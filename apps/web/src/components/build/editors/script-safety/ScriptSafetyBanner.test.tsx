@@ -28,7 +28,7 @@ mock.module("../../../../api/settings-api.js", () => ({
   updateScriptSafetySettings,
 }));
 
-const { cleanup, render, fireEvent, waitFor } = await import("@testing-library/react");
+const { cleanup, render, waitFor } = await import("@testing-library/react");
 const { ScriptSafetyBanner, isUntrustedImport } = await import("./ScriptSafetyBanner.js");
 
 function script(overrides: Partial<ScriptRecord> = {}): ScriptRecord {
@@ -85,25 +85,29 @@ describe("ScriptSafetyBanner visibility matrix", () => {
     expect(view.getByTestId("script-safety-banner")).toBeTruthy();
     expect(view.getByText("script_safety_banner_imported")).toBeTruthy();
     expect(view.getByText("script_safety_banner_full_access")).toBeTruthy();
-    expect(view.queryByText("script_safety_banner_show_warnings")).toBeNull();
   });
 
-  it("shows the «show warnings again» control for an untrusted import when suppressed", () => {
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 10, owner
+  // ruling 4b): the suppressed state used to collapse the banner to a lone
+  // «Show warnings again» link inside the warning box; it now renders
+  // nothing — the switch lives in settings (use-script-warnings-toggle
+  // tests in settings/popovers/script-warnings-setting.test.tsx).
+  it("renders nothing for an untrusted import when suppressed", () => {
     useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
-    expect(view.getByTestId("script-safety-banner")).toBeTruthy();
-    expect(view.getByText("script_safety_banner_show_warnings")).toBeTruthy();
+    expect(view.queryByTestId("script-safety-banner")).toBeNull();
     expect(view.queryByText("script_safety_banner_imported")).toBeNull();
   });
-});
 
-describe("ScriptSafetyBanner «show warnings again» control", () => {
-  it("PUTs suppressImportWarnings=false when clicked", async () => {
-    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+  it("fails open: shows the warning while the flag is not loaded yet", async () => {
+    // A GET that never settles keeps the sentinel null for the whole test.
+    getScriptSafetySettings.mockImplementationOnce(() => new Promise(() => {}));
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: null });
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
-    fireEvent.click(view.getByText("script_safety_banner_show_warnings"));
     await waitFor(() => {
-      expect(updateScriptSafetySettings).toHaveBeenCalledWith({ suppressImportWarnings: false });
+      expect(getScriptSafetySettings).toHaveBeenCalledTimes(1);
     });
+    expect(view.getByTestId("script-safety-banner")).toBeTruthy();
+    expect(view.getByText("script_safety_banner_imported")).toBeTruthy();
   });
 });

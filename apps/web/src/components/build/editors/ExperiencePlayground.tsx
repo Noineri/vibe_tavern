@@ -57,7 +57,6 @@ import type {
 import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
-import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -102,6 +101,7 @@ import {
   type ExperienceRoundCommitClaim,
 } from "../../experience/ExperienceFrame.js";
 import { ExperienceRoundFinishedPanel } from "../../experience/ExperienceModal.js";
+import { PlaygroundStartOptions } from "./experience-playground-start-options.js";
 import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
 import type { LoopDiagSample } from "../../../lib/experience-bridge.js";
 import {
@@ -195,15 +195,6 @@ const CONTROLLER_LABEL_KEY = {
   [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_human",
   [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_script",
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
-} as const;
-
-/** Short parens role for the "Who are you playing as" seat dropdown (LB-1 polish):
- *  "Name (short role)". Only this short DropdownSelect uses it; the roster
- *  editor and the setup-summary line keep the full CONTROLLER_LABEL_KEY. */
-const SHORT_ROLE_KEY = {
-  [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_short_human",
-  [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_short_script",
-  [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_short_model",
 } as const;
 
 /** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
@@ -1414,6 +1405,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
               <div key={index} className="mb-2 rounded-xl border border-border bg-surface p-2.5">
+                {/* Name field and controller dropdown share one height on
+                    every viewport: TextInput's base is h-11 / sm:h-[38px],
+                    the DropdownSelect trigger has none (py-[7px], ~35px) —
+                    both pinned to the Playground's 34px field row (the seed /
+                    human-seat pair, experience-playground-start-options). */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div
                     aria-hidden
@@ -1422,7 +1418,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                     {seatInitial(seat)}
                   </div>
                   <TextInput
-                    className="min-w-[7rem] flex-1"
+                    className="min-w-[7rem] flex-1 !h-[34px]"
                     value={seat.label}
                     placeholder={t("experience_setup_participant_name_placeholder")}
                     aria-label={t("experience_playground_participant_name")}
@@ -1433,6 +1429,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                       value={seat.controller}
                       options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
                       searchable={false}
+                      className="h-[34px]"
                       onChange={(value) => {
                         const controller = CONTROLLERS.find((c) => c === value);
                         if (controller !== undefined) {
@@ -1542,47 +1539,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div>
-              <div className="flex items-center">
-                <span className="flex items-center gap-1.5">
-                  <label className={lblCls}>{t("experience_playground_seed_label")}</label>
-                  <CustomTooltip content={t("experience_playground_seed_hint")}>
-                    <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
-                  </CustomTooltip>
-                </span>
-              </div>
-              <TextInput
-                className={cn("mt-1.5 w-full !h-[34px]", randomStart && "opacity-60")}
-                value={randomStart ? lastUsedSeed : seed}
-                placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
-                disabled={randomStart}
-                onChange={(e) => setSeed(e.target.value)}
-              />
-              <span className="mt-1.5 flex items-center gap-2">
-                <Toggle
-                  checked={randomStart}
-                  onChange={handleRandomStartChange}
-                  aria-label={t("experience_playground_random_start")}
-                />
-                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
-              </span>
-            </div>
-            <div>
-              <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
-              <div className="mt-1.5">
-                <DropdownSelect
-                  value={humanSeatId}
-                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(SHORT_ROLE_KEY[p.controller])})` }))}
-                  searchable={false}
-                  placeholder={t("experience_playground_human_seat_auto")}
-                  defaultOption={t("experience_playground_human_seat_auto")}
-                  onChange={setHumanSeatId}
-                  className="h-[34px]"
-                />
-              </div>
-            </div>
-          </div>
+          <PlaygroundStartOptions
+            seed={seed}
+            onSeedChange={setSeed}
+            randomStart={randomStart}
+            lastUsedSeed={lastUsedSeed}
+            onRandomStartChange={handleRandomStartChange}
+            humanSeatId={humanSeatId}
+            onHumanSeatChange={setHumanSeatId}
+            participants={participants}
+          />
           <div className="mt-2">
             <label className={lblCls}>{t("experience_setup_settings_label")}</label>
             {/* SS-7B2: the shared localized auto-skip state — an untrusted
@@ -2057,10 +2023,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                       <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{session.stopReason}</span></span>
                     </div>
 
-                    {/* Custom action form (type/participant/payload/requestId/expectedRevision) */}
+                    {/* Custom action form (type/participant/payload/requestId/expectedRevision).
+                        Fields share the 34px field row of the setup form. */}
                     <div className="flex flex-wrap items-center gap-2">
                       <TextInput
-                        className="w-40"
+                        className="w-40 !h-[34px]"
                         value={actionType}
                         placeholder={t("experience_tester_action_type_placeholder")}
                         onChange={(e) => setActionType(e.target.value)}
@@ -2073,16 +2040,17 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                           placeholder={t("experience_tester_action_participant_default")}
                           defaultOption={t("experience_tester_action_participant_default")}
                           onChange={setActionParticipantId}
+                          className="h-[34px]"
                         />
                       </div>
                       <TextInput
-                        className="w-32"
+                        className="w-32 !h-[34px]"
                         value={requestId}
                         aria-label={t("experience_tester_action_request_id")}
                         onChange={(e) => setRequestId(e.target.value)}
                       />
                       <TextInput
-                        className="w-24"
+                        className="w-24 !h-[34px]"
                         value={expectedRevision}
                         aria-label={t("experience_tester_action_expected_revision")}
                         onChange={(e) => setExpectedRevision(e.target.value)}

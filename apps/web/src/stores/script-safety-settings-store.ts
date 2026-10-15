@@ -4,8 +4,9 @@ import { getScriptSafetySettings, updateScriptSafetySettings } from "../api/sett
 /**
  * Client cache for the server-side script-safety singleton
  * (`/api/settings/script-safety`, SCRIPT_SAFETY_PLAN decision 3). One flag for
- * all devices; both editors' imported-script banner reads it and the
- * «Show warnings again» control writes it back.
+ * all devices; both editors' imported-script banner reads it, the
+ * imported-script modal's «don't show again» sets it, and the «Script import
+ * warnings» settings row (`hooks/use-script-warnings-toggle.ts`) flips it.
  *
  * `suppressImportWarnings === null` means "not loaded yet" — consumers
  * fail OPEN (show the warning) so a slow or failed fetch never silences the
