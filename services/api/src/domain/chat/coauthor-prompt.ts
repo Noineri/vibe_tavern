@@ -26,6 +26,7 @@ import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
+import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
@@ -109,29 +110,12 @@ function renderTrackerTemplateSection(template: TrackerTemplate | null): string 
 
 /** Render the supplied editor's authoritative review outcomes and card save state. */
 function renderEditorReviewState(editorState: NonNullable<ChatModeAssembleInput["coauthorEditorState"]>): string {
-  const sections = ["# Editor review and save state", `- card buffer: ${editorState.card.cardClean ? "saved" : "unsaved"}`];
-  sections.push("", "## Proposal review outcomes");
-  if (editorState.review.targets.length === 0) {
-    sections.push("no unreviewed proposals and no recorded outcomes");
-  } else {
-    sections.push(...editorState.review.targets.map((target) => {
-      const details: string[] = [];
-      if (target.hunks !== undefined) {
-        details.push(`hunks: accepted ${target.hunks.accepted}, rejected ${target.hunks.rejected}, pending ${target.hunks.pending}`);
-      }
-      if (target.items !== undefined) {
-        details.push(`items: offered ${target.items.offered}, selected ${target.items.selected}, applied ${target.items.applied}`);
-      }
-      if (target.selected !== undefined) {
-        details.push(`selected: ${target.selected ? "yes" : "no"}`);
-      }
-      if (target.supersededByRound !== undefined) {
-        details.push(`superseded by round \`${target.supersededByRound}\``);
-      }
-      return `- ${target.target} round \`${target.roundId}\`: **${target.outcome}**${details.length > 0 ? ` (${details.join("; ")})` : ""}`;
-    }));
-  }
-  return sections.join("\n");
+  return [
+    "# Editor review and save state",
+    `- card buffer: ${editorState.card.cardClean ? "saved" : "unsaved"}`,
+    "",
+    ...renderReviewOutcomeSection(editorState.review),
+  ].join("\n");
 }
 
 /** Render the chat's pinned Level-1 context entities as read-only reference

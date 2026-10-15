@@ -86,6 +86,19 @@ function expectedOutcomeLines(review: AgentReviewSnapshot): string[] {
   return review.targets.length === 0 ? ["no unreviewed proposals and no recorded outcomes"] : review.targets.map(outcomeLine);
 }
 
+/** The reading guidance rides only with real records (owner incident: the model insisted rejected edits were live). */
+const OUTCOME_GUIDANCE_START = "These records are authoritative: they report what the user actually did with your earlier proposals";
+const REJECTED_GUIDANCE = "`rejected`, `cancelled` and `superseded` changes are NOT in the editor — never describe them as applied or insist that they are.";
+
+function expectOutcomeGuidance(prompt: string, review: AgentReviewSnapshot, encode: (text: string) => string): void {
+  if (review.targets.length > 0) {
+    expect(prompt).toContain(encode(OUTCOME_GUIDANCE_START));
+    expect(prompt).toContain(encode(REJECTED_GUIDANCE));
+  } else {
+    expect(prompt).not.toContain(encode(OUTCOME_GUIDANCE_START));
+  }
+}
+
 /** Text as it appears inside a JSON-serialized provider payload. */
 function jsonText(text: string): string {
   return JSON.stringify(text).slice(1, -1);
@@ -212,6 +225,7 @@ async function replayCoauthor(fixture: Fixture): Promise<void> {
     expect(payload).not.toContain(STALE_GREETING);
     expect(payload).toContain(jsonText(`- card buffer: ${editor.card.cardClean ? "saved" : "unsaved"}`));
     for (const line of expectedOutcomeLines(editor.review)) expect(payload).toContain(jsonText(line));
+    expectOutcomeGuidance(payload, editor.review, jsonText);
 
     // Tools: the provider-bound mutation tool edits the live card, never the saved one.
     const tool = input.tools?.edit_personality as ExecutableTool | undefined;
@@ -370,6 +384,7 @@ async function replayCopilot(fixture: Fixture): Promise<void> {
     if (body.visualSaved !== undefined) expect(system).toContain(`- visual buffer: ${body.visualSaved ? "saved" : "unsaved"}`);
     expect(body.reviewSnapshot).toBeDefined();
     for (const line of expectedOutcomeLines(body.reviewSnapshot!)) expect(system).toContain(line);
+    expectOutcomeGuidance(system, body.reviewSnapshot!, (text) => text);
 
     // ask_user answer path: the model reads the answer as the awaited tool result.
     if (body.answer !== undefined) {

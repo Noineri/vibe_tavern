@@ -547,7 +547,10 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
       visualSaved: true,
     });
 
-    expect(result.systemMessage).toContain("## Proposal review outcomes");
+    expect(result.systemMessage).toContain(
+      "## Proposal review outcomes\nThese records are authoritative: they report what the user actually did with your earlier proposals, and they override your own memory of what you proposed.\n" +
+      "`rejected`, `cancelled` and `superseded` changes are NOT in the editor — never describe them as applied or insist that they are.\n",
+    );
     expect(result.systemMessage).toContain("- rules round `a1b2c3d4e5f6`: **applied-partial** (hunks: accepted 2, rejected 1, pending 3)");
     expect(result.systemMessage).toContain("- visual round `0f1e2d3c4b5a`: **superseded** (hunks: accepted 0, rejected 4, pending 1; superseded by round `abcdef123456`)");
     expect(result.systemMessage).toContain("## Buffer save status\n- rules buffer: unsaved\n- visual buffer: saved");

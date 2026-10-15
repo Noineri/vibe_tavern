@@ -106,6 +106,17 @@ Compaction (CM): a digest message summarizes the folded prefix; the digest ancho
 
 `ExperienceCopilotShell` (editor chrome + tabs after the UX redesign) hosts, top-to-bottom in the chat tab: the session switcher header, the context meter, the todo panel (pinned), the agent-plan section (pinned — todo ABOVE plan, PM-7), the scrolling message feed. The turn store holds per-thread activity maps plus the session-scoped `todoByThread` checklist state; the controller (`use-experience-copilot-controller`) drives sends and answers through one shared SSE-callback builder, so live routing stays field-for-field with persisted extraction by construction (the `plan` tool result rides the same tool-activity-card mechanism — the card labels it with the "Plan updated" i18n key, never the raw envelope; the `todo` tool result carries its card payload). `CopilotAskCard` renders in the feed wherever an `ask_user` activity sits — interactive on the trailing awaiting ask, read-only (answered/skipped/expired) in history. The live===persisted parity test is the boundary guard for the whole extraction layer.
 
+## Review outcome feedback (copilot and co-author)
+
+Both AI-editing surfaces tell the model, every turn, what the user did with its earlier proposals (REVIEW_OUTCOME_FEEDBACK_PLAN).
+The wire record is `AgentReviewSnapshot` (`packages/api-contracts/src/schemas/agent-review-snapshot.ts`): one record per target with a content-derived `roundId`, an outcome (`awaiting` / `applied` / `applied-partial` / `rejected` / `cancelled` / `superseded`) and separate counts.
+The copilot sends it as `reviewSnapshot` plus the per-buffer `rulesSaved` / `visualSaved` flags beside the existing live `rules` / `visual` buffers; copilot application is recorded after the local buffer accept, independently of Save.
+The co-author sends `coauthorEditorState` on both chat send routes: the live card (name, body, greetings, `cardClean`) plus the same snapshot; the server overlays the editable fields on the saved profile (`coauthor-working-document.ts`), and that working document feeds BOTH the prompt and the mutation tools; co-author application is recorded only after the Apply RPC succeeds.
+Absent fields render nothing (byte-identical legacy prompts); an explicit empty snapshot renders a sentence.
+One renderer, `services/api/src/domain/agent/agent-review-outcome-lines.ts`, writes the `## Proposal review outcomes` section for both surfaces, including the reading guidance that the records override the model's memory of its proposals.
+Client ledgers keep completed outcomes through round resets, reverts, remounts and session switches, in memory only (a page reload drops them; the live buffers still flow): the copilot uses `agent-review-outcome-store.ts`, the co-author `coauthor-editor-snapshot.ts`.
+End-to-end proof: the web suites pin real review actions to the shared fixtures in `packages/api-contracts/test/fixtures/review-outcome/`, and `services/api/test/review-outcome-integration.test.ts` replays the same bodies through the real routes into the provider prompt and tool bases.
+
 ## Testing notes
 
 The prompt tests pin the zero-feature system message by SHA-256 (byte-identical assembly when optional sections are absent). Legitimate asset changes re-capture the hash with a dated comment trail — the pins exist to catch accidental prompt drift, not to freeze assets. The turn-store parity test drives one fixture through both ingestion paths and asserts identical store state.

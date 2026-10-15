@@ -25,6 +25,7 @@ import {
   type AgentReviewSnapshot,
 } from "@vibe-tavern/api-contracts";
 import { EXPERIENCE_COPILOT_MODULE } from "../../interactive/copilot/experience-copilot-module.js";
+import { renderReviewOutcomeSection } from "../agent-review-outcome-lines.js";
 import type {
   ExperienceCopilotBoundVisual,
   ExperienceCopilotContract,
@@ -144,27 +145,7 @@ function renderContextPackage(ctx: ExperienceAgentContext): string {
   }
 
   if (reviewSnapshot !== undefined) {
-    sections.push("", "## Proposal review outcomes");
-    if (reviewSnapshot.targets.length === 0) {
-      sections.push("no unreviewed proposals and no recorded outcomes");
-    } else {
-      sections.push(...reviewSnapshot.targets.map((target) => {
-        const details: string[] = [];
-        if (target.hunks !== undefined) {
-          details.push(`hunks: accepted ${target.hunks.accepted}, rejected ${target.hunks.rejected}, pending ${target.hunks.pending}`);
-        }
-        if (target.items !== undefined) {
-          details.push(`items: offered ${target.items.offered}, selected ${target.items.selected}, applied ${target.items.applied}`);
-        }
-        if (target.selected !== undefined) {
-          details.push(`selected: ${target.selected ? "yes" : "no"}`);
-        }
-        if (target.supersededByRound !== undefined) {
-          details.push(`superseded by round \`${target.supersededByRound}\``);
-        }
-        return `- ${target.target} round \`${target.roundId}\`: **${target.outcome}**${details.length > 0 ? ` (${details.join("; ")})` : ""}`;
-      }));
-    }
+    sections.push("", ...renderReviewOutcomeSection(reviewSnapshot));
   }
 
   if (rulesSaved !== undefined || visualSaved !== undefined) {
