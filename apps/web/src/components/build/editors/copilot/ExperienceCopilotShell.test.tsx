@@ -1784,6 +1784,80 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     }
   });
 
+  it("accept-all preserves a previously dismissed hunk in both the live buffer and HTTP outcome", async () => {
+    const threadId = "ro4-supervisor-dismiss-before-accept-all";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain preserved rejection ${count}`, count);
+      expect(body.rules).toContain("A: new");
+      expect(body.rules).toContain("B: old");
+      expect(body.rules).toContain("C: new");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 2, rejected: 1, pending: 0 },
+      });
+    }
+  });
+
+  it("accept-all preserves a previously dismissed visual hunk in the live buffer and HTTP outcome", async () => {
+    const threadId = "ro4-supervisor-visual-dismiss-before-accept-all";
+    const base = ["<main>", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "</main>"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    function ControlledVisualShell() {
+      const [visualSource, setVisualSource] = useState(base);
+      return <ExperienceCopilotShell scriptId="ro4-supervisor-visual-script" rulesCode={BASE} onRulesChange={() => {}} visualSource={visualSource} onVisualChange={setVisualSource} rulesSaved={true} visualSaved={visualSource === base} />;
+    }
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledVisualShell />));
+    await flushSessionLoad();
+    fireEvent.click(utils.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(utils.getByRole("radio", { name: "agent_visual" }));
+    await sendFollowup(utils, "propose visual changes", 1);
+    await act(async () => {
+      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-visual-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "visual",
+        proposed,
+        summary: "visual changes",
+      });
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain preserved visual rejection ${count}`, count);
+      expect(body.visual).toContain("A: new");
+      expect(body.visual).toContain("B: old");
+      expect(body.visual).toContain("C: new");
+      expect(body).toMatchObject({ rulesSaved: true, visualSaved: false });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 2, rejected: 1, pending: 0 },
+      });
+    }
+  });
+
   it("retains an actual accepted-and-dismissed round as partial across two following requests", async () => {
     const threadId = "ro4-mixed-accept-dismiss";
     router.newSession = thread(threadId);
@@ -1923,12 +1997,22 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     await waitFor(() => expect(utils.queryByTestId("copilot-send-btn")).toBeNull());
     act(() => setMounted?.(true));
     await flushSessionLoad();
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
     const afterRemount = await sendFollowup(utils, "keep it after remount", 3);
     expect(afterRemount.rules).toBe(afterNextTurn.rules);
     expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
       roundId: partialReview?.roundId,
       outcome: "applied-partial",
       hunks: { accepted: 1, rejected: 0, pending: 1 },
+    });
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const completed = await sendFollowup(utils, "accept the restored pending hunk", 4);
+    expect(completed.rules).toBe(PROPOSED);
+    expect(completed.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
     });
   });
 

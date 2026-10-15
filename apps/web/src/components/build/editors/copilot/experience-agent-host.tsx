@@ -437,7 +437,7 @@ function ExperienceEditorPane({
   const acceptAllRules = useCallback(() => {
     const current = currentHunkReview("rules");
     if (!current) return;
-    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id));
+    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id) && !current.dismissed.has(id));
     acceptHunks(current.bufferReview, current.accepted, pending, rulesCodeRef.current, setAcceptedRulesHunks, onRulesChangeRef.current, "rules", current.dismissed);
   }, [currentHunkReview, acceptHunks, setAcceptedRulesHunks]);
 
@@ -477,7 +477,7 @@ function ExperienceEditorPane({
   const acceptAllVisual = useCallback(() => {
     const current = currentHunkReview("visual");
     if (!current) return;
-    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id));
+    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id) && !current.dismissed.has(id));
     acceptHunks(current.bufferReview, current.accepted, pending, visualSourceRef.current, setAcceptedVisualHunks, onVisualChangeRef.current, "visual", current.dismissed);
   }, [currentHunkReview, acceptHunks, setAcceptedVisualHunks]);
 
