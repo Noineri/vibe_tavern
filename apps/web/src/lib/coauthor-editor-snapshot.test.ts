@@ -1,8 +1,9 @@
 /**
  * RO-5 pure snapshot/ledger tests.
- * L1: repo-relative imports only; no process globals; synchronous deterministic
- * assertions; no platform assumptions; no mocks/shared-worker ordering; every
- * assertion reads the final invariant directly.
+ * L1: repo-relative imports only; module maps are process-global and are
+ * snapshotted/restored; synchronous deterministic assertions; no platform
+ * assumptions, mocks/shared-worker ordering; every assertion reads the final
+ * invariant directly.
  */
 import { afterAll, afterEach, describe, expect, it } from "bun:test";
 

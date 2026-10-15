@@ -6,10 +6,11 @@
  * each actual HTTP body still carries the retained review after its own early
  * clearTurn boundary.
  *
- * L1: all paths are repo-relative imports; fetch is restored between tests and
- * after the suite; waits are controller settlements; no platform assumptions,
- * module mocks, or shared-worker ordering; assertions read terminal request
- * bodies and the cleared turn store directly.
+ * L1: all paths are repo-relative imports; the module-held editor maps, fetch,
+ * and every touched Zustand store are restored between cases and after the
+ * suite; waits are controller settlements; no platform assumptions, module
+ * mocks, or shared-worker ordering; assertions read terminal request bodies
+ * and the cleared turn store directly.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
@@ -20,6 +21,8 @@ useDomEnv();
 const { act, renderHook } = await import("@testing-library/react");
 
 import { useChatController } from "../../hooks/use-chat-controller.js";
+import { sendChatMessage } from "../../api/chat-api.js";
+import { sendStream } from "../../api/stream.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
@@ -39,6 +42,12 @@ import {
 const CHAT = brandId<ChatId>("chat-review-send");
 const CHARACTER = "char-review-send";
 const originalSnapshotState = snapshotCoauthorEditorSnapshotStateForTests();
+const originalChatState = useChatStore.getState();
+const originalTurnState = useCoauthorTurnStore.getState();
+const originalProviderDataState = useProviderDataStore.getState();
+const originalProviderState = useProviderStore.getState();
+const originalSnapshotStoreState = useSnapshotStore.getState();
+const originalBootstrapState = useBootstrapStore.getState();
 const realFetch = globalThis.fetch;
 
 const reviewInput: CoauthorReviewInput = {
@@ -108,6 +117,20 @@ function expectRetainedReview(body: Record<string, unknown>): void {
   ]));
 }
 
+async function expectOmittedFromBothSendModes(): Promise<void> {
+  const requests: Record<string, unknown>[] = [];
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return requests.length === 1
+      ? new Response(JSON.stringify({}), { status: 200 })
+      : new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { status: 200 });
+  }) as typeof fetch;
+  await sendChatMessage(CHAT, { content: "normal omission" });
+  await sendStream(CHAT, { content: "stream omission" }, { onStatus: () => {}, onChunk: () => {} });
+  expect(requests).toHaveLength(2);
+  for (const request of requests) expect(request.coauthorEditorState).toBeUndefined();
+}
+
 describe("coauthor review send through useChatController", () => {
   beforeEach(() => {
     clearCoauthorEditorSnapshotStateForTests();
@@ -117,15 +140,23 @@ describe("coauthor review send through useChatController", () => {
 
   afterEach(() => {
     clearCoauthorEditorSnapshotStateForTests();
-    useCoauthorTurnStore.setState({ turnsByChat: {} });
-    useSnapshotStore.getState().clear();
-    useChatStore.setState({ activeChatId: null, draft: "", draftAttachments: [], generations: {} });
-    useBootstrapStore.setState({ data: null });
+    useCoauthorTurnStore.setState(originalTurnState, true);
+    useSnapshotStore.setState(originalSnapshotStoreState, true);
+    useChatStore.setState(originalChatState, true);
+    useProviderDataStore.setState(originalProviderDataState, true);
+    useProviderStore.setState(originalProviderState, true);
+    useBootstrapStore.setState(originalBootstrapState, true);
     globalThis.fetch = realFetch;
   });
 
   afterAll(() => {
     restoreCoauthorEditorSnapshotStateForTests(originalSnapshotState);
+    useCoauthorTurnStore.setState(originalTurnState, true);
+    useSnapshotStore.setState(originalSnapshotStoreState, true);
+    useChatStore.setState(originalChatState, true);
+    useProviderDataStore.setState(originalProviderDataState, true);
+    useProviderStore.setState(originalProviderState, true);
+    useBootstrapStore.setState(originalBootstrapState, true);
     globalThis.fetch = realFetch;
   });
 
@@ -160,6 +191,34 @@ describe("coauthor review send through useChatController", () => {
     expect(useCoauthorTurnStore.getState().getActivities(CHAT)).toEqual([]);
     expect(requests).toHaveLength(1);
     expectRetainedReview(requests[0]!);
+    unregister();
+  });
+
+  it("omits state without a mounted co-author editor on both send modes", async () => {
+    useSnapshotStore.setState({
+      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
+      activeChat: { id: CHAT, mode: "coauthor" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+    });
+    await expectOmittedFromBothSendModes();
+  });
+
+  it("omits a holder registered for a different co-author scope on both send modes", async () => {
+    useSnapshotStore.setState({
+      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
+      activeChat: { id: CHAT, mode: "coauthor" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+    });
+    const unregister = registerCoauthorEditor(brandId<ChatId>("other-chat"), CHARACTER, () => ({ name: "Wrong", body: "Wrong", greetings: [], cardClean: true }));
+    await expectOmittedFromBothSendModes();
+    unregister();
+  });
+
+  it("omits even a matching holder from roleplay sends on both send modes", async () => {
+    useSnapshotStore.setState({
+      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
+      activeChat: { id: CHAT, mode: "rp" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+    });
+    const unregister = registerCoauthorEditor(CHAT, CHARACTER, () => ({ name: "Live", body: "Live", greetings: [], cardClean: true }));
+    await expectOmittedFromBothSendModes();
     unregister();
   });
 });

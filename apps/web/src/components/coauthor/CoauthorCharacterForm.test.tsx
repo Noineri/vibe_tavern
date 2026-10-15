@@ -11,11 +11,13 @@
  *    affordance shows — the turn-taking concurrency control;
  *  - falls back to the placeholder when there is no active character.
  *
- * Uses the REAL snapshot-store (setState + clear in afterEach) to avoid a
- * process-global mock.module leak; `useIsSending` is overridden via the
- * spread-real pattern (no other test file consumes it, so zero leak). CM6
- * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
- * header affordance text is the always-present primary assertion.
+ * Uses the real snapshot store to avoid a process-global mock.module leak.
+ * Module-held editor maps and Zustand stores are restored after the suite;
+ * per-case cleanup prevents state from crossing assertions. `useIsSending` is
+ * overridden via the spread-real pattern (no other test file consumes it, so
+ * zero leak). CM6 mounting in happy-dom is graceful-skip (mirrors
+ * VibeMdView.test.tsx); the header affordance text is the always-present
+ * primary assertion.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
@@ -215,6 +217,9 @@ describe("CoauthorCharacterForm", () => {
 	/** Original toast.warning — spied by mutation (no mock.module → no sonner collision). */
 	const realToastWarning = toast.warning;
 	const originalSnapshotState = snapshotCoauthorEditorSnapshotStateForTests();
+	const originalAppSnapshotState = useSnapshotStore.getState();
+	const originalBootstrapState = useBootstrapStore.getState();
+	const originalTurnState = useCoauthorTurnStore.getState();
 
 	beforeEach(() => {
 		clearCoauthorEditorSnapshotStateForTests();
@@ -604,6 +609,9 @@ describe("CoauthorCharacterForm", () => {
 
 	afterAll(() => {
 		restoreCoauthorEditorSnapshotStateForTests(originalSnapshotState);
+		useSnapshotStore.setState(originalAppSnapshotState, true);
+		useBootstrapStore.setState(originalBootstrapState, true);
+		useCoauthorTurnStore.setState(originalTurnState, true);
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
 	});
@@ -646,6 +654,40 @@ describe("CoauthorCharacterForm", () => {
 			expect(body.coauthorEditorState.card.body).toContain("Live editor body");
 			expect(body.coauthorEditorState.card.greetings).toEqual([""]);
 			expect(body.coauthorEditorState.card.cardClean).toBe(false);
+			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
+		}
+	});
+
+	it("RO-5: mounted empty editor values ride the actual non-stream and stream HTTP bodies", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter({ name: "", description: "", scenario: "", mesExample: "", firstMessage: "", alternateGreetings: [] }),
+			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+		});
+		const requests: string[] = [];
+		const fetchMock = mock(async (_url: unknown, init: RequestInit | undefined) => {
+			requests.push(String(init?.body ?? ""));
+			if (requests.length === 1) {
+				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
+			}
+			return new Response('data: {"finishReason":"stop"}\n\n', { status: 200 });
+		});
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(readCoauthorEditorState(TEST_CHAT, "char_test")).toBeDefined());
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "normal empty" });
+		await sendStream(TEST_CHAT, { content: "stream empty" }, {
+			onStatus: () => {}, onChunk: () => {},
+		});
+
+		expect(requests).toHaveLength(2);
+		for (const raw of requests) {
+			const body = JSON.parse(raw);
+			expect(body.coauthorEditorState.card.name).toBe("");
+			expect(body.coauthorEditorState.card.body).toContain("# PERSONALITY");
+			expect(body.coauthorEditorState.card.body).not.toContain("A reserved arachnid weaver.");
+			expect(body.coauthorEditorState.card.greetings).toEqual([""]);
+			expect(body.coauthorEditorState.card.cardClean).toBe(true);
 			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
 		}
 	});
@@ -860,7 +902,12 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
 		let resolveResponse: ((response: Response) => void) | undefined;
 		const fetchMock = mock(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
-		globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, _init?: RequestInit) => fetchMock(), { preconnect: realFetch.preconnect });
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) return fetchMock();
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.apply"));
@@ -871,6 +918,8 @@ describe("CoauthorCharacterForm", () => {
 			expect.objectContaining({ target: "lore", outcome: "awaiting", items: expect.objectContaining({ applied: 0 }) }),
 			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: true }),
 		]));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "before full Apply confirmation" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(pending);
 
 		resolveResponse?.(new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 }));
 		await waitFor(() => {
@@ -881,6 +930,71 @@ describe("CoauthorCharacterForm", () => {
 				expect.objectContaining({ target: "tracker_template", outcome: "applied", selected: true }),
 			]));
 		});
+		for (const content of ["after full Apply", "second following full Apply turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			const state = sent.at(-1)?.coauthorEditorState;
+			expect(state?.review.targets).toHaveLength(3);
+			expect(state?.review.targets.every((target) => target.outcome === "applied")).toBe(true);
+			expect(state?.review.targets.map((target) => target.roundId)).toEqual(pending?.map((target) => target.roundId));
+			expect(state?.card.body).toContain("Bold and direct.");
+			expect(state?.card.cardClean).toBe(true);
+		}
+	});
+
+	it("RO-5 supervisor: whole Reject preserves terminal outcomes for all targets on later turns", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		const before = readCoauthorEditorState(TEST_CHAT, "char_test");
+		expect(before?.review.targets).toHaveLength(3);
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")).toBeNull());
+		for (const content of ["first rejected turn", "second rejected turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			const state = sent.at(-1)?.coauthorEditorState;
+			expect(state?.card).toEqual(before?.card);
+			expect(state?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", outcome: "rejected", hunks: { accepted: 0, rejected: 2, pending: 0 } }),
+				expect.objectContaining({ target: "lore", outcome: "rejected", items: { offered: 4, selected: 4, applied: 0 } }),
+				expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: true }),
+			]);
+			expect(state?.review.targets.map((target) => target.roundId)).toEqual(before?.review.targets.map((target) => target.roundId));
+		}
+	});
+
+	it("RO-5 supervisor: frontmatter-only card Apply publishes its confirmed name and wholesale outcome", async () => {
+		seedReviewing();
+		const activity = makeProfileActivity("rename", "A reserved arachnid weaver.");
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, { ...activity, proposed: activity.proposed?.replace("name: Kira", "name: Renamed") });
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		let applied: ReturnType<typeof coauthorApplySchema.parse> | undefined;
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				applied = coauthorApplySchema.parse(JSON.parse(String(init?.body)));
+				return new Response(JSON.stringify({ character: makeCharacter({ name: "Renamed" }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		expect(utils.queryAllByRole("checkbox")).toHaveLength(0);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
+		expect(applied?.profileMd).toContain("name: Renamed");
+		for (const content of ["first renamed turn", "second renamed turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ name: "Renamed", cardClean: true });
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", outcome: "applied", hunks: { accepted: 1, rejected: 0, pending: 0 } }),
+			]);
+		}
 	});
 
 	it("RO-5: a parked mixed-target Apply failure stays awaiting and a retry publishes only confirmed partial outcomes", async () => {
@@ -890,11 +1004,13 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
 		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
 		let applyAttempts = 0;
+		let resolveAttempt!: (response: Response) => void;
+		const appliedRequests: ReturnType<typeof coauthorApplySchema.parse>[] = [];
 		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input).includes("/coauthor/apply")) {
 				applyAttempts += 1;
-				if (applyAttempts === 1) return new Response(JSON.stringify({ error: { message: "Apply failed" } }), { status: 500 });
-				return new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 });
+				appliedRequests.push(coauthorApplySchema.parse(JSON.parse(String(init?.body))));
+				return new Promise<Response>((resolve) => { resolveAttempt = resolve; });
 			}
 			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
 			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
@@ -907,6 +1023,12 @@ describe("CoauthorCharacterForm", () => {
 		fireEvent.click(choices[3]!); // first lorebook and its entry are rejected
 		fireEvent.click(utils.getByText("coauthor.review.apply"));
 		await waitFor(() => expect(applyAttempts).toBe(1));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "Apply is still pending" });
+		const awaiting = sent.at(-1)?.coauthorEditorState?.review;
+		expect(awaiting?.targets.every((target) => target.outcome === "awaiting")).toBe(true);
+		await act(async () => {
+			resolveAttempt(new Response(JSON.stringify({ error: { message: "Apply failed" } }), { status: 500 }));
+		});
 		expect(utils.queryByText("coauthor.review.apply")).not.toBeNull();
 
 		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry remains awaiting" });
@@ -915,15 +1037,122 @@ describe("CoauthorCharacterForm", () => {
 			expect.objectContaining({ target: "lore", outcome: "awaiting", items: { offered: 4, selected: 2, applied: 0 } }),
 			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: false }),
 		]));
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(awaiting);
 
 		fireEvent.click(utils.getByText("coauthor.review.apply"));
 		await waitFor(() => expect(applyAttempts).toBe(2));
-		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry confirmed" });
+		expect(appliedRequests[1]).toEqual(appliedRequests[0]);
+		expect(appliedRequests[1]?.profileMd).toContain("Bold and direct.");
+		expect(appliedRequests[1]?.profileMd).not.toContain("A forest cave at dusk.");
+		expect(appliedRequests[1]?.loreBundle?.lorebooks.map((item) => item.id)).toEqual(["lb2"]);
+		expect(appliedRequests[1]?.loreBundle?.entries.map((item) => item.id)).toEqual(["e2"]);
+		expect(appliedRequests[1]?.trackerTemplate).toBeUndefined();
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry is still pending" });
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(awaiting);
+		await act(async () => {
+			resolveAttempt(new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 }));
+		});
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
+		for (const content of ["retry confirmed", "second following turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ cardClean: true });
+			expect(sent.at(-1)?.coauthorEditorState?.card.body).toContain("Bold and direct.");
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets.map((target) => target.roundId)).toEqual(awaiting?.targets.map((target) => target.roundId));
+		}
 		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
 			expect.objectContaining({ target: "card", outcome: "applied-partial", hunks: { accepted: 1, rejected: 1, pending: 0 } }),
 			expect.objectContaining({ target: "lore", outcome: "applied-partial", items: { offered: 4, selected: 2, applied: 2 } }),
 			expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: false }),
 		]));
+		const confirmed = sent.at(-1)?.coauthorEditorState?.review;
+		const content = utils.container.querySelector<HTMLElement>(".cm-content");
+		expect(content).not.toBeNull();
+		const editor = content ? EditorView.findFromDOM(content) : null;
+		expect(editor).not.toBeNull();
+		const body = editor?.state.doc.toString() ?? "";
+		const from = body.indexOf("Bold and direct.");
+		expect(from).toBeGreaterThanOrEqual(0);
+		await act(async () => {
+			editor?.dispatch({ changes: { from, to: from + "Bold and direct.".length, insert: "Manually refined after Apply." } });
+		});
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "manual edit after Apply" });
+		expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ cardClean: false });
+		expect(sent.at(-1)?.coauthorEditorState?.card.body).toContain("Manually refined after Apply.");
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(confirmed);
+	});
+
+	it("RO-5 supervisor: Apply settled in another chat cannot resurrect the completed proposal on return", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("parked-profile", "Confirmed while away."));
+		let resolveApply!: (response: Response) => void;
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Promise<Response>((resolve) => { resolveApply = resolve; });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const first = render(<CoauthorCharacterForm />);
+		fireEvent.click(first.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(resolveApply).toBeDefined());
+		const before = readCoauthorEditorState(TEST_CHAT, "char_test")?.review.targets;
+		expect(before).toHaveLength(1);
+		expect(before?.[0]?.outcome).toBe("awaiting");
+		first.unmount();
+		await act(async () => {
+			useSnapshotStore.setState({ activeChat: { id: "chat_other", mode: "coauthor" } as unknown as ActiveChat });
+		});
+		const other = render(<CoauthorCharacterForm />);
+		await act(async () => {
+			resolveApply(new Response(JSON.stringify({ character: makeCharacter({ description: "Confirmed while away." }), corrections: [] }), { status: 200 }));
+		});
+		expect(useSnapshotStore.getState().activeChat?.id).toBe(brandId<ChatId>("chat_other"));
+		expect(useSnapshotStore.getState().character?.description).toBe("A reserved arachnid weaver.");
+		other.unmount();
+		await act(async () => {
+			seedReviewing({ description: "Confirmed while away." });
+		});
+		const returned = render(<CoauthorCharacterForm />);
+		for (const content of ["first turn after return", "second turn after return"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", roundId: before?.[0]?.roundId, outcome: "applied" }),
+			]);
+		}
+		expect(returned.queryByText("coauthor.review.apply")).toBeNull();
+	});
+
+	it("RO-5: an Apply settlement leaves a newer same-chat proposal intact", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("origin", "Origin proposal."));
+		let resolveOrigin!: (response: Response) => void;
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Promise<Response>((resolve) => { resolveOrigin = resolve; });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(resolveOrigin).toBeDefined());
+		await act(async () => {
+			useCoauthorTurnStore.getState().clearTurn(TEST_CHAT);
+			useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("replacement", "Newer proposal."));
+		});
+		await act(async () => {
+			resolveOrigin(new Response(JSON.stringify({ character: makeCharacter({ description: "Origin proposal." }), corrections: [] }), { status: 200 }));
+		});
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).not.toBeNull());
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "newer proposal remains" });
+		const targets = sent.at(-1)?.coauthorEditorState?.review.targets;
+		expect(targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting" }),
+			expect.objectContaining({ target: "card", outcome: "superseded" }),
+		]));
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT).map((activity) => activity.toolCallId)).toEqual(["replacement"]);
 	});
 
 	it("RO-5: a tracker refresh failure cannot restore the pre-Apply editor snapshot", async () => {

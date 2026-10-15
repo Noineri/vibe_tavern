@@ -62,6 +62,7 @@ import {
   EMPTY_COAUTHOR_ACTIVITIES,
   EMPTY_COAUTHOR_CONTEXT_LINKS,
   resolveCoauthorReview,
+  settleCoauthorAppliedReview,
   useCoauthorEditorRegistration,
   useCoauthorPendingReview,
   useCoauthorReviewSelections,
@@ -470,7 +471,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       );
       // Apply is the authoritative boundary. Record success before optional
       // refreshes, which may fail independently, and before clearing the turn.
-      resolveCoauthorReview(chatId, character.id, buildCoauthorAppliedReview(frozenReviewInput, {
+      // Resolve the originating turn even after navigation, without dropping a
+      // newer proposal that may have arrived while the Apply RPC was pending.
+      settleCoauthorAppliedReview(chatId, character.id, liveActivities, buildCoauthorAppliedReview(frozenReviewInput, {
         cardApplied: request.profileMd !== undefined || request.firstMessage !== undefined,
         loreApplied: request.loreBundle !== undefined,
         trackerApplied: request.trackerTemplate !== undefined,
@@ -479,7 +482,6 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       const active = useSnapshotStore.getState();
       if (active.activeChat?.id !== chatId || active.character?.id !== character.id) return;
       useSnapshotStore.getState().ingestSnapshot(snapshot);
-      useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
       // Re-seed the form/editor from the confirmed snapshot before optional
       // follow-up refreshes. A tracker refresh may fail independently, but it
       // must never leave the next model turn reading the pre-Apply editor.

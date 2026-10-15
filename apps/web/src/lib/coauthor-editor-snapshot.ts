@@ -1,6 +1,7 @@
 import type { AgentReviewSnapshot, ReviewOutcome, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
+import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorProposal } from "./coauthor-apply-aggregate.js";
 import { allEntryIds, allLorebookIds } from "./lore-selection.js";
 
@@ -429,12 +430,57 @@ export function publishCoauthorPendingReview(chatId: string, characterId: string
 }
 
 /** Stores a successful Apply or final Reject independently of the ephemeral turn store. */
-export function resolveCoauthorReview(chatId: string, characterId: string, review: AgentReviewSnapshot): void {
+export function resolveCoauthorReview(
+  chatId: string,
+  characterId: string,
+  review: AgentReviewSnapshot,
+  options: { clearSession?: boolean } = {},
+): void {
   const ledger = ledgerFor(key(chatId, characterId));
-  for (const record of review.targets) ledger.outcomes[record.target] = record;
-  ledger.pending = [];
-  clearCoauthorReviewSession(chatId, characterId);
-  reviewSelections.delete(key(chatId, characterId));
+  const selections = readCoauthorReviewSelections(key(chatId, characterId));
+  const nextSelections = { ...selections };
+  for (const record of review.targets) {
+    const newer = ledger.pending.find((pending) => pending.target === record.target && pending.roundId !== record.roundId);
+    if (newer) {
+      ledger.superseded = [
+        ...ledger.superseded.filter((item) => item.target !== record.target),
+        { ...record, outcome: "superseded", supersededByRound: newer.roundId },
+      ];
+    } else {
+      ledger.outcomes[record.target] = record;
+    }
+    ledger.pending = ledger.pending.filter((pending) => pending.target !== record.target || pending.roundId !== record.roundId);
+    if (record.target === "card" && selections.card?.identity === record.roundId) delete nextSelections.card;
+    if (record.target === "lore" && selections.lore?.identity === record.roundId) delete nextSelections.lore;
+    if (record.target === "tracker_template" && selections.tracker?.identity === record.roundId) delete nextSelections.tracker;
+  }
+  if (Object.keys(nextSelections).length === 0) reviewSelections.delete(key(chatId, characterId));
+  else reviewSelections.set(key(chatId, characterId), nextSelections);
+  if (options.clearSession !== false) clearCoauthorReviewSession(chatId, characterId);
+}
+
+/**
+ * Settles the Apply lifecycle against the exact activity array captured at
+ * request start. A missing current turn is the normal send-boundary clear for
+ * that same review; a different current array belongs to a newer proposal.
+ */
+export function settleCoauthorAppliedReview(
+  chatId: string,
+  characterId: string,
+  originActivities: CoauthorToolActivity[],
+  review: AgentReviewSnapshot,
+): void {
+  const currentTurn = useCoauthorTurnStore.getState().turnsByChat[chatId];
+  const originTurnWasReplaced = currentTurn !== undefined && currentTurn !== originActivities;
+  resolveCoauthorReview(chatId, characterId, review, { clearSession: !originTurnWasReplaced });
+  if (currentTurn === originActivities) {
+    useCoauthorTurnStore.getState().clearTurn(chatId);
+  } else if (currentTurn) {
+    // A newer same-chat proposal owns the retained source from now on. Keeping
+    // the origin here would make its stale overlay reappear after that newer
+    // turn is later cleared for an ordinary send.
+    publishCoauthorReviewSession(chatId, characterId, currentTurn);
+  }
 }
 
 /** Reads exactly the mounted active editor. A mismatched scope means legacy omission. */
