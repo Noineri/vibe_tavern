@@ -883,6 +883,76 @@ describe("CoauthorCharacterForm", () => {
 		});
 	});
 
+	it("RO-5: a parked mixed-target Apply failure stays awaiting and a retry publishes only confirmed partial outcomes", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		let applyAttempts = 0;
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				applyAttempts += 1;
+				if (applyAttempts === 1) return new Response(JSON.stringify({ error: { message: "Apply failed" } }), { status: 500 });
+				return new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
+		const choices = utils.getAllByRole("checkbox");
+		fireEvent.click(choices[1]!); // one card hunk remains
+		fireEvent.click(choices[2]!); // tracker is offered but not selected
+		fireEvent.click(choices[3]!); // first lorebook and its entry are rejected
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(applyAttempts).toBe(1));
+		expect(utils.queryByText("coauthor.review.apply")).not.toBeNull();
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry remains awaiting" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting", hunks: { accepted: 0, rejected: 1, pending: 1 } }),
+			expect.objectContaining({ target: "lore", outcome: "awaiting", items: { offered: 4, selected: 2, applied: 0 } }),
+			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: false }),
+		]));
+
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(applyAttempts).toBe(2));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry confirmed" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "applied-partial", hunks: { accepted: 1, rejected: 1, pending: 0 } }),
+			expect.objectContaining({ target: "lore", outcome: "applied-partial", items: { offered: 4, selected: 2, applied: 2 } }),
+			expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: false }),
+		]));
+	});
+
+	it("RO-5: a tracker refresh failure cannot restore the pre-Apply editor snapshot", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("profile", "Confirmed editor body."));
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		refetchTrackerTemplateMock.mockRejectedValueOnce(new Error("tracker refresh failed"));
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Response(JSON.stringify({ character: makeCharacter({ description: "Confirmed editor body." }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(refetchTrackerTemplateMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "after refresh failure" });
+		const state = sent.at(-1)?.coauthorEditorState;
+		expect(state?.card.body).toContain("Confirmed editor body.");
+		expect(state?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "applied" }),
+			expect.objectContaining({ target: "tracker_template", outcome: "applied" }),
+		]));
+	});
+
 	it("CTX-L3: a lore-only turn enters Reviewing and Apply ships the wholesale loreBundle (no profileMd)", async () => {
 		__isSending = false;
 		seedReviewing();

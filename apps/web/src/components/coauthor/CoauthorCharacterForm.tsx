@@ -480,18 +480,19 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       if (active.activeChat?.id !== chatId || active.character?.id !== character.id) return;
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
+      // Re-seed the form/editor from the confirmed snapshot before optional
+      // follow-up refreshes. A tracker refresh may fail independently, but it
+      // must never leave the next model turn reading the pre-Apply editor.
+      const fresh = useSnapshotStore.getState().character;
+      if (fresh) {
+        form.reset(characterDefaults(fresh));
+        forceEditorFromBody();
+      }
       if (request.loreBundle) setResourcesRefreshToken((token) => token + 1);
       if (request.trackerTemplate) {
         await refetchTrackerTemplate();
         const afterRefresh = useSnapshotStore.getState();
         if (afterRefresh.activeChat?.id !== chatId || afterRefresh.character?.id !== character.id) return;
-      }
-      // Re-seed the form/editor to the freshly-written canonical so the user
-      // immediately sees the applied document (the snapshot carries the new card).
-      const fresh = useSnapshotStore.getState().character;
-      if (fresh) {
-        form.reset(characterDefaults(fresh));
-        forceEditorFromBody();
       }
       // R3: surface backend corrections (e.g. an empty name restored) — never silent.
       for (const c of corrections) {
