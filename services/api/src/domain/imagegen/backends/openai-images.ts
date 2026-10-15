@@ -24,22 +24,23 @@
  * - request: `prompt`, `model` (required — the card documents no default),
  *   `size` — GPT Image grid `1024x1024` / `1536x1024` / `1024x1536` (plus
  *   vendor `auto`; a request without a complete W×H omits the field and the
- *   vendor default applies — no invented defaults). `response_format:
- *   "b64_json"` is DALL-E-ONLY (the card: GPT Image models ALWAYS return
- *   `data[].b64_json` regardless), so the adapter sends it only for
- *   `dall-e*` models and never for `gpt-image*`;
+ *   vendor default applies — no invented defaults). `response_format` is
+ *   never sent: the card documents it as DALL-E-only (GPT Image models
+ *   ALWAYS return `data[].b64_json`), and DALL-E is retired (owner
+ *   2026-10-15) — the former dall-e-only gate is gone;
  * - response: `{created, data[]}` where each entry carries `b64_json`
- *   (GPT Image always; DALL-E when asked for it) or `url` (DALL-E-only
- *   surface, URLs valid 60 min). Bytes from `b64_json` decode in-process —
- *   NO second HTTP request; a `url` entry (defensive: only reachable when
- *   a DALL-E server ignores the requested format) downloads server-side
- *   through the injected fetch seam — the cloud-URL-expiry rule: adapters
- *   never hand remote URLs upward;
+ *   (GPT Image always) or `url` (Custom endpoints that answer with hosted
+ *   URLs). Bytes from `b64_json` decode in-process — NO second HTTP
+ *   request; a `url` entry downloads server-side through the injected
+ *   fetch seam — the cloud-URL-expiry rule: adapters never hand remote
+ *   URLs upward;
  * - no negative prompt, no steps/seed/sampler — per the card, silently
  *   ignored (capability flags off in the registry);
- * - model discovery: image models are enumerable via `GET /v1/models`
- *   filtering — the image families on the card are `gpt-image*` and
- *   `dall-e*`.
+ * - model discovery: `GET /v1/models`, listed UNFILTERED. The former
+ *   `gpt-image`/`dall-e` prefix filter emptied every Custom aggregator's
+ *   catalog (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT); owner 2026-10-15:
+ *   nobody asked for this filter and it would need constant upkeep — the
+ *   picker is searchable, the catalog is truth.
  *
  * House deltas from the STT/TTS adapters (per the IG-4 contract):
  * - NO timeout constants anywhere (owner's hardcoded-parameters ban) — the
@@ -138,13 +139,11 @@ export type OpenAiImagesFamilySizeMode =
   | { kind: "verbatim"; param: "size" }
   | { kind: "width-height" };
 
-/** `response_format` policy: DALL-E-only (OpenAI proper — GPT Image models
- *  always return b64_json without the field), always-send a documented
- *  value (the card enumerates the enum; bytes-preferred where URL lifetime
- *  is unstated), or never (the provider's endpoint documents no such
- *  field). */
+/** `response_format` policy: always-send a documented value (the card
+ *  enumerates the enum; bytes-preferred where URL lifetime is unstated), or
+ *  never (the provider's endpoint documents no such field, or — OpenAI
+ *  proper — documents it only for the retired DALL-E models). */
 export type OpenAiImagesFamilyResponseFormat =
-  | { kind: "dalle-only" }
   | { kind: "always"; value: string }
   | { kind: "never" };
 
@@ -268,15 +267,6 @@ function sniffImageMime(bytes: Buffer): string | null {
   return null;
 }
 
-/** The card's DALL-E model family prefix — `response_format` is
- *  DALL-E-only on the card, so this prefix is what gates sending it. */
-const DALL_E_MODEL_PREFIX = "dall-e";
-
-/** Model-family prefixes of the image catalog per the card (gpt-image-2,
- *  gpt-image-1.5, gpt-image-1, gpt-image-1-mini, dall-e-3, dall-e-2) —
- *  `GET /v1/models` filtering starts from these families. */
-const IMAGE_MODEL_PREFIXES = ["gpt-image", "dall-e"] as const;
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 interface OpenAiImagesConfig {
@@ -348,7 +338,7 @@ interface ParsedImageEntry {
 /** Pull the image array out of the documented envelope (`data[]` OpenAI
  *  shape, `images[]` SiliconFlow shape), then validate each entry: a
  *  `b64_json` string (the GPT Image shape — always present per the card)
- *  or a `url` string (the DALL-E / hosted-URL surface). Fails closed with a
+ *  or a `url` string (the hosted-URL surface). Fails closed with a
  *  typed error on absent/malformed containers. The SiliconFlow envelope
  *  additionally reports the effective `seed` — carried onto the generate
  *  result (the contract's "seed the backend actually used"). */
@@ -490,15 +480,10 @@ export function makeOpenAiImagesFamilyBackend(
         }
       }
 
-      // `response_format` per policy — DALL-E-only on the OpenAI card (GPT
-      // Image models always return b64_json without it), or a documented
-      // always-value for the family rows that enumerate the field.
-      let responseFormat: string | undefined;
-      if (options.responseFormat.kind === "dalle-only") {
-        responseFormat = model.startsWith(DALL_E_MODEL_PREFIX) ? "b64_json" : undefined;
-      } else if (options.responseFormat.kind === "always") {
-        responseFormat = options.responseFormat.value;
-      }
+      // `response_format` per policy — a documented always-value for the
+      // family rows that enumerate the field, otherwise never sent.
+      const responseFormat =
+        options.responseFormat.kind === "always" ? options.responseFormat.value : undefined;
 
       const body: Record<string, unknown> = {
         model,
@@ -720,17 +705,20 @@ export function makeOpenAiImagesFamilyBackend(
   return backend;
 }
 
-/** The OpenAI-proper OPTIONS row — the historical openAiImagesFactory
- *  behavior exactly (GPT Image size grid, DALL-E-gated response_format,
- *  image-family model filter, OpenAI data[] envelope). */
+/** The OpenAI-proper OPTIONS row (GPT Image size grid, OpenAI data[]
+ *  envelope). The model catalog is UNFILTERED and `response_format` is
+ *  never sent — the former `gpt-image`/`dall-e` prefix filter and the
+ *  DALL-E-only format gate were removed by owner ruling 2026-10-15
+ *  (remove it from the OpenAI adapter too — DALL-E died years ago): the
+ *  filter emptied every Custom endpoint's
+ *  catalog, and a maintained prefix list goes stale with every release. */
 const OPENAI_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
   label: "OpenAI Images",
   size: { kind: "grid", param: "size", sizes: OPENAI_IMAGES_SIZES },
-  responseFormat: { kind: "dalle-only" },
+  responseFormat: { kind: "never" },
   envelope: "openai-data",
   modelsPath: "models",
-  modelFilter: (id) => IMAGE_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix)),
-  probeModelNoun: "image models",
+  probeModelNoun: "models",
 };
 
 export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
