@@ -145,10 +145,6 @@ function ExperienceEditorPane({
     setCodeBuffer("rules");
   }, [rulesRevealLine]);
 
-  // ER-14: the latest test/simulate digest the user sent back from the test
-  // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
-  // send as `testFeedback` (survives history compaction as a system-level JSON
-  // context section), so a manual follow-up also carries it.
   const { testFeedback, launchContextRef, handleLaunchContextChange, handleSendToCopilot } = useExperienceCopilotReviewFeedback({
     bridge,
     onCopied: () => toast.success(t("agent_result_copied")),
@@ -200,6 +196,16 @@ function ExperienceEditorPane({
     visualSource,
   });
 
+  // ── Editor toggle options (XU-5) ────────────────────────────────────────
+  // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
+  // layer; code is the second layer holding the inner `[Rules | Visual]`
+  // sub-toggle. Creation mode adds the inline `sandbox` position (ER-13d-1),
+  // relabelled "Try". Built here because the creation labels resolve through
+  // `t`.
+  // Buffer-tab labels with the pending-review dot (CD-6): a tab whose buffer
+  // has unaccepted hunks carries an accent dot (per the settled vision: the
+  // OTHER tab must signal pending diffs; showing it on both tabs is harmless
+  // and simpler than hiding the active one's).
   const tabLabel = (value: "rules" | "visual", label: string): ReactNode => {
     const pending = value === "rules" ? rulesReview !== null : visualReview !== null;
     if (!pending) return label;
@@ -216,8 +222,7 @@ function ExperienceEditorPane({
   };
 
   // The OUTER "Code" tab carries a dot when EITHER buffer has pending hunks
-  // (the inner Rules / Visual dots say which one). Keep this separate from the
-  // label helper: it is deliberately a single aggregate signal.
+  // (CD-6): the preview layer can't show diffs, so the code layer signals them.
   const codeTabLabel = rulesReview !== null || visualReview !== null
     ? (
       <span className="inline-flex items-center gap-1.5">

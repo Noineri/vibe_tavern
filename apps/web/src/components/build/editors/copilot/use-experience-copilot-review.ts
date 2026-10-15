@@ -34,16 +34,30 @@ export function useExperienceCopilotReviewFeedback({
   bridge: AgentHostBridge;
   onCopied: () => void;
 }) {
+  // ER-14: the latest test/simulate digest the user sent back from the test
+  // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
+  // send as `testFeedback` (survives history compaction as a system-level JSON
+  // context section), so a manual follow-up also carries it.
   const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
+  // The playground reports its live launch configuration into a ref: changes
+  // never re-render the pane, while every send reads the freshest context.
   const launchContextRef = useRef<ExperienceCopilotLaunchContext | undefined>(undefined);
   const handleLaunchContextChange = useCallback((context: ExperienceCopilotLaunchContext) => {
     launchContextRef.current = context;
   }, []);
-  const handleSendToCopilot = useCallback((digest: CopilotDigest) => {
-    setTestFeedback(digest.feedback);
-    bridge.setInputPrefill({ text: digest.text });
-    onCopied();
-  }, [bridge, onCopied]);
+  // ER-14: copy a test/simulate/playground digest into the copilot chat input.
+  // UX 2026-08-16 remark 6: this must NOT dispatch the turn — the button copies
+  // the digest text into the input (through the shell bridge) and the user
+  // sends it themselves. The structured `feedback` is captured now so the next
+  // manual send carries it.
+  const handleSendToCopilot = useCallback(
+    (digest: CopilotDigest) => {
+      setTestFeedback(digest.feedback);
+      bridge.setInputPrefill({ text: digest.text });
+      onCopied();
+    },
+    [bridge, onCopied],
+  );
   return { testFeedback, launchContextRef, handleLaunchContextChange, handleSendToCopilot };
 }
 
