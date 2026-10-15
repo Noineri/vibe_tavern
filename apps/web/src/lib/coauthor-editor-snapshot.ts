@@ -41,7 +41,11 @@ export interface CoauthorApplyResult {
 
 const WHOLE_CARD_CHANGE = -1;
 
-/** Stable fallbacks keep Zustand selectors from allocating on every render. */
+/**
+ * Stable empty array for the turn-store selector fallback. Returning a fresh
+ * `[]` here would create a new reference every render → Zustand's `Object.is`
+ * check sees a change → infinite re-render loop ("Maximum update depth").
+ */
 export const EMPTY_COAUTHOR_ACTIVITIES: CoauthorToolActivity[] = [];
 export const EMPTY_COAUTHOR_CONTEXT_LINKS: ReadonlyArray<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }> = Object.freeze([]);
 

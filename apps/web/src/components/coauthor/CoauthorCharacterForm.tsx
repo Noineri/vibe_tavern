@@ -56,7 +56,6 @@ import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
 import {
   buildCoauthorAppliedReview,
-  buildCoauthorAwaitingReview,
   buildCoauthorRejectedReview,
   buildCoauthorReviewSelectionInputFromProposal,
   EMPTY_COAUTHOR_ACTIVITIES,
@@ -69,7 +68,7 @@ import {
   useCoauthorRetainedActivities,
   type CoauthorReviewInput,
 } from "../../lib/coauthor-editor-snapshot.js";
-import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
+import { selectLoreBundle } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter, LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";

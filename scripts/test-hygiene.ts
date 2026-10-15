@@ -73,7 +73,8 @@ export const BUDGETS = {
 	// (real RpModeStrategy instead of a stub, real executor types for the DI
 	// stub, `satisfies` for the trace literal). Lower when the nominal DI
 	// boundaries become structural.
-	asNever: 1246,
+	// 1245 (2026-10-15, RO-5): unused casts removed; ratchet lowered to match.
+	asNever: 1245,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
