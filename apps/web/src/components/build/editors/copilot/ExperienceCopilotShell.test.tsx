@@ -1737,6 +1737,46 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
     expect(secondReview).toEqual(firstReview);
   });
+
+  it("batch acceptance reverses only the surviving applied anchor after independent drift", async () => {
+    const threadId = "ro4-batch-cancel-partial-reverse";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={base.replace("C: old", "C: external")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(liveRules).toContain("B: new"));
+
+    const accepted = await sendFollowup(utils, "explain partial batch acceptance", 2);
+    const acceptedReview = accepted.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(accepted.rules).toContain("A: new");
+    expect(accepted.rules).toContain("B: new");
+    expect(accepted.rules).toContain("C: external");
+    expect(accepted).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(acceptedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 2, rejected: 0, pending: 1 } });
+    const roundId = acceptedReview?.roundId;
+    expect(roundId).toBeDefined();
+
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={liveRules.replace("A: new", "A: drift")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [3, 4]) {
+      const body = await sendFollowup(utils, `explain partial reversal ${count}`, count);
+      const review = body.reviewSnapshot?.targets.find((target) => target.target === "rules");
+      expect(body.rules).toContain("A: drift");
+      expect(body.rules).toContain("B: old");
+      expect(body.rules).toContain("C: external");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(review).toMatchObject({ roundId, outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
+    }
+  });
 });
 
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
