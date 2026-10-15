@@ -31,7 +31,12 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
+import { EditorView } from "@codemirror/view";
+import { sendChatMessage } from "../../api/chat-api.js";
+import { sendStream } from "../../api/stream.js";
+import { clearCoauthorEditorSnapshotStateForTests, readCoauthorEditorState } from "../../lib/coauthor-editor-snapshot.js";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 const handleSaveCharacter = mock(async () => undefined);
@@ -206,6 +211,7 @@ describe("CoauthorCharacterForm", () => {
 	const realToastWarning = toast.warning;
 
 	beforeEach(() => {
+		clearCoauthorEditorSnapshotStateForTests();
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
 		listAllLorebooksMock.mockReset();
@@ -217,6 +223,7 @@ describe("CoauthorCharacterForm", () => {
 	});
 
 	afterEach(() => {
+		clearCoauthorEditorSnapshotStateForTests();
 		__isSending = false;
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
@@ -469,7 +476,7 @@ describe("CoauthorCharacterForm", () => {
 	/** Seed the snapshot with a character + an active co-author chat (for chatId). */
 	function seedReviewing(characterOver: Partial<AppCharacter> = {}): AppCharacter {
 		const character = makeCharacter(characterOver);
-		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT } as never });
+		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat });
 		return character;
 	}
 
@@ -589,6 +596,48 @@ describe("CoauthorCharacterForm", () => {
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
 
+	it("RO-5: mounted live editor state rides the actual non-stream and stream HTTP bodies", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter({ name: "", firstMessage: "", alternateGreetings: [""] }),
+			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+		});
+		const requests: string[] = [];
+		const fetchMock = mock(async (_url: unknown, init: RequestInit | undefined) => {
+			requests.push(String(init?.body ?? ""));
+			if (requests.length === 1) {
+				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
+			}
+			return new Response('data: {"finishReason":"stop"}\n\n', { status: 200 });
+		});
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const content = container.querySelector(".cm-content") as HTMLElement | null;
+		expect(content).toBeTruthy();
+		const view = content ? EditorView.findFromDOM(content) : null;
+		expect(view).toBeTruthy();
+		const initialBody = view?.state.doc.toString() ?? "";
+		const from = initialBody.indexOf("A reserved arachnid weaver.");
+		expect(from).toBeGreaterThanOrEqual(0);
+		view?.dispatch({ changes: { from, to: from + "A reserved arachnid weaver.".length, insert: "Live editor body" } });
+		await waitFor(() => expect(getByText("unsaved_changes")).toBeTruthy());
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "normal" });
+		await sendStream(TEST_CHAT, { content: "stream" }, {
+			onStatus: () => {}, onChunk: () => {},
+		});
+
+		expect(requests).toHaveLength(2);
+		for (const raw of requests) {
+			const body = JSON.parse(raw);
+			expect(body.coauthorEditorState.card.name).toBe("");
+			expect(body.coauthorEditorState.card.body).toContain("Live editor body");
+			expect(body.coauthorEditorState.card.greetings).toEqual([""]);
+			expect(body.coauthorEditorState.card.cardClean).toBe(false);
+			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
+		}
+	});
+
 	// ── CTX-L3: lore proposal reviewing + Apply / Reject ───────────────────────
 	// A lore-only turn (no profile/greeting) must still enter Reviewing, render the
 	// structured lore surface, and commit the user's per-item selection via Apply.
@@ -657,6 +706,37 @@ describe("CoauthorCharacterForm", () => {
 			const call = fetchMock.mock.calls[1] as unknown as [unknown, RequestInit | undefined];
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			expect(body.trackerTemplate).toBeUndefined();
+		});
+	});
+
+	it("RO-5: full Apply records all three targets only after the parked RPC resolves", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		let resolveResponse: ((response: Response) => void) | undefined;
+		const fetchMock = mock(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		const pending = readCoauthorEditorState(TEST_CHAT)?.review.targets;
+		expect(pending).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting", hunks: expect.objectContaining({ accepted: 0 }) }),
+			expect.objectContaining({ target: "lore", outcome: "awaiting", items: expect.objectContaining({ applied: 0 }) }),
+			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: true }),
+		]));
+
+		resolveResponse?.(new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 }));
+		await waitFor(() => {
+			const resolved = readCoauthorEditorState(TEST_CHAT)?.review.targets;
+			expect(resolved).toEqual(expect.arrayContaining([
+				expect.objectContaining({ target: "card", outcome: "applied" }),
+				expect.objectContaining({ target: "lore", outcome: "applied", items: expect.objectContaining({ applied: 4 }) }),
+				expect.objectContaining({ target: "tracker_template", outcome: "applied", selected: true }),
+			]));
 		});
 	});
 

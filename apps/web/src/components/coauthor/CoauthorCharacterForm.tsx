@@ -33,7 +33,7 @@
  * why (canonical profile.md can't be rebuilt faithfully on the frontend —
  * `creator`/`character_version` are in `extensions`, absent from the snapshot).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
@@ -54,13 +54,23 @@ import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hu
 import { lblCls } from "../../lib/field-tokens.js";
 import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
+import {
+  buildCoauthorAppliedReview,
+  buildCoauthorAwaitingReview,
+  buildCoauthorRejectedReview,
+  EMPTY_COAUTHOR_ACTIVITIES,
+  EMPTY_COAUTHOR_CONTEXT_LINKS,
+  resolveCoauthorReview,
+  useCoauthorEditorRegistration,
+  useCoauthorPendingReview,
+  type CoauthorReviewInput,
+} from "../../lib/coauthor-editor-snapshot.js";
 import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter, LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useIsSending } from "../../stores/chat-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
-import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
@@ -81,14 +91,6 @@ import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-act
 import { CoauthorReviewingOverlay } from "./CoauthorReviewingOverlay.js";
 import { CoauthorLoreAssistantSettings } from "./CoauthorLoreAssistantSettings.js";
 import { useCharacterTrackerTemplate } from "../../hooks/use-character-tracker-template.js";
-
-/**
- * Stable empty array for the turn-store selector fallback. Returning a fresh
- * `[]` here would create a new reference every render → Zustand's `Object.is`
- * check sees a change → infinite re-render loop ("Maximum update depth").
- */
-const EMPTY_ACTIVITIES: CoauthorToolActivity[] = [];
-const EMPTY_CONTEXT_LINKS: ReadonlyArray<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }> = Object.freeze([]);
 
 export function CoauthorCharacterForm() {
   const character = useSnapshotStore((s) => s.character);
@@ -123,15 +125,16 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // The active chat id drives the ephemeral turn store (CA-9.2) which holds the
   // just-finished turn's tool proposals until Apply/Reject clears them.
   const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const isCoauthorChat = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
   const activities = useCoauthorTurnStore(
-    (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
+    (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_COAUTHOR_ACTIVITIES) : EMPTY_COAUTHOR_ACTIVITIES),
   );
 
   // ── CE-C1: pinned Level-1 context picker. The entities the user explicitly
   // pinned to THIS co-author chat (right-panel picker), expanded read-only into
   // the editor prompt on the backend — any of character/persona/lorebook/script.
   // Generalizes CA-13 (lorebook-only). Persisted on chats.coauthorContextLinks.
-  const contextLinks = useSnapshotStore((s) => s.activeChat?.coauthorContextLinks ?? EMPTY_CONTEXT_LINKS);
+  const contextLinks = useSnapshotStore((s) => s.activeChat?.coauthorContextLinks ?? EMPTY_COAUTHOR_CONTEXT_LINKS);
   // Characters come from the snapshot (no dedicated list endpoint); personas /
   // lorebooks / scripts are fetched once on mount (same pattern as the build
   // panel's bound-resources field). Only enabled lorebooks/scripts hold context.
@@ -177,6 +180,8 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     defaultValues: characterDefaults(character),
   });
   const { setValue, formState } = form;
+  const cardCleanRef = useRef(!formState.isDirty);
+  cardCleanRef.current = !formState.isDirty;
 
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -265,6 +270,56 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   useEffect(() => {
     if (trackerTemplate) setTrackerTemplateSelected(true);
   }, [trackerTemplate]);
+
+  // RO-5: the transport reads this holder at the actual HTTP boundary, rather
+  // than a render-time copy. This preserves live CodeMirror/form values even
+  // when the turn lifecycle clears its separate proposal store before a send.
+  const readCurrentEditorCard = useCallback(() => {
+    const values = form.getValues();
+    return {
+      name: values.name ?? "",
+      body: draftToBody(values),
+      greetings: [values.firstMessage ?? "", ...(values.alternateGreetings ?? [])],
+      cardClean: cardCleanRef.current,
+    };
+  }, [form]);
+  useCoauthorEditorRegistration(chatId, character.id, isCoauthorChat, readCurrentEditorCard);
+
+  const reviewInput = useMemo<CoauthorReviewInput>(() => {
+    if (!proposal?.hasProposal) return {};
+    const current = form.getValues();
+    const input: CoauthorReviewInput = {};
+    if (proposal.applyRequest.profileMd !== undefined || proposal.applyRequest.firstMessage !== undefined) {
+      input.card = {
+        base: draftToBody(current),
+        proposed: `${draftToBody(proposal.proposedDraft)}\u0000${proposal.applyRequest.profileMd ?? ""}\u0000${JSON.stringify(proposal.applyRequest.alternateGreetings ?? [])}`,
+        hunkIds: hunks.map((hunk) => hunk.id),
+        selectedHunkIds,
+        hasProposal: true,
+      };
+    }
+    if (proposal.loreBundle) {
+      const selected = selectLoreBundle(proposal.loreBundle, selectedLorebookIds, selectedEntryIds);
+      input.lore = {
+        offeredIds: [
+          ...proposal.loreBundle.lorebooks.map((item) => `book:${item.id}`),
+          ...proposal.loreBundle.entries.map((item) => `entry:${item.id}`),
+        ],
+        selectedIds: new Set([
+          ...selected.lorebooks.map((item) => `book:${item.id}`),
+          ...selected.entries.map((item) => `entry:${item.id}`),
+        ]),
+        identity: JSON.stringify(proposal.loreBundle),
+      };
+    }
+    if (proposal.trackerTemplate) {
+      input.tracker = { selected: trackerTemplateSelected, identity: JSON.stringify(proposal.trackerTemplate) };
+    }
+    return input;
+    // The form is frozen while reviewing; selections and proposal are the live inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal, hunks, selectedHunkIds, selectedLorebookIds, selectedEntryIds, trackerTemplateSelected]);
+  const { reviewSignature, markResolved } = useCoauthorPendingReview(chatId, character.id, isCoauthorChat, reviewInput);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -376,6 +431,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // ── CA-11: Apply / Reject the turn's aggregated proposal ───────────────────
   async function handleApply(): Promise<void> {
     if (!chatId || !proposal?.hasProposal) return;
+    // Freeze both the selections and request before the RPC. The confirmed
+    // ledger must describe what this invocation actually sent, not a later UI
+    // render or a proposal from a different chat.
+    const frozenReviewInput = reviewInput;
+    const frozenReviewSignature = reviewSignature;
     setApplying(true);
     try {
       // CA-12: rebuild the Apply request from the user's hunk selection. When all
@@ -408,6 +468,16 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         brandId<ChatId>(chatId),
         request,
       );
+      // Apply is the authoritative boundary. Record success before optional
+      // refreshes, which may fail independently, and before clearing the turn.
+      resolveCoauthorReview(chatId, character.id, buildCoauthorAppliedReview(frozenReviewInput, {
+        cardApplied: request.profileMd !== undefined || request.firstMessage !== undefined,
+        loreApplied: request.loreBundle !== undefined,
+        trackerApplied: request.trackerTemplate !== undefined,
+      }));
+      markResolved(frozenReviewSignature);
+      const active = useSnapshotStore.getState();
+      if (active.activeChat?.id !== chatId || active.character?.id !== character.id) return;
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
       if (request.loreBundle) setResourcesRefreshToken((token) => token + 1);
@@ -435,6 +505,8 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     // Discard the proposal; the editor is unchanged (it was locked for the whole
     // turn, so it still shows the pre-turn canonical). Clearing the turn store
     // drops hasProposal → editorState returns to idle (editable).
+    resolveCoauthorReview(chatId, character.id, buildCoauthorRejectedReview(reviewInput));
+    markResolved(reviewSignature);
     useCoauthorTurnStore.getState().clearTurn(chatId);
   }
 

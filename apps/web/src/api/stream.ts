@@ -7,6 +7,7 @@ import type { ChatGenerationStatus, DiceMode } from "./types.js";
 import type { RpcErrorBody } from "./unwrap.js";
 import type { z } from "zod";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
+import { readCoauthorEditorState } from "../lib/coauthor-editor-snapshot.js";
 
 export interface StreamOpts {
   signal?: AbortSignal;
@@ -92,7 +93,14 @@ export const sendStream = (
   chatId: string,
   input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   opts: StreamOpts,
-) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
+) => {
+  const coauthorEditorState = readCoauthorEditorState(chatId);
+  return streamChatEndpoint(
+    `/api/chats/${chatId}/messages/stream`,
+    { ...input, ...(coauthorEditorState ? { coauthorEditorState } : {}) },
+    opts,
+  );
+};
 
 /** Convenience: regenerate message stream */
 export const regenerateStream = (
