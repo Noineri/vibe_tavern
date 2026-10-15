@@ -194,7 +194,7 @@ describe("minimax (custom-JSON arm)", () => {
   });
 
   describe("listModels + probe", () => {
-    it("lists the documented OpenAI-compat catalog filtered to the image-* family", async () => {
+    it("lists the documented OpenAI-compat catalog unfiltered", async () => {
       const { transport, calls } = makeTransport(() =>
         Response.json({
           data: [{ id: "abab-chat" }, { id: "image-01" }, { id: "speech-2.8-hd" }],
@@ -203,11 +203,17 @@ describe("minimax (custom-JSON arm)", () => {
       );
       const backend = make(transport);
       const models = await backend.listModels();
-      expect(models).toEqual([{ id: "image-01", label: "image-01" }]);
+      // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 8, owner
+      // 2026-10-15): was filtered to the image-* prefix; now unfiltered.
+      expect(models).toEqual([
+        { id: "abab-chat", label: "abab-chat" },
+        { id: "image-01", label: "image-01" },
+        { id: "speech-2.8-hd", label: "speech-2.8-hd" },
+      ]);
       expect(calls[0].url).toBe(`${MINIMAX_ENDPOINT}/v1/models`);
 
       const probed = await backend.probe();
-      expect(probed).toEqual({ ok: true, detail: "1 image models" });
+      expect(probed).toEqual({ ok: true, detail: "3 models" });
     });
 
     it("probe honors an in-band auth failure inside HTTP 200", async () => {

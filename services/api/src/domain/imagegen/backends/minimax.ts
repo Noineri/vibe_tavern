@@ -38,11 +38,12 @@
  *   else decodes in-process and is MIME-sniffed.
  * - model discovery: MiniMax documents an OpenAI-compatible
  *   `GET /v1/models` ("a list of all available models" — the TTS twin's
- *   owner-audit precedent: static catalogs out). The image family is the
- *   `image-*` prefix (the t2i page's own enum names image-01) — a filter
- *   criterion, not a list: new image releases appear without a code
- *   change. A catalog without image entries returns [] (picker degrades to
- *   manual input).
+ *   owner-audit precedent: static catalogs out). Listed UNFILTERED: the
+ *   former `image-*` name filter was removed by owner ruling 2026-10-15
+ *   (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 8 — a name guess hides
+ *   every release that does not match it; the picker is searchable). A
+ *   request without a model still falls back to the documented
+ *   `image-01`.
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
@@ -368,7 +369,6 @@ export const minimaxImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
         if (typeof entry !== "object" || entry === null) continue;
         const id = (entry as Record<string, unknown>).id;
         if (typeof id !== "string" || id.length === 0) continue;
-        if (!id.startsWith("image-")) continue;
         out.push({ id, label: id });
       }
       return out;
@@ -396,14 +396,10 @@ export const minimaxImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
         const data = root.data;
         const count = Array.isArray(data)
           ? data.filter(
-              (e) =>
-                typeof e === "object" &&
-                e !== null &&
-                typeof (e as Record<string, unknown>).id === "string" &&
-                ((e as Record<string, unknown>).id as string).startsWith("image-"),
+              (e) => typeof e === "object" && e !== null && typeof (e as Record<string, unknown>).id === "string",
             ).length
           : 0;
-        return { ok: true, detail: `${count} image models` };
+        return { ok: true, detail: `${count} models` };
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         return { ok: false, detail: error instanceof Error ? error.message : String(error) };
