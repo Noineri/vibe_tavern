@@ -1,6 +1,8 @@
 import type { AgentReviewSnapshot, ReviewOutcome, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
+import type { CoauthorProposal } from "./coauthor-apply-aggregate.js";
+import { allEntryIds, allLorebookIds } from "./lore-selection.js";
 
 import { experienceReviewRoundId } from "./experience-copilot-review-snapshot.js";
 
@@ -51,13 +53,13 @@ function cardRecord(input: CoauthorCardReviewInput, outcome: ReviewOutcome, appl
   const selected = new Set(input.selectedHunkIds);
   if (input.hunkIds.length === 0) selected.add(WHOLE_CARD_CHANGE);
   const selectedCount = ids.filter((id) => selected.has(id)).length;
-  const rejected = ids.length - selectedCount;
+  const rejected = outcome === "rejected" ? ids.length : ids.length - selectedCount;
   const accepted = applied ? selectedCount : 0;
   return {
     target: "card",
     roundId: experienceReviewRoundId(input.base, input.proposed),
     outcome,
-    hunks: { accepted, rejected, pending: applied ? 0 : selectedCount },
+    hunks: { accepted, rejected, pending: applied || outcome === "rejected" ? 0 : selectedCount },
   };
 }
 
@@ -121,6 +123,76 @@ export interface CoauthorEditorCard {
   cardClean: boolean;
 }
 
+export interface CoauthorReviewSelectionInput {
+  card?: { identity: string; defaults: ReadonlySet<number> };
+  lore?: { identity: string; lorebookDefaults: ReadonlySet<string>; entryDefaults: ReadonlySet<string> };
+  tracker?: { identity: string; defaultSelected: boolean };
+}
+
+export interface CoauthorReviewSelectionSource {
+  card?: { base: string; proposed: string; hunkIds: readonly number[] };
+  lore?: { identity: string; lorebookIds: ReadonlySet<string>; entryIds: ReadonlySet<string> };
+  tracker?: { identity: string };
+}
+
+/** Derives compact target identities and the established wholesale defaults. */
+export function buildCoauthorReviewSelectionInput(
+  card: CoauthorReviewSelectionSource["card"],
+  lore: CoauthorReviewSelectionSource["lore"],
+  tracker: CoauthorReviewSelectionSource["tracker"],
+): CoauthorReviewSelectionInput {
+  return {
+    card: card
+      ? {
+          identity: experienceReviewRoundId(card.base, card.proposed),
+          defaults: new Set(card.hunkIds),
+        }
+      : undefined,
+    lore: lore
+      ? {
+          identity: experienceReviewRoundId("lore", lore.identity),
+          lorebookDefaults: new Set(lore.lorebookIds),
+          entryDefaults: new Set(lore.entryIds),
+        }
+      : undefined,
+    tracker: tracker
+      ? { identity: experienceReviewRoundId("tracker_template", tracker.identity), defaultSelected: true }
+      : undefined,
+  };
+}
+
+/** Keeps the form's review identity derivation beside the retained selection lifecycle. */
+export function buildCoauthorReviewSelectionInputFromProposal(
+  proposal: CoauthorProposal | null,
+  base: string,
+  proposedBody: string,
+  hunkIds: readonly number[],
+): CoauthorReviewSelectionInput {
+  return buildCoauthorReviewSelectionInput(
+    proposal?.hasProposal && (proposal.applyRequest.profileMd !== undefined || proposal.applyRequest.firstMessage !== undefined)
+      ? {
+          base,
+          proposed: `${proposedBody}\u0000${proposal.applyRequest.profileMd ?? ""}\u0000${JSON.stringify(proposal.applyRequest.alternateGreetings ?? [])}`,
+          hunkIds,
+        }
+      : undefined,
+    proposal?.loreBundle
+      ? {
+          identity: JSON.stringify(proposal.loreBundle),
+          lorebookIds: allLorebookIds(proposal.loreBundle),
+          entryIds: allEntryIds(proposal.loreBundle),
+        }
+      : undefined,
+    proposal?.trackerTemplate ? { identity: JSON.stringify(proposal.trackerTemplate) } : undefined,
+  );
+}
+
+interface CoauthorReviewSelections {
+  card?: { identity: string; selectedIds: Set<number> };
+  lore?: { identity: string; lorebookIds: Set<string>; entryIds: Set<string> };
+  tracker?: { identity: string; selected: boolean };
+}
+
 interface Holder {
   characterId: string;
   readCard: () => CoauthorEditorCard;
@@ -132,8 +204,22 @@ interface Ledger {
   superseded: ReviewTargetRecord[];
 }
 
+interface ReviewSession {
+  activities: CoauthorToolActivity[];
+}
+
+export interface CoauthorEditorSnapshotStateForTests {
+  holders: Map<string, Holder>;
+  ledgers: Map<string, Ledger>;
+  reviewSessions: Map<string, ReviewSession>;
+  reviewSelections: Map<string, CoauthorReviewSelections>;
+}
+
 const holders = new Map<string, Holder>();
 const ledgers = new Map<string, Ledger>();
+const reviewSessions = new Map<string, ReviewSession>();
+const reviewSelections = new Map<string, CoauthorReviewSelections>();
+const reviewSelectionListeners = new Map<string, Set<() => void>>();
 
 function key(chatId: string, characterId: string): string {
   return `${chatId}\u0000${characterId}`;
@@ -156,8 +242,138 @@ function replacePending(identity: string, records: readonly ReviewTargetRecord[]
       ledger.superseded = [...ledger.superseded.filter((item) => item.target !== record.target), { ...prior, outcome: "superseded", supersededByRound: record.roundId }];
       delete ledger.outcomes[record.target];
     }
+    const pending = ledger.pending.find((item) => item.target === record.target);
+    if (pending && pending.roundId !== record.roundId) {
+      ledger.superseded = [...ledger.superseded.filter((item) => item.target !== record.target), { ...pending, outcome: "superseded", supersededByRound: record.roundId }];
+    }
   }
   ledger.pending = [...records];
+}
+
+/** Retains the source proposal across the turn store's intentional early clear. */
+export function publishCoauthorReviewSession(chatId: string, characterId: string, activities: readonly CoauthorToolActivity[]): void {
+  reviewSessions.set(key(chatId, characterId), { activities: [...activities] });
+}
+
+/** The form rehydrates this scoped source after a clear/remount without copying it into canonical data. */
+export function readCoauthorReviewSession(chatId: string | null, characterId: string): CoauthorToolActivity[] {
+  if (!chatId) return EMPTY_COAUTHOR_ACTIVITIES;
+  return reviewSessions.get(key(chatId, characterId))?.activities ?? EMPTY_COAUTHOR_ACTIVITIES;
+}
+
+/**
+ * The send lifecycle clears its ephemeral activity store before HTTP. Retain
+ * the actual source proposal outside that store so a clear/remount can still
+ * render the same review and publish its awaiting selection.
+ */
+export function useCoauthorRetainedActivities(
+  chatId: string | null,
+  characterId: string,
+  enabled: boolean,
+  liveActivities: CoauthorToolActivity[],
+): CoauthorToolActivity[] {
+  const retainedActivities = readCoauthorReviewSession(chatId, characterId);
+  useEffect(() => {
+    if (chatId && enabled && liveActivities.length > 0) {
+      publishCoauthorReviewSession(chatId, characterId, liveActivities);
+    }
+  }, [characterId, chatId, enabled, liveActivities]);
+  return liveActivities.length > 0 ? liveActivities : retainedActivities;
+}
+
+function clearCoauthorReviewSession(chatId: string, characterId: string): void {
+  reviewSessions.delete(key(chatId, characterId));
+}
+
+function notifyCoauthorReviewSelection(identity: string): void {
+  for (const listener of reviewSelectionListeners.get(identity) ?? []) listener();
+}
+
+function readCoauthorReviewSelections(identity: string): CoauthorReviewSelections {
+  return reviewSelections.get(identity) ?? {};
+}
+
+function writeCoauthorReviewSelections(identity: string, next: CoauthorReviewSelections): void {
+  reviewSelections.set(identity, next);
+  notifyCoauthorReviewSelection(identity);
+}
+
+/**
+ * Preserves review choices by scoped, content-derived target identity without
+ * copying proposal documents into the review metadata. Missing or replaced
+ * targets read as the established wholesale defaults until a user changes them.
+ */
+export function useCoauthorReviewSelections(
+  chatId: string | null,
+  characterId: string,
+  enabled: boolean,
+  input: CoauthorReviewSelectionInput,
+): {
+  selectedHunkIds: Set<number>;
+  selectedLorebookIds: Set<string>;
+  selectedEntryIds: Set<string>;
+  trackerTemplateSelected: boolean;
+  setSelectedHunkIds: (next: Set<number> | ((previous: Set<number>) => Set<number>)) => void;
+  setSelectedLorebookIds: (next: Set<string> | ((previous: Set<string>) => Set<string>)) => void;
+  setSelectedEntryIds: (next: Set<string> | ((previous: Set<string>) => Set<string>)) => void;
+  setTrackerTemplateSelected: (next: boolean | ((previous: boolean) => boolean)) => void;
+} {
+  const scope = chatId && enabled ? key(chatId, characterId) : null;
+  const [, setRevision] = useState(0);
+  useEffect(() => {
+    if (!scope) return;
+    const listeners = reviewSelectionListeners.get(scope) ?? new Set<() => void>();
+    const listener = () => setRevision((revision) => revision + 1);
+    listeners.add(listener);
+    reviewSelectionListeners.set(scope, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) reviewSelectionListeners.delete(scope);
+    };
+  }, [scope]);
+
+  const selections = scope ? readCoauthorReviewSelections(scope) : {};
+  const selectedHunkIds = input.card && selections.card?.identity === input.card.identity
+    ? new Set(selections.card.selectedIds)
+    : new Set(input.card?.defaults ?? []);
+  const selectedLorebookIds = input.lore && selections.lore?.identity === input.lore.identity
+    ? new Set(selections.lore.lorebookIds)
+    : new Set(input.lore?.lorebookDefaults ?? []);
+  const selectedEntryIds = input.lore && selections.lore?.identity === input.lore.identity
+    ? new Set(selections.lore.entryIds)
+    : new Set(input.lore?.entryDefaults ?? []);
+  const trackerTemplateSelected = input.tracker && selections.tracker?.identity === input.tracker.identity
+    ? selections.tracker.selected
+    : input.tracker?.defaultSelected ?? false;
+
+  const setSelectedHunkIds = useCallback((next: Set<number> | ((previous: Set<number>) => Set<number>)) => {
+    if (!scope || !input.card) return;
+    const current = readCoauthorReviewSelections(scope);
+    const previous = current.card?.identity === input.card.identity ? new Set(current.card.selectedIds) : new Set(input.card.defaults);
+    writeCoauthorReviewSelections(scope, { ...current, card: { identity: input.card.identity, selectedIds: new Set(typeof next === "function" ? next(previous) : next) } });
+  }, [input.card, scope]);
+  const setSelectedLorebookIds = useCallback((next: Set<string> | ((previous: Set<string>) => Set<string>)) => {
+    if (!scope || !input.lore) return;
+    const current = readCoauthorReviewSelections(scope);
+    const previous = current.lore?.identity === input.lore.identity ? new Set(current.lore.lorebookIds) : new Set(input.lore.lorebookDefaults);
+    const entryIds = current.lore?.identity === input.lore.identity ? current.lore.entryIds : input.lore.entryDefaults;
+    writeCoauthorReviewSelections(scope, { ...current, lore: { identity: input.lore.identity, lorebookIds: new Set(typeof next === "function" ? next(previous) : next), entryIds: new Set(entryIds) } });
+  }, [input.lore, scope]);
+  const setSelectedEntryIds = useCallback((next: Set<string> | ((previous: Set<string>) => Set<string>)) => {
+    if (!scope || !input.lore) return;
+    const current = readCoauthorReviewSelections(scope);
+    const previous = current.lore?.identity === input.lore.identity ? new Set(current.lore.entryIds) : new Set(input.lore.entryDefaults);
+    const lorebookIds = current.lore?.identity === input.lore.identity ? current.lore.lorebookIds : input.lore.lorebookDefaults;
+    writeCoauthorReviewSelections(scope, { ...current, lore: { identity: input.lore.identity, lorebookIds: new Set(lorebookIds), entryIds: new Set(typeof next === "function" ? next(previous) : next) } });
+  }, [input.lore, scope]);
+  const setTrackerTemplateSelected = useCallback((next: boolean | ((previous: boolean) => boolean)) => {
+    if (!scope || !input.tracker) return;
+    const current = readCoauthorReviewSelections(scope);
+    const previous = current.tracker?.identity === input.tracker.identity ? current.tracker.selected : input.tracker.defaultSelected;
+    writeCoauthorReviewSelections(scope, { ...current, tracker: { identity: input.tracker.identity, selected: typeof next === "function" ? next(previous) : next } });
+  }, [input.tracker, scope]);
+
+  return { selectedHunkIds, selectedLorebookIds, selectedEntryIds, trackerTemplateSelected, setSelectedHunkIds, setSelectedLorebookIds, setSelectedEntryIds, setTrackerTemplateSelected };
 }
 
 /** Registers a mounted editor. Cleanup never removes a replacement registration. */
@@ -197,7 +413,6 @@ export function useCoauthorPendingReview(
     if (!chatId || !enabled) return;
     if (reviewSignature === "[]") {
       resolvedReviewSignatureRef.current = null;
-      publishCoauthorPendingReview(chatId, characterId, { targets: [] });
       return;
     }
     if (resolvedReviewSignatureRef.current === reviewSignature) return;
@@ -218,13 +433,15 @@ export function resolveCoauthorReview(chatId: string, characterId: string, revie
   const ledger = ledgerFor(key(chatId, characterId));
   for (const record of review.targets) ledger.outcomes[record.target] = record;
   ledger.pending = [];
+  clearCoauthorReviewSession(chatId, characterId);
+  reviewSelections.delete(key(chatId, characterId));
 }
 
-/** Reads exactly the mounted editor for this chat. No holder means legacy omission. */
-export function readCoauthorEditorState(chatId: string): { card: CoauthorEditorCard; review: AgentReviewSnapshot } | undefined {
-  const match = [...holders.entries()].find(([identity]) => identity.startsWith(`${chatId}\u0000`));
-  if (!match) return undefined;
-  const [identity, holder] = match;
+/** Reads exactly the mounted active editor. A mismatched scope means legacy omission. */
+export function readCoauthorEditorState(chatId: string, characterId: string): { card: CoauthorEditorCard; review: AgentReviewSnapshot } | undefined {
+  const identity = key(chatId, characterId);
+  const holder = holders.get(identity);
+  if (!holder) return undefined;
   const ledger = ledgerFor(identity);
   return {
     card: holder.readCard(),
@@ -235,4 +452,28 @@ export function readCoauthorEditorState(chatId: string): { card: CoauthorEditorC
 export function clearCoauthorEditorSnapshotStateForTests(): void {
   holders.clear();
   ledgers.clear();
+  reviewSessions.clear();
+  reviewSelections.clear();
+}
+
+/** Test-only worker-state seam: suites restore rather than leak a naked reset. */
+export function snapshotCoauthorEditorSnapshotStateForTests(): CoauthorEditorSnapshotStateForTests {
+  return {
+    holders: new Map(holders),
+    ledgers: new Map(ledgers),
+    reviewSessions: new Map(reviewSessions),
+    reviewSelections: new Map(reviewSelections),
+  };
+}
+
+/** Restores the exact module-held state captured before a test suite changed it. */
+export function restoreCoauthorEditorSnapshotStateForTests(snapshot: CoauthorEditorSnapshotStateForTests): void {
+  holders.clear();
+  ledgers.clear();
+  reviewSessions.clear();
+  reviewSelections.clear();
+  for (const [identity, holder] of snapshot.holders) holders.set(identity, holder);
+  for (const [identity, ledger] of snapshot.ledgers) ledgers.set(identity, ledger);
+  for (const [identity, session] of snapshot.reviewSessions) reviewSessions.set(identity, session);
+  for (const [identity, selections] of snapshot.reviewSelections) reviewSelections.set(identity, selections);
 }

@@ -16,6 +16,7 @@ export type WireAttachment = z.infer<typeof attachmentSchema>;
 import { getGatewayBaseUrl } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 import { readCoauthorEditorState } from "../lib/coauthor-editor-snapshot.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 
 export type CreateMessageVariantInput = {
   readonly content: string;
@@ -128,7 +129,10 @@ export async function sendChatMessage(
   input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
-  const coauthorEditorState = readCoauthorEditorState(chatId);
+  const state = useSnapshotStore.getState();
+  const coauthorEditorState = state.activeChat?.id === chatId && state.activeChat.mode === "coauthor" && state.character
+    ? readCoauthorEditorState(chatId, state.character.id)
+    : undefined;
   const response = await client.api.chats[":chatId"].messages.$post(
     { param: { chatId }, json: { ...input, ...(coauthorEditorState ? { coauthorEditorState } : {}) } },
     { init: { signal: options?.signal } },

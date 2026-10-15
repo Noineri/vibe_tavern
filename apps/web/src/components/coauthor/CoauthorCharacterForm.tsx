@@ -58,11 +58,14 @@ import {
   buildCoauthorAppliedReview,
   buildCoauthorAwaitingReview,
   buildCoauthorRejectedReview,
+  buildCoauthorReviewSelectionInputFromProposal,
   EMPTY_COAUTHOR_ACTIVITIES,
   EMPTY_COAUTHOR_CONTEXT_LINKS,
   resolveCoauthorReview,
   useCoauthorEditorRegistration,
   useCoauthorPendingReview,
+  useCoauthorReviewSelections,
+  useCoauthorRetainedActivities,
   type CoauthorReviewInput,
 } from "../../lib/coauthor-editor-snapshot.js";
 import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
@@ -126,9 +129,10 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // just-finished turn's tool proposals until Apply/Reject clears them.
   const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
   const isCoauthorChat = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
-  const activities = useCoauthorTurnStore(
+  const liveActivities = useCoauthorTurnStore(
     (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_COAUTHOR_ACTIVITIES) : EMPTY_COAUTHOR_ACTIVITIES),
   );
+  const activities = useCoauthorRetainedActivities(chatId, character.id, isCoauthorChat, liveActivities);
 
   // ── CE-C1: pinned Level-1 context picker. The entities the user explicitly
   // pinned to THIS co-author chat (right-panel picker), expanded read-only into
@@ -244,32 +248,28 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // torn down between states — it just leaves flow so it can't be scrolled to.
   const showReview = reviewing && (!!diff || !!proposal?.loreBundle || !!proposal?.trackerTemplate);
   const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
-  const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    // New proposal → start from "apply everything" (wholesale default).
-    setSelectedHunkIds(allHunkIds(hunks));
-  }, [hunks]);
-
   // ── CTX-L3: lore per-item selection (parent-dependency enforced at render +
   //    Apply). Defaults to ALL (wholesale), reset on each new lore bundle. ─
   const loreBundle = proposal?.loreBundle;
-  const [selectedLorebookIds, setSelectedLorebookIds] = useState<Set<string>>(new Set());
-  const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    // New lore proposal → start from "accept everything".
-    if (loreBundle) {
-      setSelectedLorebookIds(allLorebookIds(loreBundle));
-      setSelectedEntryIds(allEntryIds(loreBundle));
-    }
-  }, [loreBundle]);
-
   // ── CT-7b: tracker-template proposal selection. Single proposal, wholesale
   //    Apply; mirrors the lore review's include/exclude mechanics. ───────────
   const trackerTemplate = proposal?.trackerTemplate;
-  const [trackerTemplateSelected, setTrackerTemplateSelected] = useState(false);
-  useEffect(() => {
-    if (trackerTemplate) setTrackerTemplateSelected(true);
-  }, [trackerTemplate]);
+  const reviewSelectionInput = buildCoauthorReviewSelectionInputFromProposal(
+    proposal,
+    draftToBody(form.getValues()),
+    draftToBody(proposal?.proposedDraft ?? form.getValues()),
+    hunks.map((hunk) => hunk.id),
+  );
+  const {
+    selectedHunkIds,
+    selectedLorebookIds,
+    selectedEntryIds,
+    trackerTemplateSelected,
+    setSelectedHunkIds,
+    setSelectedLorebookIds,
+    setSelectedEntryIds,
+    setTrackerTemplateSelected,
+  } = useCoauthorReviewSelections(chatId, character.id, isCoauthorChat, reviewSelectionInput);
 
   // RO-5: the transport reads this holder at the actual HTTP boundary, rather
   // than a render-time copy. This preserves live CodeMirror/form values even
@@ -481,7 +481,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
       if (request.loreBundle) setResourcesRefreshToken((token) => token + 1);
-      if (request.trackerTemplate) await refetchTrackerTemplate();
+      if (request.trackerTemplate) {
+        await refetchTrackerTemplate();
+        const afterRefresh = useSnapshotStore.getState();
+        if (afterRefresh.activeChat?.id !== chatId || afterRefresh.character?.id !== character.id) return;
+      }
       // Re-seed the form/editor to the freshly-written canonical so the user
       // immediately sees the applied document (the snapshot carries the new card).
       const fresh = useSnapshotStore.getState().character;

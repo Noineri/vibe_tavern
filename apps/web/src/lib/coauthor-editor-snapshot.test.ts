@@ -4,7 +4,7 @@
  * assertions; no platform assumptions; no mocks/shared-worker ordering; every
  * assertion reads the final invariant directly.
  */
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 
 import {
   buildCoauthorAppliedReview,
@@ -15,6 +15,8 @@ import {
   readCoauthorEditorState,
   registerCoauthorEditor,
   resolveCoauthorReview,
+  restoreCoauthorEditorSnapshotStateForTests,
+  snapshotCoauthorEditorSnapshotStateForTests,
   type CoauthorReviewInput,
 } from "./coauthor-editor-snapshot.js";
 
@@ -34,8 +36,14 @@ const input: CoauthorReviewInput = {
   tracker: { identity: "tracker proposal", selected: false },
 };
 
+const originalSnapshotState = snapshotCoauthorEditorSnapshotStateForTests();
+
 afterEach(() => {
   clearCoauthorEditorSnapshotStateForTests();
+});
+
+afterAll(() => {
+  restoreCoauthorEditorSnapshotStateForTests(originalSnapshotState);
 });
 
 describe("coauthor editor snapshot", () => {
@@ -67,7 +75,7 @@ describe("coauthor editor snapshot", () => {
   it("records full rejection without inventing application", () => {
     const rejected = buildCoauthorRejectedReview(input).targets;
     expect(rejected.every((target) => target.outcome === "rejected")).toBe(true);
-    expect(rejected[0]?.hunks).toEqual({ accepted: 0, rejected: 1, pending: 1 });
+    expect(rejected[0]?.hunks).toEqual({ accepted: 0, rejected: 2, pending: 0 });
     expect(rejected[1]?.items).toEqual({ offered: 3, selected: 2, applied: 0 });
   });
 
@@ -76,24 +84,24 @@ describe("coauthor editor snapshot", () => {
     const unregister = registerCoauthorEditor("chat-a", "character-a", () => ({ name: "", body, greetings: ["", "alt"], cardClean: false }));
     publishCoauthorPendingReview("chat-a", "character-a", buildCoauthorAwaitingReview(input));
     body = "edited after registration";
-    expect(readCoauthorEditorState("chat-a")).toMatchObject({ card: { name: "", body: "edited after registration", greetings: ["", "alt"], cardClean: false } });
+    expect(readCoauthorEditorState("chat-a", "character-a")).toMatchObject({ card: { name: "", body: "edited after registration", greetings: ["", "alt"], cardClean: false } });
 
     resolveCoauthorReview("chat-a", "character-a", buildCoauthorAppliedReview(input, { cardApplied: true, loreApplied: true, trackerApplied: false }));
-    const state = readCoauthorEditorState("chat-a");
+    const state = readCoauthorEditorState("chat-a", "character-a");
     expect(state?.review.targets).toEqual(expect.arrayContaining([
       expect.objectContaining({ target: "card", outcome: "applied-partial" }),
       expect.objectContaining({ target: "lore", outcome: "applied-partial" }),
       expect.objectContaining({ target: "tracker_template", outcome: "rejected" }),
     ]));
     unregister();
-    expect(readCoauthorEditorState("chat-a")).toBeUndefined();
+    expect(readCoauthorEditorState("chat-a", "character-a")).toBeUndefined();
   });
 
   it("isolates chat and character registrations", () => {
     registerCoauthorEditor("chat-a", "character-a", () => ({ name: "A", body: "A", greetings: [], cardClean: true }));
     registerCoauthorEditor("chat-b", "character-b", () => ({ name: "B", body: "B", greetings: [], cardClean: true }));
-    expect(readCoauthorEditorState("chat-a")?.card.name).toBe("A");
-    expect(readCoauthorEditorState("chat-b")?.card.name).toBe("B");
-    expect(readCoauthorEditorState("chat-c")).toBeUndefined();
+    expect(readCoauthorEditorState("chat-a", "character-a")?.card.name).toBe("A");
+    expect(readCoauthorEditorState("chat-b", "character-b")?.card.name).toBe("B");
+    expect(readCoauthorEditorState("chat-c", "character-c")).toBeUndefined();
   });
 });
