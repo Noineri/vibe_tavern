@@ -23,6 +23,7 @@
  */
 import { IMAGE_GEN_BACKENDS } from "./entities.js";
 import { NOVELAI_IMAGE_GEN_CAPABILITIES } from "./imagegen-capabilities-novelai.js";
+import { OPENAI_IMAGES_CAPABILITIES, OPENAI_IMAGES_CUSTOM_CAPABILITIES } from "./imagegen-capabilities-openai-images.js";
 import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange } from "./entities.js";
 /** Global default slider ranges for the advanced numeric params
  *  (IMAGE_GENERATION_PLAN IG-CF5) — the single named constants block both
@@ -107,23 +108,8 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
-  [IMAGE_GEN_BACKENDS.OpenAiImages]: {
-    // POST /v1/images/generations: prompt/size only in our v1 arm — no
-    // negative prompt, no steps/seed/sampler surface.
-    supportsNegativePrompt: false,
-    supportsSamplers: false,
-    supportsSeed: false,
-    sizeSupport: {
-      kind: "vendor-set",
-      sizes: ["1024x1024", "1536x1024", "1024x1536"],
-    },
-    noApiKey: false,
-    supportsLiveProgress: false,
-    localExecution: false,
-    supportsImg2img: false,
-    supportsInpaint: false,
-    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
-  },
+  [IMAGE_GEN_BACKENDS.OpenAiImages]: OPENAI_IMAGES_CAPABILITIES,
+  [IMAGE_GEN_BACKENDS.OpenAiImagesCustom]: OPENAI_IMAGES_CUSTOM_CAPABILITIES,
   [IMAGE_GEN_BACKENDS.A1111]: {
     // /sdapi/v1/txt2img: full param surface — negative prompt, samplers
     // (GET /samplers), seed (reported back), free W×H integers, live

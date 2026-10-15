@@ -108,6 +108,13 @@ describe("imagegen registry", () => {
         sizes: ["1024x1024", "1536x1024", "1024x1536"],
       });
 
+      // The Custom arm (report step 9): same surface, free W×H — no grid.
+      const custom = getImageGenBackendCapabilities(IMAGE_GEN_BACKENDS.OpenAiImagesCustom);
+      expect(custom.supportsNegativePrompt).toBe(false);
+      expect(custom.noApiKey).toBe(false);
+      expect(custom.localExecution).toBe(false);
+      expect(custom.sizeSupport).toEqual({ kind: "free" });
+
       const a1111 = getImageGenBackendCapabilities(IMAGE_GEN_BACKENDS.A1111);
       expect(a1111.supportsNegativePrompt).toBe(true);
       expect(a1111.supportsSamplers).toBe(true);
@@ -182,7 +189,7 @@ describe("imagegen registry", () => {
   describe("listImageGenBackendSlugs", () => {
     it("contains exactly the roster slugs (four v1 + PE-1 family)", () => {
       expect(listImageGenBackendSlugs().sort()).toEqual([...ALL_SLUGS].sort());
-      expect(ALL_SLUGS).toHaveLength(31);
+      expect(ALL_SLUGS).toHaveLength(32);
     });
 
     it("keeps the contracts Zod enum in lockstep with the domain roster (PE-1: the roster now grows by waves — an unsynced schema would reject valid profiles at parse time)", async () => {

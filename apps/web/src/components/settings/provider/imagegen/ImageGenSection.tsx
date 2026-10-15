@@ -57,8 +57,8 @@ export function ImageGenSection({ imageGen }: { imageGen: ImageGenHook }) {
 
 /** New-profile seed backend (IG-CF8): a fresh profile is a bare CUSTOM one
  *  (presetId null), and custom speaks the OpenAI-images dialect under the
- *  hood — the only implemented cloud dialect for custom endpoints. */
-const IMAGE_GEN_CUSTOM_SEED_BACKEND = IMAGE_GEN_BACKENDS.OpenAiImages;
+ *  hood through its own Custom slug (free W×H — owner ruling 2026-10-15). */
+const IMAGE_GEN_CUSTOM_SEED_BACKEND = IMAGE_GEN_BACKENDS.OpenAiImagesCustom;
 
 const imageGenStatusClassName = (_profile: ImageGenProfileRecord, _isActive: boolean, isEditing: boolean) =>
   isEditing ? "bg-accent" : "bg-t4";

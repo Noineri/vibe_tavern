@@ -205,13 +205,14 @@ describe("ImageGenSection", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-load-error")).toBeTruthy());
   });
 
-  it("'+ New' seeds a BARE custom profile (name + the openai-images dialect via startCreate, IG-CF8)", async () => {
+  it("'+ New' seeds a BARE custom profile (name + the Custom openai-images-custom slug via startCreate, IG-CF8)", async () => {
     const imageGen = makeImageGen();
     const view = renderSection(imageGen);
     await waitFor(() => expect(view.getByTestId("image-gen-new-profile-btn")).toBeTruthy());
     fireEvent.click(view.getByTestId("image-gen-new-profile-btn"));
     await waitFor(() =>
-      expect(imageGen.startCreate).toHaveBeenCalledWith("image_gen_profile_default_name", IMAGE_GEN_BACKENDS.OpenAiImages),
+      // Behavior change (report step 9): was openai-images.
+      expect(imageGen.startCreate).toHaveBeenCalledWith("image_gen_profile_default_name", IMAGE_GEN_BACKENDS.OpenAiImagesCustom),
     );
   });
 

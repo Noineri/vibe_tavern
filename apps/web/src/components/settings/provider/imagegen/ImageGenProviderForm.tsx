@@ -126,11 +126,12 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
       if (first) applyPreset(first.id);
       return;
     }
-    // Custom (IG-CF8): bare endpoint + key. The backend pins to the
-    // OpenAI-images dialect (the hook's backend-switch branch resets the
-    // preset slug, endpoint, and key when it differs); presetId drops so
-    // the segment stays Custom on re-open.
-    updateForm("backend", IMAGE_GEN_BACKENDS.OpenAiImages);
+    // Custom (IG-CF8): bare endpoint + key. The backend pins to the Custom
+    // arm of the OpenAI-images dialect (free W×H, no OpenAI grid — owner
+    // ruling 2026-10-15; the hook's backend-switch branch resets the preset
+    // slug, endpoint, and key when it differs); presetId drops so the
+    // segment stays Custom on re-open.
+    updateForm("backend", IMAGE_GEN_BACKENDS.OpenAiImagesCustom);
     updateForm("presetId", null);
   }
 

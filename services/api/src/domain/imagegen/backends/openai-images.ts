@@ -3,8 +3,9 @@
  *
  * OpenAI Images backend adapter (IMAGE_GENERATION_PLAN IG-6) — the
  * `/v1/images/generations` arm. Serves the OpenAI protocol proper (the VT
- * `openai` preset baseUrl matches directly) and Custom cloud endpoints that
- * implement the OpenAI-images shape.
+ * `openai` preset baseUrl matches directly) and — under its own
+ * `openai-images-custom` slug — Custom cloud endpoints that implement the
+ * OpenAI-images shape (free W×H, nothing OpenAI-specific assumed).
  *
  * FAMILY PARAMETERIZATION (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1): the
  * same transport serves every OpenAI-images-shaped cloud provider — the
@@ -724,8 +725,28 @@ const OPENAI_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
 export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
   makeOpenAiImagesFamilyBackend(OPENAI_FAMILY_OPTIONS, config);
 
+/** The Custom OPTIONS row (`openai-images-custom`, owner ruling 2026-10-15):
+ *  a bare user endpoint speaking the OpenAI-images dialect. It has no card,
+ *  so nothing OpenAI-specific is assumed — the user's complete W×H rides
+ *  verbatim as the `size` string (no grid, no fail-closed mapping), no
+ *  `response_format`, the catalog unfiltered. Same envelope and transport
+ *  as the OpenAI row; a hosted-URL answer downloads server-side. */
+const CUSTOM_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Custom (OpenAI Images)",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "never" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  probeModelNoun: "models",
+};
+
+export const openAiImagesCustomFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeOpenAiImagesFamilyBackend(CUSTOM_FAMILY_OPTIONS, config);
+
 // Module-scope registration (protocol-registry pattern, the STT/TTS twins):
-// importing this module makes the 'openai-images' image-gen slug creatable
-// via the image-gen registry. The route layer (IG-8) imports this module for
-// the side effect, exactly like stt-adapter.ts imports the STT backends.
+// importing this module makes the 'openai-images' and 'openai-images-custom'
+// image-gen slugs creatable via the image-gen registry. The route layer
+// (IG-8) imports this module for the side effect, exactly like
+// stt-adapter.ts imports the STT backends.
 registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImages, openAiImagesFactory);
+registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImagesCustom, openAiImagesCustomFactory);

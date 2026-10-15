@@ -14,6 +14,7 @@ import {
   OpenAiImagesConfigError,
   OpenAiImagesError,
   OpenAiImagesSizeError,
+  openAiImagesCustomFactory,
   openAiImagesFactory,
 } from "../src/domain/imagegen/backends/openai-images.js";
 import {
@@ -404,5 +405,48 @@ describe("openai-images adapter", () => {
       expect(typeof backend.probe).toBe("function");
       expect(typeof backend.dispose).toBe("function");
     });
+  });
+});
+
+describe("openai-images-custom (the Custom arm — report step 9)", () => {
+  const CUSTOM_ENDPOINT = "https://api.closerouter.dev/v1";
+
+  it("is registered under its own slug", () => {
+    const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImagesCustom, {
+      endpoint: CUSTOM_ENDPOINT,
+      apiKey: API_KEY,
+    });
+    expect(typeof backend.generate).toBe("function");
+  });
+
+  it("sends the user's W×H verbatim as the size string — no OpenAI grid, no response_format", async () => {
+    const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    const result = await backend.generate({
+      prompt: "p",
+      model: "google/gemini-3-pro-image-preview",
+      width: 832,
+      height: 1216,
+    });
+    expect(calls[0].url).toBe(`${CUSTOM_ENDPOINT}/images/generations`);
+    const body = sentJson(calls[0]);
+    expect(body.size).toBe("832x1216");
+    expect("response_format" in body).toBe(false);
+    expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("omits size when the W×H is incomplete (vendor default)", async () => {
+    const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    await backend.generate({ prompt: "p", model: "m", width: 832 });
+    expect("size" in sentJson(calls[0])).toBe(false);
+  });
+
+  it("lists the catalog unfiltered and probes with the plain noun", async () => {
+    const roster = { data: [{ id: "anthropic/claude-fable-5" }, { id: "google/gemini-3-pro-image-preview" }] };
+    const { transport } = makeTransport(() => Response.json(roster));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    expect((await backend.listModels()).map((m) => m.id)).toEqual(["anthropic/claude-fable-5", "google/gemini-3-pro-image-preview"]);
+    expect(await backend.probe()).toEqual({ ok: true, detail: "2 models" });
   });
 });

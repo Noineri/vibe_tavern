@@ -293,7 +293,7 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(google.queryByTestId("image-gen-endpoint-hint")).toBeNull();
   });
 
-  it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
+  it("CF8: segment switch to Custom pins the backend to openai-images-custom under the hood + drops the preset slug", async () => {
     const setForm = mock(() => {});
     const imageGen = makeImageGen({
       setForm,
@@ -315,7 +315,9 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
       (option as HTMLElement).click();
     });
     const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
-    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImages)).toBe(true);
+    // Behavior change (report step 9): was openai-images; Custom now has its
+    // own slug (free W×H, no OpenAI grid — owner ruling 2026-10-15).
+    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImagesCustom)).toBe(true);
     expect(calls.some((patch) => patch["presetId"] === null)).toBe(true);
   });
 
