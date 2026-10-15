@@ -14,7 +14,6 @@ import { rehydrateExperienceCopilotDrafts, syncPersistedCopilotRound } from "../
 import { EMPTY_REVIEW_ROUND, useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import { useShallow } from "zustand/react/shallow";
-import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import {
@@ -34,13 +33,12 @@ import {
   buildBufferReview,
   AgentBufferReviewEditor,
   mergedReviewText,
-  revertHunksFromBuffer,
   type CopilotBufferReview,
 } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { cancelStoredExperienceOutcomes, recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotStep, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder, useExperienceReviewSupersession } from "./use-experience-copilot-review.js";
+import { cancelExperienceReviewHunks, cancelStoredExperienceOutcomes, recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotStep, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder, useExperienceReviewSupersession } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -363,9 +361,9 @@ function ExperienceEditorPane({
         for (const id of clickedIds) nextWhole.add(id);
         if (bufferText !== bufferReview.proposed) {
           onChange(bufferReview.proposed);
-          setAccepted(nextWhole);
-          recordAppliedOutcome(target, bufferReview, nextWhole, dismissed, nextWhole);
         }
+        setAccepted(nextWhole);
+        recordAppliedOutcome(target, bufferReview, nextWhole, dismissed, nextWhole);
         return;
       }
       const expected = mergedReviewText(bufferReview, prevAccepted);
@@ -485,66 +483,33 @@ function ExperienceEditorPane({
   // buffer (non-anchoring hunks are skipped + toasted, never guessed). No
   // clearTurn, no snapshot pop, no setDangling — that is the toolbar revert's
   // job (CD-3).
-  const cancelRoundHunks = useCallback(
-    (
-      bufferReview: CopilotBufferReview,
-      prevAccepted: ReadonlySet<number>,
-      prevDismissed: ReadonlySet<number>,
-      bufferText: string,
-      setDismissed: (next: Set<number>) => void,
-      onChange: (text: string) => void,
-    ) => {
-      // tooLarge wholesale (RV-1): the round is only reachable while the
-      // sentinel is PENDING (an accepted sentinel resolves the round and the
-      // bar disappears), so cancelling just dismisses it — the buffer was
-      // never touched by a pending proposal.
-      if (!bufferReview.diff) {
-        setDismissed(new Set([...prevDismissed, ...allReviewHunkIds(bufferReview)]));
-        return;
-      }
-      const acceptedIds = [...allReviewHunkIds(bufferReview)].filter((id) => prevAccepted.has(id));
-      const expected = mergedReviewText(bufferReview, prevAccepted);
-      if (bufferText === expected) {
-        // Clean path: rebuild from the snapshot base (no accepted hunks left).
-        if (acceptedIds.length > 0) onChange(mergeSelectedBody(bufferReview.diff, new Set()));
-      } else {
-        const { text, skippedHunkIds } = revertHunksFromBuffer(
-          bufferText,
-          bufferReview.diff,
-          bufferReview.hunks,
-          new Set(acceptedIds),
-        );
-        const reverted = acceptedIds.filter((id) => !skippedHunkIds.includes(id));
-        if (reverted.length > 0) onChange(text);
-        if (skippedHunkIds.length > 0)
-          toast.warning(t("copilot_review_hunks_skipped", { n: skippedHunkIds.length }));
-      }
-      setDismissed(new Set([...prevDismissed, ...allReviewHunkIds(bufferReview)]));
-    },
-    [t],
-  );
-
   const cancelRoundRules = useCallback(() => {
     if (!rulesReview) return;
-    cancelRoundHunks(rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, setDismissedRulesHunks, onRulesChange);
-    if (threadId) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "rules", bufferReview: rulesReview, accepted: acceptedRulesHunks, dismissed: new Set(allReviewHunkIds(rulesReview)), cancelled: true });
-  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, onRulesChange, cancelRoundHunks, threadId]);
+    const result = cancelExperienceReviewHunks({ bufferReview: rulesReview, prevAccepted: acceptedRulesHunks, prevDismissed: dismissedRulesHunks, bufferText: rulesCode, setAccepted: setAcceptedRulesHunks, setDismissed: setDismissedRulesHunks, onChange: onRulesChange });
+    if (result.skippedCount > 0) toast.warning(t("copilot_review_hunks_skipped", { n: result.skippedCount }));
+    recordAppliedOutcome("rules", rulesReview, result.accepted, result.dismissed, result.accepted, result.cancelled, true);
+  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, onRulesChange, recordAppliedOutcome, t]);
   const cancelRoundVisual = useCallback(() => {
     if (!visualReview) return;
-    cancelRoundHunks(visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, setDismissedVisualHunks, onVisualChange);
-    if (threadId) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "visual", bufferReview: visualReview, accepted: acceptedVisualHunks, dismissed: new Set(allReviewHunkIds(visualReview)), cancelled: true });
-  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks, threadId]);
+    const result = cancelExperienceReviewHunks({ bufferReview: visualReview, prevAccepted: acceptedVisualHunks, prevDismissed: dismissedVisualHunks, bufferText: visualSource, setAccepted: setAcceptedVisualHunks, setDismissed: setDismissedVisualHunks, onChange: onVisualChange });
+    if (result.skippedCount > 0) toast.warning(t("copilot_review_hunks_skipped", { n: result.skippedCount }));
+    recordAppliedOutcome("visual", visualReview, result.accepted, result.dismissed, result.accepted, result.cancelled, true);
+  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, recordAppliedOutcome, t]);
 
   const handleToolbarRevert = useCallback(() => {
-    if (threadId) {
+    if (threadId && review.lastSnapshot) {
       const revertedTargets: Array<"rules" | "visual"> = [];
-      if (review.lastSnapshot && rulesCode !== review.lastSnapshot.rules) revertedTargets.push("rules");
-      if (review.lastSnapshot && visualSource !== review.lastSnapshot.visual) revertedTargets.push("visual");
+      if (rulesCode !== review.lastSnapshot.rules) revertedTargets.push("rules");
+      if (visualSource !== review.lastSnapshot.visual) revertedTargets.push("visual");
+      // The parent callback restores the snapshot synchronously. Do not commit
+      // cancellation evidence until that local restoration has actually run.
+      review.revertLastTurn();
       recordExperienceRevertedOutcomes(EXPERIENCE_KIND, threadId, ([{ target: "rules" as const, review: rulesReview, accepted: acceptedRulesHunks, dismissed: dismissedRulesHunks }, { target: "visual" as const, review: visualReview, accepted: acceptedVisualHunks, dismissed: dismissedVisualHunks }]).filter(({ target }) => revertedTargets.includes(target)));
       cancelStoredExperienceOutcomes(EXPERIENCE_KIND, threadId, revertedTargets);
       useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
+    } else {
+      review.revertLastTurn();
     }
-    review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
   }, [review, t, threadId, rulesReview, visualReview, acceptedRulesHunks, acceptedVisualHunks, dismissedRulesHunks, dismissedVisualHunks, rulesCode, visualSource]);
 

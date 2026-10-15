@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
@@ -1440,16 +1440,22 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
   const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
   const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
 
-  function ControlledShell() {
-    const [rulesCode, setRulesCode] = useState(BASE);
+  function ControlledShell({ initialRules = BASE, rulesOverride, onRulesCode }: { initialRules?: string; rulesOverride?: string; onRulesCode?: (rules: string) => void }) {
+    const [rulesCode, setRulesCode] = useState(initialRules);
+    useEffect(() => {
+      if (rulesOverride !== undefined) setRulesCode(rulesOverride);
+    }, [rulesOverride]);
     return (
       <ExperienceCopilotShell
         scriptId="ro4-supervisor-script"
         rulesCode={rulesCode}
-        onRulesChange={setRulesCode}
+        onRulesChange={(rules) => {
+          setRulesCode(rules);
+          onRulesCode?.(rules);
+        }}
         visualSource=""
         onVisualChange={() => {}}
-        rulesSaved={rulesCode === BASE}
+        rulesSaved={rulesCode === initialRules}
         visualSaved={true}
       />
     );
@@ -1465,6 +1471,10 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
   }
 
   async function openReview(utils: ReturnType<typeof render>, threadId: string) {
+    return openReviewProposal(utils, threadId, PROPOSED);
+  }
+
+  async function openReviewProposal(utils: ReturnType<typeof render>, threadId: string, proposed: string) {
     await flushSessionLoad();
     await sendFollowup(utils, "propose changes", 1);
     await act(async () => {
@@ -1473,7 +1483,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
         toolName: "write_buffer",
         status: "done",
         target: "rules",
-        proposed: PROPOSED,
+        proposed,
         summary: "header and tail",
       });
     });
@@ -1656,6 +1666,76 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
     expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
     expect(retriedReview).toEqual(failedReview);
+  });
+
+  it("keeps only cleanly anchored accepted hunks applied across two HTTP turns", async () => {
+    const threadId = "ro4-accept-drift";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    utils.rerender(withIsolatedI18n(<ControlledShell rulesOverride={BASE.replace("// rules buffer", "// external header")} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    const first = await sendFollowup(utils, "explain anchored change", 2);
+    const second = await sendFollowup(utils, "explain anchored change again", 3);
+    const firstReview = first.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const secondReview = second.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(first.rules).toContain("// external header");
+    expect(first.rules).toContain("const tail = 22.");
+    expect(first).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(secondReview).toEqual(firstReview);
+  });
+
+  it("resolves an explicit tooLarge acceptance when the live parent buffer already equals the proposal", async () => {
+    const threadId = "ro4-too-large-already-applied";
+    const base = Array.from({ length: 900 }, (_, index) => `base-${index}`).join("\n");
+    const proposed = Array.from({ length: 900 }, (_, index) => `proposed-${index}`).join("\n");
+    const onRulesCode = mock();
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={onRulesCode} />));
+    await openReviewProposal(utils, threadId, proposed);
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={proposed} onRulesCode={onRulesCode} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const body = await sendFollowup(utils, "explain wholesale acceptance", 2);
+    const review = body.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(body.rules).toBe(proposed);
+    expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(review).toMatchObject({ outcome: "applied", hunks: { accepted: 1, rejected: 0, pending: 0 } });
+    expect(onRulesCode).not.toHaveBeenCalled();
+  });
+
+  it("cancelling a drifted round retains only accepted hunks whose reverse anchor still exists", async () => {
+    const threadId = "ro4-cancel-drift";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={liveRules.replace("A: new", "A: drift")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    const first = await sendFollowup(utils, "explain partial cancellation", 2);
+    const second = await sendFollowup(utils, "explain partial cancellation again", 3);
+    const firstReview = first.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const secondReview = second.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(first.rules).toContain("A: drift");
+    expect(first.rules).toContain("B: old");
+    expect(first.rules).toContain("C: old");
+    expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
+    expect(secondReview).toEqual(firstReview);
   });
 });
 

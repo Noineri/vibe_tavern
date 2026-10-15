@@ -4,7 +4,9 @@ import type { AgentHostBridge } from "../../../../lib/agent-host-registry.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import type { CopilotBufferReview } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { TFunc } from "../../../../i18n/locale-helpers.js";
-import { allReviewHunkIds } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
+import { allReviewHunkIds, mergedReviewText } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
+import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
+import { revertHunksFromBuffer } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import { buildExperienceCopilotReviewSnapshot, experienceReviewRoundId } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { agentThreadKey, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
@@ -56,7 +58,7 @@ export function useExperienceCopilotReviewTabs({
 }
 
 /** Records a successful local buffer application with all prior applied hunks for the round. */
-export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled = false }: {
+export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled = false, replaceApplied = false }: {
   kind: AgentKind;
   threadId: string;
   target: "rules" | "visual";
@@ -65,10 +67,14 @@ export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferR
   dismissed: ReadonlySet<number>;
   applied: ReadonlySet<number>;
   cancelled?: boolean;
+  /** Reversal paths replace prior local application evidence with surviving hunks. */
+  replaceApplied?: boolean;
 }): void {
   const prior = useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(kind, threadId)]?.[target];
   const roundId = experienceReviewRoundId(bufferReview.base, bufferReview.proposed);
-  const appliedHunkIds = new Set([...(prior?.record.roundId === roundId ? prior.appliedHunkIds : []), ...applied]);
+  const appliedHunkIds = replaceApplied
+    ? new Set(applied)
+    : new Set([...(prior?.record.roundId === roundId ? prior.appliedHunkIds : []), ...applied]);
   const [record] = buildExperienceCopilotReviewSnapshot([{
     target,
     base: bufferReview.base,
@@ -84,9 +90,44 @@ export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferR
 
 /** Binds the host's current thread to successful local application recording. */
 export function useExperienceReviewOutcomeRecorder(kind: AgentKind, threadId: string | null) {
-  return useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false) => {
-    if (threadId) recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled });
+  return useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false, replaceApplied = false) => {
+    if (threadId) recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled, replaceApplied });
   }, [kind, threadId]);
+}
+
+/** Resolves a cancelled round against the actual buffer, retaining unanchored applies. */
+export function cancelExperienceReviewHunks({ bufferReview, prevAccepted, prevDismissed, bufferText, setAccepted, setDismissed, onChange }: {
+  bufferReview: CopilotBufferReview;
+  prevAccepted: ReadonlySet<number>;
+  prevDismissed: ReadonlySet<number>;
+  bufferText: string;
+  setAccepted: (next: Set<number>) => void;
+  setDismissed: (next: Set<number>) => void;
+  onChange: (text: string) => void;
+}): { accepted: Set<number>; dismissed: Set<number>; skippedCount: number; cancelled: boolean } {
+  const offered = allReviewHunkIds(bufferReview);
+  if (!bufferReview.diff) {
+    const dismissed = new Set([...prevDismissed, ...offered]);
+    setAccepted(new Set());
+    setDismissed(dismissed);
+    return { accepted: new Set(), dismissed, skippedCount: 0, cancelled: false };
+  }
+  const acceptedIds = [...offered].filter((id) => prevAccepted.has(id));
+  if (bufferText === mergedReviewText(bufferReview, prevAccepted)) {
+    if (acceptedIds.length > 0) onChange(mergeSelectedBody(bufferReview.diff, new Set()));
+    const dismissed = new Set([...prevDismissed, ...offered]);
+    setAccepted(new Set());
+    setDismissed(dismissed);
+    return { accepted: new Set(), dismissed, skippedCount: 0, cancelled: acceptedIds.length > 0 };
+  }
+  const { text, skippedHunkIds } = revertHunksFromBuffer(bufferText, bufferReview.diff, bufferReview.hunks, new Set(acceptedIds));
+  const reverted = acceptedIds.filter((id) => !skippedHunkIds.includes(id));
+  if (reverted.length > 0) onChange(text);
+  const accepted = new Set(skippedHunkIds.filter((id) => prevAccepted.has(id)));
+  const dismissed = new Set([...prevDismissed, ...offered].filter((id) => !accepted.has(id)));
+  setAccepted(accepted);
+  setDismissed(dismissed);
+  return { accepted, dismissed, skippedCount: skippedHunkIds.length, cancelled: acceptedIds.length > 0 && accepted.size === 0 };
 }
 
 /** Validates the effective review document rather than a stale live buffer. */
