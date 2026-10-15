@@ -105,6 +105,24 @@ afterEach(async () => {
   listSttDraftModelsMock.mockClear();
 });
 
+describe("SttProfileEditor — view mode base card auto-key", () => {
+  it("an auto-matched keyless card counts as ready and does NOT name its source (the form does)", async () => {
+    const stt = makeStt({
+      profiles: [makeRecord({ autoKeyProviderName: "LLM Hub" })],
+      form: makeForm({ autoKeyProviderName: "LLM Hub" }),
+    });
+    const props = { stt } as unknown as React.ComponentProps<typeof SttProfileEditor>;
+    const view = render(React.createElement(SttProfileEditor, props));
+    await waitFor(() => expect(view.getByTestId("stt-base-card")).toBeTruthy());
+    const status = view.getByTestId("stt-base-card-status").textContent ?? "";
+    expect(status).toContain("api_key_saved");
+    expect(status).not.toContain("no_api_key");
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 2, owner
+    // 2026-10-15): the base card no longer carries the key-source hint.
+    expect(view.queryByTestId("stt-key-source-hint")).toBeNull();
+  });
+});
+
 describe("SttProfileEditor — view mode (level-2 recognition settings)", () => {
   it("renders the base card with the profile name; model picker + language below, NO endpoint field (connection-level)", async () => {
     const stt = makeStt();

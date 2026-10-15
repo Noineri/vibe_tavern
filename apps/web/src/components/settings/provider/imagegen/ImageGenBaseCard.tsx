@@ -52,10 +52,10 @@ export function ImageGenBaseCard({ form, isActive, onEdit, onActivate }: ImageGe
   const host = endpointHost(form);
   const keylessByDesign =
     form.backend === IMAGE_GEN_BACKENDS.A1111 || form.backend === IMAGE_GEN_BACKENDS.ComfyUI;
-  // IG-21: an auto-matched key counts as ready (the SttBaseCard twin) —
-  //  the status row names its source; a1111 never matches.
-  const autoKeyName = form.autoKeyProviderName;
-  const hasKey = form.hasStoredApiKey || autoKeyName !== null || form.apiKey.trim() !== "";
+  // IG-21: an auto-matched key counts as ready (the SttBaseCard twin);
+  //  a1111 never matches. The card does not name the source — the editor
+  //  form does.
+  const hasKey = form.hasStoredApiKey || form.autoKeyProviderName !== null || form.apiKey.trim() !== "";
 
   return (
     <div className="mb-6" data-testid="image-gen-base-card">
@@ -76,11 +76,9 @@ export function ImageGenBaseCard({ form, isActive, onEdit, onActivate }: ImageGe
               </>
             )}
             <span className="h-1 w-1 rounded-full bg-t4" />
-            {autoKeyName !== null && (
-              <span className="text-t3" data-testid="image-gen-key-source-hint">
-                {t("image_gen_key_from_provider_hint", { name: autoKeyName })}
-              </span>
-            )}
+            {/* No key-source hint here (owner 2026-10-15: the hint does not
+                belong on this card and clutters it) — the editor form keeps
+                it; an auto-matched key still counts as ready. */}
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
                 <Icons.Check /> {t("api_key_saved")}
@@ -106,13 +104,16 @@ export function ImageGenBaseCard({ form, isActive, onEdit, onActivate }: ImageGe
         </div>
         {/* MR-5: the global activate button — the ProviderViewHeader fork
             verbatim (same classes, same keys, disabled on the active
-            profile). Content-sized on sm+ (w-auto); full-width stacked row
-            on mobile. */}
+            profile). Content-sized on sm+ (w-auto) and never squeezed:
+            shrink-0 + whitespace-nowrap keep the label on one line inside the
+            34px box (owner screenshot 2026-10-15 — it wrapped and spilled);
+            the left column (min-w-0) absorbs the squeeze. Full-width stacked
+            row on mobile. */}
         <button
           type="button"
           onClick={onActivate}
           data-testid="image-gen-base-card-activate-btn"
-          className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto"
+          className="min-h-11 w-full shrink-0 whitespace-nowrap rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto"
           disabled={isActive}
         >
           {isActive ? t("provider_active") : t("make_active")}

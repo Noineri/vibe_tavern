@@ -474,7 +474,7 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-base-card-keyless")).toBeTruthy());
   });
 
-  it("IG-21: an auto-matched keyless card names its source and counts as ready (no no-key warning)", async () => {
+  it("IG-21: an auto-matched keyless card counts as ready (no no-key warning) and does NOT name its source", async () => {
     const record = makeRecord({ backend: IMAGE_GEN_BACKENDS.OpenRouter, hasStoredApiKey: false });
     const imageGen = makeViewImageGen({
       profiles: [record],
@@ -489,7 +489,10 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     });
     const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
     await waitFor(() => expect(view.getByTestId("image-gen-base-card")).toBeTruthy());
-    expect(view.getByTestId("image-gen-key-source-hint").textContent).toContain("OR main");
+    // Behavior change (report step 2, owner 2026-10-15): the card used to name
+    // the source; the hint now lives only in the editor form.
+    expect(view.queryByTestId("image-gen-key-source-hint")).toBeNull();
+    expect(view.getByTestId("image-gen-base-card-status").textContent).toContain("api_key_saved");
     // Auto-matched = ready: the keyless warning must NOT render (the
     // SttBaseCard twin — an auto-match is not a missing key).
     expect(view.queryByTestId("image-gen-base-card-keyless")).toBeNull();

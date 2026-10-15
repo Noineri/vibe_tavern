@@ -90,11 +90,9 @@ export function TtsBaseCard({ form, isDefault, onEdit, onSetDefault }: TtsBaseCa
           >
             <span>{presetLabel}</span>
             <span className="h-1 w-1 rounded-full bg-t4" />
-            {form.autoKeyProviderName !== null && (
-              <span className="text-t3" data-testid="tts-key-source-hint">
-                {t("tts_key_from_provider_hint", { name: form.autoKeyProviderName })}
-              </span>
-            )}
+            {/* No key-source hint here (owner 2026-10-15: the hint does not
+                belong on this card and clutters it) — the editor form keeps
+                it; an auto-matched key still counts as ready. */}
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
                 <Icons.Check /> {t(statusKey)}

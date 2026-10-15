@@ -1691,10 +1691,16 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     cleanup();
   });
 
-  it("view mode: base card status row names the auto-key provider", () => {
+  it("view mode: an auto-matched base card counts as ready and does NOT name its source", () => {
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 2, owner
+    // 2026-10-15): was "base card status row names the auto-key provider";
+    // the hint now lives only in the editor form.
     const tts = viewTts({ form: orForm({ id: "p1", voiceId: "alloy" }) });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
+    expect(view.queryByTestId("tts-key-source-hint")).toBeNull();
+    const status = view.getByTestId("tts-base-card-status").textContent ?? "";
+    expect(status).toContain("api_key_saved");
+    expect(status).not.toContain("no_api_key");
     cleanup();
   });
 });
