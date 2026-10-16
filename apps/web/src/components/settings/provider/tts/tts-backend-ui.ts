@@ -346,7 +346,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     connection: {
       apiKey: { placeholder: "MiniMax API key" },
       // Live discovery (TPE-9a): listModels() fetches the documented
-      // GET /v1/models and keeps the speech-* family.
+      // GET /v1/models, unfiltered (owner ruling 2026-10-15).
       model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
     },
     tuning: [

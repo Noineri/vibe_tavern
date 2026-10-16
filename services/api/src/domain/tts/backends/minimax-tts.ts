@@ -232,10 +232,11 @@ export class MinimaxTtsBackend implements TtsBackend {
     // Live discovery (owner audit 2026-09-01: static catalogs out): MiniMax
     // documents an OpenAI-compatible GET /v1/models ("Returns a list of all
     // available models", platform.minimax.io/docs/api-reference/models/
-    // openai/list-models). The TTS models are the `speech-*` family named by
-    // the T2A page's own model enum — a filter criterion, not a list: new
-    // speech releases appear here without a code change. A catalog without
-    // speech entries returns [] (the picker degrades to manual input).
+    // openai/list-models). Listed UNFILTERED: the `speech-` prefix check is
+    // gone (owner ruling 2026-10-15, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+    // step 8 — a name guess silently hides every model outside it, and the
+    // picker is searchable). An empty catalog returns [] (the picker
+    // degrades to manual input).
     const apiKey = this.requireApiKey();
     const response = await fetch(`${MINIMAX_BASE_URL}/v1/models`, {
       headers: authHeaders(apiKey),
@@ -249,7 +250,7 @@ export class MinimaxTtsBackend implements TtsBackend {
     for (const entry of data) {
       if (typeof entry !== "object" || entry === null) continue;
       const id = (entry as Record<string, unknown>).id;
-      if (typeof id !== "string" || !id.startsWith("speech-")) continue;
+      if (typeof id !== "string" || id.length === 0) continue;
       out.push({ id, label: id });
     }
     return out;

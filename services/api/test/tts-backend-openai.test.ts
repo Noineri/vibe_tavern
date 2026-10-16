@@ -578,10 +578,12 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     ]);
   });
 
-  test("legacy name-heuristic stamp + groq host → live filtered catalog wins (TPE-9a host-heal)", async () => {
+  test("legacy name-heuristic stamp + groq host → the live catalog, unfiltered (TPE-9a host-heal)", async () => {
     // Pre-F8 presets stamped groq profiles with `name-heuristic` (preset
     // glue, not a user choice) — the host heals it to the LIVE /models
-    // catalog filtered to the orpheus family; chat models never surface.
+    // catalog. Behavior change (owner ruling 2026-10-15,
+    // IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 8): the orpheus name
+    // filter is gone, chat models list too.
     const { captured } = captureFetch(() =>
       jsonResponse(200, {
         data: [{ id: "llama-3.3-70b-versatile" }, { id: "canopylabs/orpheus-v1-english" }],
@@ -593,12 +595,14 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     });
     const models = await backend.listModels();
     expect(captured()!.url).toBe("https://api.groq.com/openai/v1/models");
-    expect(models.map((m) => m.id)).toEqual(["canopylabs/orpheus-v1-english"]);
+    expect(models.map((m) => m.id)).toEqual(["llama-3.3-70b-versatile", "canopylabs/orpheus-v1-english"]);
   });
 });
 
-describe("openai-compat TTS live discovery (TPE-9a): known-host criteria + audio-type", () => {
-  test("openai host → live /models filtered to the tts family", async () => {
+describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-type", () => {
+  // Behavior change (owner ruling 2026-10-15, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+  // step 8): the "tts" name filter is gone — the whole catalog lists.
+  test("openai host → live /models, unfiltered", async () => {
     const { captured } = captureFetch(() =>
       jsonResponse(200, {
         data: [
@@ -613,7 +617,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known-host criteria + audio
     const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1" });
     const models = await backend.listModels();
     expect(captured()!.url).toBe("https://api.openai.com/v1/models");
-    expect(models.map((m) => m.id)).toEqual(["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]);
+    expect(models.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini-tts", "tts-1", "tts-1-hd", "whisper-1"]);
     // No hardcoded rosters ride the live entries (owner rule: no static
     // voice lists) — voices come from listVoices or manual input.
     expect(models.every((m) => m.voices === undefined)).toBe(true);
@@ -633,11 +637,32 @@ describe("openai-compat TTS live discovery (TPE-9a): known-host criteria + audio
     });
     expect(await groqAr.listVoices()).toBeNull();
     // One /audio/voices attempt each, then the manual floor — no roster
-    // table to consult and no /voices fallback on a filtered host.
+    // table to consult and no chatterbox /voices fallback on a known
+    // vendor host (that fallback is for local servers on plain hosts).
     expect(urls).toEqual([
       "https://api.openai.com/v1/audio/voices",
       "https://api.groq.com/openai/v1/audio/voices",
     ]);
+  });
+
+  test("legacy documented / name-heuristic stamps on a known vendor host → the same unfiltered listing, still no /voices fallback", async () => {
+    for (const modelFilter of ["documented", "name-heuristic"]) {
+      const { captured } = captureFetch(() =>
+        jsonResponse(200, { data: [{ id: "gpt-4o" }, { id: "tts-1" }] }),
+      );
+      const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1", modelFilter, model: "tts-1" });
+      const models = await backend.listModels();
+      expect(captured()!.url).toBe("https://api.openai.com/v1/models");
+      expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1"]);
+
+      const urls: string[] = [];
+      globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return jsonResponse(404, { detail: "nope" });
+      });
+      expect(await backend.listVoices()).toBeNull();
+      expect(urls).toEqual(["https://api.openai.com/v1/audio/voices"]);
+    }
   });
 
   test("electronhub → plain live catalog as-is (no unifying criterion)", async () => {
@@ -661,7 +686,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known-host criteria + audio
     expect(urls).toEqual(["https://api.electronhub.ai/v1/audio/voices", "https://api.electronhub.ai/v1/voices"]);
   });
 
-  test("retired documented stamp on a criterion-less host falls through to plain", async () => {
+  test("retired documented stamp on a host that is not a known vendor falls through to plain", async () => {
     const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "gpt-4o-mini-tts" }] }));
     const backend = openAiCompatTtsFactory({
       endpoint: "https://api.electronhub.ai/v1",

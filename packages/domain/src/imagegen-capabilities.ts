@@ -426,8 +426,8 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     // image_urls as the fallback field. seed int64 — supported. FAILURES
     // RIDE base_resp.status_code INSIDE HTTP 200 (live 200+1004 login
     // fail — the adapter honors the in-band status everywhere). Model
-    // discovery: documented OpenAI-compat GET /v1/models filtered to the
-    // image-* family (the TTS speech-* precedent).
+    // discovery: documented OpenAI-compat GET /v1/models, unfiltered (the
+    // image-* name filter was removed — owner ruling 2026-10-15).
     supportsNegativePrompt: false,
     supportsSamplers: false,
     supportsSeed: true,

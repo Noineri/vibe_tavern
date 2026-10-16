@@ -47,8 +47,8 @@ export const TTS_PRESETS: TtsPreset[] = [
     backend: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
     // Live discovery (TPE-9a owner rule): the live /models catalog,
-    // server-side filtered to the TTS family (their TTS guide naming —
-    // every id of the family carries "tts"); no static list in code.
+    // unfiltered (the "tts" name filter was removed — owner ruling
+    // 2026-10-15); no static list in code.
     defaultModel: "gpt-4o-mini-tts",
   },
   {
@@ -67,9 +67,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     backend: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
     // Live discovery (TPE-9a owner rule): the live /models catalog,
-    // server-side filtered to the orpheus family (their TTS page naming;
-    // playai retired). The models array below is quickstart glue only,
-    // not a discovery source.
+    // unfiltered (the "orpheus" name filter was removed — owner ruling
+    // 2026-10-15). The models array below is quickstart glue only, not a
+    // discovery source.
     models: ["canopylabs/orpheus-v1-english", "canopylabs/orpheus-arabic-saudi"],
     // input hard limit 200 characters (chunking implication for TE2-6); response_format supports wav only
   },
@@ -156,7 +156,7 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "native",
     backend: "minimax",
     // Live discovery (TPE-9a): listModels() fetches the documented
-    // OpenAI-compatible GET /v1/models and keeps the speech-* family.
+    // OpenAI-compatible GET /v1/models, unfiltered (owner ruling 2026-10-15).
     modelFilter: "none",
   },
   {
