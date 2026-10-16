@@ -37,6 +37,7 @@ import {
 import { ImagePromptFamilyRow, adaptSetPayloadForTarget, composeSetFieldNotes } from "./ImageGenPromptFamilyRow.js";
 import { LlmAssistSection } from "./ImageGenLlmAssistSection.js";
 import { ProviderModelSelector } from "../ProviderModelSelector.js";
+import { useImageGenListingFills } from "./use-image-gen-listing-fills.js";
 import type { ProviderModelListOption } from "../ProviderModelList.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
@@ -730,14 +731,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // by the real-hook round-trip tests, which mount before a form exists).
   const guardProfileId = form?.id ?? null;
   const guardSamplers = form?.capabilities.supportsSamplers ?? false;
-  useEffect(() => {
-    if (guardProfileId === null || !guardSamplers) return;
-    if ((imageGen.samplersByProfile[guardProfileId] ?? []).length === 0) {
-      void imageGen.fetchSamplers(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardSamplers]);
 
   // ADetailer availability (IG-CF15 15d / PG-4 v1): A1111-dialect servers
   // report their extensions; the pane row (and the chip's nested accordion
@@ -748,18 +741,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // isLocalDialectBackend) — the scheduler-list consumer gate; both
   // dialects expose the schedulers route (PG-3/CG-A3).
   const guardIsLocalDialect = form !== null && isLocalDialectBackend(form.backend);
-  // Scheduler list (PG-3) — the dialect-gated schedule-type catalog, one-shot
-  // cache fill per profile (the samplers-guard twin, dialect-gated: the
-  // schedulers route exists only on the local family). Failure = empty
-  // options, no connectivity signal (the samplers fetch owns that).
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsLocalDialect) return;
-    if ((imageGen.schedulersByProfile[guardProfileId] ?? []).length === 0) {
-      void imageGen.fetchSchedulers(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsLocalDialect]);
   // DiT sidecar lists (CG-B1, comfyui dialect): one-shot cache fill when
   // the SELECTED model (or the manual base-workflow pick) resolves a DiT
   // workflow family — the encoder/VAE fields need them. Options-data only
@@ -785,26 +766,14 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     modelId: guardModelId ?? undefined,
   });
   const guardIsDit = ditControls !== null;
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsDit) return;
-    if (imageGen.sidecarsByProfile[guardProfileId] === undefined) {
-      void imageGen.fetchSidecars(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsDit]);
-  // VAE list (IF-7b): the swappable-VAE vocabulary for the advanced
-  // accordion's VAE field — one-shot cache fill per LOCAL profile (A1111
-  // + ComfyUI; the field renders for every non-DiT local target).
-  // Options-data only (the fetchSidecars rule verbatim).
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsLocalDialect) return;
-    if (imageGen.vaeByProfile[guardProfileId] === undefined) {
-      void imageGen.fetchVae(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsLocalDialect]);
+  // One-shot listing cache fills per profile (models — stored list first,
+  // step 11 — samplers, schedulers, DiT sidecars, VAEs); the gates and the
+  // per-list rules live with the effects in use-image-gen-listing-fills.
+  useImageGenListingFills(imageGen, guardProfileId, {
+    supportsSamplers: guardSamplers,
+    isLocalDialect: guardIsLocalDialect,
+    isDit: guardIsDit,
+  });
   // Hires upscaler vocabulary (IF-7b, the pane's hires section): fetched
   // when a hires-capable profile opens the advanced accordion — the chip's
   // own fetch twin. Options-data only; [] on failure (Auto stays pickable).

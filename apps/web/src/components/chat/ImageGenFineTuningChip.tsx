@@ -270,7 +270,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     });
   }, [effective?.id, effective?.llmProviderProfileId, effective?.llmModelId]);
 
-  // Model catalog for the effective profile (re-fetched on profile switch).
+  // Model catalog for the effective profile: stored list first (step 11).
   useEffect(() => {
     if (effectiveId === null) {
       setModels(null);
@@ -280,7 +280,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     setModels(null);
     setModelsFailed(false);
     setModelsSnapshotAt(null);
-    void listImageGenModels(effectiveId)
+    void listImageGenModels(effectiveId, undefined, { storedFirst: true })
       .then((listing) => {
         if (cancelled) return;
         setModels(listing?.data ?? []);

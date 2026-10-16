@@ -66,7 +66,7 @@ import type {
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
 import { imageGenDitSidecarsSchema, imageGenModelInfoSchema, imageGenSamplerSetPayloadSchema } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_LISTING_SNAPSHOT_KINDS, ImagePromptVariantStore, type ImageGenListingSnapshotKind } from "@vibe-tavern/db";
+import { IMAGE_GEN_LISTING_SNAPSHOT_KINDS, ImagePromptVariantStore } from "@vibe-tavern/db";
 import type {
   CreateImageGenProfileData,
   StoreContainer,
@@ -98,7 +98,8 @@ import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreamin
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { resolveEffectiveSummaryProfile } from "../../domain/chat/summary-generation-seam.js";
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
+import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
+import { listWithSnapshot, readStoredListing } from "./image-gen-listing-snapshot.js";
 
 // Side-effect registration of the complete backend roster (the stt-adapter
 // twin) is centralized in this file-size-ratchet extraction.
@@ -364,52 +365,30 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "probe", (inner) => backend.probe(inner));
   };
 
-  /**
-   * IF-20 (owner 2026-09-27: a restarted server must not empty the pickers):
-   * run a live listing; a success overwrites the profile's last-good
-   * snapshot, a failure serves that snapshot flagged with `snapshotAt` —
-   * never silent freshness — and rethrows when none exists. A caller-side
-   * abort always rethrows (nobody is waiting for the fallback). The stored
-   * payload is re-validated on read; an unreadable one counts as none.
-   */
-  private async listWithSnapshot<T>(
-    profileId: string,
-    kind: ImageGenListingSnapshotKind,
-    signal: AbortSignal | undefined,
-    parse: (raw: unknown) => T | null,
-    live: () => Promise<T>,
-  ): Promise<ImageGenListing<T>> {
-    let data: T;
-    try {
-      data = await live();
-    } catch (error) {
-      if (signal?.aborted === true) throw error;
-      const snapshot = await this.stores.imageGenListingSnapshots.get(profileId, kind);
-      const stored = snapshot === null ? null : parse(snapshot.payload);
-      if (snapshot === null || stored === null) throw error;
-      return { data: stored, snapshotAt: snapshot.fetchedAt };
-    }
-    try {
-      await this.stores.imageGenListingSnapshots.put(profileId, kind, data);
-    } catch (error) {
-      // The live listing is still correct — a failed snapshot write only
-      // costs the next outage its fallback.
-      console.warn(`[image-gen] ${kind} snapshot write failed for profile ${profileId}:`, error);
-    }
-    return { data };
-  }
-
-  listImageGenProfileModels = async (id: string, signal?: AbortSignal) => {
+  listImageGenProfileModels = async (id: string, signal?: AbortSignal, options?: { storedFirst?: boolean }) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    return this.listWithSnapshot(
+    const parse = (raw: unknown) => {
+      const parsed = imageGenModelInfoSchema.array().safeParse(raw);
+      return parsed.success ? parsed.data : null;
+    };
+    // Step 11 (the LLM picker pattern): opening a profile reads the stored
+    // list with no upstream call; nothing stored → the live path below.
+    if (options?.storedFirst === true) {
+      const stored = await readStoredListing(
+        this.stores.imageGenListingSnapshots,
+        profile.id,
+        IMAGE_GEN_LISTING_SNAPSHOT_KINDS.Models,
+        parse,
+      );
+      if (stored !== null) return { data: stored };
+    }
+    return listWithSnapshot(
+      this.stores.imageGenListingSnapshots,
       profile.id,
       IMAGE_GEN_LISTING_SNAPSHOT_KINDS.Models,
       signal,
-      (raw) => {
-        const parsed = imageGenModelInfoSchema.array().safeParse(raw);
-        return parsed.success ? parsed.data : null;
-      },
+      parse,
       async () => {
         const backend = await createProfileBackend(this.stores, profile, this.fetchOverride);
         return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "model list", (inner) =>
@@ -479,7 +458,8 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const listDitSidecars = backend.listDitSidecars.bind(backend);
     // IF-20: the encoder/VAE folders ride the last-good snapshot too — the
     // lists the owner saw go empty across a Comfy restart.
-    return this.listWithSnapshot(
+    return listWithSnapshot(
+      this.stores.imageGenListingSnapshots,
       profile.id,
       IMAGE_GEN_LISTING_SNAPSHOT_KINDS.DitSidecars,
       signal,

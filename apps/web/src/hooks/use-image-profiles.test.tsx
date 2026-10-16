@@ -524,6 +524,66 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
   });
 
+  // IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11: the open path
+  // (`storedFirst`) is options data only — its failure leaves the shared
+  // error alone; the refresh path (no options) still reports.
+  it("step 11: storedFirst rides to the API; its failure sets no shared error, a refresh failure does", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha" })];
+    const ref: { current: ReturnType<typeof useImageProfiles> | null } = { current: null };
+    function Probe() {
+      ref.current = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(ref.current?.profiles.length).toBe(1));
+
+    modelsMock.mockClear();
+    expect((await ref.current!.fetchSavedModels("p1", { storedFirst: true }))?.length).toBe(2);
+    expect(modelsMock.mock.calls.at(-1) as unknown[]).toEqual(["p1", undefined, { storedFirst: true }]);
+    await waitFor(() => expect(ref.current?.modelsByProfile.p1?.length).toBe(2));
+
+    modelsMock.mockImplementationOnce(async () => {
+      throw new Error("upstream down");
+    });
+    expect(await ref.current!.fetchSavedModels("p1", { storedFirst: true })).toBeNull();
+    expect(ref.current?.error).toBeNull();
+    // The failed open read keeps the cached list.
+    expect(ref.current?.modelsByProfile.p1?.length).toBe(2);
+
+    modelsMock.mockImplementationOnce(async () => {
+      throw new Error("upstream down");
+    });
+    expect(await ref.current!.fetchSavedModels("p1")).toBeNull();
+    await waitFor(() => expect(ref.current?.error).toBe("upstream down"));
+  });
+
+  it("step 11: saving a new endpoint drops the cached model list; a save on the same server keeps it", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha" })];
+    const ref: { current: ReturnType<typeof useImageProfiles> | null } = { current: null };
+    function Probe() {
+      ref.current = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(ref.current?.profiles.length).toBe(1));
+    ref.current!.select("p1");
+    await waitFor(() => expect(ref.current?.form?.id).toBe("p1"));
+    await ref.current!.fetchSavedModels("p1");
+    await waitFor(() => expect(ref.current?.modelsByProfile.p1?.length).toBe(2));
+
+    act(() => ref.current!.setForm({ name: "Renamed" }));
+    await act(async () => {
+      await ref.current!.save();
+    });
+    expect(ref.current?.modelsByProfile.p1?.length).toBe(2);
+
+    act(() => ref.current!.setForm({ endpoint: "http://other-host:9000/v1" }));
+    await act(async () => {
+      await ref.current!.save();
+    });
+    await waitFor(() => expect(ref.current?.modelsByProfile.p1).toBeUndefined());
+  });
+
   it("fetchSamplers caches per profile; failures land in the per-profile OFFLINE status, never the shared error (IG-CF12a)", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
     samplersMock.mockImplementationOnce(async () => {

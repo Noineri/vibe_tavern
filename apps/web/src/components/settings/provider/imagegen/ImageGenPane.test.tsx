@@ -579,14 +579,54 @@ describe("ImageGenPane — model picker (cached catalog + persisted stars)", () 
     expect(patch["modelId"]).toBe("my-hand-typed-model");
   });
 
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11): the
+  // open profile now fills an empty catalog cache from the STORED list first
+  // (call #1, `storedFirst`), so the refresh is call #2 — still the bare
+  // live call it always was.
   it("refresh re-fetches the SAVED profile's model catalog", async () => {
-    const fetchSavedModels = mock(async () => null);
+    const fetchSavedModels = mock(async (_id?: string, _options?: { storedFirst?: boolean }) => null);
     const imageGen = makeImageGen({ fetchSavedModels });
     const view = render(<ImageGenPane imageGen={imageGen} />);
     await waitFor(() => expect(view.getByTestId("image-gen-models-refresh")).toBeTruthy());
-    fireEvent.click(view.getByTestId("image-gen-models-refresh"));
     await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(1));
-    expect((fetchSavedModels.mock.calls[0] as unknown[])).toEqual(["ig1"]);
+    fireEvent.click(view.getByTestId("image-gen-models-refresh"));
+    await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(2));
+    expect((fetchSavedModels.mock.calls[1] as unknown[])).toEqual(["ig1"]);
+  });
+
+  it("step 11: opening a saved profile with no cached catalog reads the stored list once", async () => {
+    const fetchSavedModels = mock(async (_id?: string, _options?: { storedFirst?: boolean }) => null);
+    const view = render(<ImageGenPane imageGen={makeImageGen({ fetchSavedModels })} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(1));
+    expect((fetchSavedModels.mock.calls[0] as unknown[])).toEqual(["ig1", { storedFirst: true }]);
+  });
+
+  it("step 11: a catalog already in the cache makes no list request on open", async () => {
+    const fetchSavedModels = mock(async (_id?: string, _options?: { storedFirst?: boolean }) => null);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({ fetchSavedModels, modelsByProfile: { ig1: [{ id: "m1", label: "M1" }] } })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    expect(fetchSavedModels).not.toHaveBeenCalled();
+  });
+
+  it("step 11: a dropped cache (saved server change) re-arms the stored-first read", async () => {
+    const fetchSavedModels = mock(async (_id?: string, _options?: { storedFirst?: boolean }) => null);
+    const cached = makeImageGen({ fetchSavedModels, modelsByProfile: { ig1: [{ id: "m1", label: "M1" }] } });
+    const view = render(<ImageGenPane imageGen={cached} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    expect(fetchSavedModels).not.toHaveBeenCalled();
+
+    view.rerender(
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane imageGen={{ ...cached, modelsByProfile: {} }} />
+      </TooltipProvider>,
+    );
+    await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(1));
+    expect((fetchSavedModels.mock.calls[0] as unknown[])).toEqual(["ig1", { storedFirst: true }]);
   });
 });
 

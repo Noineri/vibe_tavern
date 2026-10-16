@@ -22,9 +22,11 @@ export interface ImageGenListingSnapshot {
 /**
  * Last-good listing snapshots (IF-20, owner 2026-09-27 «мы не можем их
  * как-то... хранить?»). One row per (profile, kind): every successful live
- * listing overwrites it; the adapter serves it — flagged stale — only when
- * the live fetch fails. Rows cascade with the profile and are cleared when
- * the profile's server (endpoint/backend) changes.
+ * listing overwrites it; the adapter serves it — flagged stale — when the
+ * live fetch fails, and unflagged as the stored-first answer when a profile
+ * opens (models only, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11). Rows
+ * cascade with the profile and are cleared when the profile's server
+ * (endpoint/backend) changes.
  */
 export class ImageGenListingSnapshotStore {
   private readonly db: AppDb;

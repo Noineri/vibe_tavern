@@ -14,7 +14,7 @@
  *   DELETE /api/image-gen/profiles/:id
  *   PUT    /api/image-gen/profiles/:id/default       (global active pointer, MR-12)
  *   POST   /api/image-gen/profiles/:id/probe
- *   GET    /api/image-gen/profiles/:id/models
+ *   GET    /api/image-gen/profiles/:id/models          (?source=stored = open path, step 11)
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
  *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated: A1111 + ComfyUI, PG-3/CG-A3)
  *   GET    /api/image-gen/profiles/:id/sidecars         (dialect-gated: ComfyUI, CG-B1 — DiT encoder/VAE folders)
@@ -145,10 +145,13 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
       if (!result) return c.json({ error: "Image-gen profile not found" }, 404);
       return c.json(result);
     })
-    // ── Live model discovery (picker data source) ─────────────────────────
-    .get("/api/image-gen/profiles/:id/models", async (c) => {
+    // ── Model discovery (picker data source) ──────────────────────────────
+    // `?source=stored` = the open path (stored list first, step 11); bare =
+    // the refresh path (live, IF-20 snapshot on failure).
+    .get("/api/image-gen/profiles/:id/models", zValidator("query", schemas.imageGenModelListQuerySchema), async (c) => {
       try {
-        const models = await runtime.listImageGenProfileModels(c.req.param("id"), c.req.raw.signal);
+        const storedFirst = c.req.valid("query").source === "stored";
+        const models = await runtime.listImageGenProfileModels(c.req.param("id"), c.req.raw.signal, { storedFirst });
         if (models === null) return c.json({ error: "Image-gen profile not found" }, 404);
         // IF-20: a snapshot answer keeps the live body shape; the header says so.
         if (models.snapshotAt !== undefined) c.header(schemas.IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, models.snapshotAt);

@@ -113,6 +113,8 @@ let modelsSnapshotAtStore: Record<string, string> = {};
 let sidecarsSnapshotAtStore: Record<string, string> = {};
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
+// Step 11: the model-list reads with their options (the stored-first pin).
+const listModelsCalls: Array<{ id: string; options: { storedFirst?: boolean } | undefined }> = [];
 const generateCalls: Array<[string, import("@vibe-tavern/api-contracts").GenerateImageGenInput]> = [];
 const draftPromptCalls: Array<{
   chatId: string;
@@ -156,8 +158,10 @@ mock.module("../../api/image-gen-api.js", () => ({
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   // IF-10: the learned prompt-cap table (advisory counter data).
   listImageGenPromptCaps: () => Promise.resolve([...promptCapsStore]),
-  listImageGenModels: (id: string) =>
-    Promise.resolve({ data: [...(modelsStore[id] ?? [])], snapshotAt: modelsSnapshotAtStore[id] ?? null }),
+  listImageGenModels: (id: string, _signal?: AbortSignal, options?: { storedFirst?: boolean }) => {
+    listModelsCalls.push({ id, options });
+    return Promise.resolve({ data: [...(modelsStore[id] ?? [])], snapshotAt: modelsSnapshotAtStore[id] ?? null });
+  },
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
@@ -1824,6 +1828,19 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     await waitFor(() => expect(within(live.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy());
     expect(within(live.baseElement).queryByTestId("image-gen-ft-models-snapshot")).toBeNull();
     expect(within(live.baseElement).queryByTestId("image-gen-ft-sidecars-snapshot")).toBeNull();
+  });
+
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11, owner
+  // 2026-10-15): the chip used to list the models live on every open; it
+  // now reads the stored list (the server lists live only when none is
+  // stored) — the settings pane's refresh is the live path.
+  it("step 11: opening the chip reads the stored model list", async () => {
+    armDitChat("chat-stored");
+    listModelsCalls.length = 0;
+    const view = await openAccordion("chat-stored", "Ray DiT");
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy());
+    expect(listModelsCalls.length).toBeGreaterThan(0);
+    expect(listModelsCalls.every((call) => call.options?.storedFirst === true)).toBe(true);
   });
 });
 

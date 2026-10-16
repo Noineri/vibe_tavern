@@ -891,6 +891,111 @@ describe("image-gen routes — last-good listing snapshots (IF-20)", () => {
     state.up = false;
     expect((await app.request(`/api/image-gen/profiles/${id}/models`)).status).toBe(502);
   });
+
+  // IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11 (owner 2026-10-15: pick the
+  // model once, never re-request the list just to open the profile — the LLM
+  // picker pattern): `?source=stored` is the open path.
+  describe("stored-first open path (?source=stored)", () => {
+    /** The switchable transport plus a count of upstream calls. */
+    function countingTransport(handler: (input: FetchArgs[0]) => Response) {
+      const counter = { calls: 0 };
+      const switchable = switchableTransport((input) => {
+        counter.calls += 1;
+        return handler(input);
+      });
+      return { ...switchable, counter };
+    }
+
+    test("a stored list answers with no upstream call and no snapshot header", async () => {
+      const { counter, transport } = countingTransport(() => modelsBody());
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      const live = await app.request(`/api/image-gen/profiles/${id}/models`);
+      const liveBody = await live.json();
+      const callsAfterLive = counter.calls;
+
+      const stored = await app.request(`/api/image-gen/profiles/${id}/models?source=stored`);
+      expect(stored.status).toBe(200);
+      expect(await stored.json()).toEqual(liveBody);
+      expect(stored.headers.get(SNAPSHOT_HEADER)).toBeNull();
+      expect(counter.calls).toBe(callsAfterLive);
+    });
+
+    test("nothing stored → one live fetch, recorded for the next open", async () => {
+      const { counter, transport } = countingTransport(() => modelsBody());
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+
+      const first = await app.request(`/api/image-gen/profiles/${id}/models?source=stored`);
+      expect(first.status).toBe(200);
+      expect(counter.calls).toBeGreaterThan(0);
+      const callsAfterFirst = counter.calls;
+
+      const second = await app.request(`/api/image-gen/profiles/${id}/models?source=stored`);
+      expect(await second.json()).toEqual(await first.json());
+      expect(counter.calls).toBe(callsAfterFirst);
+    });
+
+    test("refresh (no query) refetches live and overwrites the stored list", async () => {
+      let roster = [{ id: "old-model" }];
+      const { counter, transport } = countingTransport(() => Response.json({ data: roster }));
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      await app.request(`/api/image-gen/profiles/${id}/models`);
+
+      roster = [{ id: "new-model" }];
+      const callsBefore = counter.calls;
+      const refreshed = (await (await app.request(`/api/image-gen/profiles/${id}/models`)).json()) as Array<{ id: string }>;
+      expect(counter.calls).toBeGreaterThan(callsBefore);
+      expect(refreshed.map((m) => m.id)).toEqual(["new-model"]);
+
+      const reopened = (await (await app.request(`/api/image-gen/profiles/${id}/models?source=stored`)).json()) as Array<{ id: string }>;
+      expect(reopened.map((m) => m.id)).toEqual(["new-model"]);
+    });
+
+    test("a changed endpoint drops the stored list — the next open lists the new server live", async () => {
+      const { counter, transport } = countingTransport(() => modelsBody());
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      await app.request(`/api/image-gen/profiles/${id}/models`);
+      const moved = await app.request(`/api/image-gen/profiles/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: "http://localhost:9000/v1" }),
+      });
+      expect(moved.status).toBe(200);
+
+      const callsBefore = counter.calls;
+      expect((await app.request(`/api/image-gen/profiles/${id}/models?source=stored`)).status).toBe(200);
+      expect(counter.calls).toBeGreaterThan(callsBefore);
+    });
+
+    test("an unreadable stored payload counts as nothing stored (live path)", async () => {
+      const { counter, transport } = countingTransport(() => modelsBody());
+      const { app, stores } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      await stores.imageGenListingSnapshots.put(id, "models", { not: "a model list" });
+
+      const res = await app.request(`/api/image-gen/profiles/${id}/models?source=stored`);
+      expect(res.status).toBe(200);
+      expect(counter.calls).toBeGreaterThan(0);
+    });
+
+    test("nothing stored and the server down → the live failure surfaces (502)", async () => {
+      const { state, transport } = countingTransport(() => modelsBody());
+      state.up = false;
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      expect((await app.request(`/api/image-gen/profiles/${id}/models?source=stored`)).status).toBe(502);
+    });
+
+    test("an unknown source value is a 400", async () => {
+      const { transport } = countingTransport(() => modelsBody());
+      const { app } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      expect((await app.request(`/api/image-gen/profiles/${id}/models?source=cache`)).status).toBe(400);
+    });
+  });
 });
 
 describe("image-gen routes — samplers (capability-gated)", () => {
