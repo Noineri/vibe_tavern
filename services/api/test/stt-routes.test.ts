@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { createDb } from "@vibe-tavern/db";
-import { ProviderStore, SttStore, TtsStore } from "@vibe-tavern/db";
+import { ProviderStore, SttListingSnapshotStore, SttStore, TtsStore } from "@vibe-tavern/db";
 
 import { createSttRoutes } from "../src/api/routes/stt.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
@@ -38,9 +38,10 @@ async function makeApp() {
   const stt = new SttStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
   const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
   const tts = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
-  const adapter = new SttAdapter({ stt, providers, tts });
+  const sttListingSnapshots = new SttListingSnapshotStore(db, { clock: fixedClock });
+  const adapter = new SttAdapter({ stt, providers, tts, sttListingSnapshots });
   const app = createSttRoutes(adapter);
-  return { app, stt, providers, tts, db };
+  return { app, stt, providers, tts, sttListingSnapshots, db };
 }
 
 function multipartTranscribe(profileId: string, extra?: { language?: string }): RequestInit {
@@ -647,7 +648,8 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     const stt = new SttStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
     const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
     const tts = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
-    const adapter = new SttAdapter({ stt, providers, tts });
+    const sttListingSnapshots = new SttListingSnapshotStore(db, { clock: fixedClock });
+    const adapter = new SttAdapter({ stt, providers, tts, sttListingSnapshots });
     const created = await stt.create({
       name: "Gemini",
       backend: "gemini" as never,

@@ -981,6 +981,19 @@ describe("image-gen routes — last-good listing snapshots (IF-20)", () => {
       expect(counter.calls).toBeGreaterThan(0);
     });
 
+    // The LLM picker rule (`cachedModels.length > 0`), shared with the STT/TTS
+    // stored lists (step 11b): an empty stored list is no answer.
+    test("an empty stored list counts as nothing stored (live path)", async () => {
+      const { counter, transport } = countingTransport(() => modelsBody());
+      const { app, stores } = await makeApp(transport);
+      const id = await seedProfile(app, { apiKey: "sk-own" });
+      await stores.imageGenListingSnapshots.put(id, "models", []);
+
+      const res = await app.request(`/api/image-gen/profiles/${id}/models?source=stored`);
+      expect(((await res.json()) as unknown[]).length).toBeGreaterThan(0);
+      expect(counter.calls).toBeGreaterThan(0);
+    });
+
     test("nothing stored and the server down → the live failure surfaces (502)", async () => {
       const { state, transport } = countingTransport(() => modelsBody());
       state.up = false;

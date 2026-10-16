@@ -110,6 +110,10 @@ export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGe
 export { ImageGenPromptCapStore } from './image-gen-prompt-cap-store.js';
 export { ImageGenListingSnapshotStore, IMAGE_GEN_LISTING_SNAPSHOT_KINDS } from './image-gen-listing-snapshot-store.js';
 export type { ImageGenListingSnapshot, ImageGenListingSnapshotKind } from './image-gen-listing-snapshot-store.js';
+export { SttListingSnapshotStore, STT_LISTING_SNAPSHOT_KINDS } from './stt-listing-snapshot-store.js';
+export type { SttListingSnapshot, SttListingSnapshotKind } from './stt-listing-snapshot-store.js';
+export { TtsListingSnapshotStore, TTS_LISTING_SNAPSHOT_KINDS, TTS_VOICES_SNAPSHOT_KIND_PREFIX, ttsVoicesSnapshotKind } from './tts-listing-snapshot-store.js';
+export type { TtsListingSnapshot, TtsListingSnapshotKind } from './tts-listing-snapshot-store.js';
 export type { ImageGenPromptCapRow } from './image-gen-prompt-cap-store.js';
 
 export { ImagePromptVariantStore } from './image-prompt-variant-store.js';

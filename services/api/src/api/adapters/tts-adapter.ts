@@ -4,6 +4,7 @@
 
 import type { ClientTtsProfileRecord } from "@vibe-tavern/api-contracts";
 import type { DraftTtsPreviewInput, DraftTtsVoicesInput, GenerateTtsInput } from "@vibe-tavern/api-contracts";
+import { TTS_LISTING_SNAPSHOT_KINDS } from "@vibe-tavern/db";
 import type { CreateTtsProfileData, UpdateTtsProfileData } from "@vibe-tavern/db";
 import type { TtsProfile } from "@vibe-tavern/domain";
 import { discoverLocalTtsServers } from "@vibe-tavern/domain";
@@ -35,6 +36,13 @@ import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
 import type { NarrationLibraryService } from "../../domain/tts/narration-library.js";
 import { NARRATION_LIBRARY_MIME } from "../../domain/tts/narration-library.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
+import {
+  parseTtsModels,
+  parseTtsVoicesEnvelope,
+  readStoredTtsListing,
+  recordTtsListing,
+  ttsVoicesKindForConfig,
+} from "./tts-listing-snapshot.js";
 
 /** Wire projection (TE2-16): the secret lives in the typed `apiKey` column
  *  and is reported as `hasStoredApiKey` — exactly like
@@ -134,15 +142,74 @@ async function resolveSynthesisConfig(
 	return await autoMatchProviderKey(stores, profile.backend, config);
 }
 
+/** The saved profile's effective endpoint: the trimmed synthesis-config
+ *  endpoint ("" when none). A providerRef profile resolves its endpoint from
+ *  the provider, so this is the effective endpoint, not the raw blob. */
+async function savedTtsEndpoint(
+	stores: Pick<StoreContainer, "tts" | "providers">,
+	profile: TtsProfile,
+): Promise<string> {
+	const effective = await resolveSynthesisConfig(stores, profile);
+	return typeof effective.endpoint === "string" ? effective.endpoint.trim() : "";
+}
+
+/** THE derivation of "this draft request is the saved profile's connection":
+ *  the same backend and, for the endpoint backend (openai-compatible), the
+ *  same non-empty endpoint — a stored credential, and a stored list, may only
+ *  serve the server it was saved with (write-only key UX without letting a
+ *  caller aim the secret at an arbitrary replacement URL). The other backends
+ *  are vendor-keyed: the backend IS the connection. Two consumers read this
+ *  and nothing else: the draft stored-key injection (resolveDraftConfig) and
+ *  the stored model/voice lists (read on the open path, written after a live
+ *  listing). Key presence is NOT part of the identity — a keyless local
+ *  server is still the saved connection. */
+async function isSavedTtsConnection(
+	stores: Pick<StoreContainer, "tts" | "providers">,
+	profile: TtsProfile,
+	backend: DraftTtsVoicesInput["backend"],
+	draftConfig: Record<string, unknown>,
+): Promise<boolean> {
+	if (profile.backend !== backend) return false;
+	if (backend !== TTS_BACKEND.OpenAiCompatible) return true;
+	const incomingEndpoint = typeof draftConfig.endpoint === "string" ? draftConfig.endpoint.trim() : "";
+	return incomingEndpoint !== "" && incomingEndpoint === (await savedTtsEndpoint(stores, profile));
+}
+
+/** The roster scope a listing carries beyond the connection identity: Azure
+ *  and Polly list region-specific voices, so a stored list belongs to the
+ *  region it was listed in. "" when the config names none (every other
+ *  backend reads no region). Listing-only — the stored-key rule does not
+ *  compare it. */
+function ttsListingRegion(config: Record<string, unknown>): string {
+	const region = config["region"];
+	return typeof region === "string" ? region.trim() : "";
+}
+
+/** The saved profile whose stored lists a draft request reads and writes, or
+ *  null: needs `profileId`, an existing profile, a config passing
+ *  isSavedTtsConnection, and the same listing region. */
+async function findSavedTtsConnection(
+	stores: Pick<StoreContainer, "tts" | "providers">,
+	backend: DraftTtsVoicesInput["backend"],
+	draftConfig: Record<string, unknown>,
+	profileId: string | undefined,
+): Promise<TtsProfile | null> {
+	if (profileId === undefined) return null;
+	const profile = await stores.tts.getById(profileId);
+	if (profile === null) return null;
+	if (ttsListingRegion(profile.config) !== ttsListingRegion(draftConfig)) return null;
+	return (await isSavedTtsConnection(stores, profile, backend, draftConfig)) ? profile : null;
+}
+
 /** Draft (transient) stored-key resolution — the LLM branch's test-draft
  *  pattern: the form sends NO apiKey back (reads never carried one, TE2-16);
- *  when the draft names its saved profile and the identity matches (same
- *  backend; for endpoint backends also the same endpoint — a stored key may
- *  only be reused where it was saved), the server injects the stored key for
- *  this ONE request. The key comes from the typed column (own) or, via
- *  providerRef, from the provider store — never from the config blob. Unknown
- *  profileId / mismatched identity → the config passes through untouched (the
- *  backend factory will surface an auth error if any). */
+ *  when the draft names its saved profile and the identity matches
+ *  (isSavedTtsConnection: same backend; for endpoint backends also the same
+ *  endpoint — a stored key may only be reused where it was saved), the server
+ *  injects the stored key for this ONE request. The key comes from the typed
+ *  column (own) or, via providerRef, from the provider store — never from the
+ *  config blob. Unknown profileId / mismatched identity → the config passes
+ *  through untouched (the backend factory will surface an auth error if any). */
 async function resolveDraftConfig(
 	stores: Pick<StoreContainer, "tts" | "providers">,
 	backend: DraftTtsVoicesInput["backend"],
@@ -154,26 +221,19 @@ async function resolveDraftConfig(
 		const profile = await stores.tts.getById(profileId);
 		if (
 			profile !== null &&
-			profile.backend === backend &&
-			!(profile.apiKey === null && profile.providerRef === null)
+			!(profile.apiKey === null && profile.providerRef === null) &&
+			(await isSavedTtsConnection(stores, profile, backend, config))
 		) {
-			// Endpoint-bearing backend: a stored key may only be reused for the
-			// endpoint it was saved with (write-only key UX without letting a
-			// caller aim the secret at an arbitrary replacement URL). A
-			// providerRef profile resolves its endpoint from the provider, so
-			// the guard compares against the effective synthesis endpoint, not
-			// the raw blob.
-			if (backend === TTS_BACKEND.OpenAiCompatible) {
-				const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
-				if (incomingEndpoint !== "") {
-					const effective = await resolveSynthesisConfig(stores, profile);
-					const storedEndpoint = typeof effective.endpoint === "string" ? effective.endpoint.trim() : "";
-					if (incomingEndpoint === storedEndpoint && configApiKey(effective) !== "") return effective;
-				}
-			} else {
-				const effective = await resolveSynthesisConfig(stores, profile);
-				if (configApiKey(effective) !== "") return effective;
-			}
+			// Inject the stored KEY into the DRAFT config — never the saved
+			// config wholesale: the draft's own fields (model, region, tuning)
+			// are what this request lists. Returning the saved config used to
+			// list the saved model's voices while the form showed another
+			// model (and would file them under the wrong model's stored row,
+			// IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11b). The endpoint
+			// needs no injection: the match rule already requires the draft's
+			// endpoint to equal the saved one.
+			const storedKey = configApiKey(await resolveSynthesisConfig(stores, profile));
+			if (storedKey !== "") return { ...config, apiKey: storedKey };
 		}
 	}
 	// No own key and no matching stored profile — auto-match the endpoint
@@ -185,7 +245,7 @@ async function resolveDraftConfig(
 
 export class TtsAdapter implements TtsRuntimeApi {
   constructor(
-    private readonly stores: Pick<StoreContainer, "tts" | "providers">,
+    private readonly stores: Pick<StoreContainer, "tts" | "providers" | "ttsListingSnapshots">,
     /** TPE-18c: narration-library file service (optional so bare test
      *  helpers keep constructing the adapter without one — narration
      *  methods throw NarrationLibraryUnavailableError then, route → 501). */
@@ -246,7 +306,21 @@ export class TtsAdapter implements TtsRuntimeApi {
     // TE2-16 tri-state: apiKey/providerRef are `undefined` = untouched,
     // `""` = cleared, non-empty = set — the store maps them onto the typed
     // columns; the old F2b merge-on-read dance is gone.
+    const before = await this.stores.tts.getById(id);
+    const beforeEndpoint = before === null ? "" : await savedTtsEndpoint(this.stores, before);
     const updated = await this.stores.tts.update(id, { ...body });
+    // A different server (backend, effective endpoint or listing region —
+    // what the stored lists are gated on) lists different models and voices:
+    // its predecessor's stored lists must never stand in for it.
+    if (
+      before !== null &&
+      updated !== null &&
+      (before.backend !== updated.backend ||
+        ttsListingRegion(before.config) !== ttsListingRegion(updated.config) ||
+        beforeEndpoint !== (await savedTtsEndpoint(this.stores, updated)))
+    ) {
+      await this.stores.ttsListingSnapshots.clear(id);
+    }
     return updated ? (await this.decorateAutoKey([toClientTtsProfile(updated)]))[0] : null;
   };
 
@@ -309,9 +383,20 @@ export class TtsAdapter implements TtsRuntimeApi {
     if (body.backend === TTS_BACKEND.Kokoro) {
       throw new KokoroClientSideError();
     }
+    // The saved profile this draft IS (isSavedTtsConnection): it owns the
+    // stored voices of this request's model — read on the open path
+    // (`source: "stored"`), overwritten after a live listing. A draft pointing
+    // elsewhere (unsaved edit, other endpoint) never touches a profile's lists.
+    const saved = await findSavedTtsConnection(this.stores, body.backend, body.config, body.profileId);
+    const kind = ttsVoicesKindForConfig(body.backend, body.config);
+    if (body.source === "stored" && saved !== null) {
+      const stored = await readStoredTtsListing(this.stores.ttsListingSnapshots, saved.id, kind, parseTtsVoicesEnvelope);
+      if (stored !== null) return stored;
+    }
     // Transient config: validated by the registry factory, used once for this
-    // request, never stored. With profileId + no transient key the stored key
-    // is injected server-side for this request only (write-only key UX).
+    // request, never stored (only the resulting listing is recorded, below).
+    // With profileId + no transient key the stored key is injected
+    // server-side for this request only (write-only key UX).
     const config = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
     const backend = createTtsBackend(body.backend, config);
     const voices = await backend.listVoices();
@@ -319,7 +404,11 @@ export class TtsAdapter implements TtsRuntimeApi {
     // learns clone support from which voices route answered (the /voices
     // library fallback = chatterbox-style upload endpoint). voices may be
     // null (empty library / manual floor) while cloning is still available.
-    return { voices, capabilities: backend.capabilities() };
+    // The recorded envelope is the whole answer — voices never travel
+    // without the capabilities they were listed under.
+    const envelope = { voices, capabilities: backend.capabilities() };
+    if (saved !== null) await recordTtsListing(this.stores.ttsListingSnapshots, saved.id, kind, envelope);
+    return envelope;
   };
 
   cloneTtsVoiceDraft: TtsRuntimeApi["cloneTtsVoiceDraft"] = async (body) => {
@@ -368,6 +457,19 @@ export class TtsAdapter implements TtsRuntimeApi {
     if (body.backend === TTS_BACKEND.Kokoro) {
       throw new KokoroClientSideError();
     }
+    // Stored model list of the saved profile this draft IS (see
+    // draftListTtsVoices): read on the open path, overwritten after a live
+    // listing. A backend without a model list answers null and stores nothing.
+    const saved = await findSavedTtsConnection(this.stores, body.backend, body.config, body.profileId);
+    if (body.source === "stored" && saved !== null) {
+      const stored = await readStoredTtsListing(
+        this.stores.ttsListingSnapshots,
+        saved.id,
+        TTS_LISTING_SNAPSHOT_KINDS.Models,
+        parseTtsModels,
+      );
+      if (stored !== null) return stored;
+    }
     const baseConfig = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
     const config: Record<string, unknown> = { ...baseConfig };
     if (body.modelFilter !== undefined) {
@@ -375,7 +477,11 @@ export class TtsAdapter implements TtsRuntimeApi {
     }
     const backend = createTtsBackend(body.backend, config);
     if (typeof backend.listModels !== "function") return null;
-    return backend.listModels();
+    const models = await backend.listModels();
+    if (saved !== null) {
+      await recordTtsListing(this.stores.ttsListingSnapshots, saved.id, TTS_LISTING_SNAPSHOT_KINDS.Models, models);
+    }
+    return models;
   };
 
   probeLocalDocker = () => probeDockerAvailability();

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "b
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { createDb } from "@vibe-tavern/db";
-import { ProviderStore, TtsStore } from "@vibe-tavern/db";
+import { ProviderStore, TtsListingSnapshotStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
@@ -48,9 +48,10 @@ async function makeApp() {
   const db = await createDb(":memory:");
   const store = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
   const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
-  const adapter = new TtsAdapter({ tts: store, providers });
+  const ttsListingSnapshots = new TtsListingSnapshotStore(db, { clock: fixedClock });
+  const adapter = new TtsAdapter({ tts: store, providers, ttsListingSnapshots });
   const app = createTtsRoutes(adapter);
-  return { app, store, providers, db };
+  return { app, store, providers, ttsListingSnapshots, db };
 }
 
 beforeEach(() => {

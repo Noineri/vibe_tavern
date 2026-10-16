@@ -1,3 +1,4 @@
+// forks: 2 — stt-listing-snapshot-store.ts, tts-listing-snapshot-store.ts (packages/db/src/stores/)
 import { and, eq } from 'drizzle-orm';
 import { imageGenListingSnapshots } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';

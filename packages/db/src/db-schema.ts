@@ -666,6 +666,24 @@ export const ttsProfileLinks = sqliteTable('tts_profile_links', {
   profileIdx: index('idx_tts_profile_links_profile').on(table.ttsProfileId),
 }));
 
+// Last-good listing snapshots of a saved TTS profile
+// (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11b; fork #2 of
+// image_gen_listing_snapshots). Every successful live listing for the saved
+// profile (the model catalog, the per-model voice envelopes) overwrites its
+// row; the profile editor opens on the stored copy instead of listing live.
+// `kind` is a TTS_LISTING_SNAPSHOT_KINDS value ('models') or a
+// `voices:<modelId>` key; `payloadJson` is the listing as the live route
+// returned it. Rows cascade with the profile and are cleared when its
+// backend/endpoint changes (another server's lists).
+export const ttsListingSnapshots = sqliteTable('tts_listing_snapshots', {
+  ttsProfileId: text('tts_profile_id').notNull().references(() => ttsProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ttsProfileId, table.kind] }),
+}));
+
 // ─── sttProfiles ──────────────────────────────────────────────────────
 //
 // Named speech-to-text profiles (STT_PLAN ST-1; design STT_DESIGN).
@@ -702,6 +720,23 @@ export const sttProfiles = sqliteTable('stt_profiles', {
 }, (table) => ({
   defaultIdx: index('idx_stt_profiles_default').on(table.isDefault),
   backendIdx: index('idx_stt_profiles_backend').on(table.backend),
+}));
+
+// Last-good listing snapshot of a saved STT profile
+// (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11b; fork #1 of
+// image_gen_listing_snapshots). The one kind is the model catalog
+// ('models'): every successful live listing for the saved profile overwrites
+// the row and the profile editor opens on it instead of listing live.
+// `payloadJson` is the listing as the live route returned it. Rows cascade
+// with the profile and are cleared when its backend/endpoint changes
+// (another server's catalog).
+export const sttListingSnapshots = sqliteTable('stt_listing_snapshots', {
+  sttProfileId: text('stt_profile_id').notNull().references(() => sttProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sttProfileId, table.kind] }),
 }));
 
 // ─── chatBranches ──────────────────────────────────────────────────────────────

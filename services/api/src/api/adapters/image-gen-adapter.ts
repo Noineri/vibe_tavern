@@ -373,7 +373,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       return parsed.success ? parsed.data : null;
     };
     // Step 11 (the LLM picker pattern): opening a profile reads the stored
-    // list with no upstream call; nothing stored → the live path below.
+    // list with no upstream call; nothing (or []) stored → the live path.
     if (options?.storedFirst === true) {
       const stored = await readStoredListing(
         this.stores.imageGenListingSnapshots,
@@ -381,7 +381,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         IMAGE_GEN_LISTING_SNAPSHOT_KINDS.Models,
         parse,
       );
-      if (stored !== null) return { data: stored };
+      if (stored !== null && stored.length > 0) return { data: stored };
     }
     return listWithSnapshot(
       this.stores.imageGenListingSnapshots,

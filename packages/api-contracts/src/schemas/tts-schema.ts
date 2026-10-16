@@ -161,8 +161,18 @@ export const draftTtsVoicesSchema = z.object({
    *  backend (and, for endpoint backends, the same endpoint), the server
    *  injects the stored typed-column key (or the linked provider's key —
    *  TE2-16 providerRef) for this one request — the LLM branch's test-draft
-   *  pattern. Optional: a brand-new profile sends none. */
+   *  pattern. Optional: a brand-new profile sends none. The same id (with a
+   *  config matching that profile's connection) also names the profile whose
+   *  stored voice list this request reads and records, per model. */
   profileId: z.string().optional(),
+  /** `source: "stored"` = the open path (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+   *  step 11b, the LLM picker pattern): the saved profile's stored voices
+   *  (for the config's model, with their capabilities) with no upstream call,
+   *  live only when nothing is stored. Absent = the refresh path: always
+   *  live, and the answer replaces the stored one. Needs `profileId` and a
+   *  config matching that profile — otherwise it is an ordinary live
+   *  request. */
+  source: z.literal("stored").optional(),
 });
 export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;
 
@@ -194,8 +204,17 @@ export const draftTtsModelsSchema = z.object({
    *  may still carry the old `name-heuristic` string — it is loose bag
    *  data, not validated here, and the backend host-maps heal it. */
   modelFilter: z.enum(["modality", "audio-models", "audio-type", "documented", "none"]).optional(),
-  /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}. */
+  /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}
+   *  (and likewise the profile whose stored model list this request reads
+   *  and records). */
   profileId: z.string().optional(),
+  /** `source: "stored"` = the open path (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+   *  step 11b, the LLM picker pattern): the saved profile's stored model list
+   *  with no upstream call, live only when nothing is stored. Absent = the
+   *  refresh path: always live, and the answer replaces the stored list.
+   *  Needs `profileId` and a config matching that profile — otherwise it is
+   *  an ordinary live request. */
+  source: z.literal("stored").optional(),
 });
 export type DraftTtsModelsInput = z.infer<typeof draftTtsModelsSchema>;
 

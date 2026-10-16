@@ -1,3 +1,4 @@
+// forks: 2 — stt-listing-snapshot.ts, tts-listing-snapshot.ts (services/api/src/api/adapters/; the read/write halves only, no failure fallback)
 /**
  * Saved-profile listings over the last-good snapshot table
  * (`image_gen_listing_snapshots`). Moved out of `image-gen-adapter.ts`

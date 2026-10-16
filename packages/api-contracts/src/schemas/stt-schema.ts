@@ -81,7 +81,19 @@ export const draftSttModelsSchema = z.object({
    *  rides INSIDE it (formDraftConfig) — a strict parse would strip the
    *  secret before the factory ever sees it. */
   config: z.record(z.string(), z.unknown()),
+  /** Saved-profile id: stored-key resolution (above) AND the profile whose
+   *  stored model list this request reads and records — both only when the
+   *  config matches that profile's connection (same backend; for the
+   *  endpoint backend also the same endpoint). */
   profileId: z.string().optional(),
+  /** `source: "stored"` = the open path (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+   *  step 11b, the LLM picker pattern): the saved profile's stored list with
+   *  no upstream call, live only when nothing is stored. Absent = the
+   *  refresh path: always live, and the answer replaces the stored list.
+   *  Needs `profileId` and a config matching that profile — otherwise it is
+   *  an ordinary live request. A stored answer is options data, not a
+   *  connection test. */
+  source: z.literal("stored").optional(),
 });
 export type DraftSttModelsInput = z.infer<typeof draftSttModelsSchema>;
 
