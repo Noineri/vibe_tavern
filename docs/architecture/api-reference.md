@@ -1231,6 +1231,18 @@ Count tokens for an AI Assistant request before running it (context-budget previ
 
 ---
 
+## Experience Try Tab (unsaved-source tester)
+
+Stateless endpoints that drive UNSAVED rules source through the real sandbox/kernel (no session, store, or chat binding). Typed failures are 422 (409 `stale_revision`) with `error.details.{code,kind,console}`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/experience/test/discover` | Discover-only: `{ rulesCode, scriptName? }` (strict) → `{ definition }` (same shape as `/test/run`'s `definition`); never runs `create`, grants nothing — the Try tab derives grants / roster / setup fields from it |
+| `POST /api/experience/test/run` | Discover + `create` (with the request's `capabilityGrants`) + project + replay `actions` |
+| `POST /api/experience/test/simulate` | Discover + `create`, then a bounded script-seat simulation |
+
+---
+
 ## Experience Copilot
 
 The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`.

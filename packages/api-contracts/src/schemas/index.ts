@@ -326,6 +326,9 @@ export type {
   CopilotProfileUpdate,
 } from "./experience-copilot-schema.js";
 
+export { experienceTestDiscoverRequestSchema } from "./experience-test-discover-schema.js";
+export type { ExperienceTestDiscoverRequestDto } from "./experience-test-discover-schema.js";
+
 export {
   // Enums
   experienceCapabilitySchema,

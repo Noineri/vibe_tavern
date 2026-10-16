@@ -33,9 +33,13 @@ import {
 import { ExperienceModelEffectService } from "../src/domain/interactive/experience-model-effect-service.js";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import {
+  discoverExperienceTest,
   runExperienceTest,
   simulateExperienceTest,
 } from "../src/domain/interactive/experience-tester.js";
+// The shipped starters live in apps/web (UI feature); the Try tab's derive call
+// discovers exactly these sources, so the discover tests pin them directly.
+import { RULES_STARTERS, getRulesStarter } from "../../../apps/web/src/lib/experience-rules-starters.js";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
 
@@ -403,6 +407,101 @@ describe("runExperienceTest — real kernel (stateless)", () => {
   });
 });
 
+// ─── 1b. discoverExperienceTest — discover-only, never runs `create` ─────────
+
+/** `create` uses `context.random` — a run WITHOUT the grant throws in create. */
+const RANDOM_CREATE_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "shuf", name: "Shuf" },
+  capabilities: [{ capability: "deterministic_random" }],
+  create(c) { return { deck: c.random.shuffle([1, 2, 3]) }; },
+  project(c) { return { deck: c.state.deck }; },
+  actions() { return [{ type: "draw" }]; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+/** `create` always throws — discovery must never reach it. */
+const THROWING_CREATE_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "boom", name: "Boom" }, capabilities: [],
+  create() { throw new Error("create must not run during discovery"); },
+  project() { return {}; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+describe("discoverExperienceTest — discover-only (never runs create)", () => {
+  test("rules whose create needs context.random discover with the declared capability", () => {
+    // Pin the bug: the same source fails as a no-grants RUN (create throws).
+    const run = runExperienceTest({ rulesCode: RANDOM_CREATE_SOURCE });
+    expect(run.ok).toBe(false);
+    const res = discoverExperienceTest({ rulesCode: RANDOM_CREATE_SOURCE });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.definition.manifest.id).toBe("shuf");
+    expect(res.data.definition.declaredCapabilities.map((c) => c.capability)).toEqual(["deterministic_random"]);
+  });
+
+  test("rules whose create needs context.participants discover with the declared capability", () => {
+    // PARTICIPANTS_SOURCE.create reads c.participants.length: a no-grants run throws.
+    expect(runExperienceTest({ rulesCode: PARTICIPANTS_SOURCE }).ok).toBe(false);
+    const res = discoverExperienceTest({ rulesCode: PARTICIPANTS_SOURCE });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.definition.declaredCapabilities.map((c) => c.capability)).toEqual(["participants"]);
+  });
+
+  test("a create that throws unconditionally still discovers (create is never executed)", () => {
+    const res = discoverExperienceTest({ rulesCode: THROWING_CREATE_SOURCE });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.definition.manifest.id).toBe("boom");
+    // The run path, by contrast, executes create and surfaces its throw.
+    expect(runExperienceTest({ rulesCode: THROWING_CREATE_SOURCE }).ok).toBe(false);
+  });
+
+  test("a syntax error returns the typed discovery failure", () => {
+    const res = discoverExperienceTest({ rulesCode: "this is not valid javascript ((" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.status).toBe(422);
+    expect(res.error.code).toBe("vm_error");
+    expect(res.error.kind).toBe("syntax");
+  });
+
+  test("source that never calls register returns the typed no_registration failure", () => {
+    const res = discoverExperienceTest({ rulesCode: "const x = 1;" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("vm_error");
+    expect(res.error.kind).toBe("no_registration");
+  });
+
+  test("a registration missing mandatory methods returns the typed missing_method failure", () => {
+    const res = discoverExperienceTest({
+      rulesCode: "context.experience.register({ apiVersion: 1, manifest: { id: 'x', name: 'X' } });",
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Same classification the run path reports for this source.
+    expect(res.error.code).toBe("vm_error");
+    expect(res.error.kind).toBe("missing_method");
+  });
+
+  test("every shipped starter discovers (round and card included)", () => {
+    for (const starter of RULES_STARTERS) {
+      const res = discoverExperienceTest({ rulesCode: starter.source });
+      expect(res.ok).toBe(true);
+    }
+    const round = discoverExperienceTest({ rulesCode: getRulesStarter("round")?.source ?? "" });
+    const card = discoverExperienceTest({ rulesCode: getRulesStarter("card")?.source ?? "" });
+    expect(round.ok && round.data.definition.declaredCapabilities.map((c) => c.capability)).toEqual(["participants"]);
+    expect(card.ok && card.data.definition.declaredCapabilities.map((c) => c.capability)).toEqual(["deterministic_random"]);
+  });
+});
+
 // ─── 2. simulateExperienceTest — real kernel (stateless) ─────────────────────
 
 describe("simulateExperienceTest — real kernel (stateless)", () => {
@@ -660,6 +759,59 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
     expect(body.stopReason).toBe("completed");
     expect(body.iterations).toBe(3);
     expect(body.revision).toBe(3);
+  });
+
+  test("POST /api/experience/test/discover returns the card starter's definition without running create", async () => {
+    const app = await setupTesterApp();
+    const res = await app.request("/api/experience/test/discover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rulesCode: getRulesStarter("card")?.source }),
+    });
+    expect(res.status).toBe(200);
+    const body = await jsonBody(res);
+    expect(Object.keys(body)).toEqual(["definition"]);
+    expect(body.definition.manifest.id).toBe("card");
+    expect(body.definition.declaredCapabilities.map((c: { capability: string }) => c.capability)).toEqual([
+      "deterministic_random",
+    ]);
+    // Same definition wire shape /test/run returns (create needs the grant there).
+    const run = await app.request("/api/experience/test/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        rulesCode: getRulesStarter("card")?.source,
+        capabilityGrants: ["deterministic_random"],
+      }),
+    });
+    expect(run.status).toBe(200);
+    expect((await jsonBody(run)).definition).toEqual(body.definition);
+  });
+
+  test("discover: broken source is 422 with the typed error and console on the error path", async () => {
+    const app = await setupTesterApp();
+    const res = await app.request("/api/experience/test/discover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rulesCode: "(((" }),
+    });
+    expect(res.status).toBe(422);
+    const body = await jsonBody(res);
+    expect(body.error.details.code).toBe("vm_error");
+    expect(body.error.details.kind).toBe("syntax");
+    expect(Array.isArray(body.error.details.console)).toBe(true);
+  });
+
+  test("discover: strict schema rejects missing rulesCode and run-only fields with 400", async () => {
+    const app = await setupTesterApp();
+    const post = (payload: unknown) =>
+      app.request("/api/experience/test/discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    expect((await post({})).status).toBe(400);
+    expect((await post({ rulesCode: COUNTER_SOURCE, capabilityGrants: ["participants"] })).status).toBe(400);
   });
 
   test("schema rejection: a run body missing rulesCode is 400", async () => {

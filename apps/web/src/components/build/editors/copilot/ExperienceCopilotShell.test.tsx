@@ -151,6 +151,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
   // falls back to `String(null)` in build-config) — route on path SUFFIXES,
   // never exact equality.
+  if (method === "POST" && path.endsWith("/api/experience/test/discover")) return jsonResponse({ definition: TEST_RUN_DATA.definition });
   if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
   if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
   // CX-6: the shell fetches the mention catalog on mount (best-effort). Serve
@@ -250,12 +251,13 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
-// The ExperiencePlayground (inside the sandbox modal) drives BOTH
-// runExperienceTest (the auto-derive discovery and the absorbed tester's
-// discover) and startExperiencePlayground. Both are served by the fetch router
-// above (POST /api/experience/test/run and /api/experience/playground/start),
-// so the ER-14 send-to-copilot flow is observable through the REAL shell →
-// child → callback → controller → client → router wiring — with no module mocks.
+// The ExperiencePlayground (inside the sandbox modal) drives discoverExperience
+// (the auto-derive, discover-only), runExperienceTest (the absorbed tester's
+// discover) and startExperiencePlayground. All are served by the fetch router
+// above (POST /api/experience/test/discover, /test/run and
+// /api/experience/playground/start), so the ER-14 send-to-copilot flow is
+// observable through the REAL shell → child → callback → controller → client →
+// router wiring — with no module mocks.
 // CX-6: the shell's mount-time catalog fetch hits the skills endpoint; the
 // loader test seeds one entry so the pinned pill resolves its display label.
 const SKILL_CATALOG_ENTRIES = [
@@ -1265,9 +1267,10 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_diagnostics"));
     fireEvent.click(getByText("experience_tester_run"));
-    // The playground's auto-derive also POSTs run once on mount, so the explicit
-    // discover is the SECOND call.
-    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(2));
+    // The playground's auto-derive POSTs the discover-only endpoint once on mount;
+    // the explicit discover is the ONLY run call.
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/discover$/).length).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1));
     // Wait for the result to render (the definition block appears after setTesterResult).
     await findByText("experience_tester_definition");
 
@@ -2937,6 +2940,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
       await act(async () => {
         jest.advanceTimersByTime(600);
       });
+      expect(apiCalls("POST", /\/api\/experience\/test\/discover$/)).toHaveLength(0);
       expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(0);
     } finally {
       jest.useRealTimers();
@@ -2952,7 +2956,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
     fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     await waitFor(
-      () => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1),
+      () => expect(apiCalls("POST", /\/api\/experience\/test\/discover$/).length).toBeGreaterThanOrEqual(1),
       { timeout: 4000 },
     );
     expect(queryByTestId("playground-auto-skip")).toBeNull();

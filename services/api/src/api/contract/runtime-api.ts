@@ -535,12 +535,7 @@ import type {
 } from "../../domain/interactive/experience-service.js";
 import type { ExperienceReportStatus } from "../../domain/interactive/experience-report-service.js";
 import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
-import type {
-	ExperienceTestRunData,
-	ExperienceTestRunInput,
-	ExperienceTestSimulateData,
-	ExperienceTestSimulateInput,
-} from "../../domain/interactive/experience-tester.js";
+import type { ExperienceTesterRuntimeApi } from "./experience-tester-contracts.js";
 import type {
 	ExperiencePlaygroundAdvanceInput,
 	ExperiencePlaygroundData,
@@ -629,7 +624,7 @@ export interface ExperiencePromptOverridesResponse {
   character: ExperiencePromptOverrideDto | null;
 }
 
-export interface ExperienceRuntimeApi {
+export interface ExperienceRuntimeApi extends ExperienceTesterRuntimeApi {
 	// ── Config (the config-driven setup source) ──
 	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
 	updateExperienceConfig: (chatId: string, body: {
@@ -751,18 +746,8 @@ export interface ExperienceRuntimeApi {
 	 *  Returns the updated combined layers. */
 	updateExperienceCharacterOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
 
-	// ── Stateless unsaved-source tester (Wave 8 / IR-81B) ──
-	/** Drive UNSAVED rules source through the real sandbox/kernel with zero
-	 *  persistence and zero chat/session/DB binding: discover + create + project
-	 *  + legal actions, then replay an ordered action list with the host managing
-	 *  the in-memory revision counter, requestId idempotency, and expectedRevision
-	 *  compare-and-swap. Authoritative only over its own ephemeral state. */
-	runExperienceTest: (body: ExperienceTestRunInput) => Promise<ExperienceTestRunData>;
-	/** Discover + create, then run a bounded automated simulation advancing
-	 *  script-controlled seats via the real `choose` until a human/model boundary,
-	 *  a terminal status, no legal action, or a host bound is reached. Returns a
-	 *  typed stop-reason diagnostic per case. */
-	simulateExperienceTest: (body: ExperienceTestSimulateInput) => Promise<ExperienceTestSimulateData>;
+	// Stateless unsaved-source tester (run / simulate / discover): see
+	// ExperienceTesterRuntimeApi in ./experience-tester-contracts.ts.
 
 	// ── Interactive playground session driver (Wave 8 / IR-84A) ──
 	/** Start an in-memory interactive play session: discover + create + project

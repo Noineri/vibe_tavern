@@ -76,6 +76,7 @@ import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
   advanceExperiencePlayground,
+  discoverExperience,
   runExperiencePlaygroundTimer,
   runExperienceRoundModel,
   runExperienceTest,
@@ -724,9 +725,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
 
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
-  // seats. Uses the REAL runExperienceTest discovery (not brittle text parsing)
-  // — discovery failure (broken rules) explicitly restores the safe default
-  // single human seat plus empty grants.
+  // seats. Uses the discover-only endpoint (never runs `create`, so random/participants
+  // rules still discover); a failure (broken rules) restores the default single human seat.
   // LOBBY-A: the discovery is (a) DEBOUNCED — the unsaved rules buffer changes
   // per keystroke, and the pre-LOBBY-A effect fired a compile on each one —
   // and (b) no longer skipped for a user-owned roster: it ALWAYS captures the
@@ -742,7 +742,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     const timer = setTimeout(() => {
       if (cancelled) return;
       setDeriving(true);
-      runExperienceTest({ rulesCode: code, actions: [] })
+      discoverExperience({ rulesCode: code })
         .then((data) => {
           if (cancelled) return;
           const fields = data.definition.setup?.fields ?? [];

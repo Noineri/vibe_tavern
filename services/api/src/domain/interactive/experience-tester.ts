@@ -383,7 +383,7 @@ function fromKernel(
 
 // ─── Shared discovery + capability-gate preamble ────────────────────────────
 
-interface DiscoveredPreamble {
+export interface DiscoveredPreamble {
   readonly definition: ExperienceDefinition;
   readonly sourceHash: string;
   readonly console: readonly ExperienceConsoleEntry[];
@@ -435,6 +435,25 @@ function discoverAndGate(
       console: consoleBuf,
     },
   };
+}
+
+/** Success payload of {@link discoverExperienceTest}: the validated definition,
+ *  its source hash, and the discovery console. */
+export type ExperienceTestDiscoverData = DiscoveredPreamble;
+export type ExperienceTestDiscoverResult =
+  | { readonly ok: true; readonly data: ExperienceTestDiscoverData }
+  | { readonly ok: false; readonly error: ExperienceTestError };
+
+/**
+ * Discover-only: run the rules BODY to collect the registration and return the
+ * definition. `create` is never called and no capability is granted, so rules
+ * whose `create` needs `context.random` / `context.participants` still discover
+ * (a run without grants would throw there). Failures share the run error path.
+ */
+export function discoverExperienceTest(
+  input: { readonly rulesCode: string; readonly scriptName?: string },
+): ExperienceTestDiscoverResult {
+  return discoverAndGate(input);
 }
 
 // ─── Projection (degrades gracefully, mirroring the service) ────────────────

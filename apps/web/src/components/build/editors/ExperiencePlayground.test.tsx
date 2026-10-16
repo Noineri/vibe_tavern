@@ -46,6 +46,7 @@ import { savePlaygroundConfig } from "../../../lib/playground-config-persistence
 
 import type {
   ExperiencePlaygroundData,
+  ExperienceTestDiscoverData,
   ExperienceTestRunData,
   ExperienceTestSimulateData,
   ExperienceVisualRow,
@@ -175,15 +176,27 @@ const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listProviderProfiles = mock(() => Promise.resolve([{ id: "pp_test", name: "Test Provider", providerPreset: "openai", defaultModel: "gpt-test" }]));
 const fetchProviderProfileModels = mock((_id: string) => Promise.resolve({ models: [{ id: "gpt-test", label: "GPT Test" }] }));
 
-// IR-90E: mock runExperienceTest for the auto-derive discovery. By default it
-// rejects (no definition discovered → default single human seat preserved).
-// Individual tests override it to return a real definition.
+// IR-90E: mock discoverExperience (the discover-only endpoint) for the
+// auto-derive. By default it rejects (no definition discovered → default single
+// human seat preserved). Individual tests override it to return a real definition.
 // Explicit return type avoids TS2322: Promise.reject infers Promise<never>,
-// which rejects later mockImplementation calls returning Promise<ExperienceTestRunData>.
+// which rejects later mockImplementation calls returning Promise<ExperienceTestDiscoverData>.
+const discoverExperience = mock(
+  (_body: Record<string, unknown>): Promise<ExperienceTestDiscoverData> =>
+    Promise.reject(new Error("mock not configured")),
+);
+
+// The explicit "Validate rules" button still runs the real run endpoint with the
+// user's grants; by default it rejects, individual tests supply a run result.
 const runExperienceTest = mock(
   (_body: Record<string, unknown>): Promise<ExperienceTestRunData> =>
     Promise.reject(new Error("mock not configured")),
 );
+
+/** Wrap a run-shaped fixture as the discover endpoint's `{ definition }` body. */
+function asDiscovery(run: ExperienceTestRunData): ExperienceTestDiscoverData {
+  return { definition: run.definition };
+}
 
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realScriptApi = await import("../../../api/script-api.js");
@@ -267,6 +280,7 @@ mock.module("../../../api/experience-api.js", () => ({
   startExperiencePlayground,
   advanceExperiencePlayground,
   runExperiencePlaygroundTimer,
+  discoverExperience,
   runExperienceTest,
   simulateExperienceTest,
   listExperienceVisuals,
@@ -356,6 +370,8 @@ beforeEach(() => {
   listAllScripts.mockClear();
   listProviderProfiles.mockClear();
   fetchProviderProfileModels.mockClear();
+  discoverExperience.mockClear();
+  discoverExperience.mockImplementation(async () => Promise.reject(new Error("mock not configured")));
   runExperienceTest.mockClear();
   runExperienceTest.mockImplementation(async () => Promise.reject(new Error("mock not configured")));
   simulateExperienceTest.mockImplementation(async () => makeSimData());
@@ -788,7 +804,7 @@ describe("ExperiencePlayground", () => {
     // ── Step 0: configure discovery mock BEFORE render ──
     // The starter declares participants + model; auto-derive reads this to
     // populate seats and grants without user action.
-    runExperienceTest.mockImplementation(async () => ({
+    discoverExperience.mockImplementation(async () => asDiscovery({
       definition: {
         apiVersion: 1,
         manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
@@ -894,7 +910,7 @@ describe("ExperiencePlayground", () => {
       const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
       expect(seatIds.length).toBe(2);
     });
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(discoverExperience).toHaveBeenCalledTimes(1);
 
     // Verify auto-derived roster: human seat "you" + model seat "ai".
     const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
@@ -956,10 +972,10 @@ describe("ExperiencePlayground", () => {
   // IR-90E blocker-1: the unchanged shipped Model Conversation starter
   // auto-derives a usable human+model roster and grants WITHOUT the user
   // manually creating seats or checking raw capability checkboxes. Discovery
-  // uses the REAL runExperienceTest API (not brittle display-text parsing).
+  // uses the REAL discoverExperience API (not brittle display-text parsing).
   it("IR-90E: auto-derive — Model Conversation starter opens with human+model seats and grants pre-configured", async () => {
-    // Mock runExperienceTest to return a definition declaring participants + model.
-    runExperienceTest.mockImplementation(async () => ({
+    // Mock discoverExperience to return a definition declaring participants + model.
+    discoverExperience.mockImplementation(async () => asDiscovery({
       definition: {
         apiVersion: 1,
         manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
@@ -992,7 +1008,7 @@ describe("ExperiencePlayground", () => {
       const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
       expect(seatIds.length).toBe(2);
     });
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(discoverExperience).toHaveBeenCalledTimes(1);
 
     // The roster now has TWO seats: the default human seat AND an auto-derived
     // model seat — without the user manually adding or configuring anything.
@@ -1018,7 +1034,7 @@ describe("ExperiencePlayground", () => {
   // human seats) and picks send that humanSeatId; the seed toggle governs
   // whether a random seed or the manual seed reaches the Start request.
   it("seat choice (XU-2): the dropdown lists ALL roster seats incl. a model seat, and picking one sends that humanSeatId", async () => {
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     const utils = renderPlayground(VALID_CODE);
     const { container, getByText, getByRole } = utils;
     // Auto-derive → human "you" + model "ai".
@@ -1381,7 +1397,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
   it("persists the roster + grants + seed + settings after a manual change and restores them on remount", async () => {
     // First mount: configure a model seat + grant + seed, then start so the
     // change is flushed (the persist effect runs on touched state).
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     const first = renderPlayground(VALID_CODE, null, { scriptId: "script_persist" });
     await first.findByText("experience_playground_start");
     // Touch the roster: add a seat and set its controller to model.
@@ -1414,7 +1430,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
   });
 
   it("without a scriptId nothing is persisted (standalone panel keeps the old behavior)", async () => {
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     const view = renderPlayground(VALID_CODE, null);
     await view.findByText("experience_playground_start");
     fireEvent.click(view.getByText("experience_setup_add_participant"));
@@ -1422,7 +1438,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
   });
 
   it("a malformed saved envelope is discarded (no half-restore)", () => {
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     window.localStorage.setItem("experience.playground.script_bad", "{not json");
     const view = renderPlayground(VALID_CODE, null, { scriptId: "script_bad" });
     // Falls back to the default single human seat — the roster shows the
@@ -1488,25 +1504,26 @@ describe("ExperiencePlayground — one-click restart (fix item 9b)", () => {
 // ── XU-4: the absorbed tester (discover / simulate / single-action participant) ─
 // The retired InteractiveTester's one-shot capabilities moved into the
 // playground's collapsed diagnostics accordion. The SAME boundary is pinned
-// here: the STATELESS runExperienceTest / simulateExperienceTest endpoints are
-// mocked at the client boundary; the component under test is real.
+// here: the STATELESS discoverExperience (auto-derive) and runExperienceTest /
+// simulateExperienceTest endpoints are mocked at the client boundary; the
+// component under test is real.
 
 describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
   it("discover: the 'Validate rules' button re-runs create-only discovery over the current context and renders definition, projection, and legal actions", async () => {
     const utils = renderPlayground();
     const { getByText, findByText } = utils;
-    // Auto-derive fires runExperienceTest once on mount (default reject → safe
+    // Auto-derive fires discoverExperience once on mount (default reject → safe
     // default single human seat + empty grants). Settle it first so the
-    // explicit discover is the SECOND call and the grants stay [] (the same
+    // explicit discover is the FIRST run call and the grants stay [] (the same
     // context the retired tester's discover test pinned).
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     expandDiagnostics(utils);
     fireEvent.click(getByText("experience_tester_run"));
 
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
-    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(runExperienceTest.mock.calls[0]?.[0]).toMatchObject({
       rulesCode: VALID_CODE,
       participants: [{ id: "you", label: "You", controller: "human" }],
       capabilityGrants: [],
@@ -1524,7 +1541,7 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
   it("discover: renders the per-seat legality matrix when the server supplies seatLegality", async () => {
     const utils = renderPlayground();
     const { getByText, findByText } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     runExperienceTest.mockImplementationOnce(async () =>
       makeDiscoverData({
@@ -1549,7 +1566,7 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
   it("discover: a broken rules body renders the typed vm_error with the kernel kind and console behind the tech-details disclosure", async () => {
     const utils = renderPlayground();
     const { getByText, findByText, queryByText } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     runExperienceTest.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
       kind: "syntax",
@@ -1571,7 +1588,7 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
   it("discover: malformed settings JSON shows the detailed diagnostic and never fires the request", async () => {
     const utils = renderPlayground();
     const { getByText, getByTestId, container } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
 
     // The settings JSON lives under the collapsed "advanced" disclosure
@@ -1587,14 +1604,15 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
 
     await waitFor(() => expect(container.textContent ?? "").toContain("experience_tester_settings_invalid"));
     expect(container.textContent).toContain("unclosed '{' opened at line 1");
-    // Still exactly the auto-derive call — the discover never fired.
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    // Still exactly the auto-derive discovery — the explicit run never fired.
+    expect(discoverExperience).toHaveBeenCalledTimes(1);
+    expect(runExperienceTest).not.toHaveBeenCalled();
   });
 
   it("simulate: auto-play sends the current context and renders the typed stop reason + iterations", async () => {
     const utils = renderPlayground();
     const { getByText, findByText } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
 
     fireEvent.click(getByText("experience_tester_simulate"));
@@ -1609,7 +1627,7 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
     expect(await findByText("awaiting_human")).toBeTruthy();
     expect(await findByText("2")).toBeTruthy();
     // Simulate never touches the run endpoint or the live playground.
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(runExperienceTest).not.toHaveBeenCalled();
     expect(startExperiencePlayground).not.toHaveBeenCalled();
   });
 
@@ -1636,12 +1654,12 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
     const onSendToCopilot = mock();
     const utils = render(<ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />);
     const { getByText, getByTestId } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     expandDiagnostics(utils);
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
 
     fireEvent.click(getByTestId("playground-tester-send-to-copilot"));
     expect(onSendToCopilot).toHaveBeenCalledTimes(1);
@@ -1665,7 +1683,7 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
   it("random start ON, before any launch: both diagnostics fall back to the manual seed and the seed line names it", async () => {
     const utils = renderPlayground();
     const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     // The manual seed input is only editable while the toggle is OFF:
     // switch off, type, switch back on — the manual seed survives the toggle.
@@ -1676,8 +1694,8 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     expandDiagnostics(utils);
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
-    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(runExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
     // The seed line at the top of the result block (identity i18n: the key
     // verbatim, the value appended by the component's plain template).
     await waitFor(() =>
@@ -1695,7 +1713,7 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
   it("random start ON, after a launch: both diagnostics reuse the launch's random seed (the same game just played)", async () => {
     const utils = renderPlayground();
     const { getByText, getByTestId } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
 
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
@@ -1707,8 +1725,8 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
     expandDiagnostics(utils);
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
-    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: launchSeed });
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(runExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: launchSeed });
     await waitFor(() =>
       expect(getByTestId("playground-discover-seed").textContent).toBe(`experience_playground_diagnostics_seed: ${launchSeed}`),
     );
@@ -1724,14 +1742,14 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
   it("random start OFF, empty manual seed: no seed key in either call and the seed line shows the none-sent marker", async () => {
     const utils = renderPlayground();
     const { getByText, getByRole, getByTestId } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
     fireEvent.click(getByRole("switch")); // ON → OFF
 
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     expandDiagnostics(utils);
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
-    expect(runExperienceTest.mock.calls[1]?.[0]).not.toHaveProperty("seed");
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(runExperienceTest.mock.calls[0]?.[0]).not.toHaveProperty("seed");
     await waitFor(() =>
       expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: —"),
     );
@@ -1744,17 +1762,17 @@ describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", 
   it("random start OFF, typed manual seed: both diagnostics send it with the payload otherwise byte-identical", async () => {
     const utils = renderPlayground();
     const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
     fireEvent.click(getByRole("switch")); // ON → OFF
     fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "my-seed-42" } });
 
     runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
     expandDiagnostics(utils);
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
     // The full discover body, byte-identical to the pre-step-7 manual-seed
     // payload ("nothing else changed" with the toggle OFF).
-    expect(runExperienceTest.mock.calls[1]?.[0]).toEqual({
+    expect(runExperienceTest.mock.calls[0]?.[0]).toEqual({
       rulesCode: VALID_CODE,
       settings: {},
       participants: [{ id: "you", label: "You", controller: "human" }],
@@ -1798,8 +1816,8 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
   }
 
   function mockDiscoveryWithSetup(fields: ExperienceSetupFieldDto[]): void {
-    runExperienceTest.mockImplementation(async () =>
-      makeDiscoverData({
+    discoverExperience.mockImplementation(async () =>
+      asDiscovery(makeDiscoverData({
         definition: {
           apiVersion: 1,
           manifest: { id: "round", name: "Round", mode: "turn" },
@@ -1809,7 +1827,7 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
           hasUpdate: false,
           setup: { fields },
         },
-      }),
+      })),
     );
   }
 
@@ -1914,9 +1932,9 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
   });
 
   it("a package with no declared fields hides the JSON under the advanced disclosure too (no form, but never a raw textarea in the default view)", async () => {
-    runExperienceTest.mockImplementation(async () => makeDiscoverData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeDiscoverData()));
     const utils = renderPlayground();
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1), { timeout: 4000 });
     expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull();
     // LB-1: a package with no declared fields shows an explicit line (no bare
     // empty space above the advanced disclosure).
@@ -2169,7 +2187,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
   }
 
   it("realtime start: badge + running status, no turn chrome, and the loop config rides the frame document", async () => {
-    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeRealtimeDiscovery()));
     startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
     installUrlSpies();
     const utils = await renderRealtime();
@@ -2197,7 +2215,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
   });
 
   it("realtime start NEVER issues timer beats — the frame loop is the only clock", async () => {
-    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeRealtimeDiscovery()));
     startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData({ pendingTimers: 2 }));
     const utils = await renderRealtime();
 
@@ -2212,7 +2230,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
   });
 
   it("realtime reset tears the round down (badge gone, blob revoked) and a re-start boots a fresh round", async () => {
-    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeRealtimeDiscovery()));
     startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
     installUrlSpies();
     const utils = await renderRealtime();
@@ -2233,7 +2251,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
   });
 
   it("realtime without a visual: start stays enabled and the hint explains the round cannot be played", async () => {
-    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeRealtimeDiscovery()));
     startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
     const utils = renderPlayground(REALTIME_CODE, null);
     await waitFor(() => {
@@ -2248,7 +2266,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
   });
 
   it("send-log sends the REALTIME loop digest, not the turn log (grounding step 6)", async () => {
-    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeRealtimeDiscovery()));
     startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
     const onSendToCopilot = mock();
     const utils = render(
@@ -2371,7 +2389,7 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
   it("untrusted import: renders the shared localized auto-skip state and sends NO discovery request", async () => {
     jest.useFakeTimers();
     try {
-      runExperienceTest.mockImplementation(async () => makeTestRunData());
+      discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
       const utils = render(
         <ExperiencePlayground
           code={VALID_CODE}
@@ -2390,6 +2408,7 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
       await act(async () => {
         jest.advanceTimersByTime(600);
       });
+      expect(discoverExperience).not.toHaveBeenCalled();
       expect(runExperienceTest).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
@@ -2397,7 +2416,7 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
   });
 
   it("trusted import: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     const utils = render(
       <ExperiencePlayground
         code={VALID_CODE}
@@ -2406,7 +2425,7 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
       />,
     );
 
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1), { timeout: 4000 });
     // No skip state — the discovery-driven UI renders as before (the derived
     // 2-seat roster pins that the discovery actually landed).
     expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
@@ -2416,7 +2435,7 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
   });
 
   it("in-app script: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
-    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    discoverExperience.mockImplementation(async () => asDiscovery(makeTestRunData()));
     const utils = render(
       <ExperiencePlayground
         code={VALID_CODE}
@@ -2425,10 +2444,73 @@ describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
       />,
     );
 
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1), { timeout: 4000 });
     expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
     await waitFor(() => {
       expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
     });
+  });
+});
+
+// ── Discover-only auto-derive (the Try sandbox must not run `create`) ───────
+// Regression: the effect used to call runExperienceTest WITHOUT grants, so
+// rules whose `create` uses context.random / context.participants (the round and
+// card starters) threw there and the sandbox launched them with empty grants.
+// The derive now goes through the discover-only endpoint.
+
+describe("ExperiencePlayground — discover-only auto-derive", () => {
+  function randomAndSeatsDiscovery(): ExperienceTestDiscoverData {
+    return {
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "card", name: "Card", mode: "turn" },
+        declaredCapabilities: [
+          { capability: "participants", reason: "seats" },
+          { capability: "deterministic_random", reason: "shuffle" },
+        ],
+        hasChoose: false,
+        hasFlavor: false,
+        hasUpdate: false,
+      },
+    };
+  }
+
+  it("derives grants + roster from discoverExperience (rules only) and never calls the run endpoint", async () => {
+    discoverExperience.mockImplementation(async () => randomAndSeatsDiscovery());
+    const utils = renderPlayground();
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
+    expect(discoverExperience.mock.calls[0]?.[0]).toEqual({ rulesCode: VALID_CODE });
+    expect(runExperienceTest).not.toHaveBeenCalled();
+
+    // Both declared capabilities arrive pre-granted without any user click.
+    await waitFor(() => {
+      const checked = [...utils.container.querySelectorAll('[role="checkbox"]')].filter(
+        (cb) => cb.getAttribute("aria-checked") === "true",
+      );
+      expect(checked.length).toBe(2);
+    });
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]?.[0]).toMatchObject({
+      capabilityGrants: ["participants", "deterministic_random"],
+      participants: [{ id: "you", label: "You", controller: "human" }],
+    });
+    expect(runExperienceTest).not.toHaveBeenCalled();
+  });
+
+  it("a discovery failure keeps the fallback: empty grants and the single human seat", async () => {
+    discoverExperience.mockRejectedValue(new ExperienceApiError(422, "Unexpected token", "vm_error", { kind: "syntax" }));
+    const utils = renderPlayground();
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(utils.getByTestId("playground-no-fields")).toBeTruthy());
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]?.[0]).toMatchObject({
+      capabilityGrants: [],
+      participants: [{ id: "you", label: "You", controller: "human" }],
+    });
+    expect(runExperienceTest).not.toHaveBeenCalled();
   });
 });

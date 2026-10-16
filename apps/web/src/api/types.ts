@@ -49,6 +49,7 @@ import type {
 	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
 	ExperienceRoundModelResponseDto,
+	ExperienceTestDiscoverRequestDto,
 } from "@vibe-tavern/api-contracts";
 // Type-only schema imports: the interactive-runtime request DTOs that the
 // contracts index does NOT re-export are derived here via `z.input` of the
@@ -92,6 +93,7 @@ export type {
 	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
 	ExperienceRoundModelResponseDto,
+	ExperienceTestDiscoverRequestDto,
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────
@@ -364,6 +366,13 @@ export type ExperiencePlaygroundAdvanceRequest = z.input<typeof experiencePlaygr
  *  contract, RM-9 client). The schema has no input-only derivations, so the
  *  request type is the contracts DTO verbatim. */
 export type ExperienceRoundModelRequest = ExperienceRoundModelRequestDto;
+
+/** POST /experience/test/discover body (the schema has no input-only
+ *  derivations, so the request type is the contracts DTO verbatim). */
+export type ExperienceTestDiscoverRequest = ExperienceTestDiscoverRequestDto;
+/** POST /experience/test/discover success body: `{ definition }`, the same
+ *  definition wire shape /test/run returns. */
+export type ExperienceTestDiscoverData = RpcData<Api["experience"]["test"]["discover"]["$post"]>;
 
 /** POST /experience/test/run success body. */
 export type ExperienceTestRunData = RpcData<Api["experience"]["test"]["run"]["$post"]>;
