@@ -84,3 +84,40 @@ describe("TTS profile reorder client", () => {
 		expect(capturedInit?.body).toBe(JSON.stringify({ updates: [{ id: "voice-2", sortOrder: 0 }, { id: "voice-1", sortOrder: 1 }] }));
 	});
 });
+
+// Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c): the draft
+// listings carry the server's `source: "stored"` open-path marker — in the body
+// only when the caller asks, so the refresh path and the connection tests
+// stay byte-identical to before.
+describe("TTS draft listings — the stored-first marker", () => {
+	function captureBody(): { read: () => Record<string, unknown>; url: () => string } {
+		let capturedUrl = "";
+		let capturedBody = "";
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = String(input);
+			capturedBody = String(init?.body);
+			return new Response(JSON.stringify({ voices: [], capabilities: { supportsCloning: false } }), { status: 200 });
+		});
+		return { read: () => JSON.parse(capturedBody) as Record<string, unknown>, url: () => capturedUrl };
+	}
+
+	it("listTtsDraftVoices sends source only when requested", async () => {
+		const sent = captureBody();
+		await ttsApi.listTtsDraftVoices({ backend: "openai-compatible", config: { model: "m" }, profileId: "p1", source: "stored" });
+		expect(sent.url().endsWith("/api/tts/draft/voices")).toBe(true);
+		expect(sent.read()).toEqual({ backend: "openai-compatible", config: { model: "m" }, profileId: "p1", source: "stored" });
+
+		await ttsApi.listTtsDraftVoices({ backend: "openai-compatible", config: { model: "m" }, profileId: "p1" });
+		expect("source" in sent.read()).toBe(false);
+	});
+
+	it("listTtsDraftModels sends source only when requested", async () => {
+		const sent = captureBody();
+		await ttsApi.listTtsDraftModels({ backend: "gemini", config: {}, profileId: "p1", source: "stored" });
+		expect(sent.url().endsWith("/api/tts/draft/models")).toBe(true);
+		expect(sent.read()).toEqual({ backend: "gemini", config: {}, profileId: "p1", source: "stored" });
+
+		await ttsApi.listTtsDraftModels({ backend: "gemini", config: {}, profileId: "p1" });
+		expect("source" in sent.read()).toBe(false);
+	});
+});

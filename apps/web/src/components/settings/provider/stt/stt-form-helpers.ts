@@ -83,6 +83,16 @@ export function formDraftConfig(form: {
   return { ...form.config, apiKey: trimmed };
 }
 
+/** The part of a draft config that decides the model listing (the effect key
+ *  of the editor's catalog fetch): everything except the recognition
+ *  settings the view mode writes — the picked model and the language hint
+ *  never change the catalog, so picking them must not re-run it (the
+ *  catalog does not depend on the pick; the TTS twin is `ttsListingConfig`). */
+export function sttListingConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const { model: _model, language: _language, ...rest } = config;
+  return rest;
+}
+
 /** Reads an optional string/number config key with a display fallback. The
  *  `typeof` guard narrows `unknown` — no casts needed. */
 export function configString(config: Record<string, unknown>, key: string, fallback = ""): string {

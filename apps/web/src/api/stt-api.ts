@@ -166,11 +166,17 @@ export interface SttModelListEntry {
 /** Transient draft request over the CURRENT form config (P8) — mirror of
  *  listTtsDraftModels in tts-api.ts: the form's just-typed key rides INSIDE
  *  the config (formDraftConfig), profileId lets the server inject the stored
- *  typed-column key for a matching endpoint. */
+ *  typed-column key for a matching endpoint. `source: "stored"` = the open
+ *  path of a saved profile (step 11c): its stored model list with no
+ *  upstream call, live only when nothing is stored; omit it for the refresh
+ *  path (always live, replaces the stored list). It goes into the body only
+ *  when given. The connection checks (Test button, local-status chip) never
+ *  send it — a stored answer is options data, not a connection test. */
 export async function listSttDraftModels(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
+  source?: "stored";
 }): Promise<SttModelListEntry[]> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/stt/draft/models`), {

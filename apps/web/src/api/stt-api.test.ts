@@ -134,3 +134,31 @@ describe("STT profile reorder client", () => {
 		expect(capturedInit?.body).toBe(JSON.stringify({ updates: [{ id: "stt-2", sortOrder: 0 }, { id: "stt-1", sortOrder: 1 }] }));
 	});
 });
+
+// Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c): the draft
+// model listing carries the server's `source: "stored"` open-path marker — in
+// the body only when the caller asks, so the refresh path, the Test button
+// and the local-status chip stay byte-identical to before.
+describe("STT draft model listing — the stored-first marker", () => {
+	it("sends source only when requested", async () => {
+		let capturedUrl = "";
+		let capturedBody = "";
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = String(input);
+			capturedBody = String(init?.body);
+			return new Response(JSON.stringify([{ id: "whisper-1", label: "Whisper" }]), { status: 200 });
+		});
+
+		await sttApi.listSttDraftModels({ backend: "openai-compat", config: { endpoint: "https://x/v1" }, profileId: "p1", source: "stored" });
+		expect(capturedUrl.endsWith("/api/stt/draft/models")).toBe(true);
+		expect(JSON.parse(capturedBody)).toEqual({
+			backend: "openai-compat",
+			config: { endpoint: "https://x/v1" },
+			profileId: "p1",
+			source: "stored",
+		});
+
+		await sttApi.listSttDraftModels({ backend: "openai-compat", config: { endpoint: "https://x/v1" }, profileId: "p1" });
+		expect("source" in (JSON.parse(capturedBody) as Record<string, unknown>)).toBe(false);
+	});
+});
