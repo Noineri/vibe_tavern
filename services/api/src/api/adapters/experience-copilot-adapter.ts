@@ -3,7 +3,7 @@ import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage,
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
-import { notFound } from "../../shared/errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
 import {
@@ -47,14 +47,16 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   }
 
   /** AS-2c kind resolution at the stream-turn start: thread → script row →
-   *  `resolveKindForScript(script.scriptKind)` through the registry. The
-   *  resolved kind is not yet dispatched (the experience kind is the only one —
-   *  the stream wiring stays the single consumer today); the call exists so
-   *  the ROUTE can reject an unserved script kind with a 400 BEFORE the SSE
-   *  headers are sent. Draft threads and dangling script links resolve
-   *  nothing (today's draft semantics — the turn streams as before). Throws
-   *  the registry's `NoAgentKindForScriptKindError` for an unserved kind and
-   *  `notFound` for a missing thread. */
+   *  `resolveKindForScript(script.scriptKind)` through the registry. Since
+   *  AS-7 the registry serves prompt/dice scripts too (the `script` kind), so
+   *  a merely-resolvable kind no longer proves this ENDPOINT may run the
+   *  thread: the resolved kind must BE the experience kind. A thread anchored
+   *  to a script served by another kind is a 400 (`copilot_thread_kind_mismatch`)
+   *  BEFORE the SSE headers are sent. Draft threads and dangling script links
+   *  resolve nothing (today's draft semantics — the turn streams as before).
+   *  Throws the registry's `NoAgentKindForScriptKindError` for an unserved
+   *  kind, `UnknownAgentKindError` for an unregistered id, and `notFound` for
+   *  a missing thread. */
   experienceCopilotAssertStreamKind = async (threadId: string): Promise<void> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);
     if (!thread) {
@@ -63,7 +65,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     if (thread.scriptId === null) return; // draft — no script row to resolve
     const script = await this.stores.scripts.getById(thread.scriptId);
     if (script === null) return; // dangling soft link — draft semantics
-    resolveKindForScript(script.scriptKind);
+    const kind = resolveKindForScript(script.scriptKind);
+    if (kind.id !== "experience") {
+      throw validation(
+        `Copilot thread '${threadId}' anchors a '${script.scriptKind}' script served by the '${kind.id}' agent kind — this endpoint serves only the experience kind.`,
+        { code: "copilot_thread_kind_mismatch" },
+      );
+    }
   };
 
   experienceCopilotStream = async function* (

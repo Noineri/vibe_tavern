@@ -67,9 +67,11 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		// profile of another kind is a 422 (`copilot_profile_kind_mismatch`).
 		// `null`/omitted clears the soft link (allowed); a DANGLING id is
 		// allowed too (the resolver falls back to the seed, unchanged). A script
-		// kind no registered kind serves (prompt/dice until AS-7) cannot accept
-		// any profile — the unresolvable mapping counts as a mismatch, never a
-		// silent pass.
+		// kind no registered kind serves cannot accept any profile — the
+		// unresolvable mapping counts as a mismatch, never a silent pass. Since
+		// AS-7 prompt/dice scripts resolve to the `script` kind, so only a
+		// SCRIPT-kind profile may be assigned to them (an experience profile on
+		// a prompt script is still a 422 mismatch).
 		if (body.copilotProfileId !== undefined && body.copilotProfileId !== null) {
 			const [script, profile] = await Promise.all([
 				this.stores.scripts.getById(scriptId),

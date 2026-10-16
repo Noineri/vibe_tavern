@@ -630,6 +630,8 @@ export function buildExperienceCopilotTools(opts: {
 
     todo: createCopilotTodoTool({ save: saveTodo, enqueue: runQueued }),
 
+    // forks: 1 — agent/script-agent/script-agent-tools.ts (AS-7: the script kind's
+    // ask_user — description/schema/refine byte-identical to this original).
     ask_user: tool({
       description:
         "Ask the user ONE clarifying question and end your turn. Provide option chips when the answer space is small (mark your recommended option via `recommended`), or omit options for open questions. " +

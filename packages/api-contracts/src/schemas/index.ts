@@ -293,11 +293,14 @@ export {
   copilotTodoItemSchema,
   copilotTodoListSchema,
   copilotToolSetSchema,
+  scriptAgentToolSetSchema,
+  agentToolSetSchema,
   copilotProfileSchema,
   copilotProfileListSchema,
   copilotProfileCreateSchema,
   copilotProfileUpdateSchema,
   COPILOT_TOOL_KEYS,
+  SCRIPT_AGENT_TOOL_KEYS,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
@@ -316,6 +319,8 @@ export type {
   CopilotTodoItem,
   CopilotTodoList,
   CopilotToolSet,
+  ScriptAgentToolSet,
+  AgentToolSet,
   CopilotProfile,
   CopilotProfileCreate,
   CopilotProfileUpdate,

@@ -281,6 +281,43 @@ export function renderDigestSection(digest: string): string {
   ].join("\n");
 }
 
+// ─── Skill-catalog rendering ──────────────────────────────────────────────
+//
+// fork #2 of renderSkillCatalog (services/api/src/domain/chat/coauthor-prompt.ts).
+// forks: 2 — 1) renderExperienceCopilotSkillCatalog (experience-copilot-module.ts,
+// copilot-local so its wording can diverge), 2) this generic twin (AS-7: the
+// script kind needed a renderer without importing experience code). Per the
+// fork rule the THIRD occurrence must be surfaced to the owner with a
+// unification proposal (migrate coauthor + experience onto this generic
+// renderer, an AS-10 cleanup candidate); until then this stays byte-identical
+// to the experience copy and carries the correspondence by construction.
+
+/** Render the skill-catalog block for a system message: the progressive-
+ *  disclosure "Available skills" section (id + one-line description + the
+ *  `read_skill_file` path to read on demand). Returns an empty string when no
+ *  skills are available so the section is omitted entirely. */
+export function renderAgentSkillCatalog(
+  entries: ReadonlyArray<{
+    readonly id: string;
+    readonly description: string;
+    readonly shadowsBuiltin?: boolean;
+    readonly rootRelativeManifestPath: string;
+  }>,
+): string {
+  if (entries.length === 0) return "";
+  const lines = [
+    "# Available skills (read on demand)",
+    "Skills are loaded on demand. Pick the skill whose description matches the task, call `read_skill_file` with its manifest `path` to read its `SKILL.md`, obey that workflow, and read only the referenced files the task actually needs. Do NOT read a skill you do not need.",
+    "",
+    ...entries.map((e) => {
+      const shadow = e.shadowsBuiltin ? " (user override of built-in)" : "";
+      const desc = e.description.trim() || "(no description)";
+      return `- **${e.id}**${shadow} — ${desc}  → read \`${e.rootRelativeManifestPath}\``;
+    }),
+  ];
+  return lines.join("\n");
+}
+
 // ─── History token estimation ────────────────────────────────────────────────
 
 function formatHistoryMessages(messages: ReadonlyArray<AgentFlowMessage>): string {

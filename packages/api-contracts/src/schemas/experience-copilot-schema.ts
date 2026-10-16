@@ -369,6 +369,54 @@ export const copilotToolSetSchema = z
 export type CopilotToolSet = z.infer<typeof copilotToolSetSchema>;
 
 /**
+ * Which tools a SCRIPT-kind agent profile may toggle (AGENT_SHELL_PLAN AS-7).
+ * A PARTIAL record over exactly the 6 toggleable script-agent tools
+ * (write_buffer, edit_buffer, run_script_test, plan, read_plan, ask_user) —
+ * the same convention as {@link copilotToolSetSchema}: `read_skill_file` is
+ * intentionally absent (always-on, read-only skill channel, never gated), and
+ * there is no `todo` (the script kind wires no thread-session checklist).
+ * `.strict()` rejects any unknown key — including experience-only keys like
+ * `run_test` — so a profile cannot silently carry another kind's tools on the
+ * wire; the adapter additionally re-validates against the kind's REGISTERED
+ * schema (`copilot_profile_invalid_tool_set`), which stays the enforcement
+ * seam for cross-kind sets that pass this union.
+ */
+export const scriptAgentToolSetSchema = z
+  .object({
+    write_buffer: z.boolean().optional(),
+    edit_buffer: z.boolean().optional(),
+    run_script_test: z.boolean().optional(),
+    plan: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
+  })
+  .strict();
+
+export type ScriptAgentToolSet = z.infer<typeof scriptAgentToolSetSchema>;
+
+/**
+ * Every tool a script-agent profile may toggle, in stable definition order.
+ * Derived from {@link scriptAgentToolSetSchema} exactly the way
+ * {@link COPILOT_TOOL_KEYS} derives from `copilotToolSetSchema` (the wire
+ * contract is the single source of truth for toggleable-tool names).
+ * `read_skill_file` is intentionally absent (always-on).
+ */
+export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
+  scriptAgentToolSetSchema.shape,
+) as (keyof ScriptAgentToolSet)[];
+
+/**
+ * The tool set a copilot/agent profile may carry ACROSS kinds: the experience
+ * record or the script record (a union — a set valid for either kind passes;
+ * a set mixing keys from both, or carrying an unknown key, fails BOTH members
+ * and is rejected). Per-kind enforcement (a script profile may not carry
+ * experience keys and vice versa) lives with the kind's REGISTERED schema in
+ * the profile adapter, which knows the profile's `agentKind`.
+ */
+export const agentToolSetSchema = z.union([copilotToolSetSchema, scriptAgentToolSetSchema]);
+export type AgentToolSet = CopilotToolSet | ScriptAgentToolSet;
+
+/**
  * Every tool a profile may toggle, in stable definition order. Derived from
  * `copilotToolSetSchema` so the wire contract is the single source of truth
  * (the profile editor's toggle list reads this — no parallel hardcoded array
@@ -398,7 +446,9 @@ export const copilotProfileSchema = z
     name: z.string().min(1),
     isBuiltIn: z.boolean(),
     basePrompt: z.string().min(1),
-    toolSet: copilotToolSetSchema,
+    // AS-7: the union of per-kind tool-set records — which keys a profile may
+    // toggle depends on its `agentKind` (experience or script today).
+    toolSet: agentToolSetSchema,
     // AS-3: owning agent kind ('experience' for every pre-AS-3 profile).
     // Required on the wire profile — the server always emits it (seed and
     // rows alike) so a list consumer can tell kinds apart.
@@ -421,7 +471,9 @@ export const copilotProfileCreateSchema = z
   .object({
     name: z.string().min(1),
     basePrompt: z.string().min(1),
-    toolSet: copilotToolSetSchema,
+    // AS-7: per-kind tool-set records (union) — the adapter validates the set
+    // against the OWNING kind's registered schema.
+    toolSet: agentToolSetSchema,
     // AS-3: optional with an 'experience' default so the current web client
     // (which sends no kind) keeps creating experience profiles untouched.
     agentKind: z.string().min(1).optional().default("experience"),

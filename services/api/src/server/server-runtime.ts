@@ -33,8 +33,10 @@ import { createRuntimeStore } from "../runtime/session/session-runtime-store.js"
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
 import { createCopilotSkillService } from "../domain/interactive/copilot/copilot-skill-service.js";
 import { resolveCopilotUserSkillsRoot, resolveExperienceCopilotSkillsRoot } from "../domain/interactive/copilot/experience-copilot-module.js";
-// agent-kind registration (AS-2a): experience registers itself at startup
+// agent-kind registration (AS-2a): experience registers itself at startup;
+// the script kind (AS-7) registers beside it — prompt/dice threads resolve.
 import "../domain/agent/kinds/experience-kind.js";
+import "../domain/agent/kinds/script-kind.js";
 import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";

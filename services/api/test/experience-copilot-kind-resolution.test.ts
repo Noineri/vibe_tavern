@@ -12,6 +12,10 @@ import { createExperienceCopilotRoutes } from "../src/api/routes/experience-copi
 import {
   NoAgentKindForScriptKindError,
 } from "../src/domain/agent/agent-kind-registry.js";
+// Side-effect import: registers the `script` agent kind (AS-7) so the
+// prompt/dice resolution this suite pins holds regardless of which test file
+// the shared process loaded first.
+import "../src/domain/agent/kinds/script-kind.js";
 import type {
   ExperienceCopilotRuntimeApi,
 } from "../src/api/contract/runtime-api.js";
@@ -25,11 +29,12 @@ import type {
  * The adapter-level tests execute the REAL seam (thread → script row →
  * `resolveKindForScript`). The route-level tests pin the error MAPPING against
  * a fake runtime that throws exactly what the adapter throws for an unserved
- * script kind — the mapping itself is the unit under pin there. Today the
- * experience kind serves every reachable copilot thread (interactive scripts),
- * so the 400 is a genuinely unreachable production state until a second
- * script kind gains copilot threads; the seam + mapping are pinned ahead of
- * that, per AGENT_SHELL_PLAN AS-2c.
+ * script kind — the mapping itself is the unit under pin there. Since AS-7
+ * prompt/dice scripts are served by the `script` kind: this endpoint (the
+ * experience copilot) refuses such threads with a 400
+ * `copilot_thread_kind_mismatch` — also pinned here at the adapter seam. The
+ * truly-unserved case (a bogus script kind value) still throws
+ * `NoAgentKindForScriptKindError`.
  */
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -99,8 +104,11 @@ describe("ExperienceCopilotAdapter.experienceCopilotAssertStreamKind (AS-2c)", (
     await expect(adapter.experienceCopilotAssertStreamKind("thread_kr_1")).resolves.toBeUndefined();
   });
 
-  test("a script kind no registered kind serves throws NoAgentKindForScriptKindError", async () => {
-    const adapter = makeAdapter(makeThread(), makeScriptRow("dice"));
+  test("a script kind NO registered kind serves throws NoAgentKindForScriptKindError", async () => {
+    // AS-7 note: every real script kind is served now (interactive →
+    // experience, prompt/dice → script), so the unserved branch is pinned on
+    // a bogus kind value — order-independent by construction.
+    const adapter = makeAdapter(makeThread(), makeScriptRow("bogus"));
     let caught: unknown;
     try {
       await adapter.experienceCopilotAssertStreamKind("thread_kr_1");
@@ -110,7 +118,27 @@ describe("ExperienceCopilotAdapter.experienceCopilotAssertStreamKind (AS-2c)", (
     expect(caught).toBeInstanceOf(NoAgentKindForScriptKindError);
     const error = caught as NoAgentKindForScriptKindError;
     expect(error.code).toBe("NO_AGENT_KIND_FOR_SCRIPT_KIND");
-    expect(error.scriptKind).toBe("dice");
+    expect(error.scriptKind).toBe("bogus");
+  });
+
+  test("a prompt/dice script (the AS-7 `script` kind) is refused with copilot_thread_kind_mismatch", async () => {
+    // A thread anchored to a script served by ANOTHER kind is a 400 before
+    // any SSE headers — the experience endpoint never runs the script kind's
+    // threads (AS-7 failure point: no cross-kind assembly).
+    for (const scriptKind of ["prompt", "dice"]) {
+      const adapter = makeAdapter(makeThread(), makeScriptRow(scriptKind));
+      let caught: unknown;
+      try {
+        await adapter.experienceCopilotAssertStreamKind("thread_kr_1");
+      } catch (err) {
+        caught = err;
+      }
+      const error = caught as { kind?: string; message: string; details?: { code?: string } };
+      expect(error.kind).toBe("Validation");
+      expect(error.details?.code).toBe("copilot_thread_kind_mismatch");
+      expect(error.message).toContain(scriptKind);
+      expect(error.message).toContain("script");
+    }
   });
 
   test("a draft thread (scriptId null) and a dangling script link resolve nothing", async () => {

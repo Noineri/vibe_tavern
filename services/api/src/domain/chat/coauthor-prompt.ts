@@ -61,6 +61,12 @@ function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] 
  * assets/references only as needed. Empty string when no skills are available
  * (the section is omitted entirely so the prompt is unchanged for a fresh
  * install with no built-ins).
+ *
+ * forks: 2 — 1) renderExperienceCopilotSkillCatalog (interactive/copilot/
+ * experience-copilot-module.ts, copilot-local so its wording can diverge),
+ * 2) renderAgentSkillCatalog (agent/agent-prompt.ts, the AS-7 generic twin,
+ * currently byte-identical to copy 1). Per the fork rule a THIRD occurrence
+ * must be surfaced to the owner with a unification proposal.
  */
 function renderSkillCatalog(entries: readonly SkillCatalogEntry[], primarySkillIds?: readonly string[]): string {
   if (entries.length === 0) return "";

@@ -476,7 +476,12 @@ interface ProfileViewProps {
 }
 
 function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewProps) {
-	const enabledTools = COPILOT_TOOL_KEYS.filter((key) => profile.toolSet[key] === true);
+	// AS-7: the wire tool set is now a per-kind union; this modal is
+	// experience-scoped today (kind-aware tool lists arrive with the script
+	// host, AS-8), so the read widens to a boolean record — every experience
+	// key either reads `true` or is absent, same as before the union.
+	const toolSetRecord = profile.toolSet as Record<string, boolean | undefined>;
+	const enabledTools = COPILOT_TOOL_KEYS.filter((key) => toolSetRecord[key] === true);
 	return (
 		<div className="flex flex-col gap-5">
 			<div>

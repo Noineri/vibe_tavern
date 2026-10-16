@@ -35,6 +35,7 @@ import {
   type CopilotProfile,
   type CopilotToolSet,
 } from "@vibe-tavern/api-contracts";
+import { resolveBuiltinScriptAgentProfile } from "../../agent/script-agent/script-agent-module.js";
 
 // ─── Module definition (metadata only — the prompt text is loaded lazily) ────
 
@@ -163,9 +164,18 @@ export async function resolveExperienceCopilotSkillCatalog(
  * kind throws `UnknownAgentKindError` and NEVER falls back to the experience
  * seed (a silent cross-kind fallback would mask a miswired list). The
  * `experience` path is byte-identical to the pre-AS-3 behavior, plus
- * `agentKind`.
+ * `agentKind`; the `script` kind (AS-7) delegates to its own seed in
+ * `agent/script-agent/script-agent-module.ts`.
  */
 export async function resolveBuiltinCopilotProfile(kind: string = "experience", db?: AppDb): Promise<CopilotProfile> {
+  if (kind === "script") {
+    // AS-7: the script kind's own seed — base prompt from the
+    // `script_agent_base` service prompt (SP-5 override honored on this
+    // builtin path) + tool set projected through SCRIPT_AGENT_TOOL_KEYS. The
+    // species owns the seed (agent/script-agent/script-agent-module.ts)
+    // exactly the way this module owns the experience one.
+    return resolveBuiltinScriptAgentProfile(db);
+  }
   if (kind !== "experience") {
     // Validate FIRST — an unknown kind throws `UnknownAgentKindError` and
     // NEVER falls back to the experience seed (a silent cross-kind fallback
@@ -174,7 +184,7 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     // keeps byte-identical behavior.
     const descriptor = getAgentKind(kind);
     // Generic-kind seed (today only test fakes arrive here — AS-7's script
-    // kind brings its own base prompt + service key and extends this path).
+    // kind brings its own base prompt + service key and branches ABOVE).
     // Deliberately NOT the experience prompt: serving another kind's content
     // here would be the silent cross-kind fallback AS-3 forbids. The empty
     // base prompt fails loudly (wire `min(1)`) if it ever reaches validation

@@ -16,7 +16,7 @@
  */
 
 import type { StoreContainer, CopilotProfileRow } from "@vibe-tavern/db";
-import { COPILOT_TOOL_KEYS, type CopilotProfile, type CopilotToolSet } from "@vibe-tavern/api-contracts";
+import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotToolSet, type ScriptAgentToolSet } from "@vibe-tavern/api-contracts";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
 /**
@@ -24,20 +24,32 @@ import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
  * `isBuiltIn` is always false here (the built-in seed is code-defined, never a
  * row); `createdAt`/`updatedAt` are dropped (the wire profile has no timestamps).
  * The stored `toolSet` is a loose partial record — it is projected through
- * {@link COPILOT_TOOL_KEYS} so only the known toggleable-tool keys (and only
- * their `true` entries) survive, producing a strict `CopilotToolSet`. `todo`
- * is a real key again (PM-7, owner ruling 2026-10-11): a stored `todo: true`
- * projects to `todo: true` and nothing else — the PM-2 alias that projected
- * it onto `plan` + `read_plan` was removed with the todo mechanic's
- * restoration (todo = the thread's session checklist beside the plan).
+ * the OWNING KIND's wire-contract tool keys (AS-7: `script` rows project
+ * through `SCRIPT_AGENT_TOOL_KEYS`, everything else through
+ * `COPILOT_TOOL_KEYS`) so only the kind's toggleable-tool keys (and only
+ * their `true` entries) survive, producing a strict per-kind tool set.
  * `skillIds` is NOT projected (PM-8, owner ruling 2026-10-12): the skill
  * catalog is ungated, so the stored `skill_ids_json` column is legacy data
  * the resolver simply never reads.
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
-	const toolSet: CopilotToolSet = {};
-	for (const key of COPILOT_TOOL_KEYS) {
-		if (row.toolSet[key] === true) toolSet[key] = true;
+	// Per-kind projection (AS-7): a script row projects through the script tool
+	// keys, everything else through the experience keys — a union-typed key
+	// array cannot index one concrete tool-set type, so the two projections
+	// branch explicitly. Extend the branch when a third kind registers.
+	let toolSet: CopilotProfile["toolSet"];
+	if (row.agentKind === "script") {
+		const scriptToolSet: ScriptAgentToolSet = {};
+		for (const key of SCRIPT_AGENT_TOOL_KEYS) {
+			if (row.toolSet[key] === true) scriptToolSet[key] = true;
+		}
+		toolSet = scriptToolSet;
+	} else {
+		const copilotToolSet: CopilotToolSet = {};
+		for (const key of COPILOT_TOOL_KEYS) {
+			if (row.toolSet[key] === true) copilotToolSet[key] = true;
+		}
+		toolSet = copilotToolSet;
 	}
 	return {
 		id: row.id,

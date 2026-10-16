@@ -44,6 +44,7 @@ export const SERVICE_PROMPT_FIELDS = {
   // bases (5)
   coauthor_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  script_agent_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_user_flow: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_visual: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
@@ -74,6 +75,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "scene_generate",
   "coauthor_base",
   "copilot_base",
+  "script_agent_base",
   "copilot_user_flow",
   "interactive_rules",
   "interactive_visual",

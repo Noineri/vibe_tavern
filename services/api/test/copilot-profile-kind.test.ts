@@ -247,7 +247,10 @@ describe("script assignment guard (AS-3, failure point 2)", () => {
     expect(((await res.json()) as ErrorWire).error.details?.code).toBe("copilot_profile_kind_mismatch");
   });
 
-  test("an experience profile on a prompt script → 422 (unserved script kinds accept no profile)", async () => {
+  test("an experience profile on a prompt script → 422 (only the script kind's own profiles fit, AS-7)", async () => {
+    // Since AS-7 a prompt script RESOLVES to the `script` kind, so an
+    // experience profile is a cross-kind assignment — still a 422 (the
+    // pre-AS-7 reason "unserved kind accepts no profile" no longer applies).
     const created = await postProfile({ name: "Exp assign", basePrompt: "p", toolSet: {} });
     expect(created.status).toBe(200);
     const profileId = ((await created.json()) as ProfileWire).id;

@@ -1,26 +1,31 @@
 /**
  * Agent-kind registry (AGENT_SHELL_PLAN, Wave 1 / AS-2a).
  *
- * Pins the public registry contract: the real `experience` kind
- * self-registers at module init (delegating to EXPERIENCE_COPILOT_MODULE),
- * register/unsubscribe round-trips, duplicate-id / unknown-id / unresolvable-
- * script-kind throw their typed errors, and — the unit's real test — a
- * MINIMAL FAKE KIND registers and resolves purely through the public API,
- * proving the descriptor and mapping are data-driven, not experience-bound.
+ * Pins the public registry contract: the real `experience` and `script`
+ * kinds self-register at module init (experience delegating to
+ * EXPERIENCE_COPILOT_MODULE, script to SCRIPT_AGENT_MODULE),
+ * register/unsubscribe round-trips, duplicate-id / unknown-id /
+ * unresolvable-script-kind throw their typed errors, and — the unit's real
+ * test — a MINIMAL FAKE KIND registers and resolves purely through the public
+ * API, proving the descriptor and mapping are data-driven, not
+ * experience-bound.
  *
  * Cleanup: every fake's unsubscribe is collected and called in afterAll —
  * there is no registry reset (and none is needed).
  *
- * Order note: the "prompt/dice throw today" test runs BEFORE the test that
- * registers a fake serving "prompt" (kept until afterAll) — bun executes
- * tests in declaration order within a file.
+ * Order note: both built-ins register at import (side-effect imports below);
+ * since AS-7 every REAL script kind (prompt/dice/interactive) is served by a
+ * built-in, and first-registered-wins means a later fake can never displace
+ * one — so the data-driven fake proves the mapping on a SYNTHETIC script
+ * kind value no built-in serves.
  */
 
 import { describe, test, expect, afterAll } from "bun:test";
 import { z } from "zod";
 import { SCRIPT_KIND, type ScriptKind } from "@vibe-tavern/domain";
-import { COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { EXPERIENCE_COPILOT_MODULE } from "../src/domain/interactive/copilot/experience-copilot-module.js";
+import { SCRIPT_AGENT_MODULE } from "../src/domain/agent/script-agent/script-agent-module.js";
 import type { AgentKind } from "../src/domain/agent/agent-kind.js";
 import {
   registerAgentKind,
@@ -34,6 +39,8 @@ import {
 import type { ExperienceAgentContext } from "../src/domain/agent/kinds/experience-kind.js";
 // Side-effect import: registers the real experience kind (delegation shell).
 import "../src/domain/agent/kinds/experience-kind.js";
+// Side-effect import: registers the real script kind (AS-7) — prompt/dice.
+import "../src/domain/agent/kinds/script-kind.js";
 
 /** A minimal fake kind — the proof the registry is experience-agnostic. */
 function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): AgentKind {
@@ -44,6 +51,7 @@ function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): Age
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    recencyAnchorText: "(fake kind pins no context)",
     renderContextPackage: () => "", // required since AS-2b; fakes don't render
   };
 }
@@ -107,31 +115,39 @@ describe("agent-kind registry (AS-2a)", () => {
     }
   });
 
-  test("resolveKindForScript(prompt/dice) throws NoAgentKindForScriptKindError today", () => {
-    // Documented current state: only "experience" is registered and it serves
-    // interactive — prompt/dice have no kind YET. AS-7 will flip this when
-    // the script kind registers.
+  test("resolveKindForScript(prompt/dice) returns the REAL script kind (AS-7); interactive stays experience", () => {
     for (const scriptKind of [SCRIPT_KIND.prompt, SCRIPT_KIND.dice]) {
-      let caught: unknown;
-      try {
-        resolveKindForScript(scriptKind);
-      } catch (err) {
-        caught = err;
+      const kind = resolveKindForScript(scriptKind);
+      expect(kind).toBe(getAgentKind("script"));
+      expect(kind.id).toBe("script");
+      expect(kind.servesScriptKinds).toEqual(["prompt", "dice"]);
+      expect(kind.basePromptServiceKey).toBe("script_agent_base");
+      expect(kind.skillRootId).toBe("script");
+      // Delegation: the default tool set is SCRIPT_AGENT_MODULE's toolSet
+      // projected through the wire-contract tool keys — nothing hand-copied.
+      for (const key of SCRIPT_AGENT_TOOL_KEYS) {
+        expect(kind.defaultToolSet[key]).toBe(
+          SCRIPT_AGENT_MODULE.toolSet[key] === true ? true : undefined,
+        );
       }
-      expect(caught).toBeInstanceOf(NoAgentKindForScriptKindError);
-      const error = caught as NoAgentKindForScriptKindError;
-      expect(error.scriptKind).toBe(scriptKind);
-      expect(error.code).toBe("NO_AGENT_KIND_FOR_SCRIPT_KIND");
+      // And it smuggles no tool key outside the wire contract.
+      for (const key of Object.keys(kind.defaultToolSet)) {
+        expect(SCRIPT_AGENT_TOOL_KEYS).toContain(key);
+      }
     }
+    // The AS-7 registration leaves the experience mapping untouched.
+    expect(resolveKindForScript(SCRIPT_KIND.interactive).id).toBe("experience");
   });
 
-  test("resolveKindForScript is data-driven: a fake kind serving prompt becomes resolvable", () => {
+  test("resolveKindForScript is data-driven: a fake kind serving a fresh script-kind value becomes resolvable", () => {
     // The unit's real test: a MINIMAL fake kind registers purely through the
-    // public API and the script-kind mapping follows the registered data —
-    // AS-7's script kind will do exactly this from kinds/script-kind.ts.
-    const fake = makeFakeKind("fake-prompt-kind", [SCRIPT_KIND.prompt]);
+    // public API and the script-kind mapping follows the registered data. AS-7
+    // serves every REAL script kind with a built-in (first-registered-wins —
+    // a later fake displaces nothing), so the mapping is proven on a SYNTHETIC
+    // value no built-in serves.
+    const fake = makeFakeKind("fake-fresh-kind", ["fake-fresh" as ScriptKind]);
     unsubscribes.push(registerAgentKind(fake));
-    expect(resolveKindForScript(SCRIPT_KIND.prompt)).toBe(fake);
+    expect(resolveKindForScript("fake-fresh" as ScriptKind)).toBe(fake);
   });
 
   test("resolveKindForScript(bogus value) throws NoAgentKindForScriptKindError carrying it", () => {

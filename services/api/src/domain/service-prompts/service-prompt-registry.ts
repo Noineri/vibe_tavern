@@ -37,6 +37,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   // bases (5)
   coauthor_base: "coauthor/base.md",
   copilot_base: "experience-copilot/base.md",
+  script_agent_base: "agent-script/base.md",
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",
   interactive_visual: "interactive-visual.md",
