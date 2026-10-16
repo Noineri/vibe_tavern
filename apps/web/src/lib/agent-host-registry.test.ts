@@ -35,6 +35,7 @@ function descriptor(kind: string): AgentHostDescriptor {
       emptyTitle: "agent_title",
       emptySub: "agent_subtitle",
     },
+    toolKeys: [],
     bufferSpecs: [],
     // AS-6c-i: the transport seam — fixture data mirrors the experience
     // host's delegation to the real client fns (registry-mechanics tests never
@@ -62,6 +63,17 @@ describe("agent-host-registry", () => {
     const unsubscribe = registerAgentHost(host);
     try {
       expect(getAgentHost("as5-getter")).toBe(host);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("a registered host exposes its toolKeys", () => {
+    const toolKeys = ["write_buffer", "plan"] as const;
+    const host: AgentHostDescriptor = { ...descriptor("as8b-tool-keys"), toolKeys };
+    const unsubscribe = registerAgentHost(host);
+    try {
+      expect(getAgentHost("as8b-tool-keys").toolKeys).toEqual(["write_buffer", "plan"]);
     } finally {
       unsubscribe();
     }

@@ -20,7 +20,6 @@ import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import { useT } from "../../../i18n/context.js";
-import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
@@ -37,6 +36,13 @@ import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptEditingSurface } from "./script-editing-surface.js";
+// The script agent host registers itself (getAgentHost("script")) at module
+// init — this side-effect import is the shell's ONLY registration for the
+// kind, exactly once per process (the panel and the host module are a pair;
+// mirrors ExperienceCopilotShell's import of the experience host).
+import "./script-agent-host.js";
+import { AgentShell } from "../../shared/agent-shell/AgentShell.js";
+import type { ScriptAgentHostProps } from "./script-agent-host.js";
 import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -139,7 +145,12 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
   useKeyDown("Escape", () => { setImportOpen(false); setImportCode(""); }, { enabled: importOpen });
   const [apiRefOpen, setApiRefOpen] = useState(false);
-  const [aiHelperOpen, setAiHelperOpen] = useState(false);
+  // AS-8b: agent mode — the AI assistant toolbar button switches the editor
+  // into the generic AgentShell (kind "script"); the old AiAssistantModal is
+  // gone from THIS editor only (its other consumers are untouched). A back
+  // control returns to the plain editor (desktop: the chat-header button;
+  // mobile: the shell's tab-row chevron).
+  const [agentMode, setAgentMode] = useState(false);
 
   // ── Queries (replaced with local state + async fetch) ────
   // "entity" is a BROWSE filter here, not an owner view: the sidebar's
@@ -510,19 +521,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           </div>
         </div>
       )}
-      <AiAssistantModal
-        mode="full"
-        apiMode={activeScript?.scriptKind === "dice" ? "dice_script" : "script"}
-        isOpen={aiHelperOpen}
-        onClose={() => setAiHelperOpen(false)}
-        existingContent={activeScript?.code ?? ""}
-        onInsert={(text) => updateDraft({ code: text })}
-        onReplace={(text) => updateDraft({ code: text })}
-        scopeContext={{
-          characterId: characterId,
-          personaId: personaId ?? undefined,
-        }}
-      />
       {/* SS-7: the first-enable warning surfaces. Only one can be open — the
           flow is a single discriminated union; plain shows when there are no
           blocking findings, findings shows ALONE otherwise (decision 11). */}
@@ -638,12 +636,56 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       onDeleteRequest={(id) => setConfirmDeleteId(id)}
       onSetScriptLinks={(next) => { void handleSetScriptLinks(next); }}
       onToggleApiRef={() => setApiRefOpen((v) => !v)}
-      onOpenAiHelper={() => setAiHelperOpen(true)}
+      onOpenAiHelper={() => setAgentMode(true)}
       onAddFromTemplate={(key) => handleAddFromTemplate(key)}
       onRevealLine={(line) => setRevealLine({ line })}
     />
   );
 
+  // ── Agent mode (AS-8b) ──
+  // The same surface wiring travels opaquely to the `script` host through
+  // hostProps; the host renders the identical surface inside the shell's
+  // editor pane with the hunk-review decorations joined onto the same
+  // extensions. Rendered ONLY while an active script exists — the shell's
+  // threads are script-owned. The caller (LorebookEditor) renders this INSTEAD
+  // of the padded plain-editor scroll container (the 2-pane layout needs the
+  // full unpadded height — the ExperienceEditor container approach).
+  const scriptAgentHostProps: ScriptAgentHostProps | null = activeScript && activeScriptId ? {
+    isMobile,
+    activeScript,
+    activeScriptId,
+    draftDirty,
+    draftSaveState,
+    draftError: activeDraft?.error,
+    scriptLinks,
+    linkCharacters,
+    linkPersonas,
+    apiRefOpen,
+    scriptSafetyExtensions,
+    characterName: scope === "entity" && !personaId ? allCharacters.find((x) => x.id === characterId)?.name : undefined,
+    onBackToPlain: () => setAgentMode(false),
+    onSave: () => { void handleSave(); },
+    onUpdateDraft: updateDraft,
+    onToggleEnabled: handleToggleEnabled,
+    onDeleteRequest: (id) => setConfirmDeleteId(id),
+    onSetScriptLinks: (next) => { void handleSetScriptLinks(next); },
+    onToggleApiRef: () => setApiRefOpen((v) => !v),
+    onAddFromTemplate: (key) => handleAddFromTemplate(key),
+    onRevealLine: (line) => setRevealLine({ line }),
+  } : null;
+  const scriptAgentPanel = agentMode && scriptAgentHostProps ? (
+    <AgentShell
+      kind="script"
+      ownerId={scriptAgentHostProps.activeScriptId}
+      scriptId={scriptAgentHostProps.activeScriptId}
+      isMobile={isMobile}
+      onBack={isMobile ? () => setAgentMode(false) : undefined}
+      editTabDirty={scriptAgentHostProps.draftDirty}
+      assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+      hostProps={scriptAgentHostProps}
+    />
+  ) : null;
 
-  return { modals, scriptListContent, scriptEditorPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
+
+  return { modals, scriptListContent, scriptEditorPanel, scriptAgentPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
 }

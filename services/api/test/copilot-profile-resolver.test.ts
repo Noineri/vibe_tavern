@@ -7,6 +7,12 @@ import {
   CopilotProfileResolver,
   copilotProfileRowToWire,
 } from "../src/domain/interactive/copilot/copilot-profile-resolver.js";
+// Side-effect imports: register the built-in agent kinds so the kind-aware
+// fallback (AS-8b — the builtin seed kind derives from the script row through
+// the registry) holds regardless of which test file the shared process
+// loaded first.
+import "../src/domain/agent/kinds/experience-kind.js";
+import "../src/domain/agent/kinds/script-kind.js";
 
 /**
  * CP-6 — copilot profile resolution. Pins the fallback ladder: null scriptId /
@@ -114,5 +120,54 @@ describe("CopilotProfileResolver", () => {
     const profile = await resolver.resolveForScript("script_does_not_exist");
     expect(profile.isBuiltIn).toBe(true);
     expect(profile.id).toBe("builtin");
+  });
+});
+
+describe("CopilotProfileResolver — kind-aware builtin seed (AS-8b)", () => {
+  test("prompt and dice scripts with no assigned profile → the builtin `script` seed", async () => {
+    for (const scriptKind of ["prompt", "dice"] as const) {
+      const script = await stores.scripts.create({ name: `Seed ${scriptKind}`, code: "", scriptKind, scopeType: "global" });
+      const profile = await resolver.resolveForScript(script.id);
+      expect(profile.isBuiltIn).toBe(true);
+      expect(profile.id).toBe("builtin");
+      expect(profile.agentKind).toBe("script");
+    }
+  });
+
+  test("an interactive script with no assigned profile → the experience seed", async () => {
+    const script = await stores.scripts.create({ name: "Seed interactive", code: "", scriptKind: "interactive", scopeType: "global" });
+    const profile = await resolver.resolveForScript(script.id);
+    expect(profile.isBuiltIn).toBe(true);
+    expect(profile.agentKind).toBe("experience");
+  });
+
+  test("a prompt script whose assigned profile row was deleted → the `script` seed (dangling profile id)", async () => {
+    const created = await stores.copilotProfiles.create({
+      name: "Doomed script profile",
+      basePrompt: "Will be deleted.",
+      toolSet: {},
+    });
+    const script = await stores.scripts.create({
+      name: "Dangling prompt",
+      code: "",
+      scriptKind: "prompt",
+      scopeType: "global",
+      copilotProfileId: created.id,
+    });
+    await stores.copilotProfiles.delete(created.id);
+
+    const profile = await resolver.resolveForScript(script.id);
+    expect(profile.isBuiltIn).toBe(true);
+    expect(profile.agentKind).toBe("script");
+  });
+
+  test("scriptId === null (a draft) and a dangling script row → the experience seed", async () => {
+    const draft = await resolver.resolveForScript(null);
+    expect(draft.isBuiltIn).toBe(true);
+    expect(draft.agentKind).toBe("experience");
+
+    const dangling = await resolver.resolveForScript("script_does_not_exist");
+    expect(dangling.isBuiltIn).toBe(true);
+    expect(dangling.agentKind).toBe("experience");
   });
 });

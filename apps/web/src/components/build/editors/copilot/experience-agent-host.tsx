@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
+import { COPILOT_TOOL_KEYS, type ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
@@ -401,6 +401,9 @@ registerAgentHost({
     emptySub: "agent_subtitle",
     mobileBackLabelKey: "experience_editor_back",
   },
+  // The toggleable tool keys of the experience assistant profiles — the shared
+  // profile modal reads them from here (no kind literal in the shell).
+  toolKeys: COPILOT_TOOL_KEYS,
   bufferSpecs: [
     { id: "rules", labelKey: "agent_rules", language: "javascript" },
     { id: "visual", labelKey: "agent_visual", language: "xml" },

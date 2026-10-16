@@ -1824,7 +1824,7 @@
 	"script_template_group_dice": "Шаблоны дайс-скриптов",
 	"script_import": "Импорт Скрипта",
 	"script_no_scripts": "Нет скриптов в этой области",
-	"script_ai_helper": "ИИ Помощник",
+	"script_ai_helper": "ИИ-помощник",
 	"script_ai_connection": "Провайдер",
 	"script_ai_model": "Модель",
 	"script_ai_prompt": "Опишите, что должен делать скрипт...",

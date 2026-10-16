@@ -25,12 +25,16 @@
  * contract the Wave 4 Apply flow consumes).
  */
 import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
+import type { ExperienceCopilotTarget } from "@vibe-tavern/api-contracts";
 import type { BufferProposal } from "@vibe-tavern/api-contracts";
 
-/** A finalized, proposal-producing activity (rules or visual buffer). */
+/** A finalized, proposal-producing activity (a named buffer — `rules`,
+ *  `visual`, or the script kind's `code`). The aggregator maps `rules`/
+ *  `visual` itself; `code` activities are aggregated by the script host's own
+ *  last-wins review wiring (AS-8b), never here. */
 interface ProposedActivity {
 	toolCallId: string;
-	target: "rules" | "visual";
+	target: ExperienceCopilotTarget;
 	proposed: string;
 	summary?: string;
 }

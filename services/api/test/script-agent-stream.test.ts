@@ -1,0 +1,283 @@
+/**
+ * Script-agent stream wiring (AGENT_SHELL_PLAN, AS-8b-fix-A).
+ *
+ * Pins the `script` kind's seams through the REAL `streamScriptAgentTurn`
+ * (generic loop + AS-7 assembly), with a fake store and a fake `streamText`
+ * injected through the deps (no `mock.module`):
+ * - the LIVE-BUFFER contract (the plan's failure point #3): the request's
+ *   `code` overrides the stored row's code in the assembled prompt; without a
+ *   request buffer the stored code is the fallback;
+ * - auto-compaction: the injected `autoCompact` is called with the thread id
+ *   after a completed turn when wired, and nothing is called when absent.
+ */
+
+import { describe, expect, it, beforeEach } from "bun:test";
+import type { LanguageModel } from "ai";
+import type {
+  AppendMessageInput,
+  ExperienceCopilotMessage,
+  ExperienceCopilotStore,
+  ExperienceCopilotThread,
+  ProviderProfile,
+  ScriptRow,
+  StoreContainer,
+} from "@vibe-tavern/db";
+import {
+  streamScriptAgentTurn,
+  type ScriptAgentStreamDeps,
+} from "../src/domain/agent/script-agent/script-agent-stream.js";
+// Side-effect import: registers the `script` agent kind (AS-7) so the
+// assembly's descriptor path works regardless of which test file the shared
+// process loaded first.
+import "../src/domain/agent/kinds/script-kind.js";
+
+// ─── Fakes ───────────────────────────────────────────────────────────────────
+
+const STORED_CODE = "context.character.personality += ', STORED-CODE-MARKER';";
+const LIVE_CODE = "context.character.personality += ', LIVE-CODE-MARKER';";
+
+type CapturedMessage = { role: string; content: unknown };
+
+/** The fake `streamText` records the model-facing messages it was called with. */
+let capturedMessages: CapturedMessage[] = [];
+let streamTextImpl: ((opts: { messages: CapturedMessage[] }) => unknown) | undefined;
+
+function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
+  async function* gen(): AsyncGenerator<unknown, void, unknown> {
+    for (const p of parts) yield p;
+  }
+  return {
+    stream: gen(),
+    finishReason: Promise.resolve("stop"),
+    usage: Promise.resolve(undefined),
+  };
+}
+
+function createFakeStore(thread: ExperienceCopilotThread): ExperienceCopilotStore {
+  const messages: ExperienceCopilotMessage[] = [];
+  let counter = 0;
+  return {
+    async getById() { return thread; },
+    async listMessages() { return [...messages]; },
+    async appendMessage(_threadId: string, input: AppendMessageInput) {
+      const msg: ExperienceCopilotMessage = {
+        id: `msg_${counter++}`,
+        threadId: thread.id,
+        role: input.role,
+        content: input.content ?? "",
+        toolCallsJson: input.toolCallsJson ?? null,
+        toolCallId: input.toolCallId ?? null,
+        createdAt: new Date(Date.now() + counter * 1000).toISOString(),
+      };
+      messages.push(msg);
+      return msg;
+    },
+    async updateContextMetrics() {},
+    async updateTodo() {},
+  } as unknown as ExperienceCopilotStore;
+}
+
+function makeProviderProfile(): ProviderProfile {
+  return {
+    id: "prov_1",
+    name: "Test",
+    providerPreset: "openai",
+    coauthorTransport: "chatCompletions",
+    endpoint: "http://test",
+    apiKey: "key",
+    defaultModel: "test-model",
+    contextBudget: null,
+    pinContextBudget: false,
+    bindPerModel: false,
+    maxTokens: 2000,
+    temperature: 0.3,
+    proxyMode: "inherit",
+    proxyId: null,
+    isActive: true,
+  } as unknown as ProviderProfile;
+}
+
+function makeThread(scriptId: string | null = "script_1"): ExperienceCopilotThread {
+  return {
+    id: "thread_1",
+    scriptId,
+    draftSessionId: null,
+    title: "Script thread",
+    archivedAt: null,
+    contextMetrics: null,
+    contextLinks: [],
+    todo: [],
+    lastProviderProfileId: null,
+    lastModel: null,
+    autoCompact: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function makeScriptRow(): ScriptRow {
+  return {
+    id: "script_1",
+    name: "Stream pin script",
+    description: "",
+    code: STORED_CODE,
+    enabled: true,
+    scriptKind: "prompt",
+    origin: "in_app",
+    firstEnabledAt: null,
+    creationIntentId: null,
+    scopeType: "global",
+    sortOrder: 0,
+    characterId: null,
+    personaId: null,
+    chatId: null,
+    defaultVisualId: null,
+    copilotProfileId: null,
+    extensions: {},
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  } as ScriptRow;
+}
+
+function makeDeps(
+  store: ExperienceCopilotStore,
+  overrides: Partial<ScriptAgentStreamDeps> = {},
+): ScriptAgentStreamDeps {
+  const profile = makeProviderProfile();
+  return {
+    store,
+    agentPlans: { get: async () => null, save: async () => {} },
+    getScript: async () => makeScriptRow(),
+    getOwnerNames: async () => [],
+    getProviderProfile: async () => profile,
+    getEffectiveProviderProfile: async () => profile,
+    resolveModel: () => ({}) as LanguageModel,
+    stores: {} as unknown as StoreContainer,
+    // Type-erased seam: the fake returns the partial FullStream shape the loop
+    // reads (`.stream`, `finishReason`, `usage`), not the SDK's full result.
+    streamText: ((opts: { messages: CapturedMessage[] }) => {
+      capturedMessages = opts.messages;
+      return streamTextImpl
+        ? streamTextImpl(opts)
+        : makeFakeStreamTextResult([{ type: "text-delta", text: "ok" }]);
+    }) as unknown as ScriptAgentStreamDeps["streamText"],
+    ...overrides,
+  };
+}
+
+async function drain(gen: AsyncGenerator<{ event: string; data: string }>): Promise<string[]> {
+  const events: string[] = [];
+  for await (const chunk of gen) events.push(chunk.event);
+  return events;
+}
+
+/** Every model-facing message flattened to one string for marker assertions. */
+function promptText(): string {
+  return capturedMessages
+    .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    .join("\n");
+}
+
+beforeEach(() => {
+  capturedMessages = [];
+  streamTextImpl = undefined;
+});
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("streamScriptAgentTurn - live-buffer contract", () => {
+  it("request.code overrides the stored code in the assembled prompt", async () => {
+    const store = createFakeStore(makeThread());
+    const events = await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "tweak it", providerProfileId: "prov_1", code: LIVE_CODE },
+        makeDeps(store),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    const prompt = promptText();
+    expect(prompt).toContain("LIVE-CODE-MARKER");
+    expect(prompt).not.toContain("STORED-CODE-MARKER");
+  });
+
+  it("an absent request.code falls back to the stored code", async () => {
+    const store = createFakeStore(makeThread());
+    const events = await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "tweak it", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    const prompt = promptText();
+    expect(prompt).toContain("STORED-CODE-MARKER");
+    expect(prompt).not.toContain("LIVE-CODE-MARKER");
+  });
+
+  it("an empty live buffer is still a live buffer: the stored code is not resurrected", async () => {
+    const store = createFakeStore(makeThread());
+    await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "start over", providerProfileId: "prov_1", code: "" },
+        makeDeps(store),
+      ),
+    );
+
+    expect(promptText()).not.toContain("STORED-CODE-MARKER");
+  });
+});
+
+describe("streamScriptAgentTurn - auto-compaction", () => {
+  it("calls autoCompact with the thread id after a completed turn when wired", async () => {
+    const store = createFakeStore(makeThread());
+    const compactCalls: string[] = [];
+    const events = await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, {
+          autoCompact: async (threadId: string) => {
+            compactCalls.push(threadId);
+          },
+        }),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    expect(compactCalls).toEqual(["thread_1"]);
+  });
+
+  it("an unwired turn completes with no compaction call", async () => {
+    const store = createFakeStore(makeThread());
+    const events = await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    expect(events).toContain("finish");
+  });
+
+  it("does not call autoCompact when the turn fails before completing", async () => {
+    const store = createFakeStore(makeThread());
+    const compactCalls: string[] = [];
+    streamTextImpl = () => {
+      throw new Error("provider setup failed");
+    };
+    const events = await drain(
+      streamScriptAgentTurn(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, {
+          autoCompact: async (threadId: string) => {
+            compactCalls.push(threadId);
+          },
+        }),
+      ),
+    );
+
+    expect(events).toContain("error");
+    expect(compactCalls).toEqual([]);
+  });
+});

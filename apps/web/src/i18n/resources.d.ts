@@ -2840,7 +2840,7 @@ export default interface Resources {
     "script_ai_error": "Error",
     "script_ai_generate": "Generate",
     "script_ai_generated": "Generated code",
-    "script_ai_helper": "AI Helper",
+    "script_ai_helper": "AI assistant",
     "script_ai_insert": "Insert",
     "script_ai_model": "Model",
     "script_ai_no_changes": "No changes detected.",

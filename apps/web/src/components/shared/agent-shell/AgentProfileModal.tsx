@@ -11,7 +11,8 @@ import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
-import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
+import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentSkillModal } from "./AgentSkillModal.js";
 
 /** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
@@ -19,11 +20,12 @@ const BUILTIN_PROFILE_ID = "builtin";
 
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
- *  a profile is name + basePrompt + toolSet. */
+ *  a profile is name + basePrompt + toolSet. The toolSet is a loose boolean
+ *  record (AS-8b: which keys are valid depends on the profile's agent kind). */
 interface ProfileDraft {
 	name: string;
 	basePrompt: string;
-	toolSet: CopilotToolSet;
+	toolSet: Record<string, boolean>;
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
@@ -40,11 +42,12 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 	};
 }
 
-function draftToCreateInput(d: ProfileDraft): CopilotProfileCreate {
+function draftToCreateInput(d: ProfileDraft, agentKind: string): CopilotProfileCreate {
 	return {
 		name: d.name.trim(),
 		basePrompt: d.basePrompt,
 		toolSet: d.toolSet,
+		agentKind,
 	};
 }
 
@@ -54,7 +57,7 @@ type DetailMode = "view" | "edit" | "create";
  * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9).
  * Mirrors `CoauthorModuleModal` MINUS description/openingMessage/skills: profile
  * list (built-in seed shown read-only, user profiles), name + inline system
- * prompt (AutoTextarea), tool checkboxes (the keys from `COPILOT_TOOL_KEYS`).
+ * prompt (AutoTextarea), tool toggles (the keys come from the agent host descriptor).
  * Skills are UNGATED (PM-8, owner ruling 2026-10-12): the model sees every
  * scanned skill regardless of profile, so there are no per-profile skill
  * toggles — the "Manage skills" header button opens `CopilotSkillModal` for the
@@ -67,14 +70,19 @@ type DetailMode = "view" | "edit" | "create";
  */
 export interface AgentProfileModalProps {
 	scriptId: string;
+	/** The agent kind whose profiles this instance manages (AS-8b) — drives
+	 *  the kind-filtered list and, through the registered host descriptor, the
+	 *  toggleable-tool key set. */
+	agentKind: AgentKind;
 	/** The profile currently assigned to this experience, or null (built-in seed). */
 	assignedProfileId: string | null;
 	isOpen: boolean;
 	onClose: () => void;
 }
 
-export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
+export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
 	const { t } = useT();
+	const toolKeys = getAgentHost(agentKind).toolKeys;
 
 	// Mirror the resolver's null→builtin fallback so the active row is highlighted
 	// even when nothing has been explicitly assigned yet.
@@ -97,7 +105,7 @@ export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose
 
 	useEffect(() => {
 		if (isOpen) {
-			void loadProfiles();
+			void loadProfiles(agentKind);
 		}
 		if (!isOpen) {
 			setDetailMode("view");
@@ -163,7 +171,7 @@ export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose
 		setDirty(true);
 	};
 
-	const toggleTool = (key: keyof CopilotToolSet) => {
+	const toggleTool = (key: string) => {
 		setDraft((prev) => ({
 			...prev,
 			toolSet: { ...prev.toolSet, [key]: !prev.toolSet[key] },
@@ -180,7 +188,7 @@ export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose
 			toast.error(t("copilot_profile_base_prompt_required"));
 			return;
 		}
-		const input = draftToCreateInput(draft);
+		const input = draftToCreateInput(draft, agentKind);
 		try {
 			if (detailMode === "create") {
 				const created = await createProfile(input);
@@ -293,12 +301,14 @@ export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose
 						<ProfileEditor
 							draft={draft}
 							t={t}
+							toolKeys={toolKeys}
 							onUpdate={updateDraft}
 							onToggleTool={toggleTool}
 						/>
 					) : selected ? (
 						<ProfileView
 							profile={selected}
+							toolKeys={toolKeys}
 							t={t}
 							isSelectedActive={isSelectedActive}
 							onEdit={() => handleEdit(selected)}
@@ -467,6 +477,8 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, detailM
 
 interface ProfileViewProps {
 	profile: CopilotProfile;
+	/** The host-owned toggleable tool keys of the modal's agent kind. */
+	toolKeys: readonly string[];
 	t: TFunc;
 	isSelectedActive: boolean;
 	onEdit: () => void;
@@ -475,13 +487,12 @@ interface ProfileViewProps {
 	closeDetail?: () => void;
 }
 
-function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewProps) {
-	// AS-7: the wire tool set is now a per-kind union; this modal is
-	// experience-scoped today (kind-aware tool lists arrive with the script
-	// host, AS-8), so the read widens to a boolean record — every experience
-	// key either reads `true` or is absent, same as before the union.
+function ProfileView({ profile, toolKeys, t, onEdit, onDuplicate, onDelete }: ProfileViewProps) {
+	// AS-7/AS-8b: the wire tool set is a per-kind union; the read widens to a
+	// boolean record and projects through the host's keys for this kind (the
+	// script kind's toggles differ from the experience ones).
 	const toolSetRecord = profile.toolSet as Record<string, boolean | undefined>;
-	const enabledTools = COPILOT_TOOL_KEYS.filter((key) => toolSetRecord[key] === true);
+	const enabledTools = toolKeys.filter((key) => toolSetRecord[key] === true);
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
@@ -556,11 +567,13 @@ function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewP
 interface ProfileEditorProps {
 	draft: ProfileDraft;
 	t: TFunc;
+	/** The kind's toggleable-tool keys (AS-8b — kind-aware). */
+	toolKeys: readonly string[];
 	onUpdate: <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => void;
-	onToggleTool: (key: keyof CopilotToolSet) => void;
+	onToggleTool: (key: string) => void;
 }
 
-function ProfileEditor({ draft, t, onUpdate, onToggleTool }: ProfileEditorProps) {
+function ProfileEditor({ draft, t, toolKeys, onUpdate, onToggleTool }: ProfileEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="copilot-profile-editor">
 			<div className="flex flex-col">
@@ -586,7 +599,7 @@ function ProfileEditor({ draft, t, onUpdate, onToggleTool }: ProfileEditorProps)
 
 			<Field label={t("copilot_profile_tools")}>
 				<div className="flex flex-wrap gap-1.5">
-					{COPILOT_TOOL_KEYS.map((key) => {
+					{toolKeys.map((key) => {
 						const active = draft.toolSet[key] === true;
 						return (
 							<button

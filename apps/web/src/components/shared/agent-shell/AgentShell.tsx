@@ -554,6 +554,7 @@ export function AgentShell({
       ) : threadId ? (
         <>
           <AgentChatHeader
+            leading={host.toolbarSlot?.(hostCtx)}
             sessions={sessions}
             activeThreadId={threadId}
             disabled={ctrl.isSending}
@@ -667,6 +668,7 @@ export function AgentShell({
     <>
       <AgentProfileModal
         scriptId={scriptId ?? ownerId}
+        agentKind={kind}
         assignedProfileId={assignedProfileId}
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}

@@ -17,6 +17,7 @@
 
 import type { StoreContainer, CopilotProfileRow } from "@vibe-tavern/db";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotToolSet, type ScriptAgentToolSet } from "@vibe-tavern/api-contracts";
+import { resolveKindForScript } from "../../agent/agent-kind-registry.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
 /**
@@ -61,20 +62,45 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 	};
 }
 
+/**
+ * The built-in seed kind for a script row — the script kind's registered kind
+ * (prompt/dice → `script`; interactive → `experience`), resolved through the
+ * ONE sanctioned mapping seam (AS-8b: before this, every fallback hardcoded
+ * the experience seed — unreachable for script threads pre-dispatch, wrong
+ * the moment the stream began routing them). A null scriptId (a draft,
+ * pre-save) and a missing/dangling row keep the experience seed (today's
+ * draft semantics — drafts have no kind).
+ */
+async function builtinSeedKindForScript(
+  stores: StoreContainer,
+  scriptId: string | null,
+): Promise<string> {
+  if (scriptId === null) return "experience";
+  const script = await stores.scripts.getById(scriptId);
+  if (script === null) return "experience"; // dangling soft link — draft semantics
+  return resolveKindForScript(script.scriptKind).id;
+}
+
 export class CopilotProfileResolver {
 	constructor(private readonly stores: StoreContainer) {}
 
 	/**
 	 * Resolve the profile for a script. `scriptId === null` (a draft, pre-save)
-	 * or any missing/dangling link falls back to the built-in seed.
+	 * or any missing/dangling link falls back to the built-in seed — of the
+	 * kind that SERVES the script row (AS-8b: prompt/dice scripts seed the
+	 * `script` kind's builtin, interactive scripts the experience one).
 	 */
 	async resolveForScript(scriptId: string | null): Promise<CopilotProfile> {
 		if (scriptId === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
 		const script = await this.stores.scripts.getById(scriptId);
 		const profileId = script?.copilotProfileId ?? null;
-		if (profileId === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
+		if (profileId === null) {
+			return resolveBuiltinCopilotProfile(await builtinSeedKindForScript(this.stores, scriptId), this.stores.db);
+		}
 		const row = await this.stores.copilotProfiles.getById(profileId);
-		if (row === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
+		if (row === null) {
+			return resolveBuiltinCopilotProfile(await builtinSeedKindForScript(this.stores, scriptId), this.stores.db);
+		}
 		return copilotProfileRowToWire(row);
 	}
 }

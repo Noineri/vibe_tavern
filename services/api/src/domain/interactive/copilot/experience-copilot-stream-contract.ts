@@ -42,6 +42,14 @@ export interface ExperienceCopilotStreamRequest {
   rules?: string;
   /** The LIVE visual draft the user is editing (see `rules`). */
   visual?: string;
+  /** AS-8b — the script kind's LIVE code buffer (see `rules`; the script
+   *  host sends the current unsaved editor code). */
+  code?: string;
+  /** AS-8b — ADVISORY script runtime kind (telemetry; the STORED script kind
+   *  selects the API-knowledge section — immutable after creation). */
+  scriptKind?: "prompt" | "dice";
+  /** AS-8b — whether the live `code` buffer has been saved (see `rulesSaved`). */
+  codeSaved?: boolean;
   /** The latest test/simulate digest the user sent back from the test panel.
    *  Loosely typed on the wire (`Record<string, unknown>`) because the digest
    *  shapes live in the backend domain. */

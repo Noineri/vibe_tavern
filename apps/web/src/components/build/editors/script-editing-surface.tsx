@@ -46,6 +46,11 @@ export interface ScriptEditingSurfaceProps {
   linkPersonas: LinkTarget[];
   apiRefOpen: boolean;
   scriptSafetyExtensions: Extension[];
+  /** AS-8b: freeze the code editor while an agent review round shows the
+   *  PROPOSED document (the review surface is the accept flow, not an editing
+   * surface — CD-8). Absent/false in the plain editor; the host pane passes
+   * `review !== null`. */
+  codeReadOnly?: boolean;
   characterName: string | undefined;
   onSave: () => void;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
@@ -72,6 +77,7 @@ export function ScriptEditingSurface({
   linkPersonas,
   apiRefOpen,
   scriptSafetyExtensions,
+  codeReadOnly = false,
   characterName,
   onSave,
   onUpdateDraft,
@@ -188,6 +194,7 @@ export function ScriptEditingSurface({
             onChange={(code) => onUpdateDraft({ code })}
             minHeight={isMobile ? "220px" : "300px"}
             scrollMode={isMobile ? "page" : "inner"}
+            readOnly={codeReadOnly}
             extensions={scriptSafetyExtensions}
           />
         </div>

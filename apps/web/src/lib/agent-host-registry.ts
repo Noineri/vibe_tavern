@@ -100,6 +100,14 @@ export function agentThreadKey(kind: AgentKind, threadId: string): string {
 export interface AgentSendOptions {
   rules?: string;
   visual?: string;
+  /** AS-8b — the script kind's single LIVE `code` buffer (the merged draft the
+   *  editor shows; never a stale DB read). */
+  code?: string;
+  /** AS-8b — the script's runtime kind, sent on the body as advisory
+   *  telemetry (the STORED script kind is authoritative server-side). */
+  scriptKind?: "prompt" | "dice";
+  /** AS-8b — whether the `code` buffer is saved (mirrors rulesSaved). */
+  codeSaved?: boolean;
   step?: ExperienceCopilotStep;
   /** The latest test/simulate digest the user sent back from the test panel
    *  (ER-14). Carried on the body as `testFeedback` and rendered as a JSON
@@ -229,13 +237,20 @@ export interface AgentHostDescriptor {
     placeholder: AgentI18nKey;
     loading: AgentI18nKey;
     emptyTitle: AgentI18nKey;
-    emptySub: AgentI18nKey;
+    /** Optional (AS-8b): nothing consumes it today — the shell's empty state
+     *  renders `subtitle` — so a host with no flavor-neutral subtitle wording
+     *  (the script kind) simply omits it instead of inventing prose. */
+    emptySub?: AgentI18nKey;
     /** AS-6b2: the mobile tab-row back chevron's aria-label key. Optional —
      *  a host that omits it renders no chevron even when `onBack` is passed
      *  (the chevron is folded into the tab-bar row, which a chat-only host
      *  does not render at all). */
     mobileBackLabelKey?: AgentI18nKey;
   };
+  /** The toggleable tool keys of this kind's assistant profiles (the keys of a
+   *  profile's `toolSet`). The shared profile modal renders its toggles from
+   *  here, so it never branches on the kind. */
+  toolKeys: readonly string[];
   bufferSpecs: AgentHostBufferSpec[];
   /** AS-6c-i: the transport — the send/observe API seam. Every agent-turn
    *  call the shell (session load/switch/new/rename, context pins, message

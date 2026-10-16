@@ -15,9 +15,11 @@ import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { updateScript } from "./script-api.js";
 
-/** `GET /api/copilot/profiles` — built-in seed first, then user profiles. */
-export async function listCopilotProfiles(): Promise<CopilotProfile[]> {
-  const response = await client.api.copilot.profiles.$get();
+/** `GET /api/copilot/profiles?kind=` — the requested kind's built-in seed
+ *  first, then that kind's user profiles (AS-8b: the kind param is required —
+ *  the modal must never show another kind's profiles). */
+export async function listCopilotProfiles(kind: string): Promise<CopilotProfile[]> {
+  const response = await client.api.copilot.profiles.$get({ query: { kind } });
   const data = await unwrapRpc(response);
   return data.profiles;
 }

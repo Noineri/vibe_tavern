@@ -1808,7 +1808,7 @@
 	"script_template_group_dice": "Dice-script templates",
 	"script_import": "Import Script",
 	"script_no_scripts": "No scripts in this scope",
-	"script_ai_helper": "AI Helper",
+	"script_ai_helper": "AI assistant",
 	"script_ai_connection": "Provider",
 	"script_ai_model": "Model",
 	"script_ai_prompt": "Describe what the script should do...",

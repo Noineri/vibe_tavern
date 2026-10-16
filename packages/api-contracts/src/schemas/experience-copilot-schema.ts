@@ -29,8 +29,11 @@ import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js"
  * Which buffer a copilot proposed edit lands on. Drives which editor surface
  * shows the diff (the rules editor vs the visual editor). Mirrors
  * `CoauthorTarget` ("profile" | "greeting") for the two co-author surfaces.
+ * AS-8b adds `"code"` — the script kind's single buffer (its `write_buffer`/
+ * `edit_buffer` results carry `target: "code"`); the experience kind never
+ * emits it, so the union only grows for the kind that uses it.
  */
-export const experienceCopilotTargetSchema = z.enum(["rules", "visual"]);
+export const experienceCopilotTargetSchema = z.enum(["rules", "visual", "code"]);
 export type ExperienceCopilotTarget = z.infer<typeof experienceCopilotTargetSchema>;
 
 /**
@@ -131,6 +134,16 @@ export const experienceCopilotStreamRequestSchema = z
     step: experienceCopilotStepSchema.optional(),
     rules: z.string().max(200_000).optional(),
     visual: z.string().max(200_000).optional(),
+    // AS-8b — the script kind's live-buffer fields. `code` is the LIVE editor
+    // buffer (never a stale DB read — the model must see the user's unsaved
+    // edits, exactly like `rules`/`visual` for the experience kind);
+    // `scriptKind` is ADVISORY telemetry (the STORED script kind is the
+    // authoritative selector for the API-knowledge section — immutable after
+    // creation, so a mismatching advisory is ignored, never fatal);
+    // `codeSaved` mirrors `rulesSaved`/`visualSaved`.
+    code: z.string().max(200_000).optional(),
+    scriptKind: z.enum(["prompt", "dice"]).optional(),
+    codeSaved: z.boolean().optional(),
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),

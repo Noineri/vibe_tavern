@@ -25,7 +25,7 @@ useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
-import type { CopilotProfile, CopilotProfileCreate, CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
+import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotProfileCreate, type CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
 const realI18nContext = await import("../../../i18n/context.js");
@@ -58,6 +58,24 @@ const USER: CopilotProfile = {
 };
 
 const ALL_PROFILES = [BUILTIN, USER];
+
+const SCRIPT_BUILTIN: CopilotProfile = {
+	id: "builtin",
+	name: "Script Authoring",
+	isBuiltIn: true,
+	basePrompt: "You author scripts.",
+	toolSet: { write_buffer: true, edit_buffer: true, run_script_test: true },
+	agentKind: "script",
+};
+
+const SCRIPT_USER: CopilotProfile = {
+	id: "cprof_script_1",
+	name: "Dice helpers",
+	isBuiltIn: false,
+	basePrompt: "You help author dice scripts.",
+	toolSet: { write_buffer: true, run_script_test: true },
+	agentKind: "script",
+};
 
 const listCopilotProfiles = mock(() => Promise.resolve(ALL_PROFILES));
 const createCopilotProfile = mock(async (_input: CopilotProfileCreate) => USER);
@@ -132,6 +150,11 @@ mock.module("../destructive-confirm-modal.js", () => ({
 
 let AgentProfileModal: typeof import("./AgentProfileModal.js").AgentProfileModal;
 beforeAll(async () => {
+	// The modal reads the toggleable tool keys from the registered host
+	// descriptor; importing the real host modules registers both kinds (this
+	// file never unregisters them — the worker isolates the module registry).
+	await import("../../build/editors/copilot/experience-agent-host.js");
+	await import("../../build/editors/script-agent-host.js");
 	({ AgentProfileModal } = await import("./AgentProfileModal.js"));
 });
 
@@ -157,9 +180,10 @@ afterEach(() => {
 	useCopilotSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
 });
 
-function renderModal(over: { scriptId?: string; assignedProfileId?: string | null } = {}) {
+function renderModal(over: { scriptId?: string; agentKind?: string; assignedProfileId?: string | null } = {}) {
 	const props = {
 		scriptId: "script-1",
+		agentKind: "experience",
 		assignedProfileId: null,
 		isOpen: true,
 		onClose: mock(),
@@ -278,6 +302,45 @@ describe("CopilotProfileModal — edit user profile", () => {
 		expect(getByText("copilot_profile_tools")).toBeDefined();
 		// The skill catalog RPC was profile-toggle-only wiring — never called.
 		expect(listCopilotSkills).not.toHaveBeenCalled();
+	});
+});
+
+describe("CopilotProfileModal — host-owned tool keys", () => {
+	// The tool toggles are the buttons inside the tools field, in render order.
+	function renderedToolKeys(getByText: (text: string) => HTMLElement): string[] {
+		const field = getByText("copilot_profile_tools").parentElement;
+		return Array.from(field?.querySelectorAll("button") ?? []).map((b) => b.textContent ?? "");
+	}
+
+	it("an experience modal lists exactly COPILOT_TOOL_KEYS, in order", async () => {
+		const { getByTestId, getByText } = renderModal({ agentKind: "experience" });
+		await flush(getByTestId);
+		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		expect(renderedToolKeys(getByText)).toEqual([...COPILOT_TOOL_KEYS]);
+	});
+
+	it("a script modal lists the script tool toggles and none of the experience-only ones", async () => {
+		listCopilotProfiles.mockResolvedValue([SCRIPT_BUILTIN, SCRIPT_USER]);
+		const { getByTestId, getByText } = renderModal({ agentKind: "script" });
+		await flush(getByTestId);
+		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_script_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		const keys = renderedToolKeys(getByText);
+		expect(keys).toEqual([...SCRIPT_AGENT_TOOL_KEYS]);
+		expect(keys).toContain("run_script_test");
+		expect(keys).not.toContain("run_simulate");
+		expect(keys).not.toContain("suggest_visual_binding");
+	});
+
+	it("the read-only view of a script profile projects through the script keys", async () => {
+		listCopilotProfiles.mockResolvedValue([SCRIPT_BUILTIN, SCRIPT_USER]);
+		const { getByTestId, getByText, queryByText } = renderModal({ agentKind: "script" });
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-view-duplicate-btn")).toBeDefined());
+		expect(getByText("run_script_test")).toBeDefined();
+		expect(queryByText("run_test")).toBeNull();
 	});
 });
 

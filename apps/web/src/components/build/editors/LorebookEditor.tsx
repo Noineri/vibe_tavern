@@ -33,6 +33,7 @@ import {
 } from "./use-lorebook-editor-state.js";
 import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
 import { useScriptPanel } from "./ScriptEditor.js";
+import { LorebookEditorView } from "./lorebook-editor-view.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
 import { LorebookScopePanel } from "./LorebookScopePanel.js";
@@ -853,38 +854,30 @@ export function LorebookEditor({
 
           {/* Editor */}
           {view === "editor" && (
-            <div className="animate-[lbFadeIn_250ms_ease-out] flex min-h-0 flex-1 flex-col overflow-hidden">
-              {editorHeader}
-              <div
-                className="min-h-0 flex-1 overflow-y-auto"
-                style={{
-                  padding: "12px",
-                  paddingBottom:
-                    "calc(2rem + env(safe-area-inset-bottom, 0px))",
-                  WebkitOverflowScrolling: "touch",
-                  overflowAnchor: "none",
-                }}
-              >
-                {tab === "lorebooks" && activeEntry ? (
-                  <FormProvider {...form}>
-                    <LoreEntryEditor
-                      entryId={activeEntry.id}
-                      lorebookId={activeLorebookIdForEntry!}
-                      existingGroups={existingGroups}
-                      onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
-                      onDeleted={() => {
-                        setActiveEntryId(null);
-                        setView("list");
-                      }}
-                      isMobile={isMobile}
-                      t={t}
-                    />
-                  </FormProvider>
-                ) : (
-                  scriptPanel.scriptEditorPanel
-                )}
-              </div>
-            </div>
+            <LorebookEditorView
+              editorHeader={editorHeader}
+              agentPanel={scriptPanel.scriptAgentPanel}
+              isMobile={isMobile}
+            >
+              {tab === "lorebooks" && activeEntry ? (
+                <FormProvider {...form}>
+                  <LoreEntryEditor
+                    entryId={activeEntry.id}
+                    lorebookId={activeLorebookIdForEntry!}
+                    existingGroups={existingGroups}
+                    onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
+                    onDeleted={() => {
+                      setActiveEntryId(null);
+                      setView("list");
+                    }}
+                    isMobile={isMobile}
+                    t={t}
+                  />
+                </FormProvider>
+              ) : (
+                scriptPanel.scriptEditorPanel
+              )}
+            </LorebookEditorView>
           )}
         </>
       ) : (
@@ -917,34 +910,30 @@ export function LorebookEditor({
           )}
 
           {view === "editor" && (
-            <div className="animate-[lbFadeIn_250ms_ease-out] flex min-h-0 flex-1 flex-col overflow-hidden">
-              {editorHeader}
-              <div className="flex min-h-0 flex-1 overflow-hidden">
-                <div
-                  className="min-h-0 flex-1 overflow-y-auto"
-                  style={{ padding: "24px 32px" }}
-                >
-                  {tab === "lorebooks" && activeEntry ? (
-                    <FormProvider {...form}>
-                      <LoreEntryEditor
-                        entryId={activeEntry.id}
-                        lorebookId={activeLorebookIdForEntry!}
-                        existingGroups={existingGroups}
-                        onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
-                        onDeleted={() => {
-                          setActiveEntryId(null);
-                          setView("list");
-                        }}
-                        isMobile={isMobile}
-                        t={t}
-                      />
-                    </FormProvider>
-                  ) : (
-                    scriptPanel.scriptEditorPanel
-                  )}
-                </div>
-              </div>
-            </div>
+            <LorebookEditorView
+              editorHeader={editorHeader}
+              agentPanel={scriptPanel.scriptAgentPanel}
+              isMobile={isMobile}
+            >
+              {tab === "lorebooks" && activeEntry ? (
+                <FormProvider {...form}>
+                  <LoreEntryEditor
+                    entryId={activeEntry.id}
+                    lorebookId={activeLorebookIdForEntry!}
+                    existingGroups={existingGroups}
+                    onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
+                    onDeleted={() => {
+                      setActiveEntryId(null);
+                      setView("list");
+                    }}
+                    isMobile={isMobile}
+                    t={t}
+                  />
+                </FormProvider>
+              ) : (
+                scriptPanel.scriptEditorPanel
+              )}
+            </LorebookEditorView>
           )}
         </>
       )}
