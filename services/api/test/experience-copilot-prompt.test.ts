@@ -585,7 +585,7 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
     expect(result.systemMessage).not.toContain("Proposal review outcomes");
     expect(result.systemMessage).not.toContain("Buffer save status");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
+      .toBe("2b87af5109b3dd583dc4c4d84d212c24ef656b0f4b99a4ab8efcea1c7f97b6f6");
   });
 });
 
@@ -644,7 +644,7 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // interactive-rules.md "Sandbox bounds" section became "Runtime surface
     // bounds" — security-implying wording removed; surface facts unchanged.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
+      .toBe("2b87af5109b3dd583dc4c4d84d212c24ef656b0f4b99a4ab8efcea1c7f97b6f6");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -772,7 +772,7 @@ describe("assembleExperienceCopilotPrompt — agent plan section (PM-3)", () => 
     });
     expect(result.systemMessage).not.toContain("# Plan");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
+      .toBe("2b87af5109b3dd583dc4c4d84d212c24ef656b0f4b99a4ab8efcea1c7f97b6f6");
   });
 
   test("the plan section renders task statuses and only the active task body", async () => {
@@ -839,7 +839,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // docs-honesty unit): interactive-rules.md runtime-surface rewording —
     // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
+      .toBe("2b87af5109b3dd583dc4c4d84d212c24ef656b0f4b99a4ab8efcea1c7f97b6f6");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

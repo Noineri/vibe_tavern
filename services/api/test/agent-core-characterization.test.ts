@@ -8,7 +8,10 @@
  *
  * What is REUSED from existing pins (not duplicated here):
  * - experience-copilot-prompt.test.ts — zero-plan/zero-digest/zero-attached
- *   byte-identity (SHA-256 `8fd6032e…`), the SS-4B untrusted skip-note
+ *   byte-identity (SHA-256 `2b87af51…`; re-captured 2026-10-16 with this
+ *   file's fixture for an intentional prompt change — base.md gained the
+ *   observation limits + specialist-skill routing, interactive-visual.md the
+ *   HTML/CSS-first rule and the wiring-only note), the SS-4B untrusted skip-note
  *   contains-pins, and the plan-section rendering contains-pins.
  * - experience-copilot-tools.test.ts — "all ten tools are present by default"
  *   (builder-level key list) and the full SS-4B refusal/marker suite.
