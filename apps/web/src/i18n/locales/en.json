@@ -3088,6 +3088,7 @@
 	"experience_editor_bind_disabled_hint": "Save the rules and the visual first — binding needs saved records",
 	"experience_editor_bind_visual": "Bind this visual to these rules",
 	"experience_editor_bind_visual_short": "Bind",
+	"experience_card_export": "Export",
 	"experience_editor_export": "Export mini-app (.vtapp.json file)",
 	"experience_editor_import": "Import mini-app from a .vtapp.json file",
 	"experience_editor_import_error": "Import failed",

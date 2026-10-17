@@ -529,6 +529,18 @@ function experienceDeleteButton(container: HTMLElement): HTMLElement {
   return btn;
 }
 
+/** Open a card "..." menu via keyboard (see the export test's note on the
+ *  happy-dom pointer-event gap) and click one of its dropdown items. */
+async function clickCardMenuItem(
+  menu: HTMLElement,
+  findByTestId: (testId: string) => Promise<HTMLElement>,
+  itemTestId: string,
+): Promise<void> {
+  menu.focus();
+  fireEvent.keyDown(menu, { key: "Enter", code: "Enter" });
+  fireEvent.click(await findByTestId(itemTestId));
+}
+
 /** The open experience-delete confirm's primary (full) button (bg-danger). */
 async function waitForExperienceDeleteConfirm(): Promise<HTMLElement> {
   let confirm: HTMLElement | undefined;
@@ -2081,6 +2093,14 @@ describe("ExperienceEditor — mini-app import/export", () => {
   });
 
   it("exports the card as a bundle download (script + bound visuals)", async () => {
+    // Behavior change (owner 2026-10-18 option A): was — the card's lone
+    // download arrow (experience_export_button); now — the card's "..." menu
+    // (experience_card_menu) holding the Export item (experience_card_export).
+    // The menu is a Radix DropdownMenu whose Content does not open on mouse
+    // clicks under happy-dom (pointer-event gap; same family as the limitation
+    // documented in RichChatRow.test.tsx), so the test opens it via keyboard
+    // (focus + Enter) — the same Root/Content/Item tree production mouse
+    // users get — then clicks the item.
     serverScripts = [{ ...baseScript, defaultVisualId: "vis_1" }];
     getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
     const createObjectURL = mock((_blob: Blob) => "blob:mock");
@@ -2093,7 +2113,10 @@ describe("ExperienceEditor — mini-app import/export", () => {
     try {
       const { findByTestId, findByText } = render(<ExperienceEditor />);
       await findByText("Existing Rules");
-      fireEvent.click(await findByTestId("experience_export_button"));
+      const menu = await findByTestId("experience_card_menu");
+      menu.focus();
+      fireEvent.keyDown(menu, { key: "Enter", code: "Enter" });
+      fireEvent.click(await findByTestId("experience_card_export"));
       await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
       expect(getScriptVisuals).toHaveBeenCalledWith("srv_1");
       const blob = createObjectURL.mock.calls[0][0] as Blob;
@@ -2108,6 +2131,81 @@ describe("ExperienceEditor — mini-app import/export", () => {
       if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
       if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
     }
+  });
+
+  it("card menu Delete opens the confirm; confirm deletes the script and the card's first bound visual", async () => {
+    serverScripts = [{ ...baseScript }, { ...baseScript, id: "srv_2", name: "Second Rules" }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockImplementation(async (id) =>
+      id === "srv_1" ? [{ ...baseVisual }] : [],
+    );
+    const { findAllByTestId, findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+    await findByText("Second Rules");
+
+    await clickCardMenuItem((await findAllByTestId("experience_card_menu"))[0]!, findByTestId, "experience_card_delete");
+    fireEvent.click(await waitForExperienceDeleteConfirm());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    // The deleted card is gone; the gallery otherwise stands as it was.
+    await waitFor(() => expect(queryByText("Existing Rules")).toBeNull());
+    expect(queryByText("Second Rules")).toBeTruthy();
+    expect(deleteScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("card menu Delete with \"rules only\" deletes the script but keeps the card's visual", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
+    const { findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+
+    await clickCardMenuItem(await findByTestId("experience_card_menu"), findByTestId, "experience_card_delete");
+    fireEvent.click(await waitForExperienceDeleteSecondary());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+    expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
+    await waitFor(() => expect(queryByText("Existing Rules")).toBeNull());
+  });
+
+  it("card menu Duplicate opens the editor on a pending copy", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+
+    await clickCardMenuItem(await findByTestId("experience_card_menu"), findByTestId, "experience_card_duplicate");
+
+    // The copy opens in the editor exactly like the bar's duplicate: a fresh
+    // pending local-id draft carrying the card display's values, editor view
+    // mounted (the picker is gone).
+    const dup = rulesDraftEntries().find(([id, entry]) => id.startsWith("local:") && entry.values.code === EXISTING_CODE);
+    expect(dup).toBeTruthy();
+    expect(dup?.[1].values.name).toBe("Existing Rules");
+    expect(dup?.[1].values.enabled).toBe(false);
+    await waitFor(() => expect(queryByText("experience_editor_create_new")).toBeNull());
+  });
+
+  it("the bar's delete still targets the active script and visual", async () => {
+    // Covered in part by the IR-90A bar tests above; this pins the TARGET:
+    // with two cards in the gallery and the first open, the bar deletes the
+    // ACTIVE pair and leaves the other card standing.
+    serverScripts = [{ ...baseScript }, { ...baseScript, id: "srv_2", name: "Second Rules" }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockImplementation(async (id) =>
+      id === "srv_1" ? [{ ...baseVisual }] : [],
+    );
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    fireEvent.click(experienceDeleteButton(container));
+    fireEvent.click(await waitForExperienceDeleteConfirm());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    await waitFor(() => expect(queryByText("Second Rules")).toBeTruthy());
+    expect(queryByText("Existing Rules")).toBeNull();
   });
 });
 

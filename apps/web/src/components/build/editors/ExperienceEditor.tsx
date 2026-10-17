@@ -88,8 +88,7 @@ import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/Ex
 import { ExperienceCreationStepper } from "./experience-creation-stepper.js";
 import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
 import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
-import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
-import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
+import { ExperienceGalleryCard, firstExistingBoundVisual } from "./experience-gallery-card.js";
 import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
 import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
@@ -155,13 +154,15 @@ export function ExperienceEditor() {
   const [visualDeleteId, setVisualDeleteId] = useState<string | null>(null);
   const [visualDeleteError, setVisualDeleteError] = useState<string | null>(null);
 
-  // IR-90A: explicit destructive delete for the ACTIVE rules script (the
-  // experience's identity). Dual-action confirm mirrors chat message deletion:
-  // the primary deletes BOTH the script and the active visual; the secondary
+  // IR-90A: explicit destructive delete for a rules script (the
+  // experience's identity), targeted by id — the editor bar targets the ACTIVE
+  // script + visual, a gallery card targets its own script + first bound
+  // visual. Dual-action confirm mirrors chat message deletion:
+  // the primary deletes BOTH the script and the targeted visual; the secondary
   // ("rules only") deletes just the script. A failed delete surfaces the error
   // and keeps what it can (never silently dropped). Reachable only for a saved
   // (non-local) script — an unsaved draft is discarded by navigating back.
-  const [experienceDeleteOpen, setExperienceDeleteOpen] = useState(false);
+  const [experienceDeleteTarget, setExperienceDeleteTarget] = useState<{ scriptId: string; visualId: string | null } | null>(null);
 
   // ER-13d-2a: persist-on-create. The "create" entry persists a fresh script
   // (enabled=false) immediately, so a server id exists from step 1 and the
@@ -253,7 +254,7 @@ export function ExperienceEditor() {
   const openScript = useCallback((scriptId: string) => {
     setActiveScriptId(scriptId);
     const bound = boundVisuals[scriptId] ?? [];
-    const firstExisting = bound.find((v) => visuals.some((av) => av.id === v.id));
+    const firstExisting = firstExistingBoundVisual(bound, visuals);
     setActiveVisualId(firstExisting?.id ?? null);
   }, [boundVisuals, visuals]);
 
@@ -265,7 +266,7 @@ export function ExperienceEditor() {
     if (activeVisualId !== null) return;
     const bound = boundVisuals[activeScriptId];
     if (!bound || bound.length === 0) return;
-    const first = bound.find((v) => visuals.some((av) => av.id === v.id));
+    const first = firstExistingBoundVisual(bound, visuals);
     if (first) setActiveVisualId(first.id);
   }, [activeScriptId, activeVisualId, boundVisuals, visuals]);
 
@@ -526,13 +527,12 @@ export function ExperienceEditor() {
   };
 
   /** Duplicate the rules buffer as a fresh untrusted draft inheriting the source's origin (decision 9). */
-  const handleDuplicateScript = () => {
-    if (!activeScript) return;
+  const handleDuplicateScript = (source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code" | "origin">) => {
     const values = duplicateRulesValues({
-      name: activeScript.name,
-      description: activeScript.description,
-      code: activeScript.code,
-      origin: activeScript.origin,
+      name: source.name,
+      description: source.description,
+      code: source.code,
+      origin: source.origin,
     });
     setActiveScriptId(createPendingRules(values));
   };
@@ -582,7 +582,7 @@ export function ExperienceEditor() {
     }
   }, [activeVisualId, allVisuals, removeVisualDraft]);
 
-  /** IR-90A: delete the active rules script (and optionally the active visual).
+  /** IR-90A: delete the targeted rules script (and optionally the targeted visual).
    *  The script is the experience's identity at the asset level; deleting it
    *  makes every chat config referencing it scriptless automatically (the DB
    *  FK is `onDelete: set null`, and `ExperienceAssignment` detects the stale
@@ -597,12 +597,12 @@ export function ExperienceEditor() {
    *  surviving resource is kept and the error is surfaced (same pattern as
    *  the visual delete). */
   const handleDeleteExperience = useCallback(async (mode: "full" | "rules") => {
-    if (!activeScriptId || isLocalId(activeScriptId)) return;
-    setExperienceDeleteOpen(false);
+    if (!experienceDeleteTarget || isLocalId(experienceDeleteTarget.scriptId)) return;
+    setExperienceDeleteTarget(null);
     setVisualDeleteError(null);
-    const scriptId = activeScriptId;
-    const visualId = mode === "full" && activeVisualId !== null && !isLocalId(activeVisualId)
-      ? activeVisualId
+    const scriptId = experienceDeleteTarget.scriptId;
+    const visualId = mode === "full" && experienceDeleteTarget.visualId !== null && !isLocalId(experienceDeleteTarget.visualId)
+      ? experienceDeleteTarget.visualId
       : null;
 
     try {
@@ -625,11 +625,15 @@ export function ExperienceEditor() {
         setVisualDeleteError(errorMessage(error));
       }
     }
-    setActiveScriptId(null);
-    setActiveVisualId(null);
-    setCreatingScriptId(null);
-    setChosenRulesStarterId(null);
-  }, [activeScriptId, activeVisualId, removeScriptDraft, removeVisualDraft]);
+    // A card delete from the gallery leaves the gallery as it is — the active
+    // selection clears only when the deleted script was the active one.
+    if (scriptId === activeScriptId) {
+      setActiveScriptId(null);
+      setActiveVisualId(null);
+      setCreatingScriptId(null);
+      setChosenRulesStarterId(null);
+    }
+  }, [experienceDeleteTarget, activeScriptId, removeScriptDraft, removeVisualDraft]);
 
   // ── Saves ────────────────────────────────────────────────────────────────
   const handleSaveRules = useCallback(async () => {
@@ -717,6 +721,21 @@ export function ExperienceEditor() {
   }, { enabled: !!activeScriptId && scriptDirty && scriptSaveState !== "saving" });
 
   // ── Picker / list view ───────────────────────────────────────────────────
+  // IR-90A: dual-action destructive delete for an experience (its rules
+  // script). Shared by the editor bar (targets the ACTIVE pair) and the
+  // gallery cards (each targets its own script + first bound visual), so the
+  // confirm mounts in BOTH the picker and editor views below.
+  const deleteConfirmModal = experienceDeleteTarget && (
+    <DestructiveConfirmModal
+      title={t("experience_editor_delete_title")}
+      body={t("experience_editor_delete_body")}
+      confirmLabel={t("experience_editor_delete_full")}
+      onConfirm={() => void handleDeleteExperience("full")}
+      onCancel={() => setExperienceDeleteTarget(null)}
+      secondaryLabel={experienceDeleteTarget.visualId ? t("experience_editor_delete_rules_only") : undefined}
+      onSecondary={experienceDeleteTarget.visualId ? () => void handleDeleteExperience("rules") : undefined}
+    />
+  );
   if (!activeScript) {
     return (
       <>
@@ -791,7 +810,6 @@ export function ExperienceEditor() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
-              const firstBoundVisual = (boundVisuals[script.id] ?? [])[0] ?? null;
               const isDraft = isLocalId(script.id);
               const statusKey = isDraft
                 ? "experience_editor_card_draft_tooltip"
@@ -804,67 +822,28 @@ export function ExperienceEditor() {
                   ? "bg-success"
                   : "bg-t4";
               return (
-                <div
+                <ExperienceGalleryCard
                   key={script.id}
-                  className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
-                >
-                  <button
-                    type="button"
-                    className="flex w-full cursor-pointer flex-col text-left"
-                    onClick={() => openScript(script.id)}
-                  >
-                    <ExperienceCardPreview visualSource={firstBoundVisual?.source ?? null} />
-                    <div className="p-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <CustomTooltip content={t(statusKey)}>
-                          <span
-                            aria-label={t(statusKey)}
-                            data-testid="card-status-dot"
-                            className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
-                          />
-                        </CustomTooltip>
-                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                      </div>
-                      <div
-                        data-testid="card-description"
-                        className="mt-2 min-h-[3.25em] font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
-                      >
-                        {display.description && <div className="line-clamp-2">{display.description}</div>}
-                      </div>
-                    </div>
-                  </button>
-                  {!isLocalId(script.id) && (
-                    <div className="flex items-stretch border-t border-border">
-                      <div className="min-w-0 flex-1 px-3 py-2">
-                        <ExperienceVisualBinding
-                          bound={boundVisuals[script.id] ?? []}
-                          available={visuals}
-                          onToggle={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
-                        />
-                      </div>
-                      {/* Mini-app export: the same card payload the binding
-                          strip shows — script + bound visuals + primary. */}
-                      <div className="flex shrink-0 items-center border-l border-border px-2">
-                        <CustomTooltip content={t("experience_editor_export")}>
-                          <button
-                            type="button"
-                            aria-label={t("experience_editor_export")}
-                            data-testid="experience_export_button"
-                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                            onClick={() => void handleExportMiniApp(script)}
-                          >
-                            <Ic.download />
-                          </button>
-                        </CustomTooltip>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  script={script}
+                  display={display}
+                  isDraft={isDraft}
+                  statusKey={statusKey}
+                  dotClass={dotClass}
+                  bound={boundVisuals[script.id] ?? []}
+                  available={visuals}
+                  isMobile={isMobile}
+                  onOpen={openScript}
+                  onToggleVisual={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
+                  onExport={() => void handleExportMiniApp(script)}
+                  onDuplicate={() => handleDuplicateScript(display)}
+                  onDelete={(target) => setExperienceDeleteTarget(target)}
+                />
               );
             })}
           </div>
         )}
       </div>
+      {deleteConfirmModal}
       </>
     );
   }
@@ -908,8 +887,8 @@ export function ExperienceEditor() {
       isMobile={isMobile}
       resetKey={activeScriptId}
       onSave={() => void handleSaveRules()}
-      onDuplicate={handleDuplicateScript}
-      onDelete={() => setExperienceDeleteOpen(true)}
+      onDuplicate={() => { if (activeScript) handleDuplicateScript(activeScript); }}
+      onDelete={() => { if (activeScriptId) setExperienceDeleteTarget({ scriptId: activeScriptId, visualId: activeVisualId }); }}
       canDelete={!isNewScript}
     />
   );
@@ -1254,17 +1233,7 @@ export function ExperienceEditor() {
 
       {/* IR-90A: dual-action destructive delete for the active experience (its
           rules script). */}
-      {experienceDeleteOpen && (
-        <DestructiveConfirmModal
-          title={t("experience_editor_delete_title")}
-          body={t("experience_editor_delete_body")}
-          confirmLabel={t("experience_editor_delete_full")}
-          onConfirm={() => void handleDeleteExperience("full")}
-          onCancel={() => setExperienceDeleteOpen(false)}
-          secondaryLabel={activeVisualId ? t("experience_editor_delete_rules_only") : undefined}
-          onSecondary={activeVisualId ? () => void handleDeleteExperience("rules") : undefined}
-        />
-      )}
+      {deleteConfirmModal}
 
       {/* SS-7/7B4: explicit enable and validation warnings. Only one can be
           open — the discriminated flow renders plain when there are no blocking

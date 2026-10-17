@@ -3130,6 +3130,7 @@
 	"experience_editor_bind_disabled_hint": "Сначала сохраните правила и визуал — привязке нужны сохранённые записи",
 	"experience_editor_bind_visual": "Привязать визуал к этим правилам",
 	"experience_editor_bind_visual_short": "Привязать",
+	"experience_card_export": "Экспортировать",
 	"experience_editor_export": "Экспорт мини-приложения (файл .vtapp.json)",
 	"experience_editor_import": "Импорт мини-приложения из файла .vtapp.json",
 	"experience_editor_import_error": "Не удалось импортировать",
