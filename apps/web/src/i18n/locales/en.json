@@ -1841,6 +1841,7 @@
 	"script_links_empty": "No characters or personas available.",
 	"script_unbound_warning": "Bound to nobody — never runs",
 	"script_code_label": "Code",
+	"script_tab_check": "Test",
 	"script_test_input_placeholder": "Type a message to simulate...",
 	"script_test_error": "Error",
 	"script_import_title": "Import Script",

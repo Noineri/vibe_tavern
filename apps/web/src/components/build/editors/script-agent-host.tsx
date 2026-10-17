@@ -10,7 +10,7 @@ import { Ic } from "../../shared/icons.js";
 import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type { ScriptDraftSaveState, ScriptDraftValues } from "../../../stores/script-draft-store.js";
-import { ScriptEditingSurface } from "./script-editing-surface.js";
+import { ScriptAgentEditorTabs } from "./script-agent-editor-pane.js";
 import {
   allReviewHunkIds,
   applyHunksToBuffer,
@@ -41,16 +41,17 @@ import {
  * `AgentShell` (the experience host is the structural template). Everything
  * the shell deliberately does not know lives here: the single `code` buffer's
  * hunk review (decorations JOIN the AS-8a `scriptSafetyExtensions` seam — the
- * editing surface itself is untouched except its `codeReadOnly` freeze while
- * a review round shows the proposed document), the per-turn send options
+ * tabbed editor pane freezes via its `codeReadOnly` prop while a review round
+ * shows the proposed document), the per-turn send options
  * (`{ code, scriptKind, codeSaved }` — the LIVE merged draft, never a stale
  * DB read), the desktop back-to-plain-editor control in the chat header
  * (the shell's `toolbarSlot`), and the transport (the script client).
  *
  * The wrapper (`useScriptPanel`, ScriptEditor.tsx) builds the host props from
- * the SAME state the plain-mode panel renders — the surface is byte-identical
- * in both modes. `renderEditorPane`/`toolbarSlot` narrow the opaque
- * `ctx.hostProps` here (wrapper and host are a pair).
+ * the SAME state the plain-mode panel renders — the agent pane renders them
+ * through the tabbed `ScriptAgentEditorTabs` clone (Code/Test) while the
+ * plain editor keeps its own surface. `renderEditorPane`/`toolbarSlot` narrow
+ * the opaque `ctx.hostProps` here (wrapper and host are a pair).
  *
  * REVIEW-ROUND STORE MAPPING (interim, documented): the round store's slots
  * are experience-flavored (`rules`/`visual`); the script kind rides its ONE
@@ -448,84 +449,68 @@ function ScriptAgentEditorPane({
 
   // While a review round is open the editor shows the PROPOSED document
   // (frozen — hand-editing during review is the conflict path, CD-8); the
-  // wrapper's own AI assistant toolbar button stays in place (the surface is
-  // byte-identical) but is inert in agent mode — the mode is already active.
+  // agent pane is the tabbed Code/Test clone (AS-8c2) — its toolbar holds
+  // only templates + the API reference (no AI-helper button: already active).
   const reviewedScript = review !== null ? { ...hostProps.activeScript, code: review.proposed } : hostProps.activeScript;
 
-  /* Container approach cloned from the experience host pane: the pane root is
-     the single scroll document on mobile (max-md:overflow-y-auto; the inner
-     wrapper goes natural-height max-md:flex-none) and the inner-scroll flex
-     remainder on desktop — the editing surface is one long document, exactly
-     like the plain editor's own scroll container. */
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg max-md:overflow-y-auto">
-      {review !== null && (
-        <div
-          data-testid="copilot-review-bar"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-1.5"
+  /* Layout cloned from the experience host pane: the tab strip + toolbar stay
+     pinned as shrink-0 rows while the code area is the inner-scroll flex
+     remainder on desktop; on mobile the pane root is the single scroll
+     document (the code container goes natural-height max-md:flex-none) —
+     the same single-document contract the model pane keeps. */
+  const reviewBar = review !== null ? (
+    <div
+      data-testid="copilot-review-bar"
+      className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-1.5"
+    >
+      <span data-testid="copilot-review-count" className="font-ui text-xs text-t2">
+        {t("copilot_review_hunks_count", { n: review.pendingCount })}
+      </span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          data-testid="copilot-accept-all"
+          onClick={acceptAll}
+          className="min-h-9 cursor-pointer rounded-[5px] bg-accent px-3 font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
         >
-          <span data-testid="copilot-review-count" className="font-ui text-xs text-t2">
-            {t("copilot_review_hunks_count", { n: review.pendingCount })}
-          </span>
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              data-testid="copilot-accept-all"
-              onClick={acceptAll}
-              className="min-h-9 cursor-pointer rounded-[5px] bg-accent px-3 font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
-            >
-              {t("copilot_review_accept_all")}
-            </button>
-            <button
-              type="button"
-              data-testid="copilot-dismiss-pending"
-              onClick={dismissPending}
-              className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
-            >
-              {t("copilot_review_dismiss_pending")}
-            </button>
-            <button
-              type="button"
-              data-testid="copilot-cancel-all"
-              onClick={cancelRound}
-              className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
-            >
-              {t("copilot_review_cancel_all")}
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:flex-none max-md:overflow-y-visible">
-        <ScriptEditingSurface
-          isMobile={hostProps.isMobile}
-          activeScript={reviewedScript}
-          activeScriptId={hostProps.activeScriptId}
-          draftDirty={hostProps.draftDirty}
-          draftSaveState={hostProps.draftSaveState}
-          draftError={hostProps.draftError}
-          scriptLinks={hostProps.scriptLinks}
-          linkCharacters={hostProps.linkCharacters}
-          linkPersonas={hostProps.linkPersonas}
-          apiRefOpen={hostProps.apiRefOpen}
-          scriptSafetyExtensions={surfaceExtensions}
-          codeReadOnly={review !== null}
-          characterName={hostProps.characterName}
-          onSave={hostProps.onSave}
-          onUpdateDraft={hostProps.onUpdateDraft}
-          onToggleEnabled={hostProps.onToggleEnabled}
-          onDeleteRequest={hostProps.onDeleteRequest}
-          onSetScriptLinks={hostProps.onSetScriptLinks}
-          onToggleApiRef={hostProps.onToggleApiRef}
-          onOpenAiHelper={() => {
-            /* Agent-mode arm: the assistant is already on screen — the button
-               keeps its place and look (byte-identical surface) but toggles
-               nothing here. */
-          }}
-          onAddFromTemplate={hostProps.onAddFromTemplate}
-          onRevealLine={hostProps.onRevealLine}
-        />
+          {t("copilot_review_accept_all")}
+        </button>
+        <button
+          type="button"
+          data-testid="copilot-dismiss-pending"
+          onClick={dismissPending}
+          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+        >
+          {t("copilot_review_dismiss_pending")}
+        </button>
+        <button
+          type="button"
+          data-testid="copilot-cancel-all"
+          onClick={cancelRound}
+          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+        >
+          {t("copilot_review_cancel_all")}
+        </button>
       </div>
     </div>
+  ) : null;
+  return (
+    <ScriptAgentEditorTabs
+      isMobile={hostProps.isMobile}
+      script={reviewedScript}
+      scriptId={hostProps.activeScriptId}
+      apiRefOpen={hostProps.apiRefOpen}
+      extensions={surfaceExtensions}
+      codeReadOnly={review !== null}
+      isSending={isSending}
+      reviewOpen={review !== null}
+      reviewBar={reviewBar}
+      characterName={hostProps.characterName}
+      onUpdateDraft={hostProps.onUpdateDraft}
+      onToggleApiRef={hostProps.onToggleApiRef}
+      onAddFromTemplate={hostProps.onAddFromTemplate}
+      onRevealLine={hostProps.onRevealLine}
+    />
   );
 }
 

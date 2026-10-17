@@ -2954,6 +2954,7 @@ export default interface Resources {
     "script_safety_warning_confirm_run": "Run anyway",
     "script_safety_warning_suppress": "Don't show again",
     "script_safety_warning_title": "Imported script",
+    "script_tab_check": "Test",
     "script_template_advanced_lore": "Advanced Lorebook",
     "script_template_dice": "Dice Roller (legacy)",
     "script_template_events": "Scenario Events",

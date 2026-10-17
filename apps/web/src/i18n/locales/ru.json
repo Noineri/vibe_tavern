@@ -1857,6 +1857,7 @@
 	"script_links_empty": "Нет доступных персонажей или персон.",
 	"script_unbound_warning": "Ни к кому не привязан — нигде не выполняется",
 	"script_code_label": "Код",
+	"script_tab_check": "Проверка",
 	"script_test_input_placeholder": "Введите сообщение для симуляции...",
 	"script_test_error": "Ошибка",
 	"script_import_title": "Импорт Скрипта",

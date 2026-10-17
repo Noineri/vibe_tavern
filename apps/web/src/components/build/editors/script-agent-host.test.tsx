@@ -541,3 +541,75 @@ describe("script-agent-host — trust refusal (AS-9)", () => {
     expect(queryByTestId("copilot-review-bar")).toBeNull();
   });
 });
+
+describe("script-agent-editor-tabs — Code/Test tabs (AS-8c2)", () => {
+  it("a prompt script shows Code (default, with editor) and Check (with ScriptTester) tabs", async () => {
+    const script = makeScript({ id: "script-tabs-prompt", code: BASE_CODE });
+    const utils = renderScriptShell(script);
+    await flushSessionLoad();
+
+    // Two tab radios (the shared SegmentedControl radiogroup); Code selected
+    // by default with a live CodeMirror editor mounted.
+    const codeRadio = utils.getByRole("radio", { name: "agent_code" });
+    const checkRadio = utils.getByRole("radio", { name: "script_tab_check" });
+    expect(codeRadio.getAttribute("aria-checked")).toBe("true");
+    expect(checkRadio.getAttribute("aria-checked")).toBe("false");
+    expect(document.querySelector(".cm-editor")).not.toBeNull();
+
+    // The Check tab hides the editor and shows the prompt-script tester
+    // (its input hint is ScriptTester-only — the dice tester has none).
+    fireEvent.click(checkRadio);
+    expect(codeRadio.getAttribute("aria-checked")).toBe("false");
+    expect(checkRadio.getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelector(".cm-editor")).toBeNull();
+    expect(document.body.textContent).toContain("script_test_input_hint");
+  });
+
+  it("a dice script shows the dice tester on the Check tab", async () => {
+    const script = makeScript({ id: "script-tabs-dice", scriptKind: "dice", code: "const roll = 1;" });
+    const utils = renderScriptShell(script);
+    await flushSessionLoad();
+
+    // Code is still the default tab with the editor mounted.
+    expect(utils.getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelector(".cm-editor")).not.toBeNull();
+
+    // The Check tab swaps the editor for the dice tester: no prompt-tester
+    // input hint, but the dice tester's own character field is present.
+    fireEvent.click(utils.getByRole("radio", { name: "script_tab_check" }));
+    expect(document.querySelector(".cm-editor")).toBeNull();
+    expect(document.body.textContent).not.toContain("script_test_input_hint");
+    expect(document.body.textContent).toContain("script_test_character_name");
+  });
+});
+
+describe("script-agent-editor-tabs — review dot (AS-8c2)", () => {
+  it("a write_buffer proposal lights the Code tab's pending dot", async () => {
+    const script = makeScript({ id: "script-tabs-dot", code: BASE_CODE });
+    const { queryByTestId } = renderScriptShell(script);
+    await flushSessionLoad();
+
+    // No round open — the Code tab label is the plain string (no dot).
+    expect(queryByTestId("copilot-outer-dot-code")).toBeNull();
+
+    // Reuse the AS-9 send flow: a real turn snapshots the buffer, then the
+    // model's write_buffer answer lands as the pending proposal.
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "rewrite it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("script", "script-thread-new", {
+        toolCallId: "w-dot",
+        toolName: "write_buffer",
+        status: "done",
+        target: "code",
+        proposed: PROPOSED_CODE,
+        summary: "rewrite",
+      });
+    });
+
+    await waitFor(() => expect(queryByTestId("copilot-outer-dot-code")).not.toBeNull());
+  });
+});
