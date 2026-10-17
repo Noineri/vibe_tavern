@@ -53,10 +53,12 @@ export interface AgentKind<CTX = unknown> {
    */
   readonly basePromptServiceKey: string;
   /**
-   * Which skills root feeds this kind's skill catalog — the subdirectory name
-   * under the data dir (`<dataDir>/<skillRootId>/skills`) and the matching
-   * assets root. Known values are suggested, others stay assignable so a
-   * future kind registers without touching this file.
+   * A descriptor LABEL for the kind's skill roots — nothing reads it yet. The
+   * live roots are resolved per kind in the kind's own module (the script
+   * kind's in script-agent-module.ts: assets/agent-script/skills +
+   * <dataDir>/agent-script/skills — NOT `<dataDir>/script/skills`). Known
+   * values are suggested, others stay assignable so a future kind registers
+   * without touching this file.
    */
   readonly skillRootId: "experience" | "script" | (string & {});
   /**

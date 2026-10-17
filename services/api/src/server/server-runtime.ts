@@ -33,6 +33,10 @@ import { createRuntimeStore } from "../runtime/session/session-runtime-store.js"
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
 import { createCopilotSkillService } from "../domain/interactive/copilot/copilot-skill-service.js";
 import { resolveCopilotUserSkillsRoot, resolveExperienceCopilotSkillsRoot } from "../domain/interactive/copilot/experience-copilot-module.js";
+import {
+	resolveScriptAgentSkillsRoot,
+	resolveScriptAgentUserSkillsRoot,
+} from "../domain/agent/script-agent/script-agent-module.js";
 // agent-kind registration (AS-2a): experience registers itself at startup;
 // the script kind (AS-7) registers beside it — prompt/dice threads resolve.
 import "../domain/agent/kinds/experience-kind.js";
@@ -220,6 +224,13 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		resolveCopilotUserSkillsRoot(config.dataDir),
 		await resolveExperienceCopilotSkillsRoot(),
 	);
+	// Script-agent skill library (AS-8d1) — the SAME generic service over the
+	// script-agent roots (<dataDir>/agent-script/skills + the built-in asset
+	// root), so each agent kind serves and reads its OWN skill library.
+	const scriptSkillService = new SkillLibraryService(
+		resolveScriptAgentUserSkillsRoot(config.dataDir),
+		await resolveScriptAgentSkillsRoot(),
+	);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 		dataDir: config.dataDir,
@@ -307,6 +318,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceModelEffectService,
 		experienceContextService,
 		copilotSkillService,
+		scriptSkillService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

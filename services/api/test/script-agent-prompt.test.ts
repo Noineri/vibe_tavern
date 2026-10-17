@@ -19,6 +19,9 @@
  */
 
 import { describe, test, expect } from "bun:test";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { assembleScriptAgentPrompt } from "../src/domain/agent/script-agent/script-agent-prompt.js";
@@ -304,5 +307,42 @@ describe("resolveBuiltinCopilotProfile('script') — the builtin seed", () => {
 
     const seed = await resolveBuiltinCopilotProfile("script", db);
     expect(seed.basePrompt).toBe("CUSTOM SCRIPT ASSISTANT BASE");
+  });
+});
+
+// ─── Skill catalog: the AS-8d1 user-skill root ─────────────────────────────
+
+describe("assembleScriptAgentPrompt — skillUserRoot (AS-8d1)", () => {
+  test("a SKILL.md in the passed user root appears in the script assistant's catalog section", async () => {
+    const skillRoot = await mkdtemp(join(tmpdir(), "vt-script-agent-skills-"));
+    try {
+      await mkdir(join(skillRoot, "dice-recipes"), { recursive: true });
+      await Bun.write(
+        join(skillRoot, "dice-recipes", "SKILL.md"),
+        "---\nname: dice-recipes\ndescription: Curated dice notations.\n---\n\n# dice-recipes\n",
+      );
+
+      const result = await assembleScriptAgentPrompt({
+        history: [],
+        scriptName: "Attack check",
+        scriptKind: "dice",
+        scopeType: "global",
+        ownerNames: [],
+        code: LIVE_DICE_CODE,
+        codeTrusted: true,
+        skillUserRoot: skillRoot,
+      });
+
+      // The progressive-disclosure section renders the user skill (id +
+      // description + the read_skill_file manifest path).
+      expect(result.systemMessage).toContain("# Available skills (read on demand)");
+      expect(result.systemMessage).toContain("**dice-recipes** — Curated dice notations.");
+      expect(result.systemMessage).toContain("dice-recipes/SKILL.md");
+      // The derived skill roots feed read_skill_file the same root the
+      // catalog was scanned from (the built-in script catalog is empty).
+      expect(result.skillRoots).toContain(skillRoot);
+    } finally {
+      await rm(skillRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -3,33 +3,60 @@ import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCopilotSkillRoutes } from "../src/api/routes/copilot-skill.js";
-import { CopilotSkillAdapter } from "../src/api/adapters/copilot-skill-adapter.js";
-import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
-import { listTopLevelDirs } from "../src/domain/coauthor/skills/skill-library.js";
+import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "../src/api/adapters/copilot-skill-adapter.js";
+import { SkillLibraryService, listTopLevelDirs } from "../src/domain/coauthor/skills/skill-library.js";
+import {
+  isDomainError,
+  httpStatusForDomainError,
+  domainErrorToJson,
+} from "../src/shared/errors.js";
+// Side-effect imports: register the real experience + script kinds so the
+// kind resolver routes ?kind= through the live registry (the AS-2a pattern).
+import "../src/domain/agent/kinds/experience-kind.js";
+import "../src/domain/agent/kinds/script-kind.js";
 
 /**
- * CP-5 — Copilot skill library HTTP routes. Mirrors `coauthor-skill-routes`
- * (same wire contract, same atomic import/delete semantics) against the copilot
- * roots. Uses the real SkillLibraryService against temp roots so the full
- * parse → validate → atomic-write path is exercised through the adapter.
+ * CP-5 / AS-8d1 — Copilot skill library HTTP routes. Mirrors
+ * `coauthor-skill-routes` (same wire contract, same atomic import/delete
+ * semantics) against the per-kind copilot roots. Uses the real
+ * SkillLibraryService against temp roots so the full parse → validate →
+ * atomic-write path is exercised through the adapter, and the REAL kind
+ * resolver so `?kind=` dispatch and the unknown-kind 400 are production paths.
  */
 
 const tmpRoots: string[] = [];
 let userRoot = "";
 let builtinRoot = "";
+let scriptUserRoot = "";
+let scriptBuiltinRoot = "";
 
 beforeEach(async () => {
   userRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-user-"));
   builtinRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-builtin-"));
-  tmpRoots.push(userRoot, builtinRoot);
+  scriptUserRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-script-user-"));
+  scriptBuiltinRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-script-builtin-"));
+  tmpRoots.push(userRoot, builtinRoot, scriptUserRoot, scriptBuiltinRoot);
 });
 afterEach(async () => {
   await Promise.all(tmpRoots.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
 function makeApp() {
-  const service = new SkillLibraryService(userRoot, builtinRoot);
-  return createCopilotSkillRoutes(new CopilotSkillAdapter(service));
+  const experience = new CopilotSkillAdapter(new SkillLibraryService(userRoot, builtinRoot));
+  const script = new CopilotSkillAdapter(new SkillLibraryService(scriptUserRoot, scriptBuiltinRoot));
+  const app = createCopilotSkillRoutes(
+    createCopilotSkillKindResolver(new Map([ ["experience", experience], ["script", script] ])),
+  );
+  // Mount the production DomainError → status mapping (shared helpers, not
+  // duplicated logic) so the unknown-kind 400 boundary is observable — the
+  // same pattern as copilot-profile-kind.test.ts.
+  app.onError((err, c) => {
+    if (isDomainError(err)) {
+      return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 404 | 409 | 422 | 500);
+    }
+    return c.json({ error: { kind: "Internal", message: err instanceof Error ? err.message : "error" } }, 500);
+  });
+  return app;
 }
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -113,5 +140,51 @@ describe("GET /api/copilot/skills — catalog", () => {
     expect(overview.manifestPath).toBe("profile-overview/SKILL.md");
     expect(JSON.stringify(body)).not.toContain(builtinRoot.replace(/\\/g, "/"));
     expect(JSON.stringify(body)).not.toContain(userRoot.replace(/\\/g, "/"));
+  });
+});
+
+describe("?kind= per-kind dispatch (AS-8d1)", () => {
+  test("?kind=script lists the script roots only; the default stays experience", async () => {
+    await mkdir(join(scriptUserRoot, "dice-helper"), { recursive: true });
+    await Bun.write(join(scriptUserRoot, "dice-helper", "SKILL.md"), manifest("dice-helper", "Notation recipes."));
+    await mkdir(join(userRoot, "exp-only"), { recursive: true });
+    await Bun.write(join(userRoot, "exp-only", "SKILL.md"), manifest("exp-only", "Experience side."));
+
+    const app = makeApp();
+    const scriptRes = await app.request("/api/copilot/skills?kind=script");
+    expect(scriptRes.status).toBe(200);
+    const scriptBody = await scriptRes.json();
+    expect(scriptBody.errors).toEqual([]);
+    expect(scriptBody.entries.map((e: { id: string }) => e.id)).toEqual(["dice-helper"]);
+
+    // No kind (default) and explicit ?kind=experience are the SAME list —
+    // the script skill must not leak into the experience catalog.
+    const defRes = await app.request("/api/copilot/skills");
+    const expRes = await app.request("/api/copilot/skills?kind=experience");
+    const defBody = await defRes.json();
+    const expBody = await expRes.json();
+    expect(defBody.entries.map((e: { id: string }) => e.id)).toEqual(["exp-only"]);
+    expect(expBody.entries.map((e: { id: string }) => e.id)).toEqual(["exp-only"]);
+  });
+
+  test("an import with ?kind=script lands in the script user root — not the experience one", async () => {
+    const app = makeApp();
+    const form = new FormData();
+    form.append("dice-helper/SKILL.md", new File([enc(manifest("dice-helper", "Notation recipes."))], "SKILL.md"));
+
+    const res = await app.request("/api/copilot/skills/import?kind=script", { method: "POST", body: form });
+    expect(res.status).toBe(201);
+    expect((await res.json()).importedSkillIds).toEqual(["dice-helper"]);
+
+    expect(await Bun.file(join(scriptUserRoot, "dice-helper", "SKILL.md")).text()).toContain("Notation recipes.");
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("unknown kind → 400 carrying UNKNOWN_AGENT_KIND (no silent fallback)", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills?kind=no-such-kind");
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.details?.code).toBe("UNKNOWN_AGENT_KIND");
   });
 });

@@ -31,7 +31,7 @@ import type { AutoSummaryConfig, InsightsConfig, ObjectiveMode, ObjectiveTaskSta
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
-import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { LorebookExportResult } from "@vibe-tavern/api-contracts";
 import type { CoauthorConnectionSettingsRuntimeApi } from "./coauthor-connection-contracts.js";
 export type { CoauthorConnectionSettingsRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
@@ -60,7 +60,7 @@ export type {
 } from "./experience-copilot-contracts.js";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
-export type { SkillCatalogEntryDto };
+export type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 import type {
   ServicePromptProfile,
   ServicePromptProfileListResponse,
@@ -439,29 +439,12 @@ export interface MobileAccessRuntimeApi {
 	revokeMobileAccess: () => Promise<{ token: null }>;
 }
 
-// ─── Co-Author Skills (filesystem skill libraries) ──────────────────
-// CTX-S2: import (multipart files → validated atomic tree under
-// <dataDir>/coauthor/skills) + delete one user skill directory.
-// CTX-S3: metadata-only catalog (list/read) merging built-in + user roots with
-// user precedence. Absolute filesystem paths never leave the server — only the
-// portable root-relative manifest path (`<id>/SKILL.md`) is exposed.
-
-
-export interface CoauthorSkillsRuntimeApi {
-	/** Validate + atomically import a skill tree (ordinary files with relative
-	 *  paths). Rejects unsafe paths, malformed manifests, and trees with no
-	 *  SKILL.md WITHOUT writing anything. Returns the imported skill ids. */
-	importSkills: (files: SkillImportFile[]) => Promise<SkillImportResult>;
-	/** Delete one top-level user skill directory. A user shadow of a built-in is
-	 *  deletable (removes only the user copy); a pure built-in (no user dir) is
-	 *  rejected as read-only; unsafe ids and missing ids are rejected. */
-	deleteSkill: (id: string) => Promise<{ id: string }>;
-	/** Merged metadata-only catalog (built-in + user, user precedence). Malformed
-	 *  manifests are surfaced in `errors`, never fatal. */
-	listSkills: () => Promise<{ entries: SkillCatalogEntryDto[]; errors: { source: "builtin" | "user"; id: string; reason: string }[] }>;
-	/** One catalog entry by id, or `null` if no such skill exists in either root. */
-	readSkill: (id: string) => Promise<SkillCatalogEntryDto | null>;
-}
+// Co-Author + copilot skill contracts live in their own module (extracted
+// for the size ratchet when AS-8d1 grew the per-kind seam — same pattern as
+// the siblings above); re-exported here so every existing import path keeps
+// resolving.
+import type { CoauthorSkillsRuntimeApi, CopilotSkillsByKindRuntimeApi } from "./skill-contracts.js";
+export type { CoauthorSkillsRuntimeApi, CopilotSkillsByKindRuntimeApi };
 
 // ─── Composite ──────────────────────────────────────────────────────────
 
@@ -857,8 +840,9 @@ export interface RuntimeApi extends TrackerTemplateApi {
 	importExport: ImportExportRuntimeApi;
 	asset: AssetRuntimeApi;
 	coauthorSkills: CoauthorSkillsRuntimeApi;
-	/** Copilot skills (CP-5) — same wire contract as coauthorSkills, different roots. */
-	copilotSkills: CoauthorSkillsRuntimeApi;
+	/** Copilot skills (CP-5, AS-8d1) — same wire contract as coauthorSkills,
+	 * keyed by agent kind: each kind with a skill library answers `?kind=`. */
+	copilotSkills: CopilotSkillsByKindRuntimeApi;
 	aiAssistant: AiAssistantRuntimeApi;
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;

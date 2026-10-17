@@ -30,7 +30,9 @@ import type { SceneTrackerService } from "../../domain/insights/tracker-service.
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
-import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
+import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "./copilot-skill-adapter.js";
+import type { CopilotSkillsByKindRuntimeApi } from "../contract/runtime-api.js";
+import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
@@ -81,7 +83,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
-	readonly copilotSkills: CopilotSkillAdapter;
+	readonly copilotSkills: CopilotSkillsByKindRuntimeApi;
 	readonly copilotProfiles: CopilotProfileAdapter;
 	readonly agentPlan: AgentPlanAdapter;
 	readonly samplerSets: SamplerSetAdapter;
@@ -111,6 +113,12 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		experienceModelEffectService: ExperienceModelEffectService,
 		experienceContextService: ExperienceContextService,
 		copilotSkillService: SkillLibraryService,
+		/** Script-agent skill library (AS-8d1) — the script kind's own roots
+		 * (`<dataDir>/agent-script/skills` + the built-in asset root). Optional so
+		 * lifecycle-only test harnesses can construct the adapter without it
+		 * (a `?kind=script` request then answers the same unknown-kind 400 as an
+		 * unregistered id). */
+		scriptSkillService?: SkillLibraryService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -154,7 +162,17 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
-		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
+		// AS-8d1: the copilot skill adapters keyed by agent kind — experience
+		// keeps the CP-5 copilot library; the script kind gets its own adapter
+		// over the script-agent roots (absent when no script service was wired).
+		this.copilotSkills = createCopilotSkillKindResolver(
+			new Map<AgentKindId, CopilotSkillAdapter>([
+				["experience", new CopilotSkillAdapter(copilotSkillService)],
+				...(scriptSkillService !== undefined
+					? ([["script", new CopilotSkillAdapter(scriptSkillService)]] as const)
+					: []),
+			]),
+		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.agentPlan = new AgentPlanAdapter(stores);
 		this.samplerSets = new SamplerSetAdapter(stores);
@@ -162,6 +180,11 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
-		this.experienceCopilot = new ExperienceCopilotAdapter(stores, providerProfileService, copilotSkillService);
+		this.experienceCopilot = new ExperienceCopilotAdapter(
+			stores,
+			providerProfileService,
+			copilotSkillService,
+			scriptSkillService,
+		);
 	}
 }

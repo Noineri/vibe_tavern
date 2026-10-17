@@ -74,6 +74,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
      *  two-root catalog the stream's prompt assembler scans. Optional so the
      *  lifecycle-only test harnesses can construct the adapter without it. */
     private readonly copilotSkillService?: SkillLibraryService,
+    /** Script-agent skill library (AS-8d1) — supplies the SCRIPT kind's own
+     *  user-skill root for its stream's two-root catalog scan (the experience
+     * kind never reads it). Optional so the lifecycle-only test harnesses can
+     *  construct the adapter without it. */
+    private readonly scriptSkillService?: SkillLibraryService,
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
     this.compaction = providerProfileService
@@ -221,6 +226,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // Kind-aware fallback (AS-8b): prompt/dice scripts seed the `script`
       // kind's builtin, interactive scripts the experience one.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
+      // Two-root catalog user root for the SCRIPT kind (AS-8d1 — the script
+      // service's own root, never the experience copilot one): absent →
+      // built-in root only.
+      ...(this.scriptSkillService !== undefined
+        ? { skillUserRoot: this.scriptSkillService.roots().userRoot }
+        : {}),
       db: this.stores.db,
       // Same kind-agnostic pinned-context loader as the experience wiring —
       // only wired when the skill library is present.
