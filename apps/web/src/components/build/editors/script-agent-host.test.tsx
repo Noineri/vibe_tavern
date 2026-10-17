@@ -640,6 +640,34 @@ describe("script-agent-editor-tabs — Code toolbar strip (AS-8c4e)", () => {
     expect(utils.queryByTestId("script-owner-picker")).toBeNull();
   });
 
+  it("stacks the links block below the description block as its own block (AS-8c4g)", async () => {
+    const script = makeScript({ id: "script-links-stacked", scopeType: "entity" });
+    const utils = renderScriptShell(script);
+    await flushSessionLoad();
+
+    const input = utils.getByPlaceholderText("script_desc_placeholder") as HTMLInputElement;
+    const descBlock = input.parentElement as HTMLElement | null;
+    const linksLabel = utils.getByText("script_links_label");
+    // The stub picker is the LinkBindingPopover double: links label row +
+    // picker share the links block (label row's parent).
+    const linksBlock = linksLabel.parentElement?.parentElement as HTMLElement | null;
+    expect(descBlock).not.toBeNull();
+    expect(linksBlock).not.toBeNull();
+    // Siblings in the strip: the links label is not inside the description
+    // block's row, and both blocks share the same strip parent.
+    expect(descBlock?.contains(linksLabel)).toBe(false);
+    expect(linksBlock?.parentElement).toBe(descBlock?.parentElement);
+    // No side-by-side widths left on either block.
+    expect(descBlock?.className).not.toContain("flex-1");
+    expect(linksBlock?.className).not.toContain("shrink-0");
+    // Order in the strip: description, then links, then templates.
+    const stripChildren = descBlock?.parentElement ? Array.from(descBlock.parentElement.children) : [];
+    const templatesLabel = utils.getByText("script_templates");
+    const templatesBlock = templatesLabel.parentElement as HTMLElement | null;
+    expect(stripChildren.indexOf(descBlock as Element)).toBeLessThan(stripChildren.indexOf(linksBlock as Element));
+    expect(stripChildren.indexOf(linksBlock as Element)).toBeLessThan(stripChildren.indexOf(templatesBlock as Element));
+  });
+
   it("passes bound links through and filters non-entity links on set", async () => {
     const onSetScriptLinks = mock();
     const script = makeScript({ id: "script-links-set", scopeType: "entity" });

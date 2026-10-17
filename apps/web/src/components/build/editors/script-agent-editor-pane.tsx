@@ -144,49 +144,47 @@ export function ScriptAgentEditorTabs({
       ) : (
         <>
           <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
-            {/* Description + entity-only links (layout Б, owner 2026-10-17,
-                AS-8c4e): one line on desktop (description flex-1, links block
-                shrink-0), stacked on mobile — the EXACT markup that was row 2
-                of the management bar. */}
-            <div className="flex gap-3 max-md:flex-col">
-              <div className="min-w-0 flex-1">
-                <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-                <TextInput
-                  value={script.description ?? ""}
-                  onChange={(e) => onUpdateDraft({ description: e.target.value })}
-                  placeholder={t("script_desc_placeholder")}
+            {/* Description first, then the entity-only links as a separate
+                block (owner 2026-10-17, AS-8c4g): label-above-chips is the
+                project's binding pattern (character editor, regex profile) —
+                the side-by-side layout squeezed the chips beside the input. */}
+            <div>
+              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
+              <TextInput
+                value={script.description ?? ""}
+                onChange={(e) => onUpdateDraft({ description: e.target.value })}
+                placeholder={t("script_desc_placeholder")}
+              />
+            </div>
+
+            {/* Entity scripts bind to characters/personas; global scripts run
+                unconditionally and chat scripts are chat-bound. */}
+            {script.scopeType === "entity" && (
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
+                  <CustomTooltip content={t("script_links_hint")}>
+                    <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+                  </CustomTooltip>
+                </div>
+                <LinkBindingPopover
+                  links={links}
+                  characters={linkCharacters}
+                  personas={linkPersonas}
+                  onSetLinks={(next: LinkBindingRecord[]) => {
+                    onSetScriptLinks(next
+                      .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
+                        link.targetType === "character" || link.targetType === "persona",
+                      )
+                      .map(({ targetType, targetId }) => ({ targetType, targetId })));
+                  }}
+                  t={t}
+                  isMobile={isMobile}
+                  tooltipLabel={t("script_links_add")}
+                  emptyLabel={t("script_links_empty")}
                 />
               </div>
-
-              {/* Entity scripts bind to characters/personas; global scripts run
-                  unconditionally and chat scripts are chat-bound. */}
-              {script.scopeType === "entity" && (
-                <div className="shrink-0">
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
-                    <CustomTooltip content={t("script_links_hint")}>
-                      <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
-                    </CustomTooltip>
-                  </div>
-                  <LinkBindingPopover
-                    links={links}
-                    characters={linkCharacters}
-                    personas={linkPersonas}
-                    onSetLinks={(next: LinkBindingRecord[]) => {
-                      onSetScriptLinks(next
-                        .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
-                          link.targetType === "character" || link.targetType === "persona",
-                        )
-                        .map(({ targetType, targetId }) => ({ targetType, targetId })));
-                    }}
-                    t={t}
-                    isMobile={isMobile}
-                    tooltipLabel={t("script_links_add")}
-                    emptyLabel={t("script_links_empty")}
-                  />
-                </div>
-              )}
-            </div>
+            )}
             {/* Templates — only the active script's kind (SCRIPT_EDITOR_CLEANUP step 3) */}
             <div className="flex flex-col gap-1.5">
               <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_templates")}</div>
