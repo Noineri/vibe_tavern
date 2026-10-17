@@ -79,8 +79,6 @@ import {
   simulateExperienceTest,
   startExperiencePlayground,
 } from "../../../api/experience-api.js";
-import { fetchProviderProfileModels, listProviderProfiles } from "../../../api/provider-api.js";
-import type { ProviderProfileRecord } from "../../../api/types.js";
 import type {
   ExperienceParticipant,
   ExperiencePlaygroundAdvanceRequest,
@@ -101,6 +99,7 @@ import { PlaygroundStartOptions } from "./experience-playground-start-options.js
 import { CONTROLLER_LABEL_KEY, PlaygroundRoster } from "./experience-playground-roster.js";
 import { PlaygroundErrorPanel } from "./experience-playground-error.js";
 import { PlaygroundDiagnostics } from "./experience-playground-diagnostics.js";
+import { usePlaygroundModelOptions } from "./experience-playground-model-options.js";
 import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
 import type { LoopDiagSample } from "../../../lib/experience-bridge.js";
 import {
@@ -126,9 +125,15 @@ import {
 } from "../../../lib/experience-copilot-digest.js";
 import { copyText } from "../../../lib/clipboard.js";
 import {
+  clearPlaygroundConfig,
   loadPlaygroundConfig,
   savePlaygroundConfig,
 } from "../../../lib/playground-config-persistence.js";
+import {
+  CAPABILITY_LABEL_KEY,
+  PlaygroundSetupCheck,
+  PlaygroundSetupResetButton,
+} from "./experience-playground-setup-check.js";
 import { blockCls, blockLabelCls } from "./experience-playground-results.js";
 import {
   asSettingsObject,
@@ -141,19 +146,6 @@ import {
 } from "./experience-playground-model.js";
 
 // ─── Local constants ─────────────────────────────────────────────────────────
-
-/** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
- *  The technical capability id (the wire string) stays reachable via the ⓘ
- *  tooltip next to each label — non-technical authors never see raw ids inline.
- *  The existing `experience_cap_*` keys remain in place for the other surfaces
- *  (InteractiveTester, ExperienceAssignment); these are playground-only. */
-const CAPABILITY_LABEL_KEY = {
-  [EXPERIENCE_CAPABILITY.participants]: "experience_cap_friendly_participants",
-  [EXPERIENCE_CAPABILITY.deterministicRandom]: "experience_cap_friendly_deterministic_random",
-  [EXPERIENCE_CAPABILITY.model]: "experience_cap_friendly_model",
-  [EXPERIENCE_CAPABILITY.rpContext]: "experience_cap_friendly_rp_context",
-  [EXPERIENCE_CAPABILITY.rpAttachment]: "experience_cap_friendly_rp_attachment",
-} as const;
 
 /** LOBBY-A (EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1): the setup-field discovery debounce. The unsaved rules buffer changes per keystroke; the pre-LOBBY-A auto-derive fired a compile per keystroke while the roster was untouched. The debounce coalesces that churn AND is what makes it affordable to keep discovering (for the declared setup fields) even after the roster is user-owned. */
 const DISCOVERY_DEBOUNCE_MS = 400;
@@ -316,10 +308,6 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
   const pendingExplicitActionRef = useRef<(() => void) | null>(null);
 
-  // IR-90E: provider/model loading for model seats (mirrors ExperienceSetupModal).
-  const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
-  const [modelsByProfile, setModelsByProfile] = useState<Record<string, Array<{ id: string; label: string }>>>({});
-  const [loadingProfiles, setLoadingProfiles] = useState<Set<string>>(new Set());
   // IR-90E: collapsed Developer diagnostics (novice-readable default).
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   // XU-1: which seat's id editor is currently revealed (null = none).
@@ -335,6 +323,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   // explicit choice and must not be re-derived away.
   const [seatsTouched, setSeatsTouched] = useState(() => (scriptId !== undefined && loadPlaygroundConfig(scriptId) !== null));
   const [deriving, setDeriving] = useState(false);
+  // The LAST SUCCESSFUL discovery's declared capabilities (null = none: failed
+  // or SS-7B2-skipped). Feeds the setup-mismatch check and the reset.
+  const [declaredCapabilities, setDeclaredCapabilities] = useState<string[] | null>(null);
+  // Live mirror for the discovery callbacks: the reset flips seatsTouched back
+  // to false and must NOT re-fire the discovery (it is a dep of the effect).
+  const seatsTouchedRef = useRef(seatsTouched);
+  seatsTouchedRef.current = seatsTouched;
 
   // Isolated frame wiring. The bridge captures its callbacks at creation, so
   // the frame-facing handlers delegate through refs (the IR-73B seam pattern);
@@ -457,37 +452,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     setRandomStart(checked);
   };
 
-  // IR-90E: load provider profiles when the panel opens and a model seat exists.
-  const hasModelSeat = seats.some((s) => s.controller === EXPERIENCE_CONTROLLER.model);
-  useEffect(() => {
-    if (!hasModelSeat || providerProfiles !== null) return;
-    let cancelled = false;
-    listProviderProfiles()
-      .then((profiles) => { if (!cancelled) setProviderProfiles(profiles); })
-      .catch(() => { if (!cancelled) setProviderProfiles([]); });
-    return () => { cancelled = true; };
-  }, [hasModelSeat, providerProfiles]);
-
-  function ensureModels(profileId: string): void {
-    if (profileId === "" || modelsByProfile[profileId] !== undefined || loadingProfiles.has(profileId)) return;
-    setLoadingProfiles((prev) => new Set(prev).add(profileId));
-    fetchProviderProfileModels(profileId)
-      .then((res) => { setModelsByProfile((prev) => ({ ...prev, [profileId]: res.models.map((m) => ({ id: m.id, label: m.label || m.id })) })); })
-      .catch(() => { setModelsByProfile((prev) => ({ ...prev, [profileId]: [] })); })
-      .finally(() => { setLoadingProfiles((prev) => { const n = new Set(prev); n.delete(profileId); return n; }); });
-  }
-
-  function modelOptionsFor(profileId: string): Array<{ id: string; label: string }> {
-    const fetched = modelsByProfile[profileId] ?? [];
-    const options = fetched.map((m) => ({ id: m.id, label: m.label }));
-    const profile = (providerProfiles ?? []).find((p) => p.id === profileId);
-    if (profile?.defaultModel && !options.some((o) => o.id === profile.defaultModel)) {
-      options.push({ id: profile.defaultModel, label: profile.defaultModel });
-    }
-    return options;
-  }
-
-  const providerOptions = (providerProfiles ?? []).map((p) => ({ id: p.id, label: p.name || p.id }));
+  // IR-90E: provider/model option loading — see experience-playground-model-options.ts.
+  const { providerOptions, loadingProfiles, ensureModels, modelOptionsFor } = usePlaygroundModelOptions(seats);
 
   // ── LOBBY-A: the setup form over the settings JSON ────────────────────────
   //
@@ -601,10 +567,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   // gets the form too. Only the roster/grant derivation stays gated on the
   // untouched flag.
   useEffect(() => {
-    if (code.trim() === "") return;
+    if (code.trim() === "") { setDeclaredCapabilities(null); return; }
     // SS-7B2: untrusted imports never run the automatic discovery — the
     // shared localized auto-skip state replaces the discovery-driven UI.
-    if (autoDiscoverySkipped) return;
+    if (autoDiscoverySkipped) { setDeclaredCapabilities(null); return; }
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
@@ -619,8 +585,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           // update even for a user-owned roster (before the early return).
           const manifest = data.definition.manifest;
           setDiscoveredRealtime(manifest.mode === "realtime" ? { tickMs: manifest.tickMs } : null);
-          if (seatsTouched) return; // roster/grants are the user's explicit choice
           const declared = data.definition.declaredCapabilities.map((c) => c.capability);
+          setDeclaredCapabilities(declared);
+          if (seatsTouchedRef.current) return; // roster/grants are the user's explicit choice
           const derived = deriveDefaultLaunchContext(declared);
           setGrants(derived.capabilityGrants);
           setSeats(derived.participants);
@@ -632,14 +599,35 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           // grants — but never clobber a user-owned roster.
           setSetupFields([]);
           setDiscoveredRealtime(null);
-          if (seatsTouched) return;
+          setDeclaredCapabilities(null);
+          if (seatsTouchedRef.current) return;
           setSeats([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.participants]);
           setGrants([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.capabilityGrants]);
         })
       .finally(() => { if (!cancelled) setDeriving(false); });
     }, DISCOVERY_DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [code, seatsTouched, autoDiscoverySkipped]);
+  }, [code, autoDiscoverySkipped]);
+
+  /** Reset the launch setup to the app's defaults: drop the persisted config,
+   *  re-derive roster + grants from the LAST discovery (no request), re-seed the
+   *  setup fields' defaults, and hand both ownership flags back to the
+   *  auto-derive. Seed / random-start are not reset; a live session is untouched. */
+  const handleResetSetup = () => {
+    if (scriptId !== undefined) clearPlaygroundConfig(scriptId);
+    const defaults = declaredCapabilities === null
+      ? DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT
+      : deriveDefaultLaunchContext(declaredCapabilities);
+    setSeats([...defaults.participants]);
+    setGrants([...defaults.capabilityGrants]);
+    setHumanSeatId("");
+    setSettingsJson("");
+    settingsJsonRef.current = "";
+    setFieldErrors({});
+    seedDefaultsIntoSettings(setupFields);
+    setSeatsTouched(false);
+    setSettingsTouched(false);
+  };
 
   /** The ONE advance path (host chrome AND frame actions): apply one human
    *  action to the live session, then let the driver advance script seats.
@@ -1267,6 +1255,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                 </span>
               )}
             </button>
+            <PlaygroundSetupCheck
+              declaredCapabilities={declaredCapabilities}
+              participants={participants}
+              grants={grants}
+              onReset={handleResetSetup}
+            />
             <AnimatedDisclosure open={setupOpen} className="mt-3 space-y-3">
             {/* Participants roster editor — see experience-playground-roster.tsx. */}
             <PlaygroundRoster
@@ -1382,6 +1376,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               </AnimatedDisclosure>
             </div>
           </div>
+          <PlaygroundSetupResetButton onReset={handleResetSetup} testId="playground-setup-reset" />
             </AnimatedDisclosure>
           </div>
 

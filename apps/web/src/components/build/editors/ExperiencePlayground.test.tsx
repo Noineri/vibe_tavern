@@ -42,6 +42,7 @@ import type {
   ExperienceCopilotLaunchContext,
   ExperienceSetupFieldDto,
 } from "@vibe-tavern/api-contracts";
+import type { ExperienceCapability } from "@vibe-tavern/domain";
 import { savePlaygroundConfig } from "../../../lib/playground-config-persistence.js";
 
 import type {
@@ -302,7 +303,11 @@ mock.module("../../../api/script-api.js", () => ({
 mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({
-    t: (k: string) => k,
+    // The setup-check keys interpolate a capability list / seat name; echo the
+    // variables for those keys only so the assertions can see them. Every
+    // other key stays the bare identity.
+    t: (k: string, vars?: Record<string, unknown>) =>
+      vars !== undefined && k.startsWith("experience_playground_setup_") ? `${k} ${JSON.stringify(vars)}` : k,
     tDynamic: (k: string) => k,
     locale: "en",
     setLocale: () => {},
@@ -2512,5 +2517,154 @@ describe("ExperiencePlayground — discover-only auto-derive", () => {
       participants: [{ id: "you", label: "You", controller: "human" }],
     });
     expect(runExperienceTest).not.toHaveBeenCalled();
+  });
+});
+
+// ── Setup check: mismatch warning + reset to the app's defaults ─────────────
+
+describe("ExperiencePlayground — setup check and reset", () => {
+  const SCRIPT_ID = "script_setup_check";
+  const STORAGE_KEY = `experience.playground.${SCRIPT_ID}`;
+  const HUMAN_SEAT = { id: "you", label: "You", controller: "human" as const };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  /** A discovery result declaring exactly `capabilities`. */
+  function discoveryDeclaring(...capabilities: ExperienceCapability[]): ExperienceTestDiscoverData {
+    const base = makeTestRunData();
+    return asDiscovery({
+      ...base,
+      definition: {
+        ...base.definition,
+        declaredCapabilities: capabilities.map((capability) => ({ capability, reason: "test" })),
+      },
+    });
+  }
+
+  /** Persist a user-owned setup the way the panel would have after a manual edit. */
+  function persistSetup(seats: Array<{ id: string; label: string; controller: "human" | "model" | "script"; providerProfileId?: string; modelId?: string }>, grants: ExperienceCapability[]): void {
+    savePlaygroundConfig(SCRIPT_ID, { seats, grants, seed: "", settingsJson: "", humanSeatId: "", randomStart: true });
+  }
+
+  /** Wait for the (single) debounced discovery to land and settle its state updates. */
+  async function discoveryLanded(): Promise<void> {
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await discoverExperience.mock.results[0]!.value;
+    });
+  }
+
+  it("warns about a stale one-seat, no-grant setup and the reset restores the derived roster and grants without a request", async () => {
+    discoverExperience.mockImplementation(async () =>
+      discoveryDeclaring("participants", "model", "deterministic_random"));
+    persistSetup([HUMAN_SEAT], []);
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+    const view = renderPlayground(VALID_CODE, null, {
+      scriptId: SCRIPT_ID,
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+    await discoveryLanded();
+
+    // The restored setup is user-owned: the roster stays at one seat, no grants.
+    expect(contexts.at(-1)!.participants).toHaveLength(1);
+    expect(contexts.at(-1)!.capabilityGrants).toEqual([]);
+    const missingGrants = view.getByTestId("playground-setup-mismatch-missing-grants");
+    expect(missingGrants.textContent).toContain("experience_playground_setup_missing_grants");
+    expect(missingGrants.textContent).toContain(
+      "experience_cap_friendly_participants, experience_cap_friendly_model, experience_cap_friendly_deterministic_random",
+    );
+    expect(view.getByTestId("playground-setup-mismatch-missing-model-seat")).toBeTruthy();
+    expect(view.queryByTestId("playground-setup-mismatch-undeclared-grants")).toBeNull();
+
+    // The reset itself must not schedule another discovery (the debounce timer).
+    const realSetTimeout = globalThis.setTimeout;
+    const debounceTimers: number[] = [];
+    globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...rest: unknown[]) => {
+      if (delay === 400) debounceTimers.push(delay);
+      return realSetTimeout(handler, delay, ...rest);
+    }) as typeof setTimeout;
+    try {
+      fireEvent.click(view.getByTestId("playground-setup-mismatch-reset"));
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+    expect(debounceTimers).toEqual([]);
+    expect(discoverExperience).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(contexts.at(-1)!.participants).toHaveLength(2));
+    expect(contexts.at(-1)!.participants.map((seat) => seat.controller)).toEqual(["human", "model"]);
+    expect(contexts.at(-1)!.capabilityGrants).toEqual(["participants", "model", "deterministic_random"]);
+    // The grant and missing-seat findings are resolved. The freshly derived
+    // model seat has no model picked yet, so ONLY that finding remains.
+    expect(view.queryByTestId("playground-setup-mismatch-missing-grants")).toBeNull();
+    expect(view.queryByTestId("playground-setup-mismatch-missing-model-seat")).toBeNull();
+    expect(view.getByTestId("playground-setup-mismatch-seat-no-model-ai")).toBeTruthy();
+    // The persisted config is gone and the reset does not re-save it.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("shows the undeclared-grant line for a granted capability the rules do not declare", async () => {
+    discoverExperience.mockImplementation(async () => discoveryDeclaring("deterministic_random"));
+    persistSetup([HUMAN_SEAT], ["deterministic_random", "rp_context"]);
+    const view = renderPlayground(VALID_CODE, null, { scriptId: SCRIPT_ID });
+    await discoveryLanded();
+
+    const line = view.getByTestId("playground-setup-mismatch-undeclared-grants");
+    expect(line.textContent).toContain("experience_playground_setup_undeclared_grants");
+    expect(line.textContent).toContain("experience_cap_friendly_rp_context");
+    expect(line.textContent).not.toContain("experience_cap_friendly_deterministic_random");
+    expect(view.queryByTestId("playground-setup-mismatch-missing-grants")).toBeNull();
+    expect(view.queryByTestId("playground-setup-mismatch-missing-model-seat")).toBeNull();
+  });
+
+  it("shows the no-model line for a model seat without a provider and model", async () => {
+    discoverExperience.mockImplementation(async () => discoveryDeclaring("participants", "model"));
+    persistSetup(
+      [HUMAN_SEAT, { id: "ai", label: "Narrator", controller: "model" }],
+      ["participants", "model"],
+    );
+    const view = renderPlayground(VALID_CODE, null, { scriptId: SCRIPT_ID });
+    await discoveryLanded();
+
+    const line = view.getByTestId("playground-setup-mismatch-seat-no-model-ai");
+    expect(line.textContent).toContain("experience_playground_setup_seat_no_model");
+    expect(line.textContent).toContain("Narrator");
+    expect(view.queryByTestId("playground-setup-mismatch-missing-grants")).toBeNull();
+    expect(view.queryByTestId("playground-setup-mismatch-missing-model-seat")).toBeNull();
+  });
+
+  it("shows no warning for a matching setup, while the reset button stays in the open accordion", async () => {
+    discoverExperience.mockImplementation(async () => discoveryDeclaring("deterministic_random"));
+    persistSetup([HUMAN_SEAT], ["deterministic_random"]);
+    const view = renderPlayground(VALID_CODE, null, { scriptId: SCRIPT_ID });
+    await discoveryLanded();
+
+    expect(view.queryByTestId("playground-setup-mismatch")).toBeNull();
+    expect(view.getByTestId("playground-setup-reset")).toBeTruthy();
+  });
+
+  it("shows the warning with the setup accordion collapsed", async () => {
+    discoverExperience.mockImplementation(async () => discoveryDeclaring("participants", "model"));
+    persistSetup([HUMAN_SEAT], []);
+    const view = renderPlayground(VALID_CODE, null, { scriptId: SCRIPT_ID });
+    await discoveryLanded();
+
+    fireEvent.click(view.getByText("experience_playground_setup_title"));
+    expect(view.getByTestId("playground-setup-summary")).toBeTruthy();
+    expect(view.getByTestId("playground-setup-mismatch")).toBeTruthy();
+    expect(view.getByTestId("playground-setup-mismatch-reset")).toBeTruthy();
+  });
+
+  it("shows no warning when the discovery failed", async () => {
+    persistSetup([HUMAN_SEAT], []);
+    const view = renderPlayground(VALID_CODE, null, { scriptId: SCRIPT_ID });
+    await waitFor(() => expect(discoverExperience).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await (discoverExperience.mock.results[0]!.value as Promise<unknown>).catch(() => undefined);
+    });
+
+    expect(view.queryByTestId("playground-setup-mismatch")).toBeNull();
   });
 });

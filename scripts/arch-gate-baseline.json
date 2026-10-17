@@ -20,7 +20,7 @@
   "oversizedFiles": {
     "apps/web/src/components/build/editors/CharacterForm.tsx": 903,
     "apps/web/src/components/build/editors/ExperienceEditor.tsx": 1294,
-    "apps/web/src/components/build/editors/ExperiencePlayground.tsx": 1646,
+    "apps/web/src/components/build/editors/ExperiencePlayground.tsx": 1641,
     "apps/web/src/components/build/editors/LorebookAccordion.tsx": 856,
     "apps/web/src/components/build/editors/LorebookEditor.tsx": 942,
     "apps/web/src/components/chat/ImageGenFineTuningChip.tsx": 1463,
