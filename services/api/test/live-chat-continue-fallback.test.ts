@@ -625,6 +625,105 @@ describe("LiveChatOrchestrator — continue direct fallback on prefill:false pro
   });
 });
 
+describe("LiveChatOrchestrator — continue fallback behind a local gateway relaying Gemini", () => {
+  // The owner's proxy profile shape: no preset (openai_compat, prefill-capable
+  // — so the CPF-3 direct entry never fires) pointed at a local gateway that
+  // forwards to a Gemini model. Gemini refuses the prefill with its own
+  // wording, and the gateway relays it as HTTP 502 wrapping "upstream 400: …".
+  const GEMINI_MODEL_TURN_MESSAGE = "Requests ending with a model turn are not supported.";
+  const GATEWAY_WRAPPED_MESSAGE = `upstream 400: ${JSON.stringify(
+    { error: { code: 400, message: GEMINI_MODEL_TURN_MESSAGE, status: "INVALID_ARGUMENT" } },
+    null,
+    2,
+  )}\n`;
+
+  function continueGatewayInput(continuationText: string) {
+    return {
+      chatId: CHAT,
+      messageId: MESSAGE,
+      continuationText,
+      profile: {
+        ...makeProfile(),
+        providerPreset: "",
+        endpoint: "http://127.0.0.1:9/v1/",
+        apiKey: null,
+        defaultModel: "gemini-3.8-flash-high",
+        streamResponse: false,
+      } as StoredProviderProfileRecord,
+      model: "gemini-3.8-flash-high",
+    };
+  }
+
+  it("non-streaming: a gateway 502 wrapping the upstream 400 retries once as a continuation, later clicks skip the prefill", async () => {
+    const calls = makeCalls();
+    // The 502 is injected at the executor DI seam (the real SDK would retry a
+    // 5xx itself with internal backoff — see the 5xx corroboration test);
+    // every later call runs the REAL executor against the wire stub.
+    const executorInputs: Array<{ prefill?: string; continuationFallback?: boolean }> = [];
+    const orchestrator = makeOrchestrator(calls, {
+      nonstreaming: async (input) => {
+        executorInputs.push(input);
+        if (executorInputs.length === 1) {
+          throw new ProviderExecutionError(GATEWAY_WRAPPED_MESSAGE, "server_error", "openai_compat", { statusCode: 502 });
+        }
+        return nonstreamingProviderExecute(input);
+      },
+      stream: async () => {
+        throw new Error("stream executor is not exercised by this test");
+      },
+    });
+    const wire = installFetchQueue([
+      completion(CONTINUATION_OVERLAP),
+      completion(CONTINUATION_OVERLAP),
+    ]);
+
+    const result = await orchestrator.continueMessage(continueGatewayInput(ORIGINAL));
+
+    expect(executorInputs).toHaveLength(2);
+    expect(executorInputs[0]!.prefill).toBe(ORIGINAL);
+    expect(executorInputs[1]!.prefill).toBeUndefined();
+    expect(executorInputs[1]!.continuationFallback).toBe(true);
+    expect(lastMessage(wire[0]!).role).toBe("user");
+    expect(lastMessage(wire[0]!).content).toBe(CONTINUATION_USER_INSTRUCTION);
+    expect(historyContains(wire[0]!, "assistant", ORIGINAL)).toBe(true);
+    expect(result.reply).toBe(MERGED_OVERLAP);
+    expect(calls.appendedVariants).toHaveLength(1);
+    expect(calls.discards).toBe(1);
+
+    // Click 2: rejection memory keyed on profile + model — no doomed prefill.
+    await orchestrator.continueMessage(continueGatewayInput(ORIGINAL));
+    expect(executorInputs).toHaveLength(3);
+    expect(executorInputs[2]!.prefill).toBeUndefined();
+    expect(executorInputs[2]!.continuationFallback).toBe(true);
+    expect(wire).toHaveLength(2);
+    expect(calls.appendedVariants).toHaveLength(2);
+  });
+
+  it("streaming: the Gemini model-turn 400 is swallowed and retried as a continuation", async () => {
+    const calls = makeCalls();
+    const orchestrator = makeOrchestrator(calls);
+    const wire = installFetchQueue([
+      () => new Response(JSON.stringify({ error: { code: 400, message: GEMINI_MODEL_TURN_MESSAGE, status: "INVALID_ARGUMENT" } }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+      sseCompletion([CONTINUATION_OVERLAP]),
+    ]);
+
+    const events: Array<{ event: string; data: string }> = [];
+    for await (const event of orchestrator.continueMessageStream(continueGatewayInput(ORIGINAL))) {
+      events.push(event);
+    }
+
+    expect(wire).toHaveLength(2);
+    expect(lastMessage(wire[0]!).role).toBe("assistant");
+    expect(lastMessage(wire[1]!).content).toBe(CONTINUATION_USER_INSTRUCTION);
+    expect(events.some((e) => e.event === "error")).toBe(false);
+    expect(calls.appendedVariants).toHaveLength(1);
+    expect(calls.appendedVariants[0]!.content).toBe(MERGED_OVERLAP);
+  });
+});
+
 describe("ChatRuntime — setPendingTrace (CPF-2b fallback trace attribution)", () => {
   function makeRealRuntime() {
     const addVariantCalls: Array<{ messageId: string; content: string; modelId: string | null; presetName: string | null }> = [];
