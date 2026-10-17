@@ -1,3 +1,4 @@
+// forks: 1 — script-management-controls.tsx
 /**
  * ExperienceManagementControls — the mini-app editor's management cluster
  * (name input, trust pill + enable toggle, save-state, save, duplicate,
