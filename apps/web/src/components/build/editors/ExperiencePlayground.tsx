@@ -55,11 +55,9 @@ import type {
 } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
-import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { TextInput } from "../../shared/text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { cn } from "../../../lib/cn.js";
 import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.js";
@@ -100,6 +98,9 @@ import {
 } from "../../experience/ExperienceFrame.js";
 import { ExperienceRoundFinishedPanel } from "../../experience/ExperienceModal.js";
 import { PlaygroundStartOptions } from "./experience-playground-start-options.js";
+import { CONTROLLER_LABEL_KEY, PlaygroundRoster } from "./experience-playground-roster.js";
+import { PlaygroundErrorPanel } from "./experience-playground-error.js";
+import { PlaygroundDiagnostics } from "./experience-playground-diagnostics.js";
 import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
 import type { LoopDiagSample } from "../../../lib/experience-bridge.js";
 import {
@@ -128,18 +129,9 @@ import {
   loadPlaygroundConfig,
   savePlaygroundConfig,
 } from "../../../lib/playground-config-persistence.js";
-import {
-  blockCls,
-  blockLabelCls,
-  ConsoleBlock,
-  JsonBlock,
-  RealtimeLoopDiagSection,
-  TestRunResultBlock,
-  TestSimulateResultBlock,
-} from "./experience-playground-results.js";
+import { blockCls, blockLabelCls } from "./experience-playground-results.js";
 import {
   asSettingsObject,
-  seatInitial,
   slugifyId,
   toPlaygroundError,
   uniqueIdFor,
@@ -149,21 +141,6 @@ import {
 } from "./experience-playground-model.js";
 
 // ─── Local constants ─────────────────────────────────────────────────────────
-
-const CONTROLLERS = [
-  EXPERIENCE_CONTROLLER.human,
-  EXPERIENCE_CONTROLLER.script,
-  EXPERIENCE_CONTROLLER.model,
-] as const;
-
-/** Friendly (non-technical) role labels for the roster card dropdown. The
- *  technical controller values map 1:1 (human/model/script) — only the label
- *  changes; the domain value sent to Start is untouched. */
-const CONTROLLER_LABEL_KEY = {
-  [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_human",
-  [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_script",
-  [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
-} as const;
 
 /** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
  *  The technical capability id (the wire string) stays reachable via the ⓘ
@@ -1291,121 +1268,22 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               )}
             </button>
             <AnimatedDisclosure open={setupOpen} className="mt-3 space-y-3">
-            <div>
-              <label className={lblCls}>{t("experience_setup_participants_label")}</label>
-            {seats.map((seat, index) => (
-              <div key={index} className="mb-2 rounded-xl border border-border bg-surface p-2.5">
-                {/* Name field and controller dropdown share one height on
-                    every viewport: TextInput's base is h-11 / sm:h-[38px],
-                    the DropdownSelect trigger has none (py-[7px], ~35px) —
-                    both pinned to the Playground's 34px field row (the seed /
-                    human-seat pair, experience-playground-start-options). */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div
-                    aria-hidden
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-dim font-ui text-sm font-semibold text-accent-t"
-                  >
-                    {seatInitial(seat)}
-                  </div>
-                  <TextInput
-                    className="min-w-[7rem] flex-1 !h-[34px]"
-                    value={seat.label}
-                    placeholder={t("experience_setup_participant_name_placeholder")}
-                    aria-label={t("experience_playground_participant_name")}
-                    onChange={(e) => updateSeatLabel(index, e.target.value)}
-                  />
-                  <div className="w-48 shrink-0">
-                    <DropdownSelect
-                      value={seat.controller}
-                      options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
-                      searchable={false}
-                      className="h-[34px]"
-                      onChange={(value) => {
-                        const controller = CONTROLLERS.find((c) => c === value);
-                        if (controller !== undefined) {
-                          if (controller !== EXPERIENCE_CONTROLLER.model) {
-                            updateSeat(index, { controller, providerProfileId: undefined, modelId: undefined });
-                          } else {
-                            updateSeat(index, { controller });
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={t("experience_setup_remove_participant")}
-                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s3 hover:text-t1"
-                    onClick={() => { setSeatsTouched(true); setSeats((prev) => prev.filter((_, i) => i !== index)); }}
-                  >
-                    <Ic.del />
-                  </button>
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-10">
-                  {editingIdIndex === index ? (
-                    <TextInput
-                      autoFocus
-                      className="w-32"
-                      value={seat.id}
-                      aria-label={t("experience_playground_participant_id")}
-                      onChange={(e) => updateSeatId(index, e.target.value)}
-                      onBlur={() => setEditingIdIndex(null)}
-                      onKeyDown={(e) => { if (e.key === "Enter") setEditingIdIndex(null); }}
-                    />
-                  ) : (
-                    <span className="font-mono text-[11px] text-t3">
-                      {t("experience_playground_participant_id")}: <span className="text-t2" data-testid="playground-seat-id">{seat.id === "" ? "—" : seat.id}</span>
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={t("experience_playground_participant_id_edit")}
-                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s3 hover:text-t1"
-                    onClick={() => setEditingIdIndex(editingIdIndex === index ? null : index)}
-                  >
-                    <Ic.edit />
-                  </button>
-                </div>
-                {seat.controller === EXPERIENCE_CONTROLLER.model && grants.includes(EXPERIENCE_CAPABILITY.model) && (
-                  <div className="mt-1.5 flex flex-col gap-1.5 pl-10 sm:flex-row">
-                    <div className="flex-1">
-                      <DropdownSelect
-                        value={seat.providerProfileId ?? ""}
-                        options={providerOptions}
-                        placeholder={t("experience_setup_provider_placeholder")}
-                        onChange={(value) => {
-                          updateSeat(index, { providerProfileId: value, modelId: undefined });
-                          ensureModels(value);
-                        }}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <DropdownSelect
-                        value={seat.modelId ?? ""}
-                        options={seat.providerProfileId ? modelOptionsFor(seat.providerProfileId) : []}
-                        placeholder={loadingProfiles.has(seat.providerProfileId ?? "") ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
-                        disabled={seat.providerProfileId === undefined}
-                        onChange={(value) => updateSeat(index, { modelId: value })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-            <button
-              type="button"
-              className="mt-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => {
-                setSeatsTouched(true);
-                setSeats((prev) => {
-                  const taken = new Set(prev.map((s) => s.id));
-                  return [...prev, { id: uniqueIdFor("seat", taken), label: "", controller: EXPERIENCE_CONTROLLER.human, idAuto: true }];
-                });
-              }}
-            >
-              <Ic.plus /> {t("experience_setup_add_participant")}
-            </button>
-          </div>
+            {/* Participants roster editor — see experience-playground-roster.tsx. */}
+            <PlaygroundRoster
+              seats={seats}
+              grants={grants}
+              editingIdIndex={editingIdIndex}
+              setEditingIdIndex={setEditingIdIndex}
+              setSeats={setSeats}
+              setSeatsTouched={setSeatsTouched}
+              updateSeat={updateSeat}
+              updateSeatLabel={updateSeatLabel}
+              updateSeatId={updateSeatId}
+              providerOptions={providerOptions}
+              loadingProfiles={loadingProfiles}
+              ensureModels={ensureModels}
+              modelOptionsFor={modelOptionsFor}
+            />
 
           <div>
             <label className={lblCls}>{t("experience_playground_capabilities_title")}</label>
@@ -1521,64 +1399,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
             {busy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
           </div>
 
-          {/* Typed error (start or advance) — human first, tech under a
-              disclosure, and a copilot escape hatch (XU-3). */}
+          {/* Typed error panel — see experience-playground-error.tsx. */}
           {error !== null && (
-            <div className="mt-3 rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
-              <div className="flex items-start gap-2">
-                <span aria-hidden className="mt-0.5 shrink-0 text-danger-text"><Ic.alert /></span>
-                <p className="font-ui text-[13px] leading-snug text-danger-text">{error.message}</p>
-              </div>
-              {onSendToCopilot !== undefined && (
-                <button
-                  type="button"
-                  data-testid="playground-error-ask-copilot"
-                  className="mt-2 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-                  onClick={handleAskCopilotAboutError}
-                >
-                  <Ic.sparkles />
-                  {t("experience_playground_error_ask_copilot")}
-                </button>
-              )}
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
-                  onClick={() => setErrorTechOpen((v) => !v)}
-                  aria-expanded={errorTechOpen}
-                >
-                  <span className={cn("inline-block shrink-0 text-danger-text transition-transform", errorTechOpen && "rotate-90")}>
-                    {Ic.caret("r")}
-                  </span>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-danger-text">{t("experience_playground_error_tech_details")}</span>
-                </button>
-                <AnimatedDisclosure open={errorTechOpen}>
-                  <div className="mt-1.5 space-y-1.5">
-                    {error.code !== undefined && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-semibold uppercase text-danger-text">{t("experience_playground_error_title")}</span>
-                        <span className="rounded bg-danger/20 px-1.5 py-0.5 font-mono text-[10px] uppercase text-danger-text">{error.code}</span>
-                      </div>
-                    )}
-                    <div className="space-y-0.5 font-ui text-[11px] text-t2">
-                      {error.kind !== undefined && (
-                        <div><span className="text-t3">{t("experience_tester_error_kind")}: </span><span className="font-mono">{error.kind}</span></div>
-                      )}
-                      {error.currentRevision !== undefined && (
-                        <div><span className="text-t3">{t("experience_tester_error_current_revision")}: </span><span className="font-mono">{error.currentRevision}</span></div>
-                      )}
-                      {error.granted !== undefined && (
-                        <div><span className="text-t3">{t("experience_tester_error_granted")}: </span><span className="font-mono">{error.granted.join(", ")}</span></div>
-                      )}
-                      {error.needs !== undefined && (
-                        <div><span className="text-t3">{t("experience_tester_error_needs")}: </span><span className="font-mono">{error.needs.join(", ")}</span></div>
-                      )}
-                    </div>
-                    <ConsoleBlock entries={error.console} label={t("script_test_console")} />
-                  </div>
-                </AnimatedDisclosure>
-              </div>
-            </div>
+            <PlaygroundErrorPanel
+              error={error}
+              errorTechOpen={errorTechOpen}
+              setErrorTechOpen={setErrorTechOpen}
+              onAskCopilot={onSendToCopilot === undefined ? undefined : handleAskCopilotAboutError}
+            />
           )}
 
           {/* Live session — novice-readable default: visual-first, status,
@@ -1760,259 +1588,41 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
             </div>
           )}
 
-          {/* Developer diagnostics — collapsed by default. Raw state, revision,
-              request id, expected revision, payload JSON, events, effects, and
-              console remain reachable after explicit disclosure. XU-4: also the
-              absorbed tester (validate rules / auto-play / single action). */}
-          <div className={cn(blockCls, "mt-3 p-3")}>
-                <button
-                  type="button"
-                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
-                  onClick={() => setDiagnosticsOpen((v) => !v)}
-                >
-                  <span className="inline-block text-t3 transition-transform" style={{ transform: diagnosticsOpen ? "rotate(90deg)" : "none" }}>▶</span>
-                  <span className={blockLabelCls}>{t("experience_playground_diagnostics")}</span>
-                  <CustomTooltip content={t("experience_playground_diagnostics_hint")}>
-                    <span className="cursor-help text-[11px] text-t4">ⓘ</span>
-                  </CustomTooltip>
-                </button>
-                {diagnosticsOpen && (
-                  <div className="mt-2 space-y-2">
-                    {/* XU-4: absorbed tester — validate rules (create-only
-                        discover) and auto-play script seats (bounded simulate).
-                        Both run against the STATELESS tester and stay available
-                        before/without a live session. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        data-testid="playground-discover"
-                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-                        disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => runExplicitAction(() => { void handleDiscover(); })}
-                      >
-                        {t("experience_tester_run")}
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="playground-simulate"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                        disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => runExplicitAction(() => { void handleSimulate(); })}
-                      >
-                        {t("experience_tester_simulate")}
-                      </button>
-                      {testerBusy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
-                    </div>
-
-                    {/* Grounding step 7: the seed this result RAN with
-                        (captured at request time; "—" = none sent, the
-                        server deterministic default) — owner-specified line
-                        treatment, top of the result block. */}
-                    {testerResult !== null && (
-                      <>
-                        <p className="text-[12px] text-t3" data-testid="playground-discover-seed">
-                          {`${t("experience_playground_diagnostics_seed")}: ${testerResultSeed === "" ? "—" : testerResultSeed}`}
-                        </p>
-                        <TestRunResultBlock result={testerResult} />
-                      </>
-                    )}
-                    {simResult !== null && (
-                      <>
-                        <p className="text-[12px] text-t3" data-testid="playground-simulate-seed">
-                          {`${t("experience_playground_diagnostics_seed")}: ${simResultSeed === "" ? "—" : simResultSeed}`}
-                        </p>
-                        <TestSimulateResultBlock result={simResult} />
-                      </>
-                    )}
-
-                    {/* ER-14 (absorbed): send the latest tester digest (discover
-                        result → simulate result) to the copilot. */}
-                    {onSendToCopilot !== undefined && (testerResult !== null || simResult !== null) && (
-                      <button
-                        type="button"
-                        data-testid="playground-tester-send-to-copilot"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                        disabled={testerBusy !== null}
-                        onClick={handleSendTesterToCopilot}
-                      >
-                        {t("experience_tester_send_to_copilot")}
-                      </button>
-                    )}
-
-                    {/* Live-session diagnostics (send + definition + info +
-                        custom action + raw state) — only while a session is live. */}
-                    {session !== null && (
-                      <>
-                    {/* ER-14: send the live session diagnostics to the copilot
-                        thread. Shown only when the shell wires the callback AND
-                        a session is live. Lives INSIDE the Developer-diagnostics
-                        disclosure per the user's intent. RM-13: a realtime round
-                        sends the LOOP digest (the turn-session shape would lie
-                        — revision/stopReason belong to the server sim). */}
-                    {onSendToCopilot !== undefined && (
-                      <button
-                        type="button"
-                        data-testid="playground-send-to-copilot"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                        disabled={busy !== null}
-                        onClick={() =>
-                          onSendToCopilot(
-                            realtimeRound !== null
-                              ? buildRealtimeLoopDigest({
-                                  realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
-                                  diag: loopDiag,
-                                  claim: roundClaim,
-                                  definition,
-                                  error,
-                                })
-                              : buildPlaygroundDigest({ session, definition, error }),
-                          )
-                        }
-                      >
-                        {t("experience_playground_send_diagnostics")}
-                      </button>
-                    )}
-
-                    {definition !== null && (
-                      <div>
-                        <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
-                          <span className="font-semibold">{definition.manifest.name}</span>
-                          <span className="font-mono text-[11px] text-t3">({definition.manifest.id})</span>
-                          <span className="text-[11px] text-t3">· apiVersion {definition.apiVersion}</span>
-                          {definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
-                          {definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
-                        </div>
-                        <div className="mt-1 font-ui text-[11px] text-t3">
-                          {definition.declaredCapabilities.length > 0
-                            ? definition.declaredCapabilities.map((c) => c.capability).join(", ")
-                            : t("experience_assign_no_capabilities")}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* RM-13: realtime rounds show the LOOP's own diagnostics
-                        (the authority lives in the frame); the turn-session
-                        vocabulary below would be a frozen lie (revision 0 /
-                        awaiting_human / create() snapshot forever). */}
-                    {realtimeRound !== null && (
-                      <RealtimeLoopDiagSection
-                        tickMs={realtimeRound.tickMs}
-                        seed={realtimeRound.seed}
-                        diag={loopDiag}
-                        finished={roundClaim !== null}
-                      />
-                    )}
-
-                    {realtimeRound === null && (
-                    <>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-                      <span>{t("experience_playground_session_label")}: <span className="font-mono text-t2">{session.playgroundSessionId.slice(0, 8)}</span></span>
-                      <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{session.revision}</span></span>
-                      <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{session.status}</span></span>
-                      <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{session.stopReason}</span></span>
-                    </div>
-
-                    {/* Custom action form (type/participant/payload/requestId/expectedRevision).
-                        Fields share the 34px field row of the setup form. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <TextInput
-                        className="w-40 !h-[34px]"
-                        value={actionType}
-                        placeholder={t("experience_tester_action_type_placeholder")}
-                        onChange={(e) => setActionType(e.target.value)}
-                      />
-                      <div className="w-44 shrink-0">
-                        <DropdownSelect
-                          value={actionParticipantId}
-                          options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(CONTROLLER_LABEL_KEY[p.controller])})` }))}
-                          searchable={false}
-                          placeholder={t("experience_tester_action_participant_default")}
-                          defaultOption={t("experience_tester_action_participant_default")}
-                          onChange={setActionParticipantId}
-                          className="h-[34px]"
-                        />
-                      </div>
-                      <TextInput
-                        className="w-32 !h-[34px]"
-                        value={requestId}
-                        aria-label={t("experience_tester_action_request_id")}
-                        onChange={(e) => setRequestId(e.target.value)}
-                      />
-                      <TextInput
-                        className="w-24 !h-[34px]"
-                        value={expectedRevision}
-                        aria-label={t("experience_tester_action_expected_revision")}
-                        onChange={(e) => setExpectedRevision(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-                        disabled={busy !== null || actionType.trim() === ""}
-                        onClick={() => void handleApplyAction()}
-                      >
-                        {t("experience_tester_action_apply")}
-                      </button>
-                    </div>
-                    <div>
-                      <AutoTextarea
-                        mono
-                        value={payloadJson}
-                        onChange={(e) => setPayloadJson(e.target.value)}
-                        placeholder={t("experience_tester_action_payload_label")}
-                        minRows={1}
-                        maxRows={12}
-                        macroAutocomplete={false}
-                      />
-                    </div>
-
-                    <div>
-                      <div className={blockLabelCls}>{t("experience_tester_projection")}</div>
-                      <JsonBlock value={session.projection.state} />
-                    </div>
-
-                    <div>
-                      <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
-                      <JsonBlock value={session.state} />
-                    </div>
-                    </>
-                    )}
-
-                    {session.events.length > 0 && (
-                      <div>
-                        <div className={blockLabelCls}>{t("experience_tester_events")}</div>
-                        <div className="mt-1 space-y-1">
-                          {session.events.map((event, i) => (
-                            <div key={i} className="flex items-start gap-2">
-                              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                              <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                              {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {session.effects.length > 0 && (
-                      <div>
-                        <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
-                        <div className="mt-1 space-y-1">
-                          {session.effects.map((effect, i) => (
-                            <div key={i} className="flex items-start gap-2">
-                              <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                              <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <ConsoleBlock entries={session.console} label={t("script_test_console")} />
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+          {/* Developer diagnostics disclosure — see experience-playground-diagnostics.tsx. */}
+          <PlaygroundDiagnostics
+            code={code}
+            diagnosticsOpen={diagnosticsOpen}
+            setDiagnosticsOpen={setDiagnosticsOpen}
+            busy={busy}
+            testerBusy={testerBusy}
+            runExplicitAction={runExplicitAction}
+            handleDiscover={handleDiscover}
+            handleSimulate={handleSimulate}
+            testerResult={testerResult}
+            testerResultSeed={testerResultSeed}
+            simResult={simResult}
+            simResultSeed={simResultSeed}
+            onSendToCopilot={onSendToCopilot}
+            handleSendTesterToCopilot={handleSendTesterToCopilot}
+            session={session}
+            definition={definition}
+            error={error}
+            realtimeRound={realtimeRound}
+            loopDiag={loopDiag}
+            roundClaim={roundClaim}
+            participants={participants}
+            actionType={actionType}
+            setActionType={setActionType}
+            actionParticipantId={actionParticipantId}
+            setActionParticipantId={setActionParticipantId}
+            requestId={requestId}
+            setRequestId={setRequestId}
+            expectedRevision={expectedRevision}
+            setExpectedRevision={setExpectedRevision}
+            payloadJson={payloadJson}
+            setPayloadJson={setPayloadJson}
+            handleApplyAction={handleApplyAction}
+          />
         </div>
       {scriptWarningFlow?.kind === "plain" && (
         <ImportedScriptWarningModal
