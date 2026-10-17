@@ -263,7 +263,7 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 					onCancel={() => setConfirmDeleteId(null)}
 				/>
 			)}
-			<AgentSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} />
+			<AgentSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} agentKind={agentKind} />
 			<MasterDetailModal
 				isOpen={isOpen}
 				onClose={close}

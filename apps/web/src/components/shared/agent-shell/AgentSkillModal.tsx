@@ -8,29 +8,39 @@ import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
 import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { AgentKind } from "../../../lib/agent-host-registry.js";
+
+/** Empty library fallback (module const — a `?? []` inline would return a new
+ * array per selector call and re-render forever under zustand's Object.is). */
+const EMPTY_SKILL_ENTRIES: SkillCatalogEntryDto[] = [];
 
 /**
- * Copilot skill library manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 /
- * CP-10). Mirrors `CoauthorSkillModal` against the copilot skill roots: lists
- * the merged metadata-only catalog (built-in + user, user shadows builtin),
- * imports a skill tree via a folder upload, inspects metadata, and deletes user
- * skills. Built-in skills are read-only (the server rejects their delete).
+ * Agent skill library manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 /
+ * CP-10, per-kind libraries AS-8d2). Shows ONE agent kind's library: lists
+ * that kind's merged metadata-only catalog (built-in + user, user shadows
+ * builtin), imports a skill tree via a folder upload, inspects metadata, and
+ * deletes user skills. Built-in skills are read-only (their delete is
+ * rejected by the server). Owner ruling 2026-10-17: one library per agent
+ * kind — the script editor used to show the mini-app library.
  *
  * CONTROLLED — unlike `CoauthorSkillModal` (which keys off the global
- * `modal-store`), this modal is owned by `CopilotProfileModal` (opened from its
- * "Manage skills" action), so open/close are props.
+ * `modal-store`), this modal is owned by `AgentProfileModal` (opened from its
+ * "Manage skills" action), so open/close AND the kind are props.
  */
 export interface AgentSkillModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** The agent kind whose library this instance manages (AS-8d2) — every
+   *  catalog read and mutation runs under this kind only. */
+  agentKind: AgentKind;
 }
 
-export function AgentSkillModal({ isOpen, onClose }: AgentSkillModalProps) {
+export function AgentSkillModal({ isOpen, onClose, agentKind }: AgentSkillModalProps) {
 	const { t } = useT();
 
-	const entries = useCopilotSkillStore((s) => s.entries);
+	const entries = useCopilotSkillStore((s) => s.catalogs[agentKind]?.entries ?? EMPTY_SKILL_ENTRIES);
 	const isLoading = useCopilotSkillStore((s) => s.isLoading);
-	const hasLoaded = useCopilotSkillStore((s) => s.hasLoaded);
+	const hasLoaded = useCopilotSkillStore((s) => s.catalogs[agentKind]?.hasLoaded ?? false);
 	const load = useCopilotSkillStore((s) => s.load);
 	const importTree = useCopilotSkillStore((s) => s.importTree);
 	const remove = useCopilotSkillStore((s) => s.remove);
@@ -47,13 +57,13 @@ export function AgentSkillModal({ isOpen, onClose }: AgentSkillModalProps) {
 	};
 
 	useEffect(() => {
-		if (isOpen) void load();
+		if (isOpen) void load(agentKind);
 		if (!isOpen) {
 			setSelectedId(null);
 			setPendingDelete(null);
 			setIsImporting(false);
 		}
-	}, [isOpen, load]);
+	}, [isOpen, load, agentKind]);
 
 	const selected = entries.find((e) => e.id === selectedId) ?? null;
 
@@ -70,7 +80,7 @@ export function AgentSkillModal({ isOpen, onClose }: AgentSkillModalProps) {
 		if (!files || files.length === 0) return;
 		setIsImporting(true);
 		try {
-			const ids = await importTree(Array.from(files));
+			const ids = await importTree(agentKind, Array.from(files));
 			toast.success(t("copilot_skill_import_success", { n: ids.length, ids: ids.join(", ") }));
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : t("copilot_skill_import_failed"));
@@ -85,7 +95,7 @@ export function AgentSkillModal({ isOpen, onClose }: AgentSkillModalProps) {
 		setPendingDelete(null);
 		if (!id) return;
 		try {
-			await remove(id);
+			await remove(agentKind, id);
 			if (selectedId === id) setSelectedId(null);
 			toast.success(t("copilot_skill_deleted"));
 		} catch (err) {

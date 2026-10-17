@@ -172,12 +172,12 @@ beforeEach(() => {
 	deleteCopilotProfile.mockResolvedValue(undefined);
 	setCopilotProfile.mockResolvedValue(undefined);
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
-	useCopilotSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
+	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 });
 
 afterEach(() => {
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
-	useCopilotSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
+	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 });
 
 function renderModal(over: { scriptId?: string; agentKind?: string; assignedProfileId?: string | null } = {}) {

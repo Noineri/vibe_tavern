@@ -1,12 +1,15 @@
 /**
- * Wave 3 / CP-10 — copilot skill library manager (MasterDetail) tests.
+ * Wave 3 / CP-10, per-kind libraries AS-8d2 — agent skill library manager
+ * (MasterDetail) tests.
  *
  * Mirrors `CoauthorSkillModal.test.tsx` against the copilot skill roots:
- *   - lists the merged catalog on open (built-in + user entries);
+ *   - lists the kind's merged catalog on open (built-in + user entries);
  *   - a pure built-in skill has no delete affordance (read-only);
- *   - a user skill exposes delete → confirm → `deleteCopilotSkill`.
+ *   - a user skill exposes delete → confirm → `deleteCopilotSkill(kind, id)`;
+ *   - every RPC carries the modal's kind; one kind never shows the other
+ *     kind's cached entries.
  *
- * The modal is CONTROLLED (open is a prop), so it is rendered with
+ * The modal is CONTROLLED (open + kind are props), so it is rendered with
  * `isOpen=true` directly (no global modal store).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
@@ -15,7 +18,7 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
-import type { SkillCatalog } from "@vibe-tavern/api-contracts";
+import type { SkillCatalog, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 
 const realI18nContext = await import("../../../i18n/context.js");
 const realSkillApi = await import("../../../api/copilot-skill-api.js");
@@ -91,6 +94,33 @@ const CATALOG: SkillCatalog = {
 	errors: [],
 };
 
+const SCRIPT_USER_ENTRY: SkillCatalogEntryDto = {
+	id: "script-skill",
+	source: "user",
+	name: "Script Skill",
+	description: "Script-only skill.",
+	manifestPath: "script-skill/SKILL.md",
+	shadowsBuiltin: false,
+};
+
+const CACHED_EXPERIENCE_ENTRY: SkillCatalogEntryDto = {
+	id: "cached-experience-skill",
+	source: "builtin",
+	name: "Cached Experience Skill",
+	description: "Seeded experience cache.",
+	manifestPath: "cached-experience-skill/SKILL.md",
+	shadowsBuiltin: false,
+};
+
+const CACHED_SCRIPT_ENTRY: SkillCatalogEntryDto = {
+	id: "cached-script-skill",
+	source: "builtin",
+	name: "Cached Script Skill",
+	description: "Seeded script cache.",
+	manifestPath: "cached-script-skill/SKILL.md",
+	shadowsBuiltin: false,
+};
+
 beforeEach(() => {
 	listSkillsMock.mockReset();
 	listSkillsMock.mockResolvedValue(CATALOG);
@@ -98,11 +128,11 @@ beforeEach(() => {
 	deleteSkillMock.mockResolvedValue({ id: "my-card-skill" });
 	importSkillsMock.mockReset();
 	importSkillsMock.mockResolvedValue({ importedSkillIds: ["my-card-skill"], importedTopLevelDirs: ["my-card-skill"] });
-	useCopilotSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
+	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 });
 
-function renderModal() {
-	return render(<AgentSkillModal isOpen onClose={mock()} />);
+function renderModal(agentKind = "experience") {
+	return render(<AgentSkillModal isOpen onClose={mock()} agentKind={agentKind} />);
 }
 
 describe("CopilotSkillModal — catalog list + read-only built-ins", () => {
@@ -110,6 +140,7 @@ describe("CopilotSkillModal — catalog list + read-only built-ins", () => {
 		const { getByText } = renderModal();
 		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
 		expect(getByText("Experience Authoring")).toBeDefined();
+		expect(listSkillsMock).toHaveBeenCalledWith("experience");
 	});
 
 	it("a pure built-in skill has no delete affordance", async () => {
@@ -132,6 +163,49 @@ describe("CopilotSkillModal — delete user skill", () => {
 		fireEvent.click(getByTestId("copilot-skill-delete-btn-my-card-skill"));
 		await waitFor(() => expect(getByTestId("confirm-modal")).toBeDefined());
 		fireEvent.click(getByTestId("confirm-ok"));
-		await waitFor(() => expect(deleteSkillMock).toHaveBeenCalledWith("my-card-skill"));
+		await waitFor(() => expect(deleteSkillMock).toHaveBeenCalledWith("experience", "my-card-skill"));
+	});
+});
+
+describe("CopilotSkillModal — per-kind library (AS-8d2)", () => {
+	it("the script kind requests its own catalog", async () => {
+		renderModal("script");
+		await waitFor(() => expect(listSkillsMock).toHaveBeenCalledWith("script"));
+	});
+
+	it("import passes the kind", async () => {
+		const { getByTestId } = renderModal("script");
+		await waitFor(() => expect(listSkillsMock).toHaveBeenCalledWith("script"));
+		const file = new File(["# Script skill"], "SKILL.md");
+		fireEvent.change(getByTestId("copilot-skill-folder-input"), { target: { files: [file] } });
+		await waitFor(() => expect(importSkillsMock).toHaveBeenCalledWith("script", [file]));
+	});
+
+	it("delete passes the kind", async () => {
+		useCopilotSkillStore.setState({
+			catalogs: { script: { entries: [SCRIPT_USER_ENTRY], errors: [], hasLoaded: true } },
+			isLoading: false,
+		});
+		const { getByTestId } = renderModal("script");
+		fireEvent.click(getByTestId("copilot-skill-delete-btn-script-skill"));
+		await waitFor(() => expect(getByTestId("confirm-modal")).toBeDefined());
+		fireEvent.click(getByTestId("confirm-ok"));
+		await waitFor(() => expect(deleteSkillMock).toHaveBeenCalledWith("script", "script-skill"));
+	});
+
+	it("opening the modal for one kind never shows the other kind's cached entries", async () => {
+		useCopilotSkillStore.setState({
+			catalogs: {
+				experience: { entries: [CACHED_EXPERIENCE_ENTRY], errors: [], hasLoaded: true },
+				script: { entries: [CACHED_SCRIPT_ENTRY], errors: [], hasLoaded: true },
+			},
+			isLoading: false,
+		});
+		// Sync read pins the seeded cache: the open effect's `load` has not
+		// resolved yet, so whatever renders now comes from the script cache.
+		const { queryByText } = renderModal("script");
+		expect(queryByText("Cached Script Skill")).toBeDefined();
+		expect(queryByText("Cached Experience Skill")).toBeNull();
+		await waitFor(() => expect(listSkillsMock).toHaveBeenCalledWith("script"));
 	});
 });
