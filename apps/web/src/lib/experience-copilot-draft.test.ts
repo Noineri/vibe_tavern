@@ -29,17 +29,17 @@ import {
 	isReviewRound,
 	syncPersistedCopilotRound,
 } from "./experience-copilot-draft.js";
-import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
-import { EMPTY_REVIEW_ROUND, useCopilotReviewRoundStore, type CopilotReviewRound } from "../stores/experience-copilot-review-store.js";
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
+import { useAgentTurnStore } from "../stores/agent-turn-store.js";
+import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore, type AgentReviewRound } from "../stores/agent-review-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 
 useDomEnv();
 
-function rulesActivity(toolCallId: string, proposed: string, summary = "Made rules assertive."): ExperienceCopilotToolActivity {
+function rulesActivity(toolCallId: string, proposed: string, summary = "Made rules assertive."): AgentToolActivity {
 	return { toolCallId, toolName: "write_buffer", status: "done", target: "rules", proposed, summary };
 }
 
-function visualActivity(toolCallId: string, proposed: string, summary = "Made visual bold."): ExperienceCopilotToolActivity {
+function visualActivity(toolCallId: string, proposed: string, summary = "Made visual bold."): AgentToolActivity {
 	return { toolCallId, toolName: "edit_buffer", status: "done", target: "visual", proposed, summary };
 }
 
@@ -79,7 +79,7 @@ describe("experience-copilot-draft — isFinalizedActivity", () => {
 
 describe("experience-copilot-draft — pure serialization", () => {
 	it("finalizeForPersistence keeps only done + proposed activities, dedupes by toolCallId in order", () => {
-		const activities: ExperienceCopilotToolActivity[] = [
+		const activities: AgentToolActivity[] = [
 			{ toolCallId: "c1", toolName: "write_buffer", status: "streaming" }, // transient → dropped
 			rulesActivity("c2", RULES_A),
 			{ toolCallId: "c3", toolName: "write_buffer", status: "error" }, // error → dropped
@@ -95,7 +95,7 @@ describe("experience-copilot-draft — pure serialization", () => {
 		const activities = [
 			{ toolCallId: "c1", toolName: "run_test", status: "done", summary: "Tests pass." }, // no target/proposed
 			rulesActivity("c2", RULES_A),
-		] as ExperienceCopilotToolActivity[];
+		] as AgentToolActivity[];
 		expect(finalizeForPersistence(activities).map((a) => a.toolCallId)).toEqual(["c2"]);
 	});
 
@@ -108,7 +108,7 @@ describe("experience-copilot-draft — pure serialization", () => {
 	});
 
 	it("serializeDraft keeps the key alive for a dangling-only round (CD-8 capture)", () => {
-		const round: CopilotReviewRound = {
+		const round: AgentReviewRound = {
 			...EMPTY_REVIEW_ROUND,
 			dangling: { rules: RULES_B, baseRules: RULES_A, baseVisual: VISUAL_A },
 		};
@@ -121,7 +121,7 @@ describe("experience-copilot-draft — pure serialization", () => {
 
 	it("serializeDraft → parseDraft round-trips finalized activities + the round", () => {
 		const activities = [rulesActivity("c1", RULES_A, "s1"), visualActivity("c2", VISUAL_A)];
-		const round: CopilotReviewRound = {
+		const round: AgentReviewRound = {
 			snapshots: [{ id: 3, rules: RULES_A, visual: VISUAL_A }],
 			nextSnapshotId: 4,
 			acceptedRules: [0],
@@ -204,7 +204,7 @@ describe("experience-copilot-draft — localStorage I/O", () => {
 
 	beforeEach(() => {
 		localStorage.clear();
-		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+		useAgentTurnStore.setState({ turnsByThread: {} });
 	});
 
 	it("saveDraft → loadDraft round-trips a finalized proposal", () => {
@@ -257,13 +257,13 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 
 	beforeEach(() => {
 		localStorage.clear();
-		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-		useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+		useAgentTurnStore.setState({ turnsByThread: {} });
+		useAgentReviewRoundStore.setState({ roundsByThread: {} });
 	});
 
 	it("rehydrateExperienceCopilotDrafts seeds BOTH stores from localStorage (the reload)", () => {
 		// Simulate a previous session having persisted a proposal + review round.
-		const round: CopilotReviewRound = {
+		const round: AgentReviewRound = {
 			snapshots: [{ id: 1, rules: RULES_A, visual: VISUAL_A }],
 			nextSnapshotId: 2,
 			acceptedRules: [],
@@ -276,30 +276,30 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 		};
 		saveDraft("thread_1", [rulesActivity("c1", RULES_A), visualActivity("c2", VISUAL_A)], round);
 		// Fresh page load: both stores start empty.
-		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-		useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+		useAgentTurnStore.setState({ turnsByThread: {} });
+		useAgentReviewRoundStore.setState({ roundsByThread: {} });
 		rehydrateExperienceCopilotDrafts();
-		const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
+		const acts = useAgentTurnStore.getState().getActivities("experience", "thread_1");
 		expect(acts.map((a) => a.toolCallId)).toEqual(["c1", "c2"]);
 		expect(acts[0].proposed).toBe(RULES_A);
-		expect(useCopilotReviewRoundStore.getState().roundsByThread["thread_1"]).toEqual(round);
+		expect(useAgentReviewRoundStore.getState().roundsByThread["thread_1"]).toEqual(round);
 	});
 
 	it("rehydrateExperienceCopilotDrafts is a no-op when nothing is persisted", () => {
-		useExperienceCopilotTurnStore.setState({ turnsByThread: { thread_x: [rulesActivity("c9", RULES_A)] } });
-		const before = useExperienceCopilotTurnStore.getState().turnsByThread;
+		useAgentTurnStore.setState({ turnsByThread: { thread_x: [rulesActivity("c9", RULES_A)] } });
+		const before = useAgentTurnStore.getState().turnsByThread;
 		rehydrateExperienceCopilotDrafts();
 		// Merge of {} is a no-op → dict reference unchanged.
-		expect(useExperienceCopilotTurnStore.getState().turnsByThread).toBe(before);
+		expect(useAgentTurnStore.getState().turnsByThread).toBe(before);
 	});
 
 	it("syncPersistedCopilotRound mirrors both stores into the key (the write side)", () => {
 		// A pending proposal + a half-reviewed round in the stores.
-		useExperienceCopilotTurnStore.setState({
+		useAgentTurnStore.setState({
 			turnsByThread: { thread_1: [rulesActivity("c1", RULES_A)] },
 		});
-		useCopilotReviewRoundStore.getState().pushSnapshot("experience", "thread_1", { rules: RULES_A, visual: VISUAL_A });
-		useCopilotReviewRoundStore.getState().setAcceptedHunks("experience", "thread_1", "rules", [0]);
+		useAgentReviewRoundStore.getState().pushSnapshot("experience", "thread_1", { rules: RULES_A, visual: VISUAL_A });
+		useAgentReviewRoundStore.getState().setAcceptedHunks("experience", "thread_1", "rules", [0]);
 		syncPersistedCopilotRound("thread_1");
 		const back = loadDraft("thread_1");
 		expect(back?.activities.map((a) => a.toolCallId)).toEqual(["c1"]);
@@ -307,8 +307,8 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 		expect(back?.round?.acceptedRules).toEqual([0]);
 
 		// Once both sides resolve (activities cleared, no dangling), the key goes.
-		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-		useCopilotReviewRoundStore.getState().resetRound("experience", "thread_1");
+		useAgentTurnStore.setState({ turnsByThread: {} });
+		useAgentReviewRoundStore.getState().resetRound("experience", "thread_1");
 		syncPersistedCopilotRound("thread_1");
 		expect(loadDraft("thread_1")).toBeNull();
 	});

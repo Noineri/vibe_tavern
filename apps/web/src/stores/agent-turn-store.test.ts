@@ -1,20 +1,20 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import {
   extractHistoricalTurnActivities,
-  extractPersistedExperienceCopilotActivities,
-  parseCopilotAskState,
+  extractPersistedAgentActivities,
+  parseAgentAskState,
   parseTodoToolArgs,
   parseTodoToolResult,
-  useExperienceCopilotTurnStore,
+  useAgentTurnStore,
   wireToToolSource,
-} from "./experience-copilot-turn-store.js";
+} from "./agent-turn-store.js";
 import type { AppMessage } from "../api/types.js";
 import type { CopilotTodoItem, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 describe("useExperienceCopilotTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
   it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
@@ -41,7 +41,7 @@ describe("useExperienceCopilotTurnStore", () => {
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_new",
       toolName: "write_buffer",
       args: { buffer: "rules" },
@@ -73,7 +73,7 @@ describe("useExperienceCopilotTurnStore", () => {
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_read",
       toolName: "read_skill_file",
       args: { path: "general-writing/SKILL.md" },
@@ -112,7 +112,7 @@ describe("useExperienceCopilotTurnStore", () => {
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    const acts = extractPersistedExperienceCopilotActivities(messages);
+    const acts = extractPersistedAgentActivities(messages);
     expect(acts).toHaveLength(2);
     expect(acts[0]).toMatchObject({ toolName: "read_skill_file", status: "done", readPath: "general-writing/SKILL.md" });
     expect(acts[1]).toMatchObject({ toolName: "write_buffer", status: "done", target: "rules", proposed: expect.stringContaining("Bold") });
@@ -139,7 +139,7 @@ describe("useExperienceCopilotTurnStore", () => {
       { id: "tool_write", role: "tool", toolCallId: "call_write", content: JSON.stringify({ target: "visual", proposed: "---\n# VISUAL\n# fresh", summary: "fill scenario" }) },
     ] as AppMessage[];
 
-    const acts = extractPersistedExperienceCopilotActivities(messages);
+    const acts = extractPersistedAgentActivities(messages);
     expect(acts).toHaveLength(2);
     expect(acts[0]).toMatchObject({ toolCallId: "call_edit", toolName: "edit_buffer", args: editArgs });
     expect(acts[1]).toMatchObject({ toolCallId: "call_write", toolName: "write_buffer", args: writeArgs });
@@ -163,7 +163,7 @@ describe("useExperienceCopilotTurnStore", () => {
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_test",
       toolName: "run_test",
       args: { testName: "smoke" },
@@ -207,7 +207,7 @@ describe("useExperienceCopilotTurnStore", () => {
       },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_edit",
       toolName: "edit_buffer",
       args: editArgs,
@@ -219,24 +219,24 @@ describe("useExperienceCopilotTurnStore", () => {
   });
 
   it("inserts a new activity for a thread", () => {
-    const store = useExperienceCopilotTurnStore.getState();
+    const store = useAgentTurnStore.getState();
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
-    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1")).toEqual([
+    expect(useAgentTurnStore.getState().getActivities("experience", "thread_1")).toEqual([
       { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" },
     ]);
   });
 
   it("accumulates multiple activities for a thread in insertion order", () => {
-    const store = useExperienceCopilotTurnStore.getState();
+    const store = useAgentTurnStore.getState();
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_a", toolName: "write_buffer", status: "streaming" });
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_b", toolName: "edit_buffer", status: "streaming" });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
+    const acts = useAgentTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts.map((a) => a.toolCallId)).toEqual(["call_a", "call_b"]);
   });
 
   it("merges by toolCallId so a streaming placeholder is finalized in place by tool-result", () => {
     // Simulates the real event order: tool-call (streaming) → tool-result (done + proposal).
-    const store = useExperienceCopilotTurnStore.getState();
+    const store = useAgentTurnStore.getState();
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
     store.upsertActivity("experience", "thread_1", {
       toolCallId: "call_1",
@@ -246,7 +246,7 @@ describe("useExperienceCopilotTurnStore", () => {
       proposed: "---\n# RULES\nBold.",
       summary: "Made the rules more assertive.",
     });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
+    const acts = useAgentTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts).toHaveLength(1);
     expect(acts[0]).toEqual({
       toolCallId: "call_1",
@@ -262,7 +262,7 @@ describe("useExperienceCopilotTurnStore", () => {
     // Streaming path: onToolCall captures args; onToolResult later merges result
     // fields without re-passing args. The store's merge-by-toolCallId must not
     // erase the already-captured input.
-    const store = useExperienceCopilotTurnStore.getState();
+    const store = useAgentTurnStore.getState();
     const editArgs = { edits: [{ search: "a", replace: "b" }], summary: "s" };
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "edit_buffer", args: editArgs, status: "streaming" });
     store.upsertActivity("experience", "thread_1", {
@@ -273,31 +273,31 @@ describe("useExperienceCopilotTurnStore", () => {
       proposed: "---\n# RULES\nb",
       summary: "s",
     });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
+    const acts = useAgentTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts).toHaveLength(1);
     expect(acts[0].args).toStrictEqual(editArgs);
     expect(acts[0].status).toBe("done");
   });
 
   it("clearTurn drops the thread's activities", () => {
-    const store = useExperienceCopilotTurnStore.getState();
+    const store = useAgentTurnStore.getState();
     store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
     store.upsertActivity("experience", "thread_2", { toolCallId: "call_2", toolName: "edit_buffer", status: "done" });
-    useExperienceCopilotTurnStore.getState().clearTurn("experience", "thread_1");
-    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1")).toEqual([]);
+    useAgentTurnStore.getState().clearTurn("experience", "thread_1");
+    expect(useAgentTurnStore.getState().getActivities("experience", "thread_1")).toEqual([]);
     // Other threads are untouched.
-    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_2")).toHaveLength(1);
+    expect(useAgentTurnStore.getState().getActivities("experience", "thread_2")).toHaveLength(1);
   });
 
   it("clearTurn on a thread with no activities is a no-op (state ref unchanged)", () => {
-    useExperienceCopilotTurnStore.getState().upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
-    const before = useExperienceCopilotTurnStore.getState().turnsByThread;
-    useExperienceCopilotTurnStore.getState().clearTurn("experience", "thread_unknown");
-    expect(useExperienceCopilotTurnStore.getState().turnsByThread).toBe(before);
+    useAgentTurnStore.getState().upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
+    const before = useAgentTurnStore.getState().turnsByThread;
+    useAgentTurnStore.getState().clearTurn("experience", "thread_unknown");
+    expect(useAgentTurnStore.getState().turnsByThread).toBe(before);
   });
 
   it("getActivities returns [] for an unknown thread", () => {
-    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "never")).toEqual([]);
+    expect(useAgentTurnStore.getState().getActivities("experience", "never")).toEqual([]);
   });
 });
 
@@ -341,7 +341,7 @@ describe("persisted tool-content wrapper (persistTurn shape)", () => {
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_new",
       toolName: "write_buffer",
       args: { buffer: "rules" },
@@ -366,7 +366,7 @@ describe("persisted tool-content wrapper (persistTurn shape)", () => {
       },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_orphan",
       toolName: "read_skill_file",
       args: undefined,
@@ -482,14 +482,14 @@ describe("extractHistoricalTurnActivities", () => {
 describe("feed (TF-4)", () => {
   beforeEach(() => {
     // This describe lives outside the first describe's reset — restore here.
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
   const feedOf = (threadId: string) =>
-    useExperienceCopilotTurnStore.getState().feedByThread[threadId] ?? [];
+    useAgentTurnStore.getState().feedByThread[threadId] ?? [];
 
   it("accumulates deltas into one open text segment (id is a fresh text-N)", () => {
-    const { appendTextDelta } = useExperienceCopilotTurnStore.getState();
+    const { appendTextDelta } = useAgentTurnStore.getState();
     appendTextDelta("experience", "t1", "He");
     appendTextDelta("experience", "t1", "llo");
     const feed = feedOf("t1");
@@ -499,7 +499,7 @@ describe("feed (TF-4)", () => {
   });
 
   it("closeTextSegment closes the open segment; repeat close and close-without-open are noops", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().closeTextSegment("experience", "t1"); // noop — nothing open
     expect(feedOf("t1")).toEqual([]);
     s().appendTextDelta("experience", "t1", "Hi");
@@ -514,7 +514,7 @@ describe("feed (TF-4)", () => {
   });
 
   it("appendActivityRef appends once per toolCallId (idempotent) and adds new ids", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().appendTextDelta("experience", "t1", "a");
     s().appendActivityRef("experience", "t1", "c1");
     s().appendActivityRef("experience", "t1", "c1"); // duplicate — noop
@@ -525,7 +525,7 @@ describe("feed (TF-4)", () => {
   });
 
   it("text after an activity opens a NEW segment (the old one is not written into)", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().appendTextDelta("experience", "t1", "first");
     s().appendActivityRef("experience", "t1", "c1");
     s().appendTextDelta("experience", "t1", "second");
@@ -538,7 +538,7 @@ describe("feed (TF-4)", () => {
   });
 
   it("an empty delta is a noop (no empty segment)", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().appendTextDelta("experience", "t1", "");
     expect(feedOf("t1")).toEqual([]);
     s().appendTextDelta("experience", "t1", "x");
@@ -548,19 +548,19 @@ describe("feed (TF-4)", () => {
   });
 
   it("clearTurn drops both feed and activities for one thread only", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().upsertActivity("experience", "t1", { toolCallId: "c1", toolName: "write_buffer", status: "done" });
     s().appendTextDelta("experience", "t1", "text");
     s().appendTextDelta("experience", "t2", "other");
     s().clearTurn("experience", "t1");
-    expect(useExperienceCopilotTurnStore.getState().turnsByThread["t1"]).toBeUndefined();
+    expect(useAgentTurnStore.getState().turnsByThread["t1"]).toBeUndefined();
     expect(feedOf("t1")).toEqual([]);
     expect(feedOf("t2")).toHaveLength(1);
     expect(feedOf("t2")[0]).toMatchObject({ kind: "text", text: "other" });
   });
 
   it("two threads keep independent feeds", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().appendTextDelta("experience", "t1", "one");
     s().appendTextDelta("experience", "t2", "two");
     expect(feedOf("t1")).toHaveLength(1);
@@ -652,7 +652,7 @@ describe("parseTodoToolResult (TAG-7)", () => {
 
 describe("parseCopilotAskState (TAG-7)", () => {
   it("parses the awaiting marker verbatim (question/options/recommended from the output)", () => {
-    expect(parseCopilotAskState(ASK_ARGS, { status: "awaiting_answer", ...ASK_ARGS })).toEqual({
+    expect(parseAgentAskState(ASK_ARGS, { status: "awaiting_answer", ...ASK_ARGS })).toEqual({
       question: "Which deck suits the tone?",
       options: ["tarot", "playing cards"],
       recommended: "tarot",
@@ -661,7 +661,7 @@ describe("parseCopilotAskState (TAG-7)", () => {
   });
 
   it("parses the answered rewrite: status/answer from the output, question/options/recommended recovered from the carrier args", () => {
-    expect(parseCopilotAskState(ASK_ARGS, { status: "answered", answer: "tarot, definitely" })).toEqual({
+    expect(parseAgentAskState(ASK_ARGS, { status: "answered", answer: "tarot, definitely" })).toEqual({
       question: "Which deck suits the tone?",
       options: ["tarot", "playing cards"],
       recommended: "tarot",
@@ -671,7 +671,7 @@ describe("parseCopilotAskState (TAG-7)", () => {
   });
 
   it("parses the skipped rewrite (no answer field)", () => {
-    expect(parseCopilotAskState(ASK_ARGS, { status: "skipped" })).toEqual({
+    expect(parseAgentAskState(ASK_ARGS, { status: "skipped" })).toEqual({
       question: "Which deck suits the tone?",
       options: ["tarot", "playing cards"],
       recommended: "tarot",
@@ -680,7 +680,7 @@ describe("parseCopilotAskState (TAG-7)", () => {
   });
 
   it("an answered rewrite with no carrier args degrades to an empty question", () => {
-    expect(parseCopilotAskState(undefined, { status: "answered", answer: "yes" })).toEqual({
+    expect(parseAgentAskState(undefined, { status: "answered", answer: "yes" })).toEqual({
       question: "",
       status: "answered",
       answer: "yes",
@@ -688,10 +688,10 @@ describe("parseCopilotAskState (TAG-7)", () => {
   });
 
   it("returns null for an unknown status, an awaiting marker with no question anywhere, and an answered output with no answer", () => {
-    expect(parseCopilotAskState(ASK_ARGS, { status: "done" })).toBeNull();
-    expect(parseCopilotAskState(undefined, { status: "awaiting_answer" })).toBeNull();
-    expect(parseCopilotAskState(ASK_ARGS, { status: "answered" })).toBeNull();
-    expect(parseCopilotAskState(ASK_ARGS, null)).toBeNull();
+    expect(parseAgentAskState(ASK_ARGS, { status: "done" })).toBeNull();
+    expect(parseAgentAskState(undefined, { status: "awaiting_answer" })).toBeNull();
+    expect(parseAgentAskState(ASK_ARGS, { status: "answered" })).toBeNull();
+    expect(parseAgentAskState(ASK_ARGS, null)).toBeNull();
   });
 });
 
@@ -713,7 +713,7 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
       },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_todo",
       toolName: "todo",
       args: TODO_ITEMS,
@@ -733,7 +733,7 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
       },
     ] as AppMessage[];
 
-    const [activity] = extractPersistedExperienceCopilotActivities(messages);
+    const [activity] = extractPersistedAgentActivities(messages);
     expect(activity).toMatchObject({ toolCallId: "call_todo", toolName: "todo", status: "error" });
     expect(activity!.todo).toBeUndefined();
     expect(activity!.summary).toBe(JSON.stringify({ toolName: "todo", output: { ok: false, error: "db down" } }));
@@ -756,7 +756,7 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
       },
     ] as AppMessage[];
 
-    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+    expect(extractPersistedAgentActivities(messages)).toEqual([{
       toolCallId: "call_plan",
       toolName: "plan",
       args: PLAN_ARGS,
@@ -775,7 +775,7 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
       },
     ] as AppMessage[];
 
-    const [activity] = extractPersistedExperienceCopilotActivities(messages);
+    const [activity] = extractPersistedAgentActivities(messages);
     expect(activity).toMatchObject({ toolCallId: "call_plan", toolName: "plan", status: "error" });
     expect(activity!.summary).toBe(JSON.stringify({ toolName: "plan", output: { ok: false, error: "db down" } }));
   });
@@ -801,7 +801,7 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
       { id: "t3", role: "tool", toolCallId: "c3", content: JSON.stringify({ toolName: "ask_user", output: skipped }) },
     ] as AppMessage[];
 
-    const acts = extractPersistedExperienceCopilotActivities(messages);
+    const acts = extractPersistedAgentActivities(messages);
     expect(acts.map((a) => a.ask!.status)).toEqual(["awaiting_answer", "answered", "skipped"]);
     expect(acts[0]!.ask).toEqual({
       question: "Which deck suits the tone?",
@@ -824,11 +824,11 @@ describe("extractor todo/plan/ask branches (TAG-7, persisted shapes)", () => {
 
 describe("todoByThread panel state (TAG-7, restored PM-7)", () => {
   beforeEach(() => {
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
   it("setTodo is a full-rewrite replace (the newest list IS the state)", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().setTodo("experience", "t1", TODO_ITEMS);
     expect(s().getTodo("experience", "t1")).toEqual(TODO_ITEMS);
     s().setTodo("experience", "t1", [{ title: "Only step", status: "active" }]);
@@ -839,7 +839,7 @@ describe("todoByThread panel state (TAG-7, restored PM-7)", () => {
   });
 
   it("getTodo defaults to [] and threads are isolated", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     expect(s().getTodo("experience", "unknown")).toEqual([]);
     s().setTodo("experience", "t1", TODO_ITEMS);
     expect(s().getTodo("experience", "t2")).toEqual([]);
@@ -849,7 +849,7 @@ describe("todoByThread panel state (TAG-7, restored PM-7)", () => {
     // Owner ruling (translated): "todo lives for the whole session" — clearTurn
     // fires at every turn start; wiping the panel state there would blank the
     // pinned panel during every generation until the settle refetch re-seeds it.
-    const s = () => useExperienceCopilotTurnStore.getState();
+    const s = () => useAgentTurnStore.getState();
     s().setTodo("experience", "t1", TODO_ITEMS);
     s().upsertActivity("experience", "t1", { toolCallId: "c1", toolName: "todo", status: "done" });
     s().clearTurn("experience", "t1");

@@ -16,7 +16,7 @@ import { describe, it, expect } from "bun:test";
 import {
 	aggregateExperienceCopilotProposal,
 } from "./experience-copilot-apply.js";
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 
 /** A write_buffer/edit_buffer activity whose tool-result finalized with the
  *  proposal triple (`target`/`proposed`/`summary`). */
@@ -25,19 +25,19 @@ function bufferActivity(
 	target: "rules" | "visual",
 	proposed: string,
 	summary = "Edited buffer.",
-): ExperienceCopilotToolActivity {
+): AgentToolActivity {
 	return { toolCallId, toolName: "write_buffer", status: "done", target, proposed, summary };
 }
 
 /** A read_skill_file activity — `done` with a `readPath`, but NO
  *  target/proposed, so it must never enter proposal aggregation. */
-function readActivity(toolCallId: string, path: string): ExperienceCopilotToolActivity {
+function readActivity(toolCallId: string, path: string): AgentToolActivity {
 	return { toolCallId, toolName: "read_skill_file", status: "done", readPath: path };
 }
 
 /** A run_test activity — `done` with a `summary` only (an informational digest),
  *  so it must never enter proposal aggregation. */
-function runTestActivity(toolCallId: string, summary: string): ExperienceCopilotToolActivity {
+function runTestActivity(toolCallId: string, summary: string): AgentToolActivity {
 	return { toolCallId, toolName: "run_test", status: "done", summary };
 }
 
@@ -51,8 +51,8 @@ describe("aggregateExperienceCopilotProposal — no proposal", () => {
 	});
 
 	it("excludes streaming and error activities (only done+proposed count)", () => {
-		const streaming: ExperienceCopilotToolActivity = { toolCallId: "t1", toolName: "write_buffer", status: "streaming" };
-		const errored: ExperienceCopilotToolActivity = { toolCallId: "t2", toolName: "write_buffer", status: "error", target: "rules", proposed: "x" };
+		const streaming: AgentToolActivity = { toolCallId: "t1", toolName: "write_buffer", status: "streaming" };
+		const errored: AgentToolActivity = { toolCallId: "t2", toolName: "write_buffer", status: "error", target: "rules", proposed: "x" };
 		const result = aggregateExperienceCopilotProposal([streaming, errored]);
 		expect(result.hasProposal).toBe(false);
 		expect(result.summaries).toEqual([]);
