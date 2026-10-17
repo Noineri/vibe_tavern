@@ -4,7 +4,9 @@
  * Pins the AS-8c4f1 shared mobile management row boundary: one row with the
  * name input, the enable toggle, the save button and the `...` button; the
  * `...` button opens an ActionSheet with the caller's title and items; a
- * danger item fires its action; a disabled item never fires. i18n is stubbed
+ * danger item fires its action; a disabled item never fires. AS-8c4h adds
+ * the optional badge slot: the badge renders in the row when given, and the
+ * row renders as before without it. i18n is stubbed
  * (key-echo translator); every callback is asserted through the component's
  * explicit props. No status pill and no save-state text exist anywhere — the
  * toggle and the save button carry the state.
@@ -56,6 +58,7 @@ interface RowOverrides {
   saveLabel?: string;
   sheetTitle?: string;
   sheetItems?: ActionSheetItem[];
+  badge?: ReactNode;
 }
 
 function renderRow(overrides: RowOverrides = {}) {
@@ -100,6 +103,22 @@ describe("ManagementMobileRow", () => {
     expect(container.querySelector("div.flex.w-full.items-center.gap-1\\.5")).toBeTruthy();
     expect(queryByText("Kind info")).toBeNull();
     expect(queryByText("Delete it")).toBeNull();
+  });
+
+  it("renders the badge in the row when given, inside a shrink-0 wrapper", () => {
+    const { getByText } = renderRow({ badge: <span>Prompt badge</span> });
+    // Badge is authored copy in the name row — visible with the sheet closed,
+    // never truncated (shrink-0 wrapper keeps it out of the input's flex).
+    const badge = getByText("Prompt badge");
+    expect(badge.parentElement?.className).toContain("shrink-0");
+  });
+
+  it("renders as before without a badge", () => {
+    const { queryByText, getByPlaceholderText, getByRole } = renderRow();
+    getByPlaceholderText("Name here");
+    getByRole("switch");
+    getByRole("button", { name: "Save now" });
+    expect(queryByText("Prompt badge")).toBeNull();
   });
 
   it("opens the sheet with the caller's title and items from the ... button", () => {

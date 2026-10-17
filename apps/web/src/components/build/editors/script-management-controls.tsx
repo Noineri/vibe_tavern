@@ -12,9 +12,9 @@
 // Code tab's toolbar strip (ScriptAgentEditorTabs) by owner decision
 // 2026-10-17 (AS-8c4e) — layout B places them above the templates row. On
 // mobile the bar renders the shared ManagementMobileRow instead: one row
-// (name, toggle, save, ...) with the kind badge and the delete moved into
+// (name, kind badge, toggle, save, ...) with the delete alone moved into
 // the more-actions sheet (owner decision 2026-10-17, AS-8c4f1 — the same
-// shared row mini-apps adopt in f2).
+// shared row mini-apps adopt in f2; AS-8c4h moved the badge to the row).
 //
 // Every value and callback arrives via explicit props — no store reads,
 // no new context.
@@ -61,10 +61,10 @@ export function ScriptManagementControls({
   onSave,
 }: ScriptManagementControlsProps) {
   const { t } = useT();
-  // AS-8c4f1: on mobile the whole bar is the shared ManagementMobileRow —
-  // one row (name, toggle, save, ...) with the kind badge and the delete
-  // moved into the more-actions sheet. The sheet delete calls the same
-  // onDelete (the existing confirm modal), so the delete flow is unchanged.
+  // AS-8c4h: on mobile the whole bar is the shared ManagementMobileRow —
+  // one row (name, kind badge, toggle, save, ...) with the delete alone in
+  // the more-actions sheet. The sheet delete calls the same onDelete (the
+  // existing confirm modal), so the delete flow is unchanged.
   if (isMobile) {
     return (
       <ManagementMobileRow
@@ -79,17 +79,12 @@ export function ScriptManagementControls({
         resetKey={resetKey}
         onSave={onSave}
         sheetTitle={name}
+        badge={
+          <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
+            {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
+          </div>
+        }
         sheetItems={[
-          {
-            icon: <Ic.terminal />,
-            label: scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt"),
-            // Info-only row: ActionSheet has no text-only variant, so the
-            // kind renders as a disabled item — dimmed, non-interactive,
-            // out of the tab order. The noop never fires (the sheet's
-            // onClick returns early for disabled rows).
-            disabled: true,
-            action: () => {},
-          },
           {
             icon: <Ic.del />,
             label: t("delete_script_confirm"),

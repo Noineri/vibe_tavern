@@ -5,8 +5,8 @@
  * badge, status pill, enable toggle, desktop save-state text, save, delete
  * — the description field + the entity-only links block moved into the Code
  * tab's toolbar strip since AS-8c4e); mobile pins the shared AS-8c4f1 row
- * (name, toggle, save, `...` — the kind and the delete live in the sheet).
- * i18n is stubbed (key-echo translator); every callback is asserted through
+ * (name, kind badge, toggle, save, `...` — the delete alone lives in the
+ * sheet; AS-8c4h moved the badge out of the sheet into the row). i18n is stubbed (key-echo translator); every callback is asserted through
  * the component's explicit props.
  *
  * Runner: bun:test with scoped happy-dom.
@@ -128,12 +128,13 @@ describe("ScriptManagementControls", () => {
     expect(calls.deletes()).toBe(1);
   });
 
-  it("renders the shared mobile row on mobile: one row, no status pill, kind and delete in the sheet", () => {
-    // AS-8c4f1: mobile renders ManagementMobileRow — the name, the toggle,
-    // the save and the `...` button in one row. The status pill and the
-    // save-state text are gone (the toggle and the save button carry the
-    // state); the kind badge and the delete live in the more-actions sheet.
-    const { getByPlaceholderText, getByRole, getByText, queryByText, calls } = renderControls({ isMobile: true, draftDirty: false });
+  it("renders the shared mobile row on mobile: kind badge in the row, delete alone in the sheet", () => {
+    // AS-8c4h: mobile renders ManagementMobileRow — the name, the kind badge,
+    // the toggle, the save and the `...` button in one row. The status pill
+    // and the save-state text are gone (the toggle and the save button carry
+    // the state); the kind badge lives in the row, the delete alone lives in
+    // the more-actions sheet.
+    const { getByPlaceholderText, getByRole, getByText, getAllByText, queryByText, calls } = renderControls({ isMobile: true, draftDirty: false });
     getByPlaceholderText("script_name");
     getByRole("switch");
     getByRole("button", { name: "save" });
@@ -141,17 +142,29 @@ describe("ScriptManagementControls", () => {
     expect(queryByText("experience_editor_enabled")).toBeNull();
     expect(queryByText("experience_editor_enabled_short")).toBeNull();
     expect(queryByText("saved_state")).toBeNull();
-    expect(queryByText("script_kind_prompt")).toBeNull();
+    // The kind badge is authored copy in the name row — visible before the
+    // sheet opens, with the desktop badge markup, never truncated.
+    const badge = getByText("script_kind_prompt");
+    expect(badge.parentElement?.className).toContain("shrink-0");
+    expect(badge.className).toContain("bg-s3");
+    expect(badge.className).toContain("uppercase");
     expect(queryByText("delete_script_confirm")).toBeNull();
-    // `...` opens the sheet with the script name, the kind and the delete.
+    // `...` opens the sheet with the script name and the delete only — the
+    // kind text appears exactly once (the row badge, never a sheet copy).
     fireEvent.click(getByRole("button", { name: "management_more_actions" }));
     getByText("My script");
-    getByText("script_kind_prompt");
-    // The kind row is info-only: tapping it deletes nothing.
+    expect(getAllByText("script_kind_prompt")).toHaveLength(1);
+    // Tapping the row badge deletes nothing.
     fireEvent.click(getByText("script_kind_prompt"));
     expect(calls.deletes()).toBe(0);
     // The sheet delete routes through the same onDelete (confirm modal).
     fireEvent.click(getByText("delete_script_confirm"));
     expect(calls.deletes()).toBe(1);
+  });
+
+  it("shows the dice kind badge in the mobile row for dice scripts", () => {
+    const { getByText, queryByText } = renderControls({ isMobile: true, scriptKind: "dice" });
+    getByText("script_kind_dice");
+    expect(queryByText("script_kind_prompt")).toBeNull();
   });
 });

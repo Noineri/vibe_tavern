@@ -3,12 +3,15 @@
 // name, the enable toggle, the save button and a more-actions sheet — used
 // for scripts now, adopted by mini-apps in f2). ONE row
 // `flex w-full items-center gap-1.5`: the name TextInput (the bars' name
-// classes, min-w-0 flex-1), the enable Toggle (disabled locks it), the
-// SaveButton (floppy icon, same dirty/state/resetKey/label props as the
-// bars) and a `...` icon button opening an ActionSheet with the caller's
-// title and items. No status pill, no save-state text — the toggle and the
-// save button carry the state. Plain props, no store reads.
-import { useState } from "react";
+// classes, min-w-0 flex-1), an optional badge slot in a shrink-0 wrapper
+// right after the name (authored copy, never truncated — the script kind
+// lives here since owner 2026-10-17 AS-8c4h moved it out of the sheet into
+// the name row; mini-apps pass no badge), the enable Toggle (disabled locks
+// it), the SaveButton (floppy icon, same dirty/state/resetKey/label props
+// as the bars) and a `...` icon button opening an ActionSheet with the
+// caller's title and items. No status pill, no save-state text — the toggle
+// and the save button carry the state. Plain props, no store reads.
+import { useState, type ReactNode } from "react";
 import { useT } from "../../../i18n/context.js";
 import { Ic } from "../../shared/icons.js";
 import { ActionSheet, type ActionSheetItem } from "../../shared/ActionSheet.js";
@@ -31,6 +34,7 @@ interface ManagementMobileRowProps {
   onSave: () => void;
   sheetTitle: string;
   sheetItems: ActionSheetItem[];
+  badge?: ReactNode;
 }
 
 export function ManagementMobileRow({
@@ -47,6 +51,7 @@ export function ManagementMobileRow({
   onSave,
   sheetTitle,
   sheetItems,
+  badge,
 }: ManagementMobileRowProps) {
   const { t } = useT();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -60,6 +65,7 @@ export function ManagementMobileRow({
           onChange={(e) => onNameChange(e.target.value)}
           placeholder={namePlaceholder}
         />
+        {badge ? <div className="shrink-0">{badge}</div> : null}
         <Toggle
           checked={enabled}
           disabled={enableLocked}
