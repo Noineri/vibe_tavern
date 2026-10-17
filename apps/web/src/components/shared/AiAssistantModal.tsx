@@ -16,7 +16,6 @@ import { buildLineDiff, TextDiffPreview } from "./TextDiffPreview.js";
 import { NumberInput } from "./NumberInput.js";
 import { Toggle } from "./Toggle.js";
 import { cn } from "../../lib/cn.js";
-import { cleanAiCode } from "../../lib/ai-code-clean.js";
 import { describeMdImportValue, getMdImportFieldLabel, MD_IMPORT_FIELD_OPTIONS, mergeMdImportFields, type MdImportResult } from "../../lib/md-import-utils.js";
 import { useT } from "../../i18n/context.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
@@ -39,7 +38,7 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "dice_script";
+  apiMode?: "lore_entry" | "md_import" | "scene_schema" | "scene_rules";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
@@ -323,9 +322,8 @@ export function AiAssistantModal({
   };
 
   const cleanedOutput = useMemo(() => {
-    if (apiMode === "script" || apiMode === "dice_script") return cleanAiCode(streamedOutput);
     return streamedOutput.trim();
-  }, [apiMode, streamedOutput]);
+  }, [streamedOutput]);
 
   const isAiEditMode = Boolean(existingContent && existingContent.trim());
   const aiDiffSummary = useMemo(

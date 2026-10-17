@@ -11,7 +11,7 @@ import {
 import type { AppMessage } from "../api/types.js";
 import type { CopilotTodoItem, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
-describe("useExperienceCopilotTurnStore", () => {
+describe("useAgentTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
     useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
@@ -650,7 +650,7 @@ describe("parseTodoToolResult (TAG-7)", () => {
   });
 });
 
-describe("parseCopilotAskState (TAG-7)", () => {
+describe("parseAgentAskState (TAG-7)", () => {
   it("parses the awaiting marker verbatim (question/options/recommended from the output)", () => {
     expect(parseAgentAskState(ASK_ARGS, { status: "awaiting_answer", ...ASK_ARGS })).toEqual({
       question: "Which deck suits the tone?",

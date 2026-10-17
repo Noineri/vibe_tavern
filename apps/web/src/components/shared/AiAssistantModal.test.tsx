@@ -238,43 +238,6 @@ describe("AiAssistantModal — request construction", () => {
     useBootstrapStore.setState({ data: null });
   });
 
-  it("script mode: emits the expected request body", async () => {
-    useProviderDataStore.setState({
-      profiles: [makeProfile("prov-1", "Provider One")],
-      favoritesByProfile: {},
-    });
-    seedBootstrap("prov-1", "model-a");
-    const { updateUiSettings } = await mocks();
-
-    renderModal(
-      <AiAssistantModal
-        mode="full"
-        apiMode="script"
-        isOpen={true}
-        onClose={() => {}}
-        existingContent="print('hello')"
-        onInsert={() => {}}
-        onReplace={() => {}}
-        scopeContext={{ characterId: "char-1" }}
-      />,
-    );
-
-    await generateWithPrompt("add a comment");
-
-    await waitFor(() => expect(mockState.requests).toHaveLength(1));
-    const body = mockState.requests[0];
-    if (body === undefined) throw new Error("Expected the script request to be captured");
-    expect(body).toMatchObject({
-      mode: "script",
-      instruction: "add a comment",
-      existingContent: "print('hello')",
-      providerProfileId: "prov-1",
-      model: "model-a",
-    });
-    expect(body.enabledLayers).toContain("character_base");
-    expect(updateUiSettings).toHaveBeenCalled();
-  });
-
   it("lore_entry mode: emits the expected request body without lorebooks", async () => {
     useProviderDataStore.setState({
       profiles: [makeProfile("prov-1", "Provider One")],
@@ -364,7 +327,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     ]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("greet");
@@ -383,7 +346,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     ]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("think");
@@ -400,7 +363,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     setChunks([{ type: "error", error: "model-overloaded" }]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -414,7 +377,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     mockState.shouldThrow = true;
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -442,7 +405,7 @@ describe("AiAssistantModal — stop / cancellation", () => {
     setChunks([{ type: "text", text: "partial" }]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -478,7 +441,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"old code"}
@@ -505,7 +468,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"old code"}
@@ -542,7 +505,7 @@ describe("AiAssistantModal — line diff preview", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"line one v1"}
@@ -553,9 +516,9 @@ describe("AiAssistantModal — line diff preview", () => {
 
     await generateWithPrompt("edit");
 
-    // The diff title "script_ai_changes" renders with +1/-1 counts.
+    // The diff title "lore_entry_ai_changes" renders with +1/-1 counts.
     await waitFor(() => {
-      expect(screen.getByText("script_ai_changes")).toBeTruthy();
+      expect(screen.getByText("lore_entry_ai_changes")).toBeTruthy();
     });
     await waitFor(() => {
       expect(screen.getByText("+1")).toBeTruthy();
