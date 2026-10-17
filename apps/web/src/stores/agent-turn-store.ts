@@ -685,27 +685,4 @@ export const useAgentTurnStore = create<AgentTurnState>((set, get) => ({
 // localizes the bug above the render layer.
 if (typeof window !== "undefined") {
   window.__useAgentTurnStore = useAgentTurnStore;
-  window.__useExperienceCopilotTurnStore = useAgentTurnStore;
 }
-
-// ─── AS-5 experience aliases (shim until AS-10 call-site migration) ───
-/** @deprecated Use {@link AgentToolStatus} (generic rename, AS-5). */
-export type ExperienceCopilotToolStatus = AgentToolStatus;
-/** @deprecated Use {@link AgentTodoActivityResult} (generic rename, AS-5). */
-export type CopilotTodoActivityResult = AgentTodoActivityResult;
-/** @deprecated Use {@link AgentAskState} (generic rename, AS-5). */
-export type CopilotAskState = AgentAskState;
-/** @deprecated Use {@link AgentToolActivity} (generic rename, AS-5). */
-export type ExperienceCopilotToolActivity = AgentToolActivity;
-/** @deprecated Use {@link AgentFeedEntry} (generic rename, AS-5). */
-export type CopilotFeedEntry = AgentFeedEntry;
-/** @deprecated Use {@link AgentToolSourceMessage} (generic rename, AS-5). */
-export type CopilotToolSourceMessage = AgentToolSourceMessage;
-/** @deprecated Use {@link HistoricalAgentTurnActivities} (generic rename, AS-5). */
-export type HistoricalCopilotTurnActivities = HistoricalAgentTurnActivities;
-/** @deprecated Use {@link extractPersistedAgentActivities} (generic rename, AS-5). */
-export const extractPersistedExperienceCopilotActivities = extractPersistedAgentActivities;
-/** @deprecated Use {@link parseAgentAskState} (generic rename, AS-5). */
-export const parseCopilotAskState = parseAgentAskState;
-/** @deprecated Use {@link useAgentTurnStore} (generic rename, AS-5). */
-export const useExperienceCopilotTurnStore = useAgentTurnStore;

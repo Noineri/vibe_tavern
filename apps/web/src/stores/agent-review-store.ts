@@ -212,17 +212,4 @@ export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => (
 
 if (typeof window !== "undefined") {
   window.__useAgentReviewRoundStore = useAgentReviewRoundStore;
-  window.__useCopilotReviewRoundStore = useAgentReviewRoundStore;
 }
-
-// ─── AS-5 experience aliases (shim until AS-10 call-site migration) ───
-/** @deprecated Use {@link AgentReviewSnapshot} (generic rename, AS-5). */
-export type CopilotReviewSnapshot = AgentReviewSnapshot;
-/** @deprecated Use {@link AgentDanglingCapture} (generic rename, AS-5). */
-export type CopilotDanglingCapture = AgentDanglingCapture;
-/** @deprecated Use {@link AgentReviewBuffer} (generic rename, AS-5). */
-export type CopilotReviewBuffer = AgentReviewBuffer;
-/** @deprecated Use {@link AgentReviewRound} (generic rename, AS-5). */
-export type CopilotReviewRound = AgentReviewRound;
-/** @deprecated Use {@link useAgentReviewRoundStore} (generic rename, AS-5). */
-export const useCopilotReviewRoundStore = useAgentReviewRoundStore;
