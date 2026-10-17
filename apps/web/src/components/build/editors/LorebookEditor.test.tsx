@@ -110,7 +110,7 @@ mock.module("./ScriptEditor.js", () => ({
   useScriptPanel: () => ({
     modals: null,
     scriptListContent: null,
-    scriptEditorPanel: null,
+    scriptPlaceholderPanel: null,
     ownerOptions: [],
     nameSearch: "",
     setNameSearch: () => {},

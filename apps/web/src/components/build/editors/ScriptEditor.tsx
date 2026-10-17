@@ -35,7 +35,6 @@ import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
 import { LoreEntryList } from "./LoreEntryList.js";
-import { ScriptEditingSurface } from "./script-editing-surface.js";
 import { ScriptManagementControls } from "./script-management-controls.js";
 import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 // The script agent host registers itself (getAgentHost("script")) at module
@@ -614,38 +613,24 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     </div>
   );
 
-  // ── Script editor panel (for LorebookEditor editor view) ──
-  // AS-8a: the whole editing surface lives in ScriptEditingSurface (same
-  // file order, same DOM) — this hook keeps only state/effects/store wiring.
-  const scriptEditorPanel = (
-    <ScriptEditingSurface
-      isMobile={isMobile}
-      activeScript={activeScript}
-      activeScriptId={activeScriptId}
-      draftDirty={draftDirty}
-      draftSaveState={draftSaveState}
-      draftError={activeDraft?.error}
-      scriptLinks={scriptLinks}
-      linkCharacters={linkCharacters}
-      linkPersonas={linkPersonas}
-      apiRefOpen={apiRefOpen}
-      scriptSafetyExtensions={scriptSafetyExtensions}
-      characterName={scope === "entity" && !personaId ? allCharacters.find((x) => x.id === characterId)?.name : undefined}
-      onSave={() => { void handleSave(); }}
-      onUpdateDraft={updateDraft}
-      onToggleEnabled={handleToggleEnabled}
-      onDeleteRequest={(id) => setConfirmDeleteId(id)}
-      onSetScriptLinks={(next) => { void handleSetScriptLinks(next); }}
-      onToggleApiRef={() => setApiRefOpen((v) => !v)}
-      onAddFromTemplate={(key) => handleAddFromTemplate(key)}
-      onRevealLine={(line) => setRevealLine({ line })}
-    />
+  // ── No-script placeholder (for LorebookEditor editor view) ──
+  // AS-8c4b: the plain form is gone — one render path for scripts. The only
+  // survivor of the former plain surface is this no-script empty state,
+  // moved verbatim from the removed plain-form module (same classes,
+  // same key). The editor view shows it while open with no active
+  // script record — the agent panel is null then, so the view still has
+  // content in that corner case instead of an empty pane.
+  const scriptPlaceholderPanel = (
+    <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">
+      {t("script_test_no_result")}
+    </div>
   );
 
   // ── Always-on assistant (AS-8c3b) ──
   // ONE shared management-controls node (the AS-8c1 bar) built from the
-  // active script and the same handlers the plain surface below uses — the
-  // SS-7 enable-warning flow still runs through handleToggleEnabled and the
+  // active script and the same handlers the former plain form also used —
+  // the SS-7 enable-warning flow still runs through handleToggleEnabled
+  // and the
   // delete still goes through the existing confirm modal. The same surface
   // wiring travels opaquely to the `script` host through hostProps; the host
   // renders it as the tabbed Code/Test pane (AS-8c2, ScriptAgentEditorTabs)
@@ -653,7 +638,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // onto the same extensions. Rendered
   // whenever an active script exists — the shell's threads are script-owned
   // and the assistant is always on. The caller (LorebookEditor) renders this
-  // INSTEAD of the padded plain-editor scroll container (the 2-pane layout
+  // INSTEAD of the padded placeholder scroll container (the 2-pane layout
   // needs the full unpadded height — the ExperienceEditor container approach).
   // No back button inside the top bar and no shell onBack: the lore editor's
   // own editorHeader caret is the back control on both viewports (named
@@ -742,5 +727,5 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   ) : null;
 
 
-  return { modals, scriptListContent, scriptEditorPanel, scriptAgentPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
+  return { modals, scriptListContent, scriptPlaceholderPanel, scriptAgentPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
 }

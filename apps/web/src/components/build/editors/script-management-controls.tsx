@@ -156,8 +156,9 @@ export function ScriptManagementControls({
       {/* Row 2 (no model equivalent): the description field plus, for entity
           scripts only, the links block — side by side on desktop
           (description flex-1, links block shrink-0), stacked on mobile. The
-          inner markup (labels, tooltip, LinkBindingPopover props) is verbatim
-          from script-editing-surface.tsx; only the outer spacing changed from
+          inner markup (labels, tooltip, LinkBindingPopover props) came here
+          verbatim from the former plain form (script-editing-surface.tsx,
+          removed in AS-8c4b); only the outer spacing changed from
           `style={{ marginBottom: 16 }}` to this row's gap. */}
       <div className="flex w-full gap-3 max-md:flex-col">
         <div className="min-w-0 flex-1">

@@ -270,27 +270,27 @@ afterAll(() => {
 });
 
 /** Every harness below renders the always-on layout (AS-8c4a): the agent
- *  shell whenever an open script exists, the script list otherwise — the path
- *  the user sees. (The D3 pin further down is the one exception: it keeps a
- *  dedicated plain-panel harness.) */
+ *  shell whenever an open script exists, the no-script placeholder while
+ *  the editor view is open with none, the script list otherwise — the path
+ *  the user sees. */
 function Harness() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
-  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessAll() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all", ownerId: null });
-  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessGlobal() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global", ownerId: null });
-  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessCurrent() {
   const panel = useScriptPanel({ characterId: "c1", chatId: "chat-current", personaId: null, scope: "current", ownerId: null });
-  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
@@ -298,7 +298,7 @@ function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; name
   useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
   return <>
     <div data-testid="script-owner-options">{panel.ownerOptions.map((owner) => owner.id).join(",")}</div>
-    {panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}
+    {panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}
   </>;
 }
 
@@ -651,39 +651,6 @@ describe("useScriptPanel link-binding scope filter", () => {
   });
 });
 
-/** Plain-panel harness for the D3 pin below: renders the legacy plain panel
- *  (no agent shell) so the test keeps pinning the plain form's wrapper class.
- *  Goes away with the plain form in AS-8c4b. */
-function PlainPanelHarness() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
-}
-
-describe("ScriptEditor — D3 mobile touch booster", () => {
-  beforeEach(() => {
-    mobileState.isMobile = true;
-  });
-
-  afterEach(() => {
-    mobileState.isMobile = false;
-  });
-
-  it("excludes role=switch from the editor-panel touch-target booster", async () => {
-    // v1.2.1 mobile defect D3: the blanket `[&_button]:min-h-[40px]` booster
-    // stretched Toggle tracks into oversized blobs. happy-dom has no layout
-    // engine, so this is a string-level regression pin (see the matching
-    // LorebookEditor D3 test; the Toggle side is pinned in Toggle.test.tsx).
-    const { container, findByText } = render(<PlainPanelHarness />);
-    await openEditor(container, findByText);
-    const candidates = Array.from(container.querySelectorAll('[class*="min-h-"]'));
-    const booster = candidates.find((el) =>
-      (el as HTMLElement).className.includes("min-h-[40px]"),
-    ) as HTMLElement | undefined;
-    expect(booster).toBeTruthy();
-    expect(booster!.className).toContain(":not([role=switch])");
-  });
-});
-
 // LORE_SCRIPT_OWNERS_AS_LINKS step 2: creating (or importing) a script never
 // derives an owner from the persona/character context — the create body
 // carries scopeType (+chatId for chat scope) and nothing else; owners are
@@ -844,7 +811,7 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
  *  exists (always-on — the hook returns null only with no active script). */
 function AgentModeHarness() {
 	const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
-	return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
+	return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 describe("useScriptPanel always-on assistant (AS-8c3b)", () => {

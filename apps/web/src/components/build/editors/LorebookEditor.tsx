@@ -875,7 +875,7 @@ export function LorebookEditor({
                   />
                 </FormProvider>
               ) : (
-                scriptPanel.scriptEditorPanel
+                scriptPanel.scriptPlaceholderPanel
               )}
             </LorebookEditorView>
           )}
@@ -931,7 +931,7 @@ export function LorebookEditor({
                   />
                 </FormProvider>
               ) : (
-                scriptPanel.scriptEditorPanel
+                scriptPanel.scriptPlaceholderPanel
               )}
             </LorebookEditorView>
           )}
