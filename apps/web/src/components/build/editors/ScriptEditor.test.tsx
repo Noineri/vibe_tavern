@@ -151,10 +151,11 @@ let act: typeof import("@testing-library/react").act;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let within: typeof import("@testing-library/react").within;
 let userEvent: typeof import("@testing-library/user-event").default;
 let EditorView: typeof import("@codemirror/view").EditorView;
 beforeAll(async () => {
-	({ act, fireEvent, render, waitFor } = await import("@testing-library/react"));
+	({ act, fireEvent, render, waitFor, within } = await import("@testing-library/react"));
 	({ default: userEvent } = await import("@testing-library/user-event"));
 	({ EditorView } = await import("@codemirror/view"));
 	({ useScriptPanel } = await import("./ScriptEditor.js"));
@@ -230,24 +231,66 @@ beforeEach(() => {
   });
 });
 
+// ── AS-8c4a: the whole file runs on the always-on layout ────────────────────
+// The shell's session load runs against this minimal fetch router: the
+// file-level module mocks cover script-api, not the script-agent transport
+// (the real hono client → real fetch). Installed for the WHOLE file
+// (testing skill R3: set in beforeEach, restore in afterEach + afterAll).
+const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+	const path = new URL(String(input), "http://gateway.test").pathname;
+	const method = (init?.method ?? "GET").toUpperCase();
+	const json = (payload: unknown, status = 200) =>
+		new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
+	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) return json(null);
+	if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
+		return json({ id: "agent-thread-1", scriptId: "s1", draftSessionId: null, title: "Agent", archivedAt: null, createdAt: "", updatedAt: "", metrics: null, contextLinks: [], todo: [] });
+	}
+	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) return json([]);
+	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) return json([]);
+	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) return json({ metrics: null, autoCompact: true });
+	if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) return json({ plan: { goal: "", constraints: [], tasks: [] } });
+	if (method === "GET" && /\/api\/settings\/script-safety$/.test(path)) return json({ suppressImportWarnings: false, updatedAt: "" });
+	if (method === "GET" && (path.endsWith("/api/personas") || path.endsWith("/api/lorebooks/all") || path.endsWith("/api/scripts/all") || path.endsWith("/model-favorites"))) return json([]);
+	if (method === "GET" && path.endsWith("/api/coauthor/skills")) return json({ entries: [], errors: [] });
+	return json({ error: { message: `Unhandled fetch in script editor test: ${method} ${path}` } }, 404);
+});
+
+const realFetch = globalThis.fetch;
+
+beforeEach(() => {
+	globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
+});
+
+afterEach(() => {
+	globalThis.fetch = realFetch;
+});
+
+afterAll(() => {
+	globalThis.fetch = realFetch;
+});
+
+/** Every harness below renders the always-on layout (AS-8c4a): the agent
+ *  shell whenever an open script exists, the script list otherwise — the path
+ *  the user sees. (The D3 pin further down is the one exception: it keeps a
+ *  dedicated plain-panel harness.) */
 function Harness() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessAll() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessGlobal() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessCurrent() {
   const panel = useScriptPanel({ characterId: "c1", chatId: "chat-current", personaId: null, scope: "current", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
@@ -255,7 +298,7 @@ function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; name
   useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
   return <>
     <div data-testid="script-owner-options">{panel.ownerOptions.map((owner) => owner.id).join(",")}</div>
-    {panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}
+    {panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}
   </>;
 }
 
@@ -291,6 +334,16 @@ function replaceCode(view: EditorViewInstance, code: string) {
   });
 }
 
+/** AS-8c4a bar scope: the management bar holds the script_name input and the
+ *  enable toggle, while the shell's context-auto toggle lives outside it —
+ *  so scoping the switch query to the input's parent finds the enable toggle
+ *  and never the shell's toggle. */
+function barScope(nameInput: HTMLElement) {
+  const bar = nameInput.parentElement;
+  if (!bar) throw new Error("management bar not found");
+  return within(bar);
+}
+
 describe("useScriptPanel explicit save", () => {
   it("keeps every field local until Save, then PATCHes one complete snapshot without refetching", async () => {
     const { container, findByText, getByPlaceholderText, getByRole } = render(<Harness />);
@@ -300,7 +353,8 @@ describe("useScriptPanel explicit save", () => {
     await user.clear(getByPlaceholderText("script_name"));
     await user.type(getByPlaceholderText("script_name"), "Renamed");
     await user.type(getByPlaceholderText("script_desc_placeholder"), "Description");
-    fireEvent.click(getByRole("switch"));
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     replaceCode(view, "context.state.set('x', 1);");
 
     expect(updateScript).not.toHaveBeenCalled();
@@ -332,10 +386,11 @@ describe("useScriptPanel explicit save", () => {
   });
 
   it("runs the current unsaved code directly, without saving first", async () => {
-    const { container, findByText, getByPlaceholderText, getByText } = render(<Harness />);
+    const { container, findByText, getByPlaceholderText, getByRole, getByText } = render(<Harness />);
     const view = await openEditor(container, findByText);
     const user = userEvent.setup();
     replaceCode(view, "context.character.personality = 'DRAFT';");
+    fireEvent.click(getByRole("radio", { name: "script_tab_check" }));
 
     await user.type(getByPlaceholderText("script_test_input_placeholder"), "hello");
     fireEvent.click(getByText("script_test_run"));
@@ -353,6 +408,7 @@ describe("useScriptPanel explicit save", () => {
     serverScript = { ...baseScript, scriptKind: "dice" };
     const { container, findByText, getByText, getByRole } = render(<Harness />);
     await openEditor(container, findByText);
+    fireEvent.click(getByRole("radio", { name: "script_tab_check" }));
 
     const title = getByText("script_test_panel");
     const badge = getByText("DICE");
@@ -595,6 +651,14 @@ describe("useScriptPanel link-binding scope filter", () => {
   });
 });
 
+/** Plain-panel harness for the D3 pin below: renders the legacy plain panel
+ *  (no agent shell) so the test keeps pinning the plain form's wrapper class.
+ *  Goes away with the plain form in AS-8c4b. */
+function PlainPanelHarness() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
 describe("ScriptEditor — D3 mobile touch booster", () => {
   beforeEach(() => {
     mobileState.isMobile = true;
@@ -609,7 +673,7 @@ describe("ScriptEditor — D3 mobile touch booster", () => {
     // stretched Toggle tracks into oversized blobs. happy-dom has no layout
     // engine, so this is a string-level regression pin (see the matching
     // LorebookEditor D3 test; the Toggle side is pinned in Toggle.test.tsx).
-    const { container, findByText } = render(<Harness />);
+    const { container, findByText } = render(<PlainPanelHarness />);
     await openEditor(container, findByText);
     const candidates = Array.from(container.querySelectorAll('[class*="min-h-"]'));
     const booster = candidates.find((el) =>
@@ -688,20 +752,22 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   }
 
   it("enabling an untrusted import is blocked by the plain warning; confirm enables and Save persists it", async () => {
-    const { getByRole, getAllByRole, getByText, queryAllByText, editor } = await openUntrustedImport();
+    const { getByPlaceholderText, getByRole, getAllByRole, getByText, queryAllByText, editor } = await openUntrustedImport();
     expect(editor.state.doc.toString()).toBe(CLEAN);
+    const bar = barScope(getByPlaceholderText("script_name"));
 
-    fireEvent.click(getByRole("switch"));
+    fireEvent.click(bar.getByRole("switch"));
     // The honest warning blocks (visible copy + the Modal's sr-only pair).
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(2);
     // The modal's own suppress toggle is a second switch — the EDITOR's
-    // switch stays aria-checked=false until the modal is confirmed.
-    expect(getAllByRole("switch").every((el) => el.getAttribute("aria-checked") !== "true")).toBe(true);
+    // switch stays aria-checked=false until the modal is confirmed. (hidden:
+    // the open modal aria-hides the bar, so the scoped query pierces that.)
+    expect(bar.getAllByRole("switch", { hidden: true }).every((el) => el.getAttribute("aria-checked") !== "true")).toBe(true);
     expect(updateScript).not.toHaveBeenCalled();
 
     fireEvent.click(getByText("script_safety_warning_confirm_enable"));
     // The pending enable released: the draft flips on; Save persists it.
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
     fireEvent.click(getByRole("button", { name: "save" }));
     await waitFor(() => {
       expect(updateScript).toHaveBeenCalledWith("s1", expect.objectContaining({ enabled: true }));
@@ -709,10 +775,11 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   });
 
   it("cancel leaves the untrusted import disabled", async () => {
-    const { getByRole, getByText } = await openUntrustedImport();
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, getByText } = await openUntrustedImport();
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     fireEvent.click(getByText("cancel"));
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("false");
     expect(updateScript).not.toHaveBeenCalled();
   });
 
@@ -720,22 +787,25 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
     serverScript = { ...baseScript, enabled: false, origin: "in_app" };
     const view = render(<Harness />);
     await openEditor(view.container, (text) => view.findByText(text));
-    fireEvent.click(view.getByRole("switch"));
+    const bar = barScope(view.getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(view.queryByText("script_safety_warning_body")).toBeNull();
-    expect(view.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
   });
 
   it("a suppressed untrusted import enables with no modal", async () => {
     useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
-    const { getByRole, queryAllByText } = await openUntrustedImport();
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, queryAllByText } = await openUntrustedImport();
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
   });
 
   it("findings fire the findings modal ALONE with the honest text; «Show in code» closes it and jumps the real editor caret", async () => {
-    const { getByRole, getByText, queryAllByText, editor } = await openUntrustedImport({ code: FINDINGS_CODE });
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, getByText, queryAllByText, editor } = await openUntrustedImport({ code: FINDINGS_CODE });
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
     // Honest text rides inside the findings modal (decision 11) — exactly
     // once (visible paragraph; the sr-only pair describes the findings intro).
@@ -751,11 +821,12 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   });
 
   it("a TRUSTED import with findings re-enables through the findings modal — without the honest text", async () => {
-    const { getByRole, queryAllByText } = await openUntrustedImport({
+    const { getByPlaceholderText, getByRole, queryAllByText } = await openUntrustedImport({
       code: FINDINGS_CODE,
       firstEnabledAt: "2026-01-01T00:00:00.000Z",
     });
-    fireEvent.click(getByRole("switch"));
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
   });
@@ -767,28 +838,8 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
 // editor's own editorHeader caret stays the script view's back control). The
 // legacy AiAssistantModal is gone from THIS editor (ScriptEditor.tsx no longer
 // imports it — the file-level stub above stays null, so any modal open would
-// have to surface as a dialog role). The shell's session load runs against a
-// minimal fetch router: the file-level module mocks cover script-api, not the
-// script-agent transport (the real hono client → real fetch).
-const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-	const path = new URL(String(input), "http://gateway.test").pathname;
-	const method = (init?.method ?? "GET").toUpperCase();
-	const json = (payload: unknown, status = 200) =>
-		new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
-	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) return json(null);
-	if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
-		return json({ id: "agent-thread-1", scriptId: "s1", draftSessionId: null, title: "Agent", archivedAt: null, createdAt: "", updatedAt: "", metrics: null, contextLinks: [], todo: [] });
-	}
-	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) return json([]);
-	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) return json([]);
-	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) return json({ metrics: null, autoCompact: true });
-	if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) return json({ plan: { goal: "", constraints: [], tasks: [] } });
-	if (method === "GET" && /\/api\/settings\/script-safety$/.test(path)) return json({ suppressImportWarnings: false, updatedAt: "" });
-	if (method === "GET" && (path.endsWith("/api/personas") || path.endsWith("/api/lorebooks/all") || path.endsWith("/api/scripts/all") || path.endsWith("/model-favorites"))) return json([]);
-	if (method === "GET" && path.endsWith("/api/coauthor/skills")) return json({ entries: [], errors: [] });
-	return json({ error: { message: `Unhandled fetch in agent-mode test: ${method} ${path}` } }, 404);
-});
-
+// have to surface as a dialog role). The shell's session load runs against the
+// fetch router above the harnesses (installed for the whole file since AS-8c4a).
 /** Mirrors LorebookEditorView: the agent panel renders whenever an open script
  *  exists (always-on — the hook returns null only with no active script). */
 function AgentModeHarness() {
@@ -797,17 +848,6 @@ function AgentModeHarness() {
 }
 
 describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
-	const realFetch = globalThis.fetch;
-	beforeEach(() => {
-		globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
-	});
-	afterEach(() => {
-		globalThis.fetch = realFetch;
-	});
-	afterAll(() => {
-		globalThis.fetch = realFetch;
-	});
-
 	it("shows the script agent shell at once — no helper button, no back control, no modal", async () => {
 		const { container, findByText, findByTestId, queryByRole, queryByTestId } = render(<AgentModeHarness />);
 		await openEditor(container, findByText);
