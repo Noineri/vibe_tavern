@@ -10,6 +10,7 @@ import { classifyProviderError } from "../../infrastructure/ai/provider-error-cl
 import {
   NoAgentKindForScriptKindError,
   UnknownAgentKindError,
+  AgentKindNotWiredError,
 } from "../../domain/agent/agent-kind-registry.js";
 
 type CopilotStreamEvent = { event: string; data: string };
@@ -147,7 +148,8 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         } catch (err) {
           if (
             err instanceof NoAgentKindForScriptKindError ||
-            err instanceof UnknownAgentKindError
+            err instanceof UnknownAgentKindError ||
+            err instanceof AgentKindNotWiredError
           ) {
             return c.json({ error: err.message, code: err.code }, 400);
           }
@@ -226,7 +228,22 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       async (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");
-        return c.json(await runtime.experienceCopilotCompact(threadId, body, c.req.raw.signal));
+        // AS-10h: kind-resolution errors map to the same 400 JSON shape the
+        // stream route's assert step uses (an unwired kind is a server wiring
+        // bug surfacing as 400, not the client's 500); any other error
+        // propagates unchanged.
+        try {
+          return c.json(await runtime.experienceCopilotCompact(threadId, body, c.req.raw.signal));
+        } catch (err) {
+          if (
+            err instanceof NoAgentKindForScriptKindError ||
+            err instanceof UnknownAgentKindError ||
+            err instanceof AgentKindNotWiredError
+          ) {
+            return c.json({ error: err.message, code: err.code }, 400);
+          }
+          throw err;
+        }
       },
     );
 }

@@ -23,7 +23,7 @@ import type { ExperienceCopilotStreamEvent } from "../../domain/interactive/copi
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
 import {
   resolveKindForScript,
-  UnknownAgentKindError,
+  AgentKindNotWiredError,
 } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -117,11 +117,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   /** The stream wiring a resolved kind runs through. A kind the registry
    *  serves but this adapter has no table entry for is a typed
-   *  `UnknownAgentKindError` (the route maps it to the same 400 as an
+   *  `AgentKindNotWiredError` (the route maps it to the same 400 as an
    *  unserved kind) — never a silent fallback to another kind's wiring. */
   private getKindStream(kindId: AgentKindId): KindStream {
     const entry = this.streamKinds.get(kindId);
-    if (entry === undefined) throw new UnknownAgentKindError(kindId);
+    if (entry === undefined) throw new AgentKindNotWiredError(kindId, "stream");
     return entry;
   }
 
@@ -131,7 +131,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  assembly + tools, an interactive script's thread the experience ones —
    *  so this assert only rejects what the thread cannot be served by: an
    *  unserved script kind (`NoAgentKindForScriptKindError`), a resolved kind
-   *  with no stream-table entry (`UnknownAgentKindError`), plus a missing
+   *  with no stream-table entry (`AgentKindNotWiredError`), plus a missing
    *  thread (`notFound`). It no longer pins the thread to the experience
    *  kind (the pre-dispatch mismatch 400 `copilot_thread_kind_mismatch` was
    *  removed with the dispatch). Draft threads and dangling script links
@@ -248,7 +248,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   /** AS-8b kind dispatch: the thread resolves to its agent kind through the
    *  ONE {@link resolveThreadKind} and runs THAT kind's table entry
    *  ({@link streamKinds}) — no per-kind branch here. A resolved kind without
-   *  an entry throws `UnknownAgentKindError` (the route's assert step already
+   *  an entry throws `AgentKindNotWiredError` (the route's assert step already
    *  rejected it before the SSE headers). */
   experienceCopilotStream = async function* (
     this: ExperienceCopilotAdapter,
@@ -419,7 +419,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // SCRIPT service's prompt, never the experience one.
     const kindId = await this.resolveThreadKind(threadId);
     const compaction = this.compactionKinds.get(kindId);
-    if (compaction === undefined) throw new UnknownAgentKindError(kindId);
+    if (compaction === undefined) throw new AgentKindNotWiredError(kindId, "compaction");
     const { digest, metrics } = await compaction.compact({
       threadId,
       ...(body.providerProfileId !== undefined ? { providerProfileId: body.providerProfileId } : {}),

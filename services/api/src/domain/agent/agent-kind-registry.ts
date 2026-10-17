@@ -46,6 +46,19 @@ export class NoAgentKindForScriptKindError extends Error {
   }
 }
 
+/** The kind IS registered, but the copilot adapter has no wiring-table entry
+ *  for it — unlike {@link UnknownAgentKindError} (no kind registered under
+ *  the id at all), this is a server wiring bug: a kind module registered, yet
+ *  the adapter was never given the matching stream or compaction entry. The
+ *  `table` field names which table is missing. */
+export class AgentKindNotWiredError extends Error {
+  readonly code = "AGENT_KIND_NOT_WIRED";
+  constructor(readonly kindId: AgentKindId, readonly table: "stream" | "compaction") {
+    super(`Agent kind "${kindId}" is registered but has no ${table} wiring in the copilot adapter.`);
+    this.name = "AgentKindNotWiredError";
+  }
+}
+
 // Insertion-ordered: registration order is the documented precedence for
 // resolveKindForScript.
 const kinds = new Map<AgentKindId, AgentKind>();

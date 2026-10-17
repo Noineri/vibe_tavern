@@ -11,10 +11,11 @@ import {
 import { createExperienceCopilotRoutes } from "../src/api/routes/experience-copilot.js";
 import {
   NoAgentKindForScriptKindError,
-  UnknownAgentKindError,
+  AgentKindNotWiredError,
   registerAgentKind,
 } from "../src/domain/agent/agent-kind-registry.js";
 import type { AgentKind } from "../src/domain/agent/agent-kind.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 // Side-effect import: registers the `script` agent kind (AS-7) so the
 // prompt/dice resolution this suite pins holds regardless of which test file
 // the shared process loaded first.
@@ -395,19 +396,26 @@ describe("ExperienceCopilotAdapter.experienceCopilotStream - dispatch by resolve
   });
 });
 
+/** The fake-kind fixture the unwired-kind tests share (AS-8b-fix-A,
+ *  AS-10h): a kind the registry serves for a script kind the adapter tables
+ *  have no entry for — registered only inside a test's try/finally. */
+function makeUnwiredFakeKind(): AgentKind {
+  return {
+    id: "kr-fake-unwired",
+    servesScriptKinds: ["kr-fake-script-kind"],
+    basePromptServiceKey: "kr_fake",
+    skillRootId: "kr-fake",
+    toolSetSchema: {},
+    defaultToolSet: {},
+  } as unknown as AgentKind;
+}
+
 describe("ExperienceCopilotAdapter - a resolved kind without a stream-table entry (AS-8b-fix-A)", () => {
-  test("400s in the assert step (before streaming) with UnknownAgentKindError", async () => {
+  test("400s in the assert step (before streaming) with AgentKindNotWiredError", async () => {
     // A kind the registry serves for a script kind the adapter has no wiring
     // for: the assert step must refuse it before the route sends SSE headers.
-    const fakeKind = {
-      id: "kr-fake-unwired",
-      servesScriptKinds: ["kr-fake-script-kind"],
-      basePromptServiceKey: "kr_fake",
-      skillRootId: "kr-fake",
-      toolSetSchema: {},
-      defaultToolSet: {},
-    } as unknown as AgentKind;
-    const unregister = registerAgentKind(fakeKind);
+    // AS-10h: the wiring bug is its own typed error, not an unknown kind.
+    const unregister = registerAgentKind(makeUnwiredFakeKind());
     try {
       const adapter = makeStreamAdapter(makeThread(), makeScriptRow("kr-fake-script-kind"));
       let caught: unknown;
@@ -416,20 +424,21 @@ describe("ExperienceCopilotAdapter - a resolved kind without a stream-table entr
       } catch (err) {
         caught = err;
       }
-      expect(caught).toBeInstanceOf(UnknownAgentKindError);
-      expect((caught as UnknownAgentKindError).kindId).toBe("kr-fake-unwired");
-      expect((caught as UnknownAgentKindError).code).toBe("UNKNOWN_AGENT_KIND");
+      expect(caught).toBeInstanceOf(AgentKindNotWiredError);
+      expect((caught as AgentKindNotWiredError).kindId).toBe("kr-fake-unwired");
+      expect((caught as AgentKindNotWiredError).table).toBe("stream");
+      expect((caught as AgentKindNotWiredError).code).toBe("AGENT_KIND_NOT_WIRED");
 
       // The stream itself never falls back to another kind's wiring either.
       const gen = adapter.experienceCopilotStream("thread_kr_1", { content: "hi", providerProfileId: "prov_1" });
-      await expect(gen.next()).rejects.toBeInstanceOf(UnknownAgentKindError);
+      await expect(gen.next()).rejects.toBeInstanceOf(AgentKindNotWiredError);
     } finally {
       unregister();
     }
   });
 
   test("the route maps it to a 400 JSON response carrying the error code", async () => {
-    const app = makeRouteApp(new UnknownAgentKindError("kr-fake-unwired"));
+    const app = makeRouteApp(new AgentKindNotWiredError("kr-fake-unwired", "stream"));
     const res = await app.request("/api/experience-copilot/thread_kr_1/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -437,6 +446,46 @@ describe("ExperienceCopilotAdapter - a resolved kind without a stream-table entr
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; code: string };
-    expect(body.code).toBe("UNKNOWN_AGENT_KIND");
+    expect(body.code).toBe("AGENT_KIND_NOT_WIRED");
+  });
+});
+
+describe("ExperienceCopilotAdapter - a resolved kind without a compaction-table entry (AS-10h)", () => {
+  test("compacting its thread 400s through the compact route with AGENT_KIND_NOT_WIRED", async () => {
+    // The REAL adapter seam (thread → script row → registry → compaction
+    // table miss) behind the real compact route: the wiring bug surfaces as
+    // the 400 JSON shape (before AS-10h it was an unhandled 500).
+    const unregister = registerAgentKind(makeUnwiredFakeKind());
+    try {
+      const store = {
+        async getById(threadId: string) {
+          return threadId === "thread_kr_1" ? makeThread() : null;
+        },
+      } as unknown as ExperienceCopilotStore;
+      const stores = {
+        experienceCopilot: store,
+        scripts: {
+          async getById(scriptId: string) {
+            return scriptId === "script_kr_1" ? makeScriptRow("kr-fake-script-kind") : null;
+          },
+        },
+      } as unknown as StoreContainer;
+      // A non-empty compaction table (the built-ins) the fake kind is not in;
+      // the empty object stands in for the provider profile service, which
+      // this path never reaches (the throw happens at the table lookup).
+      const adapter = new ExperienceCopilotAdapter(stores, {} as unknown as ProviderProfileService);
+      const app = createExperienceCopilotRoutes(adapter);
+      const res = await app.request("/api/experience-copilot/thread_kr_1/compact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; code: string };
+      expect(body.code).toBe("AGENT_KIND_NOT_WIRED");
+      expect(body.error).toContain("compaction");
+    } finally {
+      unregister();
+    }
   });
 });
