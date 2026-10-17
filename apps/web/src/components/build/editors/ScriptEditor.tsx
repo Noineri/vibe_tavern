@@ -648,8 +648,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // SS-7 enable-warning flow still runs through handleToggleEnabled and the
   // delete still goes through the existing confirm modal. The same surface
   // wiring travels opaquely to the `script` host through hostProps; the host
-  // renders the identical surface inside the shell's editor pane with the
-  // hunk-review decorations joined onto the same extensions. Rendered
+  // renders it as the tabbed Code/Test pane (AS-8c2, ScriptAgentEditorTabs)
+  // inside the shell's editor pane, with the hunk-review decorations joined
+  // onto the same extensions. Rendered
   // whenever an active script exists — the shell's threads are script-owned
   // and the assistant is always on. The caller (LorebookEditor) renders this
   // INSTEAD of the padded plain-editor scroll container (the 2-pane layout
@@ -702,45 +703,42 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     onAddFromTemplate: (key) => handleAddFromTemplate(key),
     onRevealLine: (line) => setRevealLine({ line }),
   } : null;
+  // Desktop: the management bar + the safety banner sit above the shell in
+  // one column (the ExperienceEditor top-bar shape, minus its back button).
+  // Mobile: no top bar — the shell gets the same nodes as its edit-tab header.
+  // The shell keeps ONE tree position on both viewports (only its siblings and
+  // the editTabHeader prop change, as in ExperienceEditor), so crossing the
+  // 768px breakpoint re-renders it instead of remounting it — the loaded
+  // session is not fetched again and a running assistant turn is not torn
+  // down by a resize or a tablet rotation.
   const scriptAgentPanel = scriptAgentHostProps ? (
-    // Desktop: the management bar + the safety banner sit above the shell in
-    // one column (the ExperienceEditor top-bar shape, minus its back button).
-    // Mobile: no top bar — the shell gets the same nodes as its edit-tab header.
-    !isMobile ? (
-      <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {!isMobile && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
           {scriptManagementControls}
         </div>
-        <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
-        <div className="flex min-h-0 flex-1">
-          <AgentShell
-            kind="script"
-            ownerId={scriptAgentHostProps.activeScriptId}
-            scriptId={scriptAgentHostProps.activeScriptId}
-            isMobile={isMobile}
-            editTabDirty={scriptAgentHostProps.draftDirty}
-            assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
-            hostProps={scriptAgentHostProps}
-          />
-        </div>
+      )}
+      {!isMobile && <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />}
+      <div className="flex min-h-0 flex-1">
+        <AgentShell
+          kind="script"
+          ownerId={scriptAgentHostProps.activeScriptId}
+          scriptId={scriptAgentHostProps.activeScriptId}
+          isMobile={isMobile}
+          editTabDirty={scriptAgentHostProps.draftDirty}
+          assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+          hostProps={scriptAgentHostProps}
+          editTabHeader={
+            isMobile ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2">{scriptManagementControls}</div>
+                <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
+              </>
+            ) : undefined
+          }
+        />
       </div>
-    ) : (
-      <AgentShell
-        kind="script"
-        ownerId={scriptAgentHostProps.activeScriptId}
-        scriptId={scriptAgentHostProps.activeScriptId}
-        isMobile={isMobile}
-        editTabDirty={scriptAgentHostProps.draftDirty}
-        assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
-        hostProps={scriptAgentHostProps}
-        editTabHeader={
-          <>
-            <div className="flex flex-wrap items-center gap-2 px-3 py-2">{scriptManagementControls}</div>
-            <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
-          </>
-        }
-      />
-    )
+    </div>
   ) : null;
 
 

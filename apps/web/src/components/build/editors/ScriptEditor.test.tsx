@@ -848,4 +848,34 @@ describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
 		const agentView = EditorView.findFromDOM(editors[0] as HTMLElement);
 		expect(agentView?.state.doc.toString()).toBe("AGENT DRAFT");
 	});
+
+	it("keeps the shell mounted across the mobile breakpoint — no second session load", async () => {
+		const activeCalls = () =>
+			agentModeFetch.mock.calls.filter(([input, init]) =>
+				(init?.method ?? "GET").toUpperCase() === "GET" &&
+				/\/api\/experience-copilot\/script\/[^/]+\/active$/.test(new URL(String(input), "http://gateway.test").pathname),
+			).length;
+		try {
+			const ui = render(<AgentModeHarness />);
+			await openEditor(ui.container, ui.findByText);
+			await ui.findByTestId("copilot-send-btn");
+			const before = activeCalls();
+			expect(before).toBeGreaterThan(0);
+
+			// Cross the breakpoint: the bar moves into the shell's Edit-tab
+			// header, the shell itself keeps its tree position. A remount would
+			// run the shell's session load again (a second GET …/active).
+			mobileState.isMobile = true;
+			ui.rerender(<AgentModeHarness />);
+			await ui.findByRole("tab", { name: "agent_tab_edit" });
+			// Drain the macrotasks a remounted shell's chained session load
+			// would need to reach fetch, so a remount cannot slip past the count.
+			await act(async () => {
+				for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+			});
+			expect(activeCalls()).toBe(before);
+		} finally {
+			mobileState.isMobile = false;
+		}
+	});
 });
