@@ -1,20 +1,20 @@
 /**
- * SHIM (AGENT_SHELL_PLAN, Wave 2 / AS-2b) — the generic compaction MECHANISM
- * moved to `domain/agent/agent-compaction.ts` (`AgentCompactionService`: budget
- * trim, digest boundary, echo stubs, token estimate). What could NOT move —
- * the EXPERIENCE seams the mechanism injects — stays here and is wired by a
- * thin subclass under the old export name, so every importer (adapter, tests)
- * compiles and behaves EXACTLY as before:
+ * Experience-kind compaction module (AGENT_SHELL_PLAN, AS-10b) — the
+ * EXPERIENCE wiring of the generic `domain/agent/agent-compaction.ts`
+ * `AgentCompactionService` (budget trim, digest boundary, echo stubs, token
+ * estimate) — the same pattern as the script kind's per-kind module
+ * (`script-agent-compaction.ts`): a per-kind subclass under the kind-owned
+ * export name, so every importer (adapter, tests) compiles and behaves
+ * EXACTLY as before. What this module injects is the kind-owned seam set:
  *
- *   - `storeMessagesToHistory` (the stored-message → flow conversion lives in
- *     the stream module; AS-2c carves the stream and can absorb the seam),
+ *   - `storeMessagesToHistory` (stored-message → flow conversion, now from
+ *     `domain/agent/agent-stream.ts` since AS-10a — the settled generic),
  *   - the summarizer system prompt (describes interactive-experience
  *     authoring — kind-owned prose),
  *   - the digest sampler constants (copilot-limits.ts, owner-fixed numbers),
  *   - the thread error label + debug-log channel names.
  *
- * This file is NOT a pure re-export because the seams need wiring; AS-10
- * removes it (the seams move into the kind's descriptor when it grows them).
+ * It stays (AS-10b, 2026-10-18): matching the script kind's per-kind module was the plan's rule — no longer a shim to remove.
  */
 
 import type { ExperienceCopilotStore, ExperienceCopilotMessage } from "@vibe-tavern/db";
