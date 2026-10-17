@@ -871,7 +871,7 @@ The Regex AI assistant is the reference consumer.
 
 **File:** `AiAssistantModal.tsx` — the frontend of the [AI Assistant backend subsystem](./backend.md#ai-assistant). One modal with two shapes:
 
-- **Full mode** (`mode="full"`) — the lightbulb "assist" generator. `apiMode` selects what to generate: `"script"`, `"lore_entry"`, or `"md_import"` (the markdown-card importer). Lets the user pick a provider/model, feeds the relevant context (character/persona via `scopeContext`), and returns the result via `onInsert` / `onReplace` (text modes) or `onMdImportApply` (the structured `md_import` fields). Maps to the backend modes in `MODE_CONFIGS`.
+- **Full mode** (`mode="full"`) — the lightbulb "assist" generator. `apiMode` selects what to generate: `"lore_entry"`, `"md_import"` (the markdown-card importer), `"scene_schema"`, or `"scene_rules"`. Lets the user pick a provider/model, feeds the relevant context (character/persona via `scopeContext`), and returns the result via `onInsert` / `onReplace` (text modes) or `onMdImportApply` (the structured `md_import` fields). Maps to the backend modes in `MODE_CONFIGS`.
 - **QuickPill mode** (`mode="quickpill"`) — the settings editor behind `<AiQuickPill>`: pick the quick-action model and toggle which options it shows (append toggle, key target, message count).
 
 The modal persists the last-used model per mode in `localStorage` so the lightbulb actions remember their model across sessions.

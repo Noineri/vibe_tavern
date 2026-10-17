@@ -491,29 +491,33 @@ Provider-bound HTTP traffic (AI SDK generation — streaming, non-streaming, Res
 
 A separate generation subsystem (`domain/ai-assistant/`) for the lightbulb-icon "assist" actions in the Build editor — generate a script, draft a lore entry, extract lore keys, impersonate a character, import a card from markdown. These are short, user-initiated, result-returning LLM calls distinct from the main chat generation path.
 
-### Six modes, one config table
+### Eleven modes, one config table
 
-`MODE_CONFIGS` (`ai-assistant-modes.ts`) registers six modes. Five are user-facing in the AI Assistant modal; `vision_describe` is backend-only (it drives the attachment-description pipeline — see [Vision and Attachment Pipeline](#vision-and-attachment-pipeline)):
+`MODE_CONFIGS` (`ai-assistant-modes.ts`) registers eleven modes. Most are user-facing; `vision_describe` is backend-only (it drives the attachment-description pipeline — see [Vision and Attachment Pipeline](#vision-and-attachment-pipeline)):
 
 | Mode | Output | Reasoning | Purpose |
 |------|--------|-----------|---------|
-| `script` | text | kept | Generate a script from a description |
 | `lore_entry` | text | kept | Draft a lorebook entry |
+| `message_edit` | text | kept | Revise a chat message per the user's request |
+| `message_merge` | text | kept | Synthesize one message from variants and preferences |
+| `message_tts_annotate` | text | kept | Insert vocal sound tags for TTS narration |
 | `lore_keys` | **JSON** | **stripped** | Extract `{ keys, secondaryKeys }` from text; only the parsed JSON is emitted |
-| `chat_impersonate` | text | stripped | Write a message in the character's voice |
+| `chat_impersonate` | text | stripped | Write the next message in the user's voice |
 | `md_import` | **JSON** | stripped | Parse a markdown card into a structured character JSON |
 | `vision_describe` | text | stripped | Backend: caption an attachment (not in the modal) |
+| `scene_schema` | **JSON** | stripped | Design a Scene Tracker schema (the tracked shape, not values) |
+| `scene_rules` | text | stripped | Extract the author's per-chat Scene Tracker rules |
+| `regex` | **JSON** | stripped | Draft one runnable regex rule (pattern, replacement, target, depth) |
 
-The `outputFormat: "json"` modes (`lore_keys`, `md_import`) buffer the whole response, strip reasoning, then parse the remainder as JSON against a per-mode schema hint before emitting. Text modes stream directly.
+The `outputFormat: "json"` modes (`lore_keys`, `md_import`, `scene_schema`, `regex`) buffer the whole response, strip reasoning, then parse the remainder as JSON against a per-mode schema hint before emitting. Text modes stream directly.
 
 ### Prompt fallback chain
 
-Each mode resolves its system prompt through the same chain (`resolveSystemPrompt(mode)` in `ai-assistant-prompts.ts`):
-1. **Preset override** — `aiAssistantPrompts[mode]` from the active prompt preset (user-editable in Settings).
-2. **Legacy column** — for the modes that predate the preset (`script` only: the old `scriptAiSystemPrompt` column).
-3. **Default `.md`** — `services/api/assets/<mode>-ai-prompt.md`, loaded + cached once.
-
-Registering `vision_describe` as a real mode (rather than a separate code path) is what unifies this chain across all six modes — see [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode).
+Each mode resolves its system prompt through the same chain (`resolveSystemPrompt` in `ai-assistant-prompts.ts`):
+1. **Active service-prompt profile override** — the profile's stored override for the mode's field (format-agnostic: one override wins over both the json and xml defaults of `scene_schema`).
+2. **Default `.md`** — the mode's asset file (format-aware: an xml `scene_schema` request selects the xml variant), re-read from disk on every call, never cached.
+The preset JSON (`aiAssistantPrompts`) and the legacy `scriptAiSystemPrompt` column now only feed the one-time preset→profile migration (`preset-to-profile-migration.ts`) — no read path consults them.
+Registering `vision_describe` as a real mode (rather than a separate code path) is what unifies this chain across all eleven modes — see [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode).
 
 ### Runtime
 

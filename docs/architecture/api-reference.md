@@ -1221,9 +1221,9 @@ The AI Assistant subsystem (the lightbulb "assist" actions in the Build editor) 
 
 ### `POST /api/ai-assistant`
 
-Run an AI Assistant mode and stream the result. The mode (`script`, `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`) selects what to generate; see [AI Assistant](./backend.md#ai-assistant) for the mode table and prompt fallback chain.
+Run an AI Assistant mode and stream the result. The mode selects what to generate: `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`, `scene_schema`, `scene_rules`, `message_edit`, `message_merge`, `message_tts_annotate`, `regex` (plus backend-only `vision_describe`, which drives the attachment-description pipeline, not the modal); see [AI Assistant](./backend.md#ai-assistant) for the mode table and prompt fallback chain.
 
-**Response:** `text/event-stream`. Events are mode-dependent: text modes stream `text-delta` chunks; JSON modes (`lore_keys`, `md_import`) buffer, strip reasoning, parse against the mode schema, then emit the parsed result.
+**Response:** `text/event-stream`. Events are mode-dependent: text modes stream `text-delta` chunks; JSON modes (`lore_keys`, `md_import`, `scene_schema`, `regex`) buffer, strip reasoning, parse against the mode schema, then emit the parsed result.
 
 ### `POST /api/ai-assistant/tokens`
 
@@ -1245,7 +1245,7 @@ Stateless endpoints that drive UNSAVED rules source through the real sandbox/ker
 
 ## Experience Copilot
 
-The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`.
+The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`. Script-owned threads of BOTH kinds (`experience` and `script`) use these endpoints; each request resolves the thread to its kind through its script row (draft threads resolve to `experience`) — see [Agent Shell](./agent-shell.md).
 
 ### Sessions
 
@@ -1273,6 +1273,7 @@ The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no checklist y
   "providerProfileId": "...", "model": "...",
   "step": "rules",
   "rules": "<live draft>", "visual": "<live draft>",
+  "code": "<live draft (script kind)>",
   "testFeedback": { }
 }
 ```
@@ -1283,7 +1284,17 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 { "answer": { "toolCallId": "...", "text": "yes, use the keyboard" }, "providerProfileId": "..." }
 ```
 
-`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual` drafts are the editor's current unsaved sources — the backend prefers them over last-persisted buffers so the copilot is never blind to in-progress edits.
+`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual`/`code` drafts are the editors' current unsaved sources — the backend prefers them over last-persisted buffers so the agent is never blind to in-progress edits. The experience kind reads `rules`/`visual` (plus `rulesSaved`/`visualSaved`, `step`, `testFeedback`, `launchContext`, `reviewSnapshot`); the script kind reads `code` (plus `codeSaved`) and treats `scriptKind` as advisory telemetry — the STORED script kind selects the API-knowledge section. Both share `content`/`answer` and the provider/model pair.
+
+### Kind errors (stream assert + compact)
+
+The stream route resolves the thread's kind BEFORE sending SSE headers, and the compact route resolves it before compacting; all three registry failures return the same HTTP 400 JSON (`{ error, code }`), never an in-stream error or a 500.
+
+| `code` | When |
+|---|---|
+| `NO_AGENT_KIND_FOR_SCRIPT_KIND` | the thread's script kind is served by no registered kind |
+| `UNKNOWN_AGENT_KIND` | the resolved kind id (including the draft fallback) is not a registered kind |
+| `AGENT_KIND_NOT_WIRED` | the kind is registered but has no `stream` / `compaction` adapter entry (the error names its table) |
 
 ### Context
 
@@ -1297,7 +1308,11 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 
 ### Profiles
 
-CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry `basePrompt` + `toolSet` toggles (9 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`) — `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot/profiles` (see the copilot profile schemas); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. User profiles carry `basePrompt` + `toolSet` toggles validated against the owning kind's registered schema (a wrong-kind set is a 422 `copilot_profile_invalid_tool_set`): the experience keys are the 9 `copilotToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`); the script keys are the 6 `scriptAgentToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_script_test`, `plan`, `read_plan`, `ask_user`). `read_skill_file` is in neither set (always on, never gated); `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+
+### Skills
+
+Per-kind skill libraries under `/api/copilot/skills` (mirroring the profile routes); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. `GET /api/copilot/skills` lists the merged built-in + user catalog (metadata only, no file bodies); `GET /api/copilot/skills/:id` reads one entry (404 when absent); `POST /api/copilot/skills/import` uploads a multipart skill where each file part's field name is its relative path (e.g. `my-skill/SKILL.md`) and returns 201; `DELETE /api/copilot/skills/:id` removes one user skill directory (a pure built-in is rejected).
 
 ---
 
@@ -1409,6 +1424,6 @@ Get the bootstrap snapshot — all reference data needed on app startup (chats, 
 
 Get the default system prompt for an AI Assistant mode (used by the Settings prompt editor to show the editable default).
 
-**Query:** `mode` (default `script`) — any of the [AI Assistant modes](./backend.md#ai-assistant).
+**Query:** `mode` (default `lore_entry`) — any of the [AI Assistant modes](./backend.md#ai-assistant).
 
 **Response:** `{ prompt: string }`.
