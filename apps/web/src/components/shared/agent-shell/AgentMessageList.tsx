@@ -3,11 +3,11 @@ import { useShallow } from "zustand/react/shallow";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
-  useExperienceCopilotTurnStore,
-  type CopilotAskState,
-  type CopilotFeedEntry,
-  type ExperienceCopilotToolActivity,
-} from "../../../stores/experience-copilot-turn-store.js";
+  useAgentTurnStore,
+  type AgentAskState,
+  type AgentFeedEntry,
+  type AgentToolActivity,
+} from "../../../stores/agent-turn-store.js";
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
@@ -20,8 +20,8 @@ import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
 
-const EMPTY: ExperienceCopilotToolActivity[] = [];
-const EMPTY_FEED: CopilotFeedEntry[] = [];
+const EMPTY: AgentToolActivity[] = [];
+const EMPTY_FEED: AgentFeedEntry[] = [];
 
 /** One ordered render item pinned between two flow messages (TA-1, owner
  *  ruling 2026-10-12: ONE accordion per assistant turn hides ALL of that
@@ -32,8 +32,8 @@ const EMPTY_FEED: CopilotFeedEntry[] = [];
  *  place (TAG-9: it stays interactive). Items within one anchor list keep
  *  their chronological slot order. */
 type CopilotTurnAnchorItem =
-  | { kind: "accordion"; activities: ExperienceCopilotToolActivity[] }
-  | { kind: "ask"; activity: ExperienceCopilotToolActivity };
+  | { kind: "accordion"; activities: AgentToolActivity[] }
+  | { kind: "ask"; activity: AgentToolActivity };
 const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
 
 /**
@@ -97,10 +97,10 @@ export function AgentMessageList({
   emptySub,
 }: AgentMessageListProps) {
   const { t } = useT();
-  const activities = useExperienceCopilotTurnStore(
+  const activities = useAgentTurnStore(
     useShallow((s) => s.turnsByThread[agentThreadKey(kind, threadId)] ?? EMPTY),
   );
-  const feed = useExperienceCopilotTurnStore(
+  const feed = useAgentTurnStore(
     useShallow((s) => s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED),
   );
 
@@ -115,7 +115,7 @@ export function AgentMessageList({
     [activities],
   );
   const historyActivities = useMemo(() => {
-    const map = new Map<string, ExperienceCopilotToolActivity>();
+    const map = new Map<string, AgentToolActivity>();
     for (const turn of extractHistoricalTurnActivities(messages)) {
       for (const activity of turn.activities) map.set(activity.toolCallId, activity);
     }
@@ -139,7 +139,7 @@ export function AgentMessageList({
   const { anchorItems, trailingItems, lastHistoryActivityId } = useMemo(() => {
     const anchor = new Map<string, CopilotTurnAnchorItem[]>();
     let pending: CopilotTurnAnchorItem[] = [];
-    let turnTools: ExperienceCopilotToolActivity[] | null = null;
+    let turnTools: AgentToolActivity[] | null = null;
     let lastActivityId: string | null = null;
     for (const m of messages) {
       if (m.role === "tool") {
@@ -179,7 +179,7 @@ export function AgentMessageList({
   // references collapses into that turn's single accordion (rendered at the
   // first tool activity's slot in the feed loop below).
   const liveToolActivities = useMemo(() => {
-    const out: ExperienceCopilotToolActivity[] = [];
+    const out: AgentToolActivity[] = [];
     for (const entry of feed) {
       if (entry.kind !== "activity") continue;
       const activity = activityById.get(entry.id);
@@ -204,9 +204,9 @@ export function AgentMessageList({
   // TAG-9: `ask_user` remains its own interactive card, rendered IN PLACE at
   // its chronological slot — never inside a turn's tool accordion (TA-1
   // collects only non-ask activities).
-  const renderAskActivity = (activity: ExperienceCopilotToolActivity) => {
+  const renderAskActivity = (activity: AgentToolActivity) => {
     const ask = activity.ask!;
-    const resolved: CopilotAskState =
+    const resolved: AgentAskState =
       pendingAskAnswer && pendingAskAnswer.toolCallId === activity.toolCallId
         ? {
             ...ask,

@@ -1,6 +1,6 @@
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, type AgentKind } from "../../../lib/agent-host-registry.js";
-import { useExperienceCopilotTurnStore } from "../../../stores/experience-copilot-turn-store.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { AgentTodoPanel } from "./AgentTodoPanel.js";
 
 /**
@@ -27,7 +27,7 @@ const EMPTY_TODO: readonly CopilotTodoItem[] = [];
 export function AgentTodoSection({ kind, threadId }: { kind: AgentKind; threadId: string | null }) {
   // TAG-8: the session-scoped checklist for the pinned todo panel. The store
   // replaces the array immutably per rewrite — a reference selector is exact.
-  const items = useExperienceCopilotTurnStore((s) =>
+  const items = useAgentTurnStore((s) =>
     threadId ? s.todoByThread[agentThreadKey(kind, threadId)] ?? EMPTY_TODO : EMPTY_TODO,
   );
   return <AgentTodoPanel items={items} />;

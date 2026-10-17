@@ -24,7 +24,7 @@ import { listAllLorebooks } from "../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../api/script-api.js";
 import { listCoauthorSkills } from "../../../api/skill-api.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useExperienceCopilotTurnStore } from "../../../stores/experience-copilot-turn-store.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatHeader } from "./AgentChatHeader.js";
 import { AgentContextMeter } from "./AgentContextMeter.js";
@@ -496,7 +496,7 @@ export function AgentShell({
   // A proposal becomes reviewable in the Chat pane (activity cards + Apply),
   // so when one lands on mobile the surface jumps there. Ref-guarded edge
   // mirroring CoauthorMode's `useCoauthorMobileTab`.
-  const hasProposal = useExperienceCopilotTurnStore((s) => {
+  const hasProposal = useAgentTurnStore((s) => {
     if (!threadId) return false;
     const activities = s.turnsByThread[agentThreadKey(kind, threadId)] ?? [];
     return activities.some(

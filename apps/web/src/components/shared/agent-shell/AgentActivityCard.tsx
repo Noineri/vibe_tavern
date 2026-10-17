@@ -1,5 +1,5 @@
 import { cn } from "../../../lib/cn.js";
-import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { Icons } from "../icons.js";
 import { useT } from "../../../i18n/context.js";
 
@@ -14,7 +14,7 @@ import { useT } from "../../../i18n/context.js";
  * affordances — the diff review lives in `AgentBufferReviewEditor`
  * (CD-5/CD-6).
  */
-export function AgentActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {
+export function AgentActivityCard({ activity }: { activity: AgentToolActivity }) {
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
   // PM-6: plan-tool cards are labelled by i18n, not by their payloads — the

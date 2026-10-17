@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { useT } from "../../../i18n/context.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { Icons } from "../icons.js";
 import { AgentActivityCard } from "./AgentActivityCard.js";
 
 export interface AgentToolAccordionProps {
-  activities: readonly ExperienceCopilotToolActivity[];
+  activities: readonly AgentToolActivity[];
   /** True only for the controller's active streamed turn. */
   isSending: boolean;
 }

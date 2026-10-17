@@ -9,11 +9,11 @@ import type {
   CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
 import {
-  useExperienceCopilotTurnStore,
+  useAgentTurnStore,
   parseTodoToolResult,
   parseTodoToolArgs,
-  parseCopilotAskState,
-} from "../../../stores/experience-copilot-turn-store.js";
+  parseAgentAskState,
+} from "../../../stores/agent-turn-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import {
   coauthorSkillReadOutputSchema,
@@ -30,7 +30,7 @@ import { ProviderStreamError } from "../../../api/provider-stream-error.js";
  *
  * The copilot has its own transport (AS-6c-i: injected through args — the
  * host descriptor's `transport`, mirroring the ER-10 stream client) and its
- * own turn store (`useExperienceCopilotTurnStore`, ER-8), so it cannot reuse
+ * own turn store (`useAgentTurnStore`, ER-8), so it cannot reuse
  * the RP-chat `useChatController`. This hook ports the stream half of
  * `executeStreamAction`, retargeted and simplified: the copilot is stream-only,
  * with no dice/attachments/variants/regenerate/non-stream/insights and no
@@ -196,7 +196,7 @@ export function useAgentController(
   // script-owned (useAgentPlan), never thread state.
   useEffect(() => {
     if (threadId === null || threadTodo === undefined) return;
-    useExperienceCopilotTurnStore.getState().setTodo(kind, threadId, threadTodo);
+    useAgentTurnStore.getState().setTodo(kind, threadId, threadTodo);
   }, [kind, threadId, threadTodo]);
 
   // TAG-9: drop a stale optimistic ask resolution on thread switch (the new
@@ -219,15 +219,15 @@ export function useAgentController(
     },
     onChunk: (delta) => {
       setPendingText((p) => p + delta);
-      useExperienceCopilotTurnStore.getState().appendTextDelta(kind, activeThreadId, delta);
+      useAgentTurnStore.getState().appendTextDelta(kind, activeThreadId, delta);
     },
     onReasoningChunk: (delta) => {
       setPendingReasoning((p) => p + delta);
     },
     onToolCall: (info) => {
-      useExperienceCopilotTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useExperienceCopilotTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
-      useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
+      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
+      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
         toolCallId: info.toolCallId,
         toolName: info.toolName,
         args: info.args,
@@ -242,29 +242,29 @@ export function useAgentController(
       if (info.toolName === "todo") {
         const todo = parseTodoToolArgs(info.args);
         if (todo !== null) {
-          useExperienceCopilotTurnStore.getState().setTodo(kind, activeThreadId, todo);
+          useAgentTurnStore.getState().setTodo(kind, activeThreadId, todo);
         }
       }
     },
     onToolInputStart: (info) => {
-      useExperienceCopilotTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useExperienceCopilotTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
-      useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
+      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
+      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
         toolCallId: info.toolCallId,
         toolName: info.toolName,
         status: "streaming",
       });
     },
     onToolResult: (info) => {
-      useExperienceCopilotTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useExperienceCopilotTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
+      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
+      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
       // This routing MUST stay field-for-field with ER-8's
       // `extractPersistedExperienceCopilotActivities` so live activities
       // === persisted activities on snapshot refetch. The only addition
       // is the live-only `isError` signal, OR'd into the error status.
       if (info.toolName === "read_skill_file") {
         const read = coauthorSkillReadOutputSchema.safeParse(info.output);
-        useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,
           status: info.isError || !read.success ? "error" : "done",
@@ -274,7 +274,7 @@ export function useAgentController(
       }
       if (info.toolName === "write_buffer" || info.toolName === "edit_buffer") {
         const output = experienceCopilotToolOutputSchema.safeParse(info.output);
-        useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,
           status: info.isError || !output.success ? "error" : "done",
@@ -298,9 +298,9 @@ export function useAgentController(
       if (info.toolName === "todo") {
         const todo = parseTodoToolResult(info.output);
         if (todo) {
-          useExperienceCopilotTurnStore.getState().setTodo(kind, activeThreadId, todo.items);
+          useAgentTurnStore.getState().setTodo(kind, activeThreadId, todo.items);
         }
-        useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,
           status: info.isError || !todo ? "error" : "done",
@@ -320,12 +320,12 @@ export function useAgentController(
       // stay field-for-field with the persisted extraction's `plan` branch.
       if (info.toolName === "plan") {
         const result = parseAgentPlanToolResult(info.output);
-        const liveArgs = useExperienceCopilotTurnStore
+        const liveArgs = useAgentTurnStore
           .getState()
           .getActivities(kind, activeThreadId)
           .find((activity) => activity.toolCallId === info.toolCallId)?.args;
         applyPlanToolResult?.(liveArgs, info.output);
-        useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,
           status: info.isError || !result ? "error" : "done",
@@ -341,12 +341,12 @@ export function useAgentController(
       // extraction (the parser prefers the output's verbatim echo and
       // falls back to the args for question/options/recommended).
       if (info.toolName === "ask_user") {
-        const liveArgs = useExperienceCopilotTurnStore
+        const liveArgs = useAgentTurnStore
           .getState()
           .getActivities(kind, activeThreadId)
           .find((activity) => activity.toolCallId === info.toolCallId)?.args;
-        const ask = parseCopilotAskState(liveArgs, info.output);
-        useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+        const ask = parseAgentAskState(liveArgs, info.output);
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,
           status: info.isError || !ask ? "error" : "done",
@@ -357,7 +357,7 @@ export function useAgentController(
       // run_test / run_simulate / suggest_visual_binding — non-proposal
       // informational digests (never parsed as a proposal). Always a
       // done card with a best-effort string summary.
-      useExperienceCopilotTurnStore.getState().upsertActivity(kind, activeThreadId, {
+      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
         toolCallId: info.toolCallId,
         toolName: info.toolName,
         status: "done",
@@ -382,7 +382,7 @@ export function useAgentController(
       // rationale as the RP controller's co-author clearTurn). Also drop any
       // stale optimistic ask resolution (TAG-9) — by now the persisted rows
       // carry the true ask state.
-      useExperienceCopilotTurnStore.getState().clearTurn(kind, threadId);
+      useAgentTurnStore.getState().clearTurn(kind, threadId);
       setPendingAskAnswer(null);
 
       const controller = new AbortController();
@@ -470,7 +470,7 @@ export function useAgentController(
       // The answer resumes the question turn (style B): clear the live turn
       // so the awaiting activity yields to the persisted row (TAG-7 note),
       // and drop any stale override from a previous answer.
-      useExperienceCopilotTurnStore.getState().clearTurn(kind, threadId);
+      useAgentTurnStore.getState().clearTurn(kind, threadId);
 
       const controller = new AbortController();
       abortRef.current = controller;

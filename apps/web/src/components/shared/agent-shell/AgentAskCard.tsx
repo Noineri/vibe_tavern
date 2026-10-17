@@ -26,7 +26,7 @@
  * optimistic `pendingAskAnswer` override before passing `ask` down.
  */
 import { useState } from "react";
-import type { CopilotAskState } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentAskState } from "../../../stores/agent-turn-store.js";
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import { cn } from "../../../lib/cn.js";
 import { AutoTextarea } from "../auto-textarea.js";
@@ -36,7 +36,7 @@ import { useT } from "../../../i18n/context.js";
 
 export interface AgentAskCardProps {
   /** The ask state (already resolved through the optimistic override). */
-  ask: CopilotAskState;
+  ask: AgentAskState;
   /** True only while this is the thread's last activity, still awaiting an
    *  answer, and no stream is running. Everything else renders read-only. */
   interactive: boolean;
