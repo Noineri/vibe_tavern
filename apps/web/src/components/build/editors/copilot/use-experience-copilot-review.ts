@@ -5,9 +5,9 @@ import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js
 import type { CopilotBufferReview } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { TFunc } from "../../../../i18n/locale-helpers.js";
 import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-state.js";
-import { useExperienceCopilotTurnStore, type ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
+import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import { syncPersistedCopilotRound } from "../../../../lib/experience-copilot-draft.js";
-import { EMPTY_REVIEW_ROUND, useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
+import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
 import { useShallow } from "zustand/react/shallow";
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import {
@@ -24,7 +24,7 @@ import { validateVisualSource } from "../../../../lib/visual-source-validator.js
 import { toast } from "sonner";
 
 /** Stable empty fallback avoids a fresh selector array every host render. */
-const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
+const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
 
 /** Cohesive host extraction: turn-local review feedback sent alongside a turn. */
 export function useExperienceCopilotReviewFeedback({
@@ -266,7 +266,7 @@ export function useExperienceCopilotReviewSession({
   // ── Review state (CD-2/CD-3): freeze, snapshots, revert ────────────────
   // The live turn's activities feed the review hook (proposal aggregation);
   // the SAME store read the MessageList does — never from inside a render.
-  const turnActivities = useExperienceCopilotTurnStore(
+  const turnActivities = useAgentTurnStore(
     useShallow((s) => (threadId ? s.turnsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
   );
   const handleRevertBuffers = useCallback(
@@ -296,7 +296,7 @@ export function useExperienceCopilotReviewSession({
   // Resetting on a NEW proposal is `ensureReviewKey` below: it clears a
   // buffer's sets only when the review key (base+proposed) actually changed,
   // so a remount with the same proposal keeps the progress.
-  const round = useCopilotReviewRoundStore(
+  const round = useAgentReviewRoundStore(
     useShallow((s) => (threadId ? s.roundsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_REVIEW_ROUND : EMPTY_REVIEW_ROUND)),
   );
   const acceptedRulesHunks = useMemo(() => new Set(round.acceptedRules), [round.acceptedRules]);
@@ -309,25 +309,25 @@ export function useExperienceCopilotReviewSession({
   // shape the accept/cancel helpers take, writing through to the round store.
   const setAcceptedRulesHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(kind, threadId, "rules", [...next]);
+      if (threadId) useAgentReviewRoundStore.getState().setAcceptedHunks(kind, threadId, "rules", [...next]);
     },
     [threadId],
   );
   const setAcceptedVisualHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(kind, threadId, "visual", [...next]);
+      if (threadId) useAgentReviewRoundStore.getState().setAcceptedHunks(kind, threadId, "visual", [...next]);
     },
     [threadId],
   );
   const setDismissedRulesHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(kind, threadId, "rules", [...next]);
+      if (threadId) useAgentReviewRoundStore.getState().setDismissedHunks(kind, threadId, "rules", [...next]);
     },
     [threadId],
   );
   const setDismissedVisualHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(kind, threadId, "visual", [...next]);
+      if (threadId) useAgentReviewRoundStore.getState().setDismissedHunks(kind, threadId, "visual", [...next]);
     },
     [threadId],
   );
@@ -345,7 +345,7 @@ export function useExperienceCopilotReviewSession({
   const captureDangling = useCallback(() => {
     if (!threadId) return;
     if (!proposalRef.current.hasProposal) return;
-    useCopilotReviewRoundStore.getState().captureDangling(kind, threadId, {
+    useAgentReviewRoundStore.getState().captureDangling(kind, threadId, {
       rules: proposalRef.current.proposedRules,
       visual: proposalRef.current.proposedVisual,
       baseRules: proposalBaseRef.current?.rules ?? rulesCode,
@@ -392,10 +392,10 @@ export function useExperienceCopilotReviewSession({
   // isolate threads, and wiping on the "" → threadId transition would destroy
   // the restored round — the exact bug this store exists to fix.
   useEffect(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(kind, threadId, "rules", rulesReviewKey);
+    if (threadId) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "rules", rulesReviewKey);
   }, [threadId, rulesReviewKey]);
   useEffect(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(kind, threadId, "visual", visualReviewKey);
+    if (threadId) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "visual", visualReviewKey);
   }, [threadId, visualReviewKey]);
   // Envelope-v2 persistence (the write side of ER-10): keep the localStorage
   // draft (finalized activities + the round) in sync on every mutation. The
@@ -424,7 +424,7 @@ export function useExperienceCopilotReviewSession({
   const currentHunkReview = useCallback(
     (target: "rules" | "visual") => {
       if (!threadId) return null;
-      const current = useCopilotReviewRoundStore.getState().roundsByThread[agentThreadKey(kind, threadId)];
+      const current = useAgentReviewRoundStore.getState().roundsByThread[agentThreadKey(kind, threadId)];
       if (!current) return null;
       const accepted = new Set(target === "rules" ? current.acceptedRules : current.acceptedVisual);
       const dismissed = new Set(target === "rules" ? current.dismissedRules : current.dismissedVisual);
@@ -518,7 +518,7 @@ export function useExperienceCopilotReviewSession({
   const dismissRulesHunk = useCallback(
     (hunkId: number) => {
       if (!threadId) return;
-      const state = useCopilotReviewRoundStore.getState();
+      const state = useAgentReviewRoundStore.getState();
       const current = state.roundsByThread[agentThreadKey(kind, threadId)];
       if (!current) return;
       const dismissed = new Set([...current.dismissedRules, hunkId]);
@@ -530,7 +530,7 @@ export function useExperienceCopilotReviewSession({
   const dismissVisualHunk = useCallback(
     (hunkId: number) => {
       if (!threadId) return;
-      const state = useCopilotReviewRoundStore.getState();
+      const state = useAgentReviewRoundStore.getState();
       const current = state.roundsByThread[agentThreadKey(kind, threadId)];
       if (!current) return;
       const dismissed = new Set([...current.dismissedVisual, hunkId]);
@@ -572,7 +572,7 @@ export function useExperienceCopilotReviewSession({
       (id) => !acceptedRulesHunks.has(id) && !dismissedRulesHunks.has(id),
     );
     if (pending.length === 0) return;
-    const state = useCopilotReviewRoundStore.getState();
+    const state = useAgentReviewRoundStore.getState();
     const current = state.roundsByThread[agentThreadKey(kind, threadId)];
     if (!current) return;
     const dismissed = new Set([...current.dismissedRules, ...pending]);
@@ -592,7 +592,7 @@ export function useExperienceCopilotReviewSession({
       (id) => !acceptedVisualHunks.has(id) && !dismissedVisualHunks.has(id),
     );
     if (pending.length === 0) return;
-    const state = useCopilotReviewRoundStore.getState();
+    const state = useAgentReviewRoundStore.getState();
     const current = state.roundsByThread[agentThreadKey(kind, threadId)];
     if (!current) return;
     const dismissed = new Set([...current.dismissedVisual, ...pending]);
@@ -660,7 +660,7 @@ export function useExperienceCopilotReviewSession({
         ].filter(({ target }) => revertedTargets.includes(target)),
       );
       cancelStoredExperienceOutcomes(kind, threadId, revertedTargets);
-      useCopilotReviewRoundStore.getState().clearDangling(kind, threadId);
+      useAgentReviewRoundStore.getState().clearDangling(kind, threadId);
     } else {
       review.revertLastTurn();
     }

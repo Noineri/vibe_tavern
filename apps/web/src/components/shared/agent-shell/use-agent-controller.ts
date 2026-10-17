@@ -259,7 +259,7 @@ export function useAgentController(
       useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
       useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
       // This routing MUST stay field-for-field with ER-8's
-      // `extractPersistedExperienceCopilotActivities` so live activities
+      // `extractPersistedAgentActivities` so live activities
       // === persisted activities on snapshot refetch. The only addition
       // is the live-only `isError` signal, OR'd into the error status.
       if (info.toolName === "read_skill_file") {

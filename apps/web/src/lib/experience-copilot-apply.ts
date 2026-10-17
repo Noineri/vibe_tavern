@@ -24,7 +24,7 @@
  * Tested in isolation (the two-buffer last-wins semantics are the load-bearing
  * contract the Wave 4 Apply flow consumes).
  */
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 import type { ExperienceCopilotTarget } from "@vibe-tavern/api-contracts";
 import type { BufferProposal } from "@vibe-tavern/api-contracts";
 
@@ -47,7 +47,7 @@ export type ExperienceCopilotProposal = BufferProposal;
  * Keep only finalized (done) activities that actually propose a buffer,
  * deduped by toolCallId (the store merges re-emits in place).
  */
-function finalizedActivities(activities: ReadonlyArray<ExperienceCopilotToolActivity>): ProposedActivity[] {
+function finalizedActivities(activities: ReadonlyArray<AgentToolActivity>): ProposedActivity[] {
 	const byId = new Map<string, ProposedActivity>();
 	for (const a of activities) {
 		if (a.status !== "done") continue;
@@ -71,7 +71,7 @@ function finalizedActivities(activities: ReadonlyArray<ExperienceCopilotToolActi
  * `write_buffer`/`edit_buffer` result is the complete cumulative buffer).
  */
 export function aggregateExperienceCopilotProposal(
-	activities: ReadonlyArray<ExperienceCopilotToolActivity>,
+	activities: ReadonlyArray<AgentToolActivity>,
 ): ExperienceCopilotProposal {
 	const finalized = finalizedActivities(activities);
 	const summaries = finalized.map((a) => a.summary).filter((s): s is string => typeof s === "string" && s.length > 0);
