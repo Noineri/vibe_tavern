@@ -1,3 +1,4 @@
+// forks: 1 — script-agent-editor-pane.tsx (the editor pane: tab strip + Try body)
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { COPILOT_TOOL_KEYS, type ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";

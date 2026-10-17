@@ -1,3 +1,6 @@
+// fork #1 of the experience host editor pane (copilot/experience-agent-host.tsx)
+// and fork #1 of the AgentBufferReviewEditor code area
+// (shared/agent-shell/AgentBufferReviewEditor.tsx) — see the doc comment below.
 import { useState, type ReactNode } from "react";
 import type { Extension } from "@codemirror/state";
 import { useT } from "../../../i18n/context.js";

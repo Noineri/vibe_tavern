@@ -1,3 +1,4 @@
+// forks: 1 — script-agent-editor-pane.tsx (the code area: container, frame, editor, scrim)
 import { useMemo } from "react";
 import type { ScriptKind } from "@vibe-tavern/domain";
 import { buildLineDiff, type TextDiffSummary } from "../TextDiffPreview.js";
