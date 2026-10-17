@@ -1,8 +1,6 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-set "BUN_EXE=bun"
 where bun >nul 2>nul
 if errorlevel 1 (
     echo Bun is not installed. Install from https://bun.sh
@@ -10,114 +8,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem ── Server port ──
-rem Default 8787; override by setting VIBE_TAVERN_PORT before launching.
-rem The Dev bat sets 8788 so a dev/playtest server never collides with
-rem (and can't be killed by) another instance on the default port.
-if not defined VIBE_TAVERN_PORT set "VIBE_TAVERN_PORT=8787"
-
-rem The frontend resolves its API base to window.location.origin at runtime
-rem (apps/web/src/gateway-client.ts), so the prod server (frontend + API on one
-rem origin) does NOT need VIBE_TAVERN_WEB_API_URL pinned. Leaving it unset keeps the
-rem built out/ port-agnostic, so two instances on different ports can share
-rem the same build output without one breaking the other's API calls.
-
-if exist "..\mcp\.env" (
-    for /f "usebackq tokens=1,* delims==" %%A in ("..\mcp\.env") do (
-        set "KEY=%%A"
-        set "VALUE=%%B"
-        if not "!KEY!"=="" if /i not "!KEY:~0,1!"=="#" (
-            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VIBE_TAVERN_WEB_DEFAULT_BASE_URL=!VALUE!"
-            if /i "!KEY!"=="NANO_GPT_MODEL" set "VIBE_TAVERN_WEB_DEFAULT_MODEL=!VALUE!"
-        )
-    )
-    set "VIBE_TAVERN_WEB_DEFAULT_PROVIDER_LABEL=NanoGPT"
-)
-
-echo ============================================
-echo  Vibe Tavern
-echo ============================================
-echo.
-echo Server: http://127.0.0.1:%VIBE_TAVERN_PORT%
-if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
-echo.
-
-rem Reconcile node_modules against bun.lock on every launch. `bun install`
-rem is a no-op (~30ms) when already in sync and self-heals when a dep was
-rem added/removed since the last launch — unlike the old sentinel check
-rem (a fixed list of package directories), which silently missed newly
-rem added packages.
-echo Checking dependencies against bun.lock...
-call %BUN_EXE% install
-if errorlevel 1 (
-    echo.
-    echo Failed to install dependencies.
-    pause
-    exit /b 1
-)
-
-:build
-echo.
-echo Building...
-call %BUN_EXE% run build
-if errorlevel 1 (
-    echo.
-    echo Build failed.
-    pause
-    exit /b 1
-)
-
-:run
-echo.
-echo Starting server...
-echo Press Ctrl+C to stop.
-echo.
-
-rem If the port is busy, offer to kill the stale holder instead of falling
-rem silently — the deliberate restart UX (owner ruling 2026-09-19: the
-rem launcher must offer to kill the stale holder instead of dying
-rem silently, as it always did — see IMAGEGEN_MAINTENANCE_REPORT).
-rem Repaired, not
-rem removed: the original assigned to $pid — a READ-ONLY automatic
-rem PowerShell variable — so the assignment threw VariableNotWritable and
-rem both the reported and the offered-to-kill PID were powershell.exe
-rem itself, never the zombie; $ownerPid is writable and carries the real
-rem OwningProcess.
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $ownerPid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $ownerPid; exit 10 } else { exit 0 }"
-if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$ownerPid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $ownerPid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $ownerPid -Force; Start-Sleep -Milliseconds 500; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
-    if errorlevel 1 (
-        pause
-        exit /b 1
-    )
-)
-
-rem ── Create log directory ──
-if not exist "logs" mkdir logs
-
-rem ── Generate timestamp via PowerShell ──
-for /f "usebackq" %%T in (`powershell.exe -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HHmmss'"`) do set "TIMESTAMP=%%T"
-set "LOG_FILE=logs\server-!TIMESTAMP!.log"
-
-echo Logging to !LOG_FILE!
-echo.
-
-rem ── Run bun with live output + log to file ──
-powershell.exe -NoProfile -Command "& bun --no-env-file services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
-set "EXIT_CODE=%ERRORLEVEL%"
-
-echo.
-if "%EXIT_CODE%"=="0" (
-    echo Server stopped cleanly.
-) else if "%EXIT_CODE%"=="1" (
-    echo Server stopped ^(code 1^).
-) else if "%EXIT_CODE%"=="3221225786" (
-    echo Server stopped ^(Ctrl+C^).
-) else if "%EXIT_CODE%"=="-1073741510" (
-    echo Server stopped ^(Ctrl+C^).
-) else (
-    echo Server exited with code %EXIT_CODE%.
-)
-echo Log saved to !LOG_FILE!
-echo.
+:: Everything else (port, build skip, port check, logging) lives in scripts/start.ts.
+bun scripts/start.ts
 pause
