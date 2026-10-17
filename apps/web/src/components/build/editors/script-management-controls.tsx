@@ -95,7 +95,9 @@ export function ScriptManagementControls({
       <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
         {/* Script kind is immutable after creation — set via the New Script /
             New Dice Script buttons. Shown as a read-only badge so the user
-            always sees which runtime a script targets. */}
+            always sees which runtime a script targets. The previous kind
+            toggle was removed: it could never persist (updateScriptSchema
+            excludes scriptKind), so it silently reverted on save. */}
         <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
           {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
         </div>
