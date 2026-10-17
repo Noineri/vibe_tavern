@@ -849,7 +849,7 @@ describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
 		await findByTestId("copilot-send-btn");
 
 		// One CodeMirror in the document (the agent pane's): the opaque
-		// hostProps share the plain panel's draft state, not a copy.
+		// hostProps share the hook's draft state, not a copy.
 		const editors = container.querySelectorAll(".cm-editor");
 		expect(editors).toHaveLength(1);
 		const agentView = EditorView.findFromDOM(editors[0] as HTMLElement);

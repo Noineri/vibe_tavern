@@ -130,8 +130,8 @@ function useScriptAgentReviewSession({
 
   // CD-2: snapshot the code buffer on the RISING edge of the turn — the diff
   // "before" side and the revert target. The snapshot rides the round store
-  // (survives pane unmounts: toggling back to the plain editor mid-review
-  // must not lose the round).
+  // (survives pane unmounts: switching to another script or leaving the
+  // editor mid-review must not lose the round).
   const prevSending = useRef(isSending);
   useEffect(() => {
     if (threadId === null) return;

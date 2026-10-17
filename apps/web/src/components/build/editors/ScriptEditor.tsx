@@ -629,17 +629,17 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // ── Always-on assistant (AS-8c3b) ──
   // ONE shared management-controls node (the AS-8c1 bar) built from the
   // active script and the same handlers the former plain form also used —
-  // the SS-7 enable-warning flow still runs through handleToggleEnabled
-  // and the
-  // delete still goes through the existing confirm modal. The same surface
+  // the SS-7 enable-warning flow still runs through handleToggleEnabled and
+  // the delete still goes through the existing confirm modal. The editing
   // wiring travels opaquely to the `script` host through hostProps; the host
   // renders it as the tabbed Code/Test pane (AS-8c2, ScriptAgentEditorTabs)
   // inside the shell's editor pane, with the hunk-review decorations joined
-  // onto the same extensions. Rendered
-  // whenever an active script exists — the shell's threads are script-owned
-  // and the assistant is always on. The caller (LorebookEditor) renders this
-  // INSTEAD of the padded placeholder scroll container (the 2-pane layout
-  // needs the full unpadded height — the ExperienceEditor container approach).
+  // onto the same extensions. Rendered whenever an active script exists —
+  // the shell's threads are script-owned and the assistant is always on.
+  // The caller (LorebookEditor) renders this INSTEAD of its padded scroll
+  // container, which now holds only the no-script placeholder (the 2-pane
+  // layout needs the full unpadded height — the ExperienceEditor container
+  // approach).
   // No back button inside the top bar and no shell onBack: the lore editor's
   // own editorHeader caret is the back control on both viewports (named
   // deviation 1). No trust-blocked hint: scripts have no enable lock, so the
