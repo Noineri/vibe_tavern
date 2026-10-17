@@ -626,6 +626,18 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     </div>
   );
 
+  // AS-8c4d: back leaves the open script — clears the active script, then
+  // the lore editor drops back to the list (the delete flow's handleDelete
+  // already pairs setActiveScriptIdRaw(null) with onBackToList the same
+  // way). Desktop renders it FIRST in the top bar (the ExperienceEditor
+  // back-button shape, verbatim classes); mobile passes it to the shell as
+  // onBack, so it lands in the shell's tab-bar chevron row at zero added
+  // height — exactly as in the mini-app editor.
+  const handleBackToList = () => {
+    setActiveScriptIdRaw(null);
+    onBackToList?.();
+  };
+
   // ── Always-on assistant (AS-8c3b) ──
   // ONE shared management-controls node (the AS-8c1 bar) built from the
   // active script and the same handlers the former plain form also used —
@@ -640,10 +652,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // container, which now holds only the no-script placeholder (the 2-pane
   // layout needs the full unpadded height — the ExperienceEditor container
   // approach).
-  // No back button inside the top bar and no shell onBack: the lore editor's
-  // own editorHeader caret is the back control on both viewports (named
-  // deviation 1). No trust-blocked hint: scripts have no enable lock, so the
-  // ScriptSafetyBanner alone sits under the bar (named deviation 2).
+  // Back sits IN the script bar on desktop (first element, the
+  // ExperienceEditor back-button shape) and in the shell's tab-row chevron
+  // on mobile via onBack, by owner decision 2026-10-17 (AS-8c4d) — the
+  // lore editor's own editorHeader caret is gone from the script view, so
+  // no row is spent on a lone caret. No trust-blocked hint: scripts have
+  // no enable lock, so the ScriptSafetyBanner alone sits under the bar
+  // (named deviation 2).
   const scriptManagementControls = activeScript && activeScriptId ? (
     <ScriptManagementControls
       name={activeScript.name}
@@ -679,18 +694,27 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     onAddFromTemplate: (key) => handleAddFromTemplate(key),
     onRevealLine: (line) => setRevealLine({ line }),
   } : null;
-  // Desktop: the management bar + the safety banner sit above the shell in
-  // one column (the ExperienceEditor top-bar shape, minus its back button).
-  // Mobile: no top bar — the shell gets the same nodes as its edit-tab header.
+  // Desktop: back (first) + the management bar + the safety banner sit above
+  // the shell in one column (the ExperienceEditor top-bar shape, back button
+  // included). Mobile: no top bar — the shell gets the same nodes as its
+  // edit-tab header and the back chevron in its tab-bar row via onBack.
   // The shell keeps ONE tree position on both viewports (only its siblings and
-  // the editTabHeader prop change, as in ExperienceEditor), so crossing the
-  // 768px breakpoint re-renders it instead of remounting it — the loaded
+  // the editTabHeader/onBack props change, as in ExperienceEditor), so crossing
+  // the 768px breakpoint re-renders it instead of remounting it — the loaded
   // session is not fetched again and a running assistant turn is not torn
   // down by a resize or a tablet rotation.
   const scriptAgentPanel = scriptAgentHostProps ? (
     <div className="flex min-h-0 flex-1 flex-col">
       {!isMobile && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
+          <button
+            type="button"
+            aria-label={t("import_back")}
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            onClick={handleBackToList}
+          >
+            {Ic.caret("l")} {t("import_back")}
+          </button>
           {scriptManagementControls}
         </div>
       )}
@@ -703,6 +727,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           isMobile={isMobile}
           editTabDirty={scriptAgentHostProps.draftDirty}
           assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+          onBack={isMobile ? handleBackToList : undefined}
           hostProps={scriptAgentHostProps}
           editTabHeader={
             isMobile ? (

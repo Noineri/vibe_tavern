@@ -885,4 +885,39 @@ describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
 			mobileState.isMobile = false;
 		}
 	});
+
+	it("returns to the list through the bar's back button on desktop (AS-8c4d)", async () => {
+		const { container, findByText, findByTestId, getByRole, queryByTestId } = render(<AgentModeHarness />);
+		await openEditor(container, findByText);
+		await findByTestId("copilot-send-btn");
+
+		// The back control is the FIRST element of the script bar (the
+		// ExperienceEditor back-button shape, label import_back) — there is
+		// no header row above the bar. The name is unique on desktop (the
+		// shell's mobile chevron renders only with onBack, which desktop
+		// never passes), so no bar scoping is needed.
+		fireEvent.click(getByRole("button", { name: "import_back" }));
+
+		// Back on the list: the script row shows, the shell is gone.
+		expect(await findByText("Test Script")).toBeTruthy();
+		await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeNull());
+	});
+
+	it("returns to the list through the shell's tab-row chevron on mobile (AS-8c4d)", async () => {
+		try {
+			mobileState.isMobile = true;
+			const { container, findByText, findByTestId, getByTestId, queryByTestId } = render(<AgentModeHarness />);
+			await openEditor(container, findByText);
+			await findByTestId("copilot-send-btn");
+
+			// No desktop bar on mobile — back lives in the shell's tab-bar
+			// row (the copilot-mobile-back chevron, as in script-agent-host).
+			fireEvent.click(getByTestId("copilot-mobile-back"));
+
+			expect(await findByText("Test Script")).toBeTruthy();
+			await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeNull());
+		} finally {
+			mobileState.isMobile = false;
+		}
+	});
 });

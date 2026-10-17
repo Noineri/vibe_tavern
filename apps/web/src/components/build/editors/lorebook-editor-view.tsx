@@ -9,7 +9,11 @@ import type { ReactNode } from "react";
  * scrolling parent would squeeze the panes and double-scroll). Mobile and
  * desktop differ only in the padding/scroll shape of the plain container;
  * the agent branch is viewport-uniform (the shell owns its responsive
- * dual-mode).
+ * dual-mode). The agent panel carries its own back control (first in the
+ * bar on desktop, the shell's tab-row chevron on mobile, AS-8c4d), so the
+ * header row is skipped then — a whole row for one caret would only cost
+ * height; lore entries keep their header row (the view renders it whenever
+ * there is no agent panel).
  */
 export function LorebookEditorView({
   agentPanel,
@@ -17,7 +21,7 @@ export function LorebookEditorView({
   editorHeader,
   isMobile,
 }: {
-  /** The script editor's agent-mode shell; null renders the plain container. */
+  /** The always-on script assistant panel; null renders the header row plus the plain container. */
   agentPanel: ReactNode;
   children: ReactNode;
   editorHeader: ReactNode;
@@ -25,7 +29,7 @@ export function LorebookEditorView({
 }) {
   return (
     <div className="animate-[lbFadeIn_250ms_ease-out] flex min-h-0 flex-1 flex-col overflow-hidden">
-      {editorHeader}
+      {agentPanel == null && editorHeader}
       {agentPanel ?? (isMobile ? (
         <div
           className="min-h-0 flex-1 overflow-y-auto"
