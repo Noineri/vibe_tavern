@@ -29,8 +29,9 @@ import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
-import type { ScriptRecord } from "../../../api/types.js";
+import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type { ScriptAgentHostProps } from "./script-agent-host.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
@@ -163,8 +164,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 // ScriptEditor suite's double).
 mock.module("../../shared/LinkBindingPopover.js", () => ({
   LinkBindingPopover: (props: {
-    links: Array<{ targetType: "character" | "persona"; targetId: string }>;
-    onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
+    links: Array<{ targetType: string; targetId: string }>;
+    onSetLinks: (links: Array<{ targetType: string; targetId: string }>) => void;
   }) => (
     <div data-testid="script-owner-picker">
       {props.links.map((link) => (
@@ -177,6 +178,7 @@ mock.module("../../shared/LinkBindingPopover.js", () => ({
         </button>
       ))}
       <button type="button" onClick={() => props.onSetLinks([...props.links, { targetType: "persona", targetId: "persona-2" }])}>add-persona</button>
+      <button type="button" onClick={() => props.onSetLinks([...props.links, { targetType: "lorebook", targetId: "lb-1" }])}>add-mixed</button>
     </div>
   ),
 }));
@@ -266,6 +268,10 @@ function makeHostProps(script: ScriptRecord, isMobile: boolean, over: Partial<Sc
     apiRefOpen: false,
     scriptSafetyExtensions: [],
     characterName: undefined,
+    scriptLinks: [],
+    linkCharacters: [],
+    linkPersonas: [],
+    onSetScriptLinks: mock(),
     onUpdateDraft: mock(),
     onToggleApiRef: mock(),
     onAddFromTemplate: mock(),
@@ -601,5 +607,82 @@ describe("script-agent-editor-tabs — review dot (AS-8c2)", () => {
     });
 
     await waitFor(() => expect(queryByTestId("copilot-outer-dot-code")).not.toBeNull());
+  });
+});
+
+describe("script-agent-editor-tabs — Code toolbar strip (AS-8c4e)", () => {
+  it("edits the description through onUpdateDraft", async () => {
+    const onUpdateDraft = mock();
+    const script = makeScript({ id: "script-desc-edit", scopeType: "global", description: "Does things" });
+    const utils = renderScriptShell(script, { onUpdateDraft });
+    await flushSessionLoad();
+
+    // The Code tab (default) opens with the description field.
+    const input = utils.getByPlaceholderText("script_desc_placeholder") as HTMLInputElement;
+    expect(input.value).toBe("Does things");
+    fireEvent.change(input, { target: { value: "New desc" } });
+    expect(onUpdateDraft).toHaveBeenCalledWith({ description: "New desc" });
+  });
+
+  it("renders the links block for entity scripts only", async () => {
+    const script = makeScript({ id: "script-links-entity", scopeType: "entity" });
+    const utils = renderScriptShell(script);
+    await flushSessionLoad();
+    utils.getByText("script_links_label");
+    utils.getByTestId("script-owner-picker");
+  });
+
+  it("renders no links block for global scripts", async () => {
+    const script = makeScript({ id: "script-links-global", scopeType: "global" });
+    const utils = renderScriptShell(script);
+    await flushSessionLoad();
+    expect(utils.queryByText("script_links_label")).toBeNull();
+    expect(utils.queryByTestId("script-owner-picker")).toBeNull();
+  });
+
+  it("passes bound links through and filters non-entity links on set", async () => {
+    const onSetScriptLinks = mock();
+    const script = makeScript({ id: "script-links-set", scopeType: "entity" });
+    const links: ScriptLinkRecord[] = [{ scriptId: script.id, targetType: "character", targetId: "c1" }];
+    const characters: LinkTarget[] = [{ id: "c1", name: "C1", avatarAssetId: null }];
+    const utils = renderScriptShell(script, { scriptLinks: links, linkCharacters: characters, onSetScriptLinks });
+    await flushSessionLoad();
+
+    utils.getByText("c1");
+    fireEvent.click(utils.getByText("add-persona"));
+    expect(onSetScriptLinks).toHaveBeenCalledWith([
+      { targetType: "character", targetId: "c1" },
+      { targetType: "persona", targetId: "persona-2" },
+    ]);
+    fireEvent.click(utils.getByText("add-mixed"));
+    // The lorebook link is dropped: only character/persona links survive.
+    expect(onSetScriptLinks).toHaveBeenLastCalledWith([{ targetType: "character", targetId: "c1" }]);
+  });
+
+  it("keeps the API toggle as the last item of the templates row", async () => {
+    const onToggleApiRef = mock();
+    const script = makeScript({ id: "script-apiref-row", scopeType: "global" });
+    const utils = renderScriptShell(script, { onToggleApiRef });
+    await flushSessionLoad();
+
+    const apiButton = utils.getByRole("button", { name: "script_api_reference" });
+    const row = apiButton.parentElement;
+    expect(row?.className).toContain("flex-wrap");
+    // The toggle shares the row with the template buttons (no own row) and
+    // sits last among them.
+    const buttons = row ? Array.from(row.querySelectorAll(":scope > button")) : [];
+    expect(buttons.length).toBeGreaterThan(1);
+    expect(buttons[buttons.length - 1]).toBe(apiButton);
+    // The reference panel stays hidden until toggled.
+    expect(utils.queryByText("script_api_context")).toBeNull();
+    fireEvent.click(apiButton);
+    expect(onToggleApiRef).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the API reference panel below the templates row once open", async () => {
+    const script = makeScript({ id: "script-apiref-open", scopeType: "global", scriptKind: "prompt" });
+    const utils = renderScriptShell(script, { apiRefOpen: true });
+    await flushSessionLoad();
+    expect(utils.getByText("script_api_context")).toBeDefined();
   });
 });

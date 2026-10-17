@@ -6,8 +6,9 @@ import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
-import type { ScriptRecord } from "../../../api/types.js";
+import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ScriptDraftValues } from "../../../stores/script-draft-store.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { ScriptAgentEditorTabs } from "./script-agent-editor-pane.js";
 import {
   allReviewHunkIds,
@@ -79,6 +80,14 @@ export interface ScriptAgentHostProps {
    *  decorations join these (the AS-8a seam). */
   scriptSafetyExtensions: Extension[];
   characterName: string | undefined;
+  /** Bound links + pick-list targets — the editor pane's toolbar strip reads
+   *  them (re-added by AS-8c4e; AS-8c4c had removed them while unread). */
+  scriptLinks: ScriptLinkRecord[];
+  linkCharacters: LinkTarget[];
+  linkPersonas: LinkTarget[];
+  onSetScriptLinks: (
+    next: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => void;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
   onToggleApiRef: () => void;
   onAddFromTemplate: (key: string) => void;
@@ -493,6 +502,10 @@ function ScriptAgentEditorPane({
       reviewOpen={review !== null}
       reviewBar={reviewBar}
       characterName={hostProps.characterName}
+      links={hostProps.scriptLinks}
+      linkCharacters={hostProps.linkCharacters}
+      linkPersonas={hostProps.linkPersonas}
+      onSetScriptLinks={hostProps.onSetScriptLinks}
       onUpdateDraft={hostProps.onUpdateDraft}
       onToggleApiRef={hostProps.onToggleApiRef}
       onAddFromTemplate={hostProps.onAddFromTemplate}

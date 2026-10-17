@@ -1,19 +1,17 @@
 /**
  * ScriptManagementControls — presentation tests.
  *
- * Pins the AS-8c1 management bar boundary: row 1 (name, kind badge, status
- * pill, enable toggle, desktop save-state text, save, delete) plus row 2
- * (description + the entity-only links block). i18n and the LinkBindingPopover
- * are stubbed (key-echo translator, structural popover double); every
- * callback is asserted through the component's explicit props.
+ * Pins the AS-8c1 management bar boundary (row 1 only since AS-8c4e: name,
+ * kind badge, status pill, enable toggle, desktop save-state text, save,
+ * delete — the description field + the entity-only links block moved into
+ * the Code tab's toolbar strip). i18n is stubbed (key-echo translator);
+ * every callback is asserted through the component's explicit props.
  *
  * Runner: bun:test with scoped happy-dom.
  */
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { ScriptLinkRecord } from "../../../api/types.js";
-import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type {
   ScriptDraftSaveState,
   ScriptDraftValues,
@@ -22,7 +20,6 @@ import type {
 useDomEnv();
 
 const realI18nContext = await import("../../../i18n/context.js");
-const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
 mock.module("../../../i18n/context.js", () => ({
@@ -34,36 +31,6 @@ mock.module("../../../i18n/context.js", () => ({
     setLocale: () => {},
     ready: true,
   }),
-}));
-
-mock.module("../../shared/LinkBindingPopover.js", () => ({
-  ...realLinkBindingPopover,
-  LinkBindingPopover: (props: {
-    links: Array<{ targetType: string; targetId: string }>;
-    onSetLinks: (links: Array<{ targetType: string; targetId: string }>) => void;
-  }) => (
-    <div data-testid="links-picker">
-      {props.links.map((link) => (
-        <span key={`${link.targetType}:${link.targetId}`} data-testid="bound-link">
-          {link.targetId}
-        </span>
-      ))}
-      <button
-        type="button"
-        data-testid="links-add"
-        onClick={() => props.onSetLinks([...props.links, { targetType: "persona", targetId: "persona-2" }])}
-      >
-        add
-      </button>
-      <button
-        type="button"
-        data-testid="links-mixed"
-        onClick={() => props.onSetLinks([...props.links, { targetType: "lorebook", targetId: "lb-1" }])}
-      >
-        mixed
-      </button>
-    </div>
-  ),
 }));
 
 mock.module("../../shared/Tooltip.js", () => ({
@@ -84,11 +51,6 @@ interface ControlOverrides {
   name?: string;
   enabled?: boolean;
   scriptKind?: string;
-  scopeType?: string;
-  description?: string;
-  links?: ScriptLinkRecord[];
-  linkCharacters?: LinkTarget[];
-  linkPersonas?: LinkTarget[];
   draftDirty?: boolean;
   draftSaveState?: ScriptDraftSaveState;
   draftError?: string | null;
@@ -99,7 +61,6 @@ interface ControlOverrides {
 function renderControls(overrides: ControlOverrides = {}) {
   const patches: Array<Partial<ScriptDraftValues>> = [];
   const toggles: boolean[] = [];
-  const linksSets: Array<Array<{ targetType: "character" | "persona"; targetId: string }>> = [];
   let saves = 0;
   let deletes = 0;
   const result = render(
@@ -107,11 +68,6 @@ function renderControls(overrides: ControlOverrides = {}) {
       name="My script"
       enabled={true}
       scriptKind="prompt"
-      scopeType="entity"
-      description="Does things"
-      links={[]}
-      linkCharacters={[]}
-      linkPersonas={[]}
       draftDirty={true}
       draftSaveState="idle"
       draftError={null}
@@ -121,19 +77,18 @@ function renderControls(overrides: ControlOverrides = {}) {
       onToggleEnabled={(enabled) => { toggles.push(enabled); }}
       onDelete={() => { deletes += 1; }}
       onSave={() => { saves += 1; }}
-      onSetScriptLinks={(next) => { linksSets.push(next); }}
       {...overrides}
     />,
   );
   return {
     ...result,
-    calls: { patches, toggles, linksSets, saves: () => saves, deletes: () => deletes },
+    calls: { patches, toggles, saves: () => saves, deletes: () => deletes },
   };
 }
 
 describe("ScriptManagementControls", () => {
-  it("renders both rows: management cluster plus description and links", () => {
-    const { getByPlaceholderText, getByRole, getByText, getByTestId } = renderControls();
+  it("renders the row-1 management cluster with no description or links", () => {
+    const { getByPlaceholderText, getByRole, getByText, queryByPlaceholderText, queryByText, queryByTestId } = renderControls();
     // Row 1: name, kind badge, status pill, toggle, save-state text, save, delete.
     getByPlaceholderText("script_name");
     getByText("script_kind_prompt");
@@ -142,10 +97,11 @@ describe("ScriptManagementControls", () => {
     getByText("unsaved_changes");
     getByRole("button", { name: "save" });
     getByRole("button", { name: "delete_script_confirm" });
-    // Row 2: description field and the entity-scope links block.
-    getByPlaceholderText("script_desc_placeholder");
-    getByText("script_links_label");
-    getByTestId("links-picker");
+    // Row 2 moved to the Code tab's toolbar strip (AS-8c4e): the bar renders
+    // no description field and no links block.
+    expect(queryByPlaceholderText("script_desc_placeholder")).toBeNull();
+    expect(queryByText("script_links_label")).toBeNull();
+    expect(queryByTestId("links-picker")).toBeNull();
   });
 
   it("shows the dice kind label for dice scripts", () => {
@@ -154,11 +110,10 @@ describe("ScriptManagementControls", () => {
     expect(queryByText("script_kind_prompt")).toBeNull();
   });
 
-  it("routes name and description edits through onUpdateDraft", () => {
+  it("routes name edits through onUpdateDraft", () => {
     const { getByPlaceholderText, calls } = renderControls();
     fireEvent.change(getByPlaceholderText("script_name"), { target: { value: "Renamed" } });
-    fireEvent.change(getByPlaceholderText("script_desc_placeholder"), { target: { value: "New desc" } });
-    expect(calls.patches).toEqual([{ name: "Renamed" }, { description: "New desc" }]);
+    expect(calls.patches).toEqual([{ name: "Renamed" }]);
   });
 
   it("routes toggle, save and delete through their callbacks", () => {
@@ -169,33 +124,6 @@ describe("ScriptManagementControls", () => {
     expect(calls.saves()).toBe(1);
     fireEvent.click(getByRole("button", { name: "delete_script_confirm" }));
     expect(calls.deletes()).toBe(1);
-  });
-
-  it("renders the links block only for entity scope", () => {
-    const entity = renderControls({ scopeType: "entity" });
-    entity.getByText("script_links_label");
-    entity.getByTestId("links-picker");
-    entity.unmount();
-    const global = renderControls({ scopeType: "global" });
-    expect(global.queryByText("script_links_label")).toBeNull();
-    expect(global.queryByTestId("links-picker")).toBeNull();
-  });
-
-  it("passes bound links through and filters non-entity links on set", () => {
-    const characters: LinkTarget[] = [{ id: "c1", name: "C1", avatarAssetId: null }];
-    const links: ScriptLinkRecord[] = [{ scriptId: "s1", targetType: "character", targetId: "c1" }];
-    const { getByTestId, getByText, calls } = renderControls({ links, linkCharacters: characters });
-    getByText("c1");
-    fireEvent.click(getByTestId("links-add"));
-    expect(calls.linksSets).toEqual([
-      [
-        { targetType: "character", targetId: "c1" },
-        { targetType: "persona", targetId: "persona-2" },
-      ],
-    ]);
-    fireEvent.click(getByTestId("links-mixed"));
-    // The lorebook link is dropped: only character/persona links survive.
-    expect(calls.linksSets[1]).toEqual([{ targetType: "character", targetId: "c1" }]);
   });
 
   it("hides the save-state text on mobile and shortens the status pill", () => {

@@ -10,7 +10,14 @@ import { CodeEditor } from "../../shared/CodeEditor.js";
 import { MobileExpandCodeEditor } from "../../shared/MobileExpandCodeEditor.js";
 import { GeneratingScrim } from "../../shared/generation-feedback.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
-import type { ScriptRecord } from "../../../api/types.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
+import { TextInput } from "../../shared/text-input.js";
+import {
+  LinkBindingPopover,
+  type LinkBindingRecord,
+  type LinkTarget,
+} from "../../shared/LinkBindingPopover.js";
+import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ScriptDraftValues } from "../../../stores/script-draft-store.js";
 import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { ScriptApiReference } from "./script-api-reference.js";
@@ -28,10 +35,11 @@ import { DiceScriptTester } from "./DiceScriptTester.js";
  * Named deviations from the model (the only ones): two tabs, not three
  * (scripts have no visual preview); no Rules/Visual sub-toggle and no
  * review-revert button (one code buffer; the script review bar keeps its own
- * accept/dismiss/cancel buttons); no description field in the toolbar strip
- * (it moves to the AS-8c1 management bar, wired by AS-8c3) and no validate
- * button (the tester tab covers it); templates always shown, as in the plain
- * script editor rather than only in a creation mode.
+ * accept/dismiss/cancel buttons); no validate button (the tester tab covers
+ * it) while the toolbar strip OPENS with the description field plus the
+ * entity-only links block (owner decision 2026-10-17, AS-8c4e, layout Б —
+ * moved from the AS-8c1 management bar above the templates row); templates
+ * always shown, as in the plain script editor, not only in creation mode.
  *
  * Presentational only: every value arrives via explicit props (no store reads,
  * no review logic) — the host (`script-agent-host.tsx`) owns the review hook,
@@ -54,6 +62,13 @@ export interface ScriptAgentEditorTabsProps {
   /** The host's review-bar JSX (or null) — rendered as is below the toolbar. */
   reviewBar: ReactNode;
   characterName: string | undefined;
+  /** Bound characters/personas (entity scripts only) — the toolbar strip's links block. */
+  links: ScriptLinkRecord[];
+  linkCharacters: LinkTarget[];
+  linkPersonas: LinkTarget[];
+  onSetScriptLinks: (
+    next: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => void;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
   onToggleApiRef: () => void;
   onAddFromTemplate: (key: string) => void;
@@ -75,6 +90,10 @@ export function ScriptAgentEditorTabs({
   reviewOpen,
   reviewBar,
   characterName,
+  links,
+  linkCharacters,
+  linkPersonas,
+  onSetScriptLinks,
   onUpdateDraft,
   onToggleApiRef,
   onAddFromTemplate,
@@ -125,6 +144,49 @@ export function ScriptAgentEditorTabs({
       ) : (
         <>
           <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+            {/* Description + entity-only links (layout Б, owner 2026-10-17,
+                AS-8c4e): one line on desktop (description flex-1, links block
+                shrink-0), stacked on mobile — the EXACT markup that was row 2
+                of the management bar. */}
+            <div className="flex gap-3 max-md:flex-col">
+              <div className="min-w-0 flex-1">
+                <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
+                <TextInput
+                  value={script.description ?? ""}
+                  onChange={(e) => onUpdateDraft({ description: e.target.value })}
+                  placeholder={t("script_desc_placeholder")}
+                />
+              </div>
+
+              {/* Entity scripts bind to characters/personas; global scripts run
+                  unconditionally and chat scripts are chat-bound. */}
+              {script.scopeType === "entity" && (
+                <div className="shrink-0">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
+                    <CustomTooltip content={t("script_links_hint")}>
+                      <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+                    </CustomTooltip>
+                  </div>
+                  <LinkBindingPopover
+                    links={links}
+                    characters={linkCharacters}
+                    personas={linkPersonas}
+                    onSetLinks={(next: LinkBindingRecord[]) => {
+                      onSetScriptLinks(next
+                        .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
+                          link.targetType === "character" || link.targetType === "persona",
+                        )
+                        .map(({ targetType, targetId }) => ({ targetType, targetId })));
+                    }}
+                    t={t}
+                    isMobile={isMobile}
+                    tooltipLabel={t("script_links_add")}
+                    emptyLabel={t("script_links_empty")}
+                  />
+                </div>
+              )}
+            </div>
             {/* Templates — only the active script's kind (SCRIPT_EDITOR_CLEANUP step 3) */}
             <div className="flex flex-col gap-1.5">
               <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_templates")}</div>
@@ -132,16 +194,14 @@ export function ScriptAgentEditorTabs({
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === (script.scriptKind || "prompt")).map(([key, tpl]) => (
                   <button type="button" key={key} className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => onAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
+                <button
+                  type="button"
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  onClick={onToggleApiRef}
+                >
+                  <Ic.book /> {t("script_api_reference")}
+                </button>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
-                onClick={onToggleApiRef}
-              >
-                <Ic.book /> {t("script_api_reference")}
-              </button>
             </div>
             {apiRefOpen && (
               <ScriptApiReference kind={scriptKind} />

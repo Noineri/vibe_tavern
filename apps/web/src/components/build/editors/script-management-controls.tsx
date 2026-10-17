@@ -7,26 +7,20 @@
 // pill — the kind is immutable after creation, so it is shown here, never
 // edited; (3) the status pill has no tooltip — the model's
 // experience_editor_trust_hint text is about interactive rules and is wrong
-// for scripts (the pill text keys are reused as is). Row 2 (the description
-// field plus the entity-only links block, full width below row 1) does not
-// exist in the model.
+// for scripts (the pill text keys are reused as is). Row 1 is the whole bar:
+// the description field plus the entity-only links block moved into the
+// Code tab's toolbar strip (ScriptAgentEditorTabs) by owner decision
+// 2026-10-17 (AS-8c4e) — layout Б places them above the templates row.
 //
-// NOT wired anywhere yet (AS-8c3 wires it): every value and callback
-// arrives via explicit props — no store reads, no new context.
+// Every value and callback arrives via explicit props — no store reads,
+// no new context.
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { lblCls } from "../../../lib/field-tokens.js";
 import { Ic } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { TextInput } from "../../shared/text-input.js";
-import {
-  LinkBindingPopover,
-  type LinkBindingRecord,
-  type LinkTarget,
-} from "../../shared/LinkBindingPopover.js";
-import type { ScriptLinkRecord } from "../../../api/types.js";
 import type {
   ScriptDraftSaveState,
   ScriptDraftValues,
@@ -36,11 +30,6 @@ interface ScriptManagementControlsProps {
   name: string;
   enabled: boolean;
   scriptKind: string;
-  scopeType: string;
-  description: string;
-  links: ScriptLinkRecord[];
-  linkCharacters: LinkTarget[];
-  linkPersonas: LinkTarget[];
   draftDirty: boolean;
   draftSaveState: ScriptDraftSaveState;
   draftError: string | null | undefined;
@@ -50,20 +39,12 @@ interface ScriptManagementControlsProps {
   onToggleEnabled: (enabled: boolean) => void;
   onDelete: () => void;
   onSave: () => void;
-  onSetScriptLinks: (
-    next: Array<{ targetType: "character" | "persona"; targetId: string }>,
-  ) => void;
 }
 
 export function ScriptManagementControls({
   name,
   enabled,
   scriptKind,
-  scopeType,
-  description,
-  links,
-  linkCharacters,
-  linkPersonas,
   draftDirty,
   draftSaveState,
   draftError,
@@ -73,7 +54,6 @@ export function ScriptManagementControls({
   onToggleEnabled,
   onDelete,
   onSave,
-  onSetScriptLinks,
 }: ScriptManagementControlsProps) {
   const { t } = useT();
   return (
@@ -89,7 +69,8 @@ export function ScriptManagementControls({
       {/* The action cluster (badge → delete) is a flat `display:contents`
           group on desktop — a single flex-wrap row with the name — and becomes
           a nested flex row on mobile, so the header composes into rows:
-          [name] / [badge, status, toggle, save, delete] / [row 2 below].
+          [name] / [badge, status, toggle, save, delete] (the bar is row-1
+          only since AS-8c4e moved description + links to the Code tab).
           (A plain `flex-1` on the name cannot force this: basis-0 lets the
           shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
       <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
@@ -151,53 +132,6 @@ export function ScriptManagementControls({
             <Ic.del />
           </button>
         </CustomTooltip>
-      </div>
-
-      {/* Row 2 (no model equivalent): the description field plus, for entity
-          scripts only, the links block — side by side on desktop
-          (description flex-1, links block shrink-0), stacked on mobile. The
-          inner markup (labels, tooltip, LinkBindingPopover props) came here
-          verbatim from the former plain form (script-editing-surface.tsx,
-          removed in AS-8c4b); only the outer spacing changed from
-          `style={{ marginBottom: 16 }}` to this row's gap. */}
-      <div className="flex w-full gap-3 max-md:flex-col">
-        <div className="min-w-0 flex-1">
-          <label className={lblCls}>{t("script_desc_label")}</label>
-          <TextInput
-            value={description}
-            onChange={(e) => onUpdateDraft({ description: e.target.value })}
-            placeholder={t("script_desc_placeholder")}
-          />
-        </div>
-
-        {/* Entity scripts bind to characters/personas; global scripts run
-            unconditionally and chat scripts are chat-bound. */}
-        {scopeType === "entity" && (
-          <div className="shrink-0">
-            <div className="mb-1.5 flex items-center gap-1.5">
-              <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
-              <CustomTooltip content={t("script_links_hint")}>
-                <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
-              </CustomTooltip>
-            </div>
-            <LinkBindingPopover
-              links={links}
-              characters={linkCharacters}
-              personas={linkPersonas}
-              onSetLinks={(next: LinkBindingRecord[]) => {
-                onSetScriptLinks(next
-                  .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
-                    link.targetType === "character" || link.targetType === "persona",
-                  )
-                  .map(({ targetType, targetId }) => ({ targetType, targetId })));
-              }}
-              t={t}
-              isMobile={isMobile}
-              tooltipLabel={t("script_links_add")}
-              emptyLabel={t("script_links_empty")}
-            />
-          </div>
-        )}
       </div>
     </>
   );

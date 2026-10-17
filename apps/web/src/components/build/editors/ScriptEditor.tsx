@@ -20,7 +20,7 @@ import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import { useT } from "../../../i18n/context.js";
-import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -664,11 +664,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       name={activeScript.name}
       enabled={activeScript.enabled}
       scriptKind={activeScript.scriptKind}
-      scopeType={activeScript.scopeType}
-      description={activeScript.description ?? ""}
-      links={scriptLinks}
-      linkCharacters={linkCharacters}
-      linkPersonas={linkPersonas}
       draftDirty={draftDirty}
       draftSaveState={draftSaveState}
       draftError={activeDraft?.error}
@@ -678,7 +673,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       onToggleEnabled={handleToggleEnabled}
       onDelete={() => setConfirmDeleteId(activeScriptId)}
       onSave={() => { void handleSave(); }}
-      onSetScriptLinks={(next) => { void handleSetScriptLinks(next); }}
     />
   ) : null;
   const scriptAgentHostProps: ScriptAgentHostProps | null = activeScript && activeScriptId ? {
@@ -689,6 +683,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     apiRefOpen,
     scriptSafetyExtensions,
     characterName: scope === "entity" && !personaId ? allCharacters.find((x) => x.id === characterId)?.name : undefined,
+    scriptLinks,
+    linkCharacters,
+    linkPersonas,
+    onSetScriptLinks: (next) => { void handleSetScriptLinks(next); },
     onUpdateDraft: updateDraft,
     onToggleApiRef: () => setApiRefOpen((v) => !v),
     onAddFromTemplate: (key) => handleAddFromTemplate(key),
