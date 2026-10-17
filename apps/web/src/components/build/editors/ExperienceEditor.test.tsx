@@ -658,30 +658,42 @@ describe("ExperienceEditor", () => {
     expect(getAllByTestId("card-description")).toHaveLength(2);
   });
 
-  // ── Follow-up round 3: mobile script header compaction ──────────────────
-  // The header action cluster must compose into ONE tight mobile row:
-  // [вкл/выкл pill][toggle][floppy save][duplicate][delete] — hence the short
-  // status keys and the icon-only SaveButton below 768px. Desktop (and every
-  // non-mobile test above) keeps the full word + text save label.
-  it("mobile: the status pill uses the short form and save collapses to a floppy icon", async () => {
+  // ── AS-8c4f2: the mini-app mobile bar is the shared ManagementMobileRow ──
+  // One row (name, toggle, floppy save, ...) — no status pill (the toggle
+  // carries the state); duplicate and delete live in the more-actions sheet.
+  // Desktop (and every non-mobile test above) keeps the full word + text
+  // save label.
+  it("mobile: mini-apps use the shared management row with duplicate and delete in the sheet", async () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
 
-    const { findByText, queryByText, findByRole, getByRole } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, findByRole, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("experience_editor_create_new"));
-    // E6: the management cluster lives in the mobile Правка tab — role queries
+    // E6: the management cluster lives in the mobile edit tab — role queries
     // skip the display:none-hidden pane, so switch tabs before querying the
-    // save button (text queries below match hidden nodes fine).
+    // row's buttons (text queries below match hidden nodes fine).
     fireEvent.click(await findByRole("tab", { name: "agent_tab_edit" }));
 
-    // Fresh script is disabled → short pill key, never the full word.
-    expect(await findByText("experience_editor_disabled_short")).toBeTruthy();
-    expect(queryByText("experience_editor_disabled")).toBeNull();
-
-    // Save is icon-only: a floppy svg, no visible text, state via aria-label.
+    // Shared row: name, unchecked toggle (fresh script is disabled), floppy
+    // save, `...` — and no status pill in either the short or full form.
+    const header = container.querySelector('[data-testid="copilot-edit-tab-header"]');
+    if (!(header instanceof HTMLElement)) throw new Error("edit-tab header missing");
+    if (!(header.querySelector('input[placeholder="script_name"]') instanceof HTMLInputElement)) throw new Error("name input missing");
+    const toggle = header.querySelector('[role="switch"]');
+    if (!(toggle instanceof HTMLElement)) throw new Error("toggle missing");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     const save = getByRole("button", { name: "save" });
     expect(save.querySelector("svg")).toBeTruthy();
     expect(save.textContent).toBe("");
+    getByRole("button", { name: "management_more_actions" });
+    expect(queryByText("experience_editor_disabled_short")).toBeNull();
+    expect(queryByText("experience_editor_disabled")).toBeNull();
+
+    // The sheet carries duplicate + delete (persist-on-create gives the fresh
+    // script a server id, so delete is present from the start).
+    fireEvent.click(getByRole("button", { name: "management_more_actions" }));
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    expect(await findByText("experience_editor_delete")).toBeTruthy();
   });
 
   it("desktop: the full status word and the text save label are unchanged", async () => {
@@ -1751,7 +1763,7 @@ describe("ExperienceEditor", () => {
   it("script header (E6): mobile management cluster lives in the Правка tab; back folds into the tab-bar row", async () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
-    const { container, findByText, findByRole } = render(<ExperienceEditor />);
+    const { container, findByText, findByRole, getByRole, queryByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
     // The cluster renders at the top of the Правка tab (inside the edit pane),
@@ -1769,34 +1781,51 @@ describe("ExperienceEditor", () => {
     expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
     expect(chevron.nextElementSibling?.getAttribute("role")).toBe("tablist");
 
-    // The composition contracts survive the move: name input flex-1 (no
-    // basis-full), action cluster is display:contents on desktop / nested flex
-    // row on mobile.
+    // AS-8c4f2: the row is the shared ManagementMobileRow — name input
+    // flex-1 (no basis-full), toggle, icon-only floppy save, `...`. No status
+    // pill and no save-state text (the toggle and the save button carry the
+    // state); the old display:contents cluster is gone with them.
     const nameInput = header.querySelector('input[placeholder="script_name"]');
     if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
     expect(nameInput.classList.contains("max-md:basis-full")).toBe(false);
     expect(nameInput.classList.contains("flex-1")).toBe(true);
-    const pill = header.querySelector("span.cursor-help");
-    if (!(pill instanceof HTMLElement)) throw new Error("status pill missing");
-    const cluster = pill.closest("div");
-    if (!(cluster instanceof HTMLElement)) throw new Error("action cluster missing");
-    expect(cluster.classList.contains("contents")).toBe(true);
-    expect(cluster.classList.contains("max-md:flex")).toBe(true);
-    expect(cluster.classList.contains("max-md:flex-wrap")).toBe(true);
+    if (!(header.querySelector('[role="switch"]') instanceof HTMLElement)) throw new Error("toggle missing");
+    expect(header.querySelector("span.cursor-help")).toBeNull();
+    expect(header.querySelector("div.contents")).toBeNull();
+    expect(header.textContent).not.toContain("saved_state");
 
-    // The save-state label stays hidden on mobile; the save button is an
-    // icon-only floppy (36px touch square).
-    const stateLabel = await findByText("saved_state");
-    expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
-    const saveBtn = header.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
+    // The save button is an icon-only floppy (36px touch square).
+    const saveBtn = header.querySelector('button[aria-label="save"]');
     if (!(saveBtn instanceof HTMLElement)) throw new Error("save button missing");
     expect(saveBtn.classList.contains("h-9")).toBe(true);
     expect(saveBtn.classList.contains("w-9")).toBe(true);
     expect(saveBtn.querySelector("svg")).toBeTruthy();
+    expect(saveBtn.textContent).toBe("");
+    const moreBtn = header.querySelector('button[aria-label="management_more_actions"]');
+    if (!(moreBtn instanceof HTMLElement)) throw new Error("more-actions button missing");
 
-    const dupBtn = header.querySelector('button[aria-label="experience_editor_duplicate"]');
-    if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");
-    expect(dupBtn.classList.contains("max-md:h-9")).toBe(true);
+    // The sheet carries duplicate + delete (the sheet portals to the body,
+    // so its items are queried from the whole tree, not the header). The
+    // delete opens the same destructive confirm the desktop icon did; the
+    // duplicate routes through the same onDuplicate and closes the sheet.
+    fireEvent.click(moreBtn);
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    fireEvent.click(await findByText("experience_editor_delete"));
+    expect(await findByText("experience_editor_delete_title")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "cancel" }));
+    expect(queryByText("experience_editor_delete_title")).toBeNull();
+    const moreBtnAgain = header.querySelector('button[aria-label="management_more_actions"]');
+    if (!(moreBtnAgain instanceof HTMLElement)) throw new Error("more-actions button missing");
+    fireEvent.click(moreBtnAgain);
+    fireEvent.click(await findByText("experience_editor_duplicate"));
+    // The duplicate routed through the same onDuplicate: the fresh pending
+    // draft is unsaved, so delete drops out of the sheet on reopen (unsaved
+    // drafts are discarded via back, never deleted).
+    const moreBtnFinal = container.querySelector('[data-testid="copilot-edit-tab-header"] button[aria-label="management_more_actions"]');
+    if (!(moreBtnFinal instanceof HTMLElement)) throw new Error("more-actions button missing");
+    fireEvent.click(moreBtnFinal);
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    expect(queryByText("experience_editor_delete")).toBeNull();
 
     // The desktop back TEXT button is absent on mobile (no node carries the
     // label as text anywhere in the tree).

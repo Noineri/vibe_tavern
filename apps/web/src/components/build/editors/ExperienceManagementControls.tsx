@@ -1,9 +1,11 @@
 // forks: 1 — script-management-controls.tsx
 /**
- * ExperienceManagementControls — the mini-app editor's management cluster
- * (name input, trust pill + enable toggle, save-state, save, duplicate,
- * delete), extracted from ExperienceEditor.tsx (SS-7, per the arch-gate's
- * split prescription — this cluster is the part SS-7 modifies: the enable
+ * ExperienceManagementControls — the mini-app editor's management cluster:
+ * on desktop (name input, trust pill + enable toggle, save-state, save,
+ * duplicate, delete), on mobile the shared ManagementMobileRow (name, the
+ * enable toggle with its lock, save, duplicate + delete in the sheet).
+ * Extracted from ExperienceEditor.tsx (SS-7, per the arch-gate's split
+ * prescription — this cluster is the part SS-7 modifies: the enable
  * toggle's onToggle now routes through the script-safety warning flow).
  *
  * E6 (MOBILE_DEFECTS_ROUND_2): rendered BOTH in the desktop top bar and as
@@ -17,6 +19,7 @@ import { Ic } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
+import { ManagementMobileRow } from "./management-mobile-row.js";
 import { TextInput } from "../../shared/text-input.js";
 import type { ScriptDraftSaveState } from "../../../stores/script-draft-store.js";
 
@@ -54,6 +57,47 @@ export function ExperienceManagementControls({
   canDelete,
 }: ExperienceManagementControlsProps) {
   const { t } = useT();
+  // AS-8c4f2: on mobile the whole bar is the shared ManagementMobileRow —
+  // one row (name, toggle with the enable lock, save, ...) with duplicate
+  // and delete moved into the more-actions sheet. The sheet actions call
+  // the same onDuplicate / onDelete, so both flows are unchanged behind
+  // it. The status pill is gone (the toggle carries the state); the
+  // trust-blocked hint below the bar still explains a lock.
+  if (isMobile) {
+    return (
+      <ManagementMobileRow
+        name={name}
+        namePlaceholder={t("script_name")}
+        onNameChange={onNameChange}
+        enabled={scriptEnabled}
+        enableLocked={enableLocked}
+        onToggleEnabled={onToggle}
+        dirty={scriptDirty}
+        saveState={scriptSaveState}
+        saveLabel={scriptSaveState === "error" ? t("retry") : t("save")}
+        resetKey={resetKey}
+        onSave={onSave}
+        sheetTitle={name}
+        sheetItems={[
+          {
+            icon: <Ic.copy />,
+            label: t("experience_editor_duplicate"),
+            action: onDuplicate,
+          },
+          ...(canDelete
+            ? [
+                {
+                  icon: <Ic.del />,
+                  label: t("experience_editor_delete"),
+                  danger: true,
+                  action: onDelete,
+                },
+              ]
+            : []),
+        ]}
+      />
+    );
+  }
   return (
     <>
       <TextInput
@@ -65,9 +109,9 @@ export function ExperienceManagementControls({
       />
 
       {/* The action cluster (pill → delete) is a flat `display:contents`
-          group on desktop — a single flex-wrap row with the name — and becomes
-          a nested flex row on mobile, so the header composes into exactly two
-          rows: [name] / [status, toggle, save(flex-1), duplicate, delete].
+          group — a single flex-wrap row with the name (desktop only: mobile
+          renders the shared ManagementMobileRow above, so this cluster never
+          sees a narrow viewport and keeps exactly this one-row shape).
           (A plain `flex-1` on the name cannot force this: basis-0 lets the
           shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
       <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
