@@ -11,8 +11,8 @@ import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
-import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
-import { useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
+import { useAgentTurnStore } from "../../../../stores/agent-turn-store.js";
+import { useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
 import type { ProviderProfileRecord } from "../../../../api/types.js";
 
@@ -418,12 +418,12 @@ function hasHiddenClass(el: HTMLElement): boolean {
 
 beforeEach(() => {
   mobileOverride = false;
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
-  useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+  useAgentReviewRoundStore.setState({ roundsByThread: {} });
   localStorage.clear();
   // CX-6: the mention catalog reads the live snapshot store — reset it so a
   // previous test's seeded characters don't leak into the next test's popover.
@@ -665,7 +665,7 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     expect(panel.textContent).toContain("Write the rules buffer");
     expect(panel.textContent).toContain("· 2");
     // The panel state went through the session-scoped store (not local).
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", "thread-1")).toHaveLength(3);
+    expect(useAgentTurnStore.getState().getTodo("experience", "thread-1")).toHaveLength(3);
   });
 
   it("stays hidden when the thread wire todo is empty", async () => {
@@ -688,7 +688,7 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
 
     act(() => {
-      useExperienceCopilotTurnStore.getState().setTodo("experience", "thread-1", [
+      useAgentTurnStore.getState().setTodo("experience", "thread-1", [
         { status: "active", title: "Fresh plan step" },
       ]);
     });
@@ -1493,7 +1493,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     await flushSessionLoad();
     await sendFollowup(utils, "propose changes", 1);
     await act(async () => {
-      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
         toolCallId: "ro4-supervisor-proposal",
         toolName: "write_buffer",
         status: "done",
@@ -1572,7 +1572,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     const utils = render(withIsolatedI18n(<ControlledShell />));
     await openReview(utils, threadId);
     await act(async () => {
-      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
         toolCallId: "ro4-supervisor-visual-proposal",
         toolName: "write_buffer",
         status: "done",
@@ -1612,7 +1612,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     const prior = priorBody.reviewSnapshot?.targets.find((target) => target.target === "rules");
     expect(prior).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
     await act(async () => {
-      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
         toolCallId: "ro4-supervisor-replacement-proposal",
         toolName: "write_buffer",
         status: "done",
@@ -1851,7 +1851,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     fireEvent.click(utils.getByRole("radio", { name: "agent_visual" }));
     await sendFollowup(utils, "propose visual changes", 1);
     await act(async () => {
-      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
         toolCallId: "ro4-supervisor-visual-proposal",
         toolName: "write_buffer",
         status: "done",
@@ -1968,7 +1968,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(completed.rules).toBe(PROPOSED);
     expect(completedReview).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
 
-    act(() => useCopilotReviewRoundStore.getState().resetRound("experience", threadId));
+    act(() => useAgentReviewRoundStore.getState().resetRound("experience", threadId));
     const afterReset = await sendFollowup(utils, "explain after round reset", 3);
     expect(afterReset.rules).toBe(PROPOSED);
     expect(afterReset.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
@@ -2137,7 +2137,7 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     // The turn's write_buffer proposal lands in the live store (as the SSE
     // tool-result path would fill it).
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2191,7 +2191,7 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2236,7 +2236,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2290,7 +2290,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
     // RV-3: the round is cancelled WITHOUT popping the snapshot / clearTurn —
     // the live turn's activities survive (the toolbar revert is a separate path).
-    expect(useExperienceCopilotTurnStore.getState().turnsByThread["thread-new"]?.length).toBeGreaterThan(0);
+    expect(useAgentTurnStore.getState().turnsByThread["thread-new"]?.length).toBeGreaterThan(0);
   });
 
   it("«Отменить все» (drift) reverses anchored accepted hunks and toasts nothing when all anchor", async () => {
@@ -2333,7 +2333,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2368,7 +2368,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     // A SECOND proposal lands on the visual buffer while the rules round is
     // still open — both rounds are live at once (CD-8: they hang until resolved).
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2419,7 +2419,7 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
   // — wrap the trigger in act() so no "not wrapped in act" warning fires.
   function seedProposal(text: string) {
     act(() => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2495,7 +2495,7 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     // Turn 2: the model proposes ONLY a visual (rules untouched).
     await sendOne("now write the visual");
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2539,7 +2539,7 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await flushSessionLoad();
 
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2587,7 +2587,7 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await flushSessionLoad();
 
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2641,7 +2641,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2691,7 +2691,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -2716,8 +2716,8 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     // stores and CLEAR the persisted key — on a real reload nothing is
     // mounted when the stores die.)
     first.unmount();
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-    useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {} });
+    useAgentReviewRoundStore.setState({ roundsByThread: {} });
 
     // Fresh page load: the shell's mount effect rehydrates from localStorage.
     const second = renderShell({ rulesCode: HYBRID, onRulesChange: mock() });

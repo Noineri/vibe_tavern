@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
-import { useExperienceCopilotTurnStore } from "../../../stores/experience-copilot-turn-store.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 
 useDomEnv();
 
@@ -36,7 +36,7 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
 }
 
 beforeEach(() => {
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
 });
 
 describe("ExperienceCopilotMessageList", () => {
@@ -121,7 +121,7 @@ describe("ExperienceCopilotMessageList", () => {
   });
 
   it("renders the current turn's activity refs from the feed as cards", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "a1", toolName: "run_test", status: "done", summary: "ok" },
@@ -216,7 +216,7 @@ describe("ExperienceCopilotMessageList", () => {
     // After settle+refetch the latest turn exists BOTH in the persisted history
     // and in the ephemeral live store (which renders it from the feed below the
     // list). The live feed owns those toolCallIds — history must not duplicate.
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [{ toolCallId: "c2", toolName: "edit_buffer", status: "done", target: "visual" }],
       },
@@ -266,7 +266,7 @@ describe("ExperienceCopilotMessageList", () => {
   });
 
   it("live feed interleaves text segments and cards in arrival order", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v2", summary: "wrote" },
@@ -303,7 +303,7 @@ describe("ExperienceCopilotMessageList", () => {
   });
 
   it("text-only turn renders one pending bubble (no cards)", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       feedByThread: {
         "thread-1": [{ kind: "text", id: "text-1", text: "Hello", closed: false }],
       },
@@ -324,7 +324,7 @@ describe("ExperienceCopilotMessageList", () => {
   });
 
   it("post-settle: empty pendingText suppresses feed text while cards stay", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v2", summary: "wrote" },
@@ -616,13 +616,13 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   });
 
   it("renders a live-feed awaiting ask as the interactive card", () => {
-    useExperienceCopilotTurnStore.getState().upsertActivity("experience", "thread-1", {
+    useAgentTurnStore.getState().upsertActivity("experience", "thread-1", {
       toolCallId: "tc-live",
       toolName: "ask_user",
       status: "done",
       ask: { ...ASK_ARGS, status: "awaiting_answer" },
     });
-    useExperienceCopilotTurnStore.getState().appendActivityRef("experience", "thread-1", "tc-live");
+    useAgentTurnStore.getState().appendActivityRef("experience", "thread-1", "tc-live");
 
     const { getByTestId } = render(
       <AgentMessageList
@@ -770,7 +770,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
   });
 
   it("live feed: interleaved text does not split the turn's accordion", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" },
@@ -820,7 +820,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
   });
 
   it("live feed: an ask between tool calls stays outside the single accordion", () => {
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" },

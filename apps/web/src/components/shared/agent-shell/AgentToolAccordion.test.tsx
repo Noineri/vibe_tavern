@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 
 useDomEnv();
 
@@ -13,7 +13,7 @@ beforeAll(async () => {
   ({ AgentToolAccordion } = await import("./AgentToolAccordion.js"));
 });
 
-function activity(id: string): ExperienceCopilotToolActivity {
+function activity(id: string): AgentToolActivity {
   return {
     toolCallId: id,
     toolName: "run_test",

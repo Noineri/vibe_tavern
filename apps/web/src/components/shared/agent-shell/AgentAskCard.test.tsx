@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { CopilotAskState } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentAskState } from "../../../stores/agent-turn-store.js";
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -18,7 +18,7 @@ mock.module("../../../components/shared/Tooltip.js", () => ({
 const { render, fireEvent } = await import("@testing-library/react");
 const { AgentAskCard } = await import("./AgentAskCard.js");
 
-function ask(over: Partial<CopilotAskState>): CopilotAskState {
+function ask(over: Partial<AgentAskState>): AgentAskState {
   return {
     question: "Which buffer should own the turn counter?",
     options: ["Rules", "Visual", "Neither"],
@@ -28,7 +28,7 @@ function ask(over: Partial<CopilotAskState>): CopilotAskState {
   };
 }
 
-function renderCard(askState: CopilotAskState, opts?: { interactive?: boolean; onSubmit?: (a: CopilotAskAnswerInput) => void }) {
+function renderCard(askState: AgentAskState, opts?: { interactive?: boolean; onSubmit?: (a: CopilotAskAnswerInput) => void }) {
   const calls: CopilotAskAnswerInput[] = [];
   const onSubmit = opts?.onSubmit ?? ((a: CopilotAskAnswerInput) => calls.push(a));
   const utils = render(

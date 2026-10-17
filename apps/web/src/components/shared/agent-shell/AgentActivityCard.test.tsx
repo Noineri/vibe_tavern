@@ -9,7 +9,7 @@
  */
 import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 
 useDomEnv();
 
@@ -21,7 +21,7 @@ beforeAll(async () => {
   ({ AgentActivityCard } = await import("./AgentActivityCard.js"));
 });
 
-function activity(over: Partial<ExperienceCopilotToolActivity>): ExperienceCopilotToolActivity {
+function activity(over: Partial<AgentToolActivity>): AgentToolActivity {
   return {
     toolCallId: "call_1",
     toolName: "run_test",

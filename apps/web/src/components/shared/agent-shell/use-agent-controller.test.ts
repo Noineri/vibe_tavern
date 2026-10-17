@@ -3,7 +3,7 @@
  *
  * Pins the load-bearing contract: the SSE→turn-store wiring (tool events upsert
  * activities with the SAME shapes the persisted path
- * `extractPersistedExperienceCopilotActivities` produces), `pendingText`
+ * `extractPersistedAgentActivities` produces), `pendingText`
  * accumulation, and the settle (done/cancelled/failed) → `onTurnSettled`
  * signal. The controller calls the real transport against a deterministic
  * fetch/SSE router, so the stream lifecycle is observed at the HTTP boundary.
@@ -118,7 +118,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 });
 
 const { useAgentController } = await import("./use-agent-controller.js");
-const { useExperienceCopilotTurnStore } = await import("../../../stores/experience-copilot-turn-store.js");
+const { useAgentTurnStore } = await import("../../../stores/agent-turn-store.js");
 const { ProviderStreamError } = await import("../../../api/provider-stream-error.js");
 // AS-6c-i: the controller receives its transport through args — this wires
 // the REAL experience client fns exactly as the experience host's descriptor
@@ -136,8 +136,8 @@ const testTransport = {
   renameSession: experienceCopilotApi.renameExperienceCopilotSession,
   setContextLinks: experienceCopilotApi.setExperienceCopilotContextLinks,
 };
-const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
-  "../../../stores/experience-copilot-turn-store.js"
+const { extractPersistedAgentActivities, wireToToolSource } = await import(
+  "../../../stores/agent-turn-store.js"
 );
 type CopilotTodoItem = import("@vibe-tavern/api-contracts").CopilotTodoItem;
 
@@ -169,7 +169,7 @@ beforeEach(() => {
   answerCopilotAsk.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+  useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
 });
 
 afterAll(() => {
@@ -197,7 +197,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     // Seed a prior turn's activity so clearTurn's drop is observable.
-    useExperienceCopilotTurnStore.getState().upsertActivity("experience", THREAD, {
+    useAgentTurnStore.getState().upsertActivity("experience", THREAD, {
       toolCallId: "old",
       toolName: "run_test",
       status: "done",
@@ -220,7 +220,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(result.current.isSending).toBe(true);
     expect(result.current.pendingText).toBe("");
     // clearTurn dropped the prior turn at start.
-    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD)).toEqual([]);
+    expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([]);
 
     // Drive text deltas; pendingText accumulates live.
     await act(async () => {
@@ -269,7 +269,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(result.current.pendingReasoning).toBe("");
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
 
-    const activities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const activities = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activities).toEqual([
       {
         toolCallId: "tc1",
@@ -385,7 +385,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc1", toolName: "write_buffer", status: "error" });
   });
 });
@@ -504,7 +504,7 @@ describe("feed wiring (TF-4)", () => {
       await pending;
     });
 
-    const feed = useExperienceCopilotTurnStore.getState().feedByThread[THREAD];
+    const feed = useAgentTurnStore.getState().feedByThread[THREAD];
     expect(feed).toHaveLength(3);
     expect(feed[0]).toMatchObject({ kind: "text", text: "I'll ", closed: true });
     expect(feed[1]).toEqual({ kind: "activity", id: "t1" });
@@ -543,15 +543,15 @@ describe("feed wiring (TF-4)", () => {
       await pending;
     });
 
-    const feed = useExperienceCopilotTurnStore.getState().feedByThread[THREAD];
+    const feed = useAgentTurnStore.getState().feedByThread[THREAD];
     expect(feed.filter((e) => e.kind === "activity").map((e) => e.id)).toEqual(["t1"]);
   });
 
   test("handleSend clears the prior turn's feed (clearTurn at start)", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     // Seed a prior turn's feed.
-    useExperienceCopilotTurnStore.getState().appendTextDelta("experience", THREAD, "old text");
-    expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
+    useAgentTurnStore.getState().appendTextDelta("experience", THREAD, "old text");
+    expect(useAgentTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
 
     const { result } = renderHook(() =>
       useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
@@ -561,7 +561,7 @@ describe("feed wiring (TF-4)", () => {
       await result.current.handleSend("new turn");
     });
 
-    expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
+    expect(useAgentTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
   });
 });
 
@@ -631,7 +631,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
 
     await act(async () => {
       captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
@@ -639,7 +639,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_todo",
       toolName: "todo",
@@ -648,7 +648,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
     });
     // The panel still shows the confirmed list after the envelope.
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
   });
 
   test("a failed todo save (ok:false) renders the error card and leaves the panel at the optimistic args value", async () => {
@@ -681,11 +681,11 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc_todo", toolName: "todo", status: "error" });
     expect(activity!.todo).toBeUndefined();
     // Optimistic panel value retained — the model retries the rewrite next step.
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
   });
 
   test("threadTodo seeds/resets the panel state from the persisted wire; omitted leaves the store untouched", async () => {
@@ -699,28 +699,28 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
         useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
       { initialProps: { todo: TODO_ITEMS } },
     );
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
 
     // A refetch producing a new wire todo re-seeds (new array identity).
     const rewritten: CopilotTodoItem[] = [{ title: "Fresh plan", status: "active" }];
     await act(async () => {
       initial.rerender({ todo: rewritten });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(rewritten);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(rewritten);
 
     // The empty wire todo clears the panel (thread switch to a plan-less thread).
     await act(async () => {
       initial.rerender({ todo: [] });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual([]);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual([]);
 
     // Omitted (undefined) — no seeding, the existing state is untouched.
-    useExperienceCopilotTurnStore.getState().setTodo("experience", THREAD, TODO_ITEMS);
+    useAgentTurnStore.getState().setTodo("experience", THREAD, TODO_ITEMS);
     initial.unmount();
     const second = renderHook(() =>
       useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     second.unmount();
   });
 
@@ -747,7 +747,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     // …and the plan call routes its carrier args + envelope to the hook seam.
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
@@ -758,9 +758,9 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
     // The two states never crossed: the todo envelope confirmed the store list…
-    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
+    expect(useAgentTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     // …and the plan activity carries no todo payload (and vice versa).
-    const activities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const activities = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activities.find((a) => a.toolName === "todo")!.todo).toBeDefined();
     expect(activities.find((a) => a.toolName === "plan")!.todo).toBeUndefined();
   });
@@ -802,7 +802,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     // use-agent-plan.test.tsx).
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_plan",
       toolName: "plan",
@@ -846,7 +846,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     // itself still fires with the same args + envelope pair.
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, { ok: false, error: "db down" });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc_plan", toolName: "plan", status: "error" });
     expect(activity!.summary).toBe(JSON.stringify({ ok: false, error: "db down" }));
   });
@@ -883,7 +883,7 @@ describe("useExperienceCopilotController — ask wiring (TAG-7)", () => {
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const [activity] = useAgentTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_ask",
       toolName: "ask_user",
@@ -904,7 +904,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     // The fixture models one real turn: a plan rewrite plus three ask calls
     // (one still awaiting, one answered, one skipped). The SAME data drives
     // (a) the live SSE callbacks and (b) the persisted wire rows through
-    // wireToToolSource → extractPersistedExperienceCopilotActivities.
+    // wireToToolSource → extractPersistedAgentActivities.
     const carrierCalls = [
       { type: "tool-call", toolCallId: "tc_plan", toolName: "plan", input: PLAN_ARGS },
       { type: "tool-call", toolCallId: "tc_a1", toolName: "ask_user", input: ASK_ARGS },
@@ -933,10 +933,10 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
 
     // (b) persisted path FIRST (pure — no hook needed): hydrate as the shell
     // would after settle+refetch.
-    const persistedActivities = extractPersistedExperienceCopilotActivities(wireRows.map(wireToToolSource));
+    const persistedActivities = extractPersistedAgentActivities(wireRows.map(wireToToolSource));
 
     // (a) live path: reset, then drive the SAME turn through the SSE callbacks.
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
     streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
@@ -965,7 +965,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       await pending;
     });
 
-    const liveActivities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
+    const liveActivities = useAgentTurnStore.getState().getActivities("experience", THREAD);
 
     // THE parity claim: field-for-field identical activities (plan/ask
     // payloads, args, status) from the two sources. The plan row is the twin
