@@ -8,7 +8,7 @@ export function createDebugRoutes(runtime: BootstrapRuntimeApi) {
     })
     .get("/api/defaults/ai-assistant-prompt", async (c) => {
       const { getDefaultPromptForMode } = await import("../../domain/ai-assistant/ai-assistant-prompts.js");
-      const mode = c.req.query("mode") ?? "script";
+      const mode = c.req.query("mode") ?? "lore_entry";
       return c.json({ prompt: await getDefaultPromptForMode(mode as never) });
     })
   ;

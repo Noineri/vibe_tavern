@@ -47,6 +47,23 @@ describe("SP-7 preset → service-prompt profile migration", () => {
 		expect(tuned.summaryPrompt).toBe("SUMMARY-OVR");
 	});
 
+	test("AS-10g-1: preset holding both script and dice_script JSON overrides migrates both (frozen key list, not the mode registry)", async () => {
+		const { presets, profileStore, stores } = await setup();
+		// The two one-shot script modes lose their mode configs in AS-10g; the
+		// frozen PRESET_JSON_KEYS literal must still read their JSON keys.
+		await presets.create({
+			name: "Legacy one-shot modes",
+			aiAssistantPrompts: JSON.stringify({ script: "SCRIPT-OVR", dice_script: "DICE-OVR" }),
+		});
+
+		await migratePresetServicePrompts(stores);
+		const profiles = await profileStore.listServicePromptProfiles();
+		const migrated = profiles.find((p) => p.name === "Legacy one-shot modes")!;
+		expect(migrated.overrides.script).toBe("SCRIPT-OVR");
+		expect(migrated.overrides.dice_script).toBe("DICE-OVR");
+		expect(Object.keys(migrated.overrides).sort()).toEqual(["dice_script", "script"]);
+	});
+
 	test("legacy scriptAiSystemPrompt backs script when the JSON slot is empty; JSON wins when both set", async () => {
 		const { presets, profileStore, stores } = await setup();
 		await presets.create({
