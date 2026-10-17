@@ -21,7 +21,7 @@ import type { ExperienceCopilotStore, ExperienceCopilotMessage } from "@vibe-tav
 import { nonstreamingProviderExecute } from "../../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderProfileService } from "../../providers/provider-profile-service.js";
 import { AgentCompactionService } from "../../agent/agent-compaction.js";
-import { storeMessagesToHistory } from "./experience-copilot-stream.js";
+import { storeMessagesToHistory } from "../../agent/agent-stream.js";
 import {
   COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
   COPILOT_COMPACT_TEMPERATURE,

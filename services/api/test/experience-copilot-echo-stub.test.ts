@@ -15,15 +15,15 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart } from "ai";
+import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import {
-  assembleExperienceCopilotPrompt,
   estimateHistoryTokens,
   stubHistoricalToolEchoes,
   BUFFER_ECHO_STUB,
   SKILL_READ_STUB,
-  type ExperienceCopilotHistoryMessage,
-  type ExperienceCopilotFlowMessage,
-} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+  type AgentHistoryMessage as ExperienceCopilotHistoryMessage,
+  type AgentFlowMessage as ExperienceCopilotFlowMessage,
+} from "../src/domain/agent/agent-prompt.js";
 
 beforeEach(() => {
   // Char-length heuristic so estimateTokens returns a realistic number.

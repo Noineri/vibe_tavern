@@ -19,11 +19,13 @@ import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import type { AgentPlan } from "@vibe-tavern/domain";
 import {
   assembleExperienceCopilotPrompt,
+  COPILOT_RECENCY_ANCHOR_TEXT,
+} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import {
   resolveDigestBoundary,
   estimateHistoryTokens,
-  COPILOT_RECENCY_ANCHOR_TEXT,
-  type ExperienceCopilotHistoryMessage,
-} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+  type AgentHistoryMessage as ExperienceCopilotHistoryMessage,
+} from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { readSkillFile } from "../src/domain/coauthor/skills/skill-read-tool.js";
 

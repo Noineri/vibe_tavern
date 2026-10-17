@@ -17,7 +17,7 @@ import {
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
 import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/script-agent-compaction.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
-import { getCopilotContextItems } from "../../domain/interactive/copilot/experience-copilot-context.js";
+import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
 import type { ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream-contract.js";
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";

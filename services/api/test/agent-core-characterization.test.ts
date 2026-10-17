@@ -50,10 +50,8 @@ import type {
   ExperienceCopilotMessage,
   AppendMessageInput,
 } from "@vibe-tavern/db";
-import {
-  assembleExperienceCopilotPrompt,
-  type ExperienceCopilotHistoryMessage,
-} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import type { AgentHistoryMessage as ExperienceCopilotHistoryMessage } from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { buildExperienceCopilotTools } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
 import {

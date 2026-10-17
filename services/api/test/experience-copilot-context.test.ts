@@ -11,7 +11,7 @@ import {
   getCopilotContextItems,
   renderAttachedContext,
   type CopilotContextDeps,
-} from "../src/domain/interactive/copilot/experience-copilot-context.js";
+} from "../src/domain/agent/agent-context.js";
 
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 

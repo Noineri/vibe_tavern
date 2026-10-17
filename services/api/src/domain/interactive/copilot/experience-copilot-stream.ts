@@ -47,7 +47,7 @@ import {
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
-import { renderAttachedContext, type CopilotContextItem } from "./experience-copilot-context.js";
+import { renderAttachedContext, type CopilotContextItem } from "../../agent/agent-context.js";
 import type {
   ExperienceCopilotContextLink,
   ExperienceCopilotStep,
