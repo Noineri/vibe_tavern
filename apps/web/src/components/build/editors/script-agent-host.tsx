@@ -541,17 +541,21 @@ function renderBackControl(ctx: { hostProps?: unknown }): ReactNode {
  * — the descriptor is a module constant and cannot close over component
  * state. i18n keys reuse the shell's existing agent wording (the RU values
  * are byte-identical to the former AI assistant modal's title, placeholder
- * and loading strings); no subtitle — the experience one is
- * rules/visual-flavored. `toolKeys` is this kind's toggleable tool set — the
- * shared profile modal reads it from here instead of branching on the kind.
+ * and loading strings); the script kind carries its own subtitle line —
+ * the experience one is rules/visual-flavored, so the script chat's
+ * empty state asks to write or fix the script instead. `toolKeys` is this
+ * kind's toggleable tool set — the shared profile modal reads it from here
+ * instead of branching on the kind.
  */
 registerAgentHost({
   kind: SCRIPT_KIND,
   i18n: {
     title: "agent_title",
+    subtitle: "agent_script_subtitle",
     placeholder: "agent_input_placeholder",
     loading: "agent_loading",
     emptyTitle: "agent_title",
+    emptySub: "agent_script_subtitle",
     mobileBackLabelKey: "import_back",
   },
   // The toggleable tool keys of the script assistant profiles — the shared

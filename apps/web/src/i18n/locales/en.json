@@ -2614,6 +2614,7 @@
 	"agent_result_copied": "Copied to the assistant chat",
 	"agent_title": "AI assistant",
 	"agent_subtitle": "Ask the AI assistant to propose rules or visual edits.",
+	"agent_script_subtitle": "Ask the AI assistant to write or fix this script.",
 	"agent_loading": "Loading AI assistant…",
 	"agent_load_error": "Couldn't load the AI assistant",
 	"agent_binding_save_error": "Couldn't save the model selection — it may reset next time",

@@ -73,6 +73,14 @@ export interface AgentMessageListProps {
   /** TAG-9: the controller's optimistic resolution of the just-answered ask —
    *  flips the card immediately, before the settle+refetch round-trip. */
   pendingAskAnswer?: AgentPendingAskAnswer | null;
+  /** AS-8c3a: already-translated empty-state title override — the shell
+   *  resolves the host's `emptyTitle` key through `useT` and passes the
+   *  string down, so this list never imports the host registry itself. */
+  emptyTitle?: string;
+  /** AS-8c3a: already-translated empty-state subtitle override — omitted
+   *  (undefined) falls back to the shared `agent_subtitle` line, exactly
+   *  as before, so existing hosts render byte-identically without it. */
+  emptySub?: string;
 }
 
 export function AgentMessageList({
@@ -85,6 +93,8 @@ export function AgentMessageList({
   isSending = false,
   onAnswer,
   pendingAskAnswer = null,
+  emptyTitle,
+  emptySub,
 }: AgentMessageListProps) {
   const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
@@ -283,8 +293,8 @@ export function AgentMessageList({
       <div className="flex flex-1 items-center justify-center">
         <EmptyState
           icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-          title={t("agent_title")}
-          sub={t("agent_subtitle")}
+          title={emptyTitle ?? t("agent_title")}
+          sub={emptySub ?? t("agent_subtitle")}
         />
       </div>
     );

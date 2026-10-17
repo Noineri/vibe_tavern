@@ -67,6 +67,7 @@ export default interface Resources {
     "agent_result_copied": "Copied to the assistant chat",
     "agent_retry": "Retry",
     "agent_rules": "Rules",
+    "agent_script_subtitle": "Ask the AI assistant to write or fix this script.",
     "agent_send": "Send",
     "agent_session": "Session",
     "agent_subtitle": "Ask the AI assistant to propose rules or visual edits.",

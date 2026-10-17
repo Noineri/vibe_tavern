@@ -237,9 +237,10 @@ export interface AgentHostDescriptor {
     placeholder: AgentI18nKey;
     loading: AgentI18nKey;
     emptyTitle: AgentI18nKey;
-    /** Optional (AS-8b): nothing consumes it today — the shell's empty state
-     *  renders `subtitle` — so a host with no flavor-neutral subtitle wording
-     *  (the script kind) simply omits it instead of inventing prose. */
+    /** Optional per-kind empty-chat subtitle key (AS-8c3a): the shell
+     *  resolves it through `useT` and passes the string to the message
+     *  list's `emptySub` prop — omitted falls back to the shared
+     *  `agent_subtitle` line the list rendered before this seam existed. */
     emptySub?: AgentI18nKey;
     /** AS-6b2: the mobile tab-row back chevron's aria-label key. Optional —
      *  a host that omits it renders no chevron even when `onBack` is passed

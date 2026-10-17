@@ -407,6 +407,46 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByText("agent_title")).toBeDefined();
   });
 
+  it("renders the agent_title/agent_subtitle keys when no empty-text overrides are passed (AS-8c3a)", () => {
+    // Without the new props the empty state is byte-identical to today — the
+    // shell passes the host's resolved strings, so the bare list keeps the
+    // shared fallback lines for hosts that register no overrides.
+    const { getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(getByText("agent_title")).toBeDefined();
+    expect(getByText("agent_subtitle")).toBeDefined();
+  });
+
+  it("renders passed emptyTitle/emptySub strings instead of the shared keys (AS-8c3a)", () => {
+    // AS-8c3a: the shell resolves the host's emptyTitle/emptySub keys and
+    // passes the strings down — the script kind's own line replaces the
+    // mini-app one without touching this list's fallback behavior.
+    const { getByText, queryByText } = render(
+      <AgentMessageList
+        kind="script" threadId="thread-9"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        emptyTitle="Write me a script"
+        emptySub="Ask the assistant to write or fix this script"
+      />,
+    );
+
+    expect(getByText("Write me a script")).toBeDefined();
+    expect(getByText("Ask the assistant to write or fix this script")).toBeDefined();
+    expect(queryByText("agent_title")).toBeNull();
+    expect(queryByText("agent_subtitle")).toBeNull();
+  });
+
   it("places a compaction digest card immediately before its anchor message (CM-9)", () => {
     const { container } = render(
       <AgentMessageList
