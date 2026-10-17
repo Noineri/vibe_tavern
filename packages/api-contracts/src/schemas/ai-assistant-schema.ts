@@ -2,8 +2,6 @@ import { z } from "zod";
 
 /** Universal AI assistant modes; mirrors `AiAssistantMode` in @vibe-tavern/prompt-pipeline. */
 export const aiAssistantModeSchema = z.enum([
-  "script",
-  "dice_script",
   "lore_entry",
   "lore_keys",
   "chat_impersonate",

@@ -2,7 +2,7 @@ import { readdir, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { resolveMigrationsFolder } from "@vibe-tavern/db";
 import { resolveTokenizerDir } from "../infrastructure/ai/tokenizer-service.js";
-import { resolvePromptPathForMode } from "../domain/ai-assistant/ai-assistant-prompts.js";
+import { resolvePromptAssetPath } from "../shared/prompt-asset-loader.js";
 import { resolveRuntimeStorePaths } from "../runtime/session/session-runtime-store.js";
 
 export interface StartupFileCheckOptions {
@@ -117,8 +117,8 @@ export async function runStartupFileChecks(options: StartupFileCheckOptions): Pr
 		ok = await checkFile(`tokenizer ${tokenizerFile}`, join(tokenizerDir, tokenizerFile)) && ok;
 	}
 
-	const promptPath = await resolvePromptPathForMode("script");
-	ok = await checkFile("AI assistant script prompt", promptPath) && ok;
+	const scriptPromptPath = await resolvePromptAssetPath("script-ai-prompt.md");
+	ok = await checkFile("script assistant API-knowledge prompt", scriptPromptPath) && ok;
 
 	const embeddedCount = options.embeddedWebFiles?.size ?? 0;
 	if (embeddedCount > 0) {

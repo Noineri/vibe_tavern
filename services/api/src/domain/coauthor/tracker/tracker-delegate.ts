@@ -115,7 +115,7 @@ function buildRepairMessage(userMessage: string, error: Error): string {
 export function createTrackerDelegate(deps: CreateTrackerDelegateDeps): TrackerDelegate {
   const { execute, profile, model, db } = deps;
   return async (input, signal): Promise<TrackerDelegateResult> => {
-    const { prompt: asset } = await resolveSystemPrompt(db, "script", { field: "tracker_template" });
+    const { prompt: asset } = await resolveSystemPrompt(db, "lore_entry", { field: "tracker_template" });
     const systemPrompt = withGrounding(asset, input);
     const userMessage = buildUserMessage(input);
     const first = await execute({ profile, model, prompt: buildOneShotPrompt(systemPrompt, userMessage), signal });

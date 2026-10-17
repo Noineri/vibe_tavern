@@ -46,8 +46,6 @@ export async function getDefaultPromptForMode(mode: AiAssistantMode, promptForma
  *    the xml variant when promptFormat === "xml")
  */
 const MODE_TO_FIELD: Record<AiAssistantMode, ServicePromptFieldKey> = {
-  script: "script",
-  dice_script: "dice_script",
   lore_entry: "lore_entry",
   message_edit: "message_edit",
   message_merge: "message_merge",

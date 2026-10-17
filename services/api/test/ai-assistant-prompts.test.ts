@@ -72,18 +72,6 @@ describe("scene_schema prompt — format-aware default selection", () => {
     }
   });
 
-  it("profile override for script mode wins over asset", async () => {
-    const { db, profileStore, uiSettings } = await setupDb();
-    const profile = await profileStore.createServicePromptProfile({
-      name: "Script Override",
-      overrides: { script: "CUSTOM SCRIPT PROMPT" },
-    });
-    await uiSettings.update({ activeServicePromptProfileId: profile.id });
-    const result = await resolveSystemPrompt(db, "script");
-    expect(result.source).toBe("override");
-    expect(result.prompt).toBe("CUSTOM SCRIPT PROMPT");
-  });
-
   it("with no profile, xml format still selects the xml default file", async () => {
     const { db } = await setupDb();
     const result = await resolveSystemPrompt(db, "scene_schema", { promptFormat: "xml" });
