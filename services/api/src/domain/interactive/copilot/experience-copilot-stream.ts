@@ -62,13 +62,6 @@ export type {
   ExperienceCopilotStreamRequest,
 } from "./experience-copilot-stream-contract.js";
 
-// ─── Compat aliases (AS-2c) ─────────────────────────────────────────────────
-//
-// The generic history conversion moved to domain/agent/agent-stream.ts; this
-// re-export keeps every existing importer (the compaction service, tests)
-// compiling untouched. AS-10 removes this block.
-export { storeMessagesToHistory } from "../../agent/agent-stream.js";
-
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ExperienceCopilotStreamDeps {

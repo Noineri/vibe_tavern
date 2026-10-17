@@ -11,8 +11,8 @@
  *
  * AS-2b SPLIT: the GENERIC half of this module (history message shapes, digest
  * boundary, echo stubs, digest-section rendering, token estimation) lives in
- * `domain/agent/agent-prompt.ts` and is re-exported below under the old names
- * for compatibility (AS-10 removes the shims). This file keeps the EXPERIENCE
+ * `domain/agent/agent-prompt.ts` and importers take it from there directly
+ * (the compat shims were removed in AS-10a). This file keeps the EXPERIENCE
  * half: the experience input/result types, contract derivation, the recency
  * anchor + RU-voice label map (experience-flavored copy), and the assembler
  * itself. The per-turn CONTEXT PACKAGE is no longer rendered here — the kind
@@ -83,30 +83,6 @@ import type { ExperienceAgentContext } from "../../agent/kinds/experience-kind.j
 // not go through server-runtime).
 import "../../agent/kinds/experience-kind.js";
 
-// ─── Compat aliases (AS-2b) ─────────────────────────────────────────────────
-//
-// The generic primitives moved to domain/agent/agent-prompt.ts; these
-// re-exports keep every existing importer (stream, compaction, tests)
-// compiling untouched. AS-10 removes this block.
-
-export {
-  resolveDigestBoundary,
-  renderDigestSection,
-  estimateHistoryTokens,
-  stubBufferToolCallInput,
-  stubBufferToolResultOutput,
-  stubHistoricalToolEchoes,
-  BUFFER_ECHO_STUB,
-  SKILL_READ_STUB,
-  AGENT_DIGEST_ANCHOR_FIELD as COPILOT_DIGEST_ANCHOR_FIELD,
-} from "../../agent/agent-prompt.js";
-export type {
-  DigestBoundaryMessage,
-  EchoStubOptions,
-  AgentHistoryMessage as ExperienceCopilotHistoryMessage,
-  AgentFlowMessage as ExperienceCopilotFlowMessage,
-  AgentDigestBoundary as CopilotDigestBoundary,
-} from "../../agent/agent-prompt.js";
 // AS-2c: the recency-anchor VALUE moved to the kind descriptor
 // (kinds/experience-kind.ts, `recencyAnchorText`); this alias keeps the old
 // export name for importers/tests, and the assembler below reads the text

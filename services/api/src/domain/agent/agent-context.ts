@@ -1,7 +1,7 @@
 /**
  * CX-2: pinned-context loader (AGENT_SHELL_PLAN, Wave 2 / AS-2b — moved
- * verbatim from `experience-copilot-context.ts`, which stays as a re-export
- * shim until AS-10; the module was already kind-agnostic). Resolves thread
+ * verbatim from `experience-copilot-context.ts`; its re-export shim was
+ * deleted in AS-10a; the module was already kind-agnostic). Resolves thread
  * context links into read-only reference items (CE-C1 semantics, generalized
  * to five target types) plus the skill arm (catalog entry → SKILL.md body,
  * injected eagerly per plan; `read_skill_file` stays for on-demand assets).
