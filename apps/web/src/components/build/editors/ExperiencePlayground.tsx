@@ -48,7 +48,6 @@ import {
   EXPERIENCE_LAUNCH_CAPABILITIES as CAPABILITIES,
   deriveDefaultLaunchContext,
   type ExperienceCapability,
-  type ExperienceController,
 } from "@vibe-tavern/domain";
 import type {
   ExperienceActionDto,
@@ -74,7 +73,6 @@ import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarnin
 import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { useT } from "../../../i18n/context.js";
 import {
-  ExperienceApiError,
   advanceExperiencePlayground,
   discoverExperience,
   runExperiencePlaygroundTimer,
@@ -89,7 +87,6 @@ import type {
   ExperienceParticipant,
   ExperiencePlaygroundAdvanceRequest,
   ExperiencePlaygroundData,
-  ExperienceTestConsoleEntry,
   ExperienceTestDefinition,
   ExperienceTestRunData,
   ExperienceTestSimulateData,
@@ -140,48 +137,18 @@ import {
   TestRunResultBlock,
   TestSimulateResultBlock,
 } from "./experience-playground-results.js";
+import {
+  asSettingsObject,
+  seatInitial,
+  slugifyId,
+  toPlaygroundError,
+  uniqueIdFor,
+  type AdvanceOutcome,
+  type PlaygroundErrorView,
+  type PlaygroundSeat,
+} from "./experience-playground-model.js";
 
-// ─── Local types + constants ────────────────────────────────────────────────
-//
-// The roster/grants/error-normalization helpers below deliberately MIRROR the
-// IR-81D InteractiveTester's module-private ones (same structural reason the
-// IR-84A driver reimplements the tester's helpers locally: the two surfaces
-// are independent panels with independent evolution, and the shared-primitive
-// chrome they compose is the actual sharing boundary).
-
-/** One editable roster row (local state only — never a store). */
-interface PlaygroundSeat {
-  id: string;
-  label: string;
-  controller: ExperienceController;
-  /** Pinned provider profile for a model seat (IR-90E). */
-  providerProfileId?: string;
-  /** Pinned model id for a model seat (IR-90E). */
-  modelId?: string;
-  /** True while the id is auto-managed (tracks the label): becomes false the
-   *  moment the user edits the id by hand. Local-only — never persisted, so a
-   *  restored seat keeps its stored id verbatim (renames do not regenerate it). */
-  idAuto?: boolean;
-}
-
-/** The typed-error view model this panel renders. Normalized from the client
- *  {@link ExperienceApiError} (which preserves the backend's structured
- *  `details`: code, kernel kind, currentRevision, granted/needs, console). */
-interface PlaygroundErrorView {
-  message: string;
-  status?: number;
-  code?: string;
-  kind?: string;
-  currentRevision?: number;
-  participantId?: string;
-  granted?: string[];
-  needs?: string[];
-  console: ExperienceTestConsoleEntry[];
-}
-
-type AdvanceOutcome =
-  | { readonly ok: true; readonly data: ExperiencePlaygroundData }
-  | { readonly ok: false; readonly error: PlaygroundErrorView };
+// ─── Local constants ─────────────────────────────────────────────────────────
 
 const CONTROLLERS = [
   EXPERIENCE_CONTROLLER.human,
@@ -218,87 +185,6 @@ const DISCOVERY_DEBOUNCE_MS = 400;
  *  whole-session log. Shared by the state initializer, Reset, and the start
  *  failure paths (the log is always replaced wholesale, never mutated). */
 const EMPTY_SESSION_LOG: PlaygroundSessionLog = { events: [], effects: [], console: [], turns: 0 };
-
-// ─── Normalization helpers (no `as any`; the wire details record is unknown) ──
-
-function asStringList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
-/** LOBBY-A: narrow a parsed JSON value to a plain settings object. Null for
- *  arrays/scalars/null — the setup form is unavailable for those and the raw
- *  JSON path applies. Runtime-checked narrowing (not a suppressed cast). */
-function asSettingsObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function asConsole(value: unknown): ExperienceTestConsoleEntry[] {
-  if (!Array.isArray(value)) return [];
-  const entries: ExperienceTestConsoleEntry[] = [];
-  for (const entry of value as unknown[]) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
-    entries.push({
-      level: record.level === "warn" || record.level === "error" ? record.level : "log",
-      args: asStringList(record.args) ?? [],
-    });
-  }
-  return entries;
-}
-
-function toPlaygroundError(error: unknown): PlaygroundErrorView {
-  if (error instanceof ExperienceApiError) {
-    const details = error.details ?? {};
-    const view: PlaygroundErrorView = {
-      message: error.message,
-      status: error.status,
-      console: asConsole(details.console),
-    };
-    if (error.code !== undefined) view.code = error.code;
-    if (typeof details.kind === "string") view.kind = details.kind;
-    if (typeof details.currentRevision === "number") view.currentRevision = details.currentRevision;
-    if (typeof details.participantId === "string") view.participantId = details.participantId;
-    const granted = asStringList(details.granted);
-    if (granted !== undefined) view.granted = granted;
-    const needs = asStringList(details.needs);
-    if (needs !== undefined) view.needs = needs;
-    return view;
-  }
-  return { message: error instanceof Error ? error.message : String(error), console: [] };
-}
-
-
-/** Slugify a participant name into a stable seat id: lowercase, latin
- *  alphanumerics + dashes only, "seat" fallback for an empty name. */
-function slugifyId(name: string): string {
-  const base = name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return base === "" ? "seat" : base;
-}
-
-/** Dedupe a candidate id against an already-taken set with -2/-3 suffixes. */
-function uniqueIdFor(base: string, taken: ReadonlySet<string>): string {
-  let candidate = base;
-  let n = 2;
-  while (taken.has(candidate)) {
-    candidate = `${base}-${n}`;
-    n += 1;
-  }
-  return candidate;
-}
-
-/** First letter for the participant's avatar circle (label → id → "?"). */
-function seatInitial(seat: PlaygroundSeat): string {
-  const source = seat.label.trim() !== "" ? seat.label.trim() : seat.id.trim();
-  return source === "" ? "?" : source.charAt(0).toUpperCase();
-}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -725,8 +611,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
 
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
-  // seats. Uses the discover-only endpoint (never runs `create`, so random/participants
-  // rules still discover); a failure (broken rules) restores the default single human seat.
+  // seats. Uses the REAL discovery through the discover-only endpoint (not
+  // brittle text parsing). It never runs `create`, so rules whose `create`
+  // uses context.random / context.participants still discover without grants
+  // — the pre-fix /test/run call executed `create` with no grants and fell
+  // back to the default for them. Discovery failure (broken rules) explicitly
+  // restores the safe default single human seat plus empty grants.
   // LOBBY-A: the discovery is (a) DEBOUNCED — the unsaved rules buffer changes
   // per keystroke, and the pre-LOBBY-A effect fired a compile on each one —
   // and (b) no longer skipped for a user-owned roster: it ALWAYS captures the
