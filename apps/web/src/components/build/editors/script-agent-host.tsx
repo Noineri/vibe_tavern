@@ -6,9 +6,8 @@ import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
-import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
-import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
-import type { ScriptDraftSaveState, ScriptDraftValues } from "../../../stores/script-draft-store.js";
+import type { ScriptRecord } from "../../../api/types.js";
+import type { ScriptDraftValues } from "../../../stores/script-draft-store.js";
 import { ScriptAgentEditorTabs } from "./script-agent-editor-pane.js";
 import {
   allReviewHunkIds,
@@ -46,10 +45,10 @@ import {
  * DB read), and the transport (the script client).
  *
  * The wrapper (`useScriptPanel`, ScriptEditor.tsx) builds the host props from
- * the SAME state the plain-mode panel renders — the agent pane renders them
- * through the tabbed `ScriptAgentEditorTabs` clone (Code/Test) while the
- * plain editor keeps its own surface. `renderEditorPane` narrows the opaque
- * `ctx.hostProps` here (wrapper and host are a pair).
+ * the SAME state the management bar reads — the tabbed `ScriptAgentEditorTabs`
+ * pane (Code/Test) renders them, and the review session reads the live draft
+ * through them. `renderEditorPane` narrows the opaque `ctx.hostProps` here
+ * (wrapper and host are a pair).
  *
  * REVIEW-ROUND STORE MAPPING (interim, documented): the round store's slots
  * are experience-flavored (`rules`/`visual`); the script kind rides its ONE
@@ -66,30 +65,21 @@ const SCRIPT_KIND: AgentKind = "script";
 /** Stable empty fallback avoids a fresh selector array every host render. */
 const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
 
-/** The wrapper's host-specific props: the plain-mode surface wiring (every
- *  value `useScriptPanel` already renders the plain panel with). No back
- *  control — the lore editor's own editorHeader caret is the script view's
- *  back control on both viewports (AS-8c3b). */
+/** The wrapper's host-specific props: exactly what the tabbed editor pane
+ *  and the review session read (nothing the management bar keeps for
+ *  itself). No back control — the lore editor's own editorHeader caret is
+ *  the script view's back control on both viewports (AS-8c3b). */
 export interface ScriptAgentHostProps {
   isMobile: boolean;
   activeScript: ScriptRecord;
   activeScriptId: string;
   draftDirty: boolean;
-  draftSaveState: ScriptDraftSaveState;
-  draftError: string | null | undefined;
-  scriptLinks: ScriptLinkRecord[];
-  linkCharacters: LinkTarget[];
-  linkPersonas: LinkTarget[];
   apiRefOpen: boolean;
-  /** The plain editor's lint + reveal extensions; the hunk-review
+  /** The wrapper's lint + reveal extensions; the hunk-review
    *  decorations join these (the AS-8a seam). */
   scriptSafetyExtensions: Extension[];
   characterName: string | undefined;
-  onSave: () => void;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
-  onToggleEnabled: (enabled: boolean) => void;
-  onDeleteRequest: (id: string) => void;
-  onSetScriptLinks: (next: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
   onToggleApiRef: () => void;
   onAddFromTemplate: (key: string) => void;
   onRevealLine: (line: number) => void;
