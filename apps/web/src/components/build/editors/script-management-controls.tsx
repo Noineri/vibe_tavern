@@ -61,6 +61,16 @@ export function ScriptManagementControls({
   onSave,
 }: ScriptManagementControlsProps) {
   const { t } = useT();
+  // Script kind is immutable after creation — set via the New Script /
+  // New Dice Script buttons. Shown as a read-only badge so the user
+  // always sees which runtime a script targets. The previous kind
+  // toggle was removed: it could never persist (updateScriptSchema
+  // excludes scriptKind), so it silently reverted on save.
+  const kindBadge = (
+    <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
+      {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
+    </div>
+  );
   // AS-8c4h: on mobile the whole bar is the shared ManagementMobileRow —
   // one row (name, kind badge, toggle, save, ...) with the delete alone in
   // the more-actions sheet. The sheet delete calls the same onDelete (the
@@ -79,11 +89,7 @@ export function ScriptManagementControls({
         resetKey={resetKey}
         onSave={onSave}
         sheetTitle={name}
-        badge={
-          <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
-            {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
-          </div>
-        }
+        badge={kindBadge}
         sheetItems={[
           {
             icon: <Ic.del />,
@@ -113,14 +119,7 @@ export function ScriptManagementControls({
           (A plain `flex-1` on the name cannot force this: basis-0 lets the
           shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
       <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
-        {/* Script kind is immutable after creation — set via the New Script /
-            New Dice Script buttons. Shown as a read-only badge so the user
-            always sees which runtime a script targets. The previous kind
-            toggle was removed: it could never persist (updateScriptSchema
-            excludes scriptKind), so it silently reverted on save. */}
-        <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
-          {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
-        </div>
+        {kindBadge}
         {/* No tooltip here (named deviation): the model's
             experience_editor_trust_hint text is about interactive rules and
             is wrong for scripts. */}
