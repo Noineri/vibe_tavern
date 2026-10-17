@@ -60,7 +60,6 @@ export interface ScriptEditingSurfaceProps {
     next: Array<{ targetType: "character" | "persona"; targetId: string }>,
   ) => void;
   onToggleApiRef: () => void;
-  onOpenAiHelper: () => void;
   onAddFromTemplate: (key: string) => void;
   onRevealLine: (line: number) => void;
 }
@@ -85,7 +84,6 @@ export function ScriptEditingSurface({
   onDeleteRequest,
   onSetScriptLinks,
   onToggleApiRef,
-  onOpenAiHelper,
   onAddFromTemplate,
   onRevealLine,
 }: ScriptEditingSurfaceProps) {
@@ -177,7 +175,6 @@ export function ScriptEditingSurface({
       {/* Toolbar */}
       <div className="mb-2 flex flex-wrap gap-2">
         <button type="button" className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")} onClick={onToggleApiRef}><Ic.book /> {t("script_api_reference")}</button>
-        <button type="button" className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onOpenAiHelper}><Ic.brain /> {t("script_ai_helper")}</button>
       </div>
 
       {/* API Reference */}

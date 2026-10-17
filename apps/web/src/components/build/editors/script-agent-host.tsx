@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { Extension } from "@codemirror/state";
 import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
-import { getT, type TFunc } from "../../../i18n/locale-helpers.js";
+import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
-import { Ic } from "../../shared/icons.js";
 import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type { ScriptDraftSaveState, ScriptDraftValues } from "../../../stores/script-draft-store.js";
@@ -44,14 +43,13 @@ import {
  * tabbed editor pane freezes via its `codeReadOnly` prop while a review round
  * shows the proposed document), the per-turn send options
  * (`{ code, scriptKind, codeSaved }` — the LIVE merged draft, never a stale
- * DB read), the desktop back-to-plain-editor control in the chat header
- * (the shell's `toolbarSlot`), and the transport (the script client).
+ * DB read), and the transport (the script client).
  *
  * The wrapper (`useScriptPanel`, ScriptEditor.tsx) builds the host props from
  * the SAME state the plain-mode panel renders — the agent pane renders them
  * through the tabbed `ScriptAgentEditorTabs` clone (Code/Test) while the
- * plain editor keeps its own surface. `renderEditorPane`/`toolbarSlot` narrow
- * the opaque `ctx.hostProps` here (wrapper and host are a pair).
+ * plain editor keeps its own surface. `renderEditorPane` narrows the opaque
+ * `ctx.hostProps` here (wrapper and host are a pair).
  *
  * REVIEW-ROUND STORE MAPPING (interim, documented): the round store's slots
  * are experience-flavored (`rules`/`visual`); the script kind rides its ONE
@@ -69,8 +67,9 @@ const SCRIPT_KIND: AgentKind = "script";
 const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
 
 /** The wrapper's host-specific props: the plain-mode surface wiring (every
- *  value `useScriptPanel` already renders the plain panel with) plus the
- *  back-to-plain-editor control. */
+ *  value `useScriptPanel` already renders the plain panel with). No back
+ *  control — the lore editor's own editorHeader caret is the script view's
+ *  back control on both viewports (AS-8c3b). */
 export interface ScriptAgentHostProps {
   isMobile: boolean;
   activeScript: ScriptRecord;
@@ -86,8 +85,6 @@ export interface ScriptAgentHostProps {
    *  decorations join these (the AS-8a seam). */
   scriptSafetyExtensions: Extension[];
   characterName: string | undefined;
-  /** Desktop chat-header control: leave agent mode, back to the plain editor. */
-  onBackToPlain: () => void;
   onSave: () => void;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
   onToggleEnabled: (enabled: boolean) => void;
@@ -514,25 +511,6 @@ function ScriptAgentEditorPane({
   );
 }
 
-/** The desktop back-to-plain-editor control — same class as the mini-app
- *  editor's equivalent back button, rendered in the shell's chat header area
- *  (the descriptor's `toolbarSlot`, wired by the shell as the header row's
- *  leading element). Label is the shared generic back wording (the generic Back label). */
-function renderBackControl(ctx: { hostProps?: unknown }): ReactNode {
-  const props = ctx.hostProps as ScriptAgentHostProps | undefined;
-  if (props === undefined) return null;
-  return (
-    <button
-      type="button"
-      data-testid="script-agent-back"
-      className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-      onClick={props.onBackToPlain}
-    >
-      {Ic.caret("l")} {getT()("import_back")}
-    </button>
-  );
-}
-
 // ─── The host descriptor ─────────────────────────────────────────────────────
 
 /**
@@ -585,7 +563,6 @@ registerAgentHost({
       hostProps={ctx.hostProps as ScriptAgentHostProps}
     />
   ),
-  toolbarSlot: renderBackControl,
   buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
   // No record-proposal renderers yet — the AS-5 fallback card covers every
   // recordType until a host registers one.

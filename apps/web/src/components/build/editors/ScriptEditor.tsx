@@ -36,6 +36,8 @@ import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptEditingSurface } from "./script-editing-surface.js";
+import { ScriptManagementControls } from "./script-management-controls.js";
+import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 // The script agent host registers itself (getAgentHost("script")) at module
 // init — this side-effect import is the shell's ONLY registration for the
 // kind, exactly once per process (the panel and the host module are a pair;
@@ -145,12 +147,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
   useKeyDown("Escape", () => { setImportOpen(false); setImportCode(""); }, { enabled: importOpen });
   const [apiRefOpen, setApiRefOpen] = useState(false);
-  // AS-8b: agent mode — the AI assistant toolbar button switches the editor
-  // into the generic AgentShell (kind "script"); the old AiAssistantModal is
-  // gone from THIS editor only (its other consumers are untouched). A back
-  // control returns to the plain editor (desktop: the chat-header button;
-  // mobile: the shell's tab-row chevron).
-  const [agentMode, setAgentMode] = useState(false);
+  // AS-8c3b: always-on assistant — every open script renders the generic
+  // AgentShell (kind "script") with the AS-8c1 management bar above it; no
+  // toggle, no back-to-plain. The lore editor's own editorHeader caret stays
+  // the script view's back control on both viewports. The old AiAssistantModal
+  // is gone from THIS editor only (its other consumers are untouched).
 
   // ── Queries (replaced with local state + async fetch) ────
   // "entity" is a BROWSE filter here, not an owner view: the sidebar's
@@ -636,20 +637,49 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       onDeleteRequest={(id) => setConfirmDeleteId(id)}
       onSetScriptLinks={(next) => { void handleSetScriptLinks(next); }}
       onToggleApiRef={() => setApiRefOpen((v) => !v)}
-      onOpenAiHelper={() => setAgentMode(true)}
       onAddFromTemplate={(key) => handleAddFromTemplate(key)}
       onRevealLine={(line) => setRevealLine({ line })}
     />
   );
 
-  // ── Agent mode (AS-8b) ──
-  // The same surface wiring travels opaquely to the `script` host through
-  // hostProps; the host renders the identical surface inside the shell's
-  // editor pane with the hunk-review decorations joined onto the same
-  // extensions. Rendered ONLY while an active script exists — the shell's
-  // threads are script-owned. The caller (LorebookEditor) renders this INSTEAD
-  // of the padded plain-editor scroll container (the 2-pane layout needs the
-  // full unpadded height — the ExperienceEditor container approach).
+  // ── Always-on assistant (AS-8c3b) ──
+  // ONE shared management-controls node (the AS-8c1 bar) built from the
+  // active script and the same handlers the plain surface below uses — the
+  // SS-7 enable-warning flow still runs through handleToggleEnabled and the
+  // delete still goes through the existing confirm modal. The same surface
+  // wiring travels opaquely to the `script` host through hostProps; the host
+  // renders the identical surface inside the shell's editor pane with the
+  // hunk-review decorations joined onto the same extensions. Rendered
+  // whenever an active script exists — the shell's threads are script-owned
+  // and the assistant is always on. The caller (LorebookEditor) renders this
+  // INSTEAD of the padded plain-editor scroll container (the 2-pane layout
+  // needs the full unpadded height — the ExperienceEditor container approach).
+  // No back button inside the top bar and no shell onBack: the lore editor's
+  // own editorHeader caret is the back control on both viewports (named
+  // deviation 1). No trust-blocked hint: scripts have no enable lock, so the
+  // ScriptSafetyBanner alone sits under the bar (named deviation 2).
+  const scriptManagementControls = activeScript && activeScriptId ? (
+    <ScriptManagementControls
+      name={activeScript.name}
+      enabled={activeScript.enabled}
+      scriptKind={activeScript.scriptKind}
+      scopeType={activeScript.scopeType}
+      description={activeScript.description ?? ""}
+      links={scriptLinks}
+      linkCharacters={linkCharacters}
+      linkPersonas={linkPersonas}
+      draftDirty={draftDirty}
+      draftSaveState={draftSaveState}
+      draftError={activeDraft?.error}
+      resetKey={activeScriptId}
+      isMobile={isMobile}
+      onUpdateDraft={updateDraft}
+      onToggleEnabled={handleToggleEnabled}
+      onDelete={() => setConfirmDeleteId(activeScriptId)}
+      onSave={() => { void handleSave(); }}
+      onSetScriptLinks={(next) => { void handleSetScriptLinks(next); }}
+    />
+  ) : null;
   const scriptAgentHostProps: ScriptAgentHostProps | null = activeScript && activeScriptId ? {
     isMobile,
     activeScript,
@@ -663,7 +693,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     apiRefOpen,
     scriptSafetyExtensions,
     characterName: scope === "entity" && !personaId ? allCharacters.find((x) => x.id === characterId)?.name : undefined,
-    onBackToPlain: () => setAgentMode(false),
     onSave: () => { void handleSave(); },
     onUpdateDraft: updateDraft,
     onToggleEnabled: handleToggleEnabled,
@@ -673,17 +702,45 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     onAddFromTemplate: (key) => handleAddFromTemplate(key),
     onRevealLine: (line) => setRevealLine({ line }),
   } : null;
-  const scriptAgentPanel = agentMode && scriptAgentHostProps ? (
-    <AgentShell
-      kind="script"
-      ownerId={scriptAgentHostProps.activeScriptId}
-      scriptId={scriptAgentHostProps.activeScriptId}
-      isMobile={isMobile}
-      onBack={isMobile ? () => setAgentMode(false) : undefined}
-      editTabDirty={scriptAgentHostProps.draftDirty}
-      assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
-      hostProps={scriptAgentHostProps}
-    />
+  const scriptAgentPanel = scriptAgentHostProps ? (
+    // Desktop: the management bar + the safety banner sit above the shell in
+    // one column (the ExperienceEditor top-bar shape, minus its back button).
+    // Mobile: no top bar — the shell gets the same nodes as its edit-tab header.
+    !isMobile ? (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
+          {scriptManagementControls}
+        </div>
+        <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
+        <div className="flex min-h-0 flex-1">
+          <AgentShell
+            kind="script"
+            ownerId={scriptAgentHostProps.activeScriptId}
+            scriptId={scriptAgentHostProps.activeScriptId}
+            isMobile={isMobile}
+            editTabDirty={scriptAgentHostProps.draftDirty}
+            assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+            hostProps={scriptAgentHostProps}
+          />
+        </div>
+      </div>
+    ) : (
+      <AgentShell
+        kind="script"
+        ownerId={scriptAgentHostProps.activeScriptId}
+        scriptId={scriptAgentHostProps.activeScriptId}
+        isMobile={isMobile}
+        editTabDirty={scriptAgentHostProps.draftDirty}
+        assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+        hostProps={scriptAgentHostProps}
+        editTabHeader={
+          <>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2">{scriptManagementControls}</div>
+            <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
+          </>
+        }
+      />
+    )
   ) : null;
 
 

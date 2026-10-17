@@ -271,7 +271,6 @@ function makeHostProps(script: ScriptRecord, isMobile: boolean, over: Partial<Sc
     apiRefOpen: false,
     scriptSafetyExtensions: [],
     characterName: undefined,
-    onBackToPlain: mock(),
     onSave: mock(),
     onUpdateDraft: mock(),
     onToggleEnabled: mock(),

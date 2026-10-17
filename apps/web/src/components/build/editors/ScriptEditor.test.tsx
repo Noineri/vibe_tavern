@@ -761,15 +761,15 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   });
 });
 
-// ── AS-9: agent-mode toggle (AGENT_SHELL_PLAN, Wave 4 closer) ───────────────
-// The "AI assistant" (script_ai_helper) toolbar button switches the editor
-// into the generic
-// AgentShell (kind "script"); the legacy AiAssistantModal is gone from THIS
-// editor (ScriptEditor.tsx no longer imports it — the file-level stub above
-// stays null, so any modal open would have to surface as a dialog role).
-// The shell's session load runs against a minimal fetch router: the
-// file-level module mocks cover script-api, not the script-agent transport
-// (the real hono client → real fetch).
+// ── AS-8c3b: always-on assistant (AGENT_SHELL_PLAN, section "AS-8c") ─────────
+// The assistant is ALWAYS on for every open script: the AS-8c1 management bar
+// sits above the shell, with no toggle and no back-to-plain (the lore
+// editor's own editorHeader caret stays the script view's back control). The
+// legacy AiAssistantModal is gone from THIS editor (ScriptEditor.tsx no longer
+// imports it — the file-level stub above stays null, so any modal open would
+// have to surface as a dialog role). The shell's session load runs against a
+// minimal fetch router: the file-level module mocks cover script-api, not the
+// script-agent transport (the real hono client → real fetch).
 const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 	const path = new URL(String(input), "http://gateway.test").pathname;
 	const method = (init?.method ?? "GET").toUpperCase();
@@ -789,14 +789,14 @@ const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit)
 	return json({ error: { message: `Unhandled fetch in agent-mode test: ${method} ${path}` } }, 404);
 });
 
-/** Mirrors LorebookEditorView: the agent panel replaces the plain scroll
- *  container while agent mode is on (nullish — the hook returns null off). */
+/** Mirrors LorebookEditorView: the agent panel renders whenever an open script
+ *  exists (always-on — the hook returns null only with no active script). */
 function AgentModeHarness() {
 	const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
 	return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent)}</>;
 }
 
-describe("useScriptPanel agent-mode toggle (AS-9)", () => {
+describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
 	const realFetch = globalThis.fetch;
 	beforeEach(() => {
 		globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
@@ -808,38 +808,38 @@ describe("useScriptPanel agent-mode toggle (AS-9)", () => {
 		globalThis.fetch = realFetch;
 	});
 
-	it("opens the script agent shell from the helper button and never opens a modal", async () => {
-		const { container, findByText, findByTestId, getByRole, queryByRole } = render(<AgentModeHarness />);
+	it("shows the script agent shell at once — no helper button, no back control, no modal", async () => {
+		const { container, findByText, findByTestId, queryByRole, queryByTestId } = render(<AgentModeHarness />);
 		await openEditor(container, findByText);
-		fireEvent.click(getByRole("button", { name: "script_ai_helper" }));
 
-		// The script host's toolbar slot (rendered ONLY by the kind-"script"
-		// host) + the shell's chat input: the generic shell with the script
-		// host resolved. The legacy modal would render a dialog role.
-		expect(await findByTestId("script-agent-back")).toBeTruthy();
+		// Always-on: the shell's chat input is mounted as soon as the editor
+		// opens — no helper-button click. The removed helper button would
+		// render a script_ai_helper button, the removed back control a
+		// script-agent-back testid, the legacy modal a dialog role.
 		expect(await findByTestId("copilot-send-btn")).toBeTruthy();
+		expect(queryByRole("button", { name: "script_ai_helper" })).toBeNull();
+		expect(queryByTestId("script-agent-back")).toBeNull();
 		expect(queryByRole("dialog")).toBeNull();
 	});
 
-	it("returns to the plain editor through the desktop back control", async () => {
-		const { container, findByText, findByRole, findByTestId, getByRole, queryByTestId } = render(<AgentModeHarness />);
+	it("renders the management bar above the shell with no back-to-plain control", async () => {
+		const { container, findByText, getByPlaceholderText, getByRole, getByText, queryByTestId } = render(<AgentModeHarness />);
 		await openEditor(container, findByText);
-		fireEvent.click(getByRole("button", { name: "script_ai_helper" }));
-		fireEvent.click(await findByTestId("script-agent-back"));
 
-		// Plain editor back: the helper button is clickable again and the
-		// shell (chat input, back control) is fully unmounted.
-		expect(await findByRole("button", { name: "script_ai_helper" })).toBeTruthy();
-		expect(queryByTestId("copilot-send-btn")).toBeNull();
+		// The AS-8c1 bar above the shell: the name input shows the script
+		// name, the kind badge and the save button render alongside it —
+		// and there is no back-to-plain control anywhere.
+		expect((getByPlaceholderText("script_name") as HTMLInputElement).value).toBe("Test Script");
+		expect(getByText("script_kind_prompt")).toBeTruthy();
+		expect(getByRole("button", { name: "save" })).toBeTruthy();
 		expect(queryByTestId("script-agent-back")).toBeNull();
 	});
 
-	it("agent mode renders the shared surface with the live draft code", async () => {
-		const { container, findByText, findByTestId, getByRole } = render(<AgentModeHarness />);
+	it("renders the shell editor with the live draft code", async () => {
+		const { container, findByText, findByTestId } = render(<AgentModeHarness />);
 		const view = await openEditor(container, findByText);
 		replaceCode(view, "AGENT DRAFT");
-		fireEvent.click(getByRole("button", { name: "script_ai_helper" }));
-		await findByTestId("script-agent-back");
+		await findByTestId("copilot-send-btn");
 
 		// One CodeMirror in the document (the agent pane's): the opaque
 		// hostProps share the plain panel's draft state, not a copy.
