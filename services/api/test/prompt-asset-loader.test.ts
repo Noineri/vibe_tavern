@@ -53,7 +53,7 @@ describe("prompt-asset-loader — shared resolver", () => {
 		test("env override (VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR) wins over bundled assets", async () => {
 			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
 			try {
-				const filename = getModeConfig("script").defaultPromptFile;
+				const filename = getModeConfig("lore_entry").defaultPromptFile;
 				const overridePath = join(tmp, filename);
 				const overrideContent = "# OVERRIDE FROM ENV DIR\nunique-marker-9f3c\n";
 				await Bun.write(overridePath, overrideContent);
@@ -90,7 +90,7 @@ describe("prompt-asset-loader — shared resolver", () => {
 			// platform and the SHA pins in experience-copilot-prompt.test.ts hold.
 			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
 			try {
-				const filename = getModeConfig("script").defaultPromptFile;
+				const filename = getModeConfig("lore_entry").defaultPromptFile;
 				const overridePath = join(tmp, filename);
 				await Bun.write(overridePath, "# CRLF HEADER\r\nmarker line 1\r\nmarker lone-cr\r\r\n");
 
@@ -114,7 +114,7 @@ describe("prompt-asset-loader — shared resolver", () => {
 		test("returns the current file content and reflects an external edit on the next call", async () => {
 			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
 			try {
-				const filename = getModeConfig("script").defaultPromptFile;
+				const filename = getModeConfig("lore_entry").defaultPromptFile;
 				const overridePath = join(tmp, filename);
 				await Bun.write(overridePath, "# FIRST DRAFT\nmarker-aaa\n");
 
@@ -161,15 +161,15 @@ describe("ai-assistant-prompts — rewire onto shared loader", () => {
 		// next assistant-mode resolution without a restart.
 		const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
 		try {
-			const filename = getModeConfig("script").defaultPromptFile;
+			const filename = getModeConfig("lore_entry").defaultPromptFile;
 			const overridePath = join(tmp, filename);
 			await Bun.write(overridePath, "# ASSISTANT FIRST\n");
 			const prev = process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
 			process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = tmp;
 			try {
-				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT FIRST\n");
+				expect(await getDefaultPromptForMode("lore_entry")).toBe("# ASSISTANT FIRST\n");
 				await Bun.write(overridePath, "# ASSISTANT EDITED\n");
-				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT EDITED\n");
+				expect(await getDefaultPromptForMode("lore_entry")).toBe("# ASSISTANT EDITED\n");
 			} finally {
 				if (prev === undefined) delete process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
 				else process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = prev;
@@ -191,9 +191,9 @@ describe("resolveSystemPrompt — fallback chain precedence (service profiles)",
 		const ps = new ServicePromptProfileStore(db);
 		const ui = new UiSettingsStore(db);
 		await ps.ensureDefaultServicePromptProfile();
-		const p = await ps.createServicePromptProfile({ name: "t", overrides: { script: "CUSTOM OVERRIDE" } });
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { lore_entry: "CUSTOM OVERRIDE" } });
 		await ui.update({ activeServicePromptProfileId: p.id });
-		const { prompt, source } = await resolveSystemPrompt(db, "script");
+		const { prompt, source } = await resolveSystemPrompt(db, "lore_entry");
 		expect(source).toBe("override");
 		expect(prompt).toBe("CUSTOM OVERRIDE");
 	});
@@ -201,7 +201,7 @@ describe("resolveSystemPrompt — fallback chain precedence (service profiles)",
 	test("default when no profile overrides are present", async () => {
 		const { createDb } = await import("@vibe-tavern/db");
 		const db = await createDb(":memory:");
-		const { prompt, source } = await resolveSystemPrompt(db, "script");
+		const { prompt, source } = await resolveSystemPrompt(db, "lore_entry");
 		expect(source).toBe("default");
 		expect(prompt.length).toBeGreaterThan(0);
 	});
@@ -213,9 +213,9 @@ describe("resolveSystemPrompt — fallback chain precedence (service profiles)",
 		const ps = new ServicePromptProfileStore(db);
 		const ui = new UiSettingsStore(db);
 		await ps.ensureDefaultServicePromptProfile();
-		const p = await ps.createServicePromptProfile({ name: "t", overrides: { script: "   \n\t  " } });
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { lore_entry: "   \n\t  " } });
 		await ui.update({ activeServicePromptProfileId: p.id });
-		const { source } = await resolveSystemPrompt(db, "script");
+		const { source } = await resolveSystemPrompt(db, "lore_entry");
 		expect(source).toBe("default");
 	});
 
@@ -253,7 +253,7 @@ describe("resolveSystemPrompt — fallback chain precedence (service profiles)",
 		// (the old preset path would have returned preset_override).
 		const { createDb } = await import("@vibe-tavern/db");
 		const db = await createDb(":memory:");
-		const { source } = await resolveSystemPrompt(db, "script");
+		const { source } = await resolveSystemPrompt(db, "lore_entry");
 		expect(source).toBe("default");
 	});
 });

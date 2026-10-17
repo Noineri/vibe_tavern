@@ -149,7 +149,7 @@ describe("chat impersonation enhancement prompt", () => {
 describe("tracker template teaching prompt (CT-10)", () => {
   it("resolves its default asset and only its own profile override via the field path", async () => {
     const { db, profileStore, uiSettings } = await setupDb();
-    const defaultResult = await resolveSystemPrompt(db, "script", { field: "tracker_template" });
+    const defaultResult = await resolveSystemPrompt(db, "lore_entry", { field: "tracker_template" });
     expect(defaultResult.source).toBe("default");
     expect(defaultResult.prompt).toContain("UNION RULE");
 
@@ -158,7 +158,7 @@ describe("tracker template teaching prompt (CT-10)", () => {
       overrides: { tracker_template: "CUSTOM TRACKER TEMPLATE PROMPT" },
     });
     await uiSettings.update({ activeServicePromptProfileId: profile.id });
-    expect(await resolveSystemPrompt(db, "script", { field: "tracker_template" }))
+    expect(await resolveSystemPrompt(db, "lore_entry", { field: "tracker_template" }))
       .toEqual({ prompt: "CUSTOM TRACKER TEMPLATE PROMPT", source: "override" });
   });
 });

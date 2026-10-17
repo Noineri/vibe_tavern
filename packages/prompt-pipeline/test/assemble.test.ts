@@ -1027,7 +1027,7 @@ describe("assemblePrompt", () => {
           ],
         },
         aiAssistant: {
-          mode: "script" as const,
+          mode: "lore_entry" as const,
           enabledLayers: ["character_base", "persona"],
           systemPrompt: "Assistant system.",
           instruction: "Write a helper.",
@@ -1099,7 +1099,7 @@ describe("assemblePrompt", () => {
     });
 
     it("pins the AI assistant assembly", () => {
-      expect(projectAssembly(getAiAssistantAssembler("script").assemble(registryContext()))).toEqual({
+      expect(projectAssembly(getAiAssistantAssembler("lore_entry").assemble(registryContext()))).toEqual({
         layers: [
           { id: "ai_assistant_system", text: "Assistant system.", position: "in_prompt" },
           characterBase,
