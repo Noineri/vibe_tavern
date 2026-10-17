@@ -1,8 +1,8 @@
 // fork #1 of ExperienceManagementControls (ExperienceManagementControls.tsx)
-// — the script editor's management bar. Row 1 clones the model's action
-// cluster (name input, status pill, enable toggle, desktop-only save-state
-// text, save button, delete) with three named deviations: (1) no duplicate
-// button — scripts have no duplicate action today; (2) a read-only
+// — the script editor's management bar. On desktop, row 1 clones the model's
+// action cluster (name input, status pill, enable toggle, desktop-only
+// save-state text, save button, delete) with three named deviations: (1) no
+// duplicate button — scripts have no duplicate action today; (2) a read-only
 // script-kind badge (prompt/dice) between the name input and the status
 // pill — the kind is immutable after creation, so it is shown here, never
 // edited; (3) the status pill has no tooltip — the model's
@@ -10,7 +10,11 @@
 // for scripts (the pill text keys are reused as is). Row 1 is the whole bar:
 // the description field plus the entity-only links block moved into the
 // Code tab's toolbar strip (ScriptAgentEditorTabs) by owner decision
-// 2026-10-17 (AS-8c4e) — layout Б places them above the templates row.
+// 2026-10-17 (AS-8c4e) — layout B places them above the templates row. On
+// mobile the bar renders the shared ManagementMobileRow instead: one row
+// (name, toggle, save, ...) with the kind badge and the delete moved into
+// the more-actions sheet (owner decision 2026-10-17, AS-8c4f1 — the same
+// shared row mini-apps adopt in f2).
 //
 // Every value and callback arrives via explicit props — no store reads,
 // no new context.
@@ -21,6 +25,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { TextInput } from "../../shared/text-input.js";
+import { ManagementMobileRow } from "./management-mobile-row.js";
 import type {
   ScriptDraftSaveState,
   ScriptDraftValues,
@@ -56,6 +61,45 @@ export function ScriptManagementControls({
   onSave,
 }: ScriptManagementControlsProps) {
   const { t } = useT();
+  // AS-8c4f1: on mobile the whole bar is the shared ManagementMobileRow —
+  // one row (name, toggle, save, ...) with the kind badge and the delete
+  // moved into the more-actions sheet. The sheet delete calls the same
+  // onDelete (the existing confirm modal), so the delete flow is unchanged.
+  if (isMobile) {
+    return (
+      <ManagementMobileRow
+        name={name}
+        namePlaceholder={t("script_name")}
+        onNameChange={(value) => onUpdateDraft({ name: value })}
+        enabled={enabled}
+        onToggleEnabled={onToggleEnabled}
+        dirty={draftDirty}
+        saveState={draftSaveState}
+        saveLabel={draftSaveState === "error" ? t("retry") : t("save")}
+        resetKey={resetKey}
+        onSave={onSave}
+        sheetTitle={name}
+        sheetItems={[
+          {
+            icon: <Ic.terminal />,
+            label: scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt"),
+            // Info-only row: ActionSheet has no text-only variant, so the
+            // kind renders as a disabled item — dimmed, non-interactive,
+            // out of the tab order. The noop never fires (the sheet's
+            // onClick returns early for disabled rows).
+            disabled: true,
+            action: () => {},
+          },
+          {
+            icon: <Ic.del />,
+            label: t("delete_script_confirm"),
+            danger: true,
+            action: onDelete,
+          },
+        ]}
+      />
+    );
+  }
   return (
     <>
       <TextInput

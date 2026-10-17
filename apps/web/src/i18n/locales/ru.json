@@ -1247,6 +1247,7 @@
 	"delete_failed": "Ошибка удаления.",
 	"persona_selection": "Переключить персону",
 	"manage_personas": "Управление персонами",
+	"management_more_actions": "Ещё действия",
 	"prompt_manager_title": "Менеджер промптов",
 	"prompt_manager_sub": "Системные, пост-исторические и инструкции саммари/инструментов для каждого пресета.",
 	"unsaved_changes_title": "Несохранённые изменения",

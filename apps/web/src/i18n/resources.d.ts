@@ -1795,6 +1795,7 @@ export default interface Resources {
     "make_active": "Set Active",
     "manage": "Manage",
     "manage_personas": "Manage Personas",
+    "management_more_actions": "More actions",
     "map_to_placeholder": "Map to…",
     "master_detail_open": "Open details",
     "match_src_character_alt_greetings": "Alternate Greetings",

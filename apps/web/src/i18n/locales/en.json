@@ -1231,6 +1231,7 @@
 	"delete_failed": "Delete failed.",
 	"persona_selection": "Switch Persona",
 	"manage_personas": "Manage Personas",
+	"management_more_actions": "More actions",
 	"prompt_manager_title": "Prompt Manager",
 	"prompt_manager_sub": "System, post-history, and summary/tools instructions per preset.",
 	"unsaved_changes_title": "Unsaved changes",

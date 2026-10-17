@@ -1,11 +1,13 @@
 /**
  * ScriptManagementControls — presentation tests.
  *
- * Pins the AS-8c1 management bar boundary (row 1 only since AS-8c4e: name,
- * kind badge, status pill, enable toggle, desktop save-state text, save,
- * delete — the description field + the entity-only links block moved into
- * the Code tab's toolbar strip). i18n is stubbed (key-echo translator);
- * every callback is asserted through the component's explicit props.
+ * Pins the AS-8c1 management bar boundary. Desktop pins row 1 (name, kind
+ * badge, status pill, enable toggle, desktop save-state text, save, delete
+ * — the description field + the entity-only links block moved into the Code
+ * tab's toolbar strip since AS-8c4e); mobile pins the shared AS-8c4f1 row
+ * (name, toggle, save, `...` — the kind and the delete live in the sheet).
+ * i18n is stubbed (key-echo translator); every callback is asserted through
+ * the component's explicit props.
  *
  * Runner: bun:test with scoped happy-dom.
  */
@@ -126,16 +128,30 @@ describe("ScriptManagementControls", () => {
     expect(calls.deletes()).toBe(1);
   });
 
-  it("hides the save-state text on mobile and shortens the status pill", () => {
-    // As in the model, the mobile hiding is the `max-md:hidden` CSS class,
-    // not conditional rendering — so the text stays in the DOM on both
-    // viewports and the class carries the boundary.
-    const desktop = renderControls({ isMobile: false, draftDirty: false });
-    expect(desktop.getByText("saved_state").getAttribute("class")).toContain("max-md:hidden");
-    desktop.getByText("experience_editor_enabled");
-    desktop.unmount();
-    const mobile = renderControls({ isMobile: true, draftDirty: false });
-    expect(mobile.getByText("saved_state").getAttribute("class")).toContain("max-md:hidden");
-    mobile.getByText("experience_editor_enabled_short");
+  it("renders the shared mobile row on mobile: one row, no status pill, kind and delete in the sheet", () => {
+    // AS-8c4f1: mobile renders ManagementMobileRow — the name, the toggle,
+    // the save and the `...` button in one row. The status pill and the
+    // save-state text are gone (the toggle and the save button carry the
+    // state); the kind badge and the delete live in the more-actions sheet.
+    const { getByPlaceholderText, getByRole, getByText, queryByText, calls } = renderControls({ isMobile: true, draftDirty: false });
+    getByPlaceholderText("script_name");
+    getByRole("switch");
+    getByRole("button", { name: "save" });
+    getByRole("button", { name: "management_more_actions" });
+    expect(queryByText("experience_editor_enabled")).toBeNull();
+    expect(queryByText("experience_editor_enabled_short")).toBeNull();
+    expect(queryByText("saved_state")).toBeNull();
+    expect(queryByText("script_kind_prompt")).toBeNull();
+    expect(queryByText("delete_script_confirm")).toBeNull();
+    // `...` opens the sheet with the script name, the kind and the delete.
+    fireEvent.click(getByRole("button", { name: "management_more_actions" }));
+    getByText("My script");
+    getByText("script_kind_prompt");
+    // The kind row is info-only: tapping it deletes nothing.
+    fireEvent.click(getByText("script_kind_prompt"));
+    expect(calls.deletes()).toBe(0);
+    // The sheet delete routes through the same onDelete (confirm modal).
+    fireEvent.click(getByText("delete_script_confirm"));
+    expect(calls.deletes()).toBe(1);
   });
 });
