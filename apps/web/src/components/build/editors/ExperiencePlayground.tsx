@@ -115,14 +115,15 @@ import {
 } from "../../experience/setup-fields.js";
 import {
   buildPlaygroundDigest,
-  buildPlaygroundLogDigest,
   buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
   type CopilotDigest,
+  type CopilotLogDigest,
   type PlaygroundSessionLog,
 } from "../../../lib/experience-copilot-digest.js";
+import { buildSessionLogDigest } from "./experience-playground-session-log.js";
 import { copyText } from "../../../lib/clipboard.js";
 import {
   clearPlaygroundConfig,
@@ -1193,39 +1194,31 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     }
   };
 
-  /** Grounding step 6: the WHOLE-session log digest for the status-strip
-   *  "send log" / "copy log" buttons. Turn sessions send the accumulated log
-   *  (every event across start + advances + timer beats); a realtime round
-   *  sends the loop digest — the frame loop is the round's authority, and the
-   *  turn-session shape would lie (RM-13). */
-  const buildSessionLogDigest = (live: ExperiencePlaygroundData) =>
-    realtimeRound !== null
-      ? buildRealtimeLoopDigest({
-          realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
-          diag: loopDiag,
-          claim: roundClaim,
-          definition,
-          error,
-        })
-      : buildPlaygroundLogDigest({
-          session: live,
-          sessionLog,
-          definition,
-          error,
-          launchContext: logLaunchContext,
-        });
+  /** Grounding step 6: the component-state wrapper over the extracted
+   *  session-log selector (see experience-playground-session-log.ts). */
+  const selectSessionLogDigest = (live: ExperiencePlaygroundData): CopilotLogDigest =>
+    buildSessionLogDigest({
+      live,
+      realtimeRound,
+      loopDiag,
+      roundClaim,
+      definition,
+      error,
+      sessionLog,
+      logLaunchContext,
+    });
 
   /** Grounding step 6: push the whole-session log into the copilot thread. */
   const handleSendLogToCopilot = () => {
     if (onSendToCopilot === undefined || session === null) return;
-    onSendToCopilot(buildSessionLogDigest(session));
+    onSendToCopilot(selectSessionLogDigest(session));
   };
 
   /** Grounding step 6: copy the log digest's FULL text to the clipboard with
    *  the honest result feedback (the TrackerConfig copy pattern). */
   const handleCopyLog = async () => {
     if (session === null) return;
-    const result = await copyText(buildSessionLogDigest(session).fullText);
+    const result = await copyText(selectSessionLogDigest(session).fullText);
     if (result.ok) {
       toast.success(t("copied"));
     } else {
