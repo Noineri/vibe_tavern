@@ -24,8 +24,23 @@ interface AgentPlanCacheEntry {
 
 const cacheByOwner = new Map<string, AgentPlanCacheEntry>();
 
+/** SC-0h: the plan-owner union gained the chatBranch arm, but this hook and
+ *  its script API client stay script-only until SC-0i wires the branch route
+ *  in — a non-script owner reaching here is a programming error caught
+ *  loudly, never a silent wrong-route GET (the explicit-narrowing pattern the
+ *  streams' `requireAgentPlanOwner` uses for the same reason). */
+function requireScriptOwner(owner: AgentPlanOwner): { kind: "script"; scriptId: string } {
+  if (owner.kind !== "script") {
+    throw new Error(
+      `use-agent-plan: unsupported plan owner kind '${owner.kind}' (branch owners arrive with SC-0i)`,
+    );
+  }
+  return owner;
+}
+
 function ownerKey(owner: AgentPlanOwner): string {
-  return `${owner.kind}:${owner.scriptId}`;
+  const script = requireScriptOwner(owner);
+  return `${script.kind}:${script.scriptId}`;
 }
 
 function entryFor(owner: AgentPlanOwner): AgentPlanCacheEntry {
@@ -55,9 +70,10 @@ function replacePlan(entry: AgentPlanCacheEntry, plan: AgentPlan): void {
 
 function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
   if (entry.loaded || entry.loadPromise) return;
+  const script = requireScriptOwner(owner);
   entry.isLoading = true;
   notify(entry);
-  entry.loadPromise = getAgentPlan(owner.scriptId)
+  entry.loadPromise = getAgentPlan(script.scriptId)
     .then((plan) => replacePlan(entry, plan))
     .catch((error: unknown) => {
       // A failed GET (server down, transient 5xx) must not become an unhandled
@@ -66,7 +82,7 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
       // per process — no retry storm); the panel stays hidden and the editor
       // modal surfaces its own save errors. Logged for diagnosability,
       // mirroring the db store's defensive-parse logging.
-      console.error(`[use-agent-plan] failed to load the plan for script '${owner.scriptId}':`, error);
+      console.error(`[use-agent-plan] failed to load the plan for script '${script.scriptId}':`, error);
     })
     .finally(() => {
       entry.loaded = true;
@@ -122,7 +138,7 @@ export function useAgentPlan(owner: AgentPlanOwner): {
   }, [key, owner]);
 
   const save = useCallback(async (plan: AgentPlan): Promise<AgentPlan> => {
-    const saved = await updateAgentPlan(owner.scriptId, plan);
+    const saved = await updateAgentPlan(requireScriptOwner(owner).scriptId, plan);
     replacePlan(entryFor(owner), saved);
     return saved;
   }, [key, owner]);

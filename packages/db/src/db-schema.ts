@@ -1976,6 +1976,23 @@ export const agentPlans = sqliteTable('agent_plans', {
   scriptIdUnique: uniqueIndex('idx_agent_plans_script').on(table.scriptId),
 }));
 
+// ─── agentBranchPlans (SIDECHAT_PLAN SC-0h) ──────────────────────────────────
+// One persisted agent plan belongs to each (chat, branch) pair — the chat-owned
+// twin of agent_plans above. Unlike the script owner's soft link, both columns
+// here are HARD FKs with CASCADE: a branch (and its chat) is runtime state
+// whose plan must not outlive it — the same convention the SC-0a chat-owned
+// copilot threads use. The unique index makes it one row per pair.
+export const agentBranchPlans = sqliteTable('agent_branch_plans', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchUnique: uniqueIndex('idx_agent_branch_plans_chat_branch').on(table.chatId, table.branchId),
+}));
+
 // ─── agentKindSettings (SIDECHAT_PLAN SC-0d) ────────────────────────────────
 // Per-agent-kind model binding + profile default: one row per kind id, the
 // UI default a kind's shell boots with (the stream still takes its actual

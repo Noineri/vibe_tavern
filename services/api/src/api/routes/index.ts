@@ -26,6 +26,7 @@ import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
 import { createCopilotSkillRoutes } from "./copilot-skill.js";
 import { createCopilotProfileRoutes } from "./copilot-profile.js";
 import { createAgentPlanRoutes } from "./agent-plan.js";
+import { createAgentBranchPlanRoutes } from "./agent-branch-plan.js";
 import { createSamplerSetRoutes } from "./sampler-set.js";
 import { createFormatTemplateRoutes } from "./format-template.js";
 import { createAiInstructionTemplateRoutes } from "./ai-instruction-template.js";
@@ -72,6 +73,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
     .route("/", createCopilotProfileRoutes(runtime.copilotProfiles))
     .route("/", createAgentPlanRoutes(runtime.agentPlan))
+    .route("/", createAgentBranchPlanRoutes(runtime.agentPlan))
     .route("/", createSamplerSetRoutes(runtime.samplerSets))
     .route("/", createFormatTemplateRoutes(runtime.formatTemplates))
     .route("/", createAiInstructionTemplateRoutes(runtime.aiInstructionTemplates))

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createAgentPlanTools } from "../src/domain/agent-plan/agent-plan-tools.js";
+import {
+  createAgentPlanTools,
+  type AgentPlanToolOptions,
+} from "../src/domain/agent-plan/agent-plan-tools.js";
 
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
 
@@ -71,5 +74,56 @@ describe("agent-plan-tools", () => {
     });
 
     expect(await tools.read_plan.execute({}, ctx)).toEqual({ empty: true });
+  });
+});
+
+describe("agent-plan-tools — owner + read-only mode (SC-0h)", () => {
+  const scriptOwner: AgentPlanToolOptions["owner"] = { kind: "script", scriptId: "script_1" };
+  const branchOwner: AgentPlanToolOptions["owner"] = {
+    kind: "chatBranch",
+    chatId: "chat_1",
+    branchId: "brnch_1",
+  };
+
+  test("read-only mode exposes ONLY read_plan — no plan write reaches the model", async () => {
+    let saveCount = 0;
+    const tools = createAgentPlanTools(
+      {
+        load: async () => null,
+        save: async () => {
+          saveCount += 1;
+        },
+      },
+      { owner: branchOwner, readOnly: true },
+    );
+
+    expect(Object.keys(tools).sort()).toEqual(["read_plan"]);
+    expect(tools.plan).toBeUndefined();
+    // The exposed reader still works over the branch owner's plan store.
+    expect(await tools.read_plan.execute({}, ctx)).toEqual({ empty: true });
+    expect(saveCount).toBe(0);
+  });
+
+  test("the branch owner scopes the read_plan description to the chat branch; the script wording stays byte-identical", () => {
+    const readOnly = createAgentPlanTools(
+      { load: async () => null, save: async () => {} },
+      { owner: branchOwner, readOnly: true },
+    ) as unknown as { read_plan: { description: string } };
+    expect(readOnly.read_plan.description).toBe("Read the full current plan for this chat branch.");
+
+    // The pre-SC-0h surface (owner absent OR script owner) keeps the exact
+    // wording the script/experience kinds have always shown the model.
+    const noOwner = createAgentPlanTools(
+      { load: async () => null, save: async () => {} },
+    ) as unknown as { read_plan: { description: string } };
+    expect(noOwner.read_plan.description).toBe("Read the full current plan for this script.");
+
+    const scriptScoped = createAgentPlanTools(
+      { load: async () => null, save: async () => {} },
+      { owner: scriptOwner },
+    ) as unknown as { plan: { description: string } };
+    expect(scriptScoped.plan.description).toContain(
+      "Replace the full durable plan for this script",
+    );
   });
 });

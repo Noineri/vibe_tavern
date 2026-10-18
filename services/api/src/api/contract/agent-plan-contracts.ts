@@ -1,11 +1,13 @@
 /**
- * Script-owned agent plan contract (EXPERIENCE_COPILOT_PLAN_MODE_PLAN, PM-4).
+ * Agent plan contract (EXPERIENCE_COPILOT_PLAN_MODE_PLAN, PM-4; branch
+ * owners SIDECHAT_PLAN SC-0h).
  *
  * Extracted into its own module per the file-size ratchet (runtime-api.ts
  * grows only by re-export) — the same split the lorebook/script contracts
- * took. One plan per script, maintained both by the model's `plan` tool and
- * by the user editor — both paths validate through the same
- * `normalizeAgentPlan`. Reads return the empty plan when nothing is stored.
+ * took. One plan per owner (a saved script; a chat branch), maintained both
+ * by the model's `plan` tool and by the user editor — both paths validate
+ * through the same `normalizeAgentPlan`. Reads return the empty plan when
+ * nothing is stored.
  */
 export interface AgentPlanRuntimeApi {
 	/** The stored plan, or the empty plan when the script has none yet. */
@@ -14,4 +16,11 @@ export interface AgentPlanRuntimeApi {
 	 *  Unprocessable with `details.code` `agent_plan_multiple_active` (more
 	 *  than one active task) or `agent_plan_invalid` (unusable shape). */
 	updateAgentPlan: (scriptId: string, plan: unknown) => Promise<import("@vibe-tavern/api-contracts").AgentPlan>;
+	/** The branch's stored plan, or the empty plan when the branch has none
+	 *  yet (SC-0h — the same no-plan-yet convention as the script read). */
+	getAgentBranchPlan: (chatId: string, branchId: string) => Promise<import("@vibe-tavern/api-contracts").AgentPlan>;
+	/** Full-replace write for the branch's plan (SC-0h). Same validation and
+	 *  error codes as {@link updateAgentPlan}; NotFound for an unknown chat
+	 *  or a branch not belonging to that chat. */
+	updateAgentBranchPlan: (chatId: string, branchId: string, plan: unknown) => Promise<import("@vibe-tavern/api-contracts").AgentPlan>;
 }

@@ -21,10 +21,14 @@ export interface AgentPlan {
   tasks: AgentPlanTask[];
 }
 
-export type AgentPlanOwner = {
-  kind: "script";
-  scriptId: string;
-};
+/** Who owns a persisted agent plan. The two arms are mutually exclusive and
+ * map to different tables in the store layer: script rows live in
+ * `agent_plans` (script_id soft link, no FK — the snapshot convention),
+ * chat-branch rows in `agent_branch_plans` (hard FK cascade — a branch is
+ * runtime state whose plan must not outlive it). */
+export type AgentPlanOwner =
+  | { kind: "script"; scriptId: string }
+  | { kind: "chatBranch"; chatId: string; branchId: string };
 
 export const EMPTY_AGENT_PLAN: AgentPlan = {
   goal: "",
