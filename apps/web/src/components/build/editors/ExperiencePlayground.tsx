@@ -1198,7 +1198,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
    *  (every event across start + advances + timer beats); a realtime round
    *  sends the loop digest — the frame loop is the round's authority, and the
    *  turn-session shape would lie (RM-13). */
-  const buildSessionLogDigest = (live: ExperiencePlaygroundData): CopilotDigest =>
+  const buildSessionLogDigest = (live: ExperiencePlaygroundData) =>
     realtimeRound !== null
       ? buildRealtimeLoopDigest({
           realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
@@ -1221,11 +1221,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     onSendToCopilot(buildSessionLogDigest(session));
   };
 
-  /** Grounding step 6: copy the log digest's text to the clipboard with the
-   *  honest result feedback (the TrackerConfig copy pattern). */
+  /** Grounding step 6: copy the log digest's FULL text to the clipboard with
+   *  the honest result feedback (the TrackerConfig copy pattern). */
   const handleCopyLog = async () => {
     if (session === null) return;
-    const result = await copyText(buildSessionLogDigest(session).text);
+    const result = await copyText(buildSessionLogDigest(session).fullText);
     if (result.ok) {
       toast.success(t("copied"));
     } else {

@@ -6,9 +6,10 @@
  * builder returns the EXACT backend digest shape
  * (`ExperienceCopilotRunTestDigest` / `ExperienceCopilotRunSimulateDigest` from
  * `experience-copilot-tools.ts`) so the model parses user-sent testFeedback
- * identically to its own run_test/run_simulate tool results: the capping rules
- * (consoleTail last 20 `"level: args"`, stateSummary JSON capped 1500 + `\u2026`)
- * MUST match the backend field-for-field.
+ * identically to its own run_test/run_simulate tool results: field-for-field,
+ * with NO caps (owner decision 2026-10-18, AS-8e7c) — the feedback attaches the
+ * whole session while the chat-message `text` shows counts only (`fullText`
+ * carries every line for the «Copy log» clipboard path).
  *
  * Runner: bun:test (pure-logic file — no DOM env, no mock.module).
  */
@@ -144,7 +145,7 @@ describe("buildRunTestDigest", () => {
     expect(text).toContain('Seat "AI" (id "ai", script): none');
   });
 
-  it("maps legalActionTypes from projection.actions[].type and caps stateSummary", () => {
+  it("maps legalActionTypes from projection.actions[].type and keeps the FULL stateSummary (was: capped at 1500 + ellipsis — now: whole JSON, basis: owner 2026-10-18)", () => {
     const big = { round: 1, blob: "x".repeat(2000) };
     const { feedback } = buildRunTestDigest(
       makeRunData({ projection: { state: big, actions: [{ type: "a" }, { type: "b" }] } }),
@@ -152,18 +153,27 @@ describe("buildRunTestDigest", () => {
 
     expect(feedback.legalActionTypes).toEqual(["a", "b"]);
     const summary = feedback.stateSummary as string;
-    expect(summary.length).toBe(1500 + 1); // 1500 chars + trailing ellipsis
-    expect(summary.endsWith("\u2026")).toBe(true);
-    expect(summary.startsWith('{"round":1,"blob":"')).toBe(true);
+    expect(summary).toBe(JSON.stringify(big)); // whole JSON, no truncation
+    expect(summary.endsWith("\u2026")).toBe(false);
   });
 
-  it("caps consoleTail at the last 20 entries, formatted as 'level: args'", () => {
+  it("falls back to a placeholder for unserializable state", () => {
+    // `object`-valued record: assignable to the hono-parsed JSON state type
+    // (whose object member permits `object` values) yet circular at runtime.
+    const circular: Record<string, object> = {};
+    circular.self = circular;
+    const { feedback } = buildRunTestDigest(
+      makeRunData({ projection: { state: circular, actions: [] } }),
+    );
+    expect(feedback.stateSummary).toBe("(unserializable state)");
+  });
+
+  it("keeps EVERY console entry in consoleTail, formatted as 'level: args' (was: last 20 — now: all 25, basis: owner 2026-10-18)", () => {
     const { feedback } = buildRunTestDigest(makeRunData({ console: consoleEntries(25) }));
     const tail = feedback.consoleTail as string[];
-    expect(tail).toHaveLength(20);
-    // Last 20 of 25 = indices 5..24.
-    expect(tail[0]).toBe("log: line-5");
-    expect(tail[19]).toBe("log: line-24");
+    expect(tail).toHaveLength(25);
+    expect(tail[0]).toBe("log: line-0");
+    expect(tail[24]).toBe("log: line-24");
   });
 
   it("produces a human-readable text with definition name/id and legal actions", () => {
@@ -215,13 +225,14 @@ describe("buildRunTestErrorDigest", () => {
     expect("errorKind" in feedback).toBe(false);
   });
 
-  it("caps consoleTail at 20 entries", () => {
+  it("keeps EVERY console entry in consoleTail (was: capped at 20 — now: all 30, basis: owner 2026-10-18)", () => {
     const { feedback } = buildRunTestErrorDigest({
       message: "fail",
       console: consoleEntries(30),
     });
-    expect((feedback.consoleTail as string[])).toHaveLength(20);
-    expect((feedback.consoleTail as string[])[19]).toBe("log: line-29");
+    expect((feedback.consoleTail as string[])).toHaveLength(30);
+    expect((feedback.consoleTail as string[])[0]).toBe("log: line-0");
+    expect((feedback.consoleTail as string[])[29]).toBe("log: line-29");
   });
 });
 
@@ -322,7 +333,7 @@ describe("buildPlaygroundLogDigest", () => {
       { visibility: "public" as const, type: "scored" },
       { visibility: "public" as const, type: "turn_passed" },
     ];
-    const { feedback, text } = buildPlaygroundLogDigest({
+    const { feedback, text, fullText } = buildPlaygroundLogDigest({
       session: makePlayground(),
       sessionLog: makeSessionLog({
         events,
@@ -365,36 +376,60 @@ describe("buildPlaygroundLogDigest", () => {
     expect(text).toContain("Turns: 2 · Events: 2 · Effects: 1");
     expect(text).toContain("Seats: you (human), bot (script) · Grants: participants · Seed: 7");
     expect(text).toContain('Seat "You" (id "you", human): reply');
-    expect(text).toContain("public/scored | public/turn_passed");
+    // Counts in the message, lines in the copy text.
+    expect(text).toContain("Effects: 1 (attached)");
+    expect(text).toContain("Events: 2 (attached)");
+    expect(text).toContain("Console: 1 lines (attached)");
+    expect(text).not.toContain("public/scored");
+    expect(fullText).toContain("public/scored | public/turn_passed");
+    expect(fullText).toContain("log: hi");
+    expect(fullText).toContain("model: ");
   });
 
-  it("keeps the last 200 events and 100 console lines with their totals, and caps the state at 8000 chars", () => {
+  it("attaches the WHOLE session — 250 events / 150 console lines / full 10 000-char state (was: last 200 / last 100 / 8000-char cap — now: everything, basis: owner 2026-10-18)", () => {
     const events = Array.from({ length: 250 }, (_, i) => ({
       visibility: "public" as const,
       type: `ev-${i}`,
     }));
-    const { feedback, text } = buildPlaygroundLogDigest({
-      session: makePlayground({ state: { blob: "x".repeat(10_000) } }),
-      sessionLog: makeSessionLog({ events, console: consoleEntries(150), turns: 3 }),
+    const bigState = { blob: "x".repeat(10_000) };
+    const { feedback, text, fullText } = buildPlaygroundLogDigest({
+      session: makePlayground({ state: bigState }),
+      sessionLog: makeSessionLog({
+        events,
+        effects: [{ kind: "model", request: { prompt: "n" } }],
+        console: consoleEntries(150),
+        turns: 3,
+      }),
     });
 
     const fb = feedback as { events: Array<{ type: string }>; console: string[]; stateSummary: string };
-    expect(fb.events).toHaveLength(200);
-    expect(fb.events[0]!.type).toBe("ev-50"); // last 200 of 250
-    expect(fb.events[199]!.type).toBe("ev-249");
+    expect(fb.events).toHaveLength(250);
+    expect(fb.events[0]!.type).toBe("ev-0");
+    expect(fb.events[249]!.type).toBe("ev-249");
     expect(feedback.eventsTotal).toBe(250);
-    expect(fb.console).toHaveLength(100);
-    expect(fb.console[0]).toBe("log: line-50"); // last 100 of 150
-    expect(fb.console[99]).toBe("log: line-149");
+    expect(fb.console).toHaveLength(150);
+    expect(fb.console[0]).toBe("log: line-0");
+    expect(fb.console[149]).toBe("log: line-149");
     expect(feedback.consoleTotal).toBe(150);
-    expect(fb.stateSummary.length).toBe(8000 + 1); // capped + trailing ellipsis
-    expect(fb.stateSummary.endsWith("\u2026")).toBe(true);
-    expect(text).toContain("Events (250 total, last 200):");
-    expect(text).toContain("Console (150 total, last 100):");
+    expect(fb.stateSummary).toBe(JSON.stringify(bigState)); // full, no ellipsis
+    // The message shows counts only.
+    expect(text).toContain("Events: 250 (attached)");
+    expect(text).toContain("Console: 150 lines (attached)");
+    expect(text).toContain("Effects: 1 (attached)");
+    expect(text).not.toContain("ev-0");
+    expect(text).not.toContain("log: line-0");
+    // The copy text carries every line in the old formats.
+    expect(fullText).toContain("ev-0");
+    expect(fullText).toContain("ev-249");
+    expect(fullText).toContain("log: line-0");
+    expect(fullText).toContain("log: line-149");
+    expect(fullText).toContain("model: ");
+    expect(fullText).toContain("Events (250 total, last 250):");
+    expect(fullText).toContain("Console (150 total, last 150):");
   });
 
   it("shapes an empty session (no log, no launch context, no matrix) without inventing fields", () => {
-    const { feedback, text } = buildPlaygroundLogDigest({
+    const { feedback, text, fullText } = buildPlaygroundLogDigest({
       session: makePlayground({ events: [], effects: [], console: [] }),
       sessionLog: makeSessionLog(),
     });
@@ -417,7 +452,11 @@ describe("buildPlaygroundLogDigest", () => {
     expect("launchContext" in feedback).toBe(false);
     expect("seatLegality" in feedback).toBe(false);
     expect(text).toContain("Turns: 0 · Events: 0 · Effects: 0");
-    expect(text).toContain("Events (0 total, last 0): none");
+    expect(text).toContain("Events: 0 (attached)");
+    expect(text).toContain("Console: 0 lines (attached)");
+    expect(text).toContain("Effects: 0 (attached)");
+    expect(fullText).toContain("Events (0 total, last 0): none");
+    expect(fullText).toContain("Console (0 total, last 0): silent");
   });
 
   it("flips to the fail-path fields when an error is present", () => {
@@ -507,8 +546,8 @@ describe("buildRealtimeLoopDigest", () => {
     expect(fb.errorTail).toEqual(["watchdog: over budget"]);
   });
 
-  it("keeps the raised tails (100 events / 50 errors / 100 console — grounding step 6)", () => {
-    const { feedback } = buildRealtimeLoopDigest({
+  it("attaches EVERY event / error / console line (was: last 100 / 50 / 100 — now: all 120 / 60 / 120, basis: owner 2026-10-18)", () => {
+    const { feedback, text, fullText } = buildRealtimeLoopDigest({
       realtime: { tickMs: 33, seed: 42 },
       diag: {
         events: Array.from({ length: 120 }, (_, i) => ({ kind: `tick-${i}` })),
@@ -521,13 +560,26 @@ describe("buildRealtimeLoopDigest", () => {
       error: null,
     });
     const fb = feedback as { eventTail?: string[]; errorTail?: string[]; consoleTail?: string[] };
-    expect(fb.eventTail).toHaveLength(100);
-    expect(fb.eventTail![0]).toContain("tick-20"); // last 100 of 120
-    expect(fb.eventTail![99]).toContain("tick-119");
-    expect(fb.errorTail).toHaveLength(50);
-    expect(fb.errorTail![0]).toContain("err-10"); // last 50 of 60
-    expect(fb.consoleTail).toHaveLength(100);
-    expect(fb.consoleTail![0]).toBe("log: c-20"); // last 100 of 120
-    expect(fb.consoleTail![99]).toBe("log: c-119");
+    expect(fb.eventTail).toHaveLength(120);
+    expect(fb.eventTail![0]).toContain("tick-0");
+    expect(fb.eventTail![119]).toContain("tick-119");
+    expect(fb.errorTail).toHaveLength(60);
+    expect(fb.errorTail![0]).toContain("err-0");
+    expect(fb.errorTail![59]).toContain("err-59");
+    expect(fb.consoleTail).toHaveLength(120);
+    expect(fb.consoleTail![0]).toBe("log: c-0");
+    expect(fb.consoleTail![119]).toBe("log: c-119");
+    // The message shows counts only.
+    expect(text).toContain("Loop events: 120 (attached)");
+    expect(text).toContain("Loop errors: 60 (attached)");
+    expect(text).toContain("Frame console: 120 lines (attached)");
+    expect(text).not.toContain("tick-0");
+    expect(text).not.toContain("log: c-0");
+    // The copy text carries every line.
+    expect(fullText).toContain("tick-0");
+    expect(fullText).toContain("tick-119");
+    expect(fullText).toContain("err-0");
+    expect(fullText).toContain("log: c-0");
+    expect(fullText).toContain("log: c-119");
   });
 });
