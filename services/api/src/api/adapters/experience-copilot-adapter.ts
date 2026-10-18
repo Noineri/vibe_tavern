@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
-import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
+import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics, AgentKindSettings } from "@vibe-tavern/db";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -472,6 +472,30 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return this.toThreadWire(thread);
   };
 
+  // ─── Per-kind model settings (SIDECHAT_PLAN SC-0d) ──────────────────────
+
+  /** Any REGISTERED kind is addressable here (no chat-owner restriction — a
+   *  kind's remembered default exists regardless of who owns its threads);
+   *  an unregistered kind is the registry's typed `UnknownAgentKindError`,
+   *  validated FIRST (no store I/O) and mapped by the route to the shared
+   *  400 shape. */
+  private requireRegisteredKind(kindId: string): void {
+    getAgentKind(kindId);
+  }
+
+  agentKindGetSettings = async (kind: string): Promise<AgentKindSettingsWire> => {
+    this.requireRegisteredKind(kind);
+    return this.toKindSettingsWire(await this.stores.agentKindSettings.get(kind));
+  };
+
+  agentKindPatchSettings = async (
+    kind: string,
+    body: AgentKindSettingsPatchRequest,
+  ): Promise<AgentKindSettingsWire> => {
+    this.requireRegisteredKind(kind);
+    return this.toKindSettingsWire(await this.stores.agentKindSettings.patch(kind, body));
+  };
+
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);
     if (!thread) {
@@ -594,6 +618,19 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       toolCallsJson: m.toolCallsJson,
       toolCallId: m.toolCallId,
       createdAt: m.createdAt,
+    };
+  }
+
+  /** Map the db store's kind-settings row (structurally identical to the
+   *  wire shape) into the api-contracts type — field-for-field so the
+   *  nullability contract is explicit (nullable fields stay `null`). */
+  private toKindSettingsWire(s: AgentKindSettings): AgentKindSettingsWire {
+    return {
+      agentKind: s.agentKind,
+      providerProfileId: s.providerProfileId,
+      modelName: s.modelName,
+      defaultProfileId: s.defaultProfileId,
+      updatedAt: s.updatedAt,
     };
   }
 }

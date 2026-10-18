@@ -29,6 +29,12 @@ export type { ProxyProfile } from './proxy-store.js';
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
 
+export { AgentKindSettingsStore } from './agent-kind-settings-store.js';
+export type {
+  AgentKindSettings,
+  AgentKindSettingsUpdate,
+} from './agent-kind-settings-store.js';
+
 export { ChatStore } from './chat-store.js';
 export type {
   Chat,

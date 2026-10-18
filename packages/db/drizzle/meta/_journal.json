@@ -813,6 +813,13 @@
       "when": 1792332436725,
       "tag": "0115_wise_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "6",
+      "when": 1792346233189,
+      "tag": "0116_brave_redwing",
+      "breakpoints": true
     }
   ]
 }

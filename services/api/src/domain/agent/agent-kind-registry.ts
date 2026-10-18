@@ -96,6 +96,14 @@ export function getAgentKind(id: AgentKindId): AgentKind {
   return kind;
 }
 
+/** All registered kinds in registration order — the enumeration seam for
+ *  consumers that need EVERY kind (e.g. the bootstrap payload's per-kind
+ *  settings map, SC-0d). A copy, so callers cannot mutate the registry
+ *  through it. */
+export function listAgentKinds(): readonly AgentKind[] {
+  return [...kinds.values()];
+}
+
 /**
  * Typed kind getter (AS-2b): same lookup as {@link getAgentKind}, but returns
  * `AgentKind<CTX>` so call sites (e.g. the generic assembly calling

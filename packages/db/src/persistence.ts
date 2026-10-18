@@ -1,5 +1,6 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { AgentPlanStore } from './stores/agent-plan-store.js';
+import { AgentKindSettingsStore } from './stores/agent-kind-settings-store.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
 import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CoauthorConnectionSettingsStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, SttListingSnapshotStore, TtsListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, AiInstructionTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
@@ -19,6 +20,7 @@ export interface StoreContainer {
   chatSummaries: ChatSummaryStore;
   presets: PresetStore;
   uiSettings: UiSettingsStore;
+  agentKindSettings: AgentKindSettingsStore;
   lorebooks: LorebookStore;
   scripts: ScriptStore;
   regex: RegexStore;
@@ -76,6 +78,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   const chats = new ChatStore(db);
   await chats.migrateGreetingVariants();
   const characters = new CharacterStore(db, { folder: characterFolder, registry: characterDirectory });
+  const uiSettings = new UiSettingsStore(db);
 
   return {
     db,
@@ -91,7 +94,8 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     traces: new PromptTraceStore(db),
     chatSummaries: new ChatSummaryStore(db, { content }),
     presets: new PresetStore(db, { content }),
-    uiSettings: new UiSettingsStore(db),
+    uiSettings,
+    agentKindSettings: new AgentKindSettingsStore(db, { uiSettings }),
     lorebooks: new LorebookStore(db, { content }),
     scripts: new ScriptStore(db, { content }),
     regex: new RegexStore(db),

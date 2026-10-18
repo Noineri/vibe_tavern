@@ -4,6 +4,14 @@ export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
 export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
 export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
 export {
+  agentKindSettingsSchema,
+  agentKindSettingsPatchSchema,
+} from "./agent-kind-settings-schema.js";
+export type {
+  AgentKindSettingsWire,
+  AgentKindSettingsPatchRequest,
+} from "./agent-kind-settings-schema.js";
+export {
   reviewHunkCountsSchema,
   reviewOutcomeSchema,
   reviewTargetRecordSchema,

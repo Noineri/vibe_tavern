@@ -1,11 +1,8 @@
-import { Hono, type Context, type TypedResponse } from "hono";
+import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { ExperienceCopilotRuntimeApi } from "../contract/runtime-api.js";
-import {
-  UnknownAgentKindError,
-  AgentKindNotChatOwnedError,
-} from "../../domain/agent/agent-kind-registry.js";
+import { mapAgentKindError } from "./agent-kind-error-map.js";
 
 /**
  * Chat-owner agent-session lifecycle routes (SIDECHAT_PLAN SC-0b) — the
@@ -25,23 +22,10 @@ import {
  * DomainError the app-level handler maps). The per-thread routes
  * (`/api/experience-copilot/:threadId/...`) are owner-agnostic and unchanged:
  * a chat-owned thread is served by them exactly like a script-owned one.
- */
-
-/** Map the registry's kind errors to the shared 400 JSON shape; any other
- *  error (including the adapter's `NotFound` DomainErrors) propagates to the
- *  app-level handler unchanged — `null` means "not mine".
  *
- *  SC-0c: the return is the precise `c.json` TypedResponse, NOT a bare
- *  `Response` — hono's `MergeTypedResponse` maps a bare `Response` member to
- *  the untyped fallback, which collapses the whole endpoint's hc `json()`
- *  to `unknown` and makes a typed web client impossible without a cast.
- *  Annotation-only (erased at runtime — behavior byte-identical). */
-function mapAgentKindError(c: Context, err: unknown): TypedResponse<{ error: string; code: string }, 400, "json"> | null {
-  if (err instanceof UnknownAgentKindError || err instanceof AgentKindNotChatOwnedError) {
-    return c.json({ error: err.message, code: err.code }, 400);
-  }
-  return null;
-}
+ * The registry-error → 400 mapping is the shared {@link mapAgentKindError}
+ * (agent-kind-error-map.ts, also used by the SC-0d kind-settings routes).
+ */
 
 export function createAgentChatSessionsRoutes(runtime: ExperienceCopilotRuntimeApi) {
   return new Hono()

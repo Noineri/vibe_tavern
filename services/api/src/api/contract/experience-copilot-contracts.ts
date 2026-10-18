@@ -5,7 +5,7 @@
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -118,4 +118,24 @@ export interface ExperienceCopilotRuntimeApi {
 	 * {@link experienceCopilotStartNewSession}. Delegates to the ER-3 store's
 	 * `startNewChatSession` (single-tx archive-then-insert). */
 	agentChatStartNewSession: (chatId: string, branchId: string, kind: string, title?: string) => Promise<ExperienceCopilotThreadWire>;
+
+	// ─── Per-kind model settings (SIDECHAT_PLAN SC-0d) ─────────────────────
+	//
+	// The kind-scoped model binding + profile default behind
+	// `GET/PATCH /api/agent/kinds/:kind/settings`. Serves EVERY registered
+	// kind (no chat-owner restriction — a kind's remembered default exists
+	// regardless of who owns its threads). The binding is a UI default only:
+	// the stream and compaction keep taking provider/model from each request.
+
+	/** One kind's effective settings: the kind's row, or the legacy
+	 *  `ui_settings` copilot pair when the kind has no row yet (owner
+	 *  decision 2 — nobody loses their choice). Validates the kind through
+	 *  the registry first (an unregistered kind is the 400-class
+	 *  `UnknownAgentKindError`, no store I/O). */
+	agentKindGetSettings: (kind: string) => Promise<AgentKindSettingsWire>;
+
+	/** Upsert one kind's row: only the fields the body carries are written
+	 *  (absent keeps the stored value, `null` clears it). Same registry
+	 *  validation as {@link agentKindGetSettings}. */
+	agentKindPatchSettings: (kind: string, body: AgentKindSettingsPatchRequest) => Promise<AgentKindSettingsWire>;
 }

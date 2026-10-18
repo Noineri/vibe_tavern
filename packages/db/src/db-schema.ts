@@ -1976,6 +1976,26 @@ export const agentPlans = sqliteTable('agent_plans', {
   scriptIdUnique: uniqueIndex('idx_agent_plans_script').on(table.scriptId),
 }));
 
+// ─── agentKindSettings (SIDECHAT_PLAN SC-0d) ────────────────────────────────
+// Per-agent-kind model binding + profile default: one row per kind id, the
+// UI default a kind's shell boots with (the stream still takes its actual
+// provider/model from each request — this is a remembered choice, not a
+// server-side override). provider_profile_id follows the ui_settings
+// dangling-policy precedent (copilot_provider_id & co.): NO FK — a deleted
+// profile leaves a dangling id the adapter/UI resolves with a fallback
+// rather than blocking the delete. Rows are born only from user PATCHes;
+// a kind with no row reads the legacy ui_settings copilot pair (owner
+// decision: nobody loses their choice; no seed SQL) — see the store.
+// default_profile_id is SC-0f's column: stored here, consumed by SC-0f's
+// stream profile resolution.
+export const agentKindSettings = sqliteTable('agent_kind_settings', {
+  agentKind: text('agent_kind').primaryKey(),
+  providerProfileId: text('provider_profile_id'),
+  modelName: text('model_name'),
+  defaultProfileId: text('default_profile_id'),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────
 // Tombstone marker for a built-in experience the user explicitly deleted or
 // unlinked. `seedBuiltinExperiences` (BE-3) is create-or-return WITHOUT memory

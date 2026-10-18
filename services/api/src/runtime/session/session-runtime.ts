@@ -1,4 +1,4 @@
-import { type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
+import { type StoreContainer, type PromptPreset, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
@@ -29,8 +29,8 @@ import { createSessionLoreDelegate } from "./session-runtime-lore-delegate.js";
 import { createSessionTrackerDelegate } from "./session-runtime-tracker-delegate.js";
 import { buildChatModeLoaders } from "./session-runtime-chat-mode-loaders.js";
 import { applyCoauthorDraft } from "./session-runtime-coauthor-apply.js";
-import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
+import { buildBootstrapState } from "./session-runtime-bootstrap.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
@@ -219,38 +219,12 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	// ─── Bootstrap & Snapshot ───────────────────────────────────────────
 
 	async getBootstrapState(): Promise<BootstrapState> {
-		const [userChars, allChats, promptPresets, uiSettings] = await Promise.all([
-			this.stores.characters.listAll(),
-			this.stores.chats.listAll(),
-			this.stores.presets.listAll(),
-			this.stores.uiSettings.get(),
-		]);
-		// Boot into the most-recent NON-coauthor chat so a reload never drops the
-		// user into the co-author surface (F-7). Falls back to the overall
-		// most-recent chat only when no RP chat exists at all.
-		const coauthorIds = new Set(allChats.filter((c) => c.mode === 'coauthor').map((c) => c.id));
-		const initialChatId = pickBootstrapChatId(this.chatOrder.items, (id) => coauthorIds.has(id));
-		const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
-		return {
-			initialChatId,
-			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
-			isFirstRun: allChats.length === 0 && userChars.length === 0,
-			allCharacters: userChars.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				tags: c.tags,
-				avatarAssetId: c.avatarAssetId,
-				avatarFullAssetId: c.avatarFullAssetId,
-				avatarCropJson: c.avatarCropJson,
-				avatarExt: c.avatarExt,
-				avatarFullExt: c.avatarFullExt,
-				updatedAt: c.updatedAt,
-			})),
-			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
-			uiSettings,
-			isArmServer,
-		};
+		return buildBootstrapState({
+			stores: this.stores,
+			chatOrderItems: this.chatOrder.items,
+			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			mapPresetToDto: (p) => this.mapPresetToDto(p),
+		});
 	}
 
 	/**

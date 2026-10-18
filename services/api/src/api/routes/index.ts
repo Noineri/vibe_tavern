@@ -33,6 +33,7 @@ import { createDiceRoutes } from "./dice.js";
 import { createExperienceRoutes } from "./experience.js";
 import { createExperienceCopilotRoutes } from "./experience-copilot.js";
 import { createAgentChatSessionsRoutes } from "./agent-chat-sessions.js";
+import { createAgentKindSettingsRoutes } from "./agent-kind-settings.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -62,6 +63,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createExperienceRoutes(runtime.experience))
     .route("/", createExperienceCopilotRoutes(runtime.experienceCopilot))
     .route("/", createAgentChatSessionsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentKindSettingsRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
