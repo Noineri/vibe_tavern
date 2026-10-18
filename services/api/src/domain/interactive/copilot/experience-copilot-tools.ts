@@ -109,9 +109,11 @@ interface ResolvedExperienceCopilotLaunchContext {
   readonly humanSeatId?: string;
 }
 
-/** A create-only test digest: the model reasons over status, legal actions, a
- *  capped state snapshot, and the console tail; on failure it gets the typed
- *  error code/kind/message to self-correct in the same turn. */
+/** A create-only test digest: the model reasons over status, legal actions,
+ *  the full state snapshot, and the whole console (AS-8e7b, owner
+ *  2026-10-18: everything the script produced, no invented economies); on
+ *  failure it gets the typed error code/kind/message to self-correct in the
+ *  same turn. */
 export interface ExperienceCopilotRunTestDigest {
   readonly ok: boolean;
   /** Session status after create (ok path). */
@@ -123,9 +125,12 @@ export interface ExperienceCopilotRunTestDigest {
   /** Per-seat legality matrix (one entry per roster participant + the current
    *  turn owners) for the resolved sandbox or capability-derived roster. */
   readonly seatLegality?: ExperienceSeatLegalityMatrix;
-  /** Compact JSON snapshot of the projected state (capped). */
+  /** Full JSON snapshot of the projected state — never capped (AS-8e7b,
+   *  owner 2026-10-18: everything the script produced, no invented
+   *  economies). */
   readonly stateSummary?: string;
-  /** Last few flattened console entries (`level: args…`). */
+  /** Every flattened console entry (`level: args…`), in order — never capped
+   *  (AS-8e7b, owner 2026-10-18: everything the script produced). */
   readonly consoleTail?: string[];
   /** The exact sandbox context used, or the capability-derived fallback. */
   readonly launchContext?: ExperienceCopilotLaunchContextDigest;
@@ -138,7 +143,9 @@ export interface ExperienceCopilotRunTestDigest {
 }
 
 /** A bounded-simulation digest: stop reason + iteration count tell the model
- *  whether the rules auto-terminate or stall; the console tail aids debugging. */
+ *  whether the rules auto-terminate or stall; the full console aids debugging
+ *  (AS-8e7b, owner 2026-10-18: everything the script produced, no invented
+ *  economies). */
 export interface ExperienceCopilotRunSimulateDigest {
   readonly ok: boolean;
   /** Why the simulation stopped (`completed`/`awaiting_human`/`no_legal_action`/…). */
@@ -214,15 +221,6 @@ export interface ExperienceCopilotAskResult {
   readonly recommended?: string;
 }
 
-// ─── Tunables ─────────────────────────────────────────────────────────────────
-
-/** Max entries retained in a digest's `consoleTail` (the model needs recent
- *  output, not the full trace). */
-const CONSOLE_TAIL_MAX = 20;
-/** Max chars of the projected state kept in `stateSummary` (avoids dumping the
- *  whole 256KB state into the model context). */
-const STATE_SUMMARY_MAX = 1500;
-
 // ─── SS-4B trust gate (SCRIPT_SAFETY_PLAN decisions 10/13) ───────────────────
 //
 // An imported script that has never been enabled is UNTRUSTED: its code must
@@ -243,25 +241,26 @@ const NOT_VALIDATED_MARKER = "not validated: script is imported and not yet enab
 
 // ─── Digest helpers ──────────────────────────────────────────────────────────
 
-/** Flatten the last {@link CONSOLE_TAIL_MAX} console entries to `level: args`
- *  strings. Structural typing on the entry shape avoids importing the sandbox
- *  type transitively. */
-function consoleTail(
+/** Format EVERY console entry as a `level: args` string, in order — the
+ *  digest's `consoleTail` field carries the whole console the script produced,
+ *  not a tail (AS-8e7b, owner 2026-10-18: everything the script produced, no
+ *  invented economies). Structural typing on the entry shape avoids importing
+ *  the sandbox type transitively. */
+function formatConsole(
   entries: ReadonlyArray<{ readonly level: string; readonly args: readonly string[] }>,
 ): string[] {
-  return entries.slice(-CONSOLE_TAIL_MAX).map((e) => `${e.level}: ${e.args.join(" ")}`);
+  return entries.map((e) => `${e.level}: ${e.args.join(" ")}`);
 }
 
-/** Compact JSON snapshot of an unknown projected state, capped to keep the
- *  model context bounded. Falls back to a placeholder for unserializable state. */
+/** Full JSON snapshot of an unknown projected state — never capped, so the
+ *  model sees everything the script produced (AS-8e7b, owner 2026-10-18: no
+ *  invented economies). Falls back to a placeholder for unserializable state. */
 function summarizeState(state: unknown): string {
-  let s: string;
   try {
-    s = JSON.stringify(state) ?? String(state);
+    return JSON.stringify(state) ?? String(state);
   } catch {
     return "(unserializable state)";
   }
-  return s.length > STATE_SUMMARY_MAX ? `${s.slice(0, STATE_SUMMARY_MAX)}\u2026` : s;
 }
 
 function launchContextDigest(
@@ -478,7 +477,7 @@ export function buildExperienceCopilotTools(opts: {
         "Run a CREATE-ONLY test of the CURRENT working rules buffer: discover the definition, create the initial state, project it for one seat, and list the legal actions. " +
         "It runs with the Try-it panel's roster, grants, settings and seed when the user has the panel open; otherwise with the default roster derived from the declared capabilities (one human seat, plus an AI seat for participants + model). " +
         "The digest's `launchContext` says which (`source: \"sandbox\"` or `source: \"derived\"`) and lists the seats, grants and seed. " +
-        "Returns a condensed digest: status, revision, the legal action types for the projected seat (the user's seat, or the first human seat), `seatLegality` (which seats can act — who owns the turn), a capped state snapshot and the console tail. " +
+        "Returns a condensed digest: status, revision, the legal action types for the projected seat (the user's seat, or the first human seat), `seatLegality` (which seats can act — who owns the turn), the full state snapshot and the full console. " +
         "On failure, returns the typed error code/kind/message to self-correct. Read-only — it NEVER mutates the working buffers. " +
         "Use it after every rules edit to confirm the rules bootstrap and that exactly the right seat can act.",
       inputSchema: z.object({}),
@@ -525,7 +524,7 @@ export function buildExperienceCopilotTools(opts: {
             legalActionTypes: result.data.projection.actions.map((a) => a.type),
             seatLegality: result.data.seatLegality,
             stateSummary: summarizeState(result.data.projection.state),
-            consoleTail: consoleTail(result.data.console),
+            consoleTail: formatConsole(result.data.console),
             launchContext: digestContext,
           };
         }
@@ -535,7 +534,7 @@ export function buildExperienceCopilotTools(opts: {
           errorCode: result.error.code,
           errorKind: result.error.kind,
           errorMessage: result.error.message,
-          consoleTail: consoleTail(result.error.console),
+          consoleTail: formatConsole(result.error.console),
           launchContext: digestContext,
         };
       },
@@ -545,7 +544,7 @@ export function buildExperienceCopilotTools(opts: {
       description:
         "Run a bounded SIMULATION of the CURRENT working rules buffer: discover, create, then auto-advance script-controlled seats via the real `choose` until a human/model boundary, a terminal status, no legal action, or a host bound is reached. " +
         "It runs with the same roster, grants, settings and seed as run_test (see the digest's `launchContext`). " +
-        "Returns a diagnostic digest (stop reason, iteration count, status, console tail, `launchContext`). " +
+        "Returns a diagnostic digest (stop reason, iteration count, status, the full console, `launchContext`). " +
         "`no_legal_action` means no seat in the echoed roster can act — a real stall only when that roster has seats. " +
         "Read-only — it NEVER mutates the working buffers. " +
         "Use it once script-controlled seats or automated flow exist, to check that the rules terminate or hand the turn back to a human.",
@@ -587,7 +586,7 @@ export function buildExperienceCopilotTools(opts: {
             iterations: result.data.iterations,
             status: result.data.status,
             revision: result.data.revision,
-            consoleTail: consoleTail(result.data.console),
+            consoleTail: formatConsole(result.data.console),
             launchContext: digestContext,
           };
         }
@@ -597,7 +596,7 @@ export function buildExperienceCopilotTools(opts: {
           errorCode: result.error.code,
           errorKind: result.error.kind,
           errorMessage: result.error.message,
-          consoleTail: consoleTail(result.error.console),
+          consoleTail: formatConsole(result.error.console),
           launchContext: digestContext,
         };
       },

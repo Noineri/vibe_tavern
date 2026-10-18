@@ -141,6 +141,40 @@ context.experience.register({
 });
 `;
 
+/** AS-8e7b no-caps fixture (owner 2026-10-18: the assistant sees everything
+ *  the script produced — no invented economies): create() logs 30 console
+ *  lines and returns a state whose JSON runs past 2 000 chars, so a digest
+ *  that still capped either would visibly drop content. */
+const VERBOSE_RULES = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "verbose", name: "Verbose" },
+  capabilities: [],
+  create() {
+    for (var i = 1; i <= 30; i++) {
+      console.log("boot line " + i);
+    }
+    var chunk = "";
+    for (var j = 0; j < 25; j++) {
+      chunk = chunk + "0123456789abcdefghij"; // 25 × 20 = 500-char chunk
+    }
+    var blob = "";
+    for (var k = 0; k < 5; k++) {
+      blob = blob + chunk; // 5 × 500 = 2 500 chars → state JSON ≈ 2.5 KB
+    }
+    return { blob: blob, marker: "verbose-state" };
+  },
+  project(context) { return context.state; },
+  actions() { return [{ type: "noop", label: "No-op" }]; },
+  reduce(context) { return { state: context.state, status: "active", events: [] }; },
+});
+`;
+
+/** The exact 2 500-char blob VERBOSE_RULES' create() builds (the chunk string
+ *  repeated 125 times) — lets the no-caps pin assert stateSummary is the
+ *  COMPLETE JSON.stringify of the projected state, not a capped prefix. */
+const VERBOSE_BLOB = "0123456789abcdefghij".repeat(125);
+
 /** Shared tool-execution context stub (the tools ignore it). */
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
 
@@ -354,6 +388,23 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
     expect(edited.proposed).toContain("Tally");
   });
 
+  test("returns the WHOLE 30-entry console and the FULL state JSON — no caps (AS-8e7b)", async () => {
+    // Owner 2026-10-18: the assistant sees everything the script produced.
+    // The old caps kept the last 20 console entries and 1 500 state chars.
+    const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
+    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+
+    expect(digest.ok).toBe(true);
+    // All 30 create() console lines, in order — no 20-entry tail.
+    expect(digest.consoleTail).toEqual(
+      Array.from({ length: 30 }, (_, i) => `log: boot line ${i + 1}`),
+    );
+    // The ~2.5 KB state JSON comes back COMPLETE: byte-equal to the full
+    // stringify of the projected state, with no trailing «…» truncation mark.
+    expect(digest.stateSummary).toBe(JSON.stringify({ blob: VERBOSE_BLOB, marker: "verbose-state" }));
+    expect(digest.stateSummary?.endsWith("\u2026")).toBe(false);
+  });
+
   test("derived context is echoed with the default seats/grants and per-seat legality", async () => {
     const tools = buildExperienceCopilotTools({ rules: REFERENCE_ROUND_RULES });
     const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
@@ -449,6 +500,18 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
     expect(digest.iterations).toBe(1);
     expect(digest.stopReason).toBe("awaiting_human");
     expect(digest.launchContext?.source).toBe("sandbox");
+  });
+
+  test("returns the WHOLE 30-entry console — no tail cap (AS-8e7b)", async () => {
+    // Owner 2026-10-18: the assistant sees everything the script produced —
+    // the simulation digest carries every create() line, not the last 20.
+    const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
+    const digest = await tools.run_simulate.execute({}, ctx) as ExperienceCopilotRunSimulateDigest;
+
+    expect(digest.ok).toBe(true);
+    expect(digest.consoleTail).toEqual(
+      Array.from({ length: 30 }, (_, i) => `log: boot line ${i + 1}`),
+    );
   });
 });
 

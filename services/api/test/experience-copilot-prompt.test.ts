@@ -587,7 +587,7 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
     expect(result.systemMessage).not.toContain("Proposal review outcomes");
     expect(result.systemMessage).not.toContain("Buffer save status");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("667bf04ba00946edf6a989d4df14b7d3723fd3d8dd44300c448dc4e2d6202aea");
+      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
   });
 });
 
@@ -645,8 +645,10 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // Re-captured again (2026-10-11, node:vm docs-honesty unit): the
     // interactive-rules.md "Sandbox bounds" section became "Runtime surface
     // bounds" — security-implying wording removed; surface facts unchanged.
+    // Re-captured again (2026-10-18, AS-8e7b, owner: no invented economies):
+    // user-flow.md's Developer-diagnostics digest says «console», not «console tail».
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("667bf04ba00946edf6a989d4df14b7d3723fd3d8dd44300c448dc4e2d6202aea");
+      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -774,7 +776,7 @@ describe("assembleExperienceCopilotPrompt — agent plan section (PM-3)", () => 
     });
     expect(result.systemMessage).not.toContain("# Plan");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("667bf04ba00946edf6a989d4df14b7d3723fd3d8dd44300c448dc4e2d6202aea");
+      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
   });
 
   test("the plan section renders task statuses and only the active task body", async () => {
@@ -841,7 +843,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // docs-honesty unit): interactive-rules.md runtime-surface rewording —
     // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("667bf04ba00946edf6a989d4df14b7d3723fd3d8dd44300c448dc4e2d6202aea");
+      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
