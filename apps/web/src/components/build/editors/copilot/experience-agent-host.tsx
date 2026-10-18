@@ -433,6 +433,9 @@ registerAgentHost({
   // The toggleable tool keys of the experience assistant profiles — the shared
   // profile modal reads them from here (no kind literal in the shell).
   toolKeys: COPILOT_TOOL_KEYS,
+  // SC-0g: the experience assistant's profile choice is script-owned (the
+  // modal's single "use profile" action writes scripts.copilot_profile_id).
+  profileAssignment: { target: "script" },
   bufferSpecs: [
     { id: "rules", labelKey: "agent_rules", language: "javascript" },
     { id: "visual", labelKey: "agent_visual", language: "xml" },

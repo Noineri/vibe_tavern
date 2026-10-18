@@ -7,7 +7,9 @@ import { Icons } from "../icons.js";
 import { TextInput } from "../text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
+import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
+import { getAgentChatSettings, patchAgentChatSettings } from "../../../api/agent-chat-settings-api.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
@@ -70,6 +72,11 @@ type DetailMode = "view" | "edit" | "create";
  */
 export interface AgentProfileModalProps {
 	scriptId: string;
+	/** SC-0g: the chat whose own profile choice a chat-target host writes.
+	 *  Required when the host's `profileAssignment` targets `"chat"`
+	 *  (no production chat host exists yet — SC-13; tests pass a fixture
+	 *  chat id). Ignored by script-target hosts. */
+	chatId?: string;
 	/** The agent kind whose profiles this instance manages (AS-8b) — drives
 	 *  the kind-filtered list and, through the registered host descriptor, the
 	 *  toggleable-tool key set. */
@@ -80,13 +87,23 @@ export interface AgentProfileModalProps {
 	onClose: () => void;
 }
 
-export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
+export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
 	const { t } = useT();
-	const toolKeys = getAgentHost(agentKind).toolKeys;
+	const host = getAgentHost(agentKind);
+	const toolKeys = host.toolKeys;
+	// SC-0g: the modal renders its single-action (script) or dual-action
+	// (chat) variant purely from the host descriptor — no kind literal here.
+	const isChatTarget = host.profileAssignment.target === "chat";
 
 	// Mirror the resolver's null→builtin fallback so the active row is highlighted
 	// even when nothing has been explicitly assigned yet.
 	const activeProfileId = assignedProfileId ?? BUILTIN_PROFILE_ID;
+
+	// SC-0g (chat-target hosts only): the chat row's own choice, read via the
+	// SC-0f client on open (null = no override — the kind default applies).
+	// The kind-wide default comes from the bootstrap kind-settings map (SC-0e).
+	const [chatProfileId, setChatProfileId] = useState<string | null>(null);
+	const kindDefaultProfileId = useBootstrapStore((s) => s.data?.agentKindSettings?.[agentKind]?.defaultProfileId) ?? null;
 
 	const profiles = useCopilotProfileStore((s) => s.profiles);
 	const isLoading = useCopilotProfileStore((s) => s.isLoading);
@@ -106,6 +123,15 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 	useEffect(() => {
 		if (isOpen) {
 			void loadProfiles(agentKind);
+			// SC-0g: a chat-target host reads the chat row's own choice on open
+			// (a missing row resolves to null — no override). A failed read
+			// keeps null (the kind default applies); writes still surface errors.
+			if (isChatTarget && chatId !== undefined) {
+				void getAgentChatSettings(chatId, agentKind).then(
+					(w) => setChatProfileId(w.profileId),
+					() => setChatProfileId(null),
+				);
+			}
 		}
 		if (!isOpen) {
 			setDetailMode("view");
@@ -113,8 +139,9 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 			setConfirmDeleteId(null);
 			setConfirmDiscardOpen(false);
 			setSkillManagerOpen(false);
+			setChatProfileId(null);
 		}
-	}, [isOpen, loadProfiles]);
+	}, [isOpen, loadProfiles, isChatTarget, chatId, agentKind]);
 
 	const selected = profiles.find((p) => p.id === selectedId) ?? null;
 	const isSelectedActive = selected !== null && selected.id === activeProfileId;
@@ -229,6 +256,40 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 		}
 	};
 
+	// SC-0g (chat-target hosts only): the two writes — the (chat, kind) row
+	// ("use here") and the kind default ("use by default"). Built-in writes
+	// null on both (clear the override / clear the default), exactly like the
+	// script path's unassign. Failures reuse the assignment error copy.
+	const isSelectedHere = selected !== null && (selected.id === BUILTIN_PROFILE_ID ? chatProfileId === null : selected.id === chatProfileId);
+	const isSelectedDefault = selected !== null && (selected.id === BUILTIN_PROFILE_ID ? kindDefaultProfileId === null : selected.id === kindDefaultProfileId);
+
+	const handleAssignHere = async () => {
+		if (!selected || isSelectedHere || chatId === undefined) return;
+		try {
+			const updated = await patchAgentChatSettings(chatId, agentKind, {
+				profileId: selected.id === BUILTIN_PROFILE_ID ? null : selected.id,
+			});
+			setChatProfileId(updated.profileId);
+			onClose();
+		} catch {
+			toast.error(t("copilot_profile_assign_failed"));
+		}
+	};
+
+	const handleAssignDefault = async () => {
+		if (!selected || isSelectedDefault) return;
+		try {
+			// The action merges the returned row into the bootstrap
+			// kind-settings map, so sibling subscribers update immediately.
+			await patchAgentKindSettingsAction(agentKind, {
+				defaultProfileId: selected.id === BUILTIN_PROFILE_ID ? null : selected.id,
+			});
+			onClose();
+		} catch {
+			toast.error(t("copilot_profile_assign_failed"));
+		}
+	};
+
 	const close = () => {
 		if (dirty) {
 			setConfirmDiscardOpen(true);
@@ -287,7 +348,12 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 						profiles={profiles}
 						isLoading={isLoading}
 						selectedId={selectedId}
-						activeProfileId={activeProfileId}
+						activeProfileId={isChatTarget ? chatProfileId : activeProfileId}
+						// SC-0g: script hosts leave this undefined (no extra badge);
+						// a chat-target host marks the kind-default row. The null→builtin
+						// mirror matches the script assignment's (no default row =
+						// the built-in seed is the default).
+						defaultProfileId={isChatTarget ? kindDefaultProfileId : undefined}
 						detailMode={detailMode}
 						t={t}
 						onSelect={(id) => handleSelect(id, openDetail)}
@@ -321,7 +387,9 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 					)
 				}
 				footer={
-					<div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
+					<div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
+						{/* SC-0g: flex-wrap budgets the longer RU action pair (AD-022)
+						on narrow mobile sheets — desktop renders the same single row. */}
 						{isEditing ? (
 							<>
 								<button
@@ -339,6 +407,45 @@ export function AgentProfileModal({ scriptId, agentKind, assignedProfileId, isOp
 									onClick={() => { void handleSave(); }}
 								>
 									{t("copilot_profile_save")}
+								</button>
+							</>
+						) : isChatTarget ? (
+							// SC-0g: chat-target hosts write two targets — the (chat, kind)
+							// row ("use here") and the kind default ("use by default").
+							// Each button swaps to its state label (the same action→state
+							// swap the script button uses) when the selected profile
+							// already holds that state. Same primitives, same classes —
+							// only the targets differ.
+							<>
+								<button
+									type="button"
+									data-testid="copilot-profile-assign-here-btn"
+									disabled={!selected || isSelectedHere}
+									className={cn(
+										"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
+										isSelectedHere
+											? "cursor-default bg-success text-on-accent"
+											: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
+									)}
+									onClick={() => { void handleAssignHere(); }}
+								>
+									{isSelectedHere && <Icons.Check className="h-3.5 w-3.5" />}
+									{isSelectedHere ? t("copilot_profile_active_here") : t("copilot_profile_use_here")}
+								</button>
+								<button
+									type="button"
+									data-testid="copilot-profile-assign-default-btn"
+									disabled={!selected || isSelectedDefault}
+									className={cn(
+										"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
+										isSelectedDefault
+											? "cursor-default bg-success text-on-accent"
+											: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
+									)}
+									onClick={() => { void handleAssignDefault(); }}
+								>
+									{isSelectedDefault && <Icons.Check className="h-3.5 w-3.5" />}
+									{isSelectedDefault ? t("copilot_profile_default") : t("copilot_profile_use_by_default")}
 								</button>
 							</>
 						) : (
@@ -371,7 +478,13 @@ interface ProfileListProps {
 	profiles: CopilotProfile[];
 	isLoading: boolean;
 	selectedId: string | null;
-	activeProfileId: string;
+	// SC-0g: null = no here-choice marked (a chat-target host with no chat-row
+	// override); the script path always passes a non-null id.
+	activeProfileId: string | null;
+	// SC-0g: the kind-default profile id — undefined = script host (no badge).
+	// A chat-target host passes the raw kind default (possibly null); null
+	// marks the built-in seed, mirroring the script null→builtin fallback.
+	defaultProfileId?: string | null;
 	detailMode: DetailMode;
 	t: TFunc;
 	onSelect: (id: string) => void;
@@ -380,7 +493,7 @@ interface ProfileListProps {
 	onDelete: (id: string) => void;
 }
 
-function ProfileList({ profiles, isLoading, selectedId, activeProfileId, detailMode, t, onSelect, onAdd, onEdit, onDelete }: ProfileListProps) {
+function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, onSelect, onAdd, onEdit, onDelete }: ProfileListProps) {
 	if (isLoading) {
 		return <div className="p-4 font-ui text-[13px] text-t3">{t("copilot_profile_loading")}</div>;
 	}
@@ -426,6 +539,15 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, detailM
 										{p.isBuiltIn && (
 											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
 												{t("copilot_profile_built_in")}
+											</span>
+										)}
+										{/* SC-0g: chat-target hosts mark the kind-default row (a
+										// second authored pill, same canon shape as built-in).
+										// Script hosts leave defaultProfileId undefined —
+										// no badge, rows byte-identical to before. */}
+										{defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID) && (
+											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+												{t("copilot_profile_default")}
 											</span>
 										)}
 									</div>

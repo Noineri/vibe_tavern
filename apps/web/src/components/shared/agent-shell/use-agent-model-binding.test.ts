@@ -135,6 +135,9 @@ beforeAll(async () => {
 			emptyTitle: "agent_title",
 		},
 		toolKeys: [],
+		// SC-0g: both script-owned hosts are `script`-assigned (the field is
+		// required on every descriptor).
+		profileAssignment: { target: "script" },
 		bufferSpecs: [],
 		transport: experienceTransport,
 		buildSendOptions: () => ({}),
@@ -150,6 +153,9 @@ beforeAll(async () => {
 			emptyTitle: "agent_title",
 		},
 		toolKeys: [],
+		// SC-0g: both script-owned hosts are `script`-assigned (the field is
+		// required on every descriptor).
+		profileAssignment: { target: "script" },
 		bufferSpecs: [],
 		transport: experienceTransport,
 		buildSendOptions: () => ({}),

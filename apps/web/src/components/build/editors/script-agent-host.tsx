@@ -610,6 +610,9 @@ registerAgentHost({
   // The toggleable tool keys of the script assistant profiles — the shared
   // profile modal reads them from here (no kind literal in the shell).
   toolKeys: SCRIPT_AGENT_TOOL_KEYS,
+  // SC-0g: the script assistant's profile choice is script-owned (the
+  // modal's single "use profile" action writes scripts.copilot_profile_id).
+  profileAssignment: { target: "script" },
   bufferSpecs: [
     { id: "code", labelKey: "script_code_label", language: "javascript" },
   ],

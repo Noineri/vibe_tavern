@@ -25,6 +25,8 @@ useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
+import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotProfileCreate, type CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
@@ -83,6 +85,28 @@ const updateCopilotProfile = mock(async (_id: string, _input: CopilotProfileUpda
 const deleteCopilotProfile = mock(async (_id: string) => undefined);
 const setCopilotProfile = mock(async (_scriptId: string, _profileId: string | null) => undefined);
 
+// SC-0g: the chat-variant wiring — the SC-0f chat-row client and the SC-0d
+// kind-default action (both mocked; the modal's two buttons pin their targets).
+const getAgentChatSettings = mock(async (_chatId: string, _kind: string) => ({
+	chatId: _chatId,
+	agentKind: _kind,
+	profileId: null as string | null,
+	updatedAt: "" as string | null,
+}));
+const patchAgentChatSettings = mock(async (_chatId: string, _kind: string, _patch: { profileId?: string | null }) => ({
+	chatId: _chatId,
+	agentKind: _kind,
+	profileId: _patch.profileId ?? null,
+	updatedAt: "",
+}));
+const patchAgentKindSettingsAction = mock(async (_kind: string, _patch: { defaultProfileId?: string | null }) => ({
+	agentKind: _kind,
+	providerProfileId: null,
+	modelName: null,
+	defaultProfileId: _patch.defaultProfileId ?? null,
+	updatedAt: "",
+}));
+
 mock.module("../../../api/copilot-profile-api.js", () => ({
 	...realProfileApi,
 	listCopilotProfiles,
@@ -91,6 +115,9 @@ mock.module("../../../api/copilot-profile-api.js", () => ({
 	deleteCopilotProfile,
 	setCopilotProfile,
 }));
+
+const realChatSettingsApi = await import("../../../api/agent-chat-settings-api.js");
+const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 
 const SKILL_CATALOG = {
 	entries: [
@@ -105,6 +132,17 @@ mock.module("../../../api/copilot-skill-api.js", () => ({
 	readCopilotSkill: mock(),
 	importCopilotSkills: mock(),
 	deleteCopilotSkill: mock(),
+}));
+
+mock.module("../../../api/agent-chat-settings-api.js", () => ({
+	...realChatSettingsApi,
+	getAgentChatSettings,
+	patchAgentChatSettings,
+}));
+
+mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
+	...realBootstrapActions,
+	patchAgentKindSettingsAction,
 }));
 
 // MasterDetailModal passthrough (render master + detail + footer + headerActions flat).
@@ -148,6 +186,51 @@ mock.module("../destructive-confirm-modal.js", () => ({
 	),
 }));
 
+// SC-0g: the chat-variant fixture — no production chat-owned host exists yet
+// (SC-13 registers the first), so the chat branch is exercised with a fixture
+// descriptor whose profileAssignment targets "chat". Nothing chat-kind-
+// specific is hardcoded in the modal; the variant renders purely from this field.
+const CHAT_KIND = "sc0g-chat";
+const CHAT_ID = "chat-1";
+
+const CHAT_BUILTIN: CopilotProfile = {
+	id: "builtin",
+	name: "Sidechat Authoring",
+	isBuiltIn: true,
+	basePrompt: "You author sidechat assistants.",
+	toolSet: { ask_user: true },
+	agentKind: CHAT_KIND,
+};
+
+const CHAT_HERE: CopilotProfile = {
+	id: "cprof_here",
+	name: "Here choice",
+	isBuiltIn: false,
+	basePrompt: "You help here.",
+	toolSet: { ask_user: true },
+	agentKind: CHAT_KIND,
+};
+
+const CHAT_DEFAULT: CopilotProfile = {
+	id: "cprof_default",
+	name: "Default choice",
+	isBuiltIn: false,
+	basePrompt: "You help by default.",
+	toolSet: { ask_user: true },
+	agentKind: CHAT_KIND,
+};
+
+const CHAT_PROFILES = [CHAT_BUILTIN, CHAT_HERE, CHAT_DEFAULT];
+
+function chatSettingsRow(profileId: string | null): {
+	chatId: string;
+	agentKind: string;
+	profileId: string | null;
+	updatedAt: string | null;
+} {
+	return { chatId: CHAT_ID, agentKind: CHAT_KIND, profileId, updatedAt: "" };
+}
+
 let AgentProfileModal: typeof import("./AgentProfileModal.js").AgentProfileModal;
 beforeAll(async () => {
 	// The modal reads the toggleable tool keys from the registered host
@@ -155,6 +238,25 @@ beforeAll(async () => {
 	// file never unregisters them — the worker isolates the module registry).
 	await import("../../build/editors/copilot/experience-agent-host.js");
 	await import("../../build/editors/script-agent-host.js");
+	// SC-0g: the chat-target fixture host (see above — no production chat
+	// host exists yet). Registered once, never unregistered, like the real
+	// hosts above.
+	const { getAgentHost, registerAgentHost } = await import("../../../lib/agent-host-registry.js");
+	registerAgentHost({
+		kind: CHAT_KIND,
+		i18n: {
+			title: "agent_title",
+			placeholder: "agent_input_placeholder",
+			loading: "agent_loading",
+			emptyTitle: "agent_title",
+		},
+		toolKeys: ["ask_user"],
+		profileAssignment: { target: "chat" },
+		bufferSpecs: [],
+		transport: getAgentHost("experience").transport,
+		buildSendOptions: () => ({}),
+		recordProposalRenderers: {},
+	});
 	({ AgentProfileModal } = await import("./AgentProfileModal.js"));
 });
 
@@ -171,16 +273,62 @@ beforeEach(() => {
 	updateCopilotProfile.mockResolvedValue(USER);
 	deleteCopilotProfile.mockResolvedValue(undefined);
 	setCopilotProfile.mockResolvedValue(undefined);
+	// SC-0g: the chat-variant wiring starts empty — no chat-row override, no
+	// kind default (the built-in seed is the effective default).
+	getAgentChatSettings.mockReset();
+	getAgentChatSettings.mockResolvedValue(chatSettingsRow(null));
+	patchAgentChatSettings.mockReset();
+	patchAgentChatSettings.mockImplementation(async (_chatId: string, _kind: string, _patch: { profileId?: string | null }) => ({
+		chatId: _chatId,
+		agentKind: _kind,
+		profileId: _patch.profileId ?? null,
+		updatedAt: "",
+	}));
+	patchAgentKindSettingsAction.mockReset();
+	patchAgentKindSettingsAction.mockImplementation(async (_kind: string, _patch: { defaultProfileId?: string | null }) => ({
+		agentKind: _kind,
+		providerProfileId: null,
+		modelName: null,
+		defaultProfileId: _patch.defaultProfileId ?? null,
+		updatedAt: "",
+	}));
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
+	seedKindDefault(null);
 });
 
 afterEach(() => {
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
+	useBootstrapStore.setState({ data: null, personas: null, isLoading: false });
 });
 
-function renderModal(over: { scriptId?: string; agentKind?: string; assignedProfileId?: string | null } = {}) {
+// SC-0g: seed the bootstrap kind-settings map's default for the fixture chat
+// kind (the modal reads it as the "use by default" state).
+function seedKindDefault(defaultProfileId: string | null): void {
+	useBootstrapStore.setState({
+		data: {
+			initialChatId: null,
+			snapshot: null,
+			isFirstRun: false,
+			allCharacters: [],
+			promptPresets: [],
+			uiSettings: wireUiSettings(),
+			agentKindSettings: {
+				[CHAT_KIND]: {
+					agentKind: CHAT_KIND,
+					providerProfileId: null,
+					modelName: null,
+					defaultProfileId,
+					updatedAt: "",
+				},
+			},
+			isArmServer: false,
+		},
+	});
+}
+
+function renderModal(over: { scriptId?: string; agentKind?: string; assignedProfileId?: string | null; chatId?: string } = {}) {
 	const props = {
 		scriptId: "script-1",
 		agentKind: "experience",
@@ -373,5 +521,100 @@ describe("CopilotProfileModal — delete user profile", () => {
 		expect(queryByTestId("confirm-cancel")).toBeDefined();
 		fireEvent.click(getByTestId("confirm-ok"));
 		await waitFor(() => expect(deleteCopilotProfile).toHaveBeenCalledWith("cprof_1"));
+	});
+});
+
+describe("CopilotProfileModal — script modal unchanged (SC-0g)", () => {
+	it("renders the single action only (no chat buttons)", async () => {
+		const { getByTestId, queryByTestId } = renderModal();
+		await flush(getByTestId);
+		expect(getByTestId("copilot-profile-assign-btn")).toBeDefined();
+		expect(queryByTestId("copilot-profile-assign-here-btn")).toBeNull();
+		expect(queryByTestId("copilot-profile-assign-default-btn")).toBeNull();
+	});
+});
+
+describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
+	function renderChatModal(chatProfileId: string | null = null, kindDefault: string | null = null) {
+		listCopilotProfiles.mockResolvedValue(CHAT_PROFILES);
+		getAgentChatSettings.mockResolvedValue(chatSettingsRow(chatProfileId));
+		seedKindDefault(kindDefault);
+		return renderModal({ agentKind: CHAT_KIND, chatId: CHAT_ID, assignedProfileId: null });
+	}
+
+	it("marks the chat row's choice and the kind default", async () => {
+		const { getByTestId } = renderChatModal("cprof_here", "cprof_default");
+		await flush(getByTestId);
+		// The mocked useT returns keys verbatim, so the pills surface as keys.
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_default");
+		// The (mocked) chat-row GET ran for this chat + kind.
+		await waitFor(() => expect(getAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND));
+	});
+
+	it("with no chat-row override nothing is marked here; the null kind default marks the seed", async () => {
+		const { getByTestId } = renderChatModal(null, null);
+		await flush(getByTestId);
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
+	});
+
+	it("each button swaps to its state label when the selection already holds that state", async () => {
+		const { getByTestId } = renderChatModal("cprof_here", "cprof_default");
+		await flush(getByTestId);
+		// Selecting the here-choice: here-button is the state, default-button the action.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_here"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_active_here"));
+		expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_use_by_default");
+		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(true);
+		// Selecting the kind default: the labels flip.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
+		expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_use_here");
+		expect((getByTestId("copilot-profile-assign-default-btn") as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("Use here writes the chat row (user id; built-in clears)", async () => {
+		const { getByTestId, props } = renderChatModal(null, null);
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_here"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-assign-here-btn"));
+		await waitFor(() => expect(patchAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND, { profileId: "cprof_here" }));
+		// The script write is never touched by the chat variant.
+		expect(setCopilotProfile).not.toHaveBeenCalled();
+		expect(props.onClose).toHaveBeenCalled();
+	});
+
+	it("Use here on the built-in seed clears the chat row", async () => {
+		const { getByTestId } = renderChatModal("cprof_here", null);
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-assign-here-btn"));
+		await waitFor(() => expect(patchAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND, { profileId: null }));
+		expect(setCopilotProfile).not.toHaveBeenCalled();
+	});
+
+	it("Use by default writes the kind default (user id; built-in clears)", async () => {
+		const { getByTestId } = renderChatModal(null, null);
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-assign-default-btn"));
+		await waitFor(() => expect(patchAgentKindSettingsAction).toHaveBeenCalledWith(CHAT_KIND, { defaultProfileId: "cprof_default" }));
+		expect(setCopilotProfile).not.toHaveBeenCalled();
+		expect(patchAgentChatSettings).not.toHaveBeenCalled();
+	});
+
+	it("Use by default on the built-in seed clears the kind default", async () => {
+		const { getByTestId } = renderChatModal(null, "cprof_default");
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-assign-default-btn"));
+		await waitFor(() => expect(patchAgentKindSettingsAction).toHaveBeenCalledWith(CHAT_KIND, { defaultProfileId: null }));
+		expect(setCopilotProfile).not.toHaveBeenCalled();
 	});
 });

@@ -288,6 +288,17 @@ export type { CopilotAskAnswerInput, CopilotStreamOpts } from "../api/experience
  *  call. The descriptor fields below carry KEYS, never translated strings. */
 export type AgentI18nKey = keyof Resources["en"];
 
+/**
+ * SC-0g: where a host's assistant-profile choice is written — the single
+ * seam the shared profile modal branches on (no kind literal in the shell).
+ * Script-owned hosts write `scripts.copilot_profile_id` (the modal's
+ * long-standing single action); chat-owned hosts write the (chat, kind)
+ * settings row ("use here") or the kind default ("use by default").
+ * Existing hosts are `script` (adding the field changes no behavior — the
+ * script modal path is byte-identical).
+ */
+export type AgentProfileAssignment = { target: "script" } | { target: "chat" };
+
 /** Everything the generic shell needs to host one agent kind. */
 export interface AgentHostDescriptor {
   kind: AgentKind;
@@ -313,6 +324,10 @@ export interface AgentHostDescriptor {
    *  profile's `toolSet`). The shared profile modal renders its toggles from
    *  here, so it never branches on the kind. */
   toolKeys: readonly string[];
+  /** SC-0g: where this host's profile choice is written — the modal renders
+   *  its single-action (script) or dual-action (chat) variant purely from
+   *  this field, never from a kind literal. */
+  profileAssignment: AgentProfileAssignment;
   bufferSpecs: AgentHostBufferSpec[];
   /** AS-6c-i: the transport — the send/observe API seam. Every agent-turn
    *  call the shell (session load/switch/new/rename, context pins, message

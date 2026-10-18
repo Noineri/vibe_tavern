@@ -37,6 +37,10 @@ function descriptor(kind: string): AgentHostDescriptor {
       emptySub: "agent_subtitle",
     },
     toolKeys: [],
+    // SC-0g: the registry-mechanics fixture is script-owned (the field is
+    // required on every descriptor; the chat target is pinned by the modal's
+    // own fixture in AgentProfileModal.test.tsx).
+    profileAssignment: { target: "script" },
     bufferSpecs: [],
     // AS-6c-i: the transport seam — fixture data mirrors the experience
     // host's delegation to the real client fns (registry-mechanics tests never
@@ -120,6 +124,20 @@ describe("agent-host-registry", () => {
       expect(binding).toEqual({ providerProfileId: "p1", modelName: "m1" });
     } finally {
       unsubscribe();
+    }
+  });
+
+  it("profileAssignment round-trips through the descriptor (SC-0g)", () => {
+    const scriptHost: AgentHostDescriptor = { ...descriptor("sc0g-script"), profileAssignment: { target: "script" } };
+    const chatHost: AgentHostDescriptor = { ...descriptor("sc0g-chat"), profileAssignment: { target: "chat" } };
+    const unsubScript = registerAgentHost(scriptHost);
+    const unsubChat = registerAgentHost(chatHost);
+    try {
+      expect(getAgentHost("sc0g-script").profileAssignment).toEqual({ target: "script" });
+      expect(getAgentHost("sc0g-chat").profileAssignment).toEqual({ target: "chat" });
+    } finally {
+      unsubScript();
+      unsubChat();
     }
   });
 
