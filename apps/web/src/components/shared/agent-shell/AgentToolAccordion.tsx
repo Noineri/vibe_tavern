@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
+import type { AgentKind } from "../../../lib/agent-host-registry.js";
 import { useT } from "../../../i18n/context.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { Icons } from "../icons.js";
@@ -7,6 +8,9 @@ import { AgentActivityCard } from "./AgentActivityCard.js";
 
 export interface AgentToolAccordionProps {
   activities: readonly AgentToolActivity[];
+  /** The host kind driving the shell — passed down so tool cards label
+   *  targets with this host's buffer names. */
+  kind: AgentKind;
   /** True only for the controller's active streamed turn. */
   isSending: boolean;
 }
@@ -16,7 +20,7 @@ export interface AgentToolAccordionProps {
  * stay open as cards arrive; settled and historical groups collapse to their
  * count header until the user opens them locally.
  */
-export function AgentToolAccordion({ activities, isSending }: AgentToolAccordionProps) {
+export function AgentToolAccordion({ activities, kind, isSending }: AgentToolAccordionProps) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(isSending);
 
@@ -48,7 +52,7 @@ export function AgentToolAccordion({ activities, isSending }: AgentToolAccordion
         data-testid="copilot-tool-accordion-body"
       >
         {activities.map((activity) => (
-          <AgentActivityCard key={activity.toolCallId} activity={activity} />
+          <AgentActivityCard key={activity.toolCallId} activity={activity} kind={kind} />
         ))}
       </AnimatedDisclosure>
     </div>

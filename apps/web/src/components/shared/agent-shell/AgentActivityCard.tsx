@@ -1,5 +1,6 @@
 import { cn } from "../../../lib/cn.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
+import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { Icons } from "../icons.js";
 import { useT } from "../../../i18n/context.js";
 
@@ -14,7 +15,14 @@ import { useT } from "../../../i18n/context.js";
  * affordances — the diff review lives in `AgentBufferReviewEditor`
  * (CD-5/CD-6).
  */
-export function AgentActivityCard({ activity }: { activity: AgentToolActivity }) {
+export function AgentActivityCard({
+  activity,
+  kind,
+}: {
+  activity: AgentToolActivity;
+  /** The host kind driving the shell — the target chip names this host's buffer. */
+  kind: AgentKind;
+}) {
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
   // PM-6: plan-tool cards are labelled by i18n, not by their payloads — the
@@ -26,8 +34,16 @@ export function AgentActivityCard({ activity }: { activity: AgentToolActivity })
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
-  const targetText =
-    activity.target === "rules" ? t("agent_rules") : t("agent_visual");
+  // AS-8e4: the target chip names the HOST's buffer (script `code` → the
+  // script host's label, experience rules/visual → theirs) — the shared
+  // shell hardcodes no buffer names. An unlisted target falls back to the
+  // raw target id (never blank). Resolved only for targeted cards: the
+  // label is consumed solely by proposals below.
+  const targetLabelKey =
+    activity.target !== undefined
+      ? getAgentHost(kind).bufferSpecs.find((b) => b.id === activity.target)?.labelKey
+      : undefined;
+  const targetText = targetLabelKey !== undefined ? t(targetLabelKey) : (activity.target ?? "");
 
   const statusIcon = isRead ? (
     <Icons.FileText />

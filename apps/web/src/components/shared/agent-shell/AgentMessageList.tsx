@@ -239,6 +239,7 @@ export function AgentMessageList({
         <AgentToolAccordion
           key={item.activities[0]!.toolCallId}
           activities={item.activities}
+          kind={kind}
           isSending={false}
         />
       ) : (
@@ -362,6 +363,7 @@ export function AgentMessageList({
                     <AgentToolAccordion
                       key={activity.toolCallId}
                       activities={liveToolActivities}
+                      kind={kind}
                       isSending
                     />,
                   );

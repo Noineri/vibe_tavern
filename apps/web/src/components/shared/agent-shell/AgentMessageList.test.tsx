@@ -19,6 +19,10 @@ let AgentMessageList: typeof import("./AgentMessageList.js").AgentMessageList;
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
+  // Tool cards resolve target labels through the registered host
+  // descriptor — the real experience host registers kind "experience"
+  // (same side-effect pattern as AgentProfileModal.test.tsx).
+  await import("../../build/editors/copilot/experience-agent-host.js");
   ({ AgentMessageList } = await import("./AgentMessageList.js"));
 });
 

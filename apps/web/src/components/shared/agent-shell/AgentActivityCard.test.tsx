@@ -18,6 +18,12 @@ let AgentActivityCard: typeof import("./AgentActivityCard.js").AgentActivityCard
 
 beforeAll(async () => {
   ({ render } = await import("@testing-library/react"));
+  // The card resolves target labels through the registered host
+  // descriptors — importing the real host modules registers both kinds
+  // (this file never unregisters them — the worker isolates the module
+  // registry; same pattern as AgentProfileModal.test.tsx).
+  await import("../../build/editors/copilot/experience-agent-host.js");
+  await import("../../build/editors/script-agent-host.js");
   ({ AgentActivityCard } = await import("./AgentActivityCard.js"));
 });
 
@@ -36,12 +42,15 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     const { getAllByText, getAllByTestId, queryByTestId } = render(
       <div>
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "read1", toolName: "read_skill_file", status: "done", summary: undefined, readPath: "/skills/combat.md" })}
         />
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "write1", toolName: "write_buffer", status: "done", summary: "wrote rules", target: "rules", proposed: "proposed buffer" })}
         />
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "run1", toolName: "run_test", status: "done", summary: "2 passed" })}
         />
       </div>,
@@ -70,6 +79,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
   it("renders a visual-target write_buffer card with a Visual label", () => {
     const { getByTestId } = render(
       <AgentActivityCard
+        kind="experience"
         activity={activity({ toolCallId: "v1", toolName: "edit_buffer", status: "done", summary: "tweaked visual", target: "visual", proposed: "new visual" })}
       />,
     );
@@ -77,13 +87,29 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(getByTestId("copilot-activity-target").textContent).toBe("agent_visual");
   });
 
+  it("AS-8e4: a script `code` proposal chip shows the script host's buffer label", () => {
+    const { getByTestId, getByText } = render(
+      <AgentActivityCard
+        kind="script"
+        activity={activity({ toolCallId: "c1", toolName: "edit_buffer", status: "done", summary: "fixed dice", target: "code", proposed: "new code" })}
+      />,
+    );
+
+    // Identity i18n (no LocaleProvider mounted): the script host's buffer
+    // label key renders verbatim — never the experience host's Visual label.
+    expect(getByTestId("copilot-activity-target").textContent).toBe("script_code_label");
+    expect(getByText("fixed dice")).toBeDefined();
+  });
+
   it("renders a streaming placeholder and an error row", () => {
     const { getByText, container } = render(
       <div>
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "s1", toolName: "write_buffer", status: "streaming", summary: undefined })}
         />
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "e1", toolName: "run_test", status: "error", summary: undefined })}
         />
       </div>,
@@ -95,6 +121,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
   it("renders a minimal done run_test activity as a card", () => {
     const { getByTestId } = render(
       <AgentActivityCard
+        kind="experience"
         activity={activity({ toolCallId: "m1", toolName: "run_test", status: "done", summary: "ok" })}
       />,
     );
@@ -107,16 +134,19 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
         {/* A done plan rewrite — NO summary (the controller/extraction omit it
             so the i18n label owns the title). */}
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "p1", toolName: "plan", status: "done", summary: undefined })}
         />
         {/* A done read_plan — the persisted row carries the whole plan JSON as
             its summary; the label must win over the machine shape. */}
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "p2", toolName: "read_plan", status: "done", summary: '{"goal":"…","tasks":[…]}' })}
         />
         {/* A failed plan save — the error card keeps the raw content (the
             write_buffer failure shape), NOT the success label. */}
         <AgentActivityCard
+          kind="experience"
           activity={activity({ toolCallId: "p3", toolName: "plan", status: "error", summary: '{"ok":false}' })}
         />
       </div>,

@@ -25,7 +25,7 @@ function activity(id: string): AgentToolActivity {
 describe("CopilotToolAccordion", () => {
   it("keeps the live turn expanded while tool cards stream in", () => {
     const { getAllByTestId, getByTestId } = render(
-      <AgentToolAccordion activities={[activity("first"), activity("second")]} isSending />,
+      <AgentToolAccordion activities={[activity("first"), activity("second")]} kind="experience" isSending />,
     );
 
     expect(getByTestId("copilot-tool-accordion-toggle").getAttribute("aria-expanded")).toBe("true");
@@ -35,7 +35,7 @@ describe("CopilotToolAccordion", () => {
 
   it("collapses a completed turn by default and exposes its tool count in the header", () => {
     const { getAllByTestId, getByTestId } = render(
-      <AgentToolAccordion activities={[activity("first"), activity("second")]} isSending={false} />,
+      <AgentToolAccordion activities={[activity("first"), activity("second")]} kind="experience" isSending={false} />,
     );
 
     const header = getByTestId("copilot-tool-accordion-toggle");
@@ -48,10 +48,10 @@ describe("CopilotToolAccordion", () => {
   it("auto-collapses after the live turn completes", () => {
     const activities = [activity("first"), activity("second")];
     const { getByTestId, rerender } = render(
-      <AgentToolAccordion activities={activities} isSending />,
+      <AgentToolAccordion activities={activities} kind="experience" isSending />,
     );
 
-    rerender(<AgentToolAccordion activities={activities} isSending={false} />);
+    rerender(<AgentToolAccordion activities={activities} kind="experience" isSending={false} />);
 
     expect(getByTestId("copilot-tool-accordion-toggle").getAttribute("aria-expanded")).toBe("false");
     expect(getByTestId("copilot-tool-accordion-body").getAttribute("aria-hidden")).toBe("true");
@@ -60,7 +60,7 @@ describe("CopilotToolAccordion", () => {
   it("toggles a completed tool run locally and retains that choice across re-renders", () => {
     const activities = [activity("first"), activity("second")];
     const { getByTestId, rerender } = render(
-      <AgentToolAccordion activities={activities} isSending={false} />,
+      <AgentToolAccordion activities={activities} kind="experience" isSending={false} />,
     );
 
     const header = getByTestId("copilot-tool-accordion-toggle");
@@ -68,7 +68,7 @@ describe("CopilotToolAccordion", () => {
     expect(header.getAttribute("aria-expanded")).toBe("true");
     expect(getByTestId("copilot-tool-accordion-body").getAttribute("aria-hidden")).toBeNull();
 
-    rerender(<AgentToolAccordion activities={[...activities]} isSending={false} />);
+    rerender(<AgentToolAccordion activities={[...activities]} kind="experience" isSending={false} />);
     expect(header.getAttribute("aria-expanded")).toBe("true");
 
     fireEvent.click(header);
@@ -78,7 +78,7 @@ describe("CopilotToolAccordion", () => {
 
   it("renders a single completed card in its own accordion", () => {
     const { getAllByTestId, getByTestId } = render(
-      <AgentToolAccordion activities={[activity("only")]} isSending={false} />,
+      <AgentToolAccordion activities={[activity("only")]} kind="experience" isSending={false} />,
     );
 
     expect(getByTestId("copilot-tool-accordion-toggle").getAttribute("data-count")).toBe("1");
