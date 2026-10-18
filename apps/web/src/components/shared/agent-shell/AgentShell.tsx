@@ -6,7 +6,7 @@ import type {
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
-import type { AgentPlanOwner, AgentThreadOwner } from "@vibe-tavern/domain";
+import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
@@ -135,16 +135,19 @@ export function AgentShell({
   // Held ONLY to seed the turn store's `todoByThread` via the controller
   // (TAG-7 effect); the live truth is the store (`todo` tool updates it).
   const [threadTodo, setThreadTodo] = useState<CopilotTodoItem[] | undefined>(undefined);
-  // ── Script-owned agent plan (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN) ────
-  // ONE plan per script (the `agent_plans` row), the durable document that
-  // survives sessions: the model maintains it through the `plan`/`read_plan`
-  // tools, the user through the editor modal. useAgentPlan is the single
-  // web-side cache; the controller feeds `plan` tool results into the SAME
-  // cache (applyPlanToolResult), and AgentPlanSection renders the panel +
-  // modal from it. Session switching/archiving never touches it (it is not
-  // thread state).
-  // SC-0c: the owner carries the script id for script-owned hosts (both
-  // wrappers pass it); the plan owner comes from the host starting SC-0i.
+  // ── Agent plan (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN) ─────────────────
+  // ONE plan per owner (the `agent_plans` / `agent_branch_plans` row), the
+  // durable document that survives sessions: the model maintains it through
+  // the `plan`/`read_plan` tools, the user through the editor modal.
+  // useAgentPlan is the single web-side cache; the controller feeds `plan`
+  // tool results into the SAME cache (applyPlanToolResult), and
+  // AgentPlanSection renders the panel + modal from it. Session
+  // switching/archiving never touches it (it is not thread state).
+  // SC-0i: the plan owner comes from the host descriptor (`planOwner`), NOT
+  // from the thread owner — a host without the hook (absent) shows NO plan
+  // block: the section below stays unmounted and the hook performs no fetch.
+  // Both built-in hosts return their script owner, so their plan section
+  // renders exactly as before this seam existed.
   const scriptId = scriptOwnerId(owner);
   // The session effects key on the owner's logical identity, never on the
   // object identity — a fresh-but-equal owner literal must not refetch.
@@ -157,7 +160,7 @@ export function AgentShell({
   // changed key still refetches with the current owner.
   const ownerRef = useRef(owner);
   ownerRef.current = owner;
-  const planOwner = useMemo<AgentPlanOwner>(() => ({ kind: "script", scriptId }), [scriptId]);
+  const planOwner = host.planOwner?.({ owner });
   const agentPlan = useAgentPlan(planOwner);
 
   // Characters come from the live snapshot store (already app-wide); the other
@@ -551,11 +554,12 @@ export function AgentShell({
               (never scrolls with the feed); hidden until the model's first
               `todo` call; read-only — the model owns the checklist. */}
           <AgentTodoSection kind={kind} threadId={threadId} />
-          {/* PM-6: the script-owned agent plan sits DIRECTLY below the todo
+          {/* PM-6: the owner-scoped agent plan sits DIRECTLY below the todo
               section; hidden while the plan is empty; its editor locks while a
               turn streams. PM-7: todo (the thread's session) ABOVE plan (the
-              script's durable document) — each hides itself when empty. */}
-          <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />
+              owner's durable document) — each hides itself when empty.
+              SC-0i: unmounted entirely when the host defines no plan owner. */}
+          {planOwner !== undefined && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
           <AgentMessageList
             kind={kind}
             threadId={threadId}

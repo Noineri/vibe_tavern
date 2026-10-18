@@ -641,6 +641,9 @@ registerAgentHost({
     />
   ),
   buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
+  // SC-0i: the script assistant's plan is script-owned (the shell's plan
+  // section renders exactly as before this seam existed).
+  planOwner: (ctx) => ({ kind: "script", scriptId: scriptOwnerId(ctx.owner) }),
   toolCaption: (activity) => scriptTestCaption(activity),
   // No record-proposal renderers yet — the AS-5 fallback card covers every
   // recordType until a host registers one.

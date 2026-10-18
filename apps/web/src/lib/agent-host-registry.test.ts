@@ -127,6 +127,34 @@ describe("agent-host-registry", () => {
     }
   });
 
+  it("planOwner is absent unless the host defines it (SC-0i)", () => {
+    const unsubscribe = registerAgentHost(descriptor("sc0i-no-hook"));
+    try {
+      expect(getAgentHost("sc0i-no-hook").planOwner).toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("a host-provided planOwner derives the script owner from the shell context (SC-0i)", () => {
+    const host: AgentHostDescriptor = {
+      ...descriptor("sc0i-hook"),
+      planOwner: (ctx) => {
+        if (ctx.owner.kind !== "script") return undefined;
+        return { kind: "script", scriptId: ctx.owner.scriptId };
+      },
+    };
+    const unsubscribe = registerAgentHost(host);
+    try {
+      expect(getAgentHost("sc0i-hook").planOwner?.({ owner: { kind: "script", scriptId: "s-1" } })).toEqual({
+        kind: "script",
+        scriptId: "s-1",
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it("profileAssignment round-trips through the descriptor (SC-0g)", () => {
     const scriptHost: AgentHostDescriptor = { ...descriptor("sc0g-script"), profileAssignment: { target: "script" } };
     const chatHost: AgentHostDescriptor = { ...descriptor("sc0g-chat"), profileAssignment: { target: "chat" } };

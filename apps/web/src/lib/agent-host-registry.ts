@@ -24,7 +24,7 @@ import type {
   ExperienceCopilotThreadWire,
   RecordProposal,
 } from "@vibe-tavern/api-contracts";
-import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import type { AgentPlanOwner, AgentThreadOwner } from "@vibe-tavern/domain";
 import type Resources from "../i18n/resources.js";
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 import type { ProviderProfileRecord } from "../api/types.js";
@@ -266,6 +266,18 @@ export interface AgentDefaultModelContext {
 }
 
 /**
+ * The context a host's optional plan owner sees (SIDECHAT_PLAN SC-0i) — the
+ * typed thread owner the shell renders for. Narrow on purpose (the
+ * SC-0e `AgentDefaultModelContext` precedent): plan ownership derives from
+ * the owner alone — thread/session state is irrelevant, and the hook must
+ * stay pure (it runs on every shell render, before the session loads).
+ */
+export interface AgentPlanOwnerContext {
+  /** The typed thread owner the shell renders for. */
+  owner: AgentThreadOwner;
+}
+
+/**
  * One host-proposed model binding (SIDECHAT_PLAN SC-0e) — the provider the
  * kind prefers plus, optionally, the model on it. Both ids are validated
  * against the live lists by the shell; unknown ids are ignored.
@@ -352,6 +364,13 @@ export interface AgentHostDescriptor {
    *  first-available fallback); it exists for future kinds (the sidechat's
    *  RP-model default lands here in SC-13). Must stay pure. */
   defaultModelBinding?: (ctx: AgentDefaultModelContext) => AgentDefaultModelBinding | undefined;
+  /** SC-0i: optional plan owner — the shell's plan section (`AgentPlanSection`
+   *  + the controller's `plan` tool-result feed) renders ONLY from what this
+   *  hook returns. Absent = the host shows NO plan block. Both built-in hosts
+   *  return their script owner (their plan section renders exactly as before
+   *  this seam existed); a future chat host may return a branch owner (SC-13
+   *  decides). Must stay pure — it runs on every shell render. */
+  planOwner?: (ctx: AgentPlanOwnerContext) => AgentPlanOwner | undefined;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;

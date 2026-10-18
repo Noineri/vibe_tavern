@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { agentPlanSchema, type AgentPlan } from "@vibe-tavern/api-contracts";
 import { EMPTY_AGENT_PLAN, type AgentPlanOwner } from "@vibe-tavern/domain";
 import { getAgentPlan, updateAgentPlan } from "../api/agent-plan-api.js";
+import { getAgentBranchPlan, updateAgentBranchPlan } from "../api/agent-branch-plan-api.js";
 
 interface AgentPlanToolResult {
   ok: true;
@@ -24,23 +25,12 @@ interface AgentPlanCacheEntry {
 
 const cacheByOwner = new Map<string, AgentPlanCacheEntry>();
 
-/** SC-0h: the plan-owner union gained the chatBranch arm, but this hook and
- *  its script API client stay script-only until SC-0i wires the branch route
- *  in — a non-script owner reaching here is a programming error caught
- *  loudly, never a silent wrong-route GET (the explicit-narrowing pattern the
- *  streams' `requireAgentPlanOwner` uses for the same reason). */
-function requireScriptOwner(owner: AgentPlanOwner): { kind: "script"; scriptId: string } {
-  if (owner.kind !== "script") {
-    throw new Error(
-      `use-agent-plan: unsupported plan owner kind '${owner.kind}' (branch owners arrive with SC-0i)`,
-    );
-  }
-  return owner;
-}
-
+/** The per-owner cache key — the two union arms address different routes
+ *  (script rows vs branch rows), so their entries never mix. */
 function ownerKey(owner: AgentPlanOwner): string {
-  const script = requireScriptOwner(owner);
-  return `${script.kind}:${script.scriptId}`;
+  return owner.kind === "script"
+    ? `script:${owner.scriptId}`
+    : `chatBranch:${owner.chatId}:${owner.branchId}`;
 }
 
 function entryFor(owner: AgentPlanOwner): AgentPlanCacheEntry {
@@ -70,10 +60,16 @@ function replacePlan(entry: AgentPlanCacheEntry, plan: AgentPlan): void {
 
 function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
   if (entry.loaded || entry.loadPromise) return;
-  const script = requireScriptOwner(owner);
+  const key = ownerKey(owner);
   entry.isLoading = true;
   notify(entry);
-  entry.loadPromise = getAgentPlan(script.scriptId)
+  // SC-0i: each union arm reads its own route (script rows vs branch rows) —
+  // a branch owner here is routed, never rejected (the SC-0h interim guard
+  // is gone: the hook serves both owners).
+  const load = owner.kind === "script"
+    ? getAgentPlan(owner.scriptId)
+    : getAgentBranchPlan(owner.chatId, owner.branchId);
+  entry.loadPromise = load
     .then((plan) => replacePlan(entry, plan))
     .catch((error: unknown) => {
       // A failed GET (server down, transient 5xx) must not become an unhandled
@@ -82,7 +78,7 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
       // per process — no retry storm); the panel stays hidden and the editor
       // modal surfaces its own save errors. Logged for diagnosability,
       // mirroring the db store's defensive-parse logging.
-      console.error(`[use-agent-plan] failed to load the plan for script '${script.scriptId}':`, error);
+      console.error(`[use-agent-plan] failed to load the plan for '${key}':`, error);
     })
     .finally(() => {
       entry.loaded = true;
@@ -114,36 +110,60 @@ export function parseAgentPlanToolResult(output: unknown): AgentPlanToolResult |
 }
 
 /**
- * Script-owned agent-plan cache. The first consumer of an owner starts its GET;
- * further consumers subscribe to that owner entry, and never share it with a
- * different script.
+ * Agent-plan cache for one owner (SC-0i: the full `AgentPlanOwner` union —
+ * script owners read/write the script route, branch owners the branch route).
+ * The first consumer of an owner starts its GET; further consumers subscribe
+ * to that owner entry, and never share it with a different owner.
+ *
+ * `undefined` is the host-without-a-plan-block case (the descriptor's
+ * `planOwner` is absent — SC-0i): no fetch runs, the plan stays empty, and
+ * `applyToolResult` is a no-op (the controller feeds it unconditionally, so
+ * it must never crash a turn). `save` without an owner is a programming
+ * error caught loudly — the editor UI that calls it is never rendered then.
  */
-export function useAgentPlan(owner: AgentPlanOwner): {
+export function useAgentPlan(owner: AgentPlanOwner | undefined): {
   plan: AgentPlan;
   isLoading: boolean;
   save(plan: AgentPlan): Promise<AgentPlan>;
   applyToolResult(toolCall: AgentPlanToolCall): void;
   applyToolResult(args: unknown, output: unknown): void;
 } {
-  const key = ownerKey(owner);
+  const key = owner === undefined ? null : ownerKey(owner);
   const [, setVersion] = useState(0);
-  const entry = entryFor(owner);
+  // The KEY carries the identity (effect deps), the ref carries the value
+  // (call args) — the shell passes a fresh-but-equal owner literal on every
+  // render, and depending on the object would resubscribe every time (the
+  // same KEY/ref split the shell's session effects use). The `key` read
+  // below keeps the dep honest: the effect only proceeds for the live owner.
+  const ownerRef = useRef(owner);
+  ownerRef.current = owner;
+  const entry = owner === undefined ? null : entryFor(owner);
 
   useEffect(() => {
-    const current = entryFor(owner);
+    const currentOwner = ownerRef.current;
+    if (currentOwner === undefined || ownerKey(currentOwner) !== key) return;
+    const current = entryFor(currentOwner);
     const listener = () => setVersion((version) => version + 1);
     current.listeners.add(listener);
-    loadPlan(owner, current);
+    loadPlan(currentOwner, current);
     return () => { current.listeners.delete(listener); };
-  }, [key, owner]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
   const save = useCallback(async (plan: AgentPlan): Promise<AgentPlan> => {
-    const saved = await updateAgentPlan(requireScriptOwner(owner).scriptId, plan);
-    replacePlan(entryFor(owner), saved);
+    const currentOwner = ownerRef.current;
+    if (currentOwner === undefined) throw new Error("use-agent-plan: no plan owner (the host defines no plan block)");
+    const saved = currentOwner.kind === "script"
+      ? await updateAgentPlan(currentOwner.scriptId, plan)
+      : await updateAgentBranchPlan(currentOwner.chatId, currentOwner.branchId, plan);
+    replacePlan(entryFor(currentOwner), saved);
     return saved;
-  }, [key, owner]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
   const applyToolResult = useCallback((toolCallOrArgs: AgentPlanToolCall | unknown, resultOutput?: unknown): void => {
+    const currentOwner = ownerRef.current;
+    if (currentOwner === undefined) return;
     const toolCall = resultOutput === undefined
       && typeof toolCallOrArgs === "object"
       && toolCallOrArgs !== null
@@ -153,8 +173,9 @@ export function useAgentPlan(owner: AgentPlanOwner): {
       : { args: toolCallOrArgs, output: resultOutput };
     const plan = parseAgentPlanToolArgs(toolCall.args);
     const result = parseAgentPlanToolResult(toolCall.output);
-    if (plan !== null && result !== null) replacePlan(entryFor(owner), plan);
-  }, [key, owner]);
+    if (plan !== null && result !== null) replacePlan(entryFor(currentOwner), plan);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
-  return { plan: entry.plan, isLoading: entry.isLoading, save, applyToolResult };
+  return { plan: entry?.plan ?? EMPTY_AGENT_PLAN, isLoading: entry?.isLoading ?? false, save, applyToolResult };
 }
