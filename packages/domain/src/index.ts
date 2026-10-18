@@ -1,4 +1,5 @@
 export * from "./agent-plan.js";
+export * from "./agent-thread.js";
 export * from "./api-types.js";
 export * from "./attachment.js";
 // builtin-experiences.js is deliberately NOT re-exported from this barrel: its
