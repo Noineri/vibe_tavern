@@ -66,6 +66,45 @@ const SCRIPT_KIND: AgentKind = "script";
 /** Stable empty fallback avoids a fresh selector array every host render. */
 const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
 
+/**
+ * AS-8e5: the `run_script_test` caption — the result envelope is a machine
+ * shape (`{ok, kind, ...}` / the `script_not_trusted` refusal) that must
+ * never render as a raw JSON title (live `summarizeToolOutput` or the
+ * persisted tool-result text on reload). Parses `activity.summary` safely
+ * (unwrapping the persisted `{toolName, output}` wrapper); unparseable or a
+ * non-`run_script_test` tool returns undefined and keeps today's fallback.
+ * `ok === true` → the passed caption; otherwise the failed caption with the
+ * first of `errors[0].error` / `errorMessage` / `discoveryError` as detail.
+ */
+function scriptTestCaption(activity: AgentToolActivity): { titleKey: "agent_script_test_ok" | "agent_script_test_failed"; detail?: string } | undefined {
+  if (activity.toolName !== "run_script_test") return undefined;
+  if (typeof activity.summary !== "string" || activity.summary === "") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(activity.summary);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed === "object" && parsed !== null && "output" in parsed && "toolName" in parsed) {
+    parsed = (parsed as { output: unknown }).output;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const record = parsed as Record<string, unknown>;
+  if (record.ok === true) return { titleKey: "agent_script_test_ok" };
+  let detail: string | undefined;
+  const errors = (record as { errors?: unknown }).errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const first = errors[0] as Record<string, unknown> | undefined;
+    if (first !== undefined && typeof first.error === "string") detail = first.error;
+  }
+  if (detail === undefined && typeof record.errorMessage === "string") detail = record.errorMessage;
+  if (detail === undefined) {
+    const discovery = (record as { discoveryError?: unknown }).discoveryError;
+    if (typeof discovery === "string") detail = discovery;
+  }
+  return detail !== undefined ? { titleKey: "agent_script_test_failed", detail } : { titleKey: "agent_script_test_failed" };
+}
+
 /** The wrapper's host-specific props: exactly what the tabbed editor pane
  *  and the review session read (nothing the management bar keeps for
  *  itself). No back control — the lore editor's own editorHeader caret is
@@ -584,6 +623,7 @@ registerAgentHost({
     />
   ),
   buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
+  toolCaption: (activity) => scriptTestCaption(activity),
   // No record-proposal renderers yet — the AS-5 fallback card covers every
   // recordType until a host registers one.
   recordProposalRenderers: {},

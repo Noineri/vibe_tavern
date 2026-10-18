@@ -24,6 +24,7 @@ import type {
   RecordProposal,
 } from "@vibe-tavern/api-contracts";
 import type Resources from "../i18n/resources.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 // AS-6c-i: type-only — the transport members mirror today's experience client
 // fns exactly (the compiler keeps the host's delegation honest), so the
 // generic shell/controller never import the kind-specific client. No runtime
@@ -272,6 +273,11 @@ export interface AgentHostDescriptor {
    *  cannot close over component state); AS-6c-ii types them as
    *  {@link AgentSendOptions} (owned by this registry). */
   buildSendOptions: (ctx: AgentHostContext) => AgentSendOptions;
+  /** AS-8e5: optional per-tool caption — the host translates a machine-shaped
+   *  activity (the script `run_script_test` JSON envelope) into an i18n title
+   *  key plus an optional detail line. Undefined = the shell keeps today's
+   *  fallback (the model summary / raw tool-result text). */
+  toolCaption?: (activity: AgentToolActivity) => { titleKey: AgentI18nKey; detail?: string } | undefined;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;

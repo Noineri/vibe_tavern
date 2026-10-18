@@ -2690,6 +2690,8 @@
 	"agent_plan_status_active": "In progress",
 	"agent_plan_status_completed": "Done",
 	"agent_plan_status_abandoned": "Cancelled",
+	"agent_script_test_ok": "Script test: passed",
+	"agent_script_test_failed": "Script test: failed",
 	"agent.record_proposal.unsupported_title": "Unsupported proposal",
 	"agent.record_proposal.hint": "This proposal type is not supported yet",
 	"agent.record_proposal.bad_payload": "(malformed data)",

@@ -157,4 +157,54 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(titles[1]).toBe("agent_plan_title");
     expect(titles[2]).toBe('{"ok":false}');
   });
+
+  it("AS-8e5: a script run_script_test card shows a caption, not the raw JSON", () => {
+    const { getAllByTestId } = render(
+      <div>
+        {/* A passed prompt-script test — the full result envelope, live shape. */}
+        <AgentActivityCard
+          kind="script"
+          activity={activity({ toolCallId: "ok1", toolName: "run_script_test", status: "done", summary: JSON.stringify({ ok: true, kind: "prompt", personality: "p", scenario: "s", stateSummary: "{}", injectedMessages: [], console: [], errors: [] }) })}
+        />
+        {/* A failed prompt-script test — the first error is the detail. */}
+        <AgentActivityCard
+          kind="script"
+          activity={activity({ toolCallId: "fail1", toolName: "run_script_test", status: "done", summary: JSON.stringify({ ok: false, kind: "prompt", personality: "", scenario: "", stateSummary: "{}", injectedMessages: [], console: [], errors: [{ error: "boom", line: 3 }, { error: "second" }] }) })}
+        />
+        {/* The trust refusal — the errorMessage is the detail. */}
+        <AgentActivityCard
+          kind="script"
+          activity={activity({ toolCallId: "ref1", toolName: "run_script_test", status: "done", summary: JSON.stringify({ ok: false, errorCode: "script_not_trusted", errorMessage: "enable it first" }) })}
+        />
+        {/* Unparseable — keeps today's raw-summary fallback. */}
+        <AgentActivityCard
+          kind="script"
+          activity={activity({ toolCallId: "raw1", toolName: "run_script_test", status: "done", summary: "{not json" })}
+        />
+      </div>,
+    );
+    const titles = getAllByTestId("copilot-activity-title").map((el) => el.textContent);
+    // Identity i18n: the keys render verbatim without a LocaleProvider.
+    expect(titles[0]).toBe("agent_script_test_ok");
+    expect(titles[1]).toBe("agent_script_test_failed");
+    expect(titles[2]).toBe("agent_script_test_failed");
+    expect(titles[3]).toBe("{not json");
+    // The failed + refusal details render in the existing sub-row style.
+    const cards = getAllByTestId("copilot-activity-card");
+    expect(cards[0]!.parentElement!.textContent).not.toContain("boom");
+    expect(cards[1]!.parentElement!.textContent).toContain("boom");
+    expect(cards[2]!.parentElement!.textContent).toContain("enable it first");
+    expect(cards[3]!.parentElement!.textContent).toContain("{not json");
+  });
+
+  it("AS-8e5: an experience run_test card keeps its raw summary", () => {
+    const { getByTestId } = render(
+      <AgentActivityCard
+        kind="experience"
+        activity={activity({ toolCallId: "exp1", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: true, checks: 3 }) })}
+      />,
+    );
+    // No host caption for the experience kind — the raw digest stays.
+    expect(getByTestId("copilot-activity-title").textContent).toBe(JSON.stringify({ ok: true, checks: 3 }));
+  });
 });

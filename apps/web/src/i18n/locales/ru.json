@@ -2730,6 +2730,8 @@
 	"agent_plan_status_active": "В работе",
 	"agent_plan_status_completed": "Готово",
 	"agent_plan_status_abandoned": "Отменена",
+	"agent_script_test_ok": "Проверка скрипта: успешно",
+	"agent_script_test_failed": "Проверка скрипта: ошибка",
 	"agent.record_proposal.unsupported_title": "Неподдерживаемое предложение",
 	"agent.record_proposal.hint": "Этот тип предложения пока не поддерживается",
 	"agent.record_proposal.bad_payload": "(некорректные данные)",

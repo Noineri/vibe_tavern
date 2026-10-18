@@ -561,12 +561,13 @@ describe("script-agent-host — trust refusal (AS-9)", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
 
-    // The refused test surfaces as a tool card carrying the refusal envelope
-    // (the controller's generic non-proposal branch: always a done card with
-    // the best-effort string summary) — and opens NO hunk review.
+    // The refused test surfaces as a captioned tool card (AS-8e5: the
+    // failed caption + the refusal errorMessage as detail, never the raw
+    // JSON envelope) — and opens NO hunk review.
     const card = await findByTestId("copilot-activity-card");
     expect(card.getAttribute("data-tool")).toBe("run_script_test");
-    expect(card.textContent).toContain("script_not_trusted");
+    expect(card.textContent).toContain("agent_script_test_failed");
+    expect(card.parentElement!.textContent).toContain("enable it in the editor first");
     expect(queryByTestId("copilot-review-bar")).toBeNull();
   });
 });

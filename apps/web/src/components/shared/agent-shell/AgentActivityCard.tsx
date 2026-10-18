@@ -32,6 +32,18 @@ export function AgentActivityCard({
   const isPlanUpdate = activity.toolName === "plan" && activity.status !== "error";
   const isPlanRead = activity.toolName === "read_plan";
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;
+  // AS-8e5: the host caption wins over the raw summary — the script host
+  // translates its machine-shaped `run_script_test` envelope into an i18n
+  // title (+ optional detail); undefined keeps today's fallback below.
+  // Unknown host (a test rendering without registered hosts) degrades to
+  // the fallback — the caption is an enhancement, never a hard requirement.
+  const toolCaption = (() => {
+    try {
+      return getAgentHost(kind).toolCaption?.(activity);
+    } catch {
+      return undefined;
+    }
+  })();
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
   // AS-8e4: the target chip names the HOST's buffer (script `code` → the
@@ -60,13 +72,15 @@ export function AgentActivityCard({
   // (see isPlanUpdate/isPlanRead above); proposals/informational cards use
   // the model-supplied summary (commit-message label), falling back to the
   // tool name / target.
-  const title = isRead
-    ? activity.readPath!
-    : isPlanUpdate
-      ? t("agent_plan_updated")
-      : isPlanRead
-        ? t("agent_plan_title")
-        : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
+  const title = toolCaption !== undefined
+    ? t(toolCaption.titleKey)
+    : isRead
+      ? activity.readPath!
+      : isPlanUpdate
+        ? t("agent_plan_updated")
+        : isPlanRead
+          ? t("agent_plan_title")
+          : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
 
   // The label is NEVER visually truncated: the model's summaries are the
   // user's window into what the copilot is doing, and an ellipsis hides
@@ -99,11 +113,15 @@ export function AgentActivityCard({
         )}
         {streaming && <span className="italic text-t3">…</span>}
       </div>
-      {errored && (
+      {toolCaption?.detail !== undefined ? (
+        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">
+          {toolCaption.detail}
+        </div>
+      ) : errored ? (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">
           {t("agent_tool_failed")}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
