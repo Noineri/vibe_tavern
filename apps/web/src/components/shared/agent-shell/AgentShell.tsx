@@ -6,13 +6,13 @@ import type {
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
-import type { AgentPlanOwner } from "@vibe-tavern/domain";
+import type { AgentPlanOwner, AgentThreadOwner } from "@vibe-tavern/domain";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
-import { agentThreadKey, getAgentHost, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
+import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useCopilotContext } from "../../../hooks/use-copilot-context.js";
@@ -73,11 +73,10 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
 export interface AgentShellProps {
   /** The registered host kind driving this shell (`getAgentHost(kind)`). */
   kind: AgentKind;
-  /** The thread owner's id — today the script the agent threads belong to. */
-  ownerId: string;
-  /** The owning script when the host is script-owned (plan owner, profile
-   *  modal). Falls back to `ownerId` — for script hosts the two coincide. */
-  scriptId?: string;
+  /** The typed thread owner — both script hosts pass
+   *  `{ kind: "script", scriptId }` (the unsaved mini-app draft passes its
+   *  local draft id here, exactly as it passed it as `ownerId` before). */
+  owner: AgentThreadOwner;
   isMobile: boolean;
   /** E6: mobile back-navigation affordance (a ← chevron folded into the
    *  tab-bar row). Desktop never passes it. Requires the host's
@@ -107,8 +106,7 @@ const EDIT_TAB_PULSE_MS = 2200;
 
 export function AgentShell({
   kind,
-  ownerId,
-  scriptId,
+  owner,
   isMobile,
   onBack,
   editTabDirty = false,
@@ -146,7 +144,21 @@ export function AgentShell({
   // cache (applyPlanToolResult), and AgentPlanSection renders the panel +
   // modal from it. Session switching/archiving never touches it (it is not
   // thread state).
-  const planOwner = useMemo<AgentPlanOwner>(() => ({ kind: "script", scriptId: scriptId ?? ownerId }), [scriptId, ownerId]);
+  // SC-0c: the owner carries the script id for script-owned hosts (both
+  // wrappers pass it); the plan owner comes from the host starting SC-0i.
+  const scriptId = scriptOwnerId(owner);
+  // The session effects key on the owner's logical identity, never on the
+  // object identity — a fresh-but-equal owner literal must not refetch.
+  const ownerKey = agentOwnerKey(owner);
+  // The transport calls read the owner through a ref: wrappers pass inline
+  // literals (a new object every render), so depending on the object would
+  // refetch the session on every parent re-render (ScriptEditor pins this:
+  // no second `active` GET across the mobile breakpoint). The KEY carries
+  // the identity (effect deps), the ref carries the value (call args) — a
+  // changed key still refetches with the current owner.
+  const ownerRef = useRef(owner);
+  ownerRef.current = owner;
+  const planOwner = useMemo<AgentPlanOwner>(() => ({ kind: "script", scriptId }), [scriptId]);
   const agentPlan = useAgentPlan(planOwner);
 
   // Characters come from the live snapshot store (already app-wide); the other
@@ -332,7 +344,7 @@ export function AgentShell({
     setSessionLoading(true);
     setSessionError(null);
     try {
-      const active = await transport.getActiveThread(ownerId);
+      const active = await transport.getActiveThread(ownerRef.current);
       if (active) {
         setThreadId(active.id);
         setContextLinks(active.contextLinks ?? []); // CX-6: seed the pinned pills
@@ -340,7 +352,7 @@ export function AgentShell({
         const msgs = await transport.listMessages(active.id);
         setMessages(msgs);
       } else {
-        const thread = await transport.startSession(ownerId);
+        const thread = await transport.startSession(ownerRef.current);
         setThreadId(thread.id);
         setContextLinks(thread.contextLinks ?? []); // CX-6: a fresh thread has no pins
         setThreadTodo(thread.todo); // TAG-8 (restored PM-7): a fresh thread has no checklist
@@ -351,20 +363,20 @@ export function AgentShell({
     } finally {
       setSessionLoading(false);
     }
-  }, [ownerId, transport]);
+  }, [ownerKey, transport]);
 
   // Session list (active + archived) for the switcher. Fetched in parallel with
   // `loadSession` on mount, then refetched after every switch/new so the active
   // indicator and archived set stay current.
   const fetchSessions = useCallback(async () => {
     try {
-      const list = await transport.listSessions(ownerId);
+      const list = await transport.listSessions(ownerRef.current);
       setSessions(list);
     } catch {
       // Best-effort session-list fetch — a transient list failure leaves the
       // switcher with its last-known sessions rather than surfacing an error.
     }
-  }, [ownerId, transport]);
+  }, [ownerKey, transport]);
 
   // (The experience host's draft rehydration — rehydrateExperienceCopilotDrafts
   // — runs in the HOST pane's mount effect: child effects run before this one,
@@ -419,7 +431,7 @@ export function AgentShell({
   // returns it directly — no narrowing cast (lib importing components is
   // banned, which is what forced the old `as AgentSendOptions`).
   const hostCtx: AgentHostContext = {
-    ownerId,
+    owner,
     scriptId,
     threadId,
     isSending: ctrl.isSending,
@@ -462,7 +474,7 @@ export function AgentShell({
   const handleNewSession = useCallback(async () => {
     if (ctrl.isSending) return;
     try {
-      const thread = await transport.startSession(ownerId);
+      const thread = await transport.startSession(ownerRef.current);
       setThreadId(thread.id);
       setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
       setThreadTodo(thread.todo); // TAG-8 (restored PM-7): new session → no checklist
@@ -472,7 +484,7 @@ export function AgentShell({
       // Best-effort — leave threadId/messages unchanged and surface the error.
       toast.error(t("agent_new_session_error"));
     }
-  }, [ctrl.isSending, ownerId, transport, fetchSessions, t]);
+  }, [ctrl.isSending, ownerKey, transport, fetchSessions, t]);
 
   // ── Session rename (2026-08-17) ──────────────────────────────────────────
   // Fire-and-refresh: the switcher exits rename mode immediately and the shell
@@ -669,7 +681,7 @@ export function AgentShell({
   const modals = (
     <>
       <AgentProfileModal
-        scriptId={scriptId ?? ownerId}
+        scriptId={scriptId}
         agentKind={kind}
         assignedProfileId={assignedProfileId}
         isOpen={profileModalOpen}

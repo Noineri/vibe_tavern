@@ -1,4 +1,4 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type TypedResponse } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { ExperienceCopilotRuntimeApi } from "../contract/runtime-api.js";
@@ -29,8 +29,14 @@ import {
 
 /** Map the registry's kind errors to the shared 400 JSON shape; any other
  *  error (including the adapter's `NotFound` DomainErrors) propagates to the
- *  app-level handler unchanged — `null` means "not mine". */
-function mapAgentKindError(c: Context, err: unknown): Response | null {
+ *  app-level handler unchanged — `null` means "not mine".
+ *
+ *  SC-0c: the return is the precise `c.json` TypedResponse, NOT a bare
+ *  `Response` — hono's `MergeTypedResponse` maps a bare `Response` member to
+ *  the untyped fallback, which collapses the whole endpoint's hc `json()`
+ *  to `unknown` and makes a typed web client impossible without a cast.
+ *  Annotation-only (erased at runtime — behavior byte-identical). */
+function mapAgentKindError(c: Context, err: unknown): TypedResponse<{ error: string; code: string }, 400, "json"> | null {
   if (err instanceof UnknownAgentKindError || err instanceof AgentKindNotChatOwnedError) {
     return c.json({ error: err.message, code: err.code }, 400);
   }

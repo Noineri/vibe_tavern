@@ -7,6 +7,7 @@ import {
   UnknownAgentHostError,
   getAgentHost,
   registerAgentHost,
+  scriptOwnerId,
   type AgentHostDescriptor,
 } from "./agent-host-registry.js";
 import {
@@ -44,10 +45,12 @@ function descriptor(kind: string): AgentHostDescriptor {
     transport: {
       sendStream: streamExperienceCopilot,
       answerAsk: answerCopilotAsk,
-      getActiveThread: getExperienceCopilotActive,
+      // SC-0c repair (assertions unchanged): the seam takes the typed
+      // owner now — the fixture maps it back exactly as the hosts do.
+      getActiveThread: (owner) => getExperienceCopilotActive(scriptOwnerId(owner)),
       listMessages: listExperienceCopilotMessages,
-      startSession: startExperienceCopilotSession,
-      listSessions: listExperienceCopilotSessions,
+      startSession: (owner, title?) => startExperienceCopilotSession(scriptOwnerId(owner), title),
+      listSessions: (owner) => listExperienceCopilotSessions(scriptOwnerId(owner)),
       activateSession: activateExperienceCopilotSession,
       renameSession: renameExperienceCopilotSession,
       setContextLinks: setExperienceCopilotContextLinks,

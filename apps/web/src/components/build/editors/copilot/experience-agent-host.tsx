@@ -11,7 +11,7 @@ import { useT } from "../../../../i18n/context.js";
 import type { ScriptRecord } from "../../../../api/types.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
-import { registerAgentHost, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
+import { registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
 import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import {
@@ -444,17 +444,20 @@ registerAgentHost({
   transport: {
     sendStream: streamExperienceCopilot,
     answerAsk: answerCopilotAsk,
-    getActiveThread: getExperienceCopilotActive,
+    // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
+    // back to the script id in one line — the thread-scoped members stay
+    // owner-agnostic (the same per-thread routes serve both owners).
+    getActiveThread: (owner) => getExperienceCopilotActive(scriptOwnerId(owner)),
     listMessages: listExperienceCopilotMessages,
-    startSession: startExperienceCopilotSession,
-    listSessions: listExperienceCopilotSessions,
+    startSession: (owner, title?) => startExperienceCopilotSession(scriptOwnerId(owner), title),
+    listSessions: (owner) => listExperienceCopilotSessions(scriptOwnerId(owner)),
     activateSession: activateExperienceCopilotSession,
     renameSession: renameExperienceCopilotSession,
     setContextLinks: setExperienceCopilotContextLinks,
   },
   renderEditorPane: (ctx) => (
     <ExperienceEditorPane
-      ownerId={ctx.ownerId}
+      ownerId={scriptOwnerId(ctx.owner)}
       threadId={ctx.threadId}
       isSending={ctx.isSending}
       bridge={ctx.bridge}

@@ -722,8 +722,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       <div className="flex min-h-0 flex-1">
         <AgentShell
           kind="script"
-          ownerId={scriptAgentHostProps.activeScriptId}
-          scriptId={scriptAgentHostProps.activeScriptId}
+          // SC-0c: the typed thread owner — script-owned, so the active
+          // script id is the whole owner.
+          owner={{ kind: "script", scriptId: scriptAgentHostProps.activeScriptId }}
           isMobile={isMobile}
           editTabDirty={scriptAgentHostProps.draftDirty}
           assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}

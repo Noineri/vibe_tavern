@@ -21,23 +21,23 @@ import type {
   AgentReviewSnapshot,
   ExperienceCopilotLaunchContext,
   ExperienceCopilotStep,
+  ExperienceCopilotThreadWire,
   RecordProposal,
 } from "@vibe-tavern/api-contracts";
+import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type Resources from "../i18n/resources.js";
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
-// AS-6c-i: type-only — the transport members mirror today's experience client
-// fns exactly (the compiler keeps the host's delegation honest), so the
-// generic shell/controller never import the kind-specific client. No runtime
-// edge: these imports are erased.
+// AS-6c-i: type-only — the thread-scoped transport members mirror today's
+// experience client fns exactly (the compiler keeps the host's delegation
+// honest), so the generic shell/controller never import the kind-specific
+// client. No runtime edge: these imports are erased. (The three owner-scoped
+// lifecycle members take the typed owner instead — SC-0c.)
 import type {
   activateExperienceCopilotSession,
   answerCopilotAsk,
-  getExperienceCopilotActive,
   listExperienceCopilotMessages,
-  listExperienceCopilotSessions,
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
-  startExperienceCopilotSession,
   streamExperienceCopilot,
 } from "../api/experience-copilot-api.js";
 
@@ -91,6 +91,31 @@ export function agentThreadKey(kind: AgentKind, threadId: string): string {
 }
 
 /**
+ * The logical-identity key of a thread owner (SC-0c) — the shell's session
+ * effects depend on THIS string, never on the owner object's identity, so a
+ * fresh-but-equal owner literal (a wrapper re-render, a new snapshot-store
+ * object) never refetches the session. Server-issued threadIds are globally
+ * unique, so equal keys always mean the same owner; two branches never share
+ * client state through `agentThreadKey` either way.
+ */
+export function agentOwnerKey(owner: AgentThreadOwner): string {
+  return owner.kind === "script"
+    ? `script:${owner.scriptId}`
+    : `chat:${owner.chatId}:${owner.branchId}:${owner.agentKind}`;
+}
+
+/**
+ * SC-0c: the one-line map-back — script-owned hosts narrow the typed owner
+ * to the script id their client fns take. A chat owner here is a wiring bug
+ * (no chat-owned host exists yet — SC-13), so it throws instead of silently
+ * serving the wrong owner's threads.
+ */
+export function scriptOwnerId(owner: AgentThreadOwner): string {
+  if (owner.kind !== "script") throw new Error(`Agent host cannot serve a chat-owned thread (kind "${owner.agentKind}")`);
+  return owner.scriptId;
+}
+
+/**
  * Live draft buffers + active authoring step to send with an agent message
  * (AS-6c-ii: moved here from use-agent-controller.ts — lib importing a
  * components module is banned, which is what forced the shell's
@@ -130,12 +155,15 @@ export interface AgentSendOptions {
 
 /**
  * The minimal-plus-live context a host descriptor receives. AS-5 shipped
- * only { ownerId, scriptId } (deliberately narrow); AS-6b2 grew it with the
+ * only { ownerId, scriptId } (deliberately narrow); SC-0c typed the owner
+ * ({ owner, scriptId }); AS-6b2 grew it with the
  * live thread/streaming state and the shell↔host bridge the split shell
  * needs — hosts still receive, they never construct it.
  */
 export interface AgentHostContext {
-  ownerId: string;
+  /** SC-0c: the typed thread owner — hosts narrow it back to a script id in
+   *  one line (`scriptOwnerId`) where their client fns need one. */
+  owner: AgentThreadOwner;
   scriptId?: string;
   /** AS-6b2: the live thread the shell renders (null while the session
    *  loads) — buffer hosts key review rounds and draft persistence by it. */
@@ -204,14 +232,16 @@ export interface AgentHostTransport {
   /** Answer a pending `ask_user` question — the split-turn continuation
    *  (no new user row; the answer replaces the awaiting tool-result row). */
   answerAsk: typeof answerCopilotAsk;
-  /** The single active thread for an owner, or null when none exists. */
-  getActiveThread: typeof getExperienceCopilotActive;
+  /** The single active thread for an owner, or null when none exists.
+   *  SC-0c: takes the typed owner (chat owners route to the SC-0b client,
+   *  script owners map back to the script id in one line). */
+  getActiveThread: (owner: AgentThreadOwner) => Promise<ExperienceCopilotThreadWire | null>;
   /** All messages for a thread, oldest → newest. */
   listMessages: typeof listExperienceCopilotMessages;
   /** Archive the current active thread (if any) and start a fresh one. */
-  startSession: typeof startExperienceCopilotSession;
+  startSession: (owner: AgentThreadOwner, title?: string) => Promise<ExperienceCopilotThreadWire>;
   /** All sessions (active + archived) for an owner, newest first. */
-  listSessions: typeof listExperienceCopilotSessions;
+  listSessions: (owner: AgentThreadOwner) => Promise<ExperienceCopilotThreadWire[]>;
   /** Resume an archived session (archiving its active sibling, if any), or
    *  a no-op when already active. Null when the thread does not exist. */
   activateSession: typeof activateExperienceCopilotSession;

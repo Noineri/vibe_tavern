@@ -120,8 +120,9 @@ export function ExperienceCopilotShell({
   return (
     <AgentShell
       kind="experience"
-      ownerId={scriptId}
-      scriptId={scriptId}
+      // SC-0c: the typed thread owner — script-owned, so the script id is
+      // the whole owner (an unsaved draft passes its local draft id here).
+      owner={{ kind: "script", scriptId }}
       isMobile={isMobile}
       onBack={onBack}
       editTabDirty={editTabDirty}

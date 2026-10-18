@@ -344,8 +344,8 @@ function renderScriptShell(
     withIsolatedI18n(
       <AgentShell
         kind="script"
-        ownerId={script.id}
-        scriptId={script.id}
+        // SC-0c repair (assertions unchanged): the shell takes the typed owner.
+        owner={{ kind: "script", scriptId: script.id }}
         isMobile={isMobile}
         editTabDirty={shellOver.editTabDirty}
         onBack={shellOver.onBack}
@@ -518,8 +518,8 @@ describe("script-agent-host — mobile tabs (AS-9)", () => {
       withIsolatedI18n(
         <AgentShell
           kind="script"
-          ownerId={script.id}
-          scriptId={script.id}
+          // SC-0c repair (assertions unchanged): the shell takes the typed owner.
+          owner={{ kind: "script", scriptId: script.id }}
           isMobile
           editTabDirty
           onBack={onBack}

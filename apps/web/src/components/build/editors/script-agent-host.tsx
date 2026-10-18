@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { Extension } from "@codemirror/state";
 import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
-import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
 import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
@@ -618,10 +618,13 @@ registerAgentHost({
   transport: {
     sendStream: streamScriptAgent,
     answerAsk: answerScriptAgentAsk,
-    getActiveThread: getScriptAgentActive,
+    // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
+    // back to the script id in one line — the thread-scoped members stay
+    // owner-agnostic (the same per-thread routes serve both owners).
+    getActiveThread: (owner) => getScriptAgentActive(scriptOwnerId(owner)),
     listMessages: listScriptAgentMessages,
-    startSession: startScriptAgentSession,
-    listSessions: listScriptAgentSessions,
+    startSession: (owner, title?) => startScriptAgentSession(scriptOwnerId(owner), title),
+    listSessions: (owner) => listScriptAgentSessions(scriptOwnerId(owner)),
     activateSession: activateScriptAgentSession,
     renameSession: renameScriptAgentSession,
     setContextLinks: setScriptAgentContextLinks,

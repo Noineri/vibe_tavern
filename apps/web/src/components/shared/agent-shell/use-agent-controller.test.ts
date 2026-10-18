@@ -125,13 +125,16 @@ const { ProviderStreamError } = await import("../../../api/provider-stream-error
 // does, so the stream lifecycle stays observed at the HTTP boundary (the
 // fetch router above); only the sendStream/answerAsk pair is ever called.
 const experienceCopilotApi = await import("../../../api/experience-copilot-api.js");
+const { scriptOwnerId } = await import("../../../lib/agent-host-registry.js");
 const testTransport = {
   sendStream: experienceCopilotApi.streamExperienceCopilot,
   answerAsk: experienceCopilotApi.answerCopilotAsk,
-  getActiveThread: experienceCopilotApi.getExperienceCopilotActive,
+  // SC-0c repair (assertions unchanged): the seam takes the typed owner
+  // now — mapped back exactly as the experience host does.
+  getActiveThread: (owner: Parameters<typeof scriptOwnerId>[0]) => experienceCopilotApi.getExperienceCopilotActive(scriptOwnerId(owner)),
   listMessages: experienceCopilotApi.listExperienceCopilotMessages,
-  startSession: experienceCopilotApi.startExperienceCopilotSession,
-  listSessions: experienceCopilotApi.listExperienceCopilotSessions,
+  startSession: (owner: Parameters<typeof scriptOwnerId>[0], title?: string) => experienceCopilotApi.startExperienceCopilotSession(scriptOwnerId(owner), title),
+  listSessions: (owner: Parameters<typeof scriptOwnerId>[0]) => experienceCopilotApi.listExperienceCopilotSessions(scriptOwnerId(owner)),
   activateSession: experienceCopilotApi.activateExperienceCopilotSession,
   renameSession: experienceCopilotApi.renameExperienceCopilotSession,
   setContextLinks: experienceCopilotApi.setExperienceCopilotContextLinks,
