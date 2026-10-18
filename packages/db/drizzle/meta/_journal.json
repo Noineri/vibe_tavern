@@ -820,6 +820,13 @@
       "when": 1792346233189,
       "tag": "0116_brave_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "6",
+      "when": 1792350711810,
+      "tag": "0117_abnormal_omega_red",
+      "breakpoints": true
     }
   ]
 }

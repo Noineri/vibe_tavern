@@ -39,6 +39,7 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../../agent/agent-stream.js";
+import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotAssembleResult,
@@ -91,6 +92,19 @@ export interface ExperienceCopilotStreamDeps {
   /** Resolve the copilot profile for a script (CP-6/CP-7). Absent → the built-in
    *  seed (the pre-plan ER-16 module). */
   readonly resolveProfile?: (scriptId: string | null) => Promise<CopilotProfile>;
+  /** SC-0f: resolve the copilot profile for a CHAT-OWNED thread (its chatId +
+   *  agentKind owner columns — see isChatOwnedAgentThread): the chat's own
+   *  choice (chat_agent_settings.profile_id) → the kind default
+   *  (agent_kind_settings.default_profile_id) → the kind's built-in seed,
+   *  with dangling ids falling through. Takes precedence over
+   *  {@link resolveProfile} for chat-owned threads ONLY — script-owned and
+   *  draft threads never consult it (their owner columns are null). Absent
+   *  (tests, legacy harnesses) → a chat-owned thread falls through to
+   *  resolveProfile/thread.scriptId exactly as before this seam existed. */
+  readonly resolveProfileForChat?: (thread: {
+    readonly chatId: string;
+    readonly agentKind: string;
+  }) => Promise<CopilotProfile>;
   /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
    *  built-in root only. */
   readonly skillUserRoot?: string;
@@ -222,11 +236,16 @@ export async function* streamExperienceCopilot(
     // ── Experience context: rules / visual / bound visuals / trust flag ──
     loadContext: (thread) => loadCopilotContext(thread.scriptId, deps),
 
-    // ── Copilot profile (CP-6/CP-7): thread → script → profile row → built-in seed.
+    // ── Copilot profile (CP-6/CP-7 + SC-0f): a CHAT-OWNED thread resolves
+    //  through the chat chain (chat row → kind default → the kind's built-in);
+    //  every other thread keeps the script path (script → profile row → the
+    //  built-in seed) byte-identically.
     resolveProfile: (thread) =>
-      deps.resolveProfile
-        ? deps.resolveProfile(thread.scriptId)
-        : resolveBuiltinCopilotProfile(),
+      isChatOwnedAgentThread(thread) && deps.resolveProfileForChat
+        ? deps.resolveProfileForChat(thread)
+        : deps.resolveProfile
+          ? deps.resolveProfile(thread.scriptId)
+          : resolveBuiltinCopilotProfile(),
 
     // ── ER-5 assembly: live drafts + attached context + plan → prompt ──
     assemble: async ({ thread, request, kindContext: context, agentProfile: copilotProfile, history, model: modelName }) => {

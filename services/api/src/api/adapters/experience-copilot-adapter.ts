@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
-import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics, AgentKindSettings } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics, AgentKindSettings, ChatAgentSettings } from "@vibe-tavern/db";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -284,6 +284,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // Kind-aware fallback (AS-8b): prompt/dice scripts seed the `script`
       // kind's builtin, interactive scripts the experience one.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
+      // SC-0f: a chat-owned thread's profile chain (the chat's own choice →
+      // the kind default → the kind's built-in) — the stream consults it only
+      // when the thread's owner columns say chat-owned.
+      resolveProfileForChat: (thread) =>
+        this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       // Two-root catalog user root for the SCRIPT kind (AS-8d1 — the script
       // service's own root, never the experience copilot one): absent →
       // built-in root only.
@@ -350,6 +355,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // Profile resolution (CP-6): thread → script → copilot_profile_id → row,
       // falling back to the built-in seed. The stream already holds thread.scriptId.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
+      // SC-0f: a chat-owned thread's profile chain (the chat's own choice →
+      // the kind default → the kind's built-in) — the stream consults it only
+      // when the thread's owner columns say chat-owned; script/draft threads
+      // keep the CP-6 path above byte-identically.
+      resolveProfileForChat: (thread) =>
+        this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       // Two-root catalog user root (CP-4): absent → built-in root only.
       ...(this.copilotSkillService !== undefined
         ? { skillUserRoot: this.copilotSkillService.roots().userRoot }
@@ -496,6 +507,40 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return this.toKindSettingsWire(await this.stores.agentKindSettings.patch(kind, body));
   };
 
+  // ─── Per-(chat, kind) profile choice (SIDECHAT_PLAN SC-0f) ──────────────
+
+  /** The chat path segment of the SC-0f chat-settings routes: the chat must
+   *  exist (404) — these routes carry no branch segment, so there is no
+   *  branch-ownership check to pair with it (unlike requireChatBranch). */
+  private async requireChat(chatId: string): Promise<void> {
+    const chat = await this.stores.chats.getById(chatId);
+    if (!chat) {
+      throw notFound("Chat", `Chat '${chatId}' was not found.`);
+    }
+  }
+
+  agentChatGetSettings = async (
+    chatId: string,
+    kind: string,
+  ): Promise<AgentChatSettingsWire> => {
+    // The SC-0b validation order: the kind is chat-owner-validated FIRST
+    // (400 class, no store I/O — a script-owned kind on a chat route is the
+    // 400 AGENT_KIND_NOT_CHAT_OWNED), then the chat's existence (404).
+    this.requireChatOwnedKind(kind);
+    await this.requireChat(chatId);
+    return this.toChatSettingsWire(await this.stores.chatAgentSettings.get(chatId, kind));
+  };
+
+  agentChatPatchSettings = async (
+    chatId: string,
+    kind: string,
+    body: AgentChatSettingsPatchRequest,
+  ): Promise<AgentChatSettingsWire> => {
+    this.requireChatOwnedKind(kind);
+    await this.requireChat(chatId);
+    return this.toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
+  };
+
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);
     if (!thread) {
@@ -630,6 +675,18 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       providerProfileId: s.providerProfileId,
       modelName: s.modelName,
       defaultProfileId: s.defaultProfileId,
+      updatedAt: s.updatedAt,
+    };
+  }
+
+  /** Map the db store's chat-settings row (structurally identical to the
+   *  wire shape) into the api-contracts type — field-for-field so the
+   *  nullability contract is explicit (nullable fields stay `null`). */
+  private toChatSettingsWire(s: ChatAgentSettings): AgentChatSettingsWire {
+    return {
+      chatId: s.chatId,
+      agentKind: s.agentKind,
+      profileId: s.profileId,
       updatedAt: s.updatedAt,
     };
   }

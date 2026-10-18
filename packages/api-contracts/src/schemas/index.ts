@@ -12,6 +12,14 @@ export type {
   AgentKindSettingsPatchRequest,
 } from "./agent-kind-settings-schema.js";
 export {
+  agentChatSettingsSchema,
+  agentChatSettingsPatchSchema,
+} from "./agent-chat-settings-schema.js";
+export type {
+  AgentChatSettingsWire,
+  AgentChatSettingsPatchRequest,
+} from "./agent-chat-settings-schema.js";
+export {
   reviewHunkCountsSchema,
   reviewOutcomeSchema,
   reviewTargetRecordSchema,

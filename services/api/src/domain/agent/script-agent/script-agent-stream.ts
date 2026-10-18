@@ -27,6 +27,7 @@ import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type { ProviderFetch } from "../../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../../shared/send-debug-log.js";
 import { streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams } from "../agent-stream.js";
+import { isChatOwnedAgentThread } from "../agent-thread-owner.js";
 import { renderAttachedContext, type CopilotContextItem } from "../agent-context.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../../interactive/copilot/copilot-limits.js";
 import { assembleScriptAgentPrompt, type ScriptAgentAssembleResult } from "./script-agent-prompt.js";
@@ -73,6 +74,19 @@ export interface ScriptAgentStreamDeps {
    *  `script` seed (with the `script_agent_base` SP-5 override when `db` is
    *  present). */
   readonly resolveProfile?: (scriptId: string | null) => Promise<CopilotProfile>;
+  /** SC-0f: resolve the profile for a CHAT-OWNED thread (its chatId +
+   *  agentKind owner columns — see isChatOwnedAgentThread): the chat's own
+   *  choice (chat_agent_settings.profile_id) → the kind default
+   *  (agent_kind_settings.default_profile_id) → the kind's built-in seed,
+   *  with dangling ids falling through. Takes precedence over
+   *  {@link resolveProfile} for chat-owned threads ONLY — script-owned and
+   *  draft threads never consult it. Absent (tests, legacy harnesses) → a
+   *  chat-owned thread falls through to resolveProfile/thread.scriptId
+   *  exactly as before this seam existed. */
+  readonly resolveProfileForChat?: (thread: {
+    readonly chatId: string;
+    readonly agentKind: string;
+  }) => Promise<CopilotProfile>;
   /** Optional user-skill root for the two-root catalog scan. */
   readonly skillUserRoot?: string;
   /** Optional DB handle for service-prompt overrides (script/dice_script API
@@ -202,11 +216,16 @@ export async function* streamScriptAgentTurn(
           : {}),
       }),
 
-    // ── Agent profile: thread → script → profile row → the kind's builtin ──
+    // ── Agent profile (SC-0f): a CHAT-OWNED thread resolves through the
+    //  chat chain (chat row → kind default → the kind's built-in); every
+    //  other thread keeps the script path (script → profile row → the kind's
+    //  builtin) byte-identically.
     resolveProfile: (thread) =>
-      deps.resolveProfile
-        ? deps.resolveProfile(thread.scriptId)
-        : resolveBuiltinScriptAgentProfile(deps.db),
+      isChatOwnedAgentThread(thread) && deps.resolveProfileForChat
+        ? deps.resolveProfileForChat(thread)
+        : deps.resolveProfile
+          ? deps.resolveProfile(thread.scriptId)
+          : resolveBuiltinScriptAgentProfile(deps.db),
 
     // ── AS-7 assembly: live code + attached context + plan → prompt ──
     assemble: async ({ thread, request, kindContext: context, agentProfile, history, model: modelName }) => {

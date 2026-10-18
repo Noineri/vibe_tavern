@@ -5,7 +5,7 @@
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -138,4 +138,25 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  (absent keeps the stored value, `null` clears it). Same registry
 	 *  validation as {@link agentKindGetSettings}. */
 	agentKindPatchSettings: (kind: string, body: AgentKindSettingsPatchRequest) => Promise<AgentKindSettingsWire>;
+
+	// ─── Per-(chat, kind) profile choice (SIDECHAT_PLAN SC-0f) ───────────────
+	//
+	// The chat-scoped profile choice behind `GET/PATCH
+	// /api/agent/chats/:chatId/:kind/settings` — the "use here" override the
+	// stream's profile chain consults BEFORE the kind default (SC-0d's
+	// `default_profile_id`). Unlike the kind-scoped twin these routes are
+	// CHAT-OWNER routes: the kind must be chat-owned (`getChatOwnedAgentKind` —
+	// a script-owned kind is the 400 `AGENT_KIND_NOT_CHAT_OWNED`, the SC-0b
+	// family), and the chat must exist (404).
+
+	/** One (chat, kind) pair's settings: the pair's row, or `profileId: null`
+	 *  with `updatedAt: null` when the pair has no row yet (a chat row has no
+	 *  legacy fallback). Validates the kind through the registry first (400
+	 *  class, no store I/O), then the chat's existence (404). */
+	agentChatGetSettings: (chatId: string, kind: string) => Promise<AgentChatSettingsWire>;
+
+	/** Upsert one (chat, kind) pair's row: only the fields the body carries
+	 *  are written (absent keeps the stored value, `null` clears it). Same
+	 *  validation order as {@link agentChatGetSettings}. */
+	agentChatPatchSettings: (chatId: string, kind: string, body: AgentChatSettingsPatchRequest) => Promise<AgentChatSettingsWire>;
 }

@@ -1996,6 +1996,24 @@ export const agentKindSettings = sqliteTable('agent_kind_settings', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── chatAgentSettings (SIDECHAT_PLAN SC-0f) ────────────────────────────────
+// Per-(chat, agent-kind) settings — the chat-scoped twin of agent_kind_settings.
+// One row per (chat, kind): the chat's OWN choice of copilot profile for that
+// kind's threads in this chat ("use here", SC-0g), overriding the kind-wide
+// default_profile_id. profile_id is a soft link with NO FK — the house
+// dangling-id policy (cf. agent_kind_settings): a deleted profile row makes
+// the stored id dangle, and the RESOLVER falls through to the next chain step
+// at read time; the delete is never blocked. Deleting the chat cascades the
+// rows away (FK ON DELETE cascade) — the settings live and die with the chat.
+export const chatAgentSettings = sqliteTable('chat_agent_settings', {
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  agentKind: text('agent_kind').notNull(),
+  profileId: text('profile_id'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.chatId, table.agentKind] }),
+}));
+
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────
 // Tombstone marker for a built-in experience the user explicitly deleted or
 // unlinked. `seedBuiltinExperiences` (BE-3) is create-or-return WITHOUT memory

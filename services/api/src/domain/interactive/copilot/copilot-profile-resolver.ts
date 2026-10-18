@@ -13,6 +13,13 @@
  * scriptId, a missing script, a null/empty `copilotProfileId`, or a DANGLING id
  * (the profile row was deleted — the soft link is never FK-enforced) all resolve
  * to the built-in seed, exactly matching the pre-plan ER-16 module.
+ *
+ * SC-0f adds the chat-owned twin, `resolveForChat`: a chat-owned thread (no
+ * script to hop through) resolves `chat_agent_settings.profile_id` (the
+ * chat's own choice) → `agent_kind_settings.default_profile_id` (the kind's
+ * default, SC-0d's column made a real consumer) → the kind's built-in seed.
+ * The same dangling policy governs BOTH hops: a stored id pointing at a
+ * deleted profile row falls through to the next step, never errors.
  */
 
 import type { StoreContainer, CopilotProfileRow } from "@vibe-tavern/db";
@@ -102,5 +109,31 @@ export class CopilotProfileResolver {
 			return resolveBuiltinCopilotProfile(await builtinSeedKindForScript(this.stores, scriptId), this.stores.db);
 		}
 		return copilotProfileRowToWire(row);
+	}
+
+	/**
+	 * Resolve the profile for a CHAT-OWNED thread's (chat, kind) pair (SC-0f):
+	 * the chat's own choice (`chat_agent_settings.profile_id`, the "use here"
+	 * override) → the kind-wide default (`agent_kind_settings
+	 * .default_profile_id`, SC-0d's column — this chain is its first consumer)
+	 * → the kind's built-in seed (`resolveBuiltinCopilotProfile(agentKind)` —
+	 * the per-kind seed AS-3 made registry-backed; a registered kind without
+	 * its own seed content gets the generic seed, never another kind's). Both
+	 * stored hops follow the dangling policy: an id whose profile row was
+	 * deleted falls through to the NEXT step (kind default, then built-in),
+	 * never errors — the same soft-link rule as `resolveForScript`.
+	 */
+	async resolveForChat(chatId: string, agentKind: string): Promise<CopilotProfile> {
+		const chatChoice = await this.stores.chatAgentSettings.get(chatId, agentKind);
+		if (chatChoice.profileId !== null) {
+			const chatRow = await this.stores.copilotProfiles.getById(chatChoice.profileId);
+			if (chatRow !== null) return copilotProfileRowToWire(chatRow);
+		}
+		const kindDefault = await this.stores.agentKindSettings.get(agentKind);
+		if (kindDefault.defaultProfileId !== null) {
+			const kindRow = await this.stores.copilotProfiles.getById(kindDefault.defaultProfileId);
+			if (kindRow !== null) return copilotProfileRowToWire(kindRow);
+		}
+		return resolveBuiltinCopilotProfile(agentKind, this.stores.db);
 	}
 }

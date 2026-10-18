@@ -35,6 +35,12 @@ export type {
   AgentKindSettingsUpdate,
 } from './agent-kind-settings-store.js';
 
+export { ChatAgentSettingsStore } from './chat-agent-settings-store.js';
+export type {
+  ChatAgentSettings,
+  ChatAgentSettingsUpdate,
+} from './chat-agent-settings-store.js';
+
 export { ChatStore } from './chat-store.js';
 export type {
   Chat,
