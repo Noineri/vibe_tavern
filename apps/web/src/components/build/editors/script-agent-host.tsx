@@ -74,7 +74,10 @@ const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
  * (unwrapping the persisted `{toolName, output}` wrapper); unparseable or a
  * non-`run_script_test` tool returns undefined and keeps today's fallback.
  * `ok === true` → the passed caption; otherwise the failed caption with the
- * first of `errors[0].error` / `errorMessage` / `discoveryError` as detail.
+ * first of `errors[0].error` / `errorMessage` / `discoveryError` / the first
+ * failed sample roll (`<checkId>: <error>` — since AS-8e6 a dice roll that
+ * fails validation makes the whole test fail with no other detail source;
+ * existing order stays first) as detail.
  */
 function scriptTestCaption(activity: AgentToolActivity): { titleKey: "agent_script_test_ok" | "agent_script_test_failed"; detail?: string } | undefined {
   if (activity.toolName !== "run_script_test") return undefined;
@@ -101,6 +104,24 @@ function scriptTestCaption(activity: AgentToolActivity): { titleKey: "agent_scri
   if (detail === undefined) {
     const discovery = (record as { discoveryError?: unknown }).discoveryError;
     if (typeof discovery === "string") detail = discovery;
+  }
+  // AS-8e6: the dice envelope's LAST detail source — the first sample roll
+  // whose result failed (a dice test can fail with no errors, no errorMessage
+  // and a null discoveryError; the failed roll's error is the fix target).
+  if (detail === undefined) {
+    const rolls = (record as { sampleRolls?: unknown }).sampleRolls;
+    if (Array.isArray(rolls)) {
+      for (const roll of rolls) {
+        if (typeof roll !== "object" || roll === null) continue;
+        const r = roll as { checkId?: unknown; result?: unknown };
+        if (typeof r.result !== "object" || r.result === null) continue;
+        const res = r.result as { ok?: unknown; error?: unknown };
+        if (res.ok === false && typeof res.error === "string" && typeof r.checkId === "string") {
+          detail = `${r.checkId}: ${res.error}`;
+          break;
+        }
+      }
+    }
   }
   return detail !== undefined ? { titleKey: "agent_script_test_failed", detail } : { titleKey: "agent_script_test_failed" };
 }

@@ -197,6 +197,36 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(cards[3]!.parentElement!.textContent).toContain("{not json");
   });
 
+  it("AS-8e6: a failed dice sample roll captions as failed with `<checkId>: <error>` detail", () => {
+    const { getAllByTestId } = render(
+      <AgentActivityCard
+        kind="script"
+        activity={activity({
+          toolCallId: "dice1",
+          toolName: "run_script_test",
+          status: "done",
+          // The AS-8e6 dice envelope: clean discovery (null), no errors, no
+          // errorMessage — the ONLY failing signal is the sample roll whose
+          // validation failed (ok is false because the roll failed).
+          summary: JSON.stringify({
+            ok: false,
+            kind: "dice",
+            checks: [{ id: "attack", label: "Attack Roll", notation: "d20+5", actors: ["persona", "character"], resolution: "strict", faceShape: "d20" }],
+            sampleRolls: [
+              { checkId: "attack", checkLabel: "Attack Roll", notation: "d20+5", faceShape: "d20", resolution: "strict", result: { ok: false, error: "strict resolution requires resolve() to return final" } },
+            ],
+            discoveryError: null,
+          }),
+        })}
+      />,
+    );
+    const titles = getAllByTestId("copilot-activity-title").map((el) => el.textContent);
+    // Identity i18n: the key renders verbatim without a LocaleProvider.
+    expect(titles[0]).toBe("agent_script_test_failed");
+    const cards = getAllByTestId("copilot-activity-card");
+    expect(cards[0]!.parentElement!.textContent).toContain("attack: strict resolution requires resolve() to return final");
+  });
+
   it("AS-8e5: an experience run_test card keeps its raw summary", () => {
     const { getByTestId } = render(
       <AgentActivityCard

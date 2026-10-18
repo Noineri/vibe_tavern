@@ -35,8 +35,13 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { log, type AgentPlan } from "@vibe-tavern/domain";
-import { testScript, type ScriptTestInput, type ScriptTestResult } from "../../scripts-engine/script-test-service.js";
+import { log, type AgentPlan, type DiceCheckDefinition } from "@vibe-tavern/domain";
+import {
+  testScript,
+  type DiceSampleRoll,
+  type ScriptTestInput,
+  type ScriptTestResult,
+} from "../../scripts-engine/script-test-service.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
 import { createBufferTools } from "../agent-buffer-tools.js";
@@ -71,6 +76,10 @@ export interface ScriptAgentPromptTestDigest {
   readonly scenario: string;
   /** Full JSON snapshot of the script's `context.state`. */
   readonly stateSummary: string;
+  /** Full JSON snapshot of `context.shared` — the turn-scoped cross-script
+   *  bucket the script left for other scripts running later in the same turn
+   *  (never capped; AS-8e6, owner 2026-10-18: everything the script produced). */
+  readonly shared: string;
   /** Messages the script injected via `context.chat.injectMessage(...)`. */
   readonly injectedMessages: ReadonlyArray<{ readonly content: string; readonly role: string }>;
   /** Every console entry the script emitted (`level: args`), in order. */
@@ -79,24 +88,22 @@ export interface ScriptAgentPromptTestDigest {
   readonly errors: ReadonlyArray<{ readonly error: string; readonly line?: number }>;
 }
 
-/** The dice-script test digest (trimmed from DiceScriptTestResult). */
+/** The dice-script test digest — the tester's WHOLE DiceScriptTestResult for
+ *  the model (AS-8e6, owner 2026-10-18: everything the script produced, no
+ *  invented economies): every DiceCheckDefinition field (resolution,
+ *  faceShape, help when the script registered one) and every sample-roll
+ *  field (checkLabel, notation, faceShape, resolution, and the full result —
+ *  faces/modifier/subtotal/total, the complete final with constraint, and
+ *  retryReason/policy/grantReason when present), typed straight from the
+ *  domain/tester shapes instead of restated here. */
 export interface ScriptAgentDiceTestDigest {
   readonly ok: boolean;
   readonly kind: "dice";
-  /** Validated check descriptors from discovery. */
-  readonly checks: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-    readonly notation: string;
-    readonly actors: readonly string[];
-  }>;
-  /** One deterministic sample roll per valid check (first allowed actor). */
-  readonly sampleRolls: ReadonlyArray<{
-    readonly checkId: string;
-    readonly result:
-      | { readonly ok: true; readonly faces: readonly number[]; readonly total: number; readonly final?: { readonly total: number; readonly outcome?: string; readonly degree?: string } }
-      | { readonly ok: false; readonly error: string };
-  }>;
+  /** Validated check descriptors from discovery — every field. */
+  readonly checks: readonly DiceCheckDefinition[];
+  /** One deterministic sample roll per valid check (first allowed actor) —
+   *  the tester's whole roll, failure included. */
+  readonly sampleRolls: readonly DiceSampleRoll[];
   /** Discovery VM error (syntax/runtime/timeout); null when clean. */
   readonly discoveryError: string | null;
 }
@@ -110,12 +117,13 @@ export type ScriptAgentRunTestResult =
 
 // ─── Envelope helpers ───────────────────────────────────────────────────────
 
-/** Full JSON snapshot of an unknown state object — never capped (AS-8e2,
- *  owner 2026-10-18); an unserializable value degrades to a marker instead
- *  of throwing (a script can stash non-JSON values in `context.state`). */
-function summarizeState(state: unknown): string {
+/** Full JSON snapshot of an unknown bucket object (`context.state`, the
+ *  turn-scoped `context.shared`) — never capped (AS-8e2, owner 2026-10-18);
+ *  an unserializable value degrades to a marker instead of throwing (a
+ *  script can stash non-JSON values in either bucket). */
+function snapshotJson(value: unknown): string {
   try {
-    return JSON.stringify(state) ?? String(state);
+    return JSON.stringify(value) ?? String(value);
   } catch {
     return "(unserializable state)";
   }
@@ -254,7 +262,7 @@ export function buildScriptAgentTools(opts: {
             : {}),
         };
         const result = await testScript(opts.stores, input);
-        const digest = trimTestResult(result);
+        const digest = toModelDigest(result);
         const digestKind = "kind" in digest ? digest.kind : digest.errorCode;
         logger.info("%s %s kind=%s", toolName, digest.ok ? "OK" : "FAIL", digestKind);
         return digest;
@@ -331,19 +339,24 @@ export function buildScriptAgentTools(opts: {
 
 /**
  * Map the tester's full result into the model-facing digest — the FULL
- * result (AS-8e2, owner 2026-10-18): personality/scenario/state/console
- * come back whole, never capped, so the model sees everything the script
- * produced; only panel-rendering-only metadata (per-error scriptId/
- * scriptName) is dropped and console entries are formatted `level: args`.
+ * result (AS-8e2/AS-8e6, owner 2026-10-18): personality/scenario/state/
+ * shared/console come back whole, never capped, and the dice checks and
+ * sample rolls pass through as-is (every field), so the model sees
+ * everything the script produced; only panel-rendering-only metadata
+ * (per-error scriptId/scriptName) is dropped and console entries are
+ * formatted `level: args`. Dice `ok` is false when discovery failed OR any
+ * sample roll failed — a roll that fails validation is a failing test, not
+ * a passing one (AS-8e6).
  */
-function trimTestResult(result: ScriptTestResult): ScriptAgentRunTestResult {
+function toModelDigest(result: ScriptTestResult): ScriptAgentRunTestResult {
   if (result.kind === "prompt") {
     return {
       ok: result.errors.length === 0,
       kind: "prompt",
       personality: result.personality,
       scenario: result.scenario,
-      stateSummary: summarizeState(result.state),
+      stateSummary: snapshotJson(result.state),
+      shared: snapshotJson(result.shared),
       injectedMessages: result.injectedMessages.map((m) => ({ content: m.content, role: m.role })),
       console: result.console.map((e) => `${e.level}: ${e.args}`),
       errors: result.errors.map((e) => ({
@@ -354,44 +367,18 @@ function trimTestResult(result: ScriptTestResult): ScriptAgentRunTestResult {
   }
   if (result.kind === "dice") {
     return {
-      ok: result.discoveryError === null,
+      ok:
+        result.discoveryError === null &&
+        result.sampleRolls.every((roll) => roll.result.ok === true),
       kind: "dice",
-      checks: result.checks.map((c) => ({
-        id: c.id,
-        label: c.label,
-        notation: c.notation,
-        actors: [...c.actors],
-      })),
-      sampleRolls: result.sampleRolls.map((r) => ({
-        checkId: r.checkId,
-        result:
-          r.result.ok === true
-            ? {
-                ok: true as const,
-                faces: [...r.result.faces],
-                total: r.result.total,
-                ...(r.result.final !== undefined
-                  ? {
-                      final: {
-                        total: r.result.final.total,
-                        ...(r.result.final.outcome !== undefined
-                          ? { outcome: r.result.final.outcome }
-                          : {}),
-                        ...(r.result.final.degree !== undefined
-                          ? { degree: r.result.final.degree }
-                          : {}),
-                      },
-                    }
-                  : {}),
-              }
-            : { ok: false as const, error: r.result.error },
-      })),
+      checks: result.checks,
+      sampleRolls: result.sampleRolls,
       discoveryError: result.discoveryError,
     };
   }
   // `interactive` scripts are served by the EXPERIENCE kind, not this one; a
   // stored interactive kind reaching here is a wiring error. Fail loudly with
-  // a typed envelope instead of executing further trimming assumptions.
+  // a typed envelope instead of executing further digest-mapping assumptions.
   return {
     ok: false,
     errorCode: "script_kind_not_supported",

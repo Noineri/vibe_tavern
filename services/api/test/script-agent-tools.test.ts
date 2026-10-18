@@ -52,6 +52,21 @@ context.dice.register({
 });
 `;
 
+/** A strict dice registration whose resolve() returns NO final — discovery
+ *  accepts it (the registration itself is well-formed), but the sample roll
+ *  fails validation (`strict resolution requires resolve() to return final`).
+ *  The fixture for the AS-8e6 failed-roll path. */
+const STRICT_DICE_NO_FINAL_CODE = `
+context.dice.register({
+  id: 'attack', label: 'Attack Roll', notation: '1d20+5',
+  actors: ['persona', 'character'], resolution: 'strict',
+  resolve() {
+    var r = context.dice.roll('1d20+5');
+    return { faces: r.faces, modifier: r.modifier, subtotal: r.subtotal, total: r.total };
+  }
+});
+`;
+
 /** Build a script ROW (the store shape `testScript` reads) — the same
  *  fixture convention the experience kind-resolution suite uses. */
 function makeScriptRow(overrides: Partial<ScriptRow> & { id: string; code: string }): ScriptRow {
@@ -249,15 +264,19 @@ describe("script-agent-tools: run_script_test — real runtime, prompt path", ()
     expect(digest.console).toHaveLength(0);
   });
 
-  test("the FULL result: a 5 000-char personality, a 2 000-char state and a 30-entry console come back whole", async () => {
+  test("the FULL result: a 5 000-char personality, a 2 000-char state, a 2 000-char shared bucket and a 30-entry console come back whole", async () => {
     // AS-8e2 (owner 2026-10-18): the digest used to cap personality/scenario
     // at 2 000 chars, the state snapshot at 1 500 and the console at the last
     // 20 entries — every cap is gone; nothing the script produced is cut.
+    // AS-8e6 (owner 2026-10-18): the shared bucket used to be dropped from
+    // the digest entirely — it now comes back through the same snapshot as
+    // the state.
     const script = makeScriptRow({ id: "s1", scriptKind: "prompt", code: "" });
     const { stores } = storesWith(script);
     const code =
       `context.character.personality = ${JSON.stringify("P".repeat(5000))};\n` +
       `context.state.set('blob', ${JSON.stringify("S".repeat(2000))});\n` +
+      `context.shared.set('handoff', ${JSON.stringify("H".repeat(2000))});\n` +
       `for (var i = 0; i < 30; i++) { console.log('line-' + i); }`;
     const tools = buildScriptAgentTools({ scriptId: "s1", code, codeTrusted: true, stores });
 
@@ -269,6 +288,9 @@ describe("script-agent-tools: run_script_test — real runtime, prompt path", ()
     expect(digest.personality).not.toContain("\u2026");
     expect(digest.stateSummary).toBe(JSON.stringify({ blob: "S".repeat(2000) }));
     expect(digest.stateSummary).not.toContain("\u2026");
+    // The turn-scoped cross-script bucket the script left (AS-8e6).
+    expect(digest.shared).toBe(JSON.stringify({ handoff: "H".repeat(2000) }));
+    expect(digest.shared).not.toContain("\u2026");
     expect(digest.console).toHaveLength(30);
     expect(digest.console[0]).toBe("log: line-0");
     expect(digest.console[29]).toBe("log: line-29");
@@ -316,17 +338,30 @@ describe("script-agent-tools: run_script_test — real runtime, dice path", () =
     if (digest.kind !== "dice") return;
     expect(digest.ok).toBe(true);
     expect(digest.discoveryError).toBeNull();
+    // AS-8e6 (owner 2026-10-18): the digest carries the tester's WHOLE check
+    // descriptor — was: the exact four-field shape {id, label, notation,
+    // actors} (resolution/faceShape/help were silently dropped). `help` stays
+    // absent here (the fixture registers none).
     expect(digest.checks).toEqual([
-      { id: "attack", label: "Attack Roll", notation: "d20+5", actors: ["persona", "character"] },
+      { id: "attack", label: "Attack Roll", notation: "d20+5", actors: ["persona", "character"], resolution: "strict", faceShape: "d20" },
     ]);
     expect(digest.sampleRolls).toHaveLength(1);
     const roll = digest.sampleRolls[0];
     expect(roll.checkId).toBe("attack");
+    // AS-8e6: the sample roll's own fields come back whole too — the check's
+    // label/notation/shape/resolution travel with the roll (was: checkId and
+    // a trimmed result only).
+    expect(roll.checkLabel).toBe("Attack Roll");
+    expect(roll.notation).toBe("d20+5");
+    expect(roll.faceShape).toBe("d20");
+    expect(roll.resolution).toBe("strict");
     expect(roll.result.ok).toBe(true);
     if (roll.result.ok !== true) return;
-    // 1d20+5: one face, arithmetic holds on the trimmed envelope, and the
+    // 1d20+5: one face, arithmetic holds on the envelope, and the
     // strict final outcome is consistent with the total.
     expect(roll.result.faces).toHaveLength(1);
+    expect(roll.result.modifier).toBe(5);
+    expect(roll.result.subtotal).toBe(roll.result.faces[0]);
     expect(roll.result.total).toBe(roll.result.faces[0] + 5);
     expect(roll.result.final?.outcome).toBe(roll.result.total >= 15 ? "hit" : "miss");
 
@@ -336,6 +371,28 @@ describe("script-agent-tools: run_script_test — real runtime, dice path", () =
       ctx,
     )) as ScriptAgentRunTestResult;
     expect(JSON.stringify(rerun.sampleRolls)).toBe(JSON.stringify(digest.sampleRolls));
+  });
+
+  test("a resolve output that fails validation fails the whole test: ok false, the failed roll's error in its sample roll", async () => {
+    // AS-8e6 (owner 2026-10-18): ok used to be discovery-only — this buffer
+    // has a clean discovery, yet its strict resolve() returns no final, so
+    // the sample roll fails validation. The digest must read as a FAILED
+    // test (the card caption depends on it), with the roll's error inline.
+    const script = makeScriptRow({ id: "s1", scriptKind: "dice", code: "" });
+    const { stores } = storesWith(script);
+    const tools = buildScriptAgentTools({ scriptId: "s1", code: STRICT_DICE_NO_FINAL_CODE, codeTrusted: true, stores });
+
+    const digest = (await tools.run_script_test.execute({}, ctx)) as ScriptAgentRunTestResult;
+    expect(digest.kind).toBe("dice");
+    if (digest.kind !== "dice") return;
+    expect(digest.discoveryError).toBeNull();
+    expect(digest.ok).toBe(false);
+    expect(digest.sampleRolls).toHaveLength(1);
+    const roll = digest.sampleRolls[0];
+    expect(roll.checkId).toBe("attack");
+    expect(roll.result.ok).toBe(false);
+    if (roll.result.ok !== false) return;
+    expect(roll.result.error).toContain("strict resolution requires resolve() to return final");
   });
 
   test("a syntax-broken dice buffer surfaces the discovery error, not a throw", async () => {
