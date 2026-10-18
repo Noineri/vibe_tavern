@@ -1852,6 +1852,23 @@ export const experienceAttachments = sqliteTable('experience_attachments', {
 // identifies the in-progress work. Deleting a script never cascade-deletes
 // copilot history (the snapshot/no-FK-source convention used throughout this
 // runtime), and a thread can predate the script row it will eventually point at.
+//
+// Chat-owned threads (SIDECHAT_PLAN SC-0a): the same table also hosts agent
+// threads owned by an RP chat branch instead of a script (the sidechat and,
+// later, the director). Ownership is mutually exclusive per row — script rows
+// set script_id, chat rows set chat_id + branch_id + agent_kind, drafts set
+// neither. UNLIKE script_id, the chat-owner columns are real FKs with
+// CASCADE: a branch (and its chat) is runtime state whose threads must not
+// outlive it (the owner-confirmed branch-delete wording already promises
+// sidechats die with their branch). agent_kind is the shared agent-shell kind
+// registry slug (e.g. "sidechat-ooc") — stored on the row because a chat
+// thread has no script to derive it from; NULL on script/draft rows, where
+// the kind stays derived. Required whenever chat_id is set — enforced by the
+// store (startNewChatSession takes it as a required parameter), not by a
+// column constraint, because the same column must stay NULL for script rows.
+// The at-most-one-active invariant is scoped per owner: the partial unique
+// index below on (chat_id, branch_id, agent_kind) is the chat-owner twin of
+// the script_id one, and the store archives only same-owner siblings.
 export const experienceCopilotThreads = sqliteTable('experience_copilot_threads', {
   id: text('id').primaryKey(),
   // Soft link to the experience (scripts row). Nullable + set-on-first-save.
@@ -1860,6 +1877,14 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // Identifies an unsaved draft session before the experience has a script_id.
   // Null once script_id is set.
   draftSessionId: text('draft_session_id'),
+  // Chat-owner triple (SC-0a): set together on chat-owned threads, NULL on
+  // script-owned and draft rows. Hard FK cascade — see the section comment.
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').references(() => chatBranches.id, { onDelete: 'cascade' }),
+  // Agent-shell kind slug for chat-owned threads; NULL on script/draft rows
+  // (their kind is derived from the script). Store-enforced required when
+  // chat_id is set — never a column constraint, so script rows stay NULL.
+  agentKind: text('agent_kind'),
   title: text('title').notNull().default(''),
   // NULL = the active session for this script_id; non-null ISO timestamp =
   // archived (resumable). The partial unique index below guarantees at most one
@@ -1895,6 +1920,9 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   scriptIdIdx: index('idx_experience_copilot_threads_script').on(table.scriptId),
+  // Chat-owner listing lookup (SC-0a): listSessionsForChat filters by the
+  // (chat_id, branch_id) pair — the chat twin of scriptIdIdx above.
+  chatBranchIdx: index('idx_experience_copilot_threads_chat_branch').on(table.chatId, table.branchId),
   // At-most-one-active invariant (DB layer): at most one row per script_id with
   // archived_at IS NULL. The `sql` template is used instead of `and(isNull(...),
   // isNotNull(...))` because `and()` returns `SQL | undefined`, which the
@@ -1904,6 +1932,17 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   activeScriptUnique: uniqueIndex('idx_experience_copilot_threads_active_script')
     .on(table.scriptId)
     .where(sql`${table.archivedAt} IS NULL AND ${table.scriptId} IS NOT NULL`),
+  // At-most-one-active invariant for chat owners (SC-0a): at most one active
+  // thread per (chat_id, branch_id, agent_kind) triple. The same `sql`-template
+  // form as the script index above (and for the same reason — `and()` returns
+  // `SQL | undefined`, which IndexBuilder.where() rejects). Two agent kinds on
+  // one branch, or the same kind on two branches, coexist by design; only the
+  // exact triple is unique. agent_kind is store-required whenever chat_id is
+  // set, so the triple has no NULL hole (script/draft rows are excluded by
+  // chat_id IS NOT NULL).
+  activeChatUnique: uniqueIndex('idx_experience_copilot_threads_active_chat')
+    .on(table.chatId, table.branchId, table.agentKind)
+    .where(sql`${table.archivedAt} IS NULL AND ${table.chatId} IS NOT NULL`),
 }));
 
 // ─── experienceCopilotMessages ────────────────────────────────────────────────

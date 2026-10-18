@@ -51,6 +51,14 @@ export interface ExperienceCopilotThread {
   id: ExperienceCopilotThreadId;
   scriptId: string | null;
   draftSessionId: string | null;
+  /** Chat-owner triple (SC-0a): set together on chat-owned threads, null on
+   *  script-owned and draft rows. Plain strings, same as scriptId — the store
+   *  projection keeps cross-domain links unbranded (ER-3). */
+  chatId: string | null;
+  branchId: string | null;
+  /** Agent-shell kind slug on chat-owned threads; null on script/draft rows
+   *  (their kind is derived from the script). */
+  agentKind: string | null;
   title: string;
   /** NULL = the active session for this script_id; non-null ISO = archived. */
   archivedAt: string | null;
@@ -140,6 +148,26 @@ export class ExperienceCopilotStore {
     return row ? this.mapThread(row) : null;
   }
 
+  /** The single active chat-owned thread (archived_at IS NULL) for a
+   *  (chat, branch, kind) triple, or null — the chat-owner twin of
+   *  {@link getActive}. Never matches script/draft rows (chat_id IS NULL on
+   *  those). */
+  async getActiveForChat(chatId: string, branchId: string, kind: string): Promise<ExperienceCopilotThread | null> {
+    const row = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          eq(experienceCopilotThreads.agentKind, kind),
+          isNull(experienceCopilotThreads.archivedAt),
+        ),
+      )
+      .get();
+    return row ? this.mapThread(row) : null;
+  }
+
   /** All messages for a thread, oldest → newest (createdAt asc, then id as a
    *  stable tiebreaker for same-timestamp collisions). The history the copilot
    *  stream (ER-6) reloads each turn. */
@@ -170,6 +198,26 @@ export class ExperienceCopilotStore {
       .select()
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.scriptId, scriptId))
+      .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
+      .all();
+    return rows.map((r) => this.mapThread(r));
+  }
+
+  /** Active + archived chat-owned threads for a (chat, branch, kind) triple,
+   *  newest first — the chat-owner twin of {@link listSessions}. Scoped to the
+   *  exact triple: other kinds on the same branch, other branches of the same
+   *  chat, and script-owned sessions never appear. */
+  async listSessionsForChat(chatId: string, branchId: string, kind: string): Promise<ExperienceCopilotThread[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          eq(experienceCopilotThreads.agentKind, kind),
+        ),
+      )
       .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
       .all();
     return rows.map((r) => this.mapThread(r));
@@ -213,12 +261,78 @@ export class ExperienceCopilotStore {
   }
 
   /**
-   * Resume an archived session: archive all siblings sharing its script_id, then
+   * "New session" for a chat owner (SC-0a): archive the current active sibling
+   * thread of the SAME (chat, branch, kind) triple (if any) and create+return a
+   * fresh active one — the chat-owner twin of {@link startNewSession}. The kind
+   * is required here (store-level enforcement of "agent_kind required when
+   * chat_id is set": chat rows are only ever born through this method). Sibling
+   * archiving is scoped to the exact triple — other kinds on the same branch,
+   * other branches, and script-owned threads are never touched. The
+   * archive-then-insert runs inside a single synchronous transaction so two
+   * actives can never coexist (the app-level half of the at-most-one-active
+   * invariant; the partial unique index on the triple is the DB half).
+   */
+  async startNewChatSession(
+    chatId: string,
+    branchId: string,
+    kind: string,
+    title?: string,
+  ): Promise<ExperienceCopilotThread> {
+    if (!kind) {
+      // Store-level guard: chat-owned rows must never exist with a NULL
+      // agent_kind (the partial unique index has no NULL hole to fill).
+      throw new Error(`[experience-copilot-store] startNewChatSession requires a non-empty agent kind (chat '${chatId}')`);
+    }
+    const now = this.clock.now();
+    const id = this.idGen.next('expcop_thread');
+    this.db.transaction((tx) => {
+      tx
+        .update(experienceCopilotThreads)
+        .set({ archivedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(experienceCopilotThreads.chatId, chatId),
+            eq(experienceCopilotThreads.branchId, branchId),
+            eq(experienceCopilotThreads.agentKind, kind),
+            isNull(experienceCopilotThreads.archivedAt),
+          ),
+        )
+        .run();
+      tx
+        .insert(experienceCopilotThreads)
+        .values({
+          id,
+          scriptId: null,
+          draftSessionId: null,
+          chatId,
+          branchId,
+          agentKind: kind,
+          title: title ?? '',
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+    });
+    const row = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(eq(experienceCopilotThreads.id, id))
+      .get();
+    return this.mapThread(row!);
+  }
+
+  /**
+   * Resume an archived session: archive all siblings sharing its owner, then
    * mark this thread active (clear archived_at). No-op (returns the thread
-   * unchanged) if it is already the active session. Enforces at-most-one-active
-   * inside a synchronous transaction when a script_id is present. A draft thread
-   * (script_id NULL, exempt from the partial unique index) only clears its own
-   * archived_at.
+   * unchanged) if it is already the active session. Siblings are scoped to the
+   * owner — a chat-owned thread archives only threads of the same
+   * (chat_id, branch_id, agent_kind) triple (its script siblings — other kinds,
+   * other branches, script-owned threads — are never touched), a script-owned
+   * thread archives its same-script_id siblings. Enforces at-most-one-active
+   * inside a synchronous transaction when an owner is present. A draft thread
+   * (script_id NULL, chat_id NULL, exempt from both partial unique indexes)
+   * only clears its own archived_at.
    */
   async activate(sessionId: string): Promise<ExperienceCopilotThread | null> {
     const target = await this.getById(sessionId);
@@ -226,14 +340,30 @@ export class ExperienceCopilotStore {
     if (target.archivedAt === null) return target; // already the active session
 
     const now = this.clock.now();
-    const scriptId = target.scriptId;
-    if (scriptId === null) {
-      await this.db
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: null, updatedAt: now })
-        .where(eq(experienceCopilotThreads.id, sessionId))
-        .run();
-    } else {
+    if (target.chatId !== null && target.branchId !== null && target.agentKind !== null) {
+      // Chat owner (SC-0a): archive same-(chat, branch, kind) siblings only.
+      const { chatId, branchId, agentKind } = target;
+      this.db.transaction((tx) => {
+        tx
+          .update(experienceCopilotThreads)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(experienceCopilotThreads.chatId, chatId),
+              eq(experienceCopilotThreads.branchId, branchId),
+              eq(experienceCopilotThreads.agentKind, agentKind),
+              isNull(experienceCopilotThreads.archivedAt),
+            ),
+          )
+          .run();
+        tx
+          .update(experienceCopilotThreads)
+          .set({ archivedAt: null, updatedAt: now })
+          .where(eq(experienceCopilotThreads.id, sessionId))
+          .run();
+      });
+    } else if (target.scriptId !== null) {
+      const scriptId = target.scriptId;
       this.db.transaction((tx) => {
         tx
           .update(experienceCopilotThreads)
@@ -246,6 +376,12 @@ export class ExperienceCopilotStore {
           .where(eq(experienceCopilotThreads.id, sessionId))
           .run();
       });
+    } else {
+      await this.db
+        .update(experienceCopilotThreads)
+        .set({ archivedAt: null, updatedAt: now })
+        .where(eq(experienceCopilotThreads.id, sessionId))
+        .run();
     }
     const row = await this.db
       .select()
@@ -450,6 +586,9 @@ export class ExperienceCopilotStore {
       id: brandId<ExperienceCopilotThreadId>(row.id),
       scriptId: row.scriptId,
       draftSessionId: row.draftSessionId,
+      chatId: row.chatId,
+      branchId: row.branchId,
+      agentKind: row.agentKind,
       title: row.title,
       archivedAt: row.archivedAt,
       contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
