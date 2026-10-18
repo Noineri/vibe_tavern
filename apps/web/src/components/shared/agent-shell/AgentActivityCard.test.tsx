@@ -227,14 +227,67 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(cards[0]!.parentElement!.textContent).toContain("attack: strict resolution requires resolve() to return final");
   });
 
-  it("AS-8e5: an experience run_test card keeps its raw summary", () => {
-    const { getByTestId } = render(
-      <AgentActivityCard
-        kind="experience"
-        activity={activity({ toolCallId: "exp1", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: true, checks: 3 }) })}
-      />,
+  it("AS-8e7a: experience run_test / run_simulate cards show captions, not raw JSON", () => {
+    const { getAllByTestId } = render(
+      <div>
+        {/* A passed rules test — the live digest shape. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "t1", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: true, status: "active", revision: 0 }) })}
+        />
+        {/* A failed rules test — the errorMessage is the detail. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "t2", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: false, errorCode: "vm_error", errorMessage: "boom" }) })}
+        />
+        {/* The trust refusal — the errorMessage is the detail. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "t3", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: false, errorCode: "script_not_trusted", errorMessage: "enable it first" }) })}
+        />
+        {/* A failed rules test with no message — caption, no detail. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "t4", toolName: "run_test", status: "done", summary: JSON.stringify({ ok: false, errorCode: "vm_error" }) })}
+        />
+        {/* A passed simulation. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "s1", toolName: "run_simulate", status: "done", summary: JSON.stringify({ ok: true, stopReason: "completed", iterations: 3 }) })}
+        />
+        {/* A failed simulation — the errorMessage is the detail. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "s2", toolName: "run_simulate", status: "done", summary: JSON.stringify({ ok: false, errorCode: "vm_error", errorMessage: "stalled" }) })}
+        />
+        {/* The persisted wrapper — unwrapped before captioning. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "w1", toolName: "run_test", status: "done", summary: JSON.stringify({ toolName: "run_test", output: { ok: true, status: "active" } }) })}
+        />
+        {/* Unparseable — keeps today's raw-summary fallback. */}
+        <AgentActivityCard
+          kind="experience"
+          activity={activity({ toolCallId: "r1", toolName: "run_test", status: "done", summary: "{not json" })}
+        />
+      </div>,
     );
-    // No host caption for the experience kind — the raw digest stays.
-    expect(getByTestId("copilot-activity-title").textContent).toBe(JSON.stringify({ ok: true, checks: 3 }));
+    const titles = getAllByTestId("copilot-activity-title").map((el) => el.textContent);
+    // Identity i18n: the keys render verbatim without a LocaleProvider.
+    expect(titles[0]).toBe("agent_rules_test_ok");
+    expect(titles[1]).toBe("agent_rules_test_failed");
+    expect(titles[2]).toBe("agent_rules_test_failed");
+    expect(titles[3]).toBe("agent_rules_test_failed");
+    expect(titles[4]).toBe("agent_simulate_ok");
+    expect(titles[5]).toBe("agent_simulate_failed");
+    expect(titles[6]).toBe("agent_rules_test_ok");
+    expect(titles[7]).toBe("{not json");
+    const cards = getAllByTestId("copilot-activity-card");
+    expect(cards[0]!.parentElement!.textContent).not.toContain("active");
+    expect(cards[1]!.parentElement!.textContent).toContain("boom");
+    expect(cards[2]!.parentElement!.textContent).toContain("enable it first");
+    expect(cards[3]!.parentElement!.textContent).not.toContain("vm_error");
+    expect(cards[5]!.parentElement!.textContent).toContain("stalled");
+    expect(cards[7]!.parentElement!.textContent).toContain("{not json");
   });
 });

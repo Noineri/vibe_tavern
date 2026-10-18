@@ -12,6 +12,8 @@ import type { ScriptRecord } from "../../../../api/types.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { registerAgentHost, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
+import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
+import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
@@ -383,6 +385,32 @@ function ExperienceEditorPane({
 }
 
 /**
+ * AS-8e7a: the mini-app `run_test` / `run_simulate` captions — the digest
+ * envelopes are machine shapes (`{ok, ...}` / the `script_not_trusted`
+ * refusal) that must never render as a raw JSON title. Parses
+ * `activity.summary` through the shared `parseAgentToolOutput` helper
+ * (unwrapping the persisted `{toolName, output}` wrapper); unparseable or
+ * any other tool returns undefined and keeps today's fallback. `ok === true`
+ * → the passed caption; otherwise the failed caption with `errorMessage` as
+ * detail when present.
+ */
+function experienceTestCaption(activity: AgentToolActivity): { titleKey: "agent_rules_test_ok" | "agent_rules_test_failed" | "agent_simulate_ok" | "agent_simulate_failed"; detail?: string } | undefined {
+  if (activity.toolName !== "run_test" && activity.toolName !== "run_simulate") return undefined;
+  const record = parseAgentToolOutput(activity);
+  if (record === undefined) return undefined;
+  if (activity.toolName === "run_test") {
+    if (record.ok === true) return { titleKey: "agent_rules_test_ok" };
+    return typeof record.errorMessage === "string"
+      ? { titleKey: "agent_rules_test_failed", detail: record.errorMessage }
+      : { titleKey: "agent_rules_test_failed" };
+  }
+  if (record.ok === true) return { titleKey: "agent_simulate_ok" };
+  return typeof record.errorMessage === "string"
+    ? { titleKey: "agent_simulate_failed", detail: record.errorMessage }
+    : { titleKey: "agent_simulate_failed" };
+}
+
+/**
  * The `experience` host descriptor. `renderEditorPane` narrows the opaque
  * `hostProps` (the wrapper and this host are a pair); `buildSendOptions`
  * forwards to the pane's live bridge session — the descriptor is a module
@@ -434,6 +462,7 @@ registerAgentHost({
     />
   ),
   buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
+  toolCaption: (activity) => experienceTestCaption(activity),
   // No record-proposal renderers yet — the AS-5 fallback card covers every
   // recordType until a host registers one.
   recordProposalRenderers: {},

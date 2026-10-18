@@ -22,6 +22,7 @@ import { agentDiffExtensions, computeDiffDecorationSpecs } from "../../shared/ag
 import { useAgentTurnStore, type AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { mergeSelectedBody } from "../../../lib/coauthor-hunk-merge.js";
+import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import {
   activateScriptAgentSession,
   answerScriptAgentAsk,
@@ -81,18 +82,8 @@ const EMPTY_ACTIVITIES: readonly AgentToolActivity[] = [];
  */
 function scriptTestCaption(activity: AgentToolActivity): { titleKey: "agent_script_test_ok" | "agent_script_test_failed"; detail?: string } | undefined {
   if (activity.toolName !== "run_script_test") return undefined;
-  if (typeof activity.summary !== "string" || activity.summary === "") return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(activity.summary);
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed === "object" && parsed !== null && "output" in parsed && "toolName" in parsed) {
-    parsed = (parsed as { output: unknown }).output;
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined;
-  const record = parsed as Record<string, unknown>;
+  const record = parseAgentToolOutput(activity);
+  if (record === undefined) return undefined;
   if (record.ok === true) return { titleKey: "agent_script_test_ok" };
   let detail: string | undefined;
   const errors = (record as { errors?: unknown }).errors;
