@@ -188,12 +188,31 @@ export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStr
  * (`systemTokens`/`digestTokens`/`historyTokens`) are always the assembler's
  * estimate (the provider only reports an aggregate). `.strict()` rejects unknown
  * keys so a client/server typo cannot silently widen the shape.
+ *
+ * SC-0j: `segments` is the OPTIONAL kind-provided breakdown. Absent = the
+ * fixed system/digest/history breakdown above (every existing consumer stays
+ * valid); present = the kind's own token sections, rendered by
+ * `AgentContextMeter` with labels from the host descriptor's
+ * `meterSegmentLabels`. No producer emits it yet (the first consumer is the
+ * sidechat kind, Wave 1) — the server never sends it.
  */
 export const experienceCopilotContextMetricsSchema = z
   .object({
     systemTokens: z.number().int(),
     digestTokens: z.number().int(),
     historyTokens: z.number().int(),
+    /** SC-0j: kind-provided meter segments (`{ key, tokens }` per section).
+     *  Optional so existing producers/consumers that ignore it stay valid. */
+    segments: z
+      .array(
+        z
+          .object({
+            key: z.string().min(1),
+            tokens: z.number().int(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Tokens of the pinned-context attached block + recency anchor (CX-1,
      *  additive). Rows written before this plan lack the field — the DB parse
      *  guard defaults it to 0, so the wire can require it unconditionally. */

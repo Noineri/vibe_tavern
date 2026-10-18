@@ -622,6 +622,47 @@ describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-
   });
 });
 
+describe("experienceCopilotContextMetricsSchema (SC-0j kind-provided segments)", () => {
+  const base = {
+    systemTokens: 1000,
+    digestTokens: 0,
+    historyTokens: 500,
+    attachedTokens: 0,
+    totalTokens: 1500,
+    budgetTokens: 16000,
+    reserveTokens: 1000,
+    source: "estimate" as const,
+    measuredAt: "2026-10-18T00:00:00.000Z",
+  };
+
+  test("segments are absent by default (existing producers stay valid)", () => {
+    const parsed = experienceCopilotContextMetricsSchema.parse(base);
+    expect("segments" in parsed).toBe(false);
+  });
+
+  test("accepts a kind-provided segments array round-trip", () => {
+    const segments = [
+      { key: "cards_lore", tokens: 800 },
+      { key: "rp_messages", tokens: 700 },
+    ];
+    expect(experienceCopilotContextMetricsSchema.parse({ ...base, segments }).segments).toEqual(segments);
+  });
+
+  test("rejects a segment with an empty key, fractional tokens, or an unknown key", () => {
+    expect(() =>
+      experienceCopilotContextMetricsSchema.parse({ ...base, segments: [{ key: "", tokens: 10 }] }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotContextMetricsSchema.parse({ ...base, segments: [{ key: "lore", tokens: 1.5 }] }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotContextMetricsSchema.parse(
+        { ...base, segments: [{ key: "lore", tokens: 10, extra: 1 }] },
+      ),
+    ).toThrow();
+  });
+});
+
 describe("experienceCopilotContextMetricsSchema (CX-1 additions)", () => {
   test("requires attachedTokens (strict)", () => {
     const base = {

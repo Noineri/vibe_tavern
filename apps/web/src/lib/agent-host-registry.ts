@@ -371,6 +371,13 @@ export interface AgentHostDescriptor {
    *  this seam existed); a future chat host may return a branch owner (SC-13
    *  decides). Must stay pure — it runs on every shell render. */
   planOwner?: (ctx: AgentPlanOwnerContext) => AgentPlanOwner | undefined;
+  /** SC-0j: optional kind-provided meter segment labels — existing i18n KEYS
+   *  (never strings) for the `segments` the kind's metrics carry, keyed by
+   *  segment key. The shell passes the map to `AgentContextMeter`, which
+   *  resolves each key through `useT`. No built-in host defines it in this
+   *  unit (the first consumer is the sidechat kind, Wave 1 — SC-6); absent =
+   *  the meter renders its fixed system/digest/history segments as today. */
+  meterSegmentLabels?: Record<string, AgentI18nKey>;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;

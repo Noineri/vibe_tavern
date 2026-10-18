@@ -532,6 +532,7 @@ export function AgentShell({
           />
           <AgentContextMeter
             metrics={copilotContext.metrics}
+            segmentLabels={host.meterSegmentLabels}
             autoCompact={copilotContext.autoCompact}
             isCompacting={copilotContext.isCompacting}
             isSending={ctrl.isSending}

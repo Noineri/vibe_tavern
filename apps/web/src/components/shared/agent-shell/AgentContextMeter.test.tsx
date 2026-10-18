@@ -6,10 +6,17 @@ import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts
 useDomEnv();
 
 // CustomTooltip wraps children in a Radix Tooltip that never anchors under
-// happy-dom (same reason the shell test mocks it). Render children inline — the
-// meter test pins the track/segment/control contract, not tooltip internals.
+// happy-dom (same reason the shell test mocks it). Render children AND the
+// tooltip content inline — SC-0j pins the kind-provided segment LABELS, which
+// surface only in the tooltip rows, so the content must render for those
+// assertions (the track/segment/control contract stays the primary pin).
 mock.module("../../../components/shared/Tooltip.js", () => ({
-  CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  CustomTooltip: ({ children, content }: { children: ReactNode; content: ReactNode }) => (
+    <>
+      {children}
+      {content}
+    </>
+  ),
 }));
 
 // The shared Toggle wraps Radix Switch; mock it to a plain button so the meter
@@ -141,5 +148,85 @@ describe("ExperienceContextMeter", () => {
     fireEvent.click(toggle);
     expect(onToggleAutoCompact).toHaveBeenCalledTimes(1);
     expect(onToggleAutoCompact).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("AgentContextMeter kind-provided segments (SC-0j)", () => {
+  // Fixture descriptor labels: EXISTING i18n keys (this unit defines zero new
+  // keys — no host provides segments yet, so tests pair fixture metrics with
+  // a fixture label map). Under test `t()` falls back to the key itself.
+  const labels = {
+    lore: "copilot_context_segment_system",
+    summaries: "copilot_context_segment_digest",
+    messages: "copilot_context_segment_history",
+  } as const;
+
+  function customMetrics() {
+    return metrics({
+      segments: [
+        { key: "lore", tokens: 2500 },
+        { key: "summaries", tokens: 1000 },
+        { key: "messages", tokens: 500 },
+      ],
+    });
+  }
+
+  it("renders custom segments with host-provided labels and proportional widths", () => {
+    const { getByTestId, getByText, queryByTestId } = renderMeter({
+      metrics: customMetrics(),
+      segmentLabels: { ...labels },
+    });
+
+    expect(getByTestId("copilot-context-segment-lore").style.width).toBe("25%");
+    expect(getByTestId("copilot-context-segment-summaries").style.width).toBe("10%");
+    expect(getByTestId("copilot-context-segment-messages").style.width).toBe("5%");
+    expect(getByText("copilot_context_segment_system")).toBeDefined();
+    expect(getByText("copilot_context_segment_digest")).toBeDefined();
+    expect(getByText("copilot_context_segment_history")).toBeDefined();
+    // The fixed segments are gone on the custom path.
+    expect(queryByTestId("copilot-context-segment-system")).toBeNull();
+    expect(queryByTestId("copilot-context-segment-digest")).toBeNull();
+    expect(queryByTestId("copilot-context-segment-history")).toBeNull();
+  });
+
+  it("sums the custom segments to the displayed total", () => {
+    const m = customMetrics();
+    const { getByTestId, getByText } = renderMeter({ metrics: m, segmentLabels: { ...labels } });
+
+    const widths = ["lore", "summaries", "messages"].map(
+      (key) => parseFloat(getByTestId(`copilot-context-segment-${key}`).style.width),
+    );
+    const rendered = widths.reduce((a, b) => a + b, 0);
+    expect(rendered).toBe((m.totalTokens / m.budgetTokens) * 100);
+    expect(m.segments?.reduce((a, s) => a + s.tokens, 0)).toBe(m.totalTokens);
+    expect(getByText("copilot_context_total")).toBeDefined();
+  });
+
+  it("renders the raw key when the label map misses a segment (wiring bug stays visible)", () => {
+    const { getByText } = renderMeter({
+      metrics: customMetrics(),
+      segmentLabels: { lore: labels.lore },
+    });
+
+    expect(getByText("summaries")).toBeDefined();
+    expect(getByText("copilot_context_segment_system")).toBeDefined();
+  });
+
+  it("falls back to the fixed segments when metrics carry no segments (labels passed anyway)", () => {
+    const { getByTestId } = renderMeter({ metrics: metrics(), segmentLabels: { ...labels } });
+
+    expect(getByTestId("copilot-context-segment-system").style.width).toBe("25%");
+    expect(getByTestId("copilot-context-segment-digest").style.width).toBe("10%");
+    expect(getByTestId("copilot-context-segment-history").style.width).toBe("5%");
+  });
+
+  it("falls back to the fixed segments when segments is an empty array", () => {
+    const { getByTestId, queryByTestId } = renderMeter({
+      metrics: metrics({ segments: [] }),
+      segmentLabels: { ...labels },
+    });
+
+    expect(getByTestId("copilot-context-segment-system")).toBeDefined();
+    expect(queryByTestId("copilot-context-track")).toBeDefined();
   });
 });
