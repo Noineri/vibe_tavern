@@ -80,6 +80,13 @@ export interface ScriptAgentHostProps {
    *  decorations join these (the AS-8a seam). */
   scriptSafetyExtensions: Extension[];
   characterName: string | undefined;
+  /** AS-8e3 — the build panel's current character (the old modal's
+   *  scopeContext parity); sent on every turn so the backend renders its
+   *  full card. */
+  contextCharacterId: string | undefined;
+  /** AS-8e3 — the build panel's current persona (undefined when the panel
+   *  has none); omitted from the body then. */
+  contextPersonaId: string | undefined;
   /** Bound links + pick-list targets — the editor pane's toolbar strip reads
    *  them (re-added by AS-8c4e; AS-8c4c had removed them while unread). */
   scriptLinks: ScriptLinkRecord[];
@@ -107,6 +114,8 @@ function useScriptAgentReviewSession({
   bridge,
   code,
   codeSaved,
+  contextCharacterId,
+  contextPersonaId,
   isSending,
   onUpdateDraft,
   scriptKind,
@@ -116,6 +125,8 @@ function useScriptAgentReviewSession({
   bridge: AgentHostBridge;
   code: string;
   codeSaved: boolean | undefined;
+  contextCharacterId: string | undefined;
+  contextPersonaId: string | undefined;
   isSending: boolean;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
   scriptKind: "prompt" | "dice";
@@ -353,13 +364,17 @@ function useScriptAgentReviewSession({
   }, [threadId]);
 
   // The per-turn send options: the LIVE merged draft (what the user sees —
-  // unsaved edits included; never a stale DB read), the runtime kind, and the
-  // buffer's save state.
+  // unsaved edits included; never a stale DB read), the runtime kind, the
+  // buffer's save state, and the panel's current character/persona (AS-8e3 —
+  // the backend renders their full cards; the persona is absent when the
+  // panel has none).
   const buildSendOptions = useCallback((): AgentSendOptions => ({
     code: codeRef.current,
     scriptKind,
     ...(codeSaved !== undefined ? { codeSaved } : {}),
-  }), [scriptKind, codeSaved]);
+    ...(contextCharacterId !== undefined ? { contextCharacterId } : {}),
+    ...(contextPersonaId !== undefined ? { contextPersonaId } : {}),
+  }), [scriptKind, codeSaved, contextCharacterId, contextPersonaId]);
   bridge.session = { onBeforeSend: captureDangling, buildSendOptions };
 
   return {
@@ -402,6 +417,8 @@ function ScriptAgentEditorPane({
     bridge,
     code: hostProps.activeScript.code,
     codeSaved: !hostProps.draftDirty,
+    contextCharacterId: hostProps.contextCharacterId,
+    contextPersonaId: hostProps.contextPersonaId,
     isSending,
     onUpdateDraft: hostProps.onUpdateDraft,
     scriptKind,

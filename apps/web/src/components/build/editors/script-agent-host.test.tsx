@@ -268,6 +268,8 @@ function makeHostProps(script: ScriptRecord, isMobile: boolean, over: Partial<Sc
     apiRefOpen: false,
     scriptSafetyExtensions: [],
     characterName: undefined,
+    contextCharacterId: undefined,
+    contextPersonaId: undefined,
     scriptLinks: [],
     linkCharacters: [],
     linkPersonas: [],
@@ -426,6 +428,37 @@ describe("script-agent-host — dice send options (AS-9)", () => {
     // read), the runtime kind, and the buffer's save state.
     const body = streamCalls()[0]!.body!;
     expect(body).toMatchObject({ code: diceCode, scriptKind: "dice", codeSaved: false });
+  });
+});
+
+describe("script-agent-host — build context (AS-8e3)", () => {
+  it("a script turn carries the panel's character and persona ids in the stream body", async () => {
+    const script = makeScript({ id: "script-context", code: BASE_CODE });
+    renderScriptShell(script, { contextCharacterId: "char-1", contextPersonaId: "persona-1" });
+    await flushSessionLoad();
+
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "explain it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+
+    const body = streamCalls()[0]!.body!;
+    expect(body).toMatchObject({ contextCharacterId: "char-1", contextPersonaId: "persona-1" });
+  });
+
+  it("omits contextPersonaId from the body when the panel has no persona", async () => {
+    const script = makeScript({ id: "script-context-nopersona", code: BASE_CODE });
+    renderScriptShell(script, { contextCharacterId: "char-1", contextPersonaId: undefined });
+    await flushSessionLoad();
+
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "explain it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+
+    const body = streamCalls()[0]!.body!;
+    expect(body).toMatchObject({ contextCharacterId: "char-1" });
+    expect("contextPersonaId" in body).toBe(false);
   });
 });
 

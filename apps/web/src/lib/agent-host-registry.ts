@@ -109,6 +109,13 @@ export interface AgentSendOptions {
   /** AS-8b — whether the `code` buffer is saved (mirrors rulesSaved). */
   codeSaved?: boolean;
   step?: ExperienceCopilotStep;
+  /** AS-8e3 — the script panel's current character/persona at send time.
+   *  Carried on the body so the backend renders their full cards (the old
+   *  modal's scopeContext parity); absent = not sent. */
+  contextCharacterId?: string;
+  /** AS-8e3 — the script panel's current persona at send time (absent when
+   *  the panel has none). */
+  contextPersonaId?: string;
   /** The latest test/simulate digest the user sent back from the test panel
    *  (ER-14). Carried on the body as `testFeedback` and rendered as a JSON
    *  context section by the backend (surviving history compaction). */
