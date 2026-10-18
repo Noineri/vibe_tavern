@@ -148,7 +148,7 @@ function makeDeps(
     store,
     agentPlans: { get: async () => null, save: async () => {} },
     getScript: async () => makeScriptRow(),
-    getOwnerNames: async () => [],
+    getContextCards: async () => ({ ownerNames: [], cards: [] }),
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
@@ -226,6 +226,90 @@ describe("streamScriptAgentTurn - live-buffer contract", () => {
     );
 
     expect(promptText()).not.toContain("STORED-CODE-MARKER");
+  });
+});
+
+describe("streamScriptAgentTurn - context cards (AS-8e1)", () => {
+  it("passes the request's build-panel ids to getContextCards and renders the returned cards in full", async () => {
+    const store = createFakeStore(makeThread());
+    let seenInput: unknown;
+    const events = await drain(
+      streamScriptAgentTurn(
+        {
+          threadId: "thread_1",
+          content: "tweak it",
+          providerProfileId: "prov_1",
+          code: LIVE_CODE,
+          contextCharacterId: "char_1",
+          contextPersonaId: "persona_1",
+        },
+        makeDeps(store, {
+          getContextCards: (async (input: {
+            scriptId: string | null;
+            contextCharacterId?: string;
+            contextPersonaId?: string;
+          }) => {
+            seenInput = input;
+            return {
+              ownerNames: ["Aria"],
+              cards: [
+                { type: "character", id: "char_1", name: "Aria", content: "CARD-TEXT-ARIA-MARKER" },
+                { type: "persona", id: "persona_1", name: "Muse", content: "PERSONA-DESC-MUSE-MARKER" },
+              ],
+            };
+          }),
+        }),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    expect(seenInput).toEqual({
+      scriptId: "script_1",
+      contextCharacterId: "char_1",
+      contextPersonaId: "persona_1",
+    });
+    const prompt = promptText();
+    expect(prompt).toContain("- Linked owners: Aria");
+    expect(prompt).toContain("## Character and persona cards");
+    expect(prompt).toContain("### Character: Aria");
+    expect(prompt).toContain("CARD-TEXT-ARIA-MARKER");
+    expect(prompt).toContain("### Persona: Muse");
+    expect(prompt).toContain("PERSONA-DESC-MUSE-MARKER");
+  });
+
+  it("a draft thread (scriptId null) still resolves the request ids' cards", async () => {
+    const store = createFakeStore(makeThread(null));
+    let seenInput: unknown;
+    const events = await drain(
+      streamScriptAgentTurn(
+        {
+          threadId: "thread_1",
+          content: "start",
+          providerProfileId: "prov_1",
+          contextPersonaId: "persona_1",
+        },
+        makeDeps(store, {
+          getScript: async () => null,
+          getContextCards: (async (input: {
+            scriptId: string | null;
+            contextCharacterId?: string;
+            contextPersonaId?: string;
+          }) => {
+            seenInput = input;
+            return {
+              ownerNames: [],
+              cards: [
+                { type: "persona", id: "persona_1", name: "Muse", content: "PERSONA-DESC-MUSE-MARKER" },
+              ],
+            };
+          }),
+        }),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    expect(seenInput).toEqual({ scriptId: null, contextPersonaId: "persona_1" });
+    expect(promptText()).toContain("PERSONA-DESC-MUSE-MARKER");
   });
 });
 

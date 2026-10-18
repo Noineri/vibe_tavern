@@ -144,6 +144,12 @@ export const experienceCopilotStreamRequestSchema = z
     code: z.string().max(200_000).optional(),
     scriptKind: z.enum(["prompt", "dice"]).optional(),
     codeSaved: z.boolean().optional(),
+    // AS-8e1 — the script kind's build-panel context (the same ids the old
+    // modal's scopeContext carried): the character and persona open in the
+    // editor when the turn was sent. The script kind renders their full cards
+    // into the context package; the experience kind ignores both fields.
+    contextCharacterId: z.string().min(1).optional(),
+    contextPersonaId: z.string().min(1).optional(),
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),

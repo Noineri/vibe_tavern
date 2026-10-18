@@ -30,6 +30,7 @@ import { streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams } from "..
 import { renderAttachedContext, type CopilotContextItem } from "../agent-context.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../../interactive/copilot/copilot-limits.js";
 import { assembleScriptAgentPrompt, type ScriptAgentAssembleResult } from "./script-agent-prompt.js";
+import type { ScriptAgentContextCard } from "../kinds/script-kind.js";
 import { buildScriptAgentTools } from "./script-agent-tools.js";
 import { resolveBuiltinScriptAgentProfile, isScriptAuthoringTrusted } from "./script-agent-module.js";
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../interactive/copilot/experience-copilot-stream-contract.js";
@@ -48,8 +49,15 @@ export interface ScriptAgentStreamDeps {
   };
   /** Fetch a script by id (identity + stored code fallback). Null when missing. */
   readonly getScript: (scriptId: string) => Promise<ScriptRow | null>;
-  /** Resolve the script's linked owner display names (script_links). */
-  readonly getOwnerNames: (scriptId: string) => Promise<string[]>;
+  /** Resolve the script's linked owners (names) PLUS the request's
+   *  build-panel character/persona into full cards (AS-8e1 — the same card
+   *  text the @-pin loader uses). Deduped by type+id; missing rows skipped.
+   *  `scriptId === null` (a draft thread) still resolves the request ids. */
+  readonly getContextCards: (input: {
+    scriptId: string | null;
+    contextCharacterId?: string;
+    contextPersonaId?: string;
+  }) => Promise<{ ownerNames: string[]; cards: ScriptAgentContextCard[] }>;
   /** Resolve a raw provider profile by id. */
   readonly getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
   /** Resolve the effective profile (base + per-model overlay). */
@@ -96,6 +104,7 @@ interface ScriptAgentTurnContext {
   readonly scriptKind: "prompt" | "dice";
   readonly scopeType: string;
   readonly ownerNames: readonly string[];
+  readonly cards: readonly ScriptAgentContextCard[];
   /** The STORED code — the fallback when the request carries no live buffer. */
   readonly storedCode: string;
   /** SCRIPT_SAFETY_PLAN trust flag (imported && never enabled → false). */
@@ -105,21 +114,35 @@ interface ScriptAgentTurnContext {
 async function loadScriptAgentContext(
   scriptId: string | null,
   deps: ScriptAgentStreamDeps,
+  requestIds?: { contextCharacterId?: string; contextPersonaId?: string },
 ): Promise<ScriptAgentTurnContext> {
+  const cardsInput = {
+    scriptId,
+    ...(requestIds?.contextCharacterId !== undefined
+      ? { contextCharacterId: requestIds.contextCharacterId }
+      : {}),
+    ...(requestIds?.contextPersonaId !== undefined
+      ? { contextPersonaId: requestIds.contextPersonaId }
+      : {}),
+  };
   if (scriptId === null) {
-    // Draft semantics (mirrors the experience stream): empty buffers, trusted.
-    return { scriptName: "Script", scriptKind: "prompt", scopeType: "global", ownerNames: [], storedCode: "", codeTrusted: true };
+    // Draft semantics (mirrors the experience stream): empty buffers, trusted —
+    // but the request's build-panel ids still resolve (an unsaved draft has
+    // no linked owners, yet the editor may already show a character/persona).
+    const { cards } = await deps.getContextCards(cardsInput);
+    return { scriptName: "Script", scriptKind: "prompt", scopeType: "global", ownerNames: [], cards, storedCode: "", codeTrusted: true };
   }
-  const [script, ownerNames] = await Promise.all([
+  const [script, contextCards] = await Promise.all([
     deps.getScript(scriptId),
-    deps.getOwnerNames(scriptId),
+    deps.getContextCards(cardsInput),
   ]);
   const scriptKind = script?.scriptKind === "dice" ? "dice" : "prompt";
   return {
     scriptName: script?.name ?? "Script",
     scriptKind,
     scopeType: script?.scopeType ?? "global",
-    ownerNames,
+    ownerNames: contextCards.ownerNames,
+    cards: contextCards.cards,
     storedCode: script?.code ?? "",
     // Derived ONCE here (the single source every consumer reads): imported
     // rows are trusted only after the first explicit enable.
@@ -166,8 +189,18 @@ export async function* streamScriptAgentTurn(
       codeTrusted: context.codeTrusted,
     }),
 
-    // ── Script context: identity, scope, linked owners, stored code, trust ──
-    loadContext: (thread) => loadScriptAgentContext(thread.scriptId, deps),
+    // ── Script context: identity, scope, linked owners + full cards, stored
+    // ── code, trust. The request's build-panel ids ride the closure (the
+    // ── generic loop's loadContext seam only passes the thread). ──
+    loadContext: (thread) =>
+      loadScriptAgentContext(thread.scriptId, deps, {
+        ...(request.contextCharacterId !== undefined
+          ? { contextCharacterId: request.contextCharacterId }
+          : {}),
+        ...(request.contextPersonaId !== undefined
+          ? { contextPersonaId: request.contextPersonaId }
+          : {}),
+      }),
 
     // ── Agent profile: thread → script → profile row → the kind's builtin ──
     resolveProfile: (thread) =>
@@ -200,6 +233,7 @@ export async function* streamScriptAgentTurn(
         scriptKind: context.scriptKind,
         scopeType: context.scopeType,
         ownerNames: [...context.ownerNames],
+        cards: [...context.cards],
         code,
         codeTrusted: context.codeTrusted,
         ...(request.codeSaved !== undefined ? { codeSaved: request.codeSaved } : {}),

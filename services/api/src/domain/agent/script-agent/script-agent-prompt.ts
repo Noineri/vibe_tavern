@@ -51,7 +51,7 @@ import {
 } from "./script-agent-module.js";
 import { renderAgentSkillCatalog } from "../agent-prompt.js";
 import { getAgentKindOf } from "../agent-kind-registry.js";
-import type { ScriptAgentContext } from "../kinds/script-kind.js";
+import type { ScriptAgentContext, ScriptAgentContextCard } from "../kinds/script-kind.js";
 // Side effect: registers the `script` kind so the descriptor path below
 // resolves in ANY process that assembles a prompt (tests included — they do
 // not go through server-runtime).
@@ -83,6 +83,10 @@ export interface ScriptAgentAssembleInput {
   readonly scopeType: string;
   /** The linked owners' display names (resolved by the caller from links). */
   readonly ownerNames: readonly string[];
+  /** The full character/persona cards for the context package (every linked
+   *  owner plus the request's build-panel character/persona; the caller
+   *  resolves them — see `ScriptAgentContextCard`). */
+  readonly cards?: readonly ScriptAgentContextCard[];
   /**
    * The CURRENT code — the LIVE buffer from the turn's request. This is the
    * value the model's `code` working buffer is seeded with and the value the
@@ -174,6 +178,7 @@ export async function assembleScriptAgentPrompt(
     scriptKind: input.scriptKind,
     scopeType: input.scopeType,
     ownerNames: input.ownerNames,
+    cards: input.cards ?? [],
     code: input.code,
     codeTrusted: input.codeTrusted,
     codeSaved: input.codeSaved,

@@ -50,6 +50,14 @@ export interface ExperienceCopilotStreamRequest {
   scriptKind?: "prompt" | "dice";
   /** AS-8b — whether the live `code` buffer has been saved (see `rulesSaved`). */
   codeSaved?: boolean;
+  /** AS-8e1 — the character open in the script editor's build panel (the
+   *  same id the old modal's scopeContext carried). The script kind renders
+   *  its full card into the context package; the experience kind ignores it. */
+  contextCharacterId?: string;
+  /** AS-8e1 — the persona open in the script editor's build panel (see
+   *  `contextCharacterId`). The script kind renders its description into the
+   *  context package; the experience kind ignores it. */
+  contextPersonaId?: string;
   /** The latest test/simulate digest the user sent back from the test panel.
    *  Loosely typed on the wire (`Record<string, unknown>`) because the digest
    *  shapes live in the backend domain. */

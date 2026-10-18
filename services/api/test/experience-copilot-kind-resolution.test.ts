@@ -1,4 +1,8 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
@@ -447,6 +451,166 @@ describe("ExperienceCopilotAdapter - a resolved kind without a stream-table entr
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; code: string };
     expect(body.code).toBe("AGENT_KIND_NOT_WIRED");
+  });
+});
+
+describe("ExperienceCopilotAdapter script stream - context cards and script-library skill pins (AS-8e1)", () => {
+  /** Adapter over a store container with linkable character/persona rows
+   *  (the script kind's card sources) plus both skill libraries. */
+  function makeCardAdapter(
+    thread: ExperienceCopilotThread,
+    script: ScriptRow | null,
+    opts: {
+      links?: Array<{ targetType: "character" | "persona"; targetId: string }>;
+      scriptSkillService?: SkillLibraryService;
+      copilotSkillService?: SkillLibraryService;
+    } = {},
+  ) {
+    const messages: Array<Record<string, unknown>> = [];
+    let counter = 0;
+    const store = {
+      async getById(threadId: string) {
+        return thread.id === threadId ? thread : null;
+      },
+      async listMessages() {
+        return [...messages];
+      },
+      async appendMessage(_threadId: string, input: { role: string; content?: string; toolCallsJson?: string | null; toolCallId?: string | null }) {
+        const msg = {
+          id: `msg_${counter++}`,
+          threadId: thread.id,
+          role: input.role,
+          content: input.content ?? "",
+          toolCallsJson: input.toolCallsJson ?? null,
+          toolCallId: input.toolCallId ?? null,
+          createdAt: new Date(Date.now() + counter * 1000).toISOString(),
+        };
+        messages.push(msg);
+        return msg;
+      },
+      async updateContextMetrics() {},
+      async updateTodo() {},
+    } as unknown as ExperienceCopilotStore;
+    const providerRow = makeProviderRow();
+    const stores = {
+      experienceCopilot: store,
+      agentPlans: { get: async () => null, save: async () => {} },
+      scripts: {
+        async getById(scriptId: string) {
+          return script && script.id === scriptId ? script : null;
+        },
+        async getLinks() {
+          return (opts.links ?? []).map((l) => ({ scriptId: script?.id ?? "script_kr_1", ...l }));
+        },
+        async getBoundVisualIds() { return []; },
+      },
+      characters: {
+        async getById(id: string) {
+          return id === "char_kr_9" ? { id, name: "Aria" } : null;
+        },
+        async getProfileMdText(id: string) {
+          return `# Aria\n\nFULL-CARD-ARIA-MARKER for ${id}`;
+        },
+      },
+      personas: {
+        async getById(id: string) {
+          return id === "persona_kr_7"
+            ? { id, name: "Muse", description: "PERSONA-DESC-MUSE-MARKER" }
+            : null;
+        },
+      },
+      lorebooks: {
+        async getLorebook() { return null; },
+        async listEntries() { return []; },
+      },
+      providers: {
+        async getById(id: string) { return id === providerRow.id ? providerRow : null; },
+        async getModelSettings() { return null; },
+      },
+      copilotProfiles: { async getById() { return null; } },
+      experienceResources: { async getVisualById() { return null; } },
+    } as unknown as StoreContainer;
+    return new ExperienceCopilotAdapter(
+      stores,
+      undefined,
+      opts.copilotSkillService,
+      opts.scriptSkillService,
+    );
+  }
+
+  test("a skill pinned in a script thread resolves from the script library, never the experience one", async () => {
+    // The same skill id exists in BOTH libraries with different bodies: the
+    // script turn must inject the script library's body (the AS-8e1 skill-pin
+    // leak was the experience library winning here).
+    const root = await mkdtemp(join(tmpdir(), "vt-kr-skill-libs-"));
+    try {
+      const scriptUser = join(root, "script-user");
+      const expUser = join(root, "exp-user");
+      await mkdir(join(scriptUser, "shared-skill"), { recursive: true });
+      await mkdir(join(expUser, "shared-skill"), { recursive: true });
+      await mkdir(join(root, "script-builtin"), { recursive: true });
+      await mkdir(join(root, "exp-builtin"), { recursive: true });
+      await Bun.write(
+        join(scriptUser, "shared-skill", "SKILL.md"),
+        "---\nname: shared-skill\ndescription: Shared test skill.\n---\n\n# shared-skill\n\nSCRIPT-LIBRARY-SKILL-BODY-MARKER\n",
+      );
+      await Bun.write(
+        join(expUser, "shared-skill", "SKILL.md"),
+        "---\nname: shared-skill\ndescription: Shared test skill.\n---\n\n# shared-skill\n\nEXPERIENCE-LIBRARY-SKILL-BODY-MARKER\n",
+      );
+      const scriptSkillService = new SkillLibraryService(scriptUser, join(root, "script-builtin"));
+      const copilotSkillService = new SkillLibraryService(expUser, join(root, "exp-builtin"));
+      const thread: ExperienceCopilotThread = {
+        ...makeThread(),
+        contextLinks: [{ targetType: "skill", targetId: "shared-skill" }],
+      };
+      const adapter = makeCardAdapter(thread, makeScriptRow("prompt"), {
+        scriptSkillService,
+        copilotSkillService,
+      });
+
+      requestBodies.length = 0;
+      const events = await runStream(adapter);
+      expect(events).toContain("finish");
+      expect(requestBodies).toHaveLength(1);
+      expect(requestBodies[0]).toContain("SCRIPT-LIBRARY-SKILL-BODY-MARKER");
+      expect(requestBodies[0]).not.toContain("EXPERIENCE-LIBRARY-SKILL-BODY-MARKER");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("linked owners render full cards; a request id matching an owner renders once", async () => {
+    const thread = makeThread();
+    const adapter = makeCardAdapter(thread, makeScriptRow("prompt"), {
+      links: [{ targetType: "character", targetId: "char_kr_9" }],
+    });
+
+    requestBodies.length = 0;
+    const events: string[] = [];
+    const gen = adapter.experienceCopilotStream("thread_kr_1", {
+      content: "hello",
+      providerProfileId: "prov_1",
+      // The build-panel character is the SAME row as the linked owner — its
+      // card must render exactly once — while the build-panel persona is
+      // context only (a card, never an owner name).
+      contextCharacterId: "char_kr_9",
+      contextPersonaId: "persona_kr_7",
+    });
+    for await (const chunk of gen) events.push(chunk.event);
+    expect(events).toContain("finish");
+    expect(requestBodies).toHaveLength(1);
+    const body = requestBodies[0] as string;
+    // The owners line stays names-only: the linked character, never the
+    // request-only persona (the request body is JSON, so the line ends at
+    // the escaped newline right after the owner's name).
+    expect(body).toContain("- Linked owners: Aria\\n");
+    // The shared id renders once (dedupe by type+id across owners + request).
+    expect(body.match(/### Character: Aria/g)).toHaveLength(1);
+    expect(body.match(/FULL-CARD-ARIA-MARKER/g)).toHaveLength(1);
+    // The request-only persona renders its full description as a card.
+    expect(body).toContain("### Persona: Muse");
+    expect(body).toContain("PERSONA-DESC-MUSE-MARKER");
   });
 });
 

@@ -48,6 +48,18 @@ for (const key of SCRIPT_AGENT_TOOL_KEYS) {
  * row) BEFORE calling the renderer: the renderer stays pure and synchronous,
  * like the experience kind's.
  */
+export interface ScriptAgentContextCard {
+  /** Which entity the card describes (drives the `### <Character|Persona>:` header). */
+  readonly type: "character" | "persona";
+  /** The entity id (dedupe key together with `type`). */
+  readonly id: string;
+  /** The entity's display name (the card header). */
+  readonly name: string;
+  /** The FULL card text — a character's profile markdown or a persona's
+   *  description — never truncated, never summarized. */
+  readonly content: string;
+}
+
 export interface ScriptAgentContext {
   /** The script's display name. */
   readonly scriptName: string;
@@ -57,6 +69,11 @@ export interface ScriptAgentContext {
   readonly scopeType: string;
   /** The linked owners' display names (script_links; names resolved by the caller). */
   readonly ownerNames: readonly string[];
+  /** The full cards of every linked owner PLUS the request's build-panel
+   *  character/persona (resolved by the caller; missing rows skipped,
+   *  deduped by type+id). Empty when there is nothing to show — the section
+   *  is then omitted entirely. */
+  readonly cards: readonly ScriptAgentContextCard[];
   /**
    * The CURRENT code — the LIVE buffer from the turn's request, never a stale
    * DB read. May be empty (a fresh script).
@@ -95,6 +112,14 @@ function renderContextPackage(ctx: ScriptAgentContext): string {
     sections.push(`- Linked owners: ${ctx.ownerNames.join(", ")}`);
   } else {
     sections.push("- Linked owners: (none — the script is unbound)");
+  }
+
+  if (ctx.cards.length > 0) {
+    sections.push("", "## Character and persona cards");
+    for (const card of ctx.cards) {
+      const header = card.type === "character" ? "Character" : "Persona";
+      sections.push("", `### ${header}: ${card.name}`, card.content);
+    }
   }
 
   if (!ctx.codeTrusted) {

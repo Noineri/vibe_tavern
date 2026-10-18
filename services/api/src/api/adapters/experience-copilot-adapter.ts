@@ -19,6 +19,7 @@ import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/sc
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
+import type { ScriptAgentContextCard } from "../../domain/agent/kinds/script-kind.js";
 import type { ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream-contract.js";
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
 import {
@@ -141,27 +142,69 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.getKindStream(await this.resolveThreadKind(threadId));
   };
 
-  /** Resolve a script's linked owner display names (script_links →
-   *  character/persona names; dangling targets are skipped, never fatal) —
-   *  the script kind's context package lists them so the model knows whom
-   *  the script binds to. */
-  private async getScriptOwnerNames(scriptId: string): Promise<string[]> {
-    const links = await this.stores.scripts.getLinks(scriptId);
+  /** Resolve a script's linked owners (names) PLUS the request's build-panel
+   *  character/persona into full cards (AS-8e1 — the card text is the same
+   *  source the @-pin loader uses: a character's full profile markdown,
+   *  a persona's description). The script kind's context package lists the
+   *  names so the model knows whom the script binds to, then renders every
+   *  card in full — the assistant sees what a human author would need, not
+   *  just a name. Deduped by type+id (a request id that is also a linked
+   *  owner renders once); dangling targets and missing rows are skipped,
+   *  never fatal. `scriptId === null` (a draft thread) still resolves the
+   *  request ids. */
+  private async getScriptContextCards(input: {
+    scriptId: string | null;
+    contextCharacterId?: string;
+    contextPersonaId?: string;
+  }): Promise<{ ownerNames: string[]; cards: ScriptAgentContextCard[] }> {
     const names: string[] = [];
-    for (const link of links) {
-      if (link.targetType === "character") {
-        const character = await this.stores.characters.getById(link.targetId);
-        if (character) names.push(character.name);
-      } else {
-        const persona = await this.stores.personas.getById(link.targetId);
-        if (persona) names.push(persona.name);
+    const cards: ScriptAgentContextCard[] = [];
+    const seen = new Set<string>();
+    const pushCharacter = async (id: string): Promise<void> => {
+      const key = `character:${id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const character = await this.stores.characters.getById(id);
+      if (!character) return;
+      names.push(character.name);
+      cards.push({
+        type: "character",
+        id: character.id,
+        name: character.name,
+        content: await this.stores.characters.getProfileMdText(id),
+      });
+    };
+    const pushPersona = async (id: string, countAsOwner: boolean): Promise<void> => {
+      const key = `persona:${id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const persona = await this.stores.personas.getById(id);
+      if (!persona) return;
+      if (countAsOwner) names.push(persona.name);
+      cards.push({ type: "persona", id: persona.id, name: persona.name, content: persona.description });
+    };
+    if (input.scriptId !== null) {
+      const links = await this.stores.scripts.getLinks(input.scriptId);
+      for (const link of links) {
+        if (link.targetType === "character") {
+          await pushCharacter(link.targetId);
+        } else {
+          await pushPersona(link.targetId, true);
+        }
       }
     }
-    return names;
+    // The request's build-panel ids are context, not ownership: their cards
+    // render, but their names never join the «Linked owners» line.
+    if (input.contextCharacterId !== undefined) await pushCharacter(input.contextCharacterId);
+    if (input.contextPersonaId !== undefined) await pushPersona(input.contextPersonaId, false);
+    return { ownerNames: names, cards };
   }
 
   /** The kind-agnostic pinned-context loader (CX-3) over the REAL stores +
-   *  copilot skill library, shared by every kind's stream deps.
+   *  the GIVEN skill library, shared by every kind's stream deps (each kind
+   *  passes its OWN library — the script kind reads the script library, the
+   *  experience kind the copilot one — so a pinned skill resolves from the
+   *  library the turn's catalog was scanned from).
    *  `getCopilotContextItems` is pure over its deps, and the store subset is
    *  structural (method syntax → bivariance for branded ids), so the
    *  StoreContainer slots in without adapters. The skill arm reads the
@@ -169,10 +212,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  root first, so a user shadow of a built-in wins — catalog precedence).
    *  `undefined` when the skill library is absent (lifecycle-only harnesses
    *  construct the adapter without one) → the stream attaches no context. */
-  private buildContextItemsResolver():
+  private buildContextItemsResolver(
+    skillService: SkillLibraryService | undefined,
+  ):
     | ((links: readonly ExperienceCopilotContextLink[]) => Promise<CopilotContextItem[]>)
     | undefined {
-    const skillService = this.copilotSkillService;
     if (skillService === undefined) return undefined;
     return (links) => {
       const { userRoot, builtinRoot } = skillService.roots();
@@ -198,16 +242,22 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   }
 
   /** AS-8b: the `script` kind's stream deps — the same store/provider seams
-   *  the experience wiring uses, with the script-owned context (owner names,
-   *  trust), the shared kind-agnostic pinned-context loader, and the script
-   *  kind's own auto-compaction (script-authoring summarizer). */
+   *  the experience wiring uses, with the script-owned context (owner names
+   *  + full cards, trust), the shared kind-agnostic pinned-context loader
+   *  over the SCRIPT skill library (AS-8e1 — a skill pinned in a script
+   *  session resolves from the script library, never the experience one),
+   *  and the script kind's own auto-compaction (script-authoring summarizer). */
   private buildScriptAgentStreamDeps(): ScriptAgentStreamDeps {
-    const contextItemsResolver = this.buildContextItemsResolver();
+    const contextItemsResolver = this.buildContextItemsResolver(this.scriptSkillService);
     return {
       store: this.stores.experienceCopilot,
       agentPlans: this.stores.agentPlans,
       getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
-      getOwnerNames: (scriptId: string) => this.getScriptOwnerNames(scriptId),
+      getContextCards: (input: {
+        scriptId: string | null;
+        contextCharacterId?: string;
+        contextPersonaId?: string;
+      }) => this.getScriptContextCards(input),
       getProviderProfile: (id: string) => this.stores.providers.getById(id),
       getEffectiveProviderProfile: async (id: string, model: string) => {
         const profile = await this.stores.providers.getById(id);
@@ -267,7 +317,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     body: StreamBody,
     signal?: AbortSignal,
   ): AsyncGenerator<ExperienceCopilotStreamEvent> {
-    const contextItemsResolver = this.buildContextItemsResolver();
+    const contextItemsResolver = this.buildContextItemsResolver(this.copilotSkillService);
     const deps: ExperienceCopilotStreamDeps = {
       store: this.stores.experienceCopilot,
       agentPlans: this.stores.agentPlans,

@@ -279,6 +279,67 @@ describe("assembleScriptAgentPrompt — context package carries the live buffer"
   });
 });
 
+// ─── Context package: the full character/persona cards (AS-8e1) ─────────────
+
+describe("assembleScriptAgentPrompt — character and persona cards (AS-8e1)", () => {
+  test("a linked character's card text and a request persona's description both appear in full", async () => {
+    const result = await assembleScriptAgentPrompt({
+      history: [],
+      scriptName: "Greeting tweak",
+      scriptKind: "prompt",
+      scopeType: "entity",
+      ownerNames: ["Aria"],
+      cards: [
+        { type: "character", id: "char_1", name: "Aria", content: "CARD-TEXT-ARIA-MARKER" },
+        { type: "persona", id: "persona_1", name: "Muse", content: "PERSONA-DESC-MUSE-MARKER" },
+      ],
+      code: LIVE_PROMPT_CODE,
+      codeTrusted: true,
+    });
+
+    // The owners line stays (names only); the cards render in full below it.
+    expect(result.systemMessage).toContain("- Linked owners: Aria");
+    expect(result.systemMessage).toContain("## Character and persona cards");
+    expect(result.systemMessage).toContain("### Character: Aria");
+    expect(result.systemMessage).toContain("CARD-TEXT-ARIA-MARKER");
+    expect(result.systemMessage).toContain("### Persona: Muse");
+    expect(result.systemMessage).toContain("PERSONA-DESC-MUSE-MARKER");
+  });
+
+  test("a card shared by owner and request renders once (the caller dedupes by type+id)", async () => {
+    const result = await assembleScriptAgentPrompt({
+      history: [],
+      scriptName: "Greeting tweak",
+      scriptKind: "prompt",
+      scopeType: "entity",
+      ownerNames: ["Aria"],
+      cards: [{ type: "character", id: "char_1", name: "Aria", content: "CARD-TEXT-ARIA-MARKER" }],
+      code: LIVE_PROMPT_CODE,
+      codeTrusted: true,
+    });
+
+    expect(result.systemMessage.match(/### Character: Aria/g)).toHaveLength(1);
+    expect(result.systemMessage.match(/CARD-TEXT-ARIA-MARKER/g)).toHaveLength(1);
+  });
+
+  test("no owners and no cards → no cards section", async () => {
+    const result = await assembleScriptAgentPrompt({
+      history: [],
+      scriptName: "S",
+      scriptKind: "prompt",
+      scopeType: "global",
+      ownerNames: [],
+      code: LIVE_PROMPT_CODE,
+      codeTrusted: true,
+    });
+
+    expect(result.systemMessage).toContain("- Linked owners: (none — the script is unbound)");
+    expect(result.systemMessage).not.toContain("## Character and persona cards");
+    expect(result.systemMessage).not.toContain("### Character:");
+    expect(result.systemMessage).not.toContain("### Persona:");
+  });
+});
+
 // ─── Built-in `script` profile seed (SP-5 parity) ────────────────────────────
 
 describe("resolveBuiltinCopilotProfile('script') — the builtin seed", () => {
