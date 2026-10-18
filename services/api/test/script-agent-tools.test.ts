@@ -8,7 +8,9 @@
  * - `run_script_test` through the REAL tester the script-test route uses
  *   (`testScript` — prompt scripts: the seven-channel run; dice scripts:
  *   discovery + one deterministic sample roll per check), running the CURRENT
- *   working `code` buffer, not the stored code;
+ *   working `code` buffer, not the stored code, and returning the FULL result
+ *   (AS-8e2, owner 2026-10-18: a 5 000-char personality, a 2 000-char state
+ *   and a 30-entry console come back whole — no invented economies);
  * - the HARD security pin (SCRIPT_SAFETY_PLAN): an UNTRUSTED script
  *   (imported, never enabled) NEVER executes — `run_script_test` refuses
  *   fail-closed BEFORE anything runs (not even the store read happens), with
@@ -191,14 +193,19 @@ describe("script-agent-tools: input schema validation", () => {
     expect(schema.inputSchema.safeParse({ target: "rules", edits: [{ search: "a", replace: "b" }], summary: "s" }).success).toBe(false);
   });
 
-  test("run_script_test rejects an empty character/persona name and an oversized simulated input", () => {
+  test("run_script_test rejects an empty character/persona name and an input past the chat-message cap", () => {
     const { stores } = storesWith(makeScriptRow({ id: "s1", code: "" }));
     const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }) as unknown as Record<string, unknown>;
     const schema = schemaOf(tools, "run_script_test");
 
     expect(schema.inputSchema.safeParse({ characterName: "" }).success).toBe(false);
     expect(schema.inputSchema.safeParse({ personaName: "" }).success).toBe(false);
-    expect(schema.inputSchema.safeParse({ input: "x".repeat(4001) }).success).toBe(false);
+    // AS-8e2 (owner 2026-10-18): the simulated message shares the chat
+    // message cap (50 000, `experienceCopilotStreamRequestSchema.content`) —
+    // was: rejected past 4 000. Names are unbounded — was: rejected past 200.
+    expect(schema.inputSchema.safeParse({ input: "x".repeat(4001) }).success).toBe(true);
+    expect(schema.inputSchema.safeParse({ input: "x".repeat(50_001) }).success).toBe(false);
+    expect(schema.inputSchema.safeParse({ characterName: "N".repeat(201) }).success).toBe(true);
     // All-optional args and a short input parse fine.
     expect(schema.inputSchema.safeParse({}).success).toBe(true);
     expect(schema.inputSchema.safeParse({ input: "hello", characterName: "Aria" }).success).toBe(true);
@@ -239,7 +246,33 @@ describe("script-agent-tools: run_script_test — real runtime, prompt path", ()
     expect(digest.personality).toBe(", brave");
     expect(digest.errors).toHaveLength(0);
     expect(digest.stateSummary).toBe("{}");
-    expect(digest.consoleTail).toHaveLength(0);
+    expect(digest.console).toHaveLength(0);
+  });
+
+  test("the FULL result: a 5 000-char personality, a 2 000-char state and a 30-entry console come back whole", async () => {
+    // AS-8e2 (owner 2026-10-18): the digest used to cap personality/scenario
+    // at 2 000 chars, the state snapshot at 1 500 and the console at the last
+    // 20 entries — every cap is gone; nothing the script produced is cut.
+    const script = makeScriptRow({ id: "s1", scriptKind: "prompt", code: "" });
+    const { stores } = storesWith(script);
+    const code =
+      `context.character.personality = ${JSON.stringify("P".repeat(5000))};\n` +
+      `context.state.set('blob', ${JSON.stringify("S".repeat(2000))});\n` +
+      `for (var i = 0; i < 30; i++) { console.log('line-' + i); }`;
+    const tools = buildScriptAgentTools({ scriptId: "s1", code, codeTrusted: true, stores });
+
+    const digest = (await tools.run_script_test.execute({}, ctx)) as ScriptAgentRunTestResult;
+    expect(digest.kind).toBe("prompt");
+    if (digest.kind !== "prompt") return;
+    // Whole, byte-identical, no truncation ellipsis anywhere.
+    expect(digest.personality).toBe("P".repeat(5000));
+    expect(digest.personality).not.toContain("\u2026");
+    expect(digest.stateSummary).toBe(JSON.stringify({ blob: "S".repeat(2000) }));
+    expect(digest.stateSummary).not.toContain("\u2026");
+    expect(digest.console).toHaveLength(30);
+    expect(digest.console[0]).toBe("log: line-0");
+    expect(digest.console[29]).toBe("log: line-29");
+    expect(digest.ok).toBe(true);
   });
 
   test("a runtime error in the buffer surfaces as a typed digest error (self-correction loop)", async () => {

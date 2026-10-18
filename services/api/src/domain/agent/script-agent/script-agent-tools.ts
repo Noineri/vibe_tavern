@@ -16,7 +16,8 @@
  *   STORED script kind: prompt scripts run the seven-channel tester, dice
  *   scripts run discovery + one deterministic sample roll per check (the
  *   exact path DiceScriptTester reaches through the route). The result is
- *   trimmed to a kind-discriminated digest the model can reason over.
+ *   the FULL kind-discriminated digest the model reasons over (AS-8e2, owner
+ *   2026-10-18: everything the script produced — no length caps).
  * - `plan`/`read_plan` via the shared agent-plan tools, `ask_user` (the
  *   TAG-3 marker semantics), `read_skill_file` reused from the Co-Author
  *   skill system — wired exactly the way the experience kind wires them.
@@ -55,31 +56,25 @@ const UNTRUSTED_SCRIPT_ERROR_CODE = "script_not_trusted";
 const UNTRUSTED_SCRIPT_REFUSAL_MESSAGE =
   "script is imported and never enabled — enable it in the editor first: its code does not run (not even for tests) until the user reviews the import warning and enables it through the import-warning flow; tell the user this";
 
-// ─── Digest caps (mirrors the experience kind's digest tunables) ─────────────
-
-/** Max entries retained in a digest's `consoleTail`. */
-const CONSOLE_TAIL_MAX = 20;
-/** Max chars of the `state`/`shared` snapshots kept in the digest. */
-const STATE_SUMMARY_MAX = 1500;
-/** Max chars of the personality/scenario outputs kept in the digest. */
-const OUTPUT_TEXT_MAX = 2000;
-
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
-/** The prompt-script test digest (trimmed from PromptScriptTestResult). */
+/** The prompt-script test digest — the FULL PromptScriptTestResult for the
+ *  model (AS-8e2, owner 2026-10-18: everything the script produced, no
+ *  invented economies); only the shape is mapped (console entries as
+ *  `level: args` strings, per-error script metadata dropped). */
 export interface ScriptAgentPromptTestDigest {
   readonly ok: boolean;
   readonly kind: "prompt";
-  /** The personality the script left on the character (capped). */
+  /** The personality the script left on the character (the full text). */
   readonly personality: string;
-  /** The scenario the script left (capped). */
+  /** The scenario the script left (the full text). */
   readonly scenario: string;
-  /** Compact JSON snapshot of the script's `context.state` (capped). */
+  /** Full JSON snapshot of the script's `context.state`. */
   readonly stateSummary: string;
   /** Messages the script injected via `context.chat.injectMessage(...)`. */
   readonly injectedMessages: ReadonlyArray<{ readonly content: string; readonly role: string }>;
-  /** Last few console entries (`level: args`). */
-  readonly consoleTail: readonly string[];
+  /** Every console entry the script emitted (`level: args`), in order. */
+  readonly console: readonly string[];
   /** Per-script runtime errors (empty when the run was clean). */
   readonly errors: ReadonlyArray<{ readonly error: string; readonly line?: number }>;
 }
@@ -113,22 +108,17 @@ export type ScriptAgentRunTestResult =
   | ScriptAgentDiceTestDigest
   | { readonly ok: false; readonly errorCode: string; readonly errorMessage: string };
 
-// ─── Digest helpers ──────────────────────────────────────────────────────────
+// ─── Envelope helpers ───────────────────────────────────────────────────────
 
-/** Cap a free-text run output (personality/scenario) for the model context. */
-function capText(text: string): string {
-  return text.length > OUTPUT_TEXT_MAX ? `${text.slice(0, OUTPUT_TEXT_MAX)}\u2026` : text;
-}
-
-/** Compact JSON snapshot of an unknown state object, capped. */
+/** Full JSON snapshot of an unknown state object — never capped (AS-8e2,
+ *  owner 2026-10-18); an unserializable value degrades to a marker instead
+ *  of throwing (a script can stash non-JSON values in `context.state`). */
 function summarizeState(state: unknown): string {
-  let s: string;
   try {
-    s = JSON.stringify(state) ?? String(state);
+    return JSON.stringify(state) ?? String(state);
   } catch {
     return "(unserializable state)";
   }
-  return s.length > STATE_SUMMARY_MAX ? `${s.slice(0, STATE_SUMMARY_MAX)}\u2026` : s;
 }
 
 // ─── Tool set ───────────────────────────────────────────────────────────────
@@ -198,21 +188,20 @@ export function buildScriptAgentTools(opts: {
     run_script_test: tool({
       description:
         "Run the script's own test against the CURRENT working `code` buffer — the SAME tester the user's test panel runs (prompt scripts: the full seven-channel run with a simulated message; dice scripts: check discovery plus one deterministic sample roll per check). " +
-        "Returns a trimmed, kind-discriminated result: outputs (personality/scenario for prompt scripts; checks and sample rolls for dice scripts), a capped state snapshot, the console tail, and typed errors to self-correct. Read-only with respect to the buffer — it NEVER mutates the working code. " +
+        "Returns the FULL, kind-discriminated result: outputs (personality/scenario for prompt scripts; checks and sample rolls for dice scripts), the complete state snapshot, the complete console, and typed errors to self-correct. Read-only with respect to the buffer — it NEVER mutates the working code. " +
         "Run it before declaring a change done, and again after every fix. " +
         "If it returns `script_not_trusted`, the script is imported and not yet enabled: relay that to the user — do not attempt to work around it.",
       inputSchema: z.object({
         input: z
           .string()
-          .max(4000)
+          .max(50_000)
           .optional()
           .describe(
-            "Optional simulated chat message for PROMPT scripts (the user turn the script reacts to). Ignored by dice scripts.",
+            "Optional simulated chat message for PROMPT scripts (the user turn the script reacts to; same 50 000-char cap as a chat message). Ignored by dice scripts.",
           ),
         characterName: z
           .string()
           .min(1)
-          .max(200)
           .optional()
           .describe(
             "Optional character name for the test context (dice sample rolls label the character actor with it; prompt scripts see it as context.character.name).",
@@ -220,7 +209,6 @@ export function buildScriptAgentTools(opts: {
         personaName: z
           .string()
           .min(1)
-          .max(200)
           .optional()
           .describe(
             "Optional persona name (dice sample rolls label the persona actor with it; prompt scripts see it as context.persona.name).",
@@ -339,24 +327,25 @@ export function buildScriptAgentTools(opts: {
   } as typeof allTools & { read_skill_file: ReturnType<typeof buildReadSkillFileTool> };
 }
 
-// ─── Envelope trimming ───────────────────────────────────────────────────────
+// ─── Envelope assembly ──────────────────────────────────────────────────────
 
 /**
- * Trim the tester's full result into the model-facing digest — the noise
- * control point (the plan's failure point #4): only what the model needs to
- * reason and self-correct, everything long capped, everything
- * panel-rendering-only dropped.
+ * Map the tester's full result into the model-facing digest — the FULL
+ * result (AS-8e2, owner 2026-10-18): personality/scenario/state/console
+ * come back whole, never capped, so the model sees everything the script
+ * produced; only panel-rendering-only metadata (per-error scriptId/
+ * scriptName) is dropped and console entries are formatted `level: args`.
  */
 function trimTestResult(result: ScriptTestResult): ScriptAgentRunTestResult {
   if (result.kind === "prompt") {
     return {
       ok: result.errors.length === 0,
       kind: "prompt",
-      personality: capText(result.personality),
-      scenario: capText(result.scenario),
+      personality: result.personality,
+      scenario: result.scenario,
       stateSummary: summarizeState(result.state),
       injectedMessages: result.injectedMessages.map((m) => ({ content: m.content, role: m.role })),
-      consoleTail: result.console.slice(-CONSOLE_TAIL_MAX).map((e) => `${e.level}: ${e.args}`),
+      console: result.console.map((e) => `${e.level}: ${e.args}`),
       errors: result.errors.map((e) => ({
         error: e.error,
         ...(e.line !== undefined ? { line: e.line } : {}),
