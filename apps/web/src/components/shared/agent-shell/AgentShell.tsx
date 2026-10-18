@@ -15,10 +15,8 @@ import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { useAgentModelBinding } from "./use-agent-model-binding.js";
 import { useCopilotContext } from "../../../hooks/use-copilot-context.js";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import { useProviderModels } from "../../../hooks/use-provider-models.js";
-import { useBootstrapStore, patchUiSettingsAction } from "../../../stores/api-actions/bootstrap-actions.js";
 import { listPersonas } from "../../../api/persona-api.js";
 import { listAllLorebooks } from "../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../api/script-api.js";
@@ -58,8 +56,9 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
  * MOUNTED across tab switches (only `hidden` toggles) so the CodeMirror
  * editor and the chat scroll positions survive. The shell owns NO canonical
  * buffer text — buffers are host props; the shell holds only session state
- * (threadId / messages / loading / error), the provider/model selection, the
- * UI-only mobile tab selection, and the profile modal open flag.
+ * (threadId / messages / loading / error), the UI-only mobile tab selection,
+ * and the profile modal open flag — the per-kind provider/model selection
+ * lives in `use-agent-model-binding.ts` (SC-0e) and is only consumed here.
  *
  * AS-6c SEAMS (remaining for later units): the turn/review stores keep their
  * `experience-copilot-*` names (AS-10 owns the call-site rename), and the
@@ -263,16 +262,12 @@ export function AgentShell({
     [contextLinks, handleSetContextLinks],
   );
 
-  // ── Provider / model selection (persisted binding, then controlled) ───────
-  // The selection lives in server-side uiSettings (copilotProviderId /
-  // copilotModelName — the Co-Author binding pattern) so it survives leaving
-  // the editor and reloads. A dangling id (deleted profile) is ignored → the
-  // first-available default takes over (resolveCoauthorBinding semantics).
-  const savedCopilotBinding = useBootstrapStore((s) => s.data?.uiSettings);
-  const profiles = useProviderDataStore((s) => s.profiles);
-  const [providerProfileId, setProviderProfileId] = useState<string | null>(null);
-  const [model, setModel] = useState<string | undefined>(undefined);
-  const { models } = useProviderModels(providerProfileId);
+  // ── Provider / model selection (per-kind binding, SC-0e) ─────────────────
+  // Each assistant kind remembers its own provider + model (the kind's
+  // settings, not the global uiSettings copilot pair) — changing the model
+  // in one assistant never changes another. Resolution and persistence live
+  // in the hook; the shell only consumes the current selection.
+  const { providerProfileId, model, handleProviderChange } = useAgentModelBinding(kind, owner);
 
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
@@ -295,49 +290,6 @@ export function AgentShell({
     bridgeRef.current = { session: null, setInputPrefill };
   }
   const bridge = bridgeRef.current;
-
-  // Resolve the provider ONCE per pass: the saved binding wins when it still
-  // exists; a dangling/absent saved id falls back to the first available
-  // profile. (One effect — a separate "default" effect would race the restore
-  // in the same commit and the last setState would win, clobbering the saved
-  // binding — exactly the bug this persistence fixes.)
-  const savedProviderId = savedCopilotBinding?.copilotProviderId ?? null;
-  useEffect(() => {
-    if (providerProfileId !== null) return;
-    if (savedProviderId && profiles.some((p) => p.id === savedProviderId)) {
-      setProviderProfileId(savedProviderId);
-      return;
-    }
-    const first = profiles[0];
-    if (first) setProviderProfileId(first.id);
-  }, [profiles, providerProfileId, savedProviderId]);
-
-  // Same one-shot resolution for the model: the saved model when it is still
-  // offered by the (restored) profile, else the first available model. A
-  // dangling model id (deleted/renamed upstream) falls through to the default.
-  const savedModelName = savedCopilotBinding?.copilotModelName ?? null;
-  useEffect(() => {
-    if (model !== undefined) return;
-    if (savedModelName && models.some((m) => m.id === savedModelName)) {
-      setModel(savedModelName);
-      return;
-    }
-    const first = models[0];
-    if (first) setModel(first.id);
-  }, [models, model, savedModelName]);
-
-  const handleProviderChange = useCallback((profileId: string, nextModel?: string) => {
-    setProviderProfileId(profileId);
-    setModel(nextModel);
-    // Persist the explicit selection (fire-and-forget; a failure only means the
-    // next entry defaults again — surfaced via toast for transparency).
-    void patchUiSettingsAction({
-      ...(profileId ? { copilotProviderId: profileId } : { copilotProviderId: null }),
-      ...(nextModel ? { copilotModelName: nextModel } : { copilotModelName: null }),
-    }).catch(() => {
-      toast.error(t("agent_binding_save_error"));
-    });
-  }, [t]);
 
   // ── Session load (mount + retry) ─────────────────────────────────────────
   const loadSession = useCallback(async () => {

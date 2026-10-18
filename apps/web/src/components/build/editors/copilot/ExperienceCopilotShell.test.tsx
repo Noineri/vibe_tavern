@@ -429,10 +429,11 @@ beforeEach(() => {
   // previous test's seeded characters don't leak into the next test's popover.
   useSnapshotStore.setState({ allCharacters: [] });
   useProviderDataStore.setState({ profiles: PROFILES });
-  // Reset the persisted copilot binding between tests (the shell restores it).
+  // Reset the persisted per-kind binding between tests (the shell restores
+  // it from the bootstrap map — SC-0e; the legacy global pair is untouched).
   const current = useBootstrapStore.getState().data;
   if (current) {
-    useBootstrapStore.setState({ data: { ...current, uiSettings: { ...current.uiSettings, copilotProviderId: null, copilotModelName: null } } });
+    useBootstrapStore.setState({ data: { ...current, agentKindSettings: {} } });
   }
   router = {
     activeThread: null,
@@ -1176,10 +1177,12 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
   });
 });
 
-describe("ExperienceCopilotShell — provider binding persistence", () => {
-  /** Seed the persisted uiSettings copilot binding. The bootstrap store starts
-   * empty in tests (no bootstrap fetch), so synthesize a minimal data record
-   * when needed — the shell only reads `data.uiSettings` from it. */
+describe("ExperienceCopilotShell — provider binding persistence (SC-0e: per-kind)", () => {
+  /** Seed the persisted per-kind binding. The bootstrap store starts empty
+   * in tests (no bootstrap fetch), so synthesize a minimal data record when
+   * needed — the shell only reads `data.agentKindSettings["experience"]`
+   * from it (was: the global `uiSettings` copilot pair — owner decision 2
+   * moved the source to the kind's settings, SC-0d/0e). */
   function seedBinding(providerId: string | null, modelName: string | null): void {
     const current = useBootstrapStore.getState().data;
     const base = current ?? {
@@ -1204,12 +1207,22 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
         copilotModelName: null,
         updatedAt: "",
       },
+      agentKindSettings: {},
       isArmServer: false,
     };
     useBootstrapStore.setState({
       data: {
         ...base,
-        uiSettings: { ...base.uiSettings, copilotProviderId: providerId, copilotModelName: modelName },
+        agentKindSettings: {
+          ...base.agentKindSettings,
+          experience: {
+            agentKind: "experience",
+            providerProfileId: providerId,
+            modelName,
+            defaultProfileId: null,
+            updatedAt: "",
+          },
+        },
       },
     });
   }

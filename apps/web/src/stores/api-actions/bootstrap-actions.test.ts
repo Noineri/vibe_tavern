@@ -4,7 +4,7 @@ import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
-import { syncBootstrapSnapshotForActiveChat, patchUiSettingsAction, useBootstrapStore } from "./bootstrap-actions.js";
+import { syncBootstrapSnapshotForActiveChat, patchAgentKindSettingsAction, patchUiSettingsAction, useBootstrapStore } from "./bootstrap-actions.js";
 import { useNavigationStore } from "../navigation-store.js";
 
 const chatId = (id: string) => id as ChatId;
@@ -207,6 +207,7 @@ describe("patchUiSettingsAction", () => {
         allCharacters: [],
         promptPresets: [],
         uiSettings: { ...baseSettings },
+        agentKindSettings: {},
         isArmServer: false,
       },
     });
@@ -231,6 +232,7 @@ describe("patchUiSettingsAction", () => {
         allCharacters: [],
         promptPresets: [],
         uiSettings: { ...baseSettings, coauthorProviderId: "prov_1" },
+        agentKindSettings: {},
         isArmServer: false,
       },
     });
@@ -254,6 +256,7 @@ describe("patchUiSettingsAction", () => {
         allCharacters: [{ id: "char-1", name: "Char", subtitle: "", tags: [], avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null, avatarExt: null, avatarFullExt: null, updatedAt: "" }],
         promptPresets: [],
         uiSettings: { ...baseSettings },
+        agentKindSettings: {},
         isArmServer: false,
       },
     });
@@ -268,5 +271,59 @@ describe("patchUiSettingsAction", () => {
     expect(data.snapshot).toBe(snap);
     expect(data.allCharacters).toHaveLength(1);
     expect(data.uiSettings.coauthorProviderId).toBe("prov_2");
+  });
+});
+
+describe("patchAgentKindSettingsAction (SC-0e)", () => {
+  function seedKindMap(): void {
+    useBootstrapStore.setState({
+      data: {
+        initialChatId: null,
+        snapshot: null,
+        isFirstRun: false,
+        allCharacters: [],
+        promptPresets: [],
+        uiSettings: { ...wireUiSettings() },
+        agentKindSettings: {
+          script: {
+            agentKind: "script",
+            providerProfileId: "p2",
+            modelName: "m2",
+            defaultProfileId: null,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+        isArmServer: false,
+      },
+    });
+  }
+
+  test("merges the returned row into the kind entry and leaves siblings untouched", async () => {
+    seedKindMap();
+    const updated = {
+      agentKind: "experience",
+      providerProfileId: "p1",
+      modelName: "m1",
+      defaultProfileId: null,
+      updatedAt: "2026-02-02T00:00:00.000Z",
+    };
+    const result = await patchAgentKindSettingsAction("experience", { providerProfileId: "p1", modelName: "m1" }, async () => updated);
+    expect(result).toBe(updated);
+    const map = useBootstrapStore.getState().data!.agentKindSettings;
+    expect(map["experience"]).toBe(updated);
+    // The sibling kind keeps its own row (per-assistant independence).
+    expect(map["script"]).toMatchObject({ providerProfileId: "p2", modelName: "m2" });
+  });
+
+  test("returns the row without crashing when the store has no data", async () => {
+    const updated = {
+      agentKind: "experience",
+      providerProfileId: "p1",
+      modelName: "m1",
+      defaultProfileId: null,
+      updatedAt: "2026-02-02T00:00:00.000Z",
+    };
+    const result = await patchAgentKindSettingsAction("experience", { providerProfileId: "p1" }, async () => updated);
+    expect(result).toBe(updated);
   });
 });

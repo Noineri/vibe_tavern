@@ -27,6 +27,7 @@ import type {
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type Resources from "../i18n/resources.js";
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
+import type { ProviderProfileRecord } from "../api/types.js";
 // AS-6c-i: type-only — the thread-scoped transport members mirror today's
 // experience client fns exactly (the compiler keeps the host's delegation
 // honest), so the generic shell/controller never import the kind-specific
@@ -253,6 +254,28 @@ export interface AgentHostTransport {
 }
 
 /**
+ * The context a host's optional model default sees (SIDECHAT_PLAN SC-0e).
+ * The shell validates the proposal (a dangling profile id falls through),
+ * so the hook only proposes — it never touches the network and must stay pure.
+ */
+export interface AgentDefaultModelContext {
+  /** The typed thread owner the shell renders for. */
+  owner: AgentThreadOwner;
+  /** The currently available provider profiles (for proposal-time checks). */
+  profiles: ProviderProfileRecord[];
+}
+
+/**
+ * One host-proposed model binding (SIDECHAT_PLAN SC-0e) — the provider the
+ * kind prefers plus, optionally, the model on it. Both ids are validated
+ * against the live lists by the shell; unknown ids are ignored.
+ */
+export interface AgentDefaultModelBinding {
+  providerProfileId: string;
+  modelName?: string | null;
+}
+
+/**
  * AS-6c-i: re-exported so the controller (and any transport consumer) types
  * its stream callbacks and ask answers through the registry instead of the
  * experience client — the single spelling stays the client's (wire types are
@@ -308,6 +331,12 @@ export interface AgentHostDescriptor {
    *  key plus an optional detail line. Undefined = the shell keeps today's
    *  fallback (the model summary / raw tool-result text). */
   toolCaption?: (activity: AgentToolActivity) => { titleKey: AgentI18nKey; detail?: string } | undefined;
+  /** SC-0e: optional per-kind model default — consulted ONLY when the kind
+   *  has no usable saved binding (no row pair whose profile still exists).
+   *  No built-in host defines it in this unit (both keep today's
+   *  first-available fallback); it exists for future kinds (the sidechat's
+   *  RP-model default lands here in SC-13). Must stay pure. */
+  defaultModelBinding?: (ctx: AgentDefaultModelContext) => AgentDefaultModelBinding | undefined;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;

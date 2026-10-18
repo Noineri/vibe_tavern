@@ -295,7 +295,7 @@ beforeEach(() => {
   useProviderDataStore.setState({ profiles: PROFILES });
   const current = useBootstrapStore.getState().data;
   if (current) {
-    useBootstrapStore.setState({ data: { ...current, uiSettings: { ...current.uiSettings, copilotProviderId: null, copilotModelName: null } } });
+    useBootstrapStore.setState({ data: { ...current, agentKindSettings: {} } });
   }
   router = {
     activeThread: null,

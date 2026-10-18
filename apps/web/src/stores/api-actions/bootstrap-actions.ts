@@ -1,7 +1,9 @@
 import { bootstrapApp, updateUiSettings } from "../../api/settings-api.js";
+import { patchAgentKindSettings as defaultPatchAgentKindSettings } from "../../api/agent-kind-settings-api.js";
 import { fetchChat } from "../../api/chat-api.js";
 import { listPersonas } from "../../api/persona-api.js";
 import type { AppSnapshot, AppCharacterEntry, PersonaRecord, UiSettingsRecord } from "../../api/types.js";
+import type { AgentKindSettingsPatchRequest, AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
@@ -15,6 +17,11 @@ export interface BootstrapData {
   allCharacters: AppCharacterEntry[];
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
+  /** Per-kind remembered model settings (SIDECHAT_PLAN SC-0d/0e) — keyed by
+   *  kind id; the server always sends every REGISTERED kind (a kind without
+   *  a row carries the legacy `ui_settings` copilot pair). The per-kind
+   *  binding hook subscribes to its own entry. */
+  agentKindSettings: Record<string, AgentKindSettingsWire>;
   isArmServer: boolean;
 }
 
@@ -101,6 +108,27 @@ export async function fetchPersonasAction(): Promise<void> {
  * subscribers update immediately without a full bootstrap refetch. Accepts
  * explicit null to clear a field (e.g. coauthor binding reset).
  */
+/**
+ * Patch one agent kind's remembered model settings on the server and merge
+ * the returned row into the live bootstrap store's per-kind map (SIDECHAT_PLAN
+ * SC-0e), so only that kind's subscribers update — a sibling assistant keeps
+ * its own choice. Accepts explicit null to clear a field. Store reads go
+ * through `useBootstrapStore.getState()` — render closures hold pre-action
+ * state.
+ */
+export async function patchAgentKindSettingsAction(
+  kind: string,
+  patch: AgentKindSettingsPatchRequest,
+  updateFn: (kind: string, input: typeof patch) => Promise<AgentKindSettingsWire> = defaultPatchAgentKindSettings,
+): Promise<AgentKindSettingsWire> {
+  const updated = await updateFn(kind, patch);
+  const current = useBootstrapStore.getState().data;
+  if (current) {
+    useBootstrapStore.setState({ data: { ...current, agentKindSettings: { ...current.agentKindSettings, [kind]: updated } } });
+  }
+  return updated;
+}
+
 export async function patchUiSettingsAction(
   patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorLoreProviderId" | "coauthorLoreModelName" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>,
   updateFn: (input: typeof patch) => Promise<UiSettingsRecord> = updateUiSettings,

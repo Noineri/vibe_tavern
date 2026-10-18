@@ -167,6 +167,7 @@ describe("DictationButton opt-in gate", () => {
         allCharacters: [],
         promptPresets: [],
         uiSettings: uiSettings({ activeDictationProfileId: "stt-2" }),
+        agentKindSettings: {},
         isArmServer: false,
       },
     });

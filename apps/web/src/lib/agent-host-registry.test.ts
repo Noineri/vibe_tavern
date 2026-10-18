@@ -97,6 +97,32 @@ describe("agent-host-registry", () => {
     }
   });
 
+  it("defaultModelBinding is absent unless the host defines it (SC-0e)", () => {
+    const unsubscribe = registerAgentHost(descriptor("sc0e-no-hook"));
+    try {
+      expect(getAgentHost("sc0e-no-hook").defaultModelBinding).toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("a host-provided defaultModelBinding is returned through the descriptor", () => {
+    const host: AgentHostDescriptor = {
+      ...descriptor("sc0e-hook"),
+      defaultModelBinding: () => ({ providerProfileId: "p1", modelName: "m1" }),
+    };
+    const unsubscribe = registerAgentHost(host);
+    try {
+      const binding = getAgentHost("sc0e-hook").defaultModelBinding?.({
+        owner: { kind: "script", scriptId: "s-1" },
+        profiles: [],
+      });
+      expect(binding).toEqual({ providerProfileId: "p1", modelName: "m1" });
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it("re-register after unsubscribe works (stale unsubscribe is a no-op)", () => {
     const first = descriptor("as5-rereg");
     const unsubscribeFirst = registerAgentHost(first);

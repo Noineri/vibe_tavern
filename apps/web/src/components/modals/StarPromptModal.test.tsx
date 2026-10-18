@@ -82,6 +82,7 @@ function openModal(settings: Partial<UiSettingsRecord> = {}) {
       allCharacters: [],
       promptPresets: [],
       uiSettings: baseSettings(settings),
+      agentKindSettings: {},
       isArmServer: false,
     },
   });

@@ -165,6 +165,7 @@ describe("VoiceMessageButton profile gate", () => {
         allCharacters: [],
         promptPresets: [],
         uiSettings: uiSettings({ activeVoiceMessageProfileId: "stt-9" }),
+        agentKindSettings: {},
         isArmServer: false,
       },
     });
@@ -185,6 +186,7 @@ describe("VoiceMessageButton profile gate", () => {
         allCharacters: [],
         promptPresets: [],
         uiSettings: uiSettings({ activeVoiceMessageProfileId: "stt-9" }),
+        agentKindSettings: {},
         isArmServer: false,
       },
     });
