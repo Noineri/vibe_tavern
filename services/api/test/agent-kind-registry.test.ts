@@ -46,6 +46,7 @@ import "../src/domain/agent/kinds/script-kind.js";
 function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): AgentKind {
   return {
     id,
+    owner: "script",
     servesScriptKinds,
     basePromptServiceKey: `${id}_base`,
     skillRootId: id,

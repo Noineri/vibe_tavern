@@ -163,6 +163,7 @@ function renderContextPackage(ctx: ExperienceAgentContext): string {
 
 const kind: AgentKind<ExperienceAgentContext> = {
   id: "experience",
+  owner: "script",
   servesScriptKinds: ["interactive"],
   basePromptServiceKey: "copilot_base",
   skillRootId: "experience",

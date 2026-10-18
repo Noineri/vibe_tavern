@@ -51,6 +51,11 @@ function makeThread(scriptId: string | null = "script_kr_1"): ExperienceCopilotT
     id: "thread_kr_1",
     scriptId,
     draftSessionId: null,
+    // SC-0a chat-owner triple: null on script-owned/draft threads (this
+    // suite's threads are all script-owned or drafts).
+    chatId: null,
+    branchId: null,
+    agentKind: null,
     title: "Kind resolution",
     archivedAt: null,
     contextMetrics: null,

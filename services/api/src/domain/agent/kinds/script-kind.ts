@@ -145,6 +145,7 @@ function renderContextPackage(ctx: ScriptAgentContext): string {
 
 const kind: AgentKind<ScriptAgentContext> = {
   id: "script",
+  owner: "script",
   servesScriptKinds: ["prompt", "dice"],
   basePromptServiceKey: "script_agent_base",
   skillRootId: "script",

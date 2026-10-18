@@ -27,6 +27,18 @@ import type { ScriptKind } from "@vibe-tavern/domain";
 export type AgentKindId = string;
 
 /**
+ * Who owns a kind's threads (SIDECHAT_PLAN SC-0b): `"script"` — threads are
+ * born from a script row and the kind is DERIVED from it
+ * (`resolveKindForScript`); `"chat"` — threads are owned by a chat branch and
+ * the kind is stored on the thread row itself (there is nothing to derive it
+ * from). Decides which lifecycle routes serve the kind: the script-owner
+ * routes reject a chat-owned kind (`AGENT_KIND_NOT_CHAT_OWNED`) and the
+ * chat-owner routes reject a script-owned one, so a kind never serves both
+ * lifecycles by accident.
+ */
+export type AgentKindOwner = "script" | "chat";
+
+/**
  * One agent species. Generic over the kind's OWN context-package input
  * `CTX` — OPAQUE to the core (the registry stores `AgentKind<unknown>`;
  * callers narrow via `getAgentKindOf<CTX>`). No shared `AgentKindContext`
@@ -38,6 +50,13 @@ export type AgentKindId = string;
 export interface AgentKind<CTX = unknown> {
   /** Stable kind id used as the registry key. */
   readonly id: AgentKindId;
+  /**
+   * Which owner this kind's threads belong to (SC-0b) — see
+   * {@link AgentKindOwner}. Species-level like every other field here: the
+   * chat-owner lifecycle routes read it through the registry to reject a
+   * kind that is not chat-owned.
+   */
+  readonly owner: AgentKindOwner;
   /**
    * Which script kinds this species serves — the DATA behind
    * `resolveKindForScript()`: the registry returns the first REGISTERED kind

@@ -95,4 +95,27 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  pair. Rejects 400 when there is nothing to compact; 409 when a compaction
 	 *  is already in-flight; provider errors surface as 502 via the global handler. */
 	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
+
+	// ─── Chat-owner lifecycle (SIDECHAT_PLAN SC-0b) ─────────────────────────────
+	//
+	// The chat-branch-owner twins of the script lifecycle above: a
+	// (chat, branch, kind) triple instead of a script id, on the same store.
+	// Every member validates the kind through the registry FIRST (a 400-class
+	// client error needs no store I/O), then the (chat, branch) pair (404).
+
+	/** The single active (unarchived) thread for a (chat, branch, kind) triple,
+	 * or null — the chat-owner twin of {@link experienceCopilotGetActive}.
+	 * Delegates to the ER-3 store's `getActiveForChat`. */
+	agentChatGetActive: (chatId: string, branchId: string, kind: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** All sessions (active + archived) for a (chat, branch, kind) triple,
+	 * newest first — the chat-owner twin of {@link experienceCopilotListSessions}.
+	 * Delegates to the ER-3 store's `listSessionsForChat`. */
+	agentChatListSessions: (chatId: string, branchId: string, kind: string) => Promise<ExperienceCopilotThreadWire[]>;
+
+	/** Archive the current active sibling of the (chat, branch, kind) triple
+	 * (if any) and create+return a fresh active one — the chat-owner twin of
+	 * {@link experienceCopilotStartNewSession}. Delegates to the ER-3 store's
+	 * `startNewChatSession` (single-tx archive-then-insert). */
+	agentChatStartNewSession: (chatId: string, branchId: string, kind: string, title?: string) => Promise<ExperienceCopilotThreadWire>;
 }

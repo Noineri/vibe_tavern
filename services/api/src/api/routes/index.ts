@@ -32,6 +32,7 @@ import { createAiInstructionTemplateRoutes } from "./ai-instruction-template.js"
 import { createDiceRoutes } from "./dice.js";
 import { createExperienceRoutes } from "./experience.js";
 import { createExperienceCopilotRoutes } from "./experience-copilot.js";
+import { createAgentChatSessionsRoutes } from "./agent-chat-sessions.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -60,6 +61,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createDiceRoutes(runtime.dice))
     .route("/", createExperienceRoutes(runtime.experience))
     .route("/", createExperienceCopilotRoutes(runtime.experienceCopilot))
+    .route("/", createAgentChatSessionsRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))

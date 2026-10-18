@@ -24,6 +24,8 @@ import type { ExperienceCopilotStreamEvent } from "../../domain/interactive/copi
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
 import {
   resolveKindForScript,
+  getAgentKind,
+  getChatOwnedAgentKind,
   AgentKindNotWiredError,
 } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
@@ -100,7 +102,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   }
 
   /** The ONE thread → agent-kind resolution (used by the assert step, the
-   *  stream dispatch and manual compaction): thread → script row →
+   *  stream dispatch and manual compaction). SC-0b: a thread that carries an
+   *  `agent_kind` (a chat-owned thread) resolves to THAT kind through the
+   *  registry — `getAgentKind` throws `UnknownAgentKindError` when nothing is
+   *  registered under the stored slug (the typed-error path; the route maps
+   *  it to the same 400 as an unserved script kind). Everything else keeps
+   *  today's script path: thread → script row →
    *  `resolveKindForScript(script.scriptKind)`. A missing thread is a
    *  `notFound`; a draft thread (`scriptId === null`) and a dangling script
    *  link resolve to the draft kind (today's draft semantics); an unserved
@@ -110,6 +117,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     if (!thread) {
       throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
     }
+    if (thread.agentKind !== null) return getAgentKind(thread.agentKind).id;
     if (thread.scriptId === null) return DRAFT_THREAD_KIND;
     const script = await this.stores.scripts.getById(thread.scriptId);
     if (script === null) return DRAFT_THREAD_KIND;
@@ -403,6 +411,65 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // falls back to the auto-numbered label).
     const thread = await this.stores.experienceCopilot.renameSession(sessionId, title.trim());
     return thread ? this.toThreadWire(thread) : null;
+  };
+
+  // ─── Chat-owner lifecycle (SIDECHAT_PLAN SC-0b) ────────────────────────────
+
+  /** The kind param of the chat-owner routes: a REGISTERED kind that owns its
+   *  threads. Both failures are the registry's typed errors
+   *  (`UnknownAgentKindError` / `AgentKindNotChatOwnedError`) — the route maps
+   *  them to a 400; validated FIRST because it needs no store I/O. */
+  private requireChatOwnedKind(kindId: string): void {
+    getChatOwnedAgentKind(kindId);
+  }
+
+  /** The (chat, branch) path pair of the chat-owner routes: the chat must
+   *  exist, and the branch must exist AND belong to that chat — a foreign
+   *  branch id under this chat's path is a 404 (the same pair check the prompt
+   *  resolver applies), never a cross-owner leak. */
+  private async requireChatBranch(chatId: string, branchId: string): Promise<void> {
+    const chat = await this.stores.chats.getById(chatId);
+    if (!chat) {
+      throw notFound("Chat", `Chat '${chatId}' was not found.`);
+    }
+    const branch = await this.stores.chats.getBranch(branchId);
+    if (!branch || branch.chatId !== chat.id) {
+      throw notFound("ChatBranch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
+    }
+  }
+
+  agentChatGetActive = async (
+    chatId: string,
+    branchId: string,
+    kind: string,
+  ): Promise<ExperienceCopilotThreadWire | null> => {
+    this.requireChatOwnedKind(kind);
+    await this.requireChatBranch(chatId, branchId);
+    const thread = await this.stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
+    return thread ? this.toThreadWire(thread) : null;
+  };
+
+  agentChatListSessions = async (
+    chatId: string,
+    branchId: string,
+    kind: string,
+  ): Promise<ExperienceCopilotThreadWire[]> => {
+    this.requireChatOwnedKind(kind);
+    await this.requireChatBranch(chatId, branchId);
+    const threads = await this.stores.experienceCopilot.listSessionsForChat(chatId, branchId, kind);
+    return threads.map((t) => this.toThreadWire(t));
+  };
+
+  agentChatStartNewSession = async (
+    chatId: string,
+    branchId: string,
+    kind: string,
+    title?: string,
+  ): Promise<ExperienceCopilotThreadWire> => {
+    this.requireChatOwnedKind(kind);
+    await this.requireChatBranch(chatId, branchId);
+    const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title);
+    return this.toThreadWire(thread);
   };
 
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {

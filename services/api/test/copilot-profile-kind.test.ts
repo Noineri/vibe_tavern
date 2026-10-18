@@ -48,6 +48,7 @@ const FAKE_KIND_ID = "fake-quill-kind";
 function makeFakeKind(): AgentKind {
   return {
     id: FAKE_KIND_ID,
+    owner: "script",
     servesScriptKinds: [] as readonly ScriptKind[],
     basePromptServiceKey: `${FAKE_KIND_ID}_base`,
     skillRootId: FAKE_KIND_ID,

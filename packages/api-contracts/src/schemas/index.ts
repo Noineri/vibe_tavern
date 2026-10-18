@@ -1,6 +1,8 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
+export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
 export {
   reviewHunkCountsSchema,
   reviewOutcomeSchema,

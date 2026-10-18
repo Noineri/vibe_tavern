@@ -59,6 +59,18 @@ export class AgentKindNotWiredError extends Error {
   }
 }
 
+/** The kind IS registered, but its threads are not chat-owned
+ *  (`owner !== "chat"`, SC-0b) — the chat-owner lifecycle routes reject it
+ *  with a 400 instead of silently serving a script-derived kind under a
+ *  chat-branch path (its kind could never be stored on a thread row). */
+export class AgentKindNotChatOwnedError extends Error {
+  readonly code = "AGENT_KIND_NOT_CHAT_OWNED";
+  constructor(readonly kindId: AgentKindId) {
+    super(`Agent kind "${kindId}" is not chat-owned.`);
+    this.name = "AgentKindNotChatOwnedError";
+  }
+}
+
 // Insertion-ordered: registration order is the documented precedence for
 // resolveKindForScript.
 const kinds = new Map<AgentKindId, AgentKind>();
@@ -94,6 +106,20 @@ export function getAgentKind(id: AgentKindId): AgentKind {
  */
 export function getAgentKindOf<CTX>(id: AgentKindId): AgentKind<CTX> {
   return getAgentKind(id);
+}
+
+/**
+ * Resolve a kind for the CHAT-OWNER lifecycle (SC-0b): the registered kind
+ * must exist AND own its threads (`owner: "chat"`). Throws
+ * {@link UnknownAgentKindError} / {@link AgentKindNotChatOwnedError} — the
+ * chat-owner routes map both to a 400. The owner check lives here, beside
+ * the data it reads, so no route or adapter holds a second kind-classification
+ * of its own.
+ */
+export function getChatOwnedAgentKind(id: AgentKindId): AgentKind {
+  const kind = getAgentKind(id);
+  if (kind.owner !== "chat") throw new AgentKindNotChatOwnedError(id);
+  return kind;
 }
 
 /**
