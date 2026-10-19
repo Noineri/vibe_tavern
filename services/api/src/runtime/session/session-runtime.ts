@@ -12,6 +12,7 @@ import {
 	tag,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import { findBranchOfChat } from "../../domain/chat/chat-branch-ownership.js";
 import { getChatModeStrategy, type ChatModeStrategy, type ChatModeAssembleLoaders } from "../../domain/chat/chat-mode-strategy.js";
 import {
 	internal,
@@ -282,8 +283,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	 *  OUTSIDE the try/catch so a NotFound propagates to the route; the catch
 	 *  only masks assembly failures (returning null) as before. */
 	async getContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
-		const branches = await this.stores.chats.getBranches(chatId);
-		if (!branches.some((b) => b.id === branchId)) {
+		if (!(await findBranchOfChat(this.stores.chats, chatId, branchId))) {
 			throw notFound("Branch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
 		}
 		try {

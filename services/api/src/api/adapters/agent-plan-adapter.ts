@@ -8,6 +8,7 @@ import {
 	type AgentPlanOwner,
 } from "@vibe-tavern/domain";
 import { notFound, unprocessable } from "../../shared/errors.js";
+import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 
 /** Counts raw tasks already marked active — used ONLY to pick the 422 code
  *  after `normalizeAgentPlan` has rejected the input. Validation itself stays
@@ -50,7 +51,7 @@ export class AgentPlanAdapter implements AgentPlanRuntimeApi {
 	};
 
 	getAgentBranchPlan = async (chatId: string, branchId: string): Promise<AgentPlan> => {
-		await this.requireChatBranch(chatId, branchId);
+		await requireChatBranch(this.stores.chats, chatId, branchId);
 		return (
 			(await this.stores.agentPlans.get({ kind: "chatBranch", chatId, branchId })) ??
 			EMPTY_AGENT_PLAN
@@ -62,7 +63,7 @@ export class AgentPlanAdapter implements AgentPlanRuntimeApi {
 		branchId: string,
 		plan: unknown,
 	): Promise<AgentPlan> => {
-		await this.requireChatBranch(chatId, branchId);
+		await requireChatBranch(this.stores.chats, chatId, branchId);
 		return this.savePlan({ kind: "chatBranch", chatId, branchId }, plan);
 	};
 
@@ -89,19 +90,5 @@ export class AgentPlanAdapter implements AgentPlanRuntimeApi {
 	private readonly requireScript = async (scriptId: string): Promise<void> => {
 		const script = await this.stores.scripts.getById(scriptId);
 		if (!script) throw notFound("Script", `Script '${scriptId}' was not found.`);
-	};
-
-	/** The (chat, branch) path pair of the branch-plan routes (SC-0h): the
-	 *  chat must exist, and the branch must exist AND belong to that chat —
-	 *  a foreign branch id under this chat's path is a 404, never a
-	 *  cross-owner leak. Same pair check (and same wording) as the SC-0b
-	 *  chat-session routes' adapter. */
-	private readonly requireChatBranch = async (chatId: string, branchId: string): Promise<void> => {
-		const chat = await this.stores.chats.getById(chatId);
-		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		const branch = await this.stores.chats.getBranch(branchId);
-		if (!branch || branch.chatId !== chat.id) {
-			throw notFound("ChatBranch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
-		}
 	};
 }

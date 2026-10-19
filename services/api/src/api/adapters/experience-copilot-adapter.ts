@@ -4,6 +4,7 @@ import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, Experie
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
+import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
 import {
@@ -434,28 +435,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     getChatOwnedAgentKind(kindId);
   }
 
-  /** The (chat, branch) path pair of the chat-owner routes: the chat must
-   *  exist, and the branch must exist AND belong to that chat — a foreign
-   *  branch id under this chat's path is a 404 (the same pair check the prompt
-   *  resolver applies), never a cross-owner leak. */
-  private async requireChatBranch(chatId: string, branchId: string): Promise<void> {
-    const chat = await this.stores.chats.getById(chatId);
-    if (!chat) {
-      throw notFound("Chat", `Chat '${chatId}' was not found.`);
-    }
-    const branch = await this.stores.chats.getBranch(branchId);
-    if (!branch || branch.chatId !== chat.id) {
-      throw notFound("ChatBranch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
-    }
-  }
-
   agentChatGetActive = async (
     chatId: string,
     branchId: string,
     kind: string,
   ): Promise<ExperienceCopilotThreadWire | null> => {
     this.requireChatOwnedKind(kind);
-    await this.requireChatBranch(chatId, branchId);
+    await requireChatBranch(this.stores.chats, chatId, branchId);
     const thread = await this.stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
     return thread ? this.toThreadWire(thread) : null;
   };
@@ -466,7 +452,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     kind: string,
   ): Promise<ExperienceCopilotThreadWire[]> => {
     this.requireChatOwnedKind(kind);
-    await this.requireChatBranch(chatId, branchId);
+    await requireChatBranch(this.stores.chats, chatId, branchId);
     const threads = await this.stores.experienceCopilot.listSessionsForChat(chatId, branchId, kind);
     return threads.map((t) => this.toThreadWire(t));
   };
@@ -478,7 +464,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     title?: string,
   ): Promise<ExperienceCopilotThreadWire> => {
     this.requireChatOwnedKind(kind);
-    await this.requireChatBranch(chatId, branchId);
+    await requireChatBranch(this.stores.chats, chatId, branchId);
     const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title);
     return this.toThreadWire(thread);
   };
@@ -511,7 +497,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   /** The chat path segment of the SC-0f chat-settings routes: the chat must
    *  exist (404) — these routes carry no branch segment, so there is no
-   *  branch-ownership check to pair with it (unlike requireChatBranch). */
+   *  branch-ownership check to pair with it (unlike the shared
+   *  requireChatBranch pair check in domain/chat/chat-branch-ownership). */
   private async requireChat(chatId: string): Promise<void> {
     const chat = await this.stores.chats.getById(chatId);
     if (!chat) {

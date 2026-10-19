@@ -19,6 +19,7 @@ import {
 import { brandId } from "@vibe-tavern/domain";
 import { buildPromptVariableContext, createFullMacroEngine, type MacroVariableScope } from "@vibe-tavern/prompt-pipeline";
 import { notFound } from "../../shared/errors.js";
+import { findBranchOfChat } from "../chat/chat-branch-ownership.js";
 import {
 	type CharacterRecord,
 	toCharacterRecord,
@@ -277,8 +278,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 
 		// 5. Timed state belongs to the selected branch, not its parent chat:
 		// SillyTavern branches are separate chat files with independent metadata.
-		const branch = await this.stores.chats.getBranch(input.branchId);
-		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
+		// The ownership pair resolves through the shared SC-0l module; a missing
+		// branch and a foreign branch stay indistinguishable (both null → the
+		// same soft empty-lore return as before).
+		const branch = await findBranchOfChat(this.stores.chats, chat.id, input.branchId);
+		if (!branch) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 		const activationState = branch.loreActivationState as LoreActivationState;
 		// Keep activation aligned with assembly's single summary selection: only
 		// snapshots injected into the chat-summary slot become scan text.

@@ -28,6 +28,7 @@ import { storeRollToSnapshot } from "../dice/dice-service.js";
 import { storeAttachmentToReportSnapshot } from "../interactive/experience-report-snapshot.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { findBranchOfChat } from "../chat/chat-branch-ownership.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { buildChatSummaryContext } from "./chat-summary-selection.js";
 import { mapPromptLayerDto } from "./prompt-layer-dto.js";
@@ -465,8 +466,7 @@ export class PromptAssemblyService {
     }
 
     const branchId = input.branchId ?? (chat.activeBranchId as ChatBranchId);
-    const branches = await this.stores.chats.getBranches(chat.id);
-    const branch = branches.find((b) => b.id === branchId);
+    const branch = await findBranchOfChat(this.stores.chats, chat.id, branchId);
     if (!branch) {
       throw new Error(`Branch '${branchId}' was not found for chat '${chat.id}'.`);
     }
