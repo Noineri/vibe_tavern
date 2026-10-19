@@ -224,6 +224,17 @@ describe("ExperienceGalleryCard", () => {
     expect(container.querySelector(".border-t.border-border")).toBeNull();
   });
 
+  it("a published card footer grows to fill the card while a draft renders no footer", () => {
+    const published = renderCard();
+    const footer = published.container.querySelector(".border-t.border-border");
+    expect(footer).not.toBeNull();
+    // Token match (not substring): the pin survives class-name reordering.
+    expect((footer?.getAttribute("class") ?? "").split(/\s+/)).toContain("flex-1");
+    const draft = renderCard({ isDraft: true });
+    expect(draft.container.querySelector('[data-testid="experience_card_menu"]')).toBeNull();
+    expect(draft.container.querySelector(".border-t.border-border")).toBeNull();
+  });
+
   it("firstExistingBoundVisual skips bound visuals missing from available", () => {
     const stale = makeVisual({ id: "vis_gone" });
     const live = makeVisual({ id: "vis_live" });

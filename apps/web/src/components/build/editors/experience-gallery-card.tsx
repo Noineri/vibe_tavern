@@ -110,7 +110,7 @@ export function ExperienceGalleryCard({
         </div>
       </button>
       {!isDraft && (
-        <div className="flex items-stretch border-t border-border">
+        <div className="flex flex-1 items-stretch border-t border-border">
           <div className="min-w-0 flex-1 px-3 py-2">
             <ExperienceVisualBinding
               bound={bound}
