@@ -15,6 +15,13 @@ import {
   streamScriptAgentTurn,
   type ScriptAgentStreamDeps,
 } from "../../domain/agent/script-agent/script-agent-stream.js";
+import {
+  streamSidechatTurn,
+  type SidechatStreamDeps,
+} from "../../domain/sidechat/sidechat-stream.js";
+import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
+import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
+import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
 import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/script-agent-compaction.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
@@ -95,6 +102,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ["experience", (threadId, body, signal) => this.streamExperienceThread(threadId, body, signal)],
       ["script", (threadId, body, signal) =>
         streamScriptAgentTurn({ ...body, threadId }, this.buildScriptAgentStreamDeps(), signal)],
+      ["sidechat-ooc", (threadId, body, signal) =>
+        streamSidechatTurn({ ...body, threadId }, this.buildSidechatStreamDeps(), signal)],
     ]);
     this.compactionKinds = new Map<AgentKindId, AgentCompactionService<ExperienceCopilotMessage>>([
       ...(this.compaction !== null ? [["experience", this.compaction] as const] : []),
@@ -306,6 +315,99 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         ? { autoCompact: (threadId: string) => this.scriptCompaction!.autoCompactAfterTurn(threadId) }
         : {}),
       stores: this.stores,
+    };
+  }
+
+  // ─── Sidechat-OOC stream wiring (SIDECHAT_PLAN SC-4b) ─────────────────────
+
+  /** The RP assembly service the sidechat seams read through (SC-2a's
+   *  branch view and SC-3b's package loader both go through
+   *  `buildPipelineContext` — the send path's own input source). Built lazily
+   *  with the SAME construction recipe session-runtime uses for its instance
+   *  (`StaticPromptResolver` + `RegexHookService` over the same stores);
+   *  session-runtime's own instance is private to it, and the service is
+   *  stateless over the stores, so this instance is behaviorally identical —
+   *  the same standalone construction every sidechat test performs. Lazy so
+   *  lifecycle-only harnesses that never stream a sidechat turn pay nothing. */
+  private sidechatAssembly: PromptAssemblyService | null = null;
+  private getSidechatAssembly(): PromptAssemblyService {
+    if (this.sidechatAssembly === null) {
+      this.sidechatAssembly = new PromptAssemblyService(
+        this.stores,
+        new StaticPromptResolver(this.stores, new RegexHookService(this.stores)),
+        this.stores.content.fileStore,
+      );
+    }
+    return this.sidechatAssembly;
+  }
+
+  /** SC-4b: the sidechat's pinned-context resolver — the SAME kind-agnostic
+   *  `getCopilotContextItems` loader over the REAL stores, with the skill arm
+   *  inert: the sidechat's own skill library is SC-5's unit, so today no skill
+   *  id can resolve (the arm answers null — the loader's dangling-pin skip,
+   *  never fatal). Character/persona/lorebook/script pins resolve exactly as
+   *  in the other kinds' streams (the CX-2 semantics, one loader, no copy). */
+  private buildSidechatContextItemsResolver(): (
+    links: readonly ExperienceCopilotContextLink[],
+  ) => Promise<CopilotContextItem[]> {
+    return (links) =>
+      getCopilotContextItems(links, {
+        characters: this.stores.characters,
+        personas: this.stores.personas,
+        lorebooks: this.stores.lorebooks,
+        scripts: this.stores.scripts,
+        skills: {
+          readCatalogEntry: async () => null,
+          readFile: async () => null,
+        },
+      });
+  }
+
+  /** SC-4b: the `sidechat-ooc` kind's stream deps — the shared store/provider
+   *  seams, the SC-2c sync + SC-3b package deps over the real stores and the
+   *  RP assembly service, the chat-owned profile chain (the only kind of
+   *  thread this stream can run for), and the pinned-context resolver above.
+   *  No streamText (production runs the real one) and no autoCompact —
+   *  compaction is Wave 2's unit; until it lands the manual compact route
+   * refuses this kind with AGENT_KIND_NOT_WIRED (compactionKinds has no
+   * sidechat entry by design). */
+  private buildSidechatStreamDeps(): SidechatStreamDeps {
+    const assembly = this.getSidechatAssembly();
+    return {
+      store: this.stores.experienceCopilot,
+      sync: {
+        chats: this.stores.chats,
+        messages: this.stores.messages,
+        assembly,
+        experienceCopilot: this.stores.experienceCopilot,
+      },
+      context: {
+        chats: this.stores.chats,
+        characters: this.stores.characters,
+        messages: this.stores.messages,
+        traces: this.stores.traces,
+        experienceCopilot: this.stores.experienceCopilot,
+        assembly,
+      },
+      getProviderProfile: (id: string) => this.stores.providers.getById(id),
+      getEffectiveProviderProfile: async (id: string, model: string) => {
+        const profile = await this.stores.providers.getById(id);
+        if (!profile) {
+          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
+        }
+        if (!profile.bindPerModel) return profile;
+        const overlay = await this.stores.providers.getModelSettings(id, model);
+        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
+      },
+      resolveModel: (
+        profile,
+        model,
+        fetch,
+      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      resolveProfileForChat: (thread) =>
+        this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
+      resolveContextItems: this.buildSidechatContextItemsResolver(),
+      db: this.stores.db,
     };
   }
 

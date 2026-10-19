@@ -18,6 +18,9 @@
  * script kind selects the API-knowledge section (immutable after creation).
  */
 
+// forks: 1 — sidechat-stream.ts (SIDECHAT_PLAN SC-4b copied the seams-wiring
+// skeleton; see that file's header for the correspondence map).
+
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderProfile, ScriptRow, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
