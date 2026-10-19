@@ -1,4 +1,5 @@
-export { assemblePrompt } from "./assemble.js";
+export { assemblePrompt, resolveHistoryAsModelSees } from "./assemble.js";
+export { transformHistoryMessages, type HistoryMessageTransformInputs } from "./history-message-transform.js";
 export { getSummaryStrategy, SUMMARY_STRATEGIES } from "./summary/summary-strategies.js";
 export { getAiAssistantAssembler, AI_ASSISTANT_ASSEMBLERS } from "./ai-assistant/ai-assistant-assemblers.js";
 export { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "./insights/insights-assemblers.js";
