@@ -7,9 +7,9 @@ import type { TFunc } from "../../../i18n/context.js";
  * extracted from the modal when the SC-0k change took it past the 800-line
  * new-file cap (extraction, never squeezing).
  *
- * One primary action: «Использовать здесь» keeps the Save button's primary
- * classes (state = the success fill + check, like the script button).
- * «Использовать по умолчанию» is the secondary action: the Cancel button's
+ * One primary action: `copilot_profile_use_here` keeps the Save button's
+ * primary classes (state = the success fill + check, like the script button).
+ * `copilot_profile_use_by_default` is the secondary action: the Cancel button's
  * classes, ordered first (the edit footer's Cancel → Save order); its state
  * is the check + the default label, disabled, still secondary (no fill). No
  * new strings — the four SC-0g keys are reused.
