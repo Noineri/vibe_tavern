@@ -188,8 +188,19 @@ export type {
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   AppendMessageInput,
-  CopilotContextMetrics,
 } from './experience-copilot-store.js';
+export type {
+  CopilotContextMetrics,
+  CopilotContextLink,
+  CopilotTodoItem,
+} from './experience-copilot-row-parse.js';
+export { AGENT_THREAD_CONTEXT_EVENT_KINDS } from './agent-thread-context-events.js';
+export type {
+  AgentThreadContextEvent,
+  AgentThreadContextEventKind,
+  AgentThreadRpFrontier,
+  AgentThreadTimelineEntry,
+} from './agent-thread-context-events.js';
 
 export { ServicePromptProfileStore } from './service-prompt-store.js';
 export type { ServicePromptProfile, CreateServicePromptProfileData, UpdateServicePromptProfileData } from './service-prompt-store.js';

@@ -1916,6 +1916,17 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // Auto-compact toggle (CM-6): 1 = on (default), 0 = off. Stored as int 0/1
   // (SQLite has no native boolean) and exposed as a boolean on the store row.
   autoCompact: integer('auto_compact').notNull().default(1),
+  // Frozen-context sequencing (SIDECHAT_PLAN SC-1). next_seq: the next seq to
+  // allocate for a CHAT-OWNED thread's rows (messages + context events),
+  // read-and-incremented inside every append transaction so seq is gapless per
+  // thread under the synchronous SQLite runtime. NULL on script/draft rows —
+  // they never allocate seq and their message ordering stays created_at-based
+  // (unchanged). rp_frontier_json: the RP-chat frontier the thread has frozen
+  // (`AgentThreadRpFrontier`: lastPosition + selected variant map). NULL until
+  // the first rp sync; written wholesale by setFrontier. Malformed JSON on read
+  // → null (logged, never fatal) — the store's defensive-parse contract.
+  nextSeq: integer('next_seq'),
+  rpFrontierJson: text('rp_frontier_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -1957,9 +1968,41 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   content: text('content').notNull().default(''),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
+  // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
+  // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
+  // messages interleave with agent_thread_context_events rows on the merged
+  // timeline. NULL on script/draft threads — their ordering stays created_at
+  // + id (unchanged), and rows written before SC-1 stay NULL (legacy chat-owned
+  // rows sort before all seq'd rows on the timeline).
+  seq: integer('seq'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
+}));
+
+// ─── agentThreadContextEvents (SIDECHAT_PLAN SC-1) ──────────────────────────
+// Frozen context events on agent threads: chat-state milestones (rp sync,
+// variant attach, selection change, branch fork) recorded on the thread's
+// timeline beside its messages, so the frozen context can be replayed in
+// order (SC-3 reads the merged timeline). seq interleaves with
+// experience_copilot_messages.seq — both are allocated from the owning
+// thread's next_seq inside the append transaction (chat-owned threads only;
+// script/draft threads have no RP chat to freeze and leave seq NULL).
+// Deleting a thread cascades its events (the same convention as messages).
+export const agentThreadContextEvents = sqliteTable('agent_thread_context_events', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  // Allocated for chat-owned threads; NULL for script/draft threads (SC-1).
+  seq: integer('seq'),
+  // Timeline kind — one of AGENT_THREAD_CONTEXT_EVENT_KINDS in the store.
+  kind: text('kind').notNull(),
+  // JSON payload; kind-specific shape, owned by the event's writer (SC-2c+).
+  // Nullable: read defensively — malformed JSON skips the event from the
+  // timeline (logged, never fatal).
+  payloadJson: text('payload_json'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  threadIdx: index('idx_agent_thread_context_events_thread').on(table.threadId),
 }));
 
 // ─── agentPlans ──────────────────────────────────────────────────────────────

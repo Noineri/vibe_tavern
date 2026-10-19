@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import { experienceCopilotThreads } from "../src/db-schema.js";
-import { ExperienceCopilotStore, type CopilotContextMetrics } from "../src/stores/experience-copilot-store.js";
+import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
+import type { CopilotContextMetrics } from "../src/stores/experience-copilot-row-parse.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 // Advancing clock so timestamps differ between sessions/messages (the fixed

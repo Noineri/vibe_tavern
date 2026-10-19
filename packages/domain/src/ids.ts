@@ -50,6 +50,9 @@ export type ExperienceAttachmentId = Brand<"ExperienceAttachmentId">;
 // Experience copilot thread/message persistence (EXPERIENCE_EDITOR_REFACTOR_PLAN, ER-3).
 export type ExperienceCopilotThreadId = Brand<"ExperienceCopilotThreadId">;
 export type ExperienceCopilotMessageId = Brand<"ExperienceCopilotMessageId">;
+// Agent-thread context events (SIDECHAT_PLAN SC-1) — frozen chat-state
+// milestones on the copilot thread table's timeline (shared by all agent kinds).
+export type AgentThreadContextEventId = Brand<"AgentThreadContextEventId">;
 
 /** Unsafe cast from a plain string to a branded ID. Use only at layer boundaries (DB, API). */
 export function brandId<TId extends Id>(value: string): TId {
