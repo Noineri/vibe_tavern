@@ -43,8 +43,10 @@ import { loadSidechatContext, type SidechatContextDeps } from "../src/domain/sid
  * 5. no reasoning text and no preset text anywhere in the package;
  * 6. objectives: `mode` straight off the chat's state (route + goals), text
  *    in the RP prompt's own objective wording;
- * 7. the timeline: the thread's own OOC turns as role-prefixed lines and the
- *    frozen rp_sync event as its XML tag.
+ * 7. SC-4d (variant A): the static package carries NO timeline — the frozen
+ *    events come back as flow-ready user-message bodies placed by the merged
+ *    timeline's order, and the OOC message rows render nowhere (the real
+ *    history rows the stream's flow carries ARE the conversation, once).
  */
 
 let stores: StoreContainer;
@@ -155,9 +157,10 @@ describe("loadSidechatContext (SC-3b)", () => {
 			content: "Hello there.",
 		});
 
-		const rendered = await loadSidechatContext(contextDeps, threadId);
+		const pkg = await loadSidechatContext(contextDeps, threadId);
 
 		// The stored card is macro-raw; the package carries the resolved text.
+		const rendered = pkg.staticPackage;
 		expect(rendered).toContain("<character name=\"Theron\">");
 		expect(rendered).toContain("A brooding ranger guarding Theron's forest roads for Sable.");
 		expect(rendered).not.toContain("{{char}}");
@@ -199,7 +202,8 @@ describe("loadSidechatContext (SC-3b)", () => {
 			content: "EDITED SINCE: the ruin has collapsed.",
 		});
 
-		const rendered = await loadSidechatContext(contextDeps, threadId);
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		const rendered = pkg.staticPackage;
 		expect(rendered).toContain("<active_lore>");
 		expect(rendered).toContain("<lore_entry title=\"Silverpine\">");
 		expect(rendered).toContain("The Silverpine forest hides an elven ruin.");
@@ -241,7 +245,8 @@ describe("loadSidechatContext (SC-3b)", () => {
 
 		// The sidechat thread lives on the SAME chat, on the NON-ACTIVE fork.
 		const thread = await stores.experienceCopilot.startNewChatSession(chatId, fork.id, "sidechat-ooc");
-		const rendered = await loadSidechatContext(contextDeps, thread.id);
+		const pkg = await loadSidechatContext(contextDeps, thread.id);
+		const rendered = pkg.staticPackage;
 
 		expect(rendered).toContain("<current_scene>");
 		expect(rendered).toContain("the quiet archive");
@@ -258,7 +263,8 @@ describe("loadSidechatContext (SC-3b)", () => {
 			content: "No generation has happened on this branch.",
 		});
 
-		const rendered = await loadSidechatContext(contextDeps, threadId);
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		const rendered = pkg.staticPackage;
 		expect(rendered).not.toContain("<active_lore>");
 		// The character section still renders — the package is not empty.
 		expect(rendered).toContain("<character name=\"Theron\">");
@@ -283,12 +289,18 @@ describe("loadSidechatContext (SC-3b)", () => {
 		await syncBeforeUserMessage(syncDeps, threadId);
 		expect(reply.id).toBeTruthy();
 
-		const rendered = await loadSidechatContext(contextDeps, threadId);
-		expect(rendered).not.toContain("SC3B-PRESET-MARKER");
-		expect(rendered).not.toContain("SC3B-REASONING-MARKER");
-		// The branch's visible text DID make it in (via the frozen rp_sync) —
-		// the absence above is not an empty package.
-		expect(rendered).toContain("The visible reply.");
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		// The absence pins run over EVERYTHING the prompt will carry: the static
+		// package AND the frozen event bodies (they ride the message flow as
+		// user messages since SC-4d).
+		const everything = [pkg.staticPackage, ...pkg.eventMessages.map((event) => event.content)].join("\n");
+		expect(everything).not.toContain("SC3B-PRESET-MARKER");
+		expect(everything).not.toContain("SC3B-REASONING-MARKER");
+		// The branch's visible text DID make it in — via the frozen rp_sync
+		// event's own message body — so the absence above is not an empty load.
+		expect(pkg.eventMessages).toHaveLength(1);
+		expect(pkg.eventMessages[0]!.content).toContain("The visible reply.");
+		expect(pkg.staticPackage).not.toContain("The visible reply.");
 	});
 
 	it("objectives render the state's mode with the RP prompt's own wording (route and goals)", async () => {
@@ -309,7 +321,7 @@ describe("loadSidechatContext (SC-3b)", () => {
 			tasks: [{ id: "t1", description: "Search the Silverpine forest", status: OBJECTIVE_TASK_STATUS.pending }],
 		};
 		await stores.chats.replaceTrackerSetup(routeFixture.chatId, enabledConfig, routeState);
-		const routeRendered = await loadSidechatContext(contextDeps, routeFixture.threadId);
+		const routeRendered = (await loadSidechatContext(contextDeps, routeFixture.threadId)).staticPackage;
 		expect(routeRendered).toContain(
 			"<objectives mode=\"route\">[Active objective] Search the Silverpine forest</objectives>",
 		);
@@ -323,13 +335,13 @@ describe("loadSidechatContext (SC-3b)", () => {
 			shortTermGoals: [{ id: "g1", description: "Recruit the dwarven smith", status: OBJECTIVE_TASK_STATUS.pending }],
 		};
 		await stores.chats.replaceTrackerSetup(goalsFixture.chatId, enabledConfig, goalsState);
-		const goalsRendered = await loadSidechatContext(contextDeps, goalsFixture.threadId);
+		const goalsRendered = (await loadSidechatContext(contextDeps, goalsFixture.threadId)).staticPackage;
 		expect(goalsRendered).toContain(
 			"<objectives mode=\"goals\">[Long-term goal] Reclaim the ancestral hold\n[Active objective] Recruit the dwarven smith</objectives>",
 		);
 	});
 
-	it("renders the thread's own OOC turns and the frozen rp_sync event as the timeline", async () => {
+	it("the static package carries no timeline; the frozen events come back as flow-placed message bodies (SC-4d)", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatFixture();
 		await stores.messages.addMessage({
 			chatId,
@@ -341,10 +353,25 @@ describe("loadSidechatContext (SC-3b)", () => {
 		await syncBeforeUserMessage(syncDeps, threadId);
 		await stores.experienceCopilot.appendMessage(threadId, { role: "user", content: "Quick OOC aside" });
 
-		const rendered = await loadSidechatContext(contextDeps, threadId);
-		expect(rendered).toContain("<rp_sync");
-		expect(rendered).toContain("</rp_sync>");
-		expect(rendered).toContain("<rp_message position=\"0\" role=\"assistant\" author=\"Theron\">The tavern door swings open.</rp_message>");
-		expect(rendered).toContain("User: Quick OOC aside");
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		// The static package: five settled sections only — no timeline section,
+		// no OOC lines, no event tags (was: a timeline section carrying both).
+		expect(pkg.staticPackage).not.toContain("<rp_sync");
+		expect(pkg.staticPackage).not.toContain("Quick OOC aside");
+		expect(pkg.staticPackage).not.toContain("User:");
+		// The frozen event: one flow-ready user-message body, placed BELOW the
+		// OOC message on the merged timeline (the sync froze it first).
+		expect(pkg.eventMessages).toHaveLength(1);
+		expect(pkg.eventMessages[0]!.precedingMessages).toBe(0);
+		expect(pkg.eventMessages[0]!.content).toBe(
+			[
+				'<rp_sync from="0" to="0">',
+				'<rp_message position="0" role="assistant" author="Theron">The tavern door swings open.</rp_message>',
+				"</rp_sync>",
+			].join("\n"),
+		);
+		// The timeline's message rows are exactly the flow's real messages: the
+		// one OOC aside (its text renders nowhere in the static package).
+		expect(pkg.messageCount).toBe(1);
 	});
 });

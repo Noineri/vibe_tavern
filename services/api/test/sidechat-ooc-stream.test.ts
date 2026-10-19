@@ -46,7 +46,15 @@ import {
  *    the turn-1 OOC exchange rides the history;
  * 3. an `@`-pinned lorebook's content reaches the prompt through the shared
  *    pinned-context seam (rendered block + the kind's recency anchor right
- *    after it).
+ *    after it);
+ * 4. SC-4d (variant A): the system message carries the STATIC package only —
+ *    no `<rp_sync>` and no OOC lines inside it; the frozen events ride the
+ *    message flow as their own user-role messages;
+ * 5. exactly-once: an OOC message's text occurs exactly ONCE in the assembled
+ *    prompt (count, not contains) — the old timeline-in-system copy is gone;
+ * 6. placement: a turn-2 RP delta rides AFTER turn 1's reply and BEFORE turn
+ *    2's user message; the pinned block + anchor sit immediately before the
+ *    turn's own user message.
  */
 
 // ─── Fakes (the provider boundary only) ──────────────────────────────────────
@@ -217,6 +225,29 @@ function promptText(): string {
 		.join("\n");
 }
 
+/** Count literal occurrences — the exactly-once pins (count, not contains). */
+function occurrences(haystack: string, needle: string): number {
+	return haystack.split(needle).length - 1;
+}
+
+/** The assembled prompt's system message text (it rides first, role "system"). */
+function systemMessageText(): string {
+	const first = capturedMessages[0]!;
+	if (first.role !== "system") throw new Error("fixture: expected the system message to ride first");
+	return String(first.content);
+}
+
+/** The index of the first captured message whose text contains the needle. */
+function messageIndexContaining(needle: string): number {
+	const index = capturedMessages.findIndex((message) =>
+		typeof message.content === "string"
+			? message.content.includes(needle)
+			: JSON.stringify(message.content).includes(needle),
+	);
+	if (index < 0) throw new Error(`fixture: no captured message contains ${JSON.stringify(needle)}`);
+	return index;
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("streamSidechatTurn (SC-4b)", () => {
@@ -235,16 +266,30 @@ describe("streamSidechatTurn (SC-4b)", () => {
 		) as { metrics: { budgetTokens: number; source: string } };
 		expect(finishData.metrics.budgetTokens).toBe(COPILOT_CONTEXT_BUDGET_TOKENS);
 
-		// Assembled prompt: the profile's base prompt AND the SC-3b package
-		// sections (character + the frozen timeline with the RP delta).
+		// Assembled prompt: the profile's base prompt AND the SC-3b static
+		// package sections (character among them) — both in the SYSTEM message.
 		const prompt = promptText();
 		expect(prompt).toContain("You are the sidechat assistant.");
 		expect(prompt).toContain('<character name="Theron">');
 		expect(prompt).toContain("<rp_sync");
 		expect(prompt).toContain("The tavern door swings open.");
-		// The turn's own message rides the history tail (the package's timeline
-		// lags one message behind by construction — the sync runs first).
-		expect(prompt).toContain("What drives Theron right now?");
+		// SC-4d (variant A): the system message carries the STATIC package only —
+		// no timeline section, so no rendered event inside it (the base prompt's
+		// own grammar MENTIONS `<rp_sync>` in prose; the rendered form always
+		// opens with `from=`, so that is the needle); the frozen rp_sync rides
+		// the message flow as its own USER-role message, placed before the
+		// turn's own user message (the timeline lags one message behind by
+		// construction — the sync runs first).
+		const systemMessage = systemMessageText();
+		expect(systemMessage).toContain("You are the sidechat assistant.");
+		expect(systemMessage).toContain('<character name="Theron">');
+		expect(systemMessage).not.toContain('<rp_sync from=');
+		const syncMessageIdx = messageIndexContaining('<rp_sync from=');
+		expect(capturedMessages[syncMessageIdx]!.role).toBe("user");
+		// Exactly-once: the OOC text reaches the model ONCE — the turn's own
+		// user message (was: twice — the system timeline's `User:` line + the
+		// history row).
+		expect(occurrences(prompt, "What drives Theron right now?")).toBe(1);
 
 		// Sync order: the frozen rp_sync event sits BELOW the user message's
 		// seq on the merged timeline (syncBeforeUserMessage ran before the
@@ -305,13 +350,23 @@ describe("streamSidechatTurn (SC-4b)", () => {
 		expect(secondPayload.messages).toHaveLength(1);
 		expect(secondPayload.messages[0]!.text).toBe("The bard strikes up a nervous tune.");
 
-		// Turn 2's prompt: the package re-renders with the new delta inside the
-		// timeline, and the turn-1 OOC exchange rides the history.
+		// Turn 2's prompt: the static package re-renders (still no events inside
+		// it), and the turn-1 OOC exchange rides the flow EXACTLY ONCE each
+		// (was: every OOC text also re-rendered inside the system timeline).
 		const prompt = promptText();
 		expect(prompt).toContain('<character name="Theron">');
 		expect(prompt).toContain("The bard strikes up a nervous tune.");
-		expect(prompt).toContain("First OOC turn");
-		expect(prompt).toContain(REPLY_TEXT);
+		expect(occurrences(prompt, "First OOC turn")).toBe(1);
+		expect(occurrences(prompt, REPLY_TEXT)).toBe(1);
+		expect(systemMessageText()).not.toContain('<rp_sync from=');
+		// SC-4d placement: the turn-2 RP delta rides as its own user message
+		// AFTER turn 1's reply and BEFORE turn 2's user message.
+		const turn1ReplyIdx = messageIndexContaining(REPLY_TEXT);
+		const deltaIdx = messageIndexContaining("The bard strikes up a nervous tune.");
+		const turn2UserIdx = messageIndexContaining("And now?");
+		expect(deltaIdx).toBeGreaterThan(turn1ReplyIdx);
+		expect(deltaIdx).toBeLessThan(turn2UserIdx);
+		expect(capturedMessages[deltaIdx]!.role).toBe("user");
 	});
 
 	it("an @-pinned lorebook reaches the prompt through the pinned-context seam", async () => {
@@ -343,5 +398,16 @@ describe("streamSidechatTurn (SC-4b)", () => {
 		const anchorIdx = prompt.indexOf(SIDECHAT_OOC_RECENCY_ANCHOR_TEXT);
 		expect(blockIdx).toBeGreaterThanOrEqual(0);
 		expect(anchorIdx).toBeGreaterThan(blockIdx);
+		// SC-4d: in the MESSAGE ARRAY the pinned block + anchor sit IMMEDIATELY
+		// before the turn's own user message — the frozen event messages joined
+		// the flow EARLIER (by placement), and the pinned block stays
+		// last-before-the-turn.
+		const turnUser = capturedMessages[capturedMessages.length - 1]!;
+		expect(turnUser.role).toBe("user");
+		expect(String(turnUser.content)).toBe("Where does that bridge lead?");
+		const anchorMessage = capturedMessages[capturedMessages.length - 2]!;
+		expect(String(anchorMessage.content)).toBe(SIDECHAT_OOC_RECENCY_ANCHOR_TEXT);
+		const pinnedMessage = capturedMessages[capturedMessages.length - 3]!;
+		expect(String(pinnedMessage.content)).toContain("# Pinned context");
 	});
 });

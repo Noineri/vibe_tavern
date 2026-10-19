@@ -7,7 +7,7 @@ import {
 	SCENE_PROMPT_FORMAT,
 } from "@vibe-tavern/domain";
 import type {
-	AgentThreadTimelineEntry,
+	AgentThreadContextEvent,
 	CharacterStore,
 	ChatStore,
 	ExperienceCopilotStore,
@@ -41,22 +41,25 @@ import {
 	renderLoreSection,
 	renderObjectivesSection,
 	renderPersonaSection,
-	renderTimelineSection,
+	renderTimelineEvent,
 	type BranchForkedPayload,
 	type LoreEntryInput,
-	type SidechatTimelineEntry,
 	type SidechatTimelineEvent,
 	type VariantsAttachedPayload,
 } from "./sidechat-xml.js";
 
 /**
- * The sidechat context loader (SIDECHAT_PLAN SC-3b): loads everything a
- * chat-owned sidechat thread's prompt package needs and renders it with the
- * SC-3a renderers into ONE string — sections in the settled tag-grammar order
- * (character, persona, active_lore, objectives, current_scene, timeline),
- * null sections dropped, joined with a blank line. The shape is a single
- * string because SC-4b's stream splices the package into the final prompt as
- * a block; no caller needs per-section access today.
+ * The sidechat context loader (SIDECHAT_PLAN SC-3b, reshaped by SC-4d): loads
+ * everything a chat-owned sidechat thread's prompt needs and renders it with
+ * the SC-3a renderers into TWO parts — the STATIC package (sections in the
+ * settled tag-grammar order: character, persona, active_lore, objectives,
+ * current_scene; null sections dropped, joined with a blank line) and the
+ * frozen timeline EVENTS as flow-ready user-message bodies (SC-4d variant A:
+ * the OOC conversation and the events both ride the turn's message flow, so
+ * the system message carries no timeline and the model reads ONE
+ * chronological flow). The stream (SC-4b) splices the static package into the
+ * system message and interleaves the event bodies into the flow by the
+ * placement this loader derives.
  *
  * WHY EACH SOURCE IS WHAT IT IS (found 2026-10-19 — three naive sources do
  * NOT give what the RP model saw):
@@ -94,13 +97,18 @@ import {
  *   that predate the snapshot, per the record contract). The RP layer's
  *   `[Scene state]` prefix and injectPrompt lead are NOT carried over — they
  *   are the RP layer's framing, and `<current_scene>` is this package's.
- * - Timeline: SC-1's `listTimeline(threadId)` — messages render as the
- *   sidechat's own `User: …` / `Assistant: …` turns, events as their frozen
- *   XML tags. Frozen event payloads (plain JSON) are structurally validated
- *   and mapped onto SC-3a's input types; a payload that does not match its
- *   kind's frozen shape THROWS (the renderer's exhaustiveness guard covers
- *   unknown kinds — corrupt payloads of known kinds surface here instead,
- *   never silently pre-filtered).
+ * - Timeline: SC-1's `listTimeline(threadId)` — the merged order (messages
+ *   and events interleaved by seq) is the SINGLE ordering source: the loader
+ *   walks it once, counts the message rows, and records per event how many
+ *   messages precede it (`precedingMessages`) — the flow builder interleaves
+ *   by those counts and never re-derives seq math. The events render with
+ *   SC-3a's per-event renderer (same tags, same escaping as before SC-4d);
+ *   the MESSAGE rows never render anywhere — the real history rows the
+ *   generic loop loads ARE the conversation. Frozen event payloads (plain
+ *   JSON) are structurally validated and mapped onto SC-3a's input types; a
+ *   payload that does not match its kind's frozen shape THROWS (the
+ *   renderer's exhaustiveness guard covers unknown kinds — corrupt payloads
+ *   of known kinds surface here instead, never silently pre-filtered).
  *
  * Must stay true: NO store writes anywhere (the lore activation inside
  * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
@@ -127,15 +135,44 @@ export interface SidechatContextDeps {
 	assembly: PromptAssemblyService;
 }
 
+// ─── The loaded package (SC-3b static sections + SC-4d flow-placed events) ───
+
+/** One frozen RP event placed for the turn's message flow (SC-4d): the
+ *  event's rendered user-message body (SC-3a's per-event renderer — same
+ *  tags, same escaping) plus how many of the thread's MESSAGE rows precede
+ *  it on the merged timeline. The count IS the placement: listTimeline's
+ *  merged order is the single ordering source, so the flow builder
+ *  interleaves by these counts instead of re-deriving seq arithmetic. */
+export interface SidechatEventMessage {
+	readonly precedingMessages: number;
+	readonly content: string;
+}
+
+/** The sidechat turn's loaded context (SC-3b, reshaped by SC-4d): the STATIC
+ *  package string (the five settled sections — NO timeline; since SC-4d the
+ *  OOC conversation and the frozen events both ride the message flow) plus
+ *  the frozen events rendered into flow-ready user-message bodies. */
+export interface SidechatContextPackage {
+	/** The static sections joined with a blank line (SC-3a grammar order). */
+	readonly staticPackage: string;
+	/** The frozen events, in merged-timeline order (SC-4d placement counts). */
+	readonly eventMessages: readonly SidechatEventMessage[];
+	/** The merged timeline's MESSAGE row count — the flow builder's alignment
+	 *  guard against a history that no longer matches the timeline (e.g. a
+	 *  compaction digest split, which Wave 2 does not wire here yet). */
+	readonly messageCount: number;
+}
+
 /**
- * Load and render the sidechat context package for a chat-owned thread.
- * Throws {@link RpSyncThreadNotChatOwnedError} for a script-owned, draft, or
- * missing thread (same typed refusal as the RP sync — one class).
+ * Load the sidechat context for a chat-owned thread: the static package +
+ * the flow-placed frozen events. Throws {@link RpSyncThreadNotChatOwnedError}
+ * for a script-owned, draft, or missing thread (same typed refusal as the RP
+ * sync — one class).
  */
 export async function loadSidechatContext(
 	deps: SidechatContextDeps,
 	threadId: ExperienceCopilotThreadId,
-): Promise<string> {
+): Promise<SidechatContextPackage> {
 	const thread = await deps.experienceCopilot.getById(threadId);
 	// Same narrowing as syncBeforeUserMessage (SC-2c): a null branchId on a
 	// chat-owned row is corruption — refused, never read through.
@@ -195,12 +232,31 @@ export async function loadSidechatContext(
 
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
-	const timelineSection = renderTimelineSection(
-		(await deps.experienceCopilot.listTimeline(threadId)).map((entry) => mapTimelineEntry(threadId, entry)),
-	);
+	// Static package (SC-4d): the five settled sections only — no timeline
+	// section exists anymore; the timeline walk below feeds the MESSAGE FLOW.
+	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection];
+	const staticPackage = sections.filter((section): section is string => section !== null).join("\n\n");
 
-	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection, timelineSection];
-	return sections.filter((section): section is string => section !== null).join("\n\n");
+	// Timeline walk (SC-4d): consume listTimeline's merged order ONCE — the
+	// single ordering source. Message rows are COUNTED (they ride the flow as
+	// the real history rows the generic loop already loaded); each event row
+	// becomes a rendered user-message body tagged with how many messages
+	// precede it, so the flow builder interleaves without seq arithmetic.
+	const timeline = await deps.experienceCopilot.listTimeline(threadId);
+	let messageCount = 0;
+	const eventMessages: SidechatEventMessage[] = [];
+	for (const entry of timeline) {
+		if (entry.rowType === "message") {
+			messageCount += 1;
+			continue;
+		}
+		eventMessages.push({
+			precedingMessages: messageCount,
+			content: renderTimelineEvent(mapTimelineEvent(threadId, entry)),
+		});
+	}
+
+	return { staticPackage, eventMessages, messageCount };
 }
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
@@ -306,11 +362,8 @@ function corrupt(threadId: string, kind: string, seq: number | null, detail: str
 	);
 }
 
-/** Map one merged-timeline row (SC-1) onto the renderer's entry type. */
-function mapTimelineEntry(threadId: string, entry: AgentThreadTimelineEntry): SidechatTimelineEntry {
-	if (entry.rowType === "message") {
-		return { rowType: "message", role: entry.role, content: entry.content };
-	}
+/** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type. */
+function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
 	// `where` names the row in every parser's refusal message.
 	const where = { threadId, kind: entry.kind, seq: entry.seq };
 	switch (entry.kind) {

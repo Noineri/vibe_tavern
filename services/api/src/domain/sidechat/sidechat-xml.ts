@@ -27,7 +27,6 @@
  *   </rp_variants>
  *   <rp_branch_forked at="n"/>
  *   <rp_summary from="a" to="b">…</rp_summary>
- *   User: … / Assistant: …                            (OOC message rows)
  *
  * `rp_message` text is the FROZEN model-view text (SC-2a) — it already
  * carries the dice and mini-app report blocks in the RP prompt's wording, so
@@ -47,23 +46,23 @@
  * non-empty). `rp_message`'s `author` is the opposite: the grammar pins a
  * fixed three-attribute shape, so a null authorName renders as `author=""`.
  *
- * TIMELINE ORDER: renderTimelineSection takes the merged listTimeline list
- * (SC-1: seq ascending, NULL-seq rows first) AS GIVEN and renders it in
- * order — it never re-sorts. Interleaving by `seq` is the store's contract.
+ * TIMELINE ORDER: renderTimelineSection takes the merged listTimeline EVENT
+ * list (SC-1: seq ascending, NULL-seq rows first) AS GIVEN and renders it in
+ * order — it never re-sorts. Interleaving events with messages by `seq` is
+ * the store's listTimeline contract; SC-4d's flow builder consumes that
+ * merged order and does not re-derive it.
  *
  * WRITERS NOT YET LANDED: `variants_attached` (SC-20), `branch_forked`
  * (SC-20), and `rp_summary` (SC-6) have no store writers yet — their input
  * payload types below are defined per the inventory semantics, and this
  * renderer renders ALL kinds regardless.
  *
- * OOC MESSAGE SHAPE (this unit's code decision, per the plan's inventory):
- * the sidechat's own user/assistant turns render as bare text lines with a
- * role prefix — `User: …` / `Assistant: …` (first letter capitalized,
- * generically for any role string) — matching the repo's settled
- * role-prefixed turn shape (completion-prompt.ts's DEFAULT_COMPLETION_TEMPLATE
- * prefixes; coauthor history renders role-prefixed lines too). Which message
- * rows enter the timeline is the assembler's (SC-3b) choice, not this
- * module's — every entry given is rendered as-is.
+ * TIMELINE IS EVENTS-ONLY (SC-4d, variant A): the renderer no longer renders
+ * OOC message rows — the sidechat's own conversation reaches the model
+ * exactly once, as the real history messages of the turn (SC-4b's flow), and
+ * each frozen event rides that same flow as its own user-role message body
+ * (renderTimelineEvent). Which events enter the flow is the loader's (SC-3b)
+ * choice, not this module's — every entry given is rendered as-is.
  */
 
 import type { RpSyncPayload, SelectionChangedPayload } from "./rp-sync.js";
@@ -78,11 +77,6 @@ function escapeXmlText(value: string): string {
 /** Escape an ATTRIBUTE value: the text set plus `"`. */
 function escapeXmlAttribute(value: string): string {
 	return escapeXmlText(value).replaceAll('"', "&quot;");
-}
-
-/** OOC line prefix: first-letter-capitalized role — `user` → `User`. */
-function rolePrefix(role: string): string {
-	return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 // ─── Section inputs ──────────────────────────────────────────────────────────
@@ -143,18 +137,7 @@ export interface RpSummaryPayload {
 	readonly text: string;
 }
 
-// ─── Timeline inputs ─────────────────────────────────────────────────────────
-
-/**
- * The renderer's plain projection of a listTimeline MESSAGE row (SC-1 +
- * the store's message projection): a sidechat turn (OOC message). The
- * renderer renders every entry it is given, as-is, in list order.
- */
-export interface SidechatTimelineMessage {
-	readonly rowType: "message";
-	readonly role: string;
-	readonly content: string;
-}
+// ─── Timeline (frozen events; events-only since SC-4d) ──────────────────────
 
 /**
  * The renderer's plain projection of a listTimeline EVENT row (SC-1): the
@@ -168,9 +151,6 @@ export type SidechatTimelineEvent =
 	| { readonly rowType: "event"; readonly kind: "selection_changed"; readonly payload: SelectionChangedPayload }
 	| { readonly rowType: "event"; readonly kind: "branch_forked"; readonly payload: BranchForkedPayload }
 	| { readonly rowType: "event"; readonly kind: "rp_summary"; readonly payload: RpSummaryPayload };
-
-/** One merged-timeline entry, in listTimeline order (see module doc). */
-export type SidechatTimelineEntry = SidechatTimelineMessage | SidechatTimelineEvent;
 
 // ─── Section renderers ───────────────────────────────────────────────────────
 
@@ -219,20 +199,27 @@ export function renderCurrentSceneSection(text: string): string | null {
 // ─── Timeline renderer ───────────────────────────────────────────────────────
 
 /**
- * Render the merged timeline: frozen events as their XML tags and the
- * sidechat's own turns as `Role: text` lines, joined with `\n`; null when
- * the list is empty. The list is rendered AS GIVEN, in order — the store's
- * listTimeline owns the seq interleaving; this function never re-sorts.
+ * Render the merged timeline's frozen events as their XML tags, joined with
+ * `\n`; null when the list is empty. EVENTS ONLY since SC-4d (variant A):
+ * OOC message rows no longer render here — the sidechat's own conversation
+ * rides the turn's message flow as the real history messages, exactly once.
+ * The list is rendered AS GIVEN, in order — the store's listTimeline owns
+ * the seq interleaving; this function never re-sorts.
  */
-export function renderTimelineSection(entries: readonly SidechatTimelineEntry[]): string | null {
+export function renderTimelineSection(entries: readonly SidechatTimelineEvent[]): string | null {
 	if (entries.length === 0) return null;
-	return entries.map(renderTimelineEntry).join("\n");
+	return entries.map(renderTimelineEvent).join("\n");
 }
 
-function renderTimelineEntry(entry: SidechatTimelineEntry): string {
-	if (entry.rowType === "message") {
-		return `${rolePrefix(entry.role)}: ${escapeXmlText(entry.content)}`;
-	}
+/**
+ * Render ONE frozen event as its XML tag block — the body of that event's
+ * user-role message in the turn's message flow (SC-4d). The same per-event
+ * renderer the timeline section renders with: tags and escaping unchanged,
+ * no wrapper prose. An input outside the event union (a message row, an
+ * unknown kind) THROWS rather than silently dropping or re-shaping it —
+ * either would change what the model is shown.
+ */
+export function renderTimelineEvent(entry: SidechatTimelineEvent): string {
 	switch (entry.kind) {
 		case "rp_sync":
 			return renderRpSyncEvent(entry.payload);

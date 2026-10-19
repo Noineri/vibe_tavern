@@ -11,12 +11,15 @@
  * TURN ORDER (the unit's contract): chat + branch come from the THREAD ROW
  * (never the request); `syncBeforeUserMessage` (SC-2c) runs inside the
  * loadContext seam — BEFORE the generic loop persists the user message and
- * BEFORE the SC-3b package's `listTimeline` read, so the package's timeline
- * section includes this turn's freshly frozen RP delta at a seq BELOW the
- * user message's. The package (SC-3b's `loadSidechatContext`) is ONE string
- * whose last section IS the timeline — it is spliced into the system message
- * as-is, never re-rendered. The reply persists through the generic loop
- * exactly like the other kinds'.
+ * BEFORE the SC-3b loader's `listTimeline` read, so this turn's freshly
+ * frozen RP delta sits at a seq BELOW the user message's on the merged
+ * timeline. Since SC-4d (variant A) the system message carries the loader's
+ * STATIC package only (character/persona/active_lore/objectives/
+ * current_scene); the frozen events ride the MESSAGE FLOW as their own
+ * user-role message bodies, placed by the merged timeline's order (the
+ * loader's placement counts), so the OOC conversation reaches the model
+ * exactly once — as the real history rows. The reply persists through the
+ * generic loop exactly like the other kinds'.
  *
  * NO tools until Wave 3 (buildTools returns the empty set) and NO
  * compaction/window until Wave 2 (history passes through unwindowed; no
@@ -31,8 +34,10 @@
 // assembly have no script analog. Correspondence map: loadContext ←
 // loadScriptAgentContext, resolveProfile ← the script 3-way chain (narrowed:
 // sidechat threads are ALWAYS chat-owned), assemble ← the AS-7 assembly call
-// (replaced by the SC-4b assembly below), buildTools ← buildScriptAgentTools
-// (empty until Wave 3), limits/logChannelPrefix/streamDeps ← verbatim shape.
+// (replaced by the SC-4b assembly below, reshaped by SC-4d: the STATIC
+// package rides the system message and the frozen events interleave into
+// the message flow), buildTools ← buildScriptAgentTools (empty until Wave 3),
+// limits/logChannelPrefix/streamDeps ← verbatim shape.
 
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
@@ -64,7 +69,11 @@ import { getAgentKind } from "../agent/agent-kind-registry.js";
 import { resolveBuiltinSidechatOocProfile } from "../agent/kinds/sidechat-ooc-kind.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../interactive/copilot/copilot-limits.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
-import { loadSidechatContext, type SidechatContextDeps } from "./sidechat-context.js";
+import {
+  loadSidechatContext,
+  type SidechatContextDeps,
+  type SidechatContextPackage,
+} from "./sidechat-context.js";
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../interactive/copilot/experience-copilot-stream-contract.js";
 
 // ─── Dependencies ────────────────────────────────────────────────────────────
@@ -116,40 +125,88 @@ export interface SidechatStreamDeps {
 
 // ─── Kind context ────────────────────────────────────────────────────────────
 
-/** The turn-start sidechat context — the SC-3b package string, loaded AFTER
- *  the RP sync so its timeline section includes this turn's freshly frozen
- *  delta. The package is ONE string by SC-3b's contract; nothing else needs
- *  to ride the kind context today. */
-interface SidechatTurnContext {
-  readonly contextPackage: string;
-}
-
-/** Load the kind context for one turn: sync the RP chat into the thread's
- *  frozen timeline FIRST (SC-2c — the chat + branch come from the thread's
- *  own row inside the writer), then load the SC-3b package (whose timeline
- *  section is merged from the SAME store the sync just wrote, so the delta
- *  lands inside `<timeline>` below the incoming user message's seq). */
+/** The turn-start sidechat context — SC-3b's load, reshaped by SC-4d: the
+ *  STATIC package string (loaded AFTER the RP sync) + the frozen events as
+ *  flow-ready user-message bodies placed by the merged timeline's order.
+ *  The package parts are the shape SC-4b's assembly below consumes
+ *  directly. */
 async function loadSidechatTurnContext(
   deps: SidechatStreamDeps,
   threadId: ExperienceCopilotThread["id"],
-): Promise<SidechatTurnContext> {
+): Promise<SidechatContextPackage> {
   await syncBeforeUserMessage(deps.sync, threadId);
-  return { contextPackage: await loadSidechatContext(deps.context, threadId) };
+  return loadSidechatContext(deps.context, threadId);
 }
 
-// ─── Assembly (SC-4b) ────────────────────────────────────────────────────────
+// ─── Assembly (SC-4b, reshaped by SC-4d) ───────────────────────────────────
+
+/**
+ * Build the turn's message flow (SC-4d, variant A): the loop's real history
+ * — tool parts and digest handling intact — with each frozen RP event
+ * injected as its own user-role message at its merged-timeline position (the
+ * loader's `precedingMessages` counts; NO seq arithmetic here — listTimeline's
+ * merged order is the single ordering source). Consecutive user messages are
+ * fine: they follow the CX-3 precedent (the pinned block already rides as a
+ * user message before the turn's own). The turn's own user message (content
+ * mode — the loop appends it LAST) re-attaches LAST: every frozen event
+ * predates it by the sync-before-persist order, so events never displace it.
+ * Pure — every input is a parameter.
+ */
+function buildSidechatMessageFlow(
+  historyFlow: readonly AgentFlowMessage[],
+  context: SidechatContextPackage,
+  hasUserPush: boolean,
+): AgentFlowMessage[] {
+  const last = historyFlow[historyFlow.length - 1];
+  if (hasUserPush && (last === undefined || last.role !== "user")) {
+    throw new Error(
+      "buildSidechatMessageFlow: content-mode history must end with the turn's own user message " +
+        "(the generic loop appends it last) — refusing to assemble a mismatched flow",
+    );
+  }
+  const realMessages = hasUserPush && last !== undefined ? historyFlow.slice(0, -1) : [...historyFlow];
+  if (realMessages.length !== context.messageCount) {
+    // The loop's history and the loader's timeline must carry the SAME
+    // message rows. Today only a compaction digest split can break that
+    // (the loop drops covered rows; the timeline keeps them) — and the
+    // sidechat has no compaction writer until Wave 2, so this is the loud
+    // guard on that seam, in the family of the corrupt-payload refusals:
+    // a mismatched flow would show the model covered messages again.
+    throw new Error(
+      `buildSidechatMessageFlow: history carries ${realMessages.length} flow messages but the merged ` +
+        `timeline carries ${context.messageCount} message rows — the sidechat flow does not follow a ` +
+        "digest split yet (Wave 2 wires sidechat compaction)",
+    );
+  }
+  const flow = [...realMessages];
+  let inserted = 0;
+  for (const event of context.eventMessages) {
+    // Events arrive in merged-timeline order, so `precedingMessages +
+    // inserted` is each event's stable index among the messages already
+    // placed (same-position events stay in their frozen order).
+    flow.splice(event.precedingMessages + inserted, 0, { role: "user", content: event.content });
+    inserted += 1;
+  }
+  if (hasUserPush && last !== undefined) flow.push(last);
+  return flow;
+}
 
 /** Assemble the sidechat prompt: system message = the profile's base prompt +
- *  (any digest section) + the SC-3b context package — the package IS the
- *  volatile context section, timeline included (never re-rendered elsewhere);
- *  history passes through UNWINDOWED (compaction/windowing is Wave 2); the
- *  pinned-context block + the kind's recency anchor inject as trailing user
- *  messages (the CX-3 pattern the other kinds' assemblers use). Pure — every
- *  input is a parameter. */
+ *  (any digest section) + the SC-3b STATIC package — the volatile context
+ *  section with NO timeline in it (SC-4d: the frozen events and the OOC
+ *  conversation both ride the message flow, so the model reads ONE
+ *  chronological flow); history passes through UNWINDOWED (compaction/
+ *  windowing is Wave 2) with the frozen events interleaved as user-role
+ *  message bodies placed by the merged timeline's order; the pinned-context
+ *  block + the kind's recency anchor inject as trailing user messages
+ *  (the CX-3 pattern the other kinds' assemblers use). Pure — every input is
+ *  a parameter. */
 function assembleSidechatPrompt(input: {
   basePrompt: string;
-  contextPackage: string;
+  context: SidechatContextPackage;
   history: readonly AgentHistoryMessage[];
+  /** Content mode: the loop appended the turn's own user message LAST. */
+  hasUserPush: boolean;
   attachedContextBlock: string;
   recencyAnchorText: string;
   model?: string;
@@ -169,20 +226,28 @@ function assembleSidechatPrompt(input: {
   const digestSectionText = digestText !== null ? renderDigestSection(digestText) : "";
 
   // System message: STABLE base prompt first, VOLATILE tail (digest → the
-  // SC-3b package) last — the other assemblers' cache-friendly order.
-  const systemWithoutDigest = [input.basePrompt, "", input.contextPackage].join("\n");
+  // SC-3b STATIC package — no timeline section since SC-4d) last — the other
+  // assemblers' cache-friendly order.
+  const systemWithoutDigest = [input.basePrompt, "", input.context.staticPackage].join("\n");
   const systemMessage = digestSectionText
-    ? [input.basePrompt, "", digestSectionText, "", input.contextPackage].join("\n")
+    ? [input.basePrompt, "", digestSectionText, "", input.context.staticPackage].join("\n")
     : systemWithoutDigest;
+
+  // Message flow (SC-4d): the real OOC history with the frozen RP events
+  // interleaved as user-role messages placed by the merged timeline's order —
+  // the OOC conversation exists in the prompt exactly once.
+  const flow = buildSidechatMessageFlow(historyFlow, input.context, input.hasUserPush);
 
   const systemTokens = estimateTokens(systemWithoutDigest);
   const digestTokens = digestSectionText ? estimateTokens(digestSectionText) : 0;
-  const historyTokens = estimateHistoryTokens(historyFlow);
+  // Event messages count with the history (SC-4d; Wave 2's SC-9 splits them
+  // into their own segments later).
+  const historyTokens = estimateHistoryTokens(flow);
   const attachedTokens = input.attachedContextBlock
     ? estimateTokens(input.attachedContextBlock) + estimateTokens(input.recencyAnchorText)
     : 0;
 
-  const messages: AgentPromptMessage[] = [{ role: "system", content: systemMessage }, ...historyFlow];
+  const messages: AgentPromptMessage[] = [{ role: "system", content: systemMessage }, ...flow];
   if (input.attachedContextBlock) {
     // CX-3: the pinned block rides as a user message immediately before the
     // turn's own user message (so the anchor sits directly under the block).
@@ -212,13 +277,13 @@ function assembleSidechatPrompt(input: {
 // ─── Main streaming function ─────────────────────────────────────────────────
 
 /**
- * Stream one sidechat-OOC turn: the RP sync + SC-3b package (loadContext),
- * the chat-owned profile chain, and the SC-4b assembly wired into the generic
- * agent turn loop. Yields the same SSE-shaped `{ event, data }` chunks the
- * route relays verbatim; throws `notFound` for a missing thread and
- * `RpSyncThreadNotChatOwnedError` for a thread this kind cannot own (a
- * script-owned/draft row can never resolve to `sidechat-ooc`, so that refusal
- * is the corruption guard, not an expected path).
+ * Stream one sidechat-OOC turn: the RP sync + SC-3b load (loadContext),
+ * the chat-owned profile chain, and the SC-4b/SC-4d assembly wired into the
+ * generic agent turn loop. Yields the same SSE-shaped `{ event, data }`
+ * chunks the route relays verbatim; throws `notFound` for a missing thread
+ * and `RpSyncThreadNotChatOwnedError` for a thread this kind cannot own (a
+ * script-owned/draft row can never resolve to `sidechat-ooc`, so that
+ * refusal is the corruption guard, not an expected path).
  */
 export async function* streamSidechatTurn(
   request: ExperienceCopilotStreamRequest,
@@ -228,7 +293,7 @@ export async function* streamSidechatTurn(
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
-    SidechatTurnContext,
+    SidechatContextPackage,
     CopilotProfile,
     AgentAssembledPrompt
   > = {
@@ -240,9 +305,10 @@ export async function* streamSidechatTurn(
       toolLoopCeiling: COPILOT_TOOL_LOOP_CEILING,
     },
 
-    // ── The kind's turn: RP sync FIRST, then the SC-3b package. This seam
-    //  runs BEFORE the generic loop persists the user message, which is what
-    //  puts the frozen delta below the turn's own seq on the timeline. ──
+    // ── The kind's turn: RP sync FIRST, then the SC-3b load (static package
+    //  + flow-placed events). This seam runs BEFORE the generic loop persists
+    //  the user message, which is what puts the frozen delta below the turn's
+    //  own seq on the merged timeline. ──
     loadContext: (thread) => loadSidechatTurnContext(deps, thread.id),
 
     // ── Agent profile: sidechat threads are ALWAYS chat-owned (the kind
@@ -255,7 +321,9 @@ export async function* streamSidechatTurn(
         ? deps.resolveProfileForChat(thread)
         : resolveBuiltinSidechatOocProfile(deps.db),
 
-    // ── SC-4b assembly: base prompt + package (+ pinned context + anchor) ──
+    // ── SC-4b/SC-4d assembly: base prompt + STATIC package in the system
+    //  message, frozen events interleaved into the flow (+ pinned context +
+    //  anchor before the turn's own user message) ──
     assemble: async ({ thread, request, kindContext: context, agentProfile, history, model }) => {
       const contextItems =
         deps.resolveContextItems && thread.contextLinks.length > 0
@@ -270,8 +338,9 @@ export async function* streamSidechatTurn(
       });
       return assembleSidechatPrompt({
         basePrompt: agentProfile.basePrompt,
-        contextPackage: context.contextPackage,
+        context,
         history,
+        hasUserPush: request.content !== undefined,
         attachedContextBlock,
         recencyAnchorText: getAgentKind("sidechat-ooc").recencyAnchorText,
         ...(model !== undefined ? { model } : {}),

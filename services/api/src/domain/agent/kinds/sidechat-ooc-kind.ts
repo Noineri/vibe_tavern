@@ -90,10 +90,11 @@ const kind: AgentKind<undefined> = {
   toolSetSchema: sidechatOocToolSetSchema,
   defaultToolSet,
   recencyAnchorText: SIDECHAT_OOC_RECENCY_ANCHOR_TEXT,
-  // The sidechat's per-turn context package is SC-3b's ASYNC loader (store
-  // reads render the frozen RP timeline), not this sync descriptor seam —
-  // SC-4b's stream splices the loader's one-string package directly. Nothing
-  // calls this today; it renders no package by design.
+  // The sidechat's per-turn context is SC-3b's ASYNC loader (store reads
+  // render the static package + the frozen RP events for the message flow),
+  // not this sync descriptor seam — SC-4b's stream splices the loader's
+  // result directly. Nothing calls this today; it renders no package by
+  // design.
   renderContextPackage: () => "",
 };
 

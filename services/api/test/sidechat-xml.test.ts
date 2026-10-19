@@ -5,8 +5,9 @@ import {
 	renderLoreSection,
 	renderObjectivesSection,
 	renderPersonaSection,
+	renderTimelineEvent,
 	renderTimelineSection,
-	type SidechatTimelineEntry,
+	type SidechatTimelineEvent,
 } from "../src/domain/sidechat/sidechat-xml.js";
 
 /**
@@ -17,14 +18,13 @@ import {
  * stays literal — the escape sets are pinned, not borrowed); empty sections
  * return null (no empty tag is ever emitted); an attached alternative
  * carries `selected="false"` while the chosen variant carries `selected="true"`;
- * and the timeline renders events and OOC messages interleaved in the order
- * given (listTimeline's seq order — the renderer never re-sorts).
+ * and the timeline renders events in the order given (listTimeline's seq
+ * order — the renderer never re-sorts). Since SC-4d (variant A) the timeline
+ * renderer is EVENTS-ONLY: OOC message rows never render here — the
+ * sidechat's own conversation rides the turn's message flow as the real
+ * history messages, and each frozen event rides it as its own user-role
+ * message body (renderTimelineEvent).
  */
-
-/** A message entry — the sidechat's own (OOC) turn. */
-function ooc(role: string, content: string): SidechatTimelineEntry {
-	return { rowType: "message", role, content };
-}
 
 describe("sidechat XML renderers (SC-3a)", () => {
 	describe("sections", () => {
@@ -99,7 +99,6 @@ describe("sidechat XML renderers (SC-3a)", () => {
 
 		it("timeline — text content escapes & < > only (quote stays literal); author attribute escapes & < > \"", () => {
 			const rendered = renderTimelineSection([
-				ooc("user", `Pick the "quiet" option & skip the <fight>`),
 				{
 					rowType: "event",
 					kind: "rp_sync",
@@ -121,7 +120,6 @@ describe("sidechat XML renderers (SC-3a)", () => {
 			]);
 			expect(rendered).toBe(
 				[
-					`User: Pick the "quiet" option &amp; skip the &lt;fight&gt;`,
 					`<rp_sync from="0" to="0">`,
 					`<rp_message position="0" role="assistant" author="Theron &quot;Cook&quot;">It's &lt;done&gt; &amp; "settled"</rp_message>`,
 					`</rp_sync>`,
@@ -161,9 +159,8 @@ describe("sidechat XML renderers (SC-3a)", () => {
 	});
 
 	describe("timeline", () => {
-		it("events and OOC messages interleave in the order given (listTimeline seq order)", () => {
-			const timeline: SidechatTimelineEntry[] = [
-				ooc("user", "Plan the next beat for me."),
+		it("events render in the order given (listTimeline seq order; OOC rows left that job to the message flow — SC-4d)", () => {
+			const timeline: SidechatTimelineEvent[] = [
 				{
 					rowType: "event",
 					kind: "rp_sync",
@@ -176,7 +173,6 @@ describe("sidechat XML renderers (SC-3a)", () => {
 						],
 					},
 				},
-				ooc("assistant", "Here is a plan: raise the stakes."),
 				{
 					rowType: "event",
 					kind: "selection_changed",
@@ -204,17 +200,14 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					kind: "rp_summary",
 					payload: { fromPosition: 0, toPosition: 5, text: "The traveler arrived; a fork was taken." },
 				},
-				ooc("user", "Good. Continue."),
 			];
 
 			expect(renderTimelineSection(timeline)).toBe(
 				[
-					"User: Plan the next beat for me.",
 					'<rp_sync from="0" to="1">',
 					'<rp_message position="0" role="assistant" author="Theron">The tavern door swings open.</rp_message>',
 					'<rp_message position="1" role="user" author="Sable">I step inside.</rp_message>',
 					"</rp_sync>",
-					"Assistant: Here is a plan: raise the stakes.",
 					'<rp_selection_changed position="1">',
 					"<previous>I step inside.</previous>",
 					"<current>I hesitate at the threshold.</current>",
@@ -225,7 +218,6 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					"</rp_variants>",
 					'<rp_branch_forked at="1"/>',
 					'<rp_summary from="0" to="5">The traveler arrived; a fork was taken.</rp_summary>',
-					"User: Good. Continue.",
 				].join("\n"),
 			);
 		});
@@ -280,8 +272,37 @@ describe("sidechat XML renderers (SC-3a)", () => {
 		});
 
 		it("an event kind outside the renderer's union throws instead of silently dropping the event", () => {
-			const bogus = { rowType: "event", kind: "not_a_kind", payload: {} } as unknown as SidechatTimelineEntry;
+			const bogus = { rowType: "event", kind: "not_a_kind", payload: {} } as unknown as SidechatTimelineEvent;
 			expect(() => renderTimelineSection([bogus])).toThrow(/unknown timeline event kind/);
+		});
+
+		it("renderTimelineEvent renders ONE event as its own message body (SC-4d: events ride the message flow)", () => {
+			expect(renderTimelineEvent({ rowType: "event", kind: "branch_forked", payload: { at: 3 } })).toBe(
+				'<rp_branch_forked at="3"/>',
+			);
+			const rendered = renderTimelineEvent({
+				rowType: "event",
+				kind: "rp_sync",
+				payload: {
+					fromPosition: 0,
+					toPosition: 0,
+					messages: [
+						{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", text: "The tavern door swings open." },
+					],
+				},
+			});
+			expect(rendered).toBe(
+				[
+					'<rp_sync from="0" to="0">',
+					'<rp_message position="0" role="assistant" author="Theron">The tavern door swings open.</rp_message>',
+					"</rp_sync>",
+				].join("\n"),
+			);
+		});
+
+		it("a message row is outside the timeline renderer's contract (SC-4d: OOC turns ride the message flow) — it throws, never renders a User: line", () => {
+			const bogus = { rowType: "message", role: "user", content: "an OOC turn" } as unknown as SidechatTimelineEvent;
+			expect(() => renderTimelineEvent(bogus)).toThrow(/unknown timeline event kind/);
 		});
 	});
 });
