@@ -1,6 +1,7 @@
 import { useVibeTavernApp } from "./hooks/use-vibe-tavern-app.js";
 import { useT } from "./i18n/context.js";
 import { AppShell } from "./components/layout/AppShell.js";
+import { FloatingGalleryViewers } from "./components/build/editors/FloatingGalleryViewers.js";
 import { TooltipProvider } from "./components/shared/Tooltip.js";
 import { Logo } from "./components/shared/Logo.js";
 import { useSessionStore } from "./stores/session-store.js";
@@ -74,6 +75,10 @@ export function App() {
         tweaksSettings={tweaksSettings}
         setTweaksSettings={setTweaksSettings}
       />
+      {/* One host for every floating gallery viewer (chat menu + Build
+          grid open into the shared store) — mounted here so open windows
+          survive mode and character switches; the user closes each one. */}
+      <FloatingGalleryViewers />
     </TooltipProvider>
   );
 }

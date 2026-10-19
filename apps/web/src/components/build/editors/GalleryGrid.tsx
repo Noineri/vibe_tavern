@@ -13,7 +13,7 @@ import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 import { useT } from "../../../i18n/context.js";
 import { useGalleryStore } from "../../../stores/gallery-store.js";
-import { GalleryViewer } from "./GalleryViewer.js";
+import { useFloatingGalleryStore } from "../../../stores/floating-gallery-store.js";
 import { GalleryLightbox } from "./GalleryLightbox.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 
@@ -470,9 +470,15 @@ function GalleryTile({
 export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelection, onSetAsAvatar }: GalleryGridProps) {
   const isMobile = useIsMobile();
   const tileHeight = justifiedTileHeight(isMobile);
-  // Multiple floating panels may be open at once (original design intent):
-  // each entry in the set renders its own independent GalleryViewer.
-  const [openPanels, setOpenPanels] = useState<Set<number>>(new Set());
+  // Floating panels live in the shared floating-gallery store (one home for
+  // the Build grid and the chat menu): each entry pins its own characterId +
+  // asset (by id, never by list index), and the global host in App renders
+  // them — so an open viewer survives the grid unmounting under a collapsed
+  // accordion and any character switch. Toggling an already-open tile closes
+  // its window; opening the same image twice keeps one window.
+  const viewers = useFloatingGalleryStore((s) => s.viewers);
+  const openGalleryViewer = useFloatingGalleryStore((s) => s.openGalleryViewer);
+  const closeGalleryViewer = useFloatingGalleryStore((s) => s.closeGalleryViewer);
   // The lightbox is a single focused surface (separate from the panels).
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -494,13 +500,13 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
     setMaxHeight(2 * first.offsetHeight + ROW_GAP);
   }, [tileHeight, assets.length]);
 
-  const togglePanel = (idx: number) => {
-    setOpenPanels((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  const togglePanel = (asset: CharacterAsset) => {
+    const rowId = asset.id as string;
+    if (viewers.some((v) => v.characterId === characterId && (v.asset.id as string) === rowId)) {
+      closeGalleryViewer(characterId, rowId);
+    } else {
+      openGalleryViewer(characterId, asset);
+    }
   };
 
   return (
@@ -523,22 +529,12 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
             isMobile={isMobile}
             onToggle={() => onToggleSelection(asset.id as string)}
             onOpenLightbox={() => setLightboxIndex(idx)}
-            onOpenPanel={() => togglePanel(idx)}
+            onOpenPanel={() => togglePanel(asset)}
             onSetAsAvatar={() => onSetAsAvatar(asset)}
             tileHeight={tileHeight}
           />
         ))}
       </div>
-
-      {/* One independent floating viewer per open index. */}
-      {[...openPanels].map((idx) => (
-        <GalleryViewer
-          key={idx}
-          characterId={characterId}
-          asset={assets[idx]}
-          onClose={() => togglePanel(idx)}
-        />
-      ))}
 
       {lightboxIndex !== null && (
         <GalleryLightbox

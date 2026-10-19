@@ -9,9 +9,9 @@ import { toast } from "sonner";
 import { serveCharacterAssetUrl } from "../../api/gallery-api.js";
 import { attachGalleryImageAsFlatAsset } from "../../lib/attach-from-gallery.js";
 import { useGalleryStore } from "../../stores/gallery-store.js";
+import { useFloatingGalleryStore } from "../../stores/floating-gallery-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useNavigationStore } from "../../stores/index.js";
-import { GalleryViewer } from "../build/editors/GalleryViewer.js";
 import { MediaModal } from "./MediaModal.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 
@@ -67,12 +67,15 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
   const draftCount = useChatStore((s) => s.draftAttachments.length);
   const setMode = useNavigationStore((s) => s.setMode);
+  const openGalleryViewer = useFloatingGalleryStore((s) => s.openGalleryViewer);
 
   const [open, setOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
-  // Floating viewers: one GalleryViewer per open tile (mirrors the gallery
-  // grid's open-panels pattern). Tracked by row id.
-  const [openViewers, setOpenViewers] = useState<CharacterAsset[]>([]);
+  // Floating viewers live in the shared floating-gallery store (one home for
+  // the chat menu and the Build grid): each entry pins its own characterId +
+  // asset, so a chat switch neither closes nor re-targets open viewers — the
+  // global host in App renders them. Opening the same image twice keeps one
+  // window (de-dupe by asset id).
 
   // Load the gallery list on first open (idempotent — safe to call every open).
   useEffect(() => {
@@ -97,13 +100,9 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   }, [draftCount, characterId, addDraftAttachment, t]);
 
   const spawnViewer = useCallback((row: CharacterAsset) => {
-    setOpenViewers((prev) => (prev.some((a) => a.id === row.id) ? prev : [...prev, row]));
+    openGalleryViewer(characterId, row);
     setOpen(false);
-  }, []);
-
-  const closeViewer = useCallback((rowId: string) => {
-    setOpenViewers((prev) => prev.filter((a) => a.id !== rowId));
-  }, []);
+  }, [characterId, openGalleryViewer]);
 
   const list = assets ?? [];
 
@@ -180,16 +179,6 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-
-      {/* Floating viewers — multiple may be open at once. */}
-      {openViewers.map((asset) => (
-        <GalleryViewer
-          key={asset.id as string}
-          characterId={characterId}
-          asset={asset}
-          onClose={() => closeViewer(asset.id as string)}
-        />
-      ))}
     </>
   );
 }
