@@ -1,0 +1,418 @@
+import {
+	brandId,
+	type ChatBranchId,
+	type ChatId,
+	type ExperienceCopilotThreadId,
+	normalizeSceneTrackerConfig,
+	SCENE_PROMPT_FORMAT,
+} from "@vibe-tavern/domain";
+import type {
+	AgentThreadTimelineEntry,
+	CharacterStore,
+	ChatStore,
+	ExperienceCopilotStore,
+	MessageStore,
+	PromptTrace,
+	PromptTraceStore,
+} from "@vibe-tavern/db";
+import {
+	buildAssemblyVariableContext,
+	createFullMacroEngine,
+	createLoreLayerId,
+	formatSceneHistory,
+	PROMPT_FORMAT,
+	type SceneInjectionFormat,
+} from "@vibe-tavern/prompt-pipeline";
+import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
+import {
+	resolveObjectiveLongTermContext,
+	resolveObjectiveTaskContext,
+	type PromptAssemblyService,
+} from "../prompt/prompt-assembly-service.js";
+import {
+	RpSyncThreadNotChatOwnedError,
+	type RpSyncPayload,
+	type RpVariantSelection,
+	type SelectionChangedPayload,
+} from "./rp-sync.js";
+import {
+	renderCharacterSection,
+	renderCurrentSceneSection,
+	renderLoreSection,
+	renderObjectivesSection,
+	renderPersonaSection,
+	renderTimelineSection,
+	type BranchForkedPayload,
+	type LoreEntryInput,
+	type SidechatTimelineEntry,
+	type SidechatTimelineEvent,
+	type VariantsAttachedPayload,
+} from "./sidechat-xml.js";
+
+/**
+ * The sidechat context loader (SIDECHAT_PLAN SC-3b): loads everything a
+ * chat-owned sidechat thread's prompt package needs and renders it with the
+ * SC-3a renderers into ONE string — sections in the settled tag-grammar order
+ * (character, persona, active_lore, objectives, current_scene, timeline),
+ * null sections dropped, joined with a blank line. The shape is a single
+ * string because SC-4b's stream splices the package into the final prompt as
+ * a block; no caller needs per-section access today.
+ *
+ * WHY EACH SOURCE IS WHAT IT IS (found 2026-10-19 — three naive sources do
+ * NOT give what the RP model saw):
+ * - Character: the STORED card carries raw macros, so the canonical
+ *   profile.md (`CharacterStore.getProfileMdText`) is macro-resolved here with
+ *   the SAME variable context the RP send builds — `buildPipelineContext`
+ *   (SC-2a's inputs: dryRun, whole-branch limit) feeds
+ *   `buildAssemblyVariableContext`, and the card resolves against that
+ *   base context exactly like `applyMacrosToContext`'s first pass resolves
+ *   the character fields (assemble.ts). No second macro pipeline is invented.
+ * - Persona: the chat's active persona off the same built context (name,
+ *   pronouns as-is, description macro-resolved the same way — the RP send
+ *   resolves only the description, never the pronouns).
+ * - Active lore: the branch's LATEST prompt trace (`getTracesByChat`, newest
+ *   first) — the entry list from `activatedLoreEntries` in activation order,
+ *   each entry's text from the trace's `assembledLayers` layer `lore_<id>`
+ *   (build-lore-layers.ts) — the text the RP model actually received, not the
+ *   lore store's current (possibly edited) row. An activated id whose layer
+ *   is absent (dropped for empty content at assembly) is skipped: the RP
+ *   model never saw it. No trace yet → the section is omitted.
+ * - Objectives: the chat row's `insightsObjectiveState`. The `mode`
+ *   attribute comes from the state itself (`route` | `goals`,
+ *   ObjectiveState.mode); the text reuses the RP path's own derivation —
+ *   `resolveObjectiveTaskContext` + `resolveObjectiveLongTermContext`
+ *   (prompt-assembly-service.ts, same objectiveEnabled gate and same
+ *   active-selection rule as the RP prompt) rendered through `PROMPT_FORMAT`
+ *   (long-term line above the active task, the pipeline's settled order).
+ *   No new model-facing wording is invented here.
+ * - Current scene: the THREAD's branch scene record via
+ *   `MessageStore.getCurrentSceneTarget(branchId)` — never the chat-level
+ *   cache (that mirrors only the ACTIVE branch) and never
+ *   `chat.activeBranchId`. The text is the record serialized by the same
+ *   `formatSceneHistory` seam the RP prompt uses, under the record's own
+ *   `promptFormat` snapshot (live-config fallback only for legacy records
+ *   that predate the snapshot, per the record contract). The RP layer's
+ *   `[Scene state]` prefix and injectPrompt lead are NOT carried over — they
+ *   are the RP layer's framing, and `<current_scene>` is this package's.
+ * - Timeline: SC-1's `listTimeline(threadId)` — messages render as the
+ *   sidechat's own `User: …` / `Assistant: …` turns, events as their frozen
+ *   XML tags. Frozen event payloads (plain JSON) are structurally validated
+ *   and mapped onto SC-3a's input types; a payload that does not match its
+ *   kind's frozen shape THROWS (the renderer's exhaustiveness guard covers
+ *   unknown kinds — corrupt payloads of known kinds surface here instead,
+ *   never silently pre-filtered).
+ *
+ * Must stay true: NO store writes anywhere (the lore activation inside
+ * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
+ * path is untouched. A thread that is not chat-owned (script-owned, draft,
+ * missing) is refused with SC-2c's typed error before any RP-chat read — the
+ * same refusal the RP sync uses, one class, not a copy.
+ */
+
+/** The stores/services this loader reads — `Pick`s so tests and callers can
+ *  pass narrow seams instead of whole containers. */
+export interface SidechatContextDeps {
+	/** The chat row — objectives state + insights config. */
+	chats: Pick<ChatStore, "getById">;
+	/** The canonical character card (profile.md text, raw macros). */
+	characters: Pick<CharacterStore, "getProfileMdText">;
+	/** Branch length (the SC-2a whole-branch read limit) + the thread branch's
+	 *  scene target. */
+	messages: Pick<MessageStore, "getMessages" | "getCurrentSceneTarget">;
+	/** The branch's prompt traces (latest first). */
+	traces: Pick<PromptTraceStore, "getTracesByChat">;
+	/** The thread row + the merged frozen timeline. */
+	experienceCopilot: Pick<ExperienceCopilotStore, "getById" | "listTimeline">;
+	/** The RP assembly service — supplies the send path's own inputs. */
+	assembly: PromptAssemblyService;
+}
+
+/**
+ * Load and render the sidechat context package for a chat-owned thread.
+ * Throws {@link RpSyncThreadNotChatOwnedError} for a script-owned, draft, or
+ * missing thread (same typed refusal as the RP sync — one class).
+ */
+export async function loadSidechatContext(
+	deps: SidechatContextDeps,
+	threadId: ExperienceCopilotThreadId,
+): Promise<string> {
+	const thread = await deps.experienceCopilot.getById(threadId);
+	// Same narrowing as syncBeforeUserMessage (SC-2c): a null branchId on a
+	// chat-owned row is corruption — refused, never read through.
+	if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
+		throw new RpSyncThreadNotChatOwnedError(threadId);
+	}
+	// brandId at the consuming edge of the store projection — the owner
+	// columns are plain strings on the row (ER-3), same seam as SC-2c.
+	const chatId = brandId<ChatId>(thread.chatId);
+	const branchId = brandId<ChatBranchId>(thread.branchId);
+
+	const chat = await deps.chats.getById(thread.chatId);
+	if (chat === null) {
+		// The FK cascade deletes the thread with its chat, so this is
+		// unreachable outside a concurrent chat delete mid-load — mirror
+		// SC-2c's branch-miss refusal rather than read through a dangling row.
+		throw new Error(
+			`loadSidechatContext: thread "${threadId}" owns chat ${thread.chatId}, but the chat does not resolve (deleted mid-load?)`,
+		);
+	}
+
+	// SC-2a's inputs exactly: the whole branch is the read window (no
+	// messageHistoryLimit window), lore activation dry, the no-model sentinel.
+	const branchMessages = await deps.messages.getMessages(branchId);
+	const built = await deps.assembly.buildPipelineContext({
+		chatId,
+		branchId,
+		model: "",
+		dryRun: true,
+		recentMessageLimit: branchMessages.length,
+	});
+
+	// The RP send's own macro seam: the full engine over the assembly-scoped
+	// variable scope, resolving against the base (raw-field) context — the
+	// same first pass applyMacrosToContext applies to the character/persona
+	// fields (assemble.ts).
+	const macroEngine = createFullMacroEngine(built.context.macroVariableScope);
+	const baseVariableContext = buildAssemblyVariableContext(built.context);
+
+	const characterSection = renderCharacterSection({
+		name: built.context.character.name,
+		card: macroEngine.resolve(await deps.characters.getProfileMdText(built.context.character.id), baseVariableContext),
+	});
+
+	const persona = built.context.persona;
+	const personaSection = persona === null || persona === undefined
+		? null
+		: renderPersonaSection({
+			name: persona.name,
+			pronouns: persona.pronouns ?? null,
+			text: macroEngine.resolve(persona.description, baseVariableContext),
+		});
+
+	const loreSection = renderLoreSection(await loadLoreEntries(deps, chatId, branchId));
+
+	const objectivesSection = renderObjectivesSection(loadObjectivesInput(chat));
+
+	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
+
+	const timelineSection = renderTimelineSection(
+		(await deps.experienceCopilot.listTimeline(threadId)).map((entry) => mapTimelineEntry(threadId, entry)),
+	);
+
+	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection, timelineSection];
+	return sections.filter((section): section is string => section !== null).join("\n\n");
+}
+
+// ─── Active lore (the branch's latest prompt trace) ──────────────────────────
+
+/** Map a trace onto the renderer's lore entries: `activatedLoreEntries` in
+ *  activation order, text + title from the trace's own `lore_<id>` layers. */
+async function loadLoreEntries(
+	deps: SidechatContextDeps,
+	chatId: ChatId,
+	branchId: ChatBranchId,
+): Promise<LoreEntryInput[]> {
+	// getTracesByChat returns newest first (desc createdAt, desc id) — the
+	// first row IS the branch's latest trace. No trace yet → no section.
+	const traces = await deps.traces.getTracesByChat(chatId, branchId);
+	const trace: PromptTrace | undefined = traces[0];
+	if (trace === undefined) return [];
+
+	// Index the trace's layers by id once; assembledLayers is plain JSON
+	// (layer DTOs), so shape-check every row before trusting it.
+	const layersById = new Map<string, Record<string, unknown>>();
+	for (const layer of trace.assembledLayers) {
+		if (isRecord(layer) && typeof layer.id === "string") layersById.set(layer.id, layer);
+	}
+
+	const entries: LoreEntryInput[] = [];
+	for (const entryId of trace.activatedLoreEntries) {
+		const layer = layersById.get(createLoreLayerId(entryId));
+		// An activated id with no layer was DROPPED at assembly (e.g. empty
+		// content — buildLoreLayers) — the RP model never saw it, so the
+		// sidechat does not see it either.
+		if (layer === undefined) continue;
+		const text = layer.text;
+		const title = layer.sourceName;
+		if (typeof text !== "string" || typeof title !== "string") {
+			throw new Error(
+				`loadSidechatContext: trace ${trace.id} layer ${createLoreLayerId(entryId)} is not the frozen layer shape — refusing to render corrupted frozen context`,
+			);
+		}
+		entries.push({ title, text });
+	}
+	return entries;
+}
+
+// ─── Objectives (the chat row's state, via the RP path's own derivation) ─────
+
+type ChatRow = NonNullable<Awaited<ReturnType<ChatStore["getById"]>>>;
+
+/** The objectives section input: `mode` straight off the state, the text from
+ *  the RP prompt's own objective derivations and wording. */
+function loadObjectivesInput(chat: ChatRow): { mode: "route" | "goals"; text: string } {
+	const insightsObjectiveState = chat.insightsObjectiveState;
+	const task = resolveObjectiveTaskContext({
+		insightsConfig: chat.insightsConfig,
+		insightsObjectiveState,
+	});
+	const longTerm = resolveObjectiveLongTermContext({
+		insightsConfig: chat.insightsConfig,
+		insightsObjectiveState,
+	});
+	// Long-term goal above the active task — the order the RP prompt settles
+	// (PROMPT_FORMAT.objectiveLongTerm's contract; the pipeline renders both
+	// goals-mode layers together at the decision point).
+	const text = [
+		longTerm !== null ? PROMPT_FORMAT.objectiveLongTerm(longTerm.injectPrompt, longTerm.description) : null,
+		task !== null ? PROMPT_FORMAT.objectiveTask(task.injectPrompt, task.description) : null,
+	]
+		.filter((line): line is string => line !== null)
+		.join("\n");
+	return { mode: insightsObjectiveState.mode, text };
+}
+
+// ─── Current scene (the THREAD's branch record) ──────────────────────────────
+
+/** Serialize the thread branch's current scene record with the RP prompt's own
+ *  formatter, under the record's own prompt-format snapshot (live-config
+ *  fallback for pre-snapshot legacy records only). */
+async function loadCurrentSceneText(
+	deps: SidechatContextDeps,
+	chat: ChatRow,
+	branchId: ChatBranchId,
+): Promise<string> {
+	const target = await deps.messages.getCurrentSceneTarget(branchId);
+	if (target === null) return "";
+	const format: SceneInjectionFormat = target.record.promptFormat
+		?? (chat.insightsConfig.tracker
+			? normalizeSceneTrackerConfig(chat.insightsConfig.tracker).promptFormat
+			: SCENE_PROMPT_FORMAT.json);
+	return formatSceneHistory([target.record.sceneState], format);
+}
+
+// ─── Timeline (frozen payloads → SC-3a input types) ──────────────────────────
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Corrupt-payload refusal: a known kind whose stored payload does not match
+ *  its frozen shape. Throwing (not skipping) is the contract — silently
+ *  dropping an event would change what the model is shown. */
+function corrupt(threadId: string, kind: string, seq: number | null, detail: string): never {
+	throw new Error(
+		`loadSidechatContext: thread ${threadId} event ${kind} (seq ${seq ?? "none"}) payload is not the frozen shape (${detail}) — refusing to render corrupted frozen context`,
+	);
+}
+
+/** Map one merged-timeline row (SC-1) onto the renderer's entry type. */
+function mapTimelineEntry(threadId: string, entry: AgentThreadTimelineEntry): SidechatTimelineEntry {
+	if (entry.rowType === "message") {
+		return { rowType: "message", role: entry.role, content: entry.content };
+	}
+	// `where` names the row in every parser's refusal message.
+	const where = { threadId, kind: entry.kind, seq: entry.seq };
+	switch (entry.kind) {
+		case "rp_sync":
+			return { rowType: "event", kind: "rp_sync", payload: parseRpSyncPayload(where, entry.payload) };
+		case "variants_attached":
+			return {
+				rowType: "event",
+				kind: "variants_attached",
+				payload: parseVariantsAttachedPayload(where, entry.payload),
+			};
+		case "selection_changed":
+			return {
+				rowType: "event",
+				kind: "selection_changed",
+				payload: parseSelectionChangedPayload(where, entry.payload),
+			};
+		case "branch_forked":
+			return { rowType: "event", kind: "branch_forked", payload: parseBranchForkedPayload(where, entry.payload) };
+	}
+	// No default: the store's kind union is closed. A new kind (e.g. SC-6's
+	// `rp_summary`) makes this switch non-exhaustive at compile time — teach
+	// this mapper before writing that kind.
+}
+
+interface EventWhere {
+	threadId: string;
+	kind: string;
+	seq: number | null;
+}
+
+function parseRpSyncPayload(where: EventWhere, payload: unknown): RpSyncPayload {
+	if (!isRecord(payload) || !Array.isArray(payload.messages)) {
+		corrupt(where.threadId, where.kind, where.seq, "messages array missing");
+	}
+	const messages = payload.messages.map((raw: unknown): RpSyncPayload["messages"][number] => {
+		if (!isRecord(raw)) corrupt(where.threadId, where.kind, where.seq, "message row is not a record");
+		const id = raw.id;
+		const position = raw.position;
+		const role = raw.role;
+		const authorName = raw.authorName ?? null;
+		const variantId = raw.variantId ?? null;
+		const text = raw.text;
+		if (typeof id !== "string" || typeof position !== "number" || typeof text !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "message id/position/text not strings/number");
+		}
+		if (
+			role !== "system" && role !== "user" && role !== "assistant" && role !== "tool"
+		) {
+			corrupt(where.threadId, where.kind, where.seq, `unknown message role "${String(role)}"`);
+		}
+		if (authorName !== null && typeof authorName !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "authorName is neither string nor null");
+		}
+		if (variantId !== null && typeof variantId !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "variantId is neither string nor null");
+		}
+		return { id, position, role, authorName, variantId, text };
+	});
+	const fromPosition = payload.fromPosition;
+	const toPosition = payload.toPosition;
+	if (typeof fromPosition !== "number" || typeof toPosition !== "number") {
+		corrupt(where.threadId, where.kind, where.seq, "fromPosition/toPosition not numbers");
+	}
+	return { fromPosition, toPosition, messages };
+}
+
+function parseVariantsAttachedPayload(where: EventWhere, payload: unknown): VariantsAttachedPayload {
+	if (!isRecord(payload) || typeof payload.position !== "number" || !Array.isArray(payload.variants)) {
+		corrupt(where.threadId, where.kind, where.seq, "position/variants missing");
+	}
+	const variants = payload.variants.map((raw: unknown): VariantsAttachedPayload["variants"][number] => {
+		if (!isRecord(raw) || typeof raw.text !== "string" || typeof raw.selected !== "boolean") {
+			corrupt(where.threadId, where.kind, where.seq, "variant text/selected missing");
+		}
+		return { text: raw.text, selected: raw.selected };
+	});
+	return { position: payload.position, variants };
+}
+
+function parseSelectionChangedPayload(where: EventWhere, payload: unknown): SelectionChangedPayload {
+	if (!isRecord(payload) || typeof payload.messageId !== "string" || typeof payload.position !== "number") {
+		corrupt(where.threadId, where.kind, where.seq, "messageId/position missing");
+	}
+	return {
+		messageId: payload.messageId,
+		position: payload.position,
+		previous: parseVariantSelection(where, payload.previous),
+		current: parseVariantSelection(where, payload.current),
+	};
+}
+
+function parseVariantSelection(where: EventWhere, raw: unknown): RpVariantSelection {
+	if (!isRecord(raw) || typeof raw.variantId !== "string" || typeof raw.text !== "string") {
+		corrupt(where.threadId, where.kind, where.seq, "previous/current variant pair missing");
+	}
+	return { variantId: raw.variantId, text: raw.text };
+}
+
+function parseBranchForkedPayload(where: EventWhere, payload: unknown): BranchForkedPayload {
+	if (!isRecord(payload) || typeof payload.at !== "number") {
+		corrupt(where.threadId, where.kind, where.seq, "at missing");
+	}
+	return { at: payload.at };
+}
