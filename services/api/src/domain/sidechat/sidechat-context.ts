@@ -3,6 +3,7 @@ import {
 	type ChatBranchId,
 	type ChatId,
 	type ExperienceCopilotThreadId,
+	isRecord,
 	normalizeSceneTrackerConfig,
 	SCENE_PROMPT_FORMAT,
 } from "@vibe-tavern/domain";
@@ -348,10 +349,6 @@ async function loadCurrentSceneText(
 }
 
 // ─── Timeline (frozen payloads → SC-3a input types) ──────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Corrupt-payload refusal: a known kind whose stored payload does not match
  *  its frozen shape. Throwing (not skipping) is the contract — silently

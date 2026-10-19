@@ -6,6 +6,7 @@ import type {
   ObjectiveTask,
   SceneTrackerConfig,
 } from "./entities.js";
+import { isRecord } from "./is-record.js";
 import { defaultObjectiveState, normalizeObjectiveState } from "./chat-json-config.js";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "./platform-constants.js";
 import { applySceneTrackerConfigPatch, normalizeSceneTrackerConfig } from "./scene-tracker-constants.js";
@@ -60,10 +61,6 @@ export interface TrackerTemplate {
   version: typeof TRACKER_TEMPLATE_VERSION;
   scene: { enabled: boolean; config: SceneTrackerTemplateConfig } | null;
   objective: { enabled: boolean; state: ObjectiveTemplateState } | null;
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function sceneTemplateConfig(config: SceneTrackerConfig): SceneTrackerTemplateConfig {
@@ -121,7 +118,7 @@ function isDefaultObjectiveTemplateState(state: ObjectiveTemplateState): boolean
  * also heals mis-slotted templates arriving through the tool/schema surface.
  */
 function migrateObjectiveTemplateRawState(raw: unknown): unknown {
-  if (!isPlainRecord(raw)) return raw;
+  if (!isRecord(raw)) return raw;
   const tasks = Array.isArray(raw.tasks) ? raw.tasks : [];
   const shortTermGoals = Array.isArray(raw.shortTermGoals) ? raw.shortTermGoals : [];
   if (raw.mode === OBJECTIVE_MODE.goals) {
@@ -164,15 +161,15 @@ function runtimeObjectiveState(state: ObjectiveTemplateState): ObjectiveState {
 }
 
 export function normalizeTrackerTemplate(raw: unknown): TrackerTemplate | null {
-  if (!isPlainRecord(raw) || raw.version !== TRACKER_TEMPLATE_VERSION) return null;
+  if (!isRecord(raw) || raw.version !== TRACKER_TEMPLATE_VERSION) return null;
 
-  const scene = isPlainRecord(raw.scene)
+  const scene = isRecord(raw.scene)
     ? {
         enabled: raw.scene.enabled === true,
         config: sceneTemplateConfig(normalizeSceneTrackerConfig(raw.scene.config)),
       }
     : null;
-  const objective = isPlainRecord(raw.objective)
+  const objective = isRecord(raw.objective)
     ? {
         enabled: raw.objective.enabled === true,
         state: objectiveTemplateState(
@@ -237,7 +234,7 @@ export function applyTrackerTemplate(
 
 export function readTrackerTemplate(extensions: Record<string, unknown>): TrackerTemplate | null {
   const vibeTavern = extensions[VT_EXTENSION_KEY];
-  if (!isPlainRecord(vibeTavern)) return null;
+  if (!isRecord(vibeTavern)) return null;
   return normalizeTrackerTemplate(vibeTavern[TRACKER_TEMPLATE_KEY]);
 }
 
@@ -246,7 +243,7 @@ export function withTrackerTemplate(
   template: TrackerTemplate | null,
 ): Record<string, unknown> {
   const vibeTavern = extensions[VT_EXTENSION_KEY];
-  if (!isPlainRecord(vibeTavern)) {
+  if (!isRecord(vibeTavern)) {
     if (template === null) return { ...extensions };
     return {
       ...extensions,

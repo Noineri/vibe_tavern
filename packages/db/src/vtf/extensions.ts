@@ -16,16 +16,15 @@
  * `write → read → write` is byte-identical regardless of the input key order.
  */
 
+import { isRecord } from "@vibe-tavern/domain";
+
 // ───────────────────────────────────────────────────────────────────────────
-// Inlined prototype-pollution-safe record helpers (db layer cannot import
-// from the import-export package; these are the pure helpers we need).
+// Inlined prototype-pollution-safe sanitize helpers (db layer cannot import
+// from the import-export package; these are the pure helpers we need). The
+// record guard itself is domain's `isRecord` (SC-5r1).
 // ───────────────────────────────────────────────────────────────────────────
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Strip prototype-pollution keys recursively (mirrors import-export/shared.ts). */
 function sanitizeRecord(value: Record<string, unknown>): Record<string, unknown> {

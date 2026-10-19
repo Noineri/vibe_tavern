@@ -20,14 +20,13 @@
  */
 
 import {
+  isRecord,
   REGEX_PLACEMENT,
   REGEX_SUBSTITUTE,
   type RegexPlacement,
   type RegexPreset,
   type RegexSubstituteMode,
 } from "@vibe-tavern/domain";
-
-import { isRecord } from "../shared.js";
 
 /**
  * A Rule in its neutral, serialization-facing shape: a `RegexPreset` minus

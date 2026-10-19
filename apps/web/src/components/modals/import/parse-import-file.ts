@@ -13,6 +13,7 @@
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader.js";
 import { unpackMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
 import { importCharacterCardV3Json, type RegexScriptImportDraft } from "@vibe-tavern/import-export";
+import { isRecord } from "@vibe-tavern/domain";
 import { getT } from "../../../i18n/locale-helpers.js";
 
 export interface CharacterPreview {
@@ -184,10 +185,6 @@ function parseChatPreview(file: File, text: string): ChatPreview {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string {

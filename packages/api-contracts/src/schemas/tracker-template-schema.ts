@@ -1,4 +1,5 @@
 import {
+  isRecord,
   OBJECTIVE_MODE,
   OBJECTIVE_TASK_STATUS,
   SCENE_AUTO_MODE,
@@ -78,10 +79,6 @@ const goalsObjectiveTemplateStateSchema = z.object({
   ...objectiveTemplateStateScalars,
 }).strict();
 
-function isPlainRecordValue(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Objective template state as a discriminated union on `mode` (CT-9). Parse
  * output is per-branch: a stored template carries only its mode's slots
@@ -92,7 +89,7 @@ function isPlainRecordValue(value: unknown): value is Record<string, unknown> {
  */
 const objectiveTemplateStateSchema = z.preprocess(
   (value) => {
-    if (isPlainRecordValue(value) && value.mode === undefined) {
+    if (isRecord(value) && value.mode === undefined) {
       return { ...value, mode: OBJECTIVE_MODE.route };
     }
     return value;

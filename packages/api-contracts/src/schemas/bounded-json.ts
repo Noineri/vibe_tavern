@@ -12,9 +12,7 @@
 
 import { z } from "zod";
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+import { isRecord } from "@vibe-tavern/domain";
 
 /**
  * Validate that `value` is JSON-safe, nests no deeper than `maxDepth`, and
@@ -70,7 +68,7 @@ export function jsonBoundsError(
       for (let i = 0; i < v.length; i += 1) {
         stack.push({ kind: "enter", v: v[i], d: d + 1 });
       }
-    } else if (isPlainObject(v)) {
+    } else if (isRecord(v)) {
       for (const child of Object.values(v)) {
         stack.push({ kind: "enter", v: child, d: d + 1 });
       }

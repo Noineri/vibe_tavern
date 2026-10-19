@@ -17,6 +17,7 @@
  */
 
 import type { SceneTrackerConfig } from "./entities.js";
+import { isRecord } from "./is-record.js";
 
 // ---------------------------------------------------------------------------
 // Central visible limits
@@ -499,10 +500,6 @@ function finiteIntOr(value: unknown, min: number, fallback: number): number {
     : fallback;
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Normalize a raw stored tracker value into a complete, integrity-correct
  * {@link SceneTrackerConfig}. Missing/invalid fields fall back to the fixed
@@ -519,8 +516,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  */
 export function normalizeSceneTrackerConfig(raw: unknown): SceneTrackerConfig {
   const base = createDefaultSceneTrackerConfig();
-  if (!isPlainRecord(raw)) return base;
-  const schema: SceneTrackerDsl = isPlainRecord(raw.schema) ? (raw.schema as SceneTrackerDsl) : base.schema;
+  if (!isRecord(raw)) return base;
+  const schema: SceneTrackerDsl = isRecord(raw.schema) ? (raw.schema as SceneTrackerDsl) : base.schema;
   return {
     schema,
     autoMode: raw.autoMode === SCENE_AUTO_MODE.manual ? SCENE_AUTO_MODE.manual : base.autoMode,

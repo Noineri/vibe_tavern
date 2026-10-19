@@ -1,4 +1,4 @@
-import { brandId, type ChatBranchId, type ChatId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
+import { brandId, isRecord, type ChatBranchId, type ChatId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
 import type {
 	AgentThreadContextEventKind,
 	AgentThreadRpFrontier,
@@ -236,10 +236,6 @@ export interface RpSyncDeps extends RpBranchViewDeps {
 /** The frontier of a never-synced thread — SC-2b's initial contract: message
  *  positions are 0-based, so -1 precedes every message; nothing is selected. */
 const NEVER_SYNCED_FRONTIER: AgentThreadRpFrontier = { lastPosition: -1, selected: {} };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Build the frozen-text lookup from the thread's STORED frozen payloads

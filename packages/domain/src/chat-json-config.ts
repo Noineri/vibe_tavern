@@ -11,6 +11,7 @@
  * data and therefore never throw.
  */
 import type { AutoSummaryConfig, InsightsConfig, ObjectiveLongTermGoal, ObjectiveState, ObjectiveTask } from "./entities.js";
+import { isRecord } from "./is-record.js";
 import {
   DICE_ACTOR_TYPE,
   DICE_MODE,
@@ -23,10 +24,6 @@ import { normalizeSceneTrackerConfig } from "./scene-tracker-constants.js";
 
 /** Default recent-message window for the Objective model. */
 export const OBJECTIVE_CONTEXT_WINDOW = 5;
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -41,7 +38,7 @@ function flooredAtLeast(value: unknown, min: number, fallback: number): number {
 // ─── Auto-summary ─────────────────────────────────────────────────────────────
 
 export function normalizeAutoSummaryConfig(raw: unknown): AutoSummaryConfig {
-  const r = isPlainRecord(raw) ? raw : {};
+  const r = isRecord(raw) ? raw : {};
   const maxPriorSummaries = finiteNumber(r.maxPriorSummaries);
   return {
     enabled: r.enabled === true,
@@ -65,7 +62,7 @@ function isDiceActorType(value: unknown): value is DiceActorType {
 /** Non-record → `null` (no override). Entries that are not arrays or keep no
  *  valid actor are dropped: an empty binding falls back to declared actors. */
 function normalizeDiceActorBindings(raw: unknown): Record<string, DiceActorType[]> | null {
-  if (!isPlainRecord(raw)) return null;
+  if (!isRecord(raw)) return null;
   const out: Record<string, DiceActorType[]> = {};
   for (const [scriptId, actors] of Object.entries(raw)) {
     if (scriptId.length === 0 || !Array.isArray(actors)) continue;
@@ -76,7 +73,7 @@ function normalizeDiceActorBindings(raw: unknown): Record<string, DiceActorType[
 }
 
 export function normalizeInsightsConfig(raw: unknown): InsightsConfig {
-  const r = isPlainRecord(raw) ? raw : {};
+  const r = isRecord(raw) ? raw : {};
   return {
     objectiveEnabled: r.objectiveEnabled === true,
     trackerEnabled: r.trackerEnabled === true,
@@ -89,7 +86,7 @@ export function normalizeInsightsConfig(raw: unknown): InsightsConfig {
     diceActorBindings: normalizeDiceActorBindings(r.diceActorBindings),
     // Stays absent until the Scene Tracker is first configured, so stored rows
     // never materialize tracker defaults on an unrelated write.
-    ...(isPlainRecord(r.tracker) ? { tracker: normalizeSceneTrackerConfig(r.tracker) } : {}),
+    ...(isRecord(r.tracker) ? { tracker: normalizeSceneTrackerConfig(r.tracker) } : {}),
   };
 }
 
@@ -130,7 +127,7 @@ function normalizeObjectiveItems(raw: unknown): ObjectiveTask[] {
   const items: ObjectiveTask[] = [];
   let activeSeen = false;
   for (const candidate of raw) {
-    if (!isPlainRecord(candidate)) continue;
+    if (!isRecord(candidate)) continue;
     const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
     const description = typeof candidate.description === "string" ? candidate.description.trim() : "";
     const status = candidate.status;
@@ -143,7 +140,7 @@ function normalizeObjectiveItems(raw: unknown): ObjectiveTask[] {
 }
 
 function normalizeLongTermGoal(raw: unknown): ObjectiveLongTermGoal | null {
-  if (!isPlainRecord(raw)) return null;
+  if (!isRecord(raw)) return null;
   const description = typeof raw.description === "string" ? raw.description.trim() : "";
   if (!description || !isObjectiveTaskStatus(raw.status)) return null;
   return { description, status: raw.status };
@@ -161,7 +158,7 @@ function nonBlankStringOrNull(value: unknown): string | null {
  */
 export function normalizeObjectiveState(raw: unknown): ObjectiveState {
   const base = defaultObjectiveState();
-  if (!isPlainRecord(raw)) return base;
+  if (!isRecord(raw)) return base;
   return {
     mode: raw.mode === OBJECTIVE_MODE.goals ? OBJECTIVE_MODE.goals : OBJECTIVE_MODE.route,
     objectiveDescription: typeof raw.objectiveDescription === "string" ? raw.objectiveDescription : base.objectiveDescription,

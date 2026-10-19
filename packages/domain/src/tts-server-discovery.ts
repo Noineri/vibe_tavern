@@ -4,7 +4,9 @@
  *  (openai-edge-tts) ship no CORS headers at all, which makes direct browser
  *  probing impossible — the browser kills the response before we can read
  *  it. The fetch implementation is injected (FetchLike); the module itself
- *  has zero dependencies and never touches I/O globals. */
+ *  has zero external dependencies and never touches I/O globals. */
+
+import { isRecord } from "./is-record.js";
 
 export type FetchLike = (
   input: string,
@@ -58,10 +60,6 @@ class TimeoutError extends Error {
     super(message);
     this.name = "TimeoutError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Pull the model-id array out of a /v1/models body. Two shapes in the wild:

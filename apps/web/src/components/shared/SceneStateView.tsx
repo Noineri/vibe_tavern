@@ -23,6 +23,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import type { SceneTone, SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
+import { isRecord } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
@@ -130,7 +131,7 @@ function Field({
 }): ReactNode {
   switch (node.$type) {
     case "object": {
-      const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
+      const child = isRecord(value) ? (value as Record<string, unknown>) : null;
       // A group tone is the group's own accent element — never a recursion
       // paint: children resolve their own nodes independently below.
       const groupTone = variant === "compact" ? undefined : resolveSceneTone(node, value);
@@ -251,7 +252,7 @@ function ArrayItem({
   depth: number;
 }): ReactNode {
   if (itemNode.$type === "object") {
-    const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
+    const child = isRecord(value) ? (value as Record<string, unknown>) : null;
     return (
       <div className={cn(variant === "hud" ? "scene-state-hud-record relative border border-border2 bg-s3/50 px-2 py-2" : variant === "clean" ? "scene-state-clean-record rounded border border-border2 bg-s3 px-2 py-1.5" : variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
         {variant === "hud" && <HudRecordCorners />}
@@ -487,8 +488,4 @@ function isShortCleanScalar(node: SceneTrackerSchemaNode, value: unknown): boole
   if (node.$type === "boolean") return true;
   if (node.$type === "number") return !shouldRenderMeter(node, typeof value === "number" ? value : null, "clean");
   return node.$type === "string" && (value == null || (typeof value === "string" && value.length <= 36));
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

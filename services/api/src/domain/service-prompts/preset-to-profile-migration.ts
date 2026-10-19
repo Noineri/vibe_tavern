@@ -35,7 +35,7 @@ import type { UiSettingsStore } from "@vibe-tavern/db";
 import { ServicePromptProfileStore } from "@vibe-tavern/db";
 import type { ServicePromptProfile } from "@vibe-tavern/db";
 import type { PromptPreset } from "@vibe-tavern/db";
-import { SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
+import { isRecord, SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
 import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
 
 /** Structural dependency set — the full StoreContainer satisfies it; tests
@@ -85,10 +85,6 @@ const FIELD_KEY_SET = new Set<string>(SERVICE_PROMPT_FIELD_KEYS);
 
 function isFieldKey(key: string): key is ServicePromptFieldKey {
 	return FIELD_KEY_SET.has(key);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Extract trim-non-empty overrides from one preset row. Order of precedence

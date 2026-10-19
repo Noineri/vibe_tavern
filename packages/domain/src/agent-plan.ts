@@ -1,3 +1,5 @@
+import { isRecord } from "./is-record.js";
+
 /** Statuses shared by the copilot todo and persisted agent plan tasks. */
 export const AGENT_PLAN_TASK_STATUS = {
   pending: "pending",
@@ -35,10 +37,6 @@ export const EMPTY_AGENT_PLAN: AgentPlan = {
   constraints: [],
   tasks: [],
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isAgentPlanTaskStatus(value: unknown): value is AgentPlanTaskStatus {
   return Object.values(AGENT_PLAN_TASK_STATUS).some((status) => status === value);

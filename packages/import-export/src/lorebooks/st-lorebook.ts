@@ -9,14 +9,13 @@ import type {
   LoreMatchSource,
   LoreEntryPosition,
 } from "@vibe-tavern/domain";
-import { brandId, compileRussianCaseFormsKey, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE, unwrapRussianCaseFormsKey } from "@vibe-tavern/domain";
+import { brandId, compileRussianCaseFormsKey, ENTITY_ID_NAMESPACE, isRecord, LORE_MATCH_SOURCE, unwrapRussianCaseFormsKey } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
   asNumber,
   asString,
   asStringArray,
-  isRecord,
   makeDeterministicId,
   normalizeTimestamp,
   parseJsonInput,
