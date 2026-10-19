@@ -33,6 +33,17 @@ export interface AgentThreadRpFrontier {
   selected: Record<string, string>;
 }
 
+/** One RP sync's write plan (SC-2c): the frozen-context events to append plus
+ *  the next frontier to store wholesale. The store's applyRpSync asks the
+ *  sync writer for this INSIDE its transaction — the callback form keeps the
+ *  pure diff (services/api's computeRpSync) out of this package's imports
+ *  (dependency direction) while the input frontier is still read inside the
+ *  same transaction that commits the plan. */
+export interface RpSyncWritePlan {
+  events: readonly { kind: AgentThreadContextEventKind; payload: unknown }[];
+  frontier: AgentThreadRpFrontier;
+}
+
 /** One frozen-context event row (SC-1) — store projection. `payload` is the
  *  parsed `payload_json`; its shape is kind-specific and owned by the event's
  *  writer (SC-2c+), so it stays `unknown` here. */

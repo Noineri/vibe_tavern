@@ -2,11 +2,10 @@ import { and, eq, isNull, desc } from 'drizzle-orm';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { brandId, log, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
-import { parseContextMetrics, parseContextLinks, parseTodo, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
-import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry } from './agent-thread-context-events.js';
-
-const logger = log.tag('experience-copilot-store');
+import { brandId, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
+import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
+import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
+import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -120,7 +119,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(and(eq(experienceCopilotThreads.scriptId, scriptId), isNull(experienceCopilotThreads.archivedAt)))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** The single active chat-owned thread (archived_at IS NULL) for a
@@ -140,7 +139,7 @@ export class ExperienceCopilotStore {
         ),
       )
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** All messages for a thread, oldest → newest (createdAt asc, then id as a
@@ -153,7 +152,7 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotMessages.threadId, threadId))
       .orderBy(experienceCopilotMessages.createdAt, experienceCopilotMessages.id)
       .all();
-    return rows.map((r) => this.mapMessage(r));
+    return rows.map((r) => mapMessage(r));
   }
 
   /** Fetch one thread by id. */
@@ -163,7 +162,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, sessionId))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Active + archived threads for a script, newest first (updatedAt desc, then
@@ -175,7 +174,7 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotThreads.scriptId, scriptId))
       .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
       .all();
-    return rows.map((r) => this.mapThread(r));
+    return rows.map((r) => mapThread(r));
   }
 
   /** Active + archived chat-owned threads for a (chat, branch, kind) triple,
@@ -195,7 +194,7 @@ export class ExperienceCopilotStore {
       )
       .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
       .all();
-    return rows.map((r) => this.mapThread(r));
+    return rows.map((r) => mapThread(r));
   }
 
   /**
@@ -232,7 +231,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, id))
       .get();
-    return this.mapThread(row!);
+    return mapThread(row!);
   }
 
   /**
@@ -294,7 +293,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, id))
       .get();
-    return this.mapThread(row!);
+    return mapThread(row!);
   }
 
   /**
@@ -363,7 +362,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, sessionId))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Archive a single thread (set archived_at). Idempotent — returns the thread
@@ -379,7 +378,7 @@ export class ExperienceCopilotStore {
       .set({ archivedAt: now, updatedAt: now })
       .where(eq(experienceCopilotThreads.id, sessionId))
       .returning();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Rename a session: set its title (empty = back to the auto-numbered
@@ -393,7 +392,7 @@ export class ExperienceCopilotStore {
       .set({ title, updatedAt: now })
       .where(eq(experienceCopilotThreads.id, sessionId))
       .returning();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /**
@@ -430,10 +429,10 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotMessages)
       .where(eq(experienceCopilotMessages.id, id))
       .get();
-    return this.mapMessage(row!);
+    return mapMessage(row!);
   }
 
-  // ─── Frozen context events / timeline / frontier (SIDECHAT_PLAN SC-1) ──
+  // ─── Frozen context events / timeline / frontier (SIDECHAT_PLAN SC-1/SC-2c) ──
 
   /**
    * Append a frozen-context event to a thread's timeline (SC-1): chat-state
@@ -502,10 +501,10 @@ export class ExperienceCopilotStore {
       .all();
     const entries: AgentThreadTimelineEntry[] = [];
     for (const row of messageRows) {
-      entries.push({ rowType: 'message', ...this.mapMessage(row) });
+      entries.push({ rowType: 'message', ...mapMessage(row) });
     }
     for (const row of eventRows) {
-      const event = this.mapEvent(row);
+      const event = mapEvent(row);
       if (event) entries.push({ rowType: 'event', ...event });
     }
     entries.sort(compareTimelineEntries);
@@ -540,6 +539,64 @@ export class ExperienceCopilotStore {
       .set({ rpFrontierJson: JSON.stringify(frontier), updatedAt: now })
       .where(eq(experienceCopilotThreads.id, threadId))
       .run();
+  }
+
+  /**
+   * Apply one RP sync ATOMICALLY (SC-2c): inside ONE synchronous transaction
+   * — read the thread's stored frontier, hand it to `compute` (the caller's
+   * pure diff: services/api's computeRpSync over a branch view read before
+   * this call), append every planned event (seq allocated exactly like
+   * appendContextEvent, so the events interleave with messages on the merged
+   * timeline), then wholesale-replace the frontier. The frontier READ and the
+   * WRITES share the transaction on purpose: two back-to-back syncs then
+   * cannot both see the pre-sync frontier — the second computes its diff
+   * against the first's COMMITTED frontier, so a delta is never duplicated
+   * (bun:sqlite transactions are synchronous; no await can interleave between
+   * the read and the writes). A `compute` throw — the frozen-history
+   * corruption SC-2c names — propagates out of the synchronous callback, so
+   * the whole transaction rolls back: no events, no frontier move. The store
+   * stays payload-agnostic, exactly like appendContextEvent: nothing inside
+   * `plan` is validated here. The callback form keeps the pure diff out of
+   * this package's imports (dependency direction) while its input frontier is
+   * still read inside the same transaction that writes the plan.
+   */
+  async applyRpSync(
+    threadId: string,
+    compute: (frontier: AgentThreadRpFrontier | null) => RpSyncWritePlan,
+  ): Promise<void> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      const row = tx
+        .select({ rpFrontierJson: experienceCopilotThreads.rpFrontierJson })
+        .from(experienceCopilotThreads)
+        .where(eq(experienceCopilotThreads.id, threadId))
+        .get();
+      const frontier =
+        row === undefined || row.rpFrontierJson === null
+          ? null
+          : parseFrontier(row.rpFrontierJson, threadId);
+      const plan = compute(frontier);
+      for (const event of plan.events) {
+        const id = this.idGen.next('expcop_evt');
+        const seq = this.allocateSeqAndTouchThread(tx, threadId, now);
+        tx
+          .insert(agentThreadContextEvents)
+          .values({
+            id,
+            threadId,
+            seq,
+            kind: event.kind,
+            payloadJson: JSON.stringify(event.payload),
+            createdAt: now,
+          })
+          .run();
+      }
+      tx
+        .update(experienceCopilotThreads)
+        .set({ rpFrontierJson: JSON.stringify(plan.frontier), updatedAt: now })
+        .where(eq(experienceCopilotThreads.id, threadId))
+        .run();
+    });
   }
 
   // ─── Context metrics / auto-compact (CM-2) ─────────────────────────────────
@@ -661,10 +718,10 @@ export class ExperienceCopilotStore {
       .set({ updatedAt: now })
       .where(eq(experienceCopilotThreads.id, threadId))
       .run();
-    return this.mapMessage(row);
+    return mapMessage(row);
   }
 
-  // ─── Row mappers (brandId at the DB edge only) ─────────────────────
+  // ─── Seq allocation (SC-1, internal) ────────────────────────────────
 
   /**
    * SC-1: bump the thread's updated_at and, on a CHAT-OWNED thread, allocate
@@ -695,68 +752,5 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotThreads.id, threadId))
       .run();
     return seq;
-  }
-
-  private mapThread(row: typeof experienceCopilotThreads.$inferSelect): ExperienceCopilotThread {
-    return {
-      id: brandId<ExperienceCopilotThreadId>(row.id),
-      scriptId: row.scriptId,
-      draftSessionId: row.draftSessionId,
-      chatId: row.chatId,
-      branchId: row.branchId,
-      agentKind: row.agentKind,
-      title: row.title,
-      archivedAt: row.archivedAt,
-      contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
-      contextLinks: parseContextLinks(row.contextLinksJson, row.id),
-      todo: parseTodo(row.todoJson, row.id),
-      lastProviderProfileId: row.lastProviderProfileId,
-      lastModel: row.lastModel,
-      autoCompact: row.autoCompact === 1,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
-
-  private mapMessage(row: typeof experienceCopilotMessages.$inferSelect): ExperienceCopilotMessage {
-    return {
-      id: brandId<ExperienceCopilotMessageId>(row.id),
-      threadId: brandId<ExperienceCopilotThreadId>(row.threadId),
-      role: row.role,
-      content: row.content,
-      toolCallsJson: row.toolCallsJson,
-      toolCallId: row.toolCallId,
-      seq: row.seq,
-      createdAt: row.createdAt,
-    };
-  }
-
-  /** Map an event row (SC-1); null — after logger.warn — when payload_json is
-   *  malformed, so the caller skips that row (listTimeline never throws on a
-   *  corrupted event). A NULL column is not malformed: the event carries a
-   *  null payload. */
-  private mapEvent(row: typeof agentThreadContextEvents.$inferSelect): AgentThreadContextEvent | null {
-    let payload: unknown = null;
-    if (row.payloadJson !== null) {
-      try {
-        payload = JSON.parse(row.payloadJson);
-      } catch (err) {
-        logger.warn(
-          'listTimeline: malformed payload_json on event %s of thread %s skipped (%s)',
-          row.id,
-          row.threadId,
-          err instanceof Error ? err.message : String(err),
-        );
-        return null;
-      }
-    }
-    return {
-      id: brandId<AgentThreadContextEventId>(row.id),
-      threadId: brandId<ExperienceCopilotThreadId>(row.threadId),
-      seq: row.seq,
-      kind: row.kind as AgentThreadContextEventKind,
-      payload,
-      createdAt: row.createdAt,
-    };
   }
 }

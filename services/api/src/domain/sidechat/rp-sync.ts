@@ -1,5 +1,12 @@
-import type { AgentThreadContextEventKind, AgentThreadRpFrontier } from "@vibe-tavern/db";
-import type { RpBranchViewMessage } from "./rp-branch-view.js";
+import { brandId, type ChatBranchId, type ChatId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
+import type {
+	AgentThreadContextEventKind,
+	AgentThreadRpFrontier,
+	AgentThreadTimelineEntry,
+	ExperienceCopilotStore,
+} from "@vibe-tavern/db";
+import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
+import { readBranchAsModelSees, type RpBranchViewDeps, type RpBranchViewMessage } from "./rp-branch-view.js";
 
 /**
  * The RP sync diff (SIDECHAT_PLAN SC-2b) — PURE. New messages are detected
@@ -10,12 +17,13 @@ import type { RpBranchViewMessage } from "./rp-branch-view.js";
  * `frontier.selected` (id → frozen variantId, SC-1) is the only "already
  * synced" truth this diff consults.
  *
- * This module computes events + the next frontier; it never touches the
+ * This module has two halves. `computeRpSync` is PURE: it never touches the
  * store, the db, a logger, the clock, or randomness — every input is a
- * parameter. SC-2c is the writer: it reads the frontier, builds the view
- * (SC-2a's readBranchAsModelSees) and the frozen-text lookup from the
- * thread's stored rp_sync / selection_changed payloads, calls
- * {@link computeRpSync}, then persists the returned events and frontier.
+ * parameter. `syncBeforeUserMessage` (SC-2c, kept beside it) is the impure
+ * writer: it reads the thread's owner row, builds the view (SC-2a's
+ * readBranchAsModelSees) and the frozen-text lookup from the thread's stored
+ * rp_sync / selection_changed payloads, then applies the pure diff through
+ * the store's ONE-transaction write.
  */
 
 /**
@@ -195,4 +203,140 @@ export function computeRpSync(
     : frontier.lastPosition;
 
   return { events, frontier: { lastPosition, selected } };
+}
+
+// ─── The writer (SC-2c) ─────────────────────────────────────────────
+
+/**
+ * `syncBeforeUserMessage` was asked to sync a thread that is NOT chat-owned —
+ * script-owned, draft, or no row at all. Only a chat-owned thread carries the
+ * (chatId, branchId) owner pair an RP sync reads (SC-0a), so the request is
+ * refused before any RP-chat read; this typed error is the refusal the
+ * sidechat stream (SC-4b) branches on (same pattern as the agent-kind
+ * registry's typed refusals).
+ */
+export class RpSyncThreadNotChatOwnedError extends Error {
+  readonly code = "RP_SYNC_THREAD_NOT_CHAT_OWNED";
+  constructor(readonly threadId: string) {
+    super(
+      `RP sync refused: thread "${threadId}" is not chat-owned ` +
+        "(script-owned and draft threads have no RP branch to sync).",
+    );
+    this.name = "RpSyncThreadNotChatOwnedError";
+  }
+}
+
+/** The stores/services the RP sync writer goes through: the SC-2a view deps
+ *  plus the agent-thread store (thread row, stored frozen events, and the
+ *  atomic sync write). */
+export interface RpSyncDeps extends RpBranchViewDeps {
+  experienceCopilot: Pick<ExperienceCopilotStore, "getById" | "listTimeline" | "applyRpSync">;
+}
+
+/** The frontier of a never-synced thread — SC-2b's initial contract: message
+ *  positions are 0-based, so -1 precedes every message; nothing is selected. */
+const NEVER_SYNCED_FRONTIER: AgentThreadRpFrontier = { lastPosition: -1, selected: {} };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Build the frozen-text lookup from the thread's STORED frozen payloads
+ * (SC-2c): every `rp_sync` event freezes its `messages[]` as
+ * (messageId, variantId) → text, and every `selection_changed` event freezes
+ * both its `previous` and `current` pairs (a swipe chain re-freezes each
+ * intermediate variant as some event's current). Structurally invalid
+ * payloads contribute nothing — the lookup is LENIENT by design, because
+ * corruption surfaces where it matters: a needed-pair miss inside
+ * {@link computeRpSync}, which throws rather than emit an event with a
+ * silently omitted previous.
+ */
+function buildFrozenVariantTextLookup(entries: readonly AgentThreadTimelineEntry[]): FrozenVariantTextLookup {
+  const texts = new Map<string, string>();
+  const freeze = (messageId: unknown, variantId: unknown, text: unknown): void => {
+    if (typeof messageId !== "string" || typeof variantId !== "string" || typeof text !== "string") return;
+    texts.set(`${messageId}\u0000${variantId}`, text);
+  };
+  for (const entry of entries) {
+    if (entry.rowType !== "event") continue;
+    if (entry.kind === "rp_sync") {
+      if (!isRecord(entry.payload) || !Array.isArray(entry.payload.messages)) continue;
+      for (const message of entry.payload.messages) {
+        if (!isRecord(message)) continue;
+        freeze(message.id, message.variantId, message.text);
+      }
+    } else if (entry.kind === "selection_changed") {
+      if (!isRecord(entry.payload)) continue;
+      for (const pair of [entry.payload.previous, entry.payload.current]) {
+        if (!isRecord(pair)) continue;
+        freeze(entry.payload.messageId, pair.variantId, pair.text);
+      }
+    }
+  }
+  return (messageId, variantId) => texts.get(`${messageId}\u0000${variantId}`) ?? null;
+}
+
+/**
+ * Sync the RP chat into the thread's frozen context before a sidechat message
+ * send (SC-2c) — the writer the pure diff above expects. Steps: read the
+ * chat + branch from the thread's OWN row (a script-owned, draft, or missing
+ * thread is refused with {@link RpSyncThreadNotChatOwnedError} before any
+ * RP-chat read), read the whole-branch view OUTSIDE any transaction (SC-2a —
+ * macro/regex work with its own store reads; SQLite's synchronous runtime
+ * forbids nesting that inside the write tx), build the frozen-text lookup from
+ * the stored events, then apply the diff through ONE synchronous store
+ * transaction (`ExperienceCopilotStore.applyRpSync`): frontier read →
+ * computeRpSync → event appends + frontier write all commit together, so two
+ * quick sends never duplicate a delta — the second sync computes against the
+ * first's committed frontier and produces no events.
+ *
+ * Failure shapes, named:
+ * - Not chat-owned (above): the typed refusal, thrown before any read.
+ * - Frozen-history corruption — a message the frontier claims was synced has
+ *   no frozen (id, variantId) text in the stored events: computeRpSync throws,
+ *   the failure PROPAGATES, and NOTHING is written — no events, no frontier
+ *   move (the whole diff lives inside the one transaction; a throw rolls it
+ *   back). Residual race, accepted with the view-outside-tx shape: a swipe
+ *   landing between this sync's view read and its transaction can surface the
+ *   same way (the needed previous pair sits in a not-yet-visible event); the
+ *   throw writes nothing, and the NEXT sync — fresh view, fresh events —
+ *   succeeds.
+ */
+export async function syncBeforeUserMessage(
+  deps: RpSyncDeps,
+  threadId: ExperienceCopilotThreadId,
+): Promise<void> {
+  const thread = await deps.experienceCopilot.getById(threadId);
+  // isChatOwnedAgentThread (SC-0b/SC-0f) narrows chatId + agentKind to
+  // non-null; the store writes branchId together with them, so a null
+  // branchId is row corruption — refused the same way, never read through.
+  if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
+    throw new RpSyncThreadNotChatOwnedError(threadId);
+  }
+
+  // brandId at the consuming edge of the store projection — the owner columns
+  // are plain strings on the row (ER-3), and this is the branded seam's
+  // caller (same pattern as experience-context-service's session ids).
+  const view = await readBranchAsModelSees(
+    deps,
+    brandId<ChatId>(thread.chatId),
+    brandId<ChatBranchId>(thread.branchId),
+  );
+  // The owner pair came from the thread's own row; a null view means the owner
+  // branch does not resolve. The FK cascade deletes the thread with its
+  // branch, so this is unreachable outside the instant a concurrent branch
+  // delete lands mid-sync — there is nothing left to sync either way.
+  if (view === null) {
+    throw new Error(
+      `syncBeforeUserMessage: thread "${threadId}" owns chat ${thread.chatId} / branch ${thread.branchId}, ` +
+        "but the branch does not resolve (deleted mid-sync?)",
+    );
+  }
+
+  const timeline = await deps.experienceCopilot.listTimeline(threadId);
+  const frozenLookup = buildFrozenVariantTextLookup(timeline);
+
+  await deps.experienceCopilot.applyRpSync(threadId, (frontier) =>
+    computeRpSync(frontier ?? NEVER_SYNCED_FRONTIER, view.messages, frozenLookup));
 }
