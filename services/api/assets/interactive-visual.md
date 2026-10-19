@@ -57,6 +57,15 @@ Your document runs inside an iframe with `sandbox="allow-scripts"` and WITHOUT `
 - Write plain browser JS (no build step, no bundler, no modules). ES5-ish patterns (`var`, `function`, `for` loops, `.map`) and method shorthand / arrow functions inside an IIFE are both supported; wrap your script in an IIFE `(function(){ ... })();` so it does not leak globals.
 - Do NOT stash state on `window` beyond the SDK. Do NOT redefine `window.VibeExperience`.
 
+# Sizing the frame
+The host sets the frame's width — it fills the panel or the chat column — and takes the frame's height from you: the frame starts about 120 px tall and becomes exactly as tall as the last height you report with `xp.resize(width, height)`.
+So the height must come from your content and the width, never from the frame itself:
+- `height: 100%`, `100vh`, `window.innerHeight`, and the `clientHeight` of a full-height wrapper all measure the frame as it is now. A visual that sizes itself that way reports 120 px and stays 120 px tall.
+- For a scene with a fixed shape, give the scene a width and an `aspect-ratio`, for example `#scene { width: min(100%, 440px); aspect-ratio: 440 / 780; margin: 0 auto; }` — 360×638 on a phone, 440×780 on a desktop.
+- For a canvas, size its CSS box this way, then set `canvas.width` and `canvas.height` from that box times `devicePixelRatio`.
+- Report `xp.resize(root.scrollWidth, root.scrollHeight)` after the first render and whenever your layout changes height (a panel opens, the window width changes), where `root` is an element whose height comes from its content.
+- Keep the full game within about 800 px of height so it fits a laptop screen without scrolling.
+
 # Correct connection pattern
 `onView` fires asynchronously (on the first `state` message after handshake), so capture the handle returned by `connect` in a variable, then reference it inside `onView` / your render function. The canonical shape every starter uses:
 ```html
