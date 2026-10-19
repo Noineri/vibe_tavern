@@ -36,6 +36,7 @@ import {
   type CopilotToolSet,
 } from "@vibe-tavern/api-contracts";
 import { resolveBuiltinScriptAgentProfile } from "../../agent/script-agent/script-agent-module.js";
+import { resolveBuiltinSidechatOocProfile } from "../../agent/kinds/sidechat-ooc-kind.js";
 
 // ─── Module definition (metadata only — the prompt text is loaded lazily) ────
 
@@ -165,7 +166,8 @@ export async function resolveExperienceCopilotSkillCatalog(
  * seed (a silent cross-kind fallback would mask a miswired list). The
  * `experience` path is byte-identical to the pre-AS-3 behavior, plus
  * `agentKind`; the `script` kind (AS-7) delegates to its own seed in
- * `agent/script-agent/script-agent-module.ts`.
+ * `agent/script-agent/script-agent-module.ts`, and the `sidechat-ooc` kind
+ * (SC-4a) to its own in `agent/kinds/sidechat-ooc-kind.ts`.
  */
 export async function resolveBuiltinCopilotProfile(kind: string = "experience", db?: AppDb): Promise<CopilotProfile> {
   if (kind === "script") {
@@ -176,6 +178,14 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     // exactly the way this module owns the experience one.
     return resolveBuiltinScriptAgentProfile(db);
   }
+  if (kind === "sidechat-ooc") {
+    // SC-4a: the sidechat kind's own seed — base prompt from the
+    // `sidechat_ooc_base` service prompt (SP-5 override honored on this
+    // builtin path, the `script` seed's pattern) + an EMPTY tool set until
+    // Wave 3's tools land. The species owns the seed
+    // (agent/kinds/sidechat-ooc-kind.ts).
+    return resolveBuiltinSidechatOocProfile(db);
+  }
   if (kind !== "experience") {
     // Validate FIRST — an unknown kind throws `UnknownAgentKindError` and
     // NEVER falls back to the experience seed (a silent cross-kind fallback
@@ -184,7 +194,8 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     // keeps byte-identical behavior.
     const descriptor = getAgentKind(kind);
     // Generic-kind seed (today only test fakes arrive here — AS-7's script
-    // kind brings its own base prompt + service key and branches ABOVE).
+    // kind and SC-4a's sidechat kind bring their own base prompts + service
+    // keys and branch ABOVE).
     // Deliberately NOT the experience prompt: serving another kind's content
     // here would be the silent cross-kind fallback AS-3 forbids. The empty
     // base prompt fails loudly (wire `min(1)`) if it ever reaches validation

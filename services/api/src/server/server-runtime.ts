@@ -38,9 +38,12 @@ import {
 	resolveScriptAgentUserSkillsRoot,
 } from "../domain/agent/script-agent/script-agent-module.js";
 // agent-kind registration (AS-2a): experience registers itself at startup;
-// the script kind (AS-7) registers beside it — prompt/dice threads resolve.
+// the script kind (AS-7) registers beside it — prompt/dice threads resolve;
+// the sidechat kind (SC-4a) is the first chat-owned kind — sidechat threads
+// resolve by the kind stored on their thread row.
 import "../domain/agent/kinds/experience-kind.js";
 import "../domain/agent/kinds/script-kind.js";
+import "../domain/agent/kinds/sidechat-ooc-kind.js";
 import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";

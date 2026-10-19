@@ -3448,6 +3448,7 @@
 	"promptManager.servicePrompts.field.coauthor_base": "База соавтора",
 	"promptManager.servicePrompts.field.copilot_base": "База ИИ-помощника мини-приложений",
 	"promptManager.servicePrompts.field.script_agent_base": "База ИИ-помощника скриптов",
+	"promptManager.servicePrompts.field.sidechat_ooc_base": "База сайдчата",
 	"promptManager.servicePrompts.field.copilot_user_flow": "Пользовательский процесс в мини-приложениях",
 	"promptManager.servicePrompts.field.interactive_rules": "Правила мини-приложений",
 	"promptManager.servicePrompts.field.interactive_visual": "Визуал мини-приложений",

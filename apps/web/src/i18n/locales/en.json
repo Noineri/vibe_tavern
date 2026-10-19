@@ -3396,6 +3396,7 @@
 	"promptManager.servicePrompts.field.coauthor_base": "Co-Author Base",
 	"promptManager.servicePrompts.field.copilot_base": "Mini-app AI Assistant Base",
 	"promptManager.servicePrompts.field.script_agent_base": "Script AI Assistant Base",
+	"promptManager.servicePrompts.field.sidechat_ooc_base": "Sidechat Base",
 	"promptManager.servicePrompts.field.copilot_user_flow": "User Process in Mini-apps",
 	"promptManager.servicePrompts.field.interactive_rules": "Mini-app Rules",
 	"promptManager.servicePrompts.field.interactive_visual": "Mini-app Visual",
