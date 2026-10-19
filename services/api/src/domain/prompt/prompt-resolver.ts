@@ -468,6 +468,10 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		 *  `context.persona` (read-only). Optional — absent when no persona is
 		 *  resolved, in which case scripts see `context.persona` as undefined. */
 		persona?: { name: string; description: string };
+		/** Run scripts without persisting the updated script state (SC-4c): the
+		 *  engine still runs (injections and field mutations shape the assembly),
+		 *  but a read must not advance chat state. */
+		dryRun?: boolean;
 	}): Promise<{
 		personality: string;
 		scenario: string;
@@ -557,10 +561,15 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			persona: input.persona,
 		});
 
-		// 4. Persist updated script state
-		try {
-			await this.stores.chats.updateScriptState(chat.id, result.updatedScriptState);
-		} catch { /* don't crash pipeline on state persistence failure */ }
+		// 4. Persist updated script state — never under dryRun (SC-4c): the
+		//    script engine still ran (its injections and field mutations shaped
+		//    this assembly exactly as on a real turn), but a read must not
+		//    advance chat state; only a real send/regenerate persists.
+		if (!input.dryRun) {
+			try {
+				await this.stores.chats.updateScriptState(chat.id, result.updatedScriptState);
+			} catch { /* don't crash pipeline on state persistence failure */ }
+		}
 
 		return {
 			personality: result.character.personality,

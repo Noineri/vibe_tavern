@@ -63,7 +63,6 @@
     "services/api/src/domain/interactive/experience-playground.ts": 1319,
     "services/api/src/domain/interactive/experience-service.ts": 1442,
     "services/api/src/domain/prompt/lore-activation-engine.ts": 1282,
-    "services/api/src/domain/prompt/prompt-assembly-service.ts": 802,
     "services/api/src/runtime/session/session-runtime.ts": 934,
     "services/api/src/server/updater.ts": 1101,
     "services/api/src/shared/st-directory-scanner.ts": 1441

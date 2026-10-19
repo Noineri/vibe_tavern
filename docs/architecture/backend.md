@@ -196,7 +196,7 @@ POST /api/chats/:chatId/messages/stream
   │       │   ├─ Load ranged summaries + exclusion ranges
   │       │   ├─ resolveActivatedEntries()       → domain/prompt/lore-activation-engine
   │       │   ├─ executeScripts()                 → domain/scripts-engine/script-sandbox
-  │       │   └─ Persist activation + script state
+  │       │   └─ Persist activation + script state (dryRun reads skip both writes — SC-4c)
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
   │       └─ assemblePrompt()                    → @vibe-tavern/prompt-pipeline
   │           ├─ Build layers (preset, character, persona, lore, memory, history)

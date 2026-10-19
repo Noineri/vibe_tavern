@@ -258,7 +258,7 @@ Editor tabs (`listByScope`) read links for character/persona scopes too, so a sc
 1. `prompt-resolver.executeScripts` reads `chat.scriptState` (typed `Chat.scriptState`, parsed from `script_state_json`).
 2. Passes it as `scriptState` to `executeScripts`.
 3. `executeScripts` returns `updatedScriptState` (the post-run buckets).
-4. Resolver persists via `chat-store.updateScriptState(chatId, state)`. Persistence failures are swallowed (the pipeline does not crash on a state-write error).
+4. Resolver persists via `chat-store.updateScriptState(chatId, state)` — only on a real send/regenerate. Under the assembly's `dryRun` (context preview, sidechat reads, tracker/objective/insight one-shots, summaries — every read-only assembly) the scripts still run and their injections and field changes still shape the assembled text, but the state write is skipped: a read never moves the chat's scripts (SC-4c). Persistence failures are swallowed (the pipeline does not crash on a state-write error).
 
 ---
 

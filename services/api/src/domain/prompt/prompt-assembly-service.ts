@@ -34,125 +34,11 @@ import { buildChatSummaryContext } from "./chat-summary-selection.js";
 import { mapPromptLayerDto } from "./prompt-layer-dto.js";
 import { priorUserMessageCreatedAt } from "./idle-duration.js";
 import { sanitizeGenerationFormatPayload } from "./generation-format-payload.js";
+import type { PromptAssemblyResolver } from "./prompt-assembly-resolver.js";
 
-export interface PromptAssemblyResolver {
-  getCharacter(
-    characterId: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    description: string;
-    scenario?: string | null;
-    systemPrompt?: string | null;
-    personality?: string | null;
-    mesExample?: string | null;
-    mesExampleMode?: string | null;
-    mesExampleDepth?: number | null;
-    alternateGreetings?: string[];
-    postHistoryInstructions?: string | null;
-    depthPrompt?: string | null;
-    depthPromptDepth?: number | null;
-    depthPromptRole?: string | null;
-    creatorNotes?: string | null;
-    subtitle?: string;
-    // Media (A7) — avatar/gallery appearance injection.
-    avatarDescription?: string | null;
-    includeAvatarInPrompt?: boolean;
-    includeGalleryInPrompt?: boolean;
-  }>;
-  getPersona(
-    personaId: string,
-  ): Promise<{
-      id: string;
-      name: string;
-      description: string;
-      // Media (A7) — avatar appearance injection.
-      avatarDescription?: string | null;
-      includeAvatarInPrompt?: boolean;
-    } | null>;
-  getPromptPreset(
-    presetId: string,
-  ): Promise<{
-      id: string;
-      name: string;
-      text: string;
-      jailbreak: string;
-      summary: string;
-      tools: string;
-      prefill: string;
-      authorsNote: string;
-      authorsNoteDepth: number;
-      authorsNotePosition: string;
-      authorsNoteRole: string;
-      nsfw: string;
-      enhanceDefinitions: string;
-      /** Whether this preset is in advanced (canvas) mode. */
-      advancedMode: boolean;
-      mergeConsecutiveRoles: boolean;
-      /** Generation format (LOCAL_SUPPORT_PLAN LS-3a). Absent = auto. */
-      generationFormat?: GenerationFormat;
-      customInjections: CustomInjection[];
-      promptOrder: PromptOrderEntry[];
-    } | null>;
-  listActiveLoreEntries(input: {
-    chatId: ChatId;
-    branchId: ChatBranchId;
-    recentText: string;
-    /** Assembly-derived branch messages to scan for lore activation. */
-    scanMessages: Array<{ role: string; content: string }>;
-    /** Effective preset Author's Note, resolved by this assembly. */
-    authorsNote?: string;
-    /** Enabled summary texts from the same set injected into prompt memory. */
-    summaries?: string[];
-    /** One-shot quiet-prompt text to scan after the global sources. */
-    quietPrompt?: string;
-    /** Turn clock for sticky/cooldown windows — the FULL branch message count,
-     * not the post-exclusion scan count (P13 changes scan input only; timed
-     * windows must not shift when the prompt excludes messages). */
-    currentTurn?: number;
-    /** Resolve active entries without changing branch timed state. */
-    dryRun?: boolean;
-    /** Max context tokens of the active model. Needed for percent-of-context
-     * token-budget mode on lorebooks. Optional — when absent, percent-mode
-     * lorebooks silently fall back to their fixed `tokenBudget`. */
-    maxContextTokens?: number;
-    /** One assembly-scoped variable namespace shared with prompt assembly. */
-    macroVariableScope?: MacroVariableScope;
-  }): Promise<ActiveLoreEntriesResult>;
-  listRetrievedMemories(input: {
-    chatId: ChatId;
-    branchId: ChatBranchId;
-    recentText: string;
-  }): Promise<RetrievedMemoryHit[]>;
-  executeScripts(input: {
-    chatId: ChatId;
-    characterRecord: {
-      name: string;
-      personality: string | null;
-      scenario: string | null;
-    };
-    messages: Array<{ role: string; content: string }>;
-    activeLoreEntries: LoreEntry[];
-    persona?: { name: string; description: string };
-  }): Promise<{
-    personality: string;
-    scenario: string;
-    injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
-    errors: Array<{ scriptId: string; scriptName: string; error: string }>;
-    scriptRuns: Array<{
-      scriptId: string;
-      scriptName: string;
-      status: 'ran' | 'errored';
-      personalityMutation: string;
-      scenarioMutation: string;
-      injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
-      console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
-      error?: string;
-      line?: number;
-    }>;
-  }>;
-  getToolInstructions(): string | null;
-}
+// The resolver seam lives in prompt-assembly-resolver.ts (SC-4c extraction);
+// re-exported here so every existing importer keeps its path.
+export type { PromptAssemblyResolver } from "./prompt-assembly-resolver.js";
 
 export interface AssemblePromptForChatInput {
   chatId: ChatId;
@@ -170,7 +56,9 @@ export interface AssemblePromptForChatInput {
   responseReserve?: number;
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
-  /** Resolve lore activation without changing its timed state. */
+  /** Read-only assembly (SC-4c): resolve lore activation and run scripts
+   *  WITHOUT changing persisted state (branch lore timed state, script state).
+   *  Only a real send/regenerate persists. */
   dryRun?: boolean;
   /** One-shot quiet-prompt text to scan after global sources without adding a chat message. */
   quietPrompt?: string;
@@ -625,6 +513,9 @@ export class PromptAssemblyService {
       messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
       activeLoreEntries,
       persona: persona ? { name: persona.name, description: persona.description } : undefined,
+      // SC-4c: the same dryRun that guards lore timed state (above) also guards
+      // script state — a read runs the scripts for their text, never for state.
+      dryRun: input.dryRun,
     });
 
     // Apply script mutations to character fields in-place
