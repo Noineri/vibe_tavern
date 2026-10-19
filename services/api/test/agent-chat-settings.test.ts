@@ -231,6 +231,13 @@ describe("per-(chat, kind) settings routes (SC-0f)", () => {
     const patchRes = await patchSettings("chat_does_not_exist", KIND_A, { profileId: "prof_x" });
     expect(patchRes.status).toBe(404);
   });
+
+  test("PATCH stores the \"builtin\" sentinel verbatim — the modal's pin-here write (SC-0k)", async () => {
+    const chat = await newChat("Builtin sentinel write");
+    const res = await patchSettings(chat.id, KIND_A, { profileId: "builtin" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as ChatSettingsWire).profileId).toBe("builtin");
+  });
 });
 
 // ─── Cascade (the FK remedy's proof) ──────────────────────────────────────────
@@ -352,6 +359,35 @@ describe("CopilotProfileResolver.resolveForChat — chat choice → kind default
 
     expect((await resolver.resolveForChat(chatWithChoice.id, KIND_B)).id).toBe(ownChoice.id);
     expect((await resolver.resolveForChat(chatWithout.id, KIND_B)).id).toBe(kindDefault.id);
+  });
+});
+
+// ─── The "builtin" sentinel (SC-0k) ────────────────────────────────────────────
+
+describe("CopilotProfileResolver.resolveForChat — the \"builtin\" sentinel (SC-0k)", () => {
+  test("a chat choice of \"builtin\" resolves to the kind's built-in seed, never the kind default", async () => {
+    const kindDefault = await stores.copilotProfiles.create({
+      name: "SC0k kind default",
+      basePrompt: "SC0k kind default base prompt.",
+      toolSet: {},
+    });
+    await stores.agentKindSettings.patch(KIND_C, { defaultProfileId: kindDefault.id });
+    const chat = await newChat("SC0k builtin pin");
+    await stores.chatAgentSettings.patch(chat.id, KIND_C, { profileId: "builtin" });
+
+    const profile = await resolver.resolveForChat(chat.id, KIND_C);
+    expect(profile.isBuiltIn).toBe(true);
+    expect(profile.id).toBe("builtin");
+    expect(profile.agentKind).toBe(KIND_C);
+  });
+
+  test("a kind default of \"builtin\" reads as null — the built-in seed", async () => {
+    await stores.agentKindSettings.patch(KIND_C, { defaultProfileId: "builtin" });
+    const chat = await newChat("SC0k builtin default");
+
+    const profile = await resolver.resolveForChat(chat.id, KIND_C);
+    expect(profile.isBuiltIn).toBe(true);
+    expect(profile.id).toBe("builtin");
   });
 });
 

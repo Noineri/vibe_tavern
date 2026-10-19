@@ -15,10 +15,37 @@ import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
 import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
+import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
 import { AgentSkillModal } from "./AgentSkillModal.js";
 
 /** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
 const BUILTIN_PROFILE_ID = "builtin";
+
+/**
+ * The effective profile id for a chat-target modal (SC-0k) — the modal-side
+ * mirror of `CopilotProfileResolver.resolveForChat` (same hop order): the
+ * chat's own choice when it resolves (the built-in sentinel always resolves;
+ * a stored custom id resolves when its row is in the loaded list) → the
+ * kind default when it resolves (a built-in default reads as null) → the
+ * built-in seed. Dangling ids fall through, never mark a missing row.
+ */
+function resolveChatEffectiveProfileId(
+	chatProfileId: string | null,
+	kindDefaultProfileId: string | null,
+	loadedProfileIds: ReadonlySet<string>,
+): string {
+	if (chatProfileId !== null && (chatProfileId === BUILTIN_PROFILE_ID || loadedProfileIds.has(chatProfileId))) {
+		return chatProfileId;
+	}
+	if (
+		kindDefaultProfileId !== null &&
+		kindDefaultProfileId !== BUILTIN_PROFILE_ID &&
+		loadedProfileIds.has(kindDefaultProfileId)
+	) {
+		return kindDefaultProfileId;
+	}
+	return BUILTIN_PROFILE_ID;
+}
 
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
@@ -145,6 +172,14 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 
 	const selected = profiles.find((p) => p.id === selectedId) ?? null;
 	const isSelectedActive = selected !== null && selected.id === activeProfileId;
+	// SC-0k: chat-target hosts mark the EFFECTIVE profile (the one the server
+	// chain resolves for this chat) — not the raw chat-row choice. Script
+	// hosts keep the assignment mirror above.
+	const chatEffectiveProfileId = resolveChatEffectiveProfileId(
+		chatProfileId,
+		kindDefaultProfileId,
+		new Set(profiles.map((p) => p.id)),
+	);
 
 	const handleSelect = (id: string, openDetail?: () => void) => {
 		if (dirty) {
@@ -256,18 +291,27 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 		}
 	};
 
-	// SC-0g (chat-target hosts only): the two writes — the (chat, kind) row
-	// ("use here") and the kind default ("use by default"). Built-in writes
-	// null on both (clear the override / clear the default), exactly like the
-	// script path's unassign. Failures reuse the assignment error copy.
-	const isSelectedHere = selected !== null && (selected.id === BUILTIN_PROFILE_ID ? chatProfileId === null : selected.id === chatProfileId);
-	const isSelectedDefault = selected !== null && (selected.id === BUILTIN_PROFILE_ID ? kindDefaultProfileId === null : selected.id === kindDefaultProfileId);
+	// SC-0g/SC-0k (chat-target hosts only): the two writes — the (chat, kind)
+	// row ("use here") and the kind default ("use by default"). SC-0k: "use
+	// here" on the built-in pins the literal sentinel (the chat runs the seed
+	// even under a custom default); null keeps meaning "no own choice —
+	// follow the default". "Use by default" on the built-in still clears
+	// the default (null — a built-in default reads the same). The script
+	// path's unassign (built-in → null) is unchanged. Failures reuse the
+	// assignment error copy.
+	const isSelectedHere = selected !== null && selected.id === chatProfileId;
+	const isSelectedDefault = selected !== null && (selected.id === BUILTIN_PROFILE_ID
+		? kindDefaultProfileId === null || kindDefaultProfileId === BUILTIN_PROFILE_ID
+		: selected.id === kindDefaultProfileId);
 
 	const handleAssignHere = async () => {
 		if (!selected || isSelectedHere || chatId === undefined) return;
 		try {
+			// SC-0k: the selected id is written verbatim — the built-in row's
+			// id IS the sentinel, so pinning it stores "builtin" (null
+			// keeps meaning "no own choice").
 			const updated = await patchAgentChatSettings(chatId, agentKind, {
-				profileId: selected.id === BUILTIN_PROFILE_ID ? null : selected.id,
+				profileId: selected.id,
 			});
 			setChatProfileId(updated.profileId);
 			onClose();
@@ -348,7 +392,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 						profiles={profiles}
 						isLoading={isLoading}
 						selectedId={selectedId}
-						activeProfileId={isChatTarget ? chatProfileId : activeProfileId}
+						activeProfileId={isChatTarget ? chatEffectiveProfileId : activeProfileId}
 						// SC-0g: script hosts leave this undefined (no extra badge);
 						// a chat-target host marks the kind-default row. The null→builtin
 						// mirror matches the script assignment's (no default row =
@@ -410,44 +454,17 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 								</button>
 							</>
 						) : isChatTarget ? (
-							// SC-0g: chat-target hosts write two targets — the (chat, kind)
-							// row ("use here") and the kind default ("use by default").
-							// Each button swaps to its state label (the same action→state
-							// swap the script button uses) when the selected profile
-							// already holds that state. Same primitives, same classes —
-							// only the targets differ.
-							<>
-								<button
-									type="button"
-									data-testid="copilot-profile-assign-here-btn"
-									disabled={!selected || isSelectedHere}
-									className={cn(
-										"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
-										isSelectedHere
-											? "cursor-default bg-success text-on-accent"
-											: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
-									)}
-									onClick={() => { void handleAssignHere(); }}
-								>
-									{isSelectedHere && <Icons.Check className="h-3.5 w-3.5" />}
-									{isSelectedHere ? t("copilot_profile_active_here") : t("copilot_profile_use_here")}
-								</button>
-								<button
-									type="button"
-									data-testid="copilot-profile-assign-default-btn"
-									disabled={!selected || isSelectedDefault}
-									className={cn(
-										"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
-										isSelectedDefault
-											? "cursor-default bg-success text-on-accent"
-											: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
-									)}
-									onClick={() => { void handleAssignDefault(); }}
-								>
-									{isSelectedDefault && <Icons.Check className="h-3.5 w-3.5" />}
-									{isSelectedDefault ? t("copilot_profile_default") : t("copilot_profile_use_by_default")}
-								</button>
-							</>
+							// SC-0k: one primary action — the chat-target footer lives in
+							// `agent-profile-chat-footer.tsx` (extracted when this file
+							// hit the 800-line cap): secondary first, primary last.
+							<AgentChatProfileFooter
+								hasSelection={selected !== null}
+								isSelectedHere={isSelectedHere}
+								isSelectedDefault={isSelectedDefault}
+								t={t}
+								onAssignHere={() => { void handleAssignHere(); }}
+								onAssignDefault={() => { void handleAssignDefault(); }}
+							/>
 						) : (
 							<button
 								type="button"
@@ -478,8 +495,10 @@ interface ProfileListProps {
 	profiles: CopilotProfile[];
 	isLoading: boolean;
 	selectedId: string | null;
-	// SC-0g: null = no here-choice marked (a chat-target host with no chat-row
-	// override); the script path always passes a non-null id.
+	// SC-0k: the EFFECTIVE profile id for chat-target hosts (the chat's own
+	// choice when it resolves, else the kind default when it resolves, else
+	// the built-in — the modal-side mirror of the server chain, never null
+	// for a loaded list); the script path passes the assignment mirror.
 	activeProfileId: string | null;
 	// SC-0g: the kind-default profile id — undefined = script host (no badge).
 	// A chat-target host passes the raw kind default (possibly null); null

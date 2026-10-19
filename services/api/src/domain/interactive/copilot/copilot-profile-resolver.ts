@@ -28,6 +28,13 @@ import { resolveKindForScript } from "../../agent/agent-kind-registry.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
 /**
+ * The literal chat-row/default value pinning the built-in seed (SC-0k). The
+ * built-in is a synthetic seed, never a DB row, so `"builtin"` cannot
+ * collide with a real `copilot_profiles` id (user rows are `cprof_…`).
+ */
+const BUILTIN_PROFILE_SENTINEL = "builtin";
+
+/**
  * Project a stored user-profile row into the wire `CopilotProfile` shape.
  * `isBuiltIn` is always false here (the built-in seed is code-defined, never a
  * row); `createdAt`/`updatedAt` are dropped (the wire profile has no timestamps).
@@ -122,15 +129,24 @@ export class CopilotProfileResolver {
 	 * stored hops follow the dangling policy: an id whose profile row was
 	 * deleted falls through to the NEXT step (kind default, then built-in),
 	 * never errors — the same soft-link rule as `resolveForScript`.
+	 *
+	 * SC-0k — the built-in pin: a chat choice of `"builtin"` resolves to the
+	 * kind's built-in seed and NEVER falls through to the kind default (a
+	 * chat can run the built-in while the default is a custom profile). A
+	 * kind default of `"builtin"` reads as `null` (same outcome — the
+	 * seed). Dangling CUSTOM ids still fall through at both hops.
 	 */
 	async resolveForChat(chatId: string, agentKind: string): Promise<CopilotProfile> {
 		const chatChoice = await this.stores.chatAgentSettings.get(chatId, agentKind);
+		if (chatChoice.profileId === BUILTIN_PROFILE_SENTINEL) {
+			return resolveBuiltinCopilotProfile(agentKind, this.stores.db);
+		}
 		if (chatChoice.profileId !== null) {
 			const chatRow = await this.stores.copilotProfiles.getById(chatChoice.profileId);
 			if (chatRow !== null) return copilotProfileRowToWire(chatRow);
 		}
 		const kindDefault = await this.stores.agentKindSettings.get(agentKind);
-		if (kindDefault.defaultProfileId !== null) {
+		if (kindDefault.defaultProfileId !== null && kindDefault.defaultProfileId !== BUILTIN_PROFILE_SENTINEL) {
 			const kindRow = await this.stores.copilotProfiles.getById(kindDefault.defaultProfileId);
 			if (kindRow !== null) return copilotProfileRowToWire(kindRow);
 		}

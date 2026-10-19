@@ -553,10 +553,14 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		await waitFor(() => expect(getAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND));
 	});
 
-	it("with no chat-row override nothing is marked here; the null kind default marks the seed", async () => {
+	it("with no chat-row override the kind default is marked active (null default → the seed)", async () => {
+		// SC-0k (was: nothing was marked here when the chat followed the
+		// default — basis: owner decision 3, refined 2026-10-19): the active
+		// mark sits on the EFFECTIVE profile, so the default row carries it.
 		const { getByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
 		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
 	});
 
@@ -575,7 +579,7 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		expect((getByTestId("copilot-profile-assign-default-btn") as HTMLButtonElement).disabled).toBe(true);
 	});
 
-	it("Use here writes the chat row (user id; built-in clears)", async () => {
+	it("Use here writes the chat row (user id)", async () => {
 		const { getByTestId, props } = renderChatModal(null, null);
 		await flush(getByTestId);
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_here"));
@@ -587,13 +591,16 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		expect(props.onClose).toHaveBeenCalled();
 	});
 
-	it("Use here on the built-in seed clears the chat row", async () => {
+	it("Use here on the built-in seed pins the built-in sentinel", async () => {
+		// SC-0k (was: the built-in write cleared the chat row with null, so a
+		// chat could never run the built-in under a custom default — basis:
+		// owner decision 3, refined 2026-10-19).
 		const { getByTestId } = renderChatModal("cprof_here", null);
 		await flush(getByTestId);
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn")).toBeDefined());
 		fireEvent.click(getByTestId("copilot-profile-assign-here-btn"));
-		await waitFor(() => expect(patchAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND, { profileId: null }));
+		await waitFor(() => expect(patchAgentChatSettings).toHaveBeenCalledWith(CHAT_ID, CHAT_KIND, { profileId: "builtin" }));
 		expect(setCopilotProfile).not.toHaveBeenCalled();
 	});
 
@@ -616,5 +623,69 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		fireEvent.click(getByTestId("copilot-profile-assign-default-btn"));
 		await waitFor(() => expect(patchAgentKindSettingsAction).toHaveBeenCalledWith(CHAT_KIND, { defaultProfileId: null }));
 		expect(setCopilotProfile).not.toHaveBeenCalled();
+	});
+
+	it("the chat pins the built-in while the default is custom", async () => {
+		// SC-0k: the pinned built-in is the effective (running) profile even
+		// when the kind default is a custom profile — the resolver twin.
+		const { getByTestId } = renderChatModal("builtin", "cprof_default");
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		// The state label proves the chat-row read ("builtin") applied.
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_active_here"));
+		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(true);
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
+	});
+
+	it("the effective-by-default profile still offers Use here (state only for the pinned choice)", async () => {
+		// SC-0k: with no own choice the kind default is the effective profile
+		// (it carries the active mark), but Use here still offers to pin it —
+		// pinning keeps this chat on it when the default later changes.
+		const { getByTestId } = renderChatModal(null, "cprof_default");
+		await flush(getByTestId);
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
+		expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_use_here");
+		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(false);
+		expect((getByTestId("copilot-profile-assign-default-btn") as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("the footer orders the secondary default action first; only Use here is primary", async () => {
+		// SC-0k: secondary first, primary last (the edit footer's Cancel →
+		// Save order). The here-button keeps the Save button's accent fill;
+		// the default-button is the Cancel-shaped secondary (no fill).
+		const { getByTestId } = renderChatModal(null, null);
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_here"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn")).toBeDefined());
+		const buttons = Array.from(getByTestId("md-footer").querySelectorAll("button"));
+		expect(buttons.map((b) => b.getAttribute("data-testid"))).toEqual([
+			"copilot-profile-assign-default-btn",
+			"copilot-profile-assign-here-btn",
+		]);
+		expect(getByTestId("copilot-profile-assign-here-btn").className).toContain("bg-accent");
+		const defaultBtn = getByTestId("copilot-profile-assign-default-btn");
+		expect(defaultBtn.className).toContain("bg-transparent");
+		expect(defaultBtn.className).toContain("border-border");
+		expect(defaultBtn.className).not.toContain("bg-accent");
+		expect(defaultBtn.className).not.toContain("bg-success");
+	});
+
+	it("the default button's state is the check + default label, disabled, still secondary", async () => {
+		// SC-0k: the selected kind default swaps the secondary button to its
+		// state (check + label) without ever taking the primary fill.
+		const { getByTestId } = renderChatModal(null, "cprof_default");
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
+		const defaultBtn = getByTestId("copilot-profile-assign-default-btn");
+		expect((defaultBtn as HTMLButtonElement).disabled).toBe(true);
+		expect(defaultBtn.className).toContain("bg-transparent");
+		expect(defaultBtn.className).not.toContain("bg-success");
+		expect(defaultBtn.className).not.toContain("bg-accent");
 	});
 });
