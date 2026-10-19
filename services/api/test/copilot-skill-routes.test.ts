@@ -29,13 +29,17 @@ let userRoot = "";
 let builtinRoot = "";
 let scriptUserRoot = "";
 let scriptBuiltinRoot = "";
+let sidechatUserRoot = "";
+let sidechatBuiltinRoot = "";
 
 beforeEach(async () => {
   userRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-user-"));
   builtinRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-builtin-"));
   scriptUserRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-script-user-"));
   scriptBuiltinRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-script-builtin-"));
-  tmpRoots.push(userRoot, builtinRoot, scriptUserRoot, scriptBuiltinRoot);
+  sidechatUserRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-sidechat-user-"));
+  sidechatBuiltinRoot = await mkdtemp(join(tmpdir(), "copilot-skill-route-sidechat-builtin-"));
+  tmpRoots.push(userRoot, builtinRoot, scriptUserRoot, scriptBuiltinRoot, sidechatUserRoot, sidechatBuiltinRoot);
 });
 afterEach(async () => {
   await Promise.all(tmpRoots.splice(0).map((d) => rm(d, { recursive: true, force: true })));
@@ -44,8 +48,9 @@ afterEach(async () => {
 function makeApp() {
   const experience = new CopilotSkillAdapter(new SkillLibraryService(userRoot, builtinRoot));
   const script = new CopilotSkillAdapter(new SkillLibraryService(scriptUserRoot, scriptBuiltinRoot));
+  const sidechat = new CopilotSkillAdapter(new SkillLibraryService(sidechatUserRoot, sidechatBuiltinRoot));
   const app = createCopilotSkillRoutes(
-    createCopilotSkillKindResolver(new Map([ ["experience", experience], ["script", script] ])),
+    createCopilotSkillKindResolver(new Map([ ["experience", experience], ["script", script], ["sidechat-ooc", sidechat] ])),
   );
   // Mount the production DomainError → status mapping (shared helpers, not
   // duplicated logic) so the unknown-kind 400 boundary is observable — the
@@ -178,6 +183,39 @@ describe("?kind= per-kind dispatch (AS-8d1)", () => {
 
     expect(await Bun.file(join(scriptUserRoot, "dice-helper", "SKILL.md")).text()).toContain("Notation recipes.");
     expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("?kind=sidechat-ooc lists the sidechat roots only; experience and script lists stay unchanged (SC-5)", async () => {
+    // The same id exists in EVERY kind's user root with a distinct body: each
+    // kind's list must show only its own root's copy (no cross-kind leak).
+    for (const [root, desc] of [
+      [sidechatUserRoot, "Sidechat side."],
+      [userRoot, "Experience side."],
+      [scriptUserRoot, "Script side."],
+    ] as const) {
+      await mkdir(join(root, "plot-talk"), { recursive: true });
+      await Bun.write(join(root, "plot-talk", "SKILL.md"), manifest("plot-talk", desc));
+    }
+
+    const app = makeApp();
+    const scRes = await app.request("/api/copilot/skills?kind=sidechat-ooc");
+    expect(scRes.status).toBe(200);
+    const scBody = await scRes.json();
+    expect(scBody.errors).toEqual([]);
+    expect(scBody.entries.map((e: { id: string }) => e.id)).toEqual(["plot-talk"]);
+    expect(scBody.entries[0].description).toBe("Sidechat side.");
+
+    // The other kinds' lists are unchanged by the third library: experience
+    // (default and explicit) and script each see only their own copy.
+    const defBody = await (await app.request("/api/copilot/skills")).json();
+    expect(defBody.entries.map((e: { id: string }) => e.id)).toEqual(["plot-talk"]);
+    expect(defBody.entries[0].description).toBe("Experience side.");
+    const expBody = await (await app.request("/api/copilot/skills?kind=experience")).json();
+    expect(expBody.entries.map((e: { id: string }) => e.id)).toEqual(["plot-talk"]);
+    expect(expBody.entries[0].description).toBe("Experience side.");
+    const scriptBody = await (await app.request("/api/copilot/skills?kind=script")).json();
+    expect(scriptBody.entries.map((e: { id: string }) => e.id)).toEqual(["plot-talk"]);
+    expect(scriptBody.entries[0].description).toBe("Script side.");
   });
 
   test("unknown kind → 400 carrying UNKNOWN_AGENT_KIND (no silent fallback)", async () => {

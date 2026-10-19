@@ -90,6 +90,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
      * kind never reads it). Optional so the lifecycle-only test harnesses can
      *  construct the adapter without it. */
     private readonly scriptSkillService?: SkillLibraryService,
+    /** Sidechat skill library (SIDECHAT_PLAN SC-5) — supplies the
+     * `sidechat-ooc` kind's own user-skill root for its stream's
+     * pinned-context skill arm (no other kind reads it; the sidechat's
+     * assembly scans no skill catalog — SC-4b's shape). Optional so the
+     * lifecycle-only test harnesses can construct the adapter without it
+     * (then the sidechat stream attaches no context, the same contract the
+     * script kind has without ITS library). */
+    private readonly sidechatSkillService?: SkillLibraryService,
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
     this.compaction = providerProfileService
@@ -341,38 +349,20 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return this.sidechatAssembly;
   }
 
-  /** SC-4b: the sidechat's pinned-context resolver — the SAME kind-agnostic
-   *  `getCopilotContextItems` loader over the REAL stores, with the skill arm
-   *  inert: the sidechat's own skill library is SC-5's unit, so today no skill
-   *  id can resolve (the arm answers null — the loader's dangling-pin skip,
-   *  never fatal). Character/persona/lorebook/script pins resolve exactly as
-   *  in the other kinds' streams (the CX-2 semantics, one loader, no copy). */
-  private buildSidechatContextItemsResolver(): (
-    links: readonly ExperienceCopilotContextLink[],
-  ) => Promise<CopilotContextItem[]> {
-    return (links) =>
-      getCopilotContextItems(links, {
-        characters: this.stores.characters,
-        personas: this.stores.personas,
-        lorebooks: this.stores.lorebooks,
-        scripts: this.stores.scripts,
-        skills: {
-          readCatalogEntry: async () => null,
-          readFile: async () => null,
-        },
-      });
-  }
-
-  /** SC-4b: the `sidechat-ooc` kind's stream deps — the shared store/provider
-   *  seams, the SC-2c sync + SC-3b package deps over the real stores and the
-   *  RP assembly service, the chat-owned profile chain (the only kind of
-   *  thread this stream can run for), and the pinned-context resolver above.
-   *  No streamText (production runs the real one) and no autoCompact —
-   *  compaction is Wave 2's unit; until it lands the manual compact route
-   * refuses this kind with AGENT_KIND_NOT_WIRED (compactionKinds has no
-   * sidechat entry by design). */
+  /** SC-4b/SC-5: the `sidechat-ooc` kind's stream deps — the shared
+   *  store/provider seams, the SC-2c sync + SC-3b package deps over the real
+   *  stores and the RP assembly service, the chat-owned profile chain (the
+   *  only kind of thread this stream can run for), and since SC-5 the SHARED
+   *  kind-agnostic pinned-context resolver (`buildContextItemsResolver`)
+   *  over the sidechat's OWN skill library — a pinned skill resolves from
+   *  the sidechat roots, never another kind's (SC-4b's inert skill arm is
+   *  gone). No streamText (production runs the real one) and no autoCompact
+   *  — compaction is Wave 2's unit; until it lands the manual compact route
+   *  refuses this kind with AGENT_KIND_NOT_WIRED (compactionKinds has no
+   *  sidechat entry by design). */
   private buildSidechatStreamDeps(): SidechatStreamDeps {
     const assembly = this.getSidechatAssembly();
+    const contextItemsResolver = this.buildContextItemsResolver(this.sidechatSkillService);
     return {
       store: this.stores.experienceCopilot,
       sync: {
@@ -406,7 +396,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
       resolveProfileForChat: (thread) =>
         this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
-      resolveContextItems: this.buildSidechatContextItemsResolver(),
+      ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
       db: this.stores.db,
     };
   }

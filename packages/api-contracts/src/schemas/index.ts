@@ -312,6 +312,7 @@ export {
   copilotTodoListSchema,
   copilotToolSetSchema,
   scriptAgentToolSetSchema,
+  sidechatOocToolSetSchema,
   agentToolSetSchema,
   copilotProfileSchema,
   copilotProfileListSchema,
@@ -319,6 +320,7 @@ export {
   copilotProfileUpdateSchema,
   COPILOT_TOOL_KEYS,
   SCRIPT_AGENT_TOOL_KEYS,
+  SIDECHAT_OOC_TOOL_KEYS,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
@@ -338,6 +340,7 @@ export type {
   CopilotTodoList,
   CopilotToolSet,
   ScriptAgentToolSet,
+  SidechatOocToolSet,
   AgentToolSet,
   CopilotProfile,
   CopilotProfileCreate,

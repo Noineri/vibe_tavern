@@ -23,7 +23,7 @@
  */
 
 import type { StoreContainer, CopilotProfileRow } from "@vibe-tavern/db";
-import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotToolSet, type ScriptAgentToolSet } from "@vibe-tavern/api-contracts";
+import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, SIDECHAT_OOC_TOOL_KEYS, type CopilotProfile, type CopilotToolSet, type ScriptAgentToolSet, type SidechatOocToolSet } from "@vibe-tavern/api-contracts";
 import { resolveKindForScript } from "../../agent/agent-kind-registry.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
@@ -40,18 +40,20 @@ const BUILTIN_PROFILE_SENTINEL = "builtin";
  * row); `createdAt`/`updatedAt` are dropped (the wire profile has no timestamps).
  * The stored `toolSet` is a loose partial record — it is projected through
  * the OWNING KIND's wire-contract tool keys (AS-7: `script` rows project
- * through `SCRIPT_AGENT_TOOL_KEYS`, everything else through
- * `COPILOT_TOOL_KEYS`) so only the kind's toggleable-tool keys (and only
- * their `true` entries) survive, producing a strict per-kind tool set.
+ * through `SCRIPT_AGENT_TOOL_KEYS`; SC-5: `sidechat-ooc` rows through
+ * `SIDECHAT_OOC_TOOL_KEYS`; everything else through `COPILOT_TOOL_KEYS`) so
+ * only the kind's toggleable-tool keys (and only their `true` entries)
+ * survive, producing a strict per-kind tool set.
  * `skillIds` is NOT projected (PM-8, owner ruling 2026-10-12): the skill
  * catalog is ungated, so the stored `skill_ids_json` column is legacy data
  * the resolver simply never reads.
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
 	// Per-kind projection (AS-7): a script row projects through the script tool
-	// keys, everything else through the experience keys — a union-typed key
-	// array cannot index one concrete tool-set type, so the two projections
-	// branch explicitly. Extend the branch when a third kind registers.
+	// keys, a sidechat row through the sidechat ones, everything else through
+	// the experience keys — a union-typed key array cannot index one concrete
+	// tool-set type, so the projections branch explicitly. Extend the branch
+	// when a fourth kind registers.
 	let toolSet: CopilotProfile["toolSet"];
 	if (row.agentKind === "script") {
 		const scriptToolSet: ScriptAgentToolSet = {};
@@ -59,6 +61,12 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 			if (row.toolSet[key] === true) scriptToolSet[key] = true;
 		}
 		toolSet = scriptToolSet;
+	} else if (row.agentKind === "sidechat-ooc") {
+		const sidechatToolSet: SidechatOocToolSet = {};
+		for (const key of SIDECHAT_OOC_TOOL_KEYS) {
+			if (row.toolSet[key] === true) sidechatToolSet[key] = true;
+		}
+		toolSet = sidechatToolSet;
 	} else {
 		const copilotToolSet: CopilotToolSet = {};
 		for (const key of COPILOT_TOOL_KEYS) {

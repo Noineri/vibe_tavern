@@ -119,6 +119,12 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		 * (a `?kind=script` request then answers the same unknown-kind 400 as an
 		 * unregistered id). */
 		scriptSkillService?: SkillLibraryService,
+		/** Sidechat skill library (SIDECHAT_PLAN SC-5) — the `sidechat-ooc`
+		 * kind's own roots (`<dataDir>/agent-sidechat/skills` + the built-in
+		 * asset root). Optional for the same reason as the script one (a
+		 * `?kind=sidechat-ooc` request then answers the unknown-kind-shaped
+		 * 400). */
+		sidechatSkillService?: SkillLibraryService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -162,14 +168,18 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
-		// AS-8d1: the copilot skill adapters keyed by agent kind — experience
-		// keeps the CP-5 copilot library; the script kind gets its own adapter
-		// over the script-agent roots (absent when no script service was wired).
+		// AS-8d1/SC-5: the copilot skill adapters keyed by agent kind —
+		// experience keeps the CP-5 copilot library; the script kind gets its
+		// own adapter over the script-agent roots and the sidechat kind over
+		// the sidechat roots (each absent when no service was wired).
 		this.copilotSkills = createCopilotSkillKindResolver(
 			new Map<AgentKindId, CopilotSkillAdapter>([
 				["experience", new CopilotSkillAdapter(copilotSkillService)],
 				...(scriptSkillService !== undefined
 					? ([["script", new CopilotSkillAdapter(scriptSkillService)]] as const)
+					: []),
+				...(sidechatSkillService !== undefined
+					? ([["sidechat-ooc", new CopilotSkillAdapter(sidechatSkillService)]] as const)
 					: []),
 			]),
 		);
@@ -185,6 +195,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			providerProfileService,
 			copilotSkillService,
 			scriptSkillService,
+			sidechatSkillService,
 		);
 	}
 }

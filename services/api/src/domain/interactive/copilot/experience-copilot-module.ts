@@ -181,8 +181,9 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
   if (kind === "sidechat-ooc") {
     // SC-4a: the sidechat kind's own seed — base prompt from the
     // `sidechat_ooc_base` service prompt (SP-5 override honored on this
-    // builtin path, the `script` seed's pattern) + an EMPTY tool set until
-    // Wave 3's tools land. The species owns the seed
+    // builtin path, the `script` seed's pattern) + a tool set projected
+    // through SIDECHAT_OOC_TOOL_KEYS, every toggle disabled until Wave 3's
+    // tools land (SC-5). The species owns the seed
     // (agent/kinds/sidechat-ooc-kind.ts).
     return resolveBuiltinSidechatOocProfile(db);
   }

@@ -444,15 +444,61 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 ) as (keyof ScriptAgentToolSet)[];
 
 /**
- * The tool set a copilot/agent profile may carry ACROSS kinds: the experience
- * record or the script record (a union — a set valid for either kind passes;
- * a set mixing keys from both, or carrying an unknown key, fails BOTH members
- * and is rejected). Per-kind enforcement (a script profile may not carry
- * experience keys and vice versa) lives with the kind's REGISTERED schema in
- * the profile adapter, which knows the profile's `agentKind`.
+ * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
+ * Wave 1 / SC-5). A PARTIAL record over exactly the 5 toggleable sidechat
+ * tools (search_context, read_context_item, propose_objective, todo,
+ * read_plan) — the same convention as {@link copilotToolSetSchema} and
+ * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
+ * tool that is not yet served is simply absent from every set. The five
+ * keys exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
+ * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
+ * ahead of their implementations) because the tools arrive in Wave 3 and
+ * flip on one by one — until then a stored `true` is inert (the stream
+ * serves no tools, `buildTools` returns the empty set). `.strict()` rejects
+ * any unknown key — including the other kinds' keys — so a profile cannot
+ * silently carry another kind's tools on the wire; the adapter additionally
+ * re-validates against the kind's REGISTERED schema
+ * (`copilot_profile_invalid_tool_set`).
  */
-export const agentToolSetSchema = z.union([copilotToolSetSchema, scriptAgentToolSetSchema]);
-export type AgentToolSet = CopilotToolSet | ScriptAgentToolSet;
+export const sidechatOocToolSetSchema = z
+  .object({
+    search_context: z.boolean().optional(),
+    read_context_item: z.boolean().optional(),
+    propose_objective: z.boolean().optional(),
+    todo: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
+  })
+  .strict();
+
+export type SidechatOocToolSet = z.infer<typeof sidechatOocToolSetSchema>;
+
+/**
+ * Every tool a sidechat-ooc profile may toggle, in stable definition order.
+ * Derived from {@link sidechatOocToolSetSchema} exactly the way
+ * {@link SCRIPT_AGENT_TOOL_KEYS} derives from `scriptAgentToolSetSchema`
+ * (the wire contract is the single source of truth for toggleable-tool
+ * names — the kind's default set and builtin seed project through this, and
+ * Wave 3 flips each key on by enabling it in the kind's declarative set).
+ */
+export const SIDECHAT_OOC_TOOL_KEYS = Object.keys(
+  sidechatOocToolSetSchema.shape,
+) as (keyof SidechatOocToolSet)[];
+
+/**
+ * The tool set a copilot/agent profile may carry ACROSS kinds: the experience
+ * record, the script record, or the sidechat record (a union — a set valid
+ * for any kind passes; a set mixing keys from several kinds, or carrying an
+ * unknown key, fails EVERY member and is rejected). Per-kind enforcement (a
+ * sidechat profile may not carry experience keys and vice versa) lives with
+ * the kind's REGISTERED schema in the profile adapter, which knows the
+ * profile's `agentKind`.
+ */
+export const agentToolSetSchema = z.union([
+  copilotToolSetSchema,
+  scriptAgentToolSetSchema,
+  sidechatOocToolSetSchema,
+]);
+export type AgentToolSet = CopilotToolSet | ScriptAgentToolSet | SidechatOocToolSet;
 
 /**
  * Every tool a profile may toggle, in stable definition order. Derived from
@@ -485,7 +531,7 @@ export const copilotProfileSchema = z
     isBuiltIn: z.boolean(),
     basePrompt: z.string().min(1),
     // AS-7: the union of per-kind tool-set records — which keys a profile may
-    // toggle depends on its `agentKind` (experience or script today).
+    // toggle depends on its `agentKind` (experience, script, or sidechat-ooc).
     toolSet: agentToolSetSchema,
     // AS-3: owning agent kind ('experience' for every pre-AS-3 profile).
     // Required on the wire profile — the server always emits it (seed and
@@ -510,7 +556,7 @@ export const copilotProfileCreateSchema = z
     name: z.string().min(1),
     basePrompt: z.string().min(1),
     // AS-7: per-kind tool-set records (union) — the adapter validates the set
-    // against the OWNING kind's registered schema.
+    // against the OWNING kind's registered schema (sidechat keys: SC-5).
     toolSet: agentToolSetSchema,
     // AS-3: optional with an 'experience' default so the current web client
     // (which sends no kind) keeps creating experience profiles untouched.

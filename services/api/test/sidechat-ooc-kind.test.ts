@@ -17,17 +17,29 @@
  * 4. The asset pin (S2-0a style — pins cover ASSEMBLY, real assets must
  *    load): `agent-sidechat/ooc.md` loads non-empty through the registry map.
  *
- * The tool set stays EMPTY until Wave 3: the strict empty schema accepts `{}`
- * and rejects every tool key.
+ * The tool toggles (SC-5): the wire contract's five sidechat keys exist
+ * BEFORE their tools (Wave 3 lands each tool and flips its toggle on) — all
+ * five are known keys, every one starts DISABLED (tool sets store only
+ * enabled keys, so the default set and the seed carry `{}`), and foreign
+ * keys stay rejected.
+ *
+ * 5. The skill roots (SC-5): the built-in root resolves through the asset
+ *    ladder to the shipped `agent-sidechat/skills` directory and scans EMPTY
+ *    (no skill is authored — SC-5 ships the root, not content), and the user
+ *    root derives as `<dataDir>/agent-sidechat/skills`.
  */
 
 import { describe, test, expect } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { SCRIPT_KIND } from "@vibe-tavern/domain";
-import { copilotProfileSchema } from "@vibe-tavern/api-contracts";
+import { copilotProfileSchema, SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
+import { buildSkillCatalog } from "../src/domain/coauthor/skills/skill-scanner.js";
 import {
   getAgentKind,
   getChatOwnedAgentKind,
@@ -44,6 +56,8 @@ import "../src/domain/agent/kinds/script-kind.js";
 import {
   SIDECHAT_OOC_SEED_NAME,
   resolveBuiltinSidechatOocProfile,
+  resolveSidechatSkillsRoot,
+  resolveSidechatUserSkillsRoot,
 } from "../src/domain/agent/kinds/sidechat-ooc-kind.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -97,13 +111,30 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     }
   });
 
-  test("the tool set is empty until Wave 3: the strict empty schema accepts {} and rejects every tool key", () => {
+  test("the five Wave-3 toggles are known keys, all disabled until their tools land (SC-5)", () => {
     const kind = getAgentKind("sidechat-ooc");
+    // The toggle names are the plan's settled contract, carried by the wire
+    // schema (the single source of truth, re-exported for consumers).
+    expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
+      "search_context",
+      "read_context_item",
+      "propose_objective",
+      "todo",
+      "read_plan",
+    ]);
+    // The schema accepts each of the five (either boolean) and the all-off
+    // `{}` — tool sets store only enabled keys, so `{}` IS “all five
+    // disabled” until Wave 3 flips one on.
+    expect(kind.toolSetSchema.parse({ search_context: true })).toEqual({ search_context: true });
+    expect(kind.toolSetSchema.parse({ read_plan: false })).toEqual({ read_plan: false });
     expect(kind.toolSetSchema.parse({})).toEqual({});
-    expect(kind.defaultToolSet).toEqual({});
-    // A foreign key (the experience kind's write_buffer) is rejected, not
-    // silently stripped — no profile can toggle a tool this species lacks.
+    // Foreign keys (the experience kind's write_buffer, the script kind's
+    // run_script_test) are rejected, not silently stripped — no profile can
+    // toggle a tool this species does not serve.
     expect(kind.toolSetSchema.safeParse({ write_buffer: true }).success).toBe(false);
+    expect(kind.toolSetSchema.safeParse({ run_script_test: true }).success).toBe(false);
+    // Nothing is enabled by default until Wave 3 lands a tool.
+    expect(kind.defaultToolSet).toEqual({});
   });
 });
 
@@ -153,5 +184,36 @@ describe("the sidechat_ooc_base asset — SC-4a pin", () => {
     expect(getServicePromptAssetFile("sidechat_ooc_base")).toBe("agent-sidechat/ooc.md");
     const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
     expect(text.trim().length).toBeGreaterThan(0);
+  });
+});
+
+// ─── The skill roots (SC-5) ──────────────────────────────────────────────
+
+describe("the sidechat skill roots (SC-5)", () => {
+  test("the built-in root resolves through the asset ladder and scans EMPTY — no skill is authored", async () => {
+    const root = await resolveSidechatSkillsRoot();
+    // The root is the shipped assets directory (the locator-README climb the
+    // script kind's root established), not a data dir and not another kind's
+    // root.
+    expect(root.replace(/\\/g, "/")).toMatch(/assets\/agent-sidechat\/skills$/);
+    // SC-5 ships the ROOT, not content: the catalog scans empty. The moment
+    // someone authors `<skill-id>/SKILL.md` here it appears — until then a
+    // pinned skill simply does not resolve (never fatal).
+    const { entries, errors } = await buildSkillCatalog([{ path: root, source: "builtin" }]);
+    expect(entries).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test("the user root derives as <dataDir>/agent-sidechat/skills (not created here)", async () => {
+    // Derived at runtime — no path-separator assumption (the repo's
+    // Windows-dev / Linux-CI split).
+    const dataDir = await mkdtemp(join(tmpdir(), "vt-sidechat-kind-roots-"));
+    try {
+      expect(resolveSidechatUserSkillsRoot(dataDir)).toBe(join(dataDir, "agent-sidechat", "skills"));
+      // The resolver only DERIVES the path; a missing root scans as empty.
+      expect(await Bun.file(join(dataDir, "agent-sidechat", "skills")).exists()).toBe(false);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 });

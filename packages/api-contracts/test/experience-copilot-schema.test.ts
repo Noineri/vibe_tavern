@@ -16,6 +16,9 @@ import {
   copilotProfileSchema,
   copilotProfileCreateSchema,
   COPILOT_TOOL_KEYS,
+  sidechatOocToolSetSchema,
+  SIDECHAT_OOC_TOOL_KEYS,
+  agentToolSetSchema,
 } from "../src/schemas/experience-copilot-schema.js";
 
 // ─── ER-4 / ER-6 regression pin (existing schemas unchanged) ──────────────────
@@ -479,6 +482,49 @@ describe("copilotToolSetSchema (CP-1)", () => {
       "todo",
       "ask_user",
     ]);
+  });
+});
+
+// ─── SC-5: the sidechat-ooc tool set (keys before tools — the TAG-1 pattern) ──
+
+describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
+  test("accepts each of the 5 Wave-3 toggles with either boolean, and {} (all off)", () => {
+    for (const key of SIDECHAT_OOC_TOOL_KEYS) {
+      expect(sidechatOocToolSetSchema.parse({ [key]: true })).toEqual({ [key]: true });
+      expect(sidechatOocToolSetSchema.parse({ [key]: false })).toEqual({ [key]: false });
+    }
+    expect(sidechatOocToolSetSchema.parse({})).toEqual({});
+  });
+
+  test("rejects the other kinds' keys and unknown keys (strict)", () => {
+    // Experience keys, the script kind's key, and the always-on channel are
+    // all foreign to the sidechat — rejected, never silently stripped.
+    expect(() => sidechatOocToolSetSchema.parse({ write_buffer: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ run_script_test: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ read_skill_file: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
+  });
+
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 5 toggles in definition order", () => {
+    expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
+      "search_context",
+      "read_context_item",
+      "propose_objective",
+      "todo",
+      "read_plan",
+    ]);
+  });
+
+  test("agentToolSetSchema carries the sidechat member: a sidechat set passes the union, a cross-kind mix fails", () => {
+    expect(agentToolSetSchema.safeParse({ search_context: true, read_plan: false }).success).toBe(true);
+    // Mixing sidechat and experience keys matches NO member — rejected.
+    expect(
+      agentToolSetSchema.safeParse({ search_context: true, write_buffer: true }).success,
+    ).toBe(false);
+    // The pre-existing members are untouched: experience and script sets
+    // still pass, exactly as before the third member joined.
+    expect(agentToolSetSchema.safeParse({ write_buffer: true }).success).toBe(true);
+    expect(agentToolSetSchema.safeParse({ run_script_test: true }).success).toBe(true);
   });
 });
 

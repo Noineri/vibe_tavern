@@ -37,6 +37,10 @@ import {
 	resolveScriptAgentSkillsRoot,
 	resolveScriptAgentUserSkillsRoot,
 } from "../domain/agent/script-agent/script-agent-module.js";
+import {
+	resolveSidechatSkillsRoot,
+	resolveSidechatUserSkillsRoot,
+} from "../domain/agent/kinds/sidechat-ooc-kind.js";
 // agent-kind registration (AS-2a): experience registers itself at startup;
 // the script kind (AS-7) registers beside it — prompt/dice threads resolve;
 // the sidechat kind (SC-4a) is the first chat-owned kind — sidechat threads
@@ -234,6 +238,15 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		resolveScriptAgentUserSkillsRoot(config.dataDir),
 		await resolveScriptAgentSkillsRoot(),
 	);
+	// Sidechat skill library (SIDECHAT_PLAN SC-5) — the same generic service
+	// over the sidechat roots (<dataDir>/agent-sidechat/skills + the built-in
+	// asset root): the sidechat kind serves its own (today empty) library, and
+	// a skill pinned in a sidechat thread resolves from it, never another
+	// kind's roots.
+	const sidechatSkillService = new SkillLibraryService(
+		resolveSidechatUserSkillsRoot(config.dataDir),
+		await resolveSidechatSkillsRoot(),
+	);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 		dataDir: config.dataDir,
@@ -322,6 +335,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceContextService,
 		copilotSkillService,
 		scriptSkillService,
+		sidechatSkillService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));
