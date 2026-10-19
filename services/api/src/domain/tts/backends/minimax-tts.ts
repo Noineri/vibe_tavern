@@ -50,7 +50,7 @@
  *   https://api.minimax.io/v1/t2a_v2 (twice) — endpoint reference wins.
  */
 
-import { TTS_BACKEND } from "@vibe-tavern/domain";
+import { isRecord, TTS_BACKEND } from "@vibe-tavern/domain";
 import type { TtsProfileConfig } from "@vibe-tavern/domain";
 
 import type {
@@ -335,10 +335,6 @@ export class MinimaxTtsBackend implements TtsBackend {
 
 // ─── Response parsing (unknown at the fetch edge) ────────────────────────────
 
-function isParsedVoiceEntry(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function toVoiceInfo(entry: Record<string, unknown>, mine: boolean): TtsVoiceInfo | null {
   const voiceId = entry.voice_id;
   if (typeof voiceId !== "string" || voiceId.length === 0) return null;
@@ -364,14 +360,14 @@ export function parseGetVoiceResponse(root: Record<string, unknown>): TtsVoiceIn
   const out: TtsVoiceInfo[] = [];
   const systemVoices = Array.isArray(root.system_voice) ? root.system_voice : [];
   for (const entry of systemVoices) {
-    if (!isParsedVoiceEntry(entry)) continue;
+    if (!isRecord(entry)) continue;
     const info = toVoiceInfo(entry, false);
     if (info) out.push(info);
   }
   for (const key of ["voice_cloning", "voice_generation"] as const) {
     const voices = Array.isArray(root[key]) ? root[key] : [];
     for (const entry of voices) {
-      if (!isParsedVoiceEntry(entry)) continue;
+      if (!isRecord(entry)) continue;
       const info = toVoiceInfo(entry, true);
       if (info) out.push(info);
     }

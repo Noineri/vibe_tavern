@@ -1,6 +1,4 @@
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+import { isRecord } from "@vibe-tavern/domain";
 
 function parseJsonRecord(text: string): Record<string, unknown> | null {
   try {

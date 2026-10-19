@@ -16,6 +16,8 @@
  * Fall-throughs are deliberately conservative — `unknown` rather than a guess.
  */
 
+import { isRecord } from "@vibe-tavern/domain";
+
 import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ProviderErrorCategory } from "./provider-execution-types.js";
 import { isDomainError } from "../../shared/errors.js";
@@ -40,10 +42,6 @@ interface RetryErrorLike {
 }
 
 // ─── helpers ───────────────────────────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function asRetryError(error: unknown): RetryErrorLike | null {
   if (!isRecord(error)) return null;

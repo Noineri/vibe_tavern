@@ -1,3 +1,5 @@
+import { isRecord } from "@vibe-tavern/domain";
+
 /**
  * Mutable macro state owned by exactly one prompt assembly.
  * Local and global names are separate namespaces; neither persists across turns
@@ -47,8 +49,4 @@ export function writeVariableKey(store: Map<string, string>, name: string, key: 
 
 function createKeyContainer(key: string): Record<string, unknown> | unknown[] {
   return /^\d+$/.test(key) ? [] : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
 }

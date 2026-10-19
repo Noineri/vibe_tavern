@@ -1123,7 +1123,7 @@ async function comfyNodeClassExists(
   );
   if (!response.ok) return false;
   const parsed: unknown = await response.json().catch(() => null);
-  return isRecord(parsed) && parsed[nodeClass] !== undefined;
+  return isObjectLike(parsed) && parsed[nodeClass] !== undefined;
 }
 
 /** The pickable detector models (the IF-6 chain discovery): the FULL
@@ -1409,9 +1409,9 @@ function openComfyProgressListener(
   let jobAnnounced = false;
 
   const applyEvent = (payload: unknown): void => {
-    if (dead || !isRecord(payload)) return;
+    if (dead || !isObjectLike(payload)) return;
     const data = payload.data;
-    const dataRecord = isRecord(data) ? data : undefined;
+    const dataRecord = isObjectLike(data) ? data : undefined;
     // ComfyUI broadcasts execution events to EVERY connected socket — only
     // this run's prompt_id counts (the cross-prompt filter).
     if (promptId === undefined || dataRecord === undefined || dataRecord.prompt_id !== promptId) return;
@@ -1492,8 +1492,8 @@ function openComfyProgressListener(
   };
 }
 
-/** `unknown` → record guard for the defensive /object_info walks. */
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** `unknown` → object-like guard; arrays pass — the folder_paths walks fold a top-level array into an empty map, not a user-visible error (SC-5r2). */
+function isObjectLike(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
@@ -1523,10 +1523,10 @@ async function fetchComfyComboValues(
     );
   }
   const parsed: unknown = await response.json().catch(() => null);
-  const node = isRecord(parsed) ? parsed[nodeName] : undefined;
-  const input = isRecord(node) ? node.input : undefined;
-  const required = isRecord(input) ? input.required : undefined;
-  const slot = isRecord(required) ? required[inputName] : undefined;
+  const node = isObjectLike(parsed) ? parsed[nodeName] : undefined;
+  const input = isObjectLike(node) ? node.input : undefined;
+  const required = isObjectLike(input) ? input.required : undefined;
+  const slot = isObjectLike(required) ? required[inputName] : undefined;
   const values = Array.isArray(slot) ? slot[0] : undefined;
   if (!Array.isArray(values)) {
     throw new ComfyImageGenError(
@@ -1612,7 +1612,7 @@ async function fetchComfyEmbeddedFamily(
     if (error instanceof Error && error.name === "AbortError") throw error;
     return undefined;
   }
-  if (!isRecord(parsed)) return undefined;
+  if (!isObjectLike(parsed)) return undefined;
   return readEmbeddedFamilyValue(parsed);
 }
 
@@ -1641,7 +1641,7 @@ async function fetchComfyFolderRoots(
     if (error instanceof Error && error.name === "AbortError") throw error;
     return undefined;
   }
-  if (!isRecord(parsed)) return undefined;
+  if (!isObjectLike(parsed)) return undefined;
   const out: Record<string, string[]> = {};
   for (const [folder, roots] of Object.entries(parsed)) {
     if (Array.isArray(roots)) {
@@ -1682,7 +1682,7 @@ async function fetchComfyEmbeddedFamilyForDetection(
     );
   }
   const parsed: unknown = await response.json().catch(() => null);
-  if (!isRecord(parsed)) {
+  if (!isObjectLike(parsed)) {
     throw new ComfyImageGenError("ComfyUI /view_metadata response was not a JSON object");
   }
   return readEmbeddedFamilyValue(parsed);
@@ -1720,7 +1720,7 @@ async function fetchComfyFolderRootsForDetection(
       error: `ComfyUI folder map fetch failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-  if (!isRecord(parsed)) {
+  if (!isObjectLike(parsed)) {
     return { error: "ComfyUI /internal/folder_paths response was not a JSON object" };
   }
   const out: Record<string, string[]> = {};
@@ -1754,7 +1754,7 @@ async function readComfySidecarFamily(
     try {
       const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
       const parsed: unknown = JSON.parse(text);
-      if (isRecord(parsed)) {
+      if (isObjectLike(parsed)) {
         const raw = parsed[field];
         if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
       }
@@ -1828,7 +1828,7 @@ async function readComfySidecarTriggerWords(
     try {
       const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
       const parsed: unknown = JSON.parse(text);
-      if (isRecord(parsed)) {
+      if (isObjectLike(parsed)) {
         const raw = parsed[field];
         if (Array.isArray(raw)) {
           const words = raw.filter((w): w is string => typeof w === "string" && w.trim().length > 0)

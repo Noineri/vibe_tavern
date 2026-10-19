@@ -279,6 +279,16 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError({ foo: "bar" })).toBe("unknown");
   });
 
+  it("returns unknown for a top-level array (arrays carry no duck-typed signal, SC-5r2)", () => {
+    expect(classifyProviderError(["no", "fields"])).toBe("unknown");
+    expect(classifyProviderError([])).toBe("unknown");
+  });
+
+  it("treats an array responseBody as no envelope (array bodies carry no .error.type, SC-5r2)", () => {
+    const apiLike = { statusCode: 400, responseBody: '["proxy_error"]' };
+    expect(classifyProviderError(apiLike)).toBe("invalid_request");
+  });
+
   // ── 9. Priority / interaction ──────────────────────────────────────────
 
   it("RetryError unwrap beats a network-shaped outer message (classifies the inner cause)", () => {

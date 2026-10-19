@@ -103,4 +103,13 @@ describe("extractProviderErrorMessage", () => {
     };
     expect(extractProviderErrorMessage(retryError)).toBe("second attempt");
   });
+
+  it("falls back when the error itself is a top-level array (SC-5r2)", () => {
+    expect(extractProviderErrorMessage(["no", "fields"])).toBe("Provider request failed");
+  });
+
+  it("falls back when responseBody parses to a JSON array, not an error envelope (SC-5r2)", () => {
+    const error = { statusCode: 400, responseBody: '["Usage limit reached"]' };
+    expect(extractProviderErrorMessage(error)).toBe("Provider request failed");
+  });
 });

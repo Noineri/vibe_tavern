@@ -217,6 +217,15 @@ describe("parseGetVoiceResponse", () => {
       { id: "a", label: "a", lang: "multi" },
     ]);
   });
+
+  test("drops array and scalar elements from voice sections (SC-5r2: arrays carry no voice_id)", () => {
+    expect(
+      parseGetVoiceResponse({
+        system_voice: [["nested"], { voice_id: "a" }, "plain"],
+        voice_cloning: [[{ voice_id: "b" }]],
+      }),
+    ).toEqual([{ id: "a", label: "a", lang: "multi" }]);
+  });
 });
 
 // ─── listModels (live GET /v1/models, unfiltered) ───────────────────────────
