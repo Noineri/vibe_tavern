@@ -25,6 +25,12 @@
  *     with one tool call, an agent plan, the builtin profile) produces a
  *     system message BYTE-IDENTICAL to the committed fixture
  *     `fixtures/agent-core-system-prompt.md` (exact equality).
+ *     S2-0a: the fixture is the prompt assembled over STAND-IN assets
+ *     (`fixtures/copilot-prompt-stand-in-assets.ts`, one marker text per asset
+ *     `.md`), so it pins how the prompt is assembled — section order, the
+ *     code-built blocks — and stays green when only asset prose changes.
+ *     The "carries every fixed input" smoke test below still runs over the
+ *     REAL assets, as before.
  * (b) The tool-name list the STREAM passes to the model for the builtin
  *     profile, taken from the real code path (captured `streamText` opts —
  *     never hand-written from docs).
@@ -51,6 +57,7 @@ import type {
   AppendMessageInput,
 } from "@vibe-tavern/db";
 import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import { withStandInAssets } from "./fixtures/copilot-prompt-stand-in-assets.js";
 import type { AgentHistoryMessage as ExperienceCopilotHistoryMessage } from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { buildExperienceCopilotTools } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
@@ -168,6 +175,16 @@ const PLAN: AgentPlan = {
 };
 
 const FIXTURE_PATH = join(import.meta.dir, "fixtures", "agent-core-system-prompt.md");
+
+/**
+ * The committed fixture, line endings normalized to `\n` — the same
+ * normalization `loadPromptAsset` applies to the assets. A Windows checkout
+ * with `core.autocrlf=true` materializes this file with CRLF while the
+ * assembled prompt is LF; the pin is about content, not the checkout's EOL.
+ */
+async function readFixture(): Promise<string> {
+  return (await Bun.file(FIXTURE_PATH).text()).replace(/\r\n?/g, "\n");
+}
 
 // ─── Fake provider + fake store (mirrors experience-copilot-stream.test.ts) ──
 // `streamText` is a deps seam (never mock.module("ai")); each test sets
@@ -365,28 +382,31 @@ const toolCtx = { messages: [], toolCallId: "t", abort: () => {} } as unknown as
 // ─── (a) Fixed input → byte-identical system message ─────────────────────────
 
 describe("AS-1 (a) — fixed experience input pins the assembled system message", () => {
-  async function assembleTrusted(): Promise<string> {
-    const profile = await resolveBuiltinCopilotProfile();
-    const result = await assembleExperienceCopilotPrompt({
-      history: HISTORY_3TURN,
-      rules: makeScriptRow().code,
-      visual: VISUAL_SOURCE,
-      boundVisuals: [...BOUND_VISUALS],
-      step: "visual",
-      profile,
-      plan: PLAN,
-    });
-    return result.systemMessage;
+  /** Real assets by default; `overStandIns` swaps in the S2-0a marker texts. */
+  async function assembleTrusted(overStandIns = false): Promise<string> {
+    const run = async () => {
+      const profile = await resolveBuiltinCopilotProfile();
+      const result = await assembleExperienceCopilotPrompt({
+        history: HISTORY_3TURN,
+        rules: makeScriptRow().code,
+        visual: VISUAL_SOURCE,
+        boundVisuals: [...BOUND_VISUALS],
+        step: "visual",
+        profile,
+        plan: PLAN,
+      });
+      return result.systemMessage;
+    };
+    return overStandIns ? withStandInAssets(run) : run();
   }
 
   test("assembly is deterministic: two consecutive assemblies are byte-identical", async () => {
     expect(await assembleTrusted()).toBe(await assembleTrusted());
   });
 
-  test("system message is byte-identical to the committed fixture file", async () => {
-    const systemMessage = await assembleTrusted();
-    const fixture = await Bun.file(FIXTURE_PATH).text();
-    expect(systemMessage).toBe(fixture);
+  test("system message over the stand-in assets is byte-identical to the committed fixture file", async () => {
+    const systemMessage = await assembleTrusted(true);
+    expect(systemMessage).toBe(await readFixture());
   });
 
   test("the pinned assembly carries every fixed input (smoke over the snapshot)", async () => {
@@ -489,22 +509,25 @@ describe("AS-1 (c) — SSE event types and order for one edit_buffer turn", () =
 
 describe("AS-1 (d) — untrusted variant (imported, never-enabled script)", () => {
   async function assembleUntrusted(): Promise<string> {
-    const profile = await resolveBuiltinCopilotProfile();
-    const result = await assembleExperienceCopilotPrompt({
-      history: HISTORY_3TURN,
-      rules: makeScriptRow().code,
-      visual: VISUAL_SOURCE,
-      boundVisuals: [...BOUND_VISUALS],
-      step: "visual",
-      profile,
-      plan: PLAN,
-      rulesTrusted: false,
+    // Over the stand-in assets, like the trusted fixture it is compared with.
+    return withStandInAssets(async () => {
+      const profile = await resolveBuiltinCopilotProfile();
+      const result = await assembleExperienceCopilotPrompt({
+        history: HISTORY_3TURN,
+        rules: makeScriptRow().code,
+        visual: VISUAL_SOURCE,
+        boundVisuals: [...BOUND_VISUALS],
+        step: "visual",
+        profile,
+        plan: PLAN,
+        rulesTrusted: false,
+      });
+      return result.systemMessage;
     });
-    return result.systemMessage;
   }
 
   test("no contract summary renders and the snapshot differs from the trusted one", async () => {
-    const fixture = await Bun.file(FIXTURE_PATH).text();
+    const fixture = await readFixture();
     const untrusted = await assembleUntrusted();
     expect(untrusted).toContain("Discovered experience definition");
     expect(untrusted).toContain("not derived: script is imported and not yet enabled");

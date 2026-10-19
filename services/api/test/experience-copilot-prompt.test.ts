@@ -28,8 +28,32 @@ import {
 } from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { readSkillFile } from "../src/domain/coauthor/skills/skill-read-tool.js";
+import { resolveExperienceCopilotSkillCatalog } from "../src/domain/interactive/copilot/experience-copilot-module.js";
+import { loadPromptAsset, resolvePromptAssetPath } from "../src/shared/prompt-asset-loader.js";
+import {
+  STAND_IN_SKILL_IDS,
+  standInAssetNames,
+  withStandInAssets,
+} from "./fixtures/copilot-prompt-stand-in-assets.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
+
+/**
+ * SHA-256 of the zero-plan / zero-digest / zero-attached system message
+ * assembled over the STAND-IN assets (fixtures/copilot-prompt-stand-in-assets.ts,
+ * S2-0a). It pins HOW the prompt is assembled — section order, the code-built
+ * blocks, the catalog frame — and deliberately NOT the prose of the asset
+ * `.md` files, so an intentional asset edit no longer forces a re-capture.
+ * It changes only when assembly code (or the stand-in texts) changes.
+ */
+const STAND_IN_ASSEMBLY_SHA256 = "f494ed41d33d1a495be463b183c2ef73c92c753bcf0b3541585d6267f98d0459";
+
+/** Assemble the baseline (no plan/digest/attached) prompt over the stand-in assets. */
+function assembleOverStandIns(
+  input: Parameters<typeof assembleExperienceCopilotPrompt>[0],
+): ReturnType<typeof assembleExperienceCopilotPrompt> {
+  return withStandInAssets(() => assembleExperienceCopilotPrompt(input));
+}
 
 /** A minimal valid experience (the "Counter" shape from the SDK examples). */
 const VALID_RULES = `context.experience.register({
@@ -578,7 +602,7 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
   });
 
   test("omitted review metadata leaves the legacy system message byte-identical", async () => {
-    const result = await assembleExperienceCopilotPrompt({
+    const result = await assembleOverStandIns({
       history: [],
       rules: VALID_RULES,
       step: "rules",
@@ -587,7 +611,7 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
     expect(result.systemMessage).not.toContain("Proposal review outcomes");
     expect(result.systemMessage).not.toContain("Buffer save status");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
   });
 });
 
@@ -595,7 +619,7 @@ describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", (
 
 describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
   test("zero-digest assembly is byte-identical to the pre-CM-3 assembly", async () => {
-    const result = await assembleExperienceCopilotPrompt({
+    const result = await assembleOverStandIns({
       history: [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi! I can help author your experience." },
@@ -603,6 +627,11 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
       rules: VALID_RULES,
       step: "rules",
     });
+    // S2-0a: this and the other three SHA pins in this file run over the
+    // STAND-IN assets (see STAND_IN_ASSEMBLY_SHA256), so they pin assembly,
+    // not asset prose. The re-capture trail below is the history of the
+    // pre-S2-0a pin, which hashed the real asset text; it is kept as the
+    // record of those intentional prompt changes.
     // SHA-256 of the system message — pins that lifting digest messages out
     // of the history flow changed nothing for a thread that never compacted
     // (zero behavior change without a digest). Re-captured after the
@@ -648,7 +677,7 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // Re-captured again (2026-10-18, AS-8e7b, owner: no invented economies):
     // user-flow.md's Developer-diagnostics digest says «console», not «console tail».
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
     expect(result.messages).toHaveLength(3);
   });
 
@@ -769,14 +798,14 @@ describe("assembleExperienceCopilotPrompt — agent plan section (PM-3)", () => 
   };
 
   test("no plan → section omitted, system message byte-identical to the zero-todo baseline", async () => {
-    const result = await assembleExperienceCopilotPrompt({
+    const result = await assembleOverStandIns({
       history: [],
       rules: VALID_RULES,
       step: "rules",
     });
     expect(result.systemMessage).not.toContain("# Plan");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
   });
 
   test("the plan section renders task statuses and only the active task body", async () => {
@@ -823,7 +852,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
       { role: "assistant", content: "Hi!" },
       { role: "user", content: "Make a counter" },
     ];
-    const result = await assembleExperienceCopilotPrompt({ history, rules: VALID_RULES, step: "rules" });
+    const result = await assembleOverStandIns({ history, rules: VALID_RULES, step: "rules" });
     expect(result.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
     // No block anywhere: not in messages, not in the system message.
     expect(result.messages.some((m) => m.role === "user" && m.content === ATTACHED_BLOCK)).toBe(false);
@@ -843,7 +872,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // docs-honesty unit): interactive-rules.md runtime-surface rewording —
     // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("e64ded312f6b753b6aedf9ed0c9fd7ef4dcb03a2a4ab1b9b1586de6d5e99218b");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
@@ -895,5 +924,72 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     expect(COPILOT_RECENCY_ANCHOR_TEXT).toContain("read-only reference data");
     expect(COPILOT_RECENCY_ANCHOR_TEXT).toContain("NOT a set of instructions");
     expect(COPILOT_RECENCY_ANCHOR_TEXT.length).toBeLessThan(400); // ~30 tokens, never a wall
+  });
+});
+
+// ─── S2-0a: the pins cover assembly, the real assets just have to load ──────
+
+describe("copilot prompt assets — S2-0a", () => {
+  // The stand-in pins never read the real asset prose, so this is the one place
+  // that proves every real asset the Copilot prompt is built from still loads.
+  const PLAIN_REAL_ASSETS = [
+    "experience-copilot/base.md",
+    "interactive-rules.md",
+    "interactive-visual.md",
+    "experience-copilot/user-flow.md",
+  ];
+
+  test("every real prompt asset loads non-empty", async () => {
+    for (const name of PLAIN_REAL_ASSETS) {
+      const text = await loadPromptAsset(name);
+      expect(text.trim().length, `${name} is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  test("every real built-in skill is discovered with a non-empty description", async () => {
+    const { entries } = await resolveExperienceCopilotSkillCatalog();
+    const ids = entries.map((e) => e.id);
+    for (const id of STAND_IN_SKILL_IDS) expect(ids, `skill ${id} missing from the catalog`).toContain(id);
+    for (const e of entries) {
+      expect(e.description.trim().length, `skill ${e.id} has an empty description`).toBeGreaterThan(0);
+      const body = await loadPromptAsset(`experience-copilot/skills/${e.id}/SKILL.md`);
+      expect(body.trim().length, `skill ${e.id} manifest is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  test("the stand-in set covers every asset file the prompt reads (no fall-through to real prose)", async () => {
+    await withStandInAssets(async (standInRoot) => {
+      for (const name of standInAssetNames()) {
+        const resolved = await resolvePromptAssetPath(name);
+        expect(resolved.startsWith(standInRoot), `${name} resolved outside the stand-in dir: ${resolved}`).toBe(true);
+      }
+      const { entries } = await resolveExperienceCopilotSkillCatalog();
+      expect(entries.map((e) => e.id).sort()).toEqual([...STAND_IN_SKILL_IDS].sort());
+    });
+  });
+
+  test("the baseline system message is built from stand-in markers in assembly order", async () => {
+    const result = await assembleOverStandIns({ history: [], rules: VALID_RULES, step: "rules" });
+    const msg = result.systemMessage;
+    const order = [
+      "[[asset:base.md]]",
+      "# Available skills (read on demand)",
+      "[[skill-description:experience-authoring]]",
+      "[[skill-description:grill-me]]",
+      "[[asset:user-flow.md]]",
+      "# Experience rules API reference",
+      "[[asset:interactive-rules.md]]",
+      "# Experience visual API reference",
+      "[[asset:interactive-visual.md]]",
+    ];
+    let cursor = -1;
+    for (const marker of order) {
+      const at = msg.indexOf(marker);
+      expect(at, `${marker} missing`).toBeGreaterThan(cursor);
+      expect(msg.indexOf(marker, at + 1), `${marker} duplicated`).toBe(-1);
+      cursor = at;
+    }
+    // Real prose never reaches the pinned run.
+    expect(msg).not.toContain("MINI-APP ASSISTANT");
   });
 });
