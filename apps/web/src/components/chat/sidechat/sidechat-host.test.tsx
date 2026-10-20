@@ -48,6 +48,7 @@ import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
+import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 
 useDomEnv();
 
@@ -297,8 +298,9 @@ describe("sidechat-host — registration (SC-13b)", () => {
       ["propose_objective", "read_context_item", "read_plan", "search_context", "todo"].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
-    // No record-proposal renderers yet — the objective card is SC-13c's.
-    expect(host.recordProposalRenderers).toEqual({});
+    // SC-13c: the objective card renders `recordType: "objective"` in place.
+    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective"]);
+    expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
   });
 
   it("carries the branch plan owner and the five meter labels", () => {

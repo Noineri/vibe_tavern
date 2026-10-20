@@ -14,8 +14,8 @@
  * segment labels, and the search/read tool captions.
  *
  * Chat-only host: no `renderEditorPane` (the shell renders the mini-app
- * assistant's chat pane), no record-proposal renderers yet (the objective
- * card is SC-13c's — the AS-5 fallback covers every recordType until then).
+ * assistant's chat pane); the objective proposal card (SC-13c) renders
+ * `recordType: "objective"`, the AS-5 fallback covers every other type.
  */
 import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
@@ -41,6 +41,7 @@ import {
   startAgentChatSession,
 } from "../../../api/agent-chat-api.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
+import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 
 /**
  * The sidechat's thread owner for the active chat + active branch (SC-14's
@@ -180,7 +181,7 @@ registerAgentHost({
     digest: "sidechat_meter_digest",
     discussion: "sidechat_meter_discussion",
   },
-  // No record-proposal renderers yet — the AS-5 fallback card covers every
-  // recordType until SC-13c registers the objective card.
-  recordProposalRenderers: {},
+  // SC-13c: the objective proposal card renders `recordType: "objective"`
+  // in place; every other recordType still falls back to the AS-5 card.
+  recordProposalRenderers: { objective: ObjectiveProposalCard },
 });

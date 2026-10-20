@@ -9,6 +9,9 @@
  * Chrome mirrors `CopilotActivityCard`/`CopilotAskCard` (neutral panel card,
  * status icon + title row, canon text ladder); the disabled Accept uses the
  * modal-footer confirm shape (which already carries `disabled:opacity-50`).
+ *
+ * forks: 1 — `ObjectiveProposalCard` (the sidechat's `recordType:
+ * "objective"` renderer, SC-13c) clones this frame.
  */
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
