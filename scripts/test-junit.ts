@@ -55,13 +55,30 @@ export function filesWithTests(report: string): ReadonlySet<string> {
  * Self-closing testcases (`<testcase ... />`) are passes by construction — a
  * failure always has body content (the assertion diff / message).
  */
+export interface FailingEntry {
+	readonly name: string;
+	/** The on-screen summary line: `fullMessage` capped at 200 characters. */
+	readonly message: string;
+	/**
+	 * The whole cleaned failure text. The cross-attribution check needs it
+	 * UNCUT: the failures that most need the «trust the stack» warning are the
+	 * long ones — the frame-runtime freshness test throws the generator's sizes
+	 * plus the first diverging byte, so its stack frame sits well past 200
+	 * characters, and a cut frame made the guard silently miss exactly the
+	 * failure it exists for (SC-8a: three full-suite runs to isolate what the
+	 * harness had re-filed under the wrong test file; fixed in SC-8b). Only the
+	 * on-screen line is capped.
+	 */
+	readonly fullMessage: string;
+}
+
 export interface FailingFile {
 	readonly file: string;
 	readonly count: number;
-	readonly entries: readonly { readonly name: string; readonly message: string }[];
+	readonly entries: readonly FailingEntry[];
 }
 
-function parseFailingEntry(block: string): { name: string; message: string } | null {
+function parseFailingEntry(block: string): FailingEntry | null {
 	if (!/<(?:failure|error)\b/.test(block)) return null;
 	const file = block.match(/\bfile="([^"]+)"/)?.[1];
 	if (file === undefined) return null;
@@ -69,7 +86,7 @@ function parseFailingEntry(block: string): { name: string; message: string } | n
 	const rawMessage = block.match(/<(?:failure|error)\b[^>]*>([\s\S]*?)<\/(?:failure|error)>/)?.[1] ?? "";
 	// XML-unescape the essentials; escaped stack frames render as &lt;at ...&gt;
 	// blobs — collapse them, keep the readable first line of the message.
-	const message = rawMessage
+	const fullMessage = rawMessage
 		.replace(/&lt;[\s\S]*?&gt;/g, " ")
 		.replace(/&amp;/g, "&")
 		.replace(/&lt;/g, "<")
@@ -78,9 +95,8 @@ function parseFailingEntry(block: string): { name: string; message: string } | n
 		.replace(/&#39;/g, "'")
 		.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
 		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, 200);
-	return { name: name === "" ? "(unnamed)" : name, message };
+		.trim();
+	return { name: name === "" ? "(unnamed)" : name, message: fullMessage.slice(0, 200), fullMessage };
 }
 
 export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
@@ -113,9 +129,12 @@ export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
  * changelogs claims a fix and the failure is intermittent, so this stays: it is
  * a diagnostic, not a workaround, and it costs nothing when the report is sane.
  * bun's on-screen tally is correct; the JUnit file path is not. When the failing
- * message's
- * first stack frame names a DIFFERENT test file than the JUnit `file=`
+ * message's first stack frame names a DIFFERENT test file than the JUnit `file=`
  * attribute, say so in the summary line — the stack is the thing to trust.
+ *
+ * `message` must be the FULL cleaned text (`fullMessage`), never the 200-char
+ * on-screen cut: long failures carry their frame at the end, and a cut frame
+ * silences this guard exactly where it matters (see `FailingEntry.fullMessage`).
  */
 export function junitCrossAttribution(file: string, message: string): string | null {
 	const frame = message.match(/\bat +(\S+\.test\.tsx?):\d+:\d+/)?.[1];
@@ -155,6 +174,8 @@ export interface JUnitTestCaseFailure {
 	readonly name: string;
 	readonly classname: string;
 	readonly message: string;
+	/** The uncapped text behind `message` (see `FailingEntry.fullMessage`). */
+	readonly fullMessage: string;
 }
 
 /** XML-unescape an attribute value (bun escapes `&<>"'` inside attributes). */
@@ -176,7 +197,7 @@ export function failedTestCases(report: string): readonly JUnitTestCaseFailure[]
 		const file = (block.match(/\bfile="([^"]+)"/)?.[1] ?? "").replaceAll("\\", "/");
 		if (file === "") continue;
 		const classname = unescapeAttribute(block.match(/\bclassname="([^"]*)"/)?.[1] ?? "");
-		failures.push({ file, name: unescapeAttribute(entry.name), classname, message: entry.message });
+		failures.push({ file, name: unescapeAttribute(entry.name), classname, message: entry.message, fullMessage: entry.fullMessage });
 	}
 	return failures;
 }
