@@ -282,8 +282,8 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 			},
 		} as unknown as StoreContainer;
 		// The scene harness never touches the objective service — a typed empty
-		// stub (one never-cast fewer: the hygiene budget was 1 over at SC-10's
-		// HEAD, fixed in SC-11's commit per the same-unit rule).
+		// stub (one never-cast fewer, a real cleanup: SC-11's new tests first
+		// pushed the count to 1246 mid-unit; the stub pays it back to 1244).
 		const unusedObjectiveService = {} as unknown as ObjectiveService;
 		return new InsightsAdapter(stores, {} as SessionRuntime, unusedObjectiveService, tracker as SceneTrackerService);
 	}
