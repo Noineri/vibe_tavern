@@ -35,7 +35,12 @@
  * even when the search mapping is absent.
  *
  * NO tools until Wave 3 — since SC-10 the search pair, since SC-11 also the
- * objective-proposal tool above. Since SC-6 the
+ * objective-proposal tool, and since SC-12 the closing pair: `todo` (the
+ * session checklist — the shared standalone factory, persisted through the
+ * thread store's `updateTodo`) and `read_plan` (the shared agent-plan tools
+ * in read-only mode — the plan owner is the thread row's chat + branch, and
+ * NO plan-write tool exists in the set), both from
+ * `kinds/sidechat/sidechat-checklist-tools.ts`. Since SC-6 the
  * assembly runs the SHELL's existing budget trim (planHistoryCompaction)
  * over the merged flow: over the shared budget the OLDEST flow entries drop
  * first, RP and discussion alike, in time order. Since SC-8c the flow
@@ -63,6 +68,7 @@
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderProfile, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
+import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type { CopilotProfile, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
@@ -89,6 +95,7 @@ import {
 } from "../context/context-search-service.js";
 import { buildSidechatSearchTools } from "../agent/kinds/sidechat/sidechat-search-tools.js";
 import { buildSidechatObjectiveTools } from "../agent/kinds/sidechat/sidechat-objective-tools.js";
+import { buildSidechatChecklistTools } from "../agent/kinds/sidechat/sidechat-checklist-tools.js";
 import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
@@ -96,7 +103,7 @@ import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "
 // (tests included — they do not go through server-runtime).
 import { resolveBuiltinSidechatOocProfile } from "../agent/kinds/sidechat-ooc-kind.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../interactive/copilot/copilot-limits.js";
-import { syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
+import { RpSyncThreadNotChatOwnedError, syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
 import type { RpBranchView } from "./rp-branch-view.js";
 import {
   loadSidechatContext,
@@ -156,6 +163,14 @@ export interface SidechatStreamDeps {
    *  records; its own skills come through `@` pins, SC-5). Absent (tests,
    *  legacy harnesses) → the stream serves no search tools. */
   readonly searchStoreReads?: ContextSearchStoreReads;
+  /** SC-12: the shared agent-plan store's READ seam for `read_plan`. The
+   *  sidechat's plan access is read-only — the branch-plan write belongs to
+   *  the director kind (owner ruling 7), so no `plan` tool exists — and the
+   *  owner the stream reads through is the THREAD ROW's chat + branch,
+   *  never the request. */
+  readonly agentPlans: {
+    get(owner: AgentPlanOwner): Promise<AgentPlan | null>;
+  };
   /** SC-8c: the kind's own compaction service — present → the stream wires
    *  the loop's autoCompact hook to the sidechat rule (the discussion
    *  against the room left after the static context and the RP layer).
@@ -592,7 +607,7 @@ export async function* streamSidechatTurn(
       return assembled;
     },
 
-    // ── SC-10 + SC-11: the kind's tools. The search pair
+    // ── SC-10 + SC-11 + SC-12: the kind's tools. The search pair
     //  (kinds/sidechat/sidechat-search-tools.ts) over a per-turn session:
     //  the ONE extracted store-reads mapping (NO Co-Author skill catalog —
     //  the sidechat's skills come through `@` pins, SC-5), the chat's active
@@ -600,12 +615,21 @@ export async function* streamSidechatTurn(
     //  branch read or dry RP assembly). SC-11 adds `propose_objective`
     //  (kinds/sidechat/sidechat-objective-tools.ts), which needs no
     //  per-turn state and therefore rides the same profile gating even
-    //  when the search mapping is absent. Served only when the RESOLVED
-    //  profile's tool set enables them (a tool landed with its toggle off is
-    //  not landed); the ownership narrowing is the same corruption guard
-    //  resolveProfile uses. ──
+    //  when the search mapping is absent. SC-12 closes the set: `todo`
+    //  (the shared session-checklist factory, persisted through the
+    //  thread store's `updateTodo` — kinds/sidechat/sidechat-checklist-
+    //  tools.ts) and `read_plan` (the shared plan tools READ-ONLY over the
+    //  thread row's own chat + branch — no plan-write tool is ever built).
+    //  Served only when the RESOLVED profile's tool set enables them (a tool
+    //  landed with its toggle off is not landed); the ownership narrowing
+    //  is the same corruption guard resolveProfile uses. ──
     buildTools: ({ thread, agentProfile }) => {
       if (!isChatOwnedAgentThread(thread)) return {};
+      // A null branchId on a chat-owned row is corruption — loadContext's
+      // sync (SC-2c) already refused it before this seam, so this throw is
+      // unreachable in practice; it narrows the type for the plan owner
+      // below (never read through, same guard as the context loader).
+      if (thread.branchId === null) throw new RpSyncThreadNotChatOwnedError(thread.id);
       const search =
         deps.searchStoreReads !== undefined
           ? buildSidechatSearchTools({
@@ -623,7 +647,22 @@ export async function* streamSidechatTurn(
               toolSet: agentProfile.toolSet,
             })
           : {};
-      return { ...search, ...buildSidechatObjectiveTools({ toolSet: agentProfile.toolSet }) };
+      const checklist = buildSidechatChecklistTools({
+        toolSet: agentProfile.toolSet,
+        // The plan owner is the THREAD ROW's own pair — never the request
+        // (SC-12's contract; the same row the sync/context seams read).
+        owner: { chatId: thread.chatId, branchId: thread.branchId },
+        // updateTodo(threadId, items) is the store's structural twin of the
+        // checklist factory's `(items) => Promise<void>` dep (the same seam
+        // the experience kind wires).
+        saveTodo: (items) => deps.store.updateTodo(thread.id, items),
+        agentPlans: deps.agentPlans,
+      });
+      return {
+        ...search,
+        ...buildSidechatObjectiveTools({ toolSet: agentProfile.toolSet }),
+        ...checklist,
+      };
     },
   };
 

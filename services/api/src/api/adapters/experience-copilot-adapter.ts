@@ -422,6 +422,9 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // Co-Author skill catalog — the sidechat's search session indexes the
       // library + the branch only (its own skills come through `@` pins).
       searchStoreReads: buildContextSearchStoreReads(this.stores),
+      // SC-12: the shared agent-plan store's READ seam — `read_plan` over the
+      // thread row's own branch plan (read-only; no plan-write tool exists).
+      agentPlans: this.stores.agentPlans,
       // SC-8c: the sidechat's own compaction service — the stream wires the
       //  auto hook to its discussion-against-room rule.
       ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),

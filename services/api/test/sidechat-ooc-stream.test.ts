@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
-import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type { RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import {
 	createStoreContainer,
 	type ProviderProfile,
@@ -11,6 +11,7 @@ import {
 } from "@vibe-tavern/db";
 import {
 	brandId,
+	type AgentPlan,
 	type ChatBranchId,
 	type ChatId,
 	type ExperienceCopilotThreadId,
@@ -185,6 +186,9 @@ beforeAll(async () => {
 		// SC-10: the ONE extracted store-reads mapping over the real stores, no
 		// Co-Author skill catalog — the sidechat's production wiring.
 		searchStoreReads: buildContextSearchStoreReads(stores),
+		// SC-12: the shared plan store's READ seam — read_plan over the thread
+		// row's own branch plan (the production wiring, real store).
+		agentPlans: stores.agentPlans,
 	};
 });
 
@@ -802,9 +806,15 @@ describe("streamSidechatTurn search tools (SC-10)", () => {
 		const events = (await drainTurn(threadId, "Find that lantern scene")).map((c) => c.event);
 		expect(events).toContain("finish");
 		// SC-10's toggles are ON in the kind's default set and the builtin seed,
-		// and SC-11 flipped propose_objective — all three are served, nothing
-		// else.
-		expect(Object.keys(capturedTools).sort()).toEqual(["propose_objective", "read_context_item", "search_context"]);
+		// SC-11 flipped propose_objective, and SC-12 flipped todo + read_plan —
+		// all five Wave-3 tools are served, nothing else.
+		expect(Object.keys(capturedTools).sort()).toEqual([
+			"propose_objective",
+			"read_context_item",
+			"read_plan",
+			"search_context",
+			"todo",
+		]);
 
 		const results = await searchTools("lantern");
 		const hit = results.find((r) => r.type === "rp-message");
@@ -881,6 +891,11 @@ describe("streamSidechatTurn search tools (SC-10)", () => {
 		).map((c) => c.event);
 		expect(events).toContain("finish");
 		expect(capturedTools).toEqual({});
+		// SC-12 extension: the checklist + branch-plan-read pair is gated by
+		// the SAME per-key filter — with the toggles off neither is served
+		// (named, beside the set-wide `{}` pin above).
+		expect(capturedTools["todo"]).toBeUndefined();
+		expect(capturedTools["read_plan"]).toBeUndefined();
 	});
 
 	it("other branches never match — the session indexes the thread's branch only", async () => {
@@ -957,5 +972,83 @@ describe("streamSidechatTurn objective proposal tool (SC-11)", () => {
 			resolveProfileForChat: async () => searchOnly,
 		});
 		expect(Object.keys(capturedTools).sort()).toEqual(["read_context_item", "search_context"]);
+	});
+});
+
+// ─── SC-12: the checklist + branch-plan read ──────────────────────
+
+/** A minimal valid branch plan (the domain's normalizeAgentPlan shape). */
+const branchPlan = (goal: string): AgentPlan => ({
+	goal,
+	constraints: [],
+	tasks: [{ id: "t1", title: "First step", body: "Do it.", status: "pending" }],
+});
+
+describe("streamSidechatTurn checklist + branch-plan read (SC-12)", () => {
+	it("serves todo and read_plan on the seed's toggles and NEVER a plan-write tool", async () => {
+		const { threadId } = await makeSidechatThread("The checklist scene.");
+		await drainTurn(threadId, "What is on the plan?");
+		// The unit's pair is served on the default seed's toggles...
+		expect(capturedTools["todo"]).toBeDefined();
+		expect(capturedTools["read_plan"]).toBeDefined();
+		// ...and the shared plan tools' WRITE arm ("plan" — the non-readOnly
+		// factory entry) is absent: readOnly builds no plan-write tool, so no
+		// branch-plan write can ever reach the sidechat model.
+		expect(capturedTools["plan"]).toBeUndefined();
+	});
+
+	it("read_plan returns THE THREAD'S OWN branch plan — a foreign branch's plan is not returned", async () => {
+		const own = await makeSidechatThread("OWN-BRANCH the mill wheel turns.");
+		const foreign = await makeSidechatThread("FOREIGN-BRANCH the ferry waits.");
+		await stores.agentPlans.save(
+			{ kind: "chatBranch", chatId: own.chatId, branchId: own.branchId },
+			branchPlan("OWN-GOAL settle the millwright's debt"),
+		);
+		await stores.agentPlans.save(
+			{ kind: "chatBranch", chatId: foreign.chatId, branchId: foreign.branchId },
+			branchPlan("FOREIGN-GOAL cross the estuary"),
+		);
+
+		// Each thread's own turn (the REAL buildTools seam): the owner is the
+		// THREAD ROW's chat + branch, so each read returns its own branch's
+		// plan — never the other's.
+		await drainTurn(own.threadId, "Read our plan");
+		const ownResult = (await capturedTools["read_plan"]!.execute({})) as AgentPlan;
+		expect(ownResult.goal).toBe("OWN-GOAL settle the millwright's debt");
+
+		await drainTurn(foreign.threadId, "Read our plan");
+		const foreignResult = (await capturedTools["read_plan"]!.execute({})) as AgentPlan;
+		expect(foreignResult.goal).toBe("FOREIGN-GOAL cross the estuary");
+	});
+
+	it("a todo call persists the full rewritten list through updateTodo and returns the shared envelope", async () => {
+		const { threadId } = await makeSidechatThread("The checklist scene.");
+		await drainTurn(threadId, "Track the session steps");
+		const todo = capturedTools["todo"];
+		if (todo === undefined) throw new Error("fixture: todo was not served");
+
+		const items: CopilotTodoItem[] = [
+			{ title: "Outline the tavern scene", status: "active" },
+			{ title: "List open threads", status: "pending" },
+			{ title: "Draft the recap", status: "completed" },
+		];
+		const result = (await todo.execute({ items })) as {
+			ok: boolean;
+			items: CopilotTodoItem[];
+			activeTitle?: string;
+			remaining?: number;
+		};
+		// The shared factory's envelope, byte-identical (SC-13 renders through
+		// the same parseAgentToolOutput path the experience panel uses).
+		expect(result).toEqual({
+			ok: true,
+			items,
+			activeTitle: "Outline the tavern scene",
+			remaining: 2,
+		});
+		// Persistence went through the thread store's updateTodo: the row's
+		// own checklist column carries the full rewritten list.
+		const thread = await stores.experienceCopilot.getById(threadId);
+		expect(thread?.todo).toEqual(items);
 	});
 });
