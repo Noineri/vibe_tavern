@@ -457,22 +457,6 @@ interface ComfyHistoryOutputImage {
   type?: string;
 }
 
-/** Validate a free W×H integer (positive, finite, integral). */
-function requirePositiveInt(name: string, value: number): number {
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-    throw new ComfyImageGenSizeError(
-      `ComfyUI image generation accepts a positive integer ${name} — got ${value}`,
-    );
-  }
-  return value;
-}
-
-/** A set string field: trimmed and non-empty, else undefined. */
-function setOrUndefined(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 /** Resolve the graph seed: unset or the -1 "random" sentinel becomes a
  *  client-side random (ComfyUI has no server sentinel; the resolved value
  *  is returned so the caller can report it as the exact used seed). */
@@ -508,8 +492,24 @@ function buildComfyCommonNodes(
   refs: { model: [string, number]; clip: [string, number] },
 ): { graph: ComfyWorkflowGraph; resolved: ComfySamplerResolved } {
   const seed = resolveComfySeed(request.seed);
-  const width = request.width !== undefined ? requirePositiveInt("width", request.width) : undefined;
-  const height = request.height !== undefined ? requirePositiveInt("height", request.height) : undefined;
+  const width =
+    request.width !== undefined
+      ? requirePositiveInt(
+          "width",
+          request.width,
+          "ComfyUI image generation",
+          ComfyImageGenSizeError,
+        )
+      : undefined;
+  const height =
+    request.height !== undefined
+      ? requirePositiveInt(
+          "height",
+          request.height,
+          "ComfyUI image generation",
+          ComfyImageGenSizeError,
+        )
+      : undefined;
   const clipSkip = request.clipSkip;
   const steps = request.steps ?? COMFY_NODE_DEFAULTS.steps;
   const cfg = request.cfgScale ?? COMFY_NODE_DEFAULTS.cfg;
@@ -1120,6 +1120,8 @@ async function comfyNodeClassExists(
     `${endpoint}/object_info/${encodeURIComponent(nodeClass)}`,
     { method: "GET", headers: { Accept: "application/json" }, signal },
     "node presence probe",
+    "ComfyUI image-gen",
+    ComfyImageGenError,
   );
   if (!response.ok) return false;
   const parsed: unknown = await response.json().catch(() => null);
@@ -1173,52 +1175,6 @@ function normalizeComfyBaseUrl(baseUrl: string): string {
     normalized = normalized.slice(0, -"/prompt".length);
   }
   return normalized.replace(/\/+$/, "");
-}
-
-/** Sniff the MIME type from image bytes by format signature (png / jpeg /
- *  webp) — /view serves without a reliable Content-Type; PNG is the
- *  SaveImage default and the fallback. */
-function sniffImageMime(bytes: Buffer): string | null {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
-/** Await a fetch call through the injected seam. Transport-level failures
- *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
- *  which is rethrown untouched (the abort contract of the a1111 twin). */
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new ComfyImageGenError(
-      `ComfyUI image-gen ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
 }
 
 /** The completion-poll cadence — transport mechanics, not a generation
@@ -1330,6 +1286,8 @@ async function waitForPromptCompletion(
       `${endpoint}/history/${encodeURIComponent(promptId)}`,
       { method: "GET", headers: { Accept: "application/json" }, signal },
       "history poll",
+      "ComfyUI image-gen",
+      ComfyImageGenError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -1514,6 +1472,8 @@ async function fetchComfyComboValues(
     `${endpoint}/object_info/${encodeURIComponent(nodeName)}`,
     { method: "GET", headers: { Accept: "application/json" }, signal },
     "node input list",
+    "ComfyUI image-gen",
+    ComfyImageGenError,
   );
   if (!response.ok) {
     const excerpt = await readProviderErrorBody(response);
@@ -1551,6 +1511,8 @@ async function fetchComfyFolderNames(
     `${endpoint}/models/${encodeURIComponent(folder)}`,
     { method: "GET", headers: { Accept: "application/json" }, signal },
     "sidecar folder list",
+    "ComfyUI image-gen",
+    ComfyImageGenError,
   );
   if (!response.ok) {
     const excerpt = await readProviderErrorBody(response);
@@ -1574,6 +1536,7 @@ async function fetchComfyFolderNames(
 // legacy export name stays for the pinned test surface.
 export { normalizeModelFamily as normalizeComfyFamily } from "../model-family.js";
 import { readEmbeddedFamilyValue, normalizeModelFamily } from "../model-family.js";
+import { fetchOrWrap, requirePositiveInt, setOrUndefined, sniffImageMime } from "./backend-helpers.js";
 
 /** Sidecar stores after the embedded metadata misses, in precedence order
  *  (CG-A3, live-verified): `.cm-info.json` (Stability Matrix's store —
@@ -1605,6 +1568,8 @@ async function fetchComfyEmbeddedFamily(
       `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
       { method: "GET", headers: { Accept: "application/json" }, signal },
       "model metadata",
+      "ComfyUI image-gen",
+      ComfyImageGenError,
     );
     if (!response.ok) return undefined;
     parsed = await response.json().catch(() => undefined);
@@ -1634,6 +1599,8 @@ async function fetchComfyFolderRoots(
       `${endpoint}/internal/folder_paths`,
       { method: "GET", headers: { Accept: "application/json" }, signal },
       "folder map",
+      "ComfyUI image-gen",
+      ComfyImageGenError,
     );
     if (!response.ok) return undefined;
     parsed = await response.json().catch(() => undefined);
@@ -1672,6 +1639,8 @@ async function fetchComfyEmbeddedFamilyForDetection(
     `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
     { method: "GET", headers: { Accept: "application/json" }, signal },
     "model metadata",
+    "ComfyUI image-gen",
+    ComfyImageGenError,
   );
   if (response.status === 404) return undefined;
   if (!response.ok) {
@@ -1705,6 +1674,8 @@ async function fetchComfyFolderRootsForDetection(
       `${endpoint}/internal/folder_paths`,
       { method: "GET", headers: { Accept: "application/json" }, signal },
       "folder map",
+      "ComfyUI image-gen",
+      ComfyImageGenError,
     );
     if (response.status === 404) return {};
     if (!response.ok) {
@@ -2129,6 +2100,8 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             signal: request.signal,
           },
           "generation queue",
+          "ComfyUI image-gen",
+          ComfyImageGenError,
         );
         if (!queuedResponse.ok) {
           const excerpt = await readProviderErrorBody(queuedResponse);
@@ -2193,6 +2166,8 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           viewUrl,
           { method: "GET", headers: { Accept: "image/*" }, signal: request.signal },
           "image download",
+          "ComfyUI image-gen",
+          ComfyImageGenError,
         );
         if (!viewResponse.ok) {
           const excerpt = await readProviderErrorBody(viewResponse);
@@ -2205,6 +2180,8 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         if (data.length === 0) {
           throw new ComfyImageGenError("ComfyUI image download returned zero bytes");
         }
+        // /view serves without a reliable Content-Type; PNG is the
+        // SaveImage default and the fallback.
         images.push({ data, mimeType: sniffImageMime(data) ?? "image/png" });
       }
 
@@ -2459,6 +2436,8 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         `${cfg.endpoint}/interrupt`,
         { method: "POST", headers: { Accept: "application/json" }, signal },
         "interrupt",
+        "ComfyUI image-gen",
+        ComfyImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);

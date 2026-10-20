@@ -54,6 +54,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -175,29 +176,6 @@ function parseConfig(config: ImageGenAdapterConfig): OpenRouterImageGenConfig {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-/** Await a fetch call through the injected seam. Transport-level failures
- *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
- *  which is rethrown untouched so cancellation stays distinguishable from
- *  a transport failure (the abort contract of the ai-assistant abort fix). */
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new OpenRouterImageGenError(
-      `OpenRouter image-gen ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
 
 /** Pull `choices[0].message.images[].image_url.url` — the documented image
  *  container. Fail closed with a typed error when the container is absent,
@@ -335,6 +313,8 @@ export const openRouterImageGenFactory = (config: ImageGenAdapterConfig): ImageG
           signal: request.signal,
         },
         "generation",
+        "OpenRouter image-gen",
+        OpenRouterImageGenError,
       );
 
       if (!response.ok) {
@@ -363,7 +343,14 @@ export const openRouterImageGenFactory = (config: ImageGenAdapterConfig): ImageG
         // Server-side byte download through the seam — Bun's fetch resolves
         // data: URLs natively, so documented data URLs and defensive remote
         // URLs take the same path (the cloud-URL-expiry rule).
-        const download = await fetchOrWrap(cfg.fetch, url, { method: "GET", signal: request.signal }, "image download");
+        const download = await fetchOrWrap(
+          cfg.fetch,
+          url,
+          { method: "GET", signal: request.signal },
+          "image download",
+          "OpenRouter image-gen",
+          OpenRouterImageGenError,
+        );
         if (!download.ok) {
           throw new OpenRouterImageGenError(
             `OpenRouter image-gen image download failed with HTTP ${download.status}`,
@@ -396,6 +383,8 @@ export const openRouterImageGenFactory = (config: ImageGenAdapterConfig): ImageG
           signal,
         },
         "model list",
+        "OpenRouter image-gen",
+        OpenRouterImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);

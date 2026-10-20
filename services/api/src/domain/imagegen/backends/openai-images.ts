@@ -73,6 +73,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -237,37 +238,6 @@ function mapSizeToString(
   );
 }
 
-// ─── MIME sniffing ───────────────────────────────────────────────────────────
-
-/** Sniff the MIME type from image bytes by format signature. The card's
- *  `output_format` surface is png|jpeg|webp and `b64_json` entries carry no
- *  content type — the bytes themselves are the only source. Returns null
- *  when no signature matches (caller falls back to content-type /
- *  octet-stream). These are format parsers, not tunable parameters. */
-function sniffImageMime(bytes: Buffer): string | null {
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  // JPEG: FF D8 FF
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  // WebP: "RIFF" <4-byte size> "WEBP"
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 interface OpenAiImagesConfig {
@@ -302,30 +272,6 @@ function parseConfig(label: string, config: ImageGenAdapterConfig): OpenAiImages
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-/** Await a fetch call through the injected seam. Transport-level failures
- *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
- *  which is rethrown untouched so cancellation stays distinguishable from
- *  a transport failure (the abort contract of the ai-assistant abort fix). */
-async function fetchOrWrap(
-  label: string,
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new OpenAiImagesError(
-      `${label} ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
 
 // ─── Response parsing ────────────────────────────────────────────────────────
 
@@ -529,7 +475,6 @@ export function makeOpenAiImagesFamilyBackend(
       }
 
       const response = await fetchOrWrap(
-        label,
         cfg.fetch,
         `${cfg.endpoint}/images/generations`,
         {
@@ -539,6 +484,8 @@ export function makeOpenAiImagesFamilyBackend(
           signal: request.signal,
         },
         "generation",
+        label,
+        OpenAiImagesError,
       );
 
       if (!response.ok) {
@@ -555,7 +502,10 @@ export function makeOpenAiImagesFamilyBackend(
       for (const entry of entries) {
         if (entry.data !== undefined) {
           // b64_json decodes in-process — no second HTTP request (the card:
-          // GPT Image always delivers bytes inline).
+          // GPT Image always delivers bytes inline). The output_format
+          // surface is png|jpeg|webp and the entries carry no content type —
+          // the bytes themselves are the only source; null falls back to
+          // octet-stream.
           images.push({
             data: entry.data,
             mimeType: sniffImageMime(entry.data) ?? "application/octet-stream",
@@ -568,11 +518,12 @@ export function makeOpenAiImagesFamilyBackend(
         // or short across the family). Bun's fetch resolves data: URLs
         // natively, same path.
         const download = await fetchOrWrap(
-          label,
           cfg.fetch,
           entry.url ?? "",
           { method: "GET", signal: request.signal },
           "image download",
+          label,
+          OpenAiImagesError,
         );
         if (!download.ok) {
           throw new OpenAiImagesError(
@@ -607,7 +558,6 @@ export function makeOpenAiImagesFamilyBackend(
         return options.staticModels.map((m) => ({ ...m }));
       }
       const response = await fetchOrWrap(
-        label,
         cfg.fetch,
         `${cfg.endpoint}/${modelsPath}`,
         {
@@ -616,6 +566,8 @@ export function makeOpenAiImagesFamilyBackend(
           signal,
         },
         "model list",
+        label,
+        OpenAiImagesError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);

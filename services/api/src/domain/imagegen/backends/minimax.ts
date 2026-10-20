@@ -64,6 +64,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -115,29 +116,6 @@ export const MINIMAX_ASPECT_RATIOS: ReadonlyMap<string, string> = new Map([
  *  profile default, the minimax-tts documented-default precedent). */
 const DEFAULT_MODEL = "image-01";
 
-// ─── MIME sniffing (the shared family helper's logic, local twin) ───────────
-
-function sniffImageMime(bytes: Buffer): string | null {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 interface MinimaxImageConfig {
@@ -174,27 +152,6 @@ function parseConfig(config: ImageGenAdapterConfig): MinimaxImageConfig {
 }
 
 // ─── HTTP + response parsing ─────────────────────────────────────────────────
-
-/** Await a fetch call through the injected seam; the caller's own abort is
- *  rethrown untouched (the shared abort contract). */
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new MinimaxImageError(
-      `MiniMax ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
 
 /** Parse a JSON body and enforce MiniMax's in-band status: failures ride as
  *  base_resp.status_code !== 0 INSIDE HTTP 200 (the TTS twin's
@@ -278,6 +235,8 @@ export const minimaxImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
           signal: request.signal,
         },
         "generation",
+        "MiniMax",
+        MinimaxImageError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -312,6 +271,8 @@ export const minimaxImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
             entry,
             { method: "GET", signal: request.signal },
             "image download",
+            "MiniMax",
+            MinimaxImageError,
           );
           if (!download.ok) {
             throw new MinimaxImageError(
@@ -352,6 +313,8 @@ export const minimaxImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
         `${cfg.endpoint}/v1/models`,
         { method: "GET", headers: buildHeaders(cfg.apiKey), signal },
         "model list",
+        "MiniMax",
+        MinimaxImageError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);

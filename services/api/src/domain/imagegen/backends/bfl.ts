@@ -68,6 +68,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -165,23 +166,6 @@ function parseConfig(config: ImageGenAdapterConfig): BflImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new BflImageError(
-      `BFL ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 /** BFL's documented error convention: `{detail: string}` (live-probed on
  *  the auth ladder). Best-effort — non-object bodies fall back to the
  *  status code alone. */
@@ -213,6 +197,8 @@ export async function pollBflTask(params: {
         signal: params.signal,
       },
       "task poll",
+      "BFL",
+      BflImageError,
     );
     if (!response.ok) {
       const detail = await readDetail(response);
@@ -285,6 +271,8 @@ export const bflImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend 
           signal: request.signal,
         },
         "generation",
+        "BFL",
+        BflImageError,
       );
       if (!submitResponse.ok) {
         const detail = await readDetail(submitResponse);
@@ -325,6 +313,8 @@ export const bflImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend 
         sample,
         { method: "GET", signal: request.signal },
         "image download",
+        "BFL",
+        BflImageError,
       );
       if (!download.ok) {
         throw new BflImageError(`BFL image download failed with HTTP ${download.status}`, {

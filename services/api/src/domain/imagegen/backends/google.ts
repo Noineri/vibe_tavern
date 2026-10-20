@@ -68,6 +68,7 @@ import type {
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -193,25 +194,6 @@ function parseConfig(config: ImageGenAdapterConfig): GoogleImageConfig {
 
 // ─── HTTP + response parsing ─────────────────────────────────────────────────
 
-/** Await a fetch call through the injected seam; the caller's own abort is
- *  rethrown untouched (the shared abort contract). */
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new GoogleImageError(
-      `Google ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 /** Google's error body — `{error: {code, message, status, details}}`,
  *  ARRAY-wrapped on the interactions endpoint (live 2026-09-18). Returns
  *  the inner error object, or null when the payload is not a recognizable
@@ -290,29 +272,6 @@ function decodeImage(block: ParsedImageBlock): ImageGenGeneratedImage {
   return { data, mimeType };
 }
 
-/** MIME sniffing for responses that omit mime_type (the family helper's
- *  logic, local twin). */
-function sniffImageMime(bytes: Buffer): string | null {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
 // ─── Registration ────────────────────────────────────────────────────────────
 
 registerImageGenBackend(
@@ -350,6 +309,8 @@ registerImageGenBackend(
           interactionsUrl,
           { method: "POST", headers: googleHeaders(), body: JSON.stringify(body), signal: request.signal },
           "image generation",
+          "Google",
+          GoogleImageError,
         );
         if (!response.ok) {
           throw await toGoogleHttpError(response, "image generation");
@@ -376,6 +337,8 @@ registerImageGenBackend(
           `${parsed.endpoint}/v1beta/models`,
           { method: "GET", headers: googleHeaders(), signal },
           "model listing",
+          "Google",
+          GoogleImageError,
         );
         if (!response.ok) {
           throw await toGoogleHttpError(response, "model listing");

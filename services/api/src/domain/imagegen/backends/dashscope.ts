@@ -77,6 +77,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -160,25 +161,6 @@ function parseConfig(config: ImageGenAdapterConfig): DashscopeImageConfig {
 }
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
-
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new DashscopeImageError(
-      `DashScope ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
 
 /** Read the `output` object from a 2xx DashScope body, failing closed on
  *  the documented error convention (`code` + `message` at the root for
@@ -265,6 +247,8 @@ export async function pollDashScopeTask(params: {
       `${params.endpoint}/tasks/${params.taskId}`,
       { method: "GET", headers: buildHeaders(params.apiKey), signal: params.signal },
       "task poll",
+      "DashScope",
+      DashscopeImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -373,6 +357,8 @@ export const dashscopeImageFactory = (config: ImageGenAdapterConfig): ImageGenBa
           signal: request.signal,
         },
         "generation",
+        "DashScope",
+        DashscopeImageError,
       );
       if (!submitResponse.ok) {
         const excerpt = await readProviderErrorBody(submitResponse);
@@ -417,6 +403,8 @@ export const dashscopeImageFactory = (config: ImageGenAdapterConfig): ImageGenBa
           url,
           { method: "GET", signal: request.signal },
           "image download",
+          "DashScope",
+          DashscopeImageError,
         );
         if (!download.ok) {
           throw new DashscopeImageError(

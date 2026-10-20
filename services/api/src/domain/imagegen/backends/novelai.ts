@@ -39,6 +39,7 @@ import { registerImageGenBackend } from "../imagegen-registry.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 import { providerError } from "../../../shared/errors.js";
+import { fetchOrWrap, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -221,27 +222,6 @@ function novelAiHeaders(apiKey: string): Record<string, string> {
   };
 }
 
-function sniffImageMime(bytes: Buffer): string | null {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
 function buildBody(request: ImageGenGenerateRequest, model: NovelAiModelId): Record<string, unknown> {
   const defaults = NOVELAI_MODEL_DEFAULTS[model];
   const negative = request.negativePrompt ?? "";
@@ -312,23 +292,6 @@ function parseGenerateResponse(payload: unknown): { data: Buffer; seed?: number 
   };
 }
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new NovelAiImageError(
-      `NovelAI ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export const novelAiImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend => {
@@ -347,6 +310,8 @@ export const novelAiImageFactory = (config: ImageGenAdapterConfig): ImageGenBack
           signal: request.signal,
         },
         "image generation",
+        "NovelAI",
+        NovelAiImageError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);

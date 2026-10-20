@@ -133,6 +133,7 @@ import type {
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { normalizeModelFamily, readEmbeddedFamilyValue } from "../model-family.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap, requirePositiveInt, setOrUndefined, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -194,74 +195,6 @@ function buildSdApiHeaders(apiKey: string, withBody: boolean): Record<string, st
     headers.Authorization = `Basic ${Buffer.from(apiKey, "utf-8").toString("base64")}`;
   }
   return headers;
-}
-
-/** A set string field: trimmed and non-empty, else undefined (unset fields
- *  are omitted from the wire body — the card's server-defaults rule). */
-function setOrUndefined(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-/** Validate a free W×H integer (positive, finite, integral). */
-function requirePositiveInt(name: string, value: number): number {
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-    throw new A1111ImageGenSizeError(
-      `A1111 image generation accepts a positive integer ${name} — got ${value}`,
-    );
-  }
-  return value;
-}
-
-/** Sniff the MIME type from image bytes by format signature (png / jpeg /
- *  webp). The card documents the txt2img response as b64 PNG — the sniff
- *  tolerates fork deltas (jpeg outputs), and the fallback is the card's
- *  documented format. These are format parsers, not tunable parameters. */
-function sniffImageMime(bytes: Buffer): string | null {
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  // JPEG: FF D8 FF
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  // WebP: "RIFF" <4-byte size> "WEBP"
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
-/** Await a fetch call through the injected seam. Transport-level failures
- *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
- *  which is rethrown untouched so cancellation stays distinguishable from
- *  a transport failure (the abort contract of the ai-assistant abort fix). */
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new A1111ImageGenError(
-      `A1111 image-gen ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
 }
 
 // ─── Response parsing ────────────────────────────────────────────────────────
@@ -570,8 +503,22 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       if (request.cfgRescale !== undefined && request.cfgRescale > 0) body.rescale_cfg = request.cfgRescale;
       // Free W×H: validated positive integers, sent INDEPENDENTLY (unlike
       // the cloud twins' coupled complete-size rule).
-      if (request.width !== undefined) body.width = requirePositiveInt("width", request.width);
-      if (request.height !== undefined) body.height = requirePositiveInt("height", request.height);
+      if (request.width !== undefined) {
+        body.width = requirePositiveInt(
+          "width",
+          request.width,
+          "A1111 image generation",
+          A1111ImageGenSizeError,
+        );
+      }
+      if (request.height !== undefined) {
+        body.height = requirePositiveInt(
+          "height",
+          request.height,
+          "A1111 image generation",
+          A1111ImageGenSizeError,
+        );
+      }
       // Seed passes through verbatim — -1 is the dialect's own "random"
       // sentinel, resolved server-side.
       if (request.seed !== undefined) body.seed = request.seed;
@@ -647,6 +594,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal: request.signal,
         },
         "generation",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
 
       if (!response.ok) {
@@ -667,6 +616,9 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         }
         images.push({
           data,
+          // The card documents the txt2img response as b64 PNG — the sniff
+          // tolerates fork deltas (jpeg outputs), and the fallback is the
+          // card's documented format.
           mimeType: sniffImageMime(data) ?? "image/png",
         });
       }
@@ -688,6 +640,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "model list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -710,6 +664,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "sampler list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -732,6 +688,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "scheduler list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -754,6 +712,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "lora list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -776,6 +736,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "upscaler list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -801,6 +763,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "VAE list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -831,6 +795,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "extension list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -853,6 +819,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "progress",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -875,6 +843,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "interrupt",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -928,6 +898,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "model list",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -992,6 +964,8 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         },
         "model preset detection",
+        "A1111 image-gen",
+        A1111ImageGenError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
