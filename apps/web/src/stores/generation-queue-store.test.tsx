@@ -42,6 +42,13 @@ function enq(chatId: string, messageId: string, model: string) {
   return useGenerationQueueStore.getState().enqueueJob({ chatId, messageId, model, promptPresetId: null });
 }
 
+function setVisibleTarget(variantIds: string[]): void {
+  useSnapshotStore.setState({
+    messageOrder: ["m1"],
+    messagesById: { m1: { id: "m1", variants: variantIds.map((id) => ({ id })) } } as unknown as Record<string, AppMessage>,
+  });
+}
+
 describe("Q3 store: sequential state machine", () => {
   beforeEach(resetStore);
 
@@ -152,6 +159,7 @@ function BatchSummarySubscriber({ chatId, onRead }: { chatId: string; onRead: (v
 describe("Q3 store: narrow selectors do not over-render", () => {
   beforeEach(() => {
     resetStore();
+    useSnapshotStore.setState({ messageOrder: [], messagesById: {} });
   });
 
   test("useQueueCount subscriber does NOT re-render when a job's error changes", () => {
@@ -221,7 +229,7 @@ describe("Q3 store: narrow selectors do not over-render", () => {
     expect(seen).toBe(0);
   });
 
-  test("owner scenarios count server variants plus records exactly once and hide only without a visible batch target", () => {
+  test("owner scenario 1 counts one persisted variant plus running and pending records", () => {
     useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
     const regenerate = useGenerationQueueStore.getState().addRecord("c1", {
       messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B", presetId: null,
@@ -231,26 +239,97 @@ describe("Q3 store: narrow selectors do not over-render", () => {
     });
     useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "frozen-c", promptPresetId: "preset-c", recordId: queued });
     act(() => {
-      useSnapshotStore.setState({
-        messageOrder: ["m1"],
-        messagesById: { m1: { id: "m1", variants: [{ id: "a" }] } } as unknown as Record<string, AppMessage>,
-      });
+      setVisibleTarget(["a"]);
     });
     let seen!: ReturnType<typeof useGenerationBatchSummary>;
-    const { rerender } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
 
     expect(seen).toEqual({ visible: true, summary: { done: 1, failed: 0, running: 1, pending: 1, total: 3 } });
     expect(useGenerationQueueStore.getState().batchesByChat.c1?.variantIdsAtStart).toEqual(["a"]);
     expect(useGenerationQueueStore.getState().recordsByChat.c1?.find((record) => record.id === regenerate)).toMatchObject({ origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B" });
+    expect(useGenerationQueueStore.getState().recordsByChat.c1?.find((record) => record.id === queued)).toMatchObject({ origin: "queue", model: "frozen-c", presetId: "preset-c" });
+    unmount();
+  });
 
-    act(() => {
-      useSnapshotStore.setState({ messagesById: { m1: { id: "m1", variants: [{ id: "a" }, { id: "b" }, { id: "c" }] } } as unknown as Record<string, AppMessage> });
+  test("owner scenario 2 counts three persisted variants plus running and pending records", () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a", "b", "c"]);
+    useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B", presetId: null,
     });
-    rerender(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
-    expect(seen.summary).toEqual({ done: 3, failed: 0, running: 1, pending: 1, total: 5 });
+    useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "pending", model: "frozen-c", presetName: "Preset C", presetId: "preset-c",
+    });
+    act(() => {
+      setVisibleTarget(["a", "b", "c"]);
+    });
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(seen).toEqual({ visible: true, summary: { done: 3, failed: 0, running: 1, pending: 1, total: 5 } });
+    expect(useGenerationQueueStore.getState().batchesByChat.c1?.variantIdsAtStart).toEqual(["a", "b", "c"]);
+    unmount();
+  });
 
-    act(() => { useSnapshotStore.setState({ messageOrder: [] }); });
-    rerender(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+  test("a plain regenerate record without a batch is hidden", () => {
+    useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "regenerate", status: "running", model: "resolved", presetName: null, presetId: null,
+    });
+    setVisibleTarget(["a"]);
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
     expect(seen.visible).toBe(false);
+    unmount();
+  });
+
+  test("removing the batch target from message order hides it", () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
+    setVisibleTarget(["a"]);
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(seen.visible).toBe(true);
+    act(() => { useSnapshotStore.setState({ messageOrder: [] }); });
+    expect(seen.visible).toBe(false);
+    unmount();
+  });
+
+  test("a drained batch stays visible and counts persisted variants until reset", async () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a", "b"]);
+    setVisibleTarget(["a", "b"]);
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(useGenerationQueueStore.getState().jobsByChat.c1).toBeUndefined();
+    expect(useGenerationQueueStore.getState().recordsByChat.c1).toBeUndefined();
+    expect(seen).toEqual({ visible: true, summary: { done: 2, failed: 0, running: 0, pending: 0, total: 2 } });
+    await act(async () => { useGenerationQueueStore.getState().clearBatch("c1"); });
+    expect(seen.visible).toBe(false);
+    unmount();
+  });
+
+  test("a running queue job and its linked running record count once", () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
+    const recordId = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "running", model: "frozen", presetName: null, presetId: null,
+    });
+    const jobId = useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "frozen", promptPresetId: null, recordId });
+    useGenerationQueueStore.getState().markRunning(jobId);
+    setVisibleTarget(["a"]);
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(seen.summary).toEqual({ done: 1, failed: 0, running: 1, pending: 0, total: 2 });
+    unmount();
+  });
+
+  test("clear removes pending records but keeps failed records and target variants", () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
+    const failed = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "failed", model: "bad", presetName: null, presetId: null, error: "provider rate limit",
+    });
+    const pending = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "pending", model: "next", presetName: null, presetId: null,
+    });
+    useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "next", promptPresetId: null, recordId: pending });
+    setVisibleTarget(["a"]);
+    useGenerationQueueStore.getState().clearPending("c1");
+    expect(useGenerationQueueStore.getState().recordsByChat.c1).toEqual([expect.objectContaining({ id: failed, status: "failed" })]);
+    expect(useSnapshotStore.getState().messagesById.m1?.variants.map((variant) => String(variant.id))).toEqual(["a"]);
   });
 });
