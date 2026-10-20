@@ -335,6 +335,47 @@ describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
     const reloaded = await store.getById(thread.id);
     expect(reloaded?.contextMetrics).toEqual({ ...metrics, attachedTokens: 0 });
   });
+
+  test("kind-provided segments round-trip (SC-9)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_metrics_segments", "T");
+
+    const withSegments: CopilotContextMetrics = {
+      ...metrics,
+      segments: [
+        { key: "context", tokens: 1000 },
+        { key: "rp_summaries", tokens: 120 },
+        { key: "rp_messages", tokens: 480 },
+        { key: "digest", tokens: 0 },
+        { key: "discussion", tokens: 500 },
+      ],
+    };
+    await store.updateContextMetrics(thread.id, withSegments, "prov_1", "model_x");
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toEqual(withSegments);
+  });
+
+  test("a present-but-corrupt segments value is dropped, the metrics kept (SC-9)", async () => {
+    const { db, store } = await setup();
+
+    // Two corrupt shapes: segments not an array, and an entry missing its
+    // number — the whole field must go (a partial array would silently break
+    // the meter's segments-sum-to-total invariant), never the metrics object.
+    for (const [label, segments] of [
+      ["not-an-array", "nope"],
+      ["bad entry", [{ key: "context" }]],
+    ] as const) {
+      const thread = await store.startNewSession(`script_bad_segments_${label}`, "T");
+      await db.update(experienceCopilotThreads)
+        .set({ contextMetricsJson: JSON.stringify({ ...metrics, segments }) })
+        .where(eq(experienceCopilotThreads.id, thread.id))
+        .run();
+
+      const reloaded = await store.getById(thread.id);
+      expect(reloaded?.contextMetrics).toEqual(metrics);
+    }
+  });
 });
 
 describe("ExperienceCopilotStore — pinned-context links (CX-1)", () => {

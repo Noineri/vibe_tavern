@@ -78,8 +78,10 @@ import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT
 import { syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
 import {
   loadSidechatContext,
+  SIDECHAT_OOC_METER_SEGMENT_KEYS,
   type SidechatContextDeps,
   type SidechatContextPackage,
+  type SidechatOocMeterSegmentKey,
 } from "./sidechat-context.js";
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../interactive/copilot/experience-copilot-stream-contract.js";
 
@@ -162,6 +164,21 @@ export interface SidechatAssembledPrompt extends AgentAssembledPrompt {
   readonly autoCompactPressure: SidechatAutoCompactPressure;
 }
 
+/** A flow entry tagged with the meter segment its tokens feed (SC-9). The
+ *  budget trim keeps entry OBJECTS (it slices suffixes), so the tag survives
+ *  `planHistoryCompaction` and the assembly measures the meter split on the
+ *  trimmed window — the same entries the model saw — without a second
+ *  derivation of which entry is what. */
+type SidechatMeteredFlowMessage = AgentFlowMessage & {
+  readonly meterSegment: SidechatOocMeterSegmentKey;
+};
+
+/** Tag every real history row (the OOC conversation — user, assistant, tool
+ *  rows alike) as discussion (SC-9): none of them is RP-layer material. */
+function toDiscussionEntry(message: AgentFlowMessage): SidechatMeteredFlowMessage {
+  return { ...message, meterSegment: "discussion" };
+}
+
 /**
  * Build the turn's message flow (SC-4d, variant A; digest-aware since SC-8c):
  * the loop's real history — tool parts intact — with each frozen RP event
@@ -172,6 +189,10 @@ export interface SidechatAssembledPrompt extends AgentAssembledPrompt {
  * user message before the turn's own). The turn's own user message (content
  * mode — the loop appends it LAST) re-attaches LAST: every frozen event
  * predates it by the sync-before-persist order, so events never displace it.
+ *
+ * Since SC-9 every returned entry carries its meter segment (discussion for
+ * the OOC rows, the event's own classification for RP rows) — see
+ * {@link SidechatMeteredFlowMessage}.
  *
  * DIGEST SPLITS (SC-8c — this replaces the SC-4d count guard): after a
  * compaction the loop's history carries only the rows past the digest's
@@ -194,7 +215,7 @@ function buildSidechatMessageFlow(
   context: SidechatContextPackage,
   hasUserPush: boolean,
   hasDigest: boolean,
-): { flow: AgentFlowMessage[]; headCount: number } {
+): { flow: SidechatMeteredFlowMessage[]; headCount: number } {
   const last = historyFlow[historyFlow.length - 1];
   if (hasUserPush && (last === undefined || last.role !== "user")) {
     throw new Error(
@@ -202,7 +223,9 @@ function buildSidechatMessageFlow(
         "(the generic loop appends it last) — refusing to assemble a mismatched flow",
     );
   }
-  const realMessages = hasUserPush && last !== undefined ? historyFlow.slice(0, -1) : [...historyFlow];
+  const realMessages: SidechatMeteredFlowMessage[] = (
+    hasUserPush && last !== undefined ? historyFlow.slice(0, -1) : [...historyFlow]
+  ).map(toDiscussionEntry);
   // Digest-aware alignment: the timeline's message count minus the history's
   // rows (minus the digest row itself, which the timeline counts as a
   // message row but the loop lifts out of the flow).
@@ -221,12 +244,12 @@ function buildSidechatMessageFlow(
   // after them, before the verbatim tail); post-boundary events interleave
   // into the tail exactly as SC-4d placed them (the counts shift by the rows
   // the digest covered).
-  const head: AgentFlowMessage[] = [];
+  const head: SidechatMeteredFlowMessage[] = [];
   const tail = [...realMessages];
   let inserted = 0;
   for (const event of context.eventMessages) {
     if (event.precedingMessages <= coveredCount) {
-      head.push({ role: "user", content: event.content });
+      head.push({ role: "user", content: event.content, meterSegment: event.meterSegment });
       continue;
     }
     // Events arrive in merged-timeline order, so the offset count is each
@@ -235,11 +258,12 @@ function buildSidechatMessageFlow(
     tail.splice(event.precedingMessages - coveredCount + inserted, 0, {
       role: "user",
       content: event.content,
+      meterSegment: event.meterSegment,
     });
     inserted += 1;
   }
   const flow = [...head, ...tail];
-  if (hasUserPush && last !== undefined) flow.push(last);
+  if (hasUserPush && last !== undefined) flow.push(toDiscussionEntry(last));
   return { flow, headCount: head.length };
 }
 
@@ -260,7 +284,11 @@ function buildSidechatMessageFlow(
  *  tokens riding the digest segment (the shell's accounting). The result
  *  also carries the kind's auto-compaction pressure (SC-8c): the discussion
  *  (digest + OOC rows) against the room left after the static context and
- *  the RP layer. The pinned-context block +
+ *  the RP layer, and since SC-9 the kind's FIVE meter segments in
+ *  `tokenAccounting.segments` (`context` / `rp_summaries` / `rp_messages` /
+ *  `digest` / `discussion`), measured on this same accounting pass — the
+ *  single place all five numbers exist (no second tokenizer pass anywhere
+ *  else). The pinned-context block +
  *  the kind's recency anchor inject as trailing user messages (the CX-3
  *  pattern the other kinds' assemblers use). Pure — every input is a
  *  parameter; exported so the trim's flow semantics are testable directly. */
@@ -340,6 +368,21 @@ export function assembleSidechatPrompt(input: {
   // message seats — its tokens ride the digest segment, exactly the shell's
   // accounting (a digest in the flow must not double-count).
   const historyTokens = estimateHistoryTokens(trimmedFlow);
+  // ── SC-9 meter split: the three history-segment values, measured HERE —
+  // the one accounting point that already knows both the whole (the same
+  // `estimateHistoryTokens` call the trim's arithmetic used, above) and each
+  // entry's class (the flow tags the loader + flow builder derived). The two
+  // RP classes are measured per class; `discussion` takes the REMAINDER of
+  // the authoritative whole so the five segments reconstruct the metered
+  // total exactly — never a rounding hole (the per-class formatter joins add
+  // a few separator/rounding tokens the residual absorbs).
+  const rpSummariesTokens = estimateHistoryTokens(
+    trimmedFlow.filter((m) => m.meterSegment === "rp_summaries"),
+  );
+  const rpMessagesTokens = estimateHistoryTokens(
+    trimmedFlow.filter((m) => m.meterSegment === "rp_messages"),
+  );
+  const discussionTokens = historyTokens - rpSummariesTokens - rpMessagesTokens;
   const compactionSummary = plan
     ? `Kept ${trimmedFlow.length} of ${flow.length} flow messages (budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudgetTokens}, reserve=${input.responseReserveTokens}).`
     : undefined;
@@ -349,7 +392,11 @@ export function assembleSidechatPrompt(input: {
   if (digestSectionText) {
     const dropped = flow.length - windowedFlow.length;
     const survivingHeadCount = Math.max(0, headCount - dropped);
-    windowedFlow.splice(survivingHeadCount, 0, { role: "user", content: digestSectionText });
+    windowedFlow.splice(survivingHeadCount, 0, {
+      role: "user",
+      content: digestSectionText,
+      meterSegment: "digest",
+    });
   }
 
   // ── SC-8c auto-compaction pressure: the discussion against the room it
@@ -358,7 +405,11 @@ export function assembleSidechatPrompt(input: {
   // fold); the room = the budget minus the static context (system +
   // attached) and the RP layer — the two things compacting the discussion
   // cannot shrink. The assembly is the one place both numbers exist; the
-  // stream hands them to the compaction service's sidechat rule.
+  // stream hands them to the compaction service's sidechat rule. The SPLIT
+  // mirrors the meter segments (digest + discussion = the pressure's
+  // discussion; every event row = its RP layer) on the PRE-TRIM base — the
+  // pressure measures what a compaction would fold, the segments above
+  // measure the trimmed window the model saw.
   const rpLayerTokens = estimateHistoryTokens(
     input.context.eventMessages.map((event) => ({ role: "user" as const, content: event.content })),
   );
@@ -381,6 +432,20 @@ export function assembleSidechatPrompt(input: {
     );
   }
 
+  // SC-9: the kind's five meter segments, keyed by the ONE key list —
+  // `context` folds the system message (base prompt + static package) and
+  // the attached block (`@` links + anchor) into the single "everything
+  // constant" bucket; the three history-segment values and the digest come
+  // from the measurements above. Sum == the assembler's total by
+  // construction (the discussion remainder closes the arithmetic).
+  const meterSegmentTokens: Record<SidechatOocMeterSegmentKey, number> = {
+    context: systemTokens + attachedTokens,
+    rp_summaries: rpSummariesTokens,
+    rp_messages: rpMessagesTokens,
+    digest: digestTokens,
+    discussion: discussionTokens,
+  };
+
   return {
     systemMessage,
     messages,
@@ -391,6 +456,10 @@ export function assembleSidechatPrompt(input: {
       history: historyTokens,
       attached: attachedTokens,
       total: systemTokens + digestTokens + historyTokens + attachedTokens,
+      segments: SIDECHAT_OOC_METER_SEGMENT_KEYS.map((key) => ({
+        key,
+        tokens: meterSegmentTokens[key],
+      })),
     },
     ...(compactionSummary !== undefined ? { compactionSummary } : {}),
   };

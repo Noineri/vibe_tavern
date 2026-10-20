@@ -21,6 +21,7 @@ import { streamText, isStepCount, hasToolCall } from "ai";
 import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, CopilotContextMetrics } from "@vibe-tavern/db";
+import { buildContextMetrics, type AgentTokenAccounting } from "./agent-context-metrics.js";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { resolveProviderFetchForProfile } from "../providers/provider-fetch-factory.js";
 import { createMappedStream, mapFinish } from "../../infrastructure/ai/stream-helpers.js";
@@ -160,17 +161,12 @@ export type AgentPromptMessage =
 
 /** Structural view of a kind's assembly result the loop reads (system length
  *  for the debug line, the messages for the model call, and the segmented
- *  token accounting for CM-4 metrics). */
+ *  token accounting for CM-4 metrics — the accounting shape lives beside its
+ *  metrics builder in `agent-context-metrics.ts`). */
 export interface AgentAssembledPrompt {
   readonly systemMessage: string;
   readonly messages: ReadonlyArray<AgentPromptMessage>;
-  readonly tokenAccounting: {
-    readonly system: number;
-    readonly digest: number;
-    readonly history: number;
-    readonly attached: number;
-    readonly total: number;
-  };
+  readonly tokenAccounting: AgentTokenAccounting;
   readonly compactionSummary?: string;
 }
 
@@ -732,45 +728,14 @@ export async function* streamAgentTurn<
   }
 
   // ── Context metrics (CM-4) ─────────────────────────────────────────────────
-  // Per-segment values are ALWAYS the assembler's estimate (the provider only
-  // reports an aggregate). `totalTokens` prefers the provider's ACTUAL input
-  // size of the FINAL request — read from the live provider-response trace's
-  // LAST step — the aggregate `usage.inputTokens` SUMS steps (multi-step turns
-  // re-send the whole context per step: 3 × ~63k ≈ 190k against a 100k budget —
-  // a false 190% reading; the last step's input is the true final size).
-  // Else the assembler's estimate — never blend the two and claim it was
-  // measured. `budgetTokens` is 0 with no explicit budget (unmetered bar);
-  // `reserveTokens` clamps negatives to 0 (maxTokens -1 = model decides).
-  // Persisting is best-effort: a failure logs and never fails the turn.
-  const traceSteps = mappedState.providerResponse.steps;
-  const lastStepInputTokens = traceSteps.length > 0
-    ? traceSteps[traceSteps.length - 1]?.usage?.inputTokens
-    : undefined;
-  const providerInputTokens = lastStepInputTokens ?? usage?.inputTokens;
-  let metricsSource: "estimate" | "provider";
-  let metricsTotalTokens: number;
-  if (
-    typeof providerInputTokens === "number" &&
-    Number.isFinite(providerInputTokens) &&
-    providerInputTokens > 0
-  ) {
-    metricsSource = "provider";
-    metricsTotalTokens = providerInputTokens;
-  } else {
-    metricsSource = "estimate";
-    metricsTotalTokens = assembled.tokenAccounting.total;
-  }
-  const contextMetrics: CopilotContextMetrics = {
-    systemTokens: assembled.tokenAccounting.system,
-    digestTokens: assembled.tokenAccounting.digest,
-    historyTokens: assembled.tokenAccounting.history,
-    totalTokens: metricsTotalTokens,
-    attachedTokens: assembled.tokenAccounting.attached,
-    budgetTokens: seams.limits.contextBudgetTokens,
-    reserveTokens: seams.limits.responseReserveTokens,
-    source: metricsSource,
-    measuredAt: new Date().toISOString(),
-  };
+  // Built by the extracted CM-4 helper (estimate-vs-provider honesty there);
+  // persisting is best-effort here — a failure logs and never fails the turn.
+  const contextMetrics = buildContextMetrics({
+    traceSteps: mappedState.providerResponse.steps,
+    usage,
+    tokenAccounting: assembled.tokenAccounting,
+    limits: seams.limits,
+  });
   try {
     await deps.store.updateContextMetrics(
       request.threadId,

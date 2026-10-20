@@ -160,6 +160,35 @@ describe("ExperienceCopilotAdapter context (CM-4)", () => {
     expect(state.autoCompact).toBe(true);
   });
 
+  it("GET context wire-maps kind-provided segments through, absent stays absent (SC-9)", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    const withSegments: CopilotContextMetrics = {
+      ...metrics,
+      segments: [
+        { key: "context", tokens: 1000 },
+        { key: "rp_summaries", tokens: 120 },
+        { key: "rp_messages", tokens: 480 },
+        { key: "digest", tokens: 0 },
+        { key: "discussion", tokens: 500 },
+      ],
+    };
+    await store.updateContextMetrics(thread.id, withSegments, "prov_1", "model_x");
+
+    const state = await adapter.experienceCopilotGetContext(thread.id);
+    // The kind's segments ride the wire verbatim (the SC-0j schema field; the
+    // first producer is the sidechat kind, SC-9).
+    expect(state.metrics).toEqual(withSegments);
+
+    // A metrics object without segments (the other kinds) maps without the
+    // field — never `segments: undefined` on the wire.
+    await store.updateContextMetrics(thread.id, metrics, "prov_1", "model_x");
+    const plain = await adapter.experienceCopilotGetContext(thread.id);
+    expect("segments" in (plain.metrics ?? {})).toBe(false);
+    expect(plain.metrics).toEqual(metrics);
+  });
+
   it("PATCH toggles autoCompact and returns the full state (metrics unchanged)", async () => {
     const { store, adapter } = await setup();
     const thread = await store.startNewSession("script_a", "T");

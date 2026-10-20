@@ -254,6 +254,37 @@ function messageIndexContaining(needle: string): number {
 	return index;
 }
 
+// ─── SC-9: meter-segment helpers ────────────────────────────────────────────
+
+/** The finish event's metrics payload (the shape this suite pins — the
+ *  segments field is SC-9's producer side; the wire schema is SC-0j's). */
+interface FinishMetrics {
+	systemTokens: number;
+	digestTokens: number;
+	historyTokens: number;
+	attachedTokens: number;
+	totalTokens: number;
+	source: string;
+	segments?: Array<{ key: string; tokens: number }>;
+}
+
+function finishMetrics(chunks: Array<{ event: string; data: string }>): FinishMetrics {
+	const data = JSON.parse(
+		chunks.find((chunk) => chunk.event === "finish")!.data,
+	) as { metrics: FinishMetrics };
+	return data.metrics;
+}
+
+function segmentMap(metrics: FinishMetrics): Record<string, number> {
+	const map: Record<string, number> = {};
+	for (const segment of metrics.segments ?? []) map[segment.key] = segment.tokens;
+	return map;
+}
+
+/** The kind's five segment keys pinned as LITERALS — a production typo in
+ *  the key list must fail here, not surface as a raw label in the meter. */
+const FIVE_SEGMENT_KEYS = ["context", "rp_summaries", "rp_messages", "digest", "discussion"];
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("streamSidechatTurn (SC-4b)", () => {
@@ -542,6 +573,41 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		expect(idxQ6).toBe(capturedMessages.length - 1);
 	});
 
+	it("the post-compaction turn's meter segments split digest, RP layer and tail (SC-9)", async () => {
+		const { threadId, chatId, branchId } = await makeCompactedThread();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "RP-ADVANCE-6 the story moves on.",
+		});
+		const chunks = await drainTurn(threadId, "OOC-Q6 after the digest");
+
+		const metrics = finishMetrics(chunks);
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		expect(metrics.source).toBe("estimate");
+		const seg = segmentMap(metrics);
+		// The digest segment is the SAME number the shell accounts as
+		// digestTokens — SC-8c's pressure discussion (digest + OOC rows) and
+		// the meter's digest + discussion split draw one line, not two.
+		expect(seg["digest"]!).toBe(metrics.digestTokens);
+		expect(seg["digest"]!).toBeGreaterThan(0);
+		// The pre-boundary sync events lead + the post-boundary ones interleave —
+		// all rp_messages (this fixture carries no summaries).
+		expect(seg["rp_messages"]!).toBeGreaterThan(0);
+		expect(seg["rp_summaries"]!).toBe(0);
+		// The kept OOC rows + the turn's own message → discussion; the static
+		// system message (+ nothing pinned) → context.
+		expect(seg["discussion"]!).toBeGreaterThan(0);
+		expect(seg["context"]!).toBe(metrics.systemTokens + metrics.attachedTokens);
+		expect(seg["context"]!).toBeGreaterThan(0);
+		// The invariant: the five reconstruct the metered total exactly, the
+		// three history classes the history segment.
+		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
+		expect(seg["rp_summaries"]! + seg["rp_messages"]! + seg["discussion"]!).toBe(metrics.historyTokens);
+	});
+
 	it("wires the loop's auto hook to the sidechat rule with the assembly's pressure", async () => {
 		const { threadId } = await makeSidechatThread("RP-SEED-AUTO");
 		let executed = 0;
@@ -574,5 +640,102 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		expect(fired[0]!.roomTokens).toBeLessThan(COPILOT_CONTEXT_BUDGET_TOKENS);
 		expect(fired[0]!.roomTokens).toBeGreaterThan(0);
 		expect(executed).toBe(0);
+	});
+});
+
+// ─── SC-9: the kind's five meter segments ─────────────────────────────
+
+describe("streamSidechatTurn meter segments (SC-9)", () => {
+	// A deterministic counter (1 char = 1 token) so the segment values are
+	// real measurements, not the unset-tokenizer zeros; restored after the
+	// block (the suite shares one process — the SC-8c block's pattern).
+	beforeAll(() => {
+		setTokenCountFn((text) => text.length);
+	});
+	afterAll(() => {
+		setTokenCountFn(() => 0);
+	});
+
+	it("carries the five segments with the right contents, summing to the total", async () => {
+		// Two RP messages (positions 0 and 1) + a summary covering only T1
+		// (position 0): the frozen batch splits into an <rp_summary> row
+		// (rp_summaries) and a surviving position-1 run (rp_messages); the OOC
+		// turn rides the discussion.
+		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED-ONE the tavern opens.");
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "RP-SEED-TWO the keeper greets you.",
+		});
+		await stores.chatSummaries.create({
+			chatId,
+			branchId,
+			label: "SC-9 chapter",
+			summarizedFrom: 1,
+			summarizedTo: 1,
+			includeInContext: true,
+			excludeSummarized: true,
+			content: "SC9-SUMMARY the opening exchange compressed.",
+		});
+
+		const chunks = await drainTurn(threadId, "meter segments turn");
+		const metrics = finishMetrics(chunks);
+
+		// The rendered rows the segments measure are actually in the prompt.
+		const prompt = promptText();
+		expect(prompt).toContain("<rp_summary");
+		expect(prompt).toContain("SC9-SUMMARY");
+		expect(prompt).toContain("RP-SEED-TWO");
+
+		// Five keys, exactly, in the kind's settled order.
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		// The fixture's fake streamText reports no usage → the total is the
+		// assembler's estimate — the frame where the sum invariant is exact
+		// (a provider-sourced total is the honest exception, CM-4's rule).
+		expect(metrics.source).toBe("estimate");
+
+		const seg = segmentMap(metrics);
+		// context = everything constant: the system message (base prompt +
+		// static package — card, persona, …) plus the attached block (nothing
+		// pinned here, so attached is 0).
+		expect(seg["context"]!).toBe(metrics.systemTokens + metrics.attachedTokens);
+		expect(seg["context"]!).toBeGreaterThan(0);
+		expect(seg["rp_summaries"]!).toBeGreaterThan(0);
+		expect(seg["rp_messages"]!).toBeGreaterThan(0);
+		expect(seg["digest"]!).toBe(0);
+		expect(seg["discussion"]!).toBeGreaterThan(0);
+
+		// The invariant: the five reconstruct the metered total exactly, and
+		// the three history classes partition the history segment.
+		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
+		expect(seg["rp_summaries"]! + seg["rp_messages"]! + seg["discussion"]!).toBe(metrics.historyTokens);
+
+		// The persisted metrics keep the segments verbatim (loop → store).
+		const persisted = await stores.experienceCopilot.getById(threadId);
+		expect(persisted?.contextMetrics?.segments).toEqual(metrics.segments);
+	});
+
+	it("an empty-RP turn segments to context + discussion only", async () => {
+		const { threadId } = await makeSidechatThread();
+
+		const chunks = await drainTurn(threadId, "no rp yet turn");
+		const metrics = finishMetrics(chunks);
+
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		const seg = segmentMap(metrics);
+		// No frozen events, no summaries, no digest — only the constant system
+		// message and the turn's own OOC row.
+		expect(seg["rp_summaries"]!).toBe(0);
+		expect(seg["rp_messages"]!).toBe(0);
+		expect(seg["digest"]!).toBe(0);
+		expect(seg["context"]!).toBe(metrics.systemTokens + metrics.attachedTokens);
+		expect(seg["context"]!).toBeGreaterThan(0);
+		// The discussion carries the whole history segment (the discussion
+		// takes the remainder — with both RP classes empty it IS the whole).
+		expect(seg["discussion"]!).toBe(metrics.historyTokens);
+		expect(seg["discussion"]!).toBeGreaterThan(0);
+		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
 	});
 });

@@ -192,6 +192,7 @@ export type {
 export type {
   CopilotContextMetrics,
   CopilotContextLink,
+  CopilotMeterSegment,
   CopilotTodoItem,
 } from './experience-copilot-row-parse.js';
 export { AGENT_THREAD_CONTEXT_EVENT_KINDS } from './agent-thread-context-events.js';

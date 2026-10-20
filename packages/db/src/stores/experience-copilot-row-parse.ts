@@ -14,6 +14,15 @@
  *  stream finish path (services/api) builds the object; the store only
  *  serializes it into `context_metrics_json` and parses it back out.
  */
+/** One kind-provided meter segment row (SC-0j's wire field; SC-9's
+ *  sidechat kind is the first producer). Local structural twin of the wire
+ *  schema's `segments` entry — same dependency-direction note as
+ *  {@link CopilotContextMetrics} above. */
+export interface CopilotMeterSegment {
+  key: string;
+  tokens: number;
+}
+
 export interface CopilotContextMetrics {
   systemTokens: number;
   /** Tokens of the pinned-context attached block + recency anchor (CX-1,
@@ -27,6 +36,12 @@ export interface CopilotContextMetrics {
   reserveTokens: number;
   source: "estimate" | "provider";
   measuredAt: string;
+  /** Kind-provided meter breakdown (SC-0j; the sidechat's five segments,
+   *  SC-9). Optional: rows written before SC-9 and kinds that provide no
+   *  segments lack the field — the parse guard keeps it absent for them and
+   *  drops (logs) a present-but-corrupt value instead of rejecting the whole
+   *  metrics object. */
+  segments?: CopilotMeterSegment[];
 }
 
 /** Pinned-context link on a copilot thread (CX-1). Local structural twin of
@@ -68,6 +83,41 @@ function isCopilotContextMetrics(value: unknown): value is Omit<CopilotContextMe
   );
 }
 
+/** Validate an optional `segments` array (SC-9): every entry must be the
+ *  `{ key: non-empty string, tokens: number }` wire shape. A present-but-
+ *  corrupt value loses the WHOLE field (never a partial array — the meter's
+ *  segments must sum to the total, so dropping single rows would silently
+ *  break the invariant), the metrics object itself stays. */
+function parseMeterSegments(
+  value: unknown,
+  threadId: string,
+): CopilotMeterSegment[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    console.error(
+      `[experience-copilot-store] invalid context_metrics_json segments for thread '${threadId}': not an array — dropping the field`,
+    );
+    return undefined;
+  }
+  const segments: CopilotMeterSegment[] = [];
+  for (const entry of value) {
+    if (
+      entry && typeof entry === "object" &&
+      typeof (entry as Record<string, unknown>).key === "string" &&
+      (entry as Record<string, unknown>).key !== "" &&
+      typeof (entry as Record<string, unknown>).tokens === "number"
+    ) {
+      segments.push({ key: (entry as Record<string, unknown>).key as string, tokens: (entry as Record<string, unknown>).tokens as number });
+      continue;
+    }
+    console.error(
+      `[experience-copilot-store] invalid context_metrics_json segments for thread '${threadId}': an entry is not { key, tokens } — dropping the field`,
+    );
+    return undefined;
+  }
+  return segments;
+}
+
 /** Parse `context_metrics_json` into a validated {@link CopilotContextMetrics},
  *  or null when absent/malformed/wrong-shape. The column is always written via
  *  JSON.stringify of a valid object, so a failure indicates corruption — fall
@@ -80,7 +130,18 @@ function parseContextMetrics(text: string | null, threadId: string): CopilotCont
     // rejecting: "no attached context recorded" and "attached not yet metered"
     // mean the same thing to the meter.
     if (isCopilotContextMetrics(parsed)) {
-      return { ...parsed, attachedTokens: typeof parsed.attachedTokens === "number" ? parsed.attachedTokens : 0 };
+      // Segments is stripped from the spread and re-validated separately — a
+      // present-but-corrupt value must come back ABSENT, never ride through
+      // `...parsed` unvalidated (the guard above does not check it).
+      const { segments: rawSegments, ...rest } = parsed as
+        Omit<CopilotContextMetrics, "attachedTokens" | "segments"> &
+        { attachedTokens?: unknown; segments?: unknown };
+      const segments = parseMeterSegments(rawSegments, threadId);
+      return {
+        ...rest,
+        attachedTokens: typeof rest.attachedTokens === "number" ? rest.attachedTokens : 0,
+        ...(segments !== undefined ? { segments } : {}),
+      };
     }
   } catch (err) {
     console.error(

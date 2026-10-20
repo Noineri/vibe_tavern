@@ -158,10 +158,51 @@ export interface SidechatContextDeps {
  *  tags, same escaping) plus how many of the thread's MESSAGE rows precede
  *  it on the merged timeline. The count IS the placement: listTimeline's
  *  merged order is the single ordering source, so the flow builder
- *  interleaves by these counts instead of re-deriving seq arithmetic. */
+ *  interleaves by these counts instead of re-deriving seq arithmetic.
+ *  Since SC-9 each row also carries the METER SEGMENT its tokens feed
+ *  (`rp_summaries` for `<rp_summary>` rows, `rp_messages` for every other
+ *  RP event) — the classification is decided HERE, where the row's kind is
+ *  known, and consumed downstream; no second derivation of which row is
+ *  what. */
 export interface SidechatEventMessage {
 	readonly precedingMessages: number;
 	readonly content: string;
+	readonly meterSegment: SidechatEventMeterSegment;
+}
+
+/** The sidechat kind's five meter segment keys (SC-9; the SC-0j wire
+ *  vocabulary — labels land in SC-13's host descriptor, the web side keys
+ *  off these same strings). Declared in THIS module (not the stream's,
+ *  which imports it) because the loader classifies event rows into the two
+ *  RP-layer keys and the stream builds the five-key array — one
+ *  declaration, both consumers, no import cycle.
+ *  `context` = everything constant in the system message — base prompt,
+ *  card, persona, active lore, objectives, scene, the skill catalog and the
+ *  `@` links (the pinned block rides `attached` tokens) — one bucket
+ *  because a narrower name (e.g. `cards_lore`) would hide the rest under a
+ *  wrong label (owner decision 3, SIDECHAT_PLAN SC-9, 2026-10-20). */
+export const SIDECHAT_OOC_METER_SEGMENT_KEYS = [
+	"context",
+	"rp_summaries",
+	"rp_messages",
+	"digest",
+	"discussion",
+] as const;
+export type SidechatOocMeterSegmentKey = (typeof SIDECHAT_OOC_METER_SEGMENT_KEYS)[number];
+
+/** The two RP-layer meter segments a timeline event row can feed (SC-9):
+ *  summary rows vs every other frozen RP event (rp_sync message blocks,
+ *  variants, selection changes, forks — all story material, none of it a
+ *  summary). */
+export type SidechatEventMeterSegment = Extract<
+	SidechatOocMeterSegmentKey,
+	"rp_summaries" | "rp_messages"
+>;
+
+/** The one classification derivation (SC-9): `<rp_summary>` rows feed the
+ *  summaries segment, every other event row feeds the messages segment. */
+function meterSegmentOfEvent(kind: string): SidechatEventMeterSegment {
+	return kind === "rp_summary" ? "rp_summaries" : "rp_messages";
 }
 
 /** The sidechat turn's loaded context (SC-3b, reshaped by SC-4d): the STATIC
@@ -276,20 +317,29 @@ export async function loadSidechatContext(
 		const mapped = mapTimelineEvent(threadId, entry);
 		if (mapped.kind === "rp_sync") {
 			for (const row of coverRpSyncPayload(mapped.payload, coverage)) {
-				eventMessages.push({ precedingMessages: messageCount, content: renderTimelineEvent(row) });
+				eventMessages.push({
+					precedingMessages: messageCount,
+					content: renderTimelineEvent(row),
+					meterSegment: meterSegmentOfEvent(row.kind),
+				});
 			}
 			continue;
 		}
 		eventMessages.push({
 			precedingMessages: messageCount,
 			content: renderTimelineEvent(mapped),
+			meterSegment: meterSegmentOfEvent(mapped.kind),
 		});
 	}
 	// Enabled summaries whose range never anchored during the walk (beyond
 	// the frozen frontier, or their messages deleted) still render — at the
 	// end of the event flow, never silently dropped.
 	for (const row of coverage.tailRows()) {
-		eventMessages.push({ precedingMessages: messageCount, content: renderTimelineEvent(row) });
+		eventMessages.push({
+			precedingMessages: messageCount,
+			content: renderTimelineEvent(row),
+			meterSegment: meterSegmentOfEvent(row.kind),
+		});
 	}
 
 	return { staticPackage, eventMessages, messageCount };

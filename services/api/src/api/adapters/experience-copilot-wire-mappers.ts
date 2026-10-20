@@ -31,7 +31,8 @@ export function toThreadWire(t: ExperienceCopilotThread): ExperienceCopilotThrea
 
 /** Map the store's parsed metrics (structurally identical to the wire shape)
  *  into the api-contracts type. Field-for-field so the nullability/union
- *  contract is explicit (never `undefined`). */
+ *  contract is explicit (never `undefined`); SC-9's optional `segments`
+ *  rides along only when present (kinds without segments stay without). */
 export function toMetricsWire(m: CopilotContextMetrics): ExperienceCopilotContextMetrics {
   return {
     systemTokens: m.systemTokens,
@@ -43,6 +44,7 @@ export function toMetricsWire(m: CopilotContextMetrics): ExperienceCopilotContex
     reserveTokens: m.reserveTokens,
     source: m.source,
     measuredAt: m.measuredAt,
+    ...(m.segments !== undefined ? { segments: [...m.segments] } : {}),
   };
 }
 
