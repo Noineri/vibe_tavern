@@ -31,6 +31,7 @@ import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
 import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/script-agent-compaction.js";
+import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-compaction.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -77,6 +78,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   private readonly profileResolver: CopilotProfileResolver;
   private readonly compaction: ExperienceCopilotCompactionService | null;
   private readonly scriptCompaction: ScriptAgentCompactionService | null;
+  private readonly sidechatCompaction: SidechatOocCompactionService | null;
   /** Per-kind stream wiring, built once (see constructor). Adding a kind =
    *  one entry here; the dispatch and the assert step read this table. */
   private readonly streamKinds: ReadonlyMap<AgentKindId, KindStream>;
@@ -115,6 +117,9 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.scriptCompaction = providerProfileService
       ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
       : null;
+    this.sidechatCompaction = providerProfileService
+      ? new SidechatOocCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      : null;
     this.streamKinds = new Map<AgentKindId, KindStream>([
       ["experience", (threadId, body, signal) => this.streamExperienceThread(threadId, body, signal)],
       ["script", (threadId, body, signal) =>
@@ -125,6 +130,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.compactionKinds = new Map<AgentKindId, AgentCompactionService<ExperienceCopilotMessage>>([
       ...(this.compaction !== null ? [["experience", this.compaction] as const] : []),
       ...(this.scriptCompaction !== null ? [["script", this.scriptCompaction] as const] : []),
+      // SC-8c: the sidechat's own discussion digest — the manual compact
+      //  button un-400s for the kind (the route dispatches through this
+      //  table).
+      ...(this.sidechatCompaction !== null ? [["sidechat-ooc", this.sidechatCompaction] as const] : []),
     ]);
   }
 
@@ -365,10 +374,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  kind-agnostic pinned-context resolver (`buildContextItemsResolver`)
    *  over the sidechat's OWN skill library — a pinned skill resolves from
    *  the sidechat roots, never another kind's (SC-4b's inert skill arm is
-   *  gone). No streamText (production runs the real one) and no autoCompact
-   *  — compaction is Wave 2's unit; until it lands the manual compact route
-   *  refuses this kind with AGENT_KIND_NOT_WIRED (compactionKinds has no
-   *  sidechat entry by design). */
+   *  gone). Since SC-8c the compaction service rides along so the stream
+   *  wires the kind's auto-compaction rule (the discussion against the room
+   *  left after the static context and the RP layer; absent → the kind never
+   *  auto-compacts). No streamText (production runs the real one). */
   private buildSidechatStreamDeps(): SidechatStreamDeps {
     const assembly = this.getSidechatAssembly();
     const contextItemsResolver = this.buildContextItemsResolver(this.sidechatSkillService);
@@ -408,6 +417,9 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
       db: this.stores.db,
+      // SC-8c: the sidechat's own compaction service — the stream wires the
+      //  auto hook to its discussion-against-room rule.
+      ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),
     };
   }
 

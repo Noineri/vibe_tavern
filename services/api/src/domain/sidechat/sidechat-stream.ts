@@ -21,12 +21,15 @@
  * exactly once — as the real history rows. The reply persists through the
  * generic loop exactly like the other kinds'.
  *
- * NO tools until Wave 3 (buildTools returns the empty set) and NO
- * auto-compaction until Wave 2's SC-8c (no compaction writer is wired) — the
- * plan's explicit cuts. Since SC-6 the assembly runs the SHELL's existing
- * budget trim (planHistoryCompaction) over the merged flow: over the shared
- * budget the OLDEST flow entries drop first, RP and discussion alike, in
- * time order.
+ * NO tools until Wave 3 (buildTools returns the empty set). Since SC-6 the
+ * assembly runs the SHELL's existing budget trim (planHistoryCompaction)
+ * over the merged flow: over the shared budget the OLDEST flow entries drop
+ * first, RP and discussion alike, in time order. Since SC-8c the flow
+ * follows a compaction digest split (the SC-4d count guard is gone — see
+ * buildSidechatMessageFlow): the digest rides the flow as its own user-role
+ * message after the pre-boundary RP layer, and the kind's auto-compaction
+ * measures the discussion against the room left after the static context
+ * and the RP layer through the compaction seam.
  */
 
 // fork #1 of script-agent-stream.ts (services/api/src/domain/agent/script-agent/script-agent-stream.ts)
@@ -65,6 +68,7 @@ import {
 import { renderAttachedContext, type CopilotContextItem } from "../agent/agent-context.js";
 import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
 import { getAgentKind } from "../agent/agent-kind-registry.js";
+import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
 // below (the recency anchor) resolves in ANY process that streams a turn
@@ -122,6 +126,13 @@ export interface SidechatStreamDeps {
   /** Optional DB handle for the `sidechat_ooc_base` seed override on the
    *  built-in fallback path. */
   readonly db?: AppDb;
+  /** SC-8c: the kind's own compaction service — present → the stream wires
+   *  the loop's autoCompact hook to the sidechat rule (the discussion
+   *  against the room left after the static context and the RP layer).
+   *  Absent (tests, legacy harnesses) → the sidechat's threads never
+   *  auto-compact; the manual compact route still works through the
+   *  adapter's compactionKinds entry. */
+  readonly compaction?: SidechatOocCompactionService;
   /** Injectable streamText (tests substitute a fake without `mock.module("ai")`). */
   readonly streamText?: typeof streamText;
 }
@@ -141,11 +152,19 @@ async function loadSidechatTurnContext(
   return loadSidechatContext(deps.context, threadId);
 }
 
-// ─── Assembly (SC-4b, reshaped by SC-4d) ───────────────────────────────────
+// ─── Assembly (SC-4b, reshaped by SC-4d; digest-aware since SC-8c) ────────
+
+/** The sidechat assembly's own result (SC-8c): the generic assembled prompt
+ *  plus the auto-compaction pressure the kind's rule measures — the assembly
+ *  is the one place that knows both the discussion's size (digest + OOC
+ *  rows) and the room left for it (budget − static context − RP layer). */
+export interface SidechatAssembledPrompt extends AgentAssembledPrompt {
+  readonly autoCompactPressure: SidechatAutoCompactPressure;
+}
 
 /**
- * Build the turn's message flow (SC-4d, variant A): the loop's real history
- * — tool parts and digest handling intact — with each frozen RP event
+ * Build the turn's message flow (SC-4d, variant A; digest-aware since SC-8c):
+ * the loop's real history — tool parts intact — with each frozen RP event
  * injected as its own user-role message at its merged-timeline position (the
  * loader's `precedingMessages` counts; NO seq arithmetic here — listTimeline's
  * merged order is the single ordering source). Consecutive user messages are
@@ -153,13 +172,29 @@ async function loadSidechatTurnContext(
  * user message before the turn's own). The turn's own user message (content
  * mode — the loop appends it LAST) re-attaches LAST: every frozen event
  * predates it by the sync-before-persist order, so events never displace it.
+ *
+ * DIGEST SPLITS (SC-8c — this replaces the SC-4d count guard): after a
+ * compaction the loop's history carries only the rows past the digest's
+ * anchor while the loader's timeline still counts every row (the store keeps
+ * them for the UI — the digest replaces them in the MODEL WINDOW only). The
+ * covered count is derived, never trusted blind: `timeline − history − the
+ * digest row itself`. OOC rows covered by the digest leave BOTH the history
+ * and the event placement; RP events before the boundary stay where SC-6
+ * puts them — they lead the flow (in frozen order) and the digest row is
+ * handed back separately so the assembly can seat it between that RP layer
+ * and the verbatim tail (the flow builder itself never renders the digest).
+ * A count that would go NEGATIVE (a history longer than the timeline) or a
+ * covered remainder on a digest-less thread is still refused — both are
+ * impossible by construction (the two reads share the pre-persist store
+ * state), so a hit means corruption, in the corrupt-payload refusal family.
  * Pure — every input is a parameter.
  */
 function buildSidechatMessageFlow(
   historyFlow: readonly AgentFlowMessage[],
   context: SidechatContextPackage,
   hasUserPush: boolean,
-): AgentFlowMessage[] {
+  hasDigest: boolean,
+): { flow: AgentFlowMessage[]; headCount: number } {
   const last = historyFlow[historyFlow.length - 1];
   if (hasUserPush && (last === undefined || last.role !== "user")) {
     throw new Error(
@@ -168,30 +203,44 @@ function buildSidechatMessageFlow(
     );
   }
   const realMessages = hasUserPush && last !== undefined ? historyFlow.slice(0, -1) : [...historyFlow];
-  if (realMessages.length !== context.messageCount) {
-    // The loop's history and the loader's timeline must carry the SAME
-    // message rows. Today only a compaction digest split can break that
-    // (the loop drops covered rows; the timeline keeps them) — and the
-    // sidechat has no compaction writer until Wave 2, so this is the loud
-    // guard on that seam, in the family of the corrupt-payload refusals:
-    // a mismatched flow would show the model covered messages again.
+  // Digest-aware alignment: the timeline's message count minus the history's
+  // rows (minus the digest row itself, which the timeline counts as a
+  // message row but the loop lifts out of the flow).
+  const coveredCount = context.messageCount - realMessages.length - (hasDigest ? 1 : 0);
+  if (coveredCount < 0 || (!hasDigest && coveredCount > 0)) {
+    // Impossible by construction (both reads share the pre-persist store
+    // state and the same table): a hit means corruption — refuse rather than
+    // assemble a flow the model would misread.
     throw new Error(
-      `buildSidechatMessageFlow: history carries ${realMessages.length} flow messages but the merged ` +
-        `timeline carries ${context.messageCount} message rows — the sidechat flow does not follow a ` +
-        "digest split yet (Wave 2 wires sidechat compaction)",
+      `buildSidechatMessageFlow: history carries ${realMessages.length} flow messages against ` +
+        `${context.messageCount} timeline message rows (${coveredCount} covered) — the counts cannot ` +
+        "reconcile; refusing to assemble a mismatched flow",
     );
   }
-  const flow = [...realMessages];
+  // Pre-boundary RP events lead the flow (the SC-8c assembly seats the digest
+  // after them, before the verbatim tail); post-boundary events interleave
+  // into the tail exactly as SC-4d placed them (the counts shift by the rows
+  // the digest covered).
+  const head: AgentFlowMessage[] = [];
+  const tail = [...realMessages];
   let inserted = 0;
   for (const event of context.eventMessages) {
-    // Events arrive in merged-timeline order, so `precedingMessages +
-    // inserted` is each event's stable index among the messages already
-    // placed (same-position events stay in their frozen order).
-    flow.splice(event.precedingMessages + inserted, 0, { role: "user", content: event.content });
+    if (event.precedingMessages <= coveredCount) {
+      head.push({ role: "user", content: event.content });
+      continue;
+    }
+    // Events arrive in merged-timeline order, so the offset count is each
+    // event's stable index among the tail's already-placed entries
+    // (same-position events stay in their frozen order).
+    tail.splice(event.precedingMessages - coveredCount + inserted, 0, {
+      role: "user",
+      content: event.content,
+    });
     inserted += 1;
   }
+  const flow = [...head, ...tail];
   if (hasUserPush && last !== undefined) flow.push(last);
-  return flow;
+  return { flow, headCount: head.length };
 }
 
 /** Assemble the sidechat prompt: system message = the profile's base prompt +
@@ -203,7 +252,15 @@ function buildSidechatMessageFlow(
  *  the SHELL's existing trim (planHistoryCompaction) drops the OLDEST merged
  *  flow entries first — RP and discussion alike, in time order (SC-6, owner
  *  2026-10-20: the assistant loses the start of the story together with the
- *  talk about it, never one without the other); the pinned-context block +
+ *  talk about it, never one without the other). After a compaction (SC-8c)
+ *  the digest rides the flow as its own user-role message — the shell's
+ *  digest-section rendering — seated AFTER the pre-boundary RP layer and
+ *  BEFORE the verbatim tail (static context → RP layer → digest → tail):
+ *  re-inserted after the trim so the budget walk can never eat it, its
+ *  tokens riding the digest segment (the shell's accounting). The result
+ *  also carries the kind's auto-compaction pressure (SC-8c): the discussion
+ *  (digest + OOC rows) against the room left after the static context and
+ *  the RP layer. The pinned-context block +
  *  the kind's recency anchor inject as trailing user messages (the CX-3
  *  pattern the other kinds' assemblers use). Pure — every input is a
  *  parameter; exported so the trim's flow semantics are testable directly. */
@@ -220,13 +277,15 @@ export function assembleSidechatPrompt(input: {
    *  overflow trim runs against these, never a kind-specific number. */
   contextBudgetTokens: number;
   responseReserveTokens: number;
-}): AgentAssembledPrompt {
+}): SidechatAssembledPrompt {
   if (input.model !== undefined) setModelHint(input.model);
 
   // Digest lift (the generic loop's CM-3 contract: it pre-splits at the
   // boundary and hands the LAST digest back at the front of the history —
-  // honored here rather than silently dropped). The sidechat has no
-  // compaction writer yet (Wave 2), so a digest cannot be born today.
+  // honored here rather than silently dropped). Since SC-8c a digest IS
+  // born (the sidechat's compaction service appends it through the shell's
+  // generic mechanism), and the assembly seats it in the FLOW (below),
+  // never in the system message.
   const digestMessages = input.history.filter((m) => m.role === "digest");
   const lastDigest = digestMessages.length > 0 ? digestMessages[digestMessages.length - 1] : null;
   const digestText = lastDigest !== null && lastDigest.role === "digest" ? lastDigest.content : null;
@@ -235,20 +294,24 @@ export function assembleSidechatPrompt(input: {
   );
   const digestSectionText = digestText !== null ? renderDigestSection(digestText) : "";
 
-  // System message: STABLE base prompt first, VOLATILE tail (digest → the
-  // SC-3b STATIC package — no timeline section since SC-4d) last — the other
-  // assemblers' cache-friendly order.
-  const systemWithoutDigest = [input.basePrompt, "", input.context.staticPackage].join("\n");
-  const systemMessage = digestSectionText
-    ? [input.basePrompt, "", digestSectionText, "", input.context.staticPackage].join("\n")
-    : systemWithoutDigest;
+  // System message (SC-4d, unchanged by SC-8c): STABLE base prompt + the
+  // SC-3b STATIC package — no timeline section, and no digest section either
+  // (the digest rides the message flow after the pre-boundary RP layer).
+  const systemMessage = [input.basePrompt, "", input.context.staticPackage].join("\n");
 
-  // Message flow (SC-4d): the real OOC history with the frozen RP events
-  // interleaved as user-role messages placed by the merged timeline's order —
-  // the OOC conversation exists in the prompt exactly once.
-  const flow = buildSidechatMessageFlow(historyFlow, input.context, input.hasUserPush);
+  // Message flow (SC-4d, digest-aware since SC-8c): the real OOC history with
+  // the frozen RP events interleaved as user-role messages placed by the
+  // merged timeline's order — the OOC conversation exists in the prompt
+  // exactly once. `headCount` is the pre-boundary RP layer's size (where the
+  // digest seats, after the trim).
+  const { flow, headCount } = buildSidechatMessageFlow(
+    historyFlow,
+    input.context,
+    input.hasUserPush,
+    digestText !== null,
+  );
 
-  const systemTokens = estimateTokens(systemWithoutDigest);
+  const systemTokens = estimateTokens(systemMessage);
   const digestTokens = digestSectionText ? estimateTokens(digestSectionText) : 0;
   const attachedTokens = input.attachedContextBlock
     ? estimateTokens(input.attachedContextBlock) + estimateTokens(input.recencyAnchorText)
@@ -260,7 +323,10 @@ export function assembleSidechatPrompt(input: {
   // OOC row alike): RP and discussion recede together, in time order, never
   // one without the other. No sidechat-specific trim, no kind carve-outs;
   // the attached block is injected AFTER this (the CX-3 rule) but its tokens
-  // are paid here, exactly like the other assemblers' trim.
+  // are paid here, exactly like the other assemblers' trim. The digest rides
+  // the nonHistory side of this arithmetic (its tokens are pressure the trim
+  // cannot recover) and is re-inserted into the flow AFTERWARDS — the trim
+  // can shrink the RP layer and the tail, never the digest itself.
   const nonHistoryTokens = systemTokens + digestTokens + attachedTokens;
   const plan = planHistoryCompaction({
     messages: flow,
@@ -269,11 +335,37 @@ export function assembleSidechatPrompt(input: {
     responseReserve: input.responseReserveTokens,
     countHistoryTokens: estimateHistoryTokens,
   });
-  const windowedFlow = plan ? plan.messages : flow;
-  const historyTokens = estimateHistoryTokens(windowedFlow);
+  const trimmedFlow = plan ? [...plan.messages] : [...flow];
+  // The history segment and the summary line are measured BEFORE the digest
+  // message seats — its tokens ride the digest segment, exactly the shell's
+  // accounting (a digest in the flow must not double-count).
+  const historyTokens = estimateHistoryTokens(trimmedFlow);
   const compactionSummary = plan
-    ? `Kept ${windowedFlow.length} of ${flow.length} flow messages (budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudgetTokens}, reserve=${input.responseReserveTokens}).`
+    ? `Kept ${trimmedFlow.length} of ${flow.length} flow messages (budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudgetTokens}, reserve=${input.responseReserveTokens}).`
     : undefined;
+  // Seat the digest after the SURVIVING pre-boundary RP layer: the trim kept
+  // a suffix, so the surviving head is however much of it outlived the cut.
+  const windowedFlow = trimmedFlow;
+  if (digestSectionText) {
+    const dropped = flow.length - windowedFlow.length;
+    const survivingHeadCount = Math.max(0, headCount - dropped);
+    windowedFlow.splice(survivingHeadCount, 0, { role: "user", content: digestSectionText });
+  }
+
+  // ── SC-8c auto-compaction pressure: the discussion against the room it
+  // has. The discussion = the digest + the OOC rows as they exist (the
+  // history flow the loop handed in, pre-trim — what a compaction would
+  // fold); the room = the budget minus the static context (system +
+  // attached) and the RP layer — the two things compacting the discussion
+  // cannot shrink. The assembly is the one place both numbers exist; the
+  // stream hands them to the compaction service's sidechat rule.
+  const rpLayerTokens = estimateHistoryTokens(
+    input.context.eventMessages.map((event) => ({ role: "user" as const, content: event.content })),
+  );
+  const autoCompactPressure: SidechatAutoCompactPressure = {
+    discussionTokens: digestTokens + estimateHistoryTokens(historyFlow),
+    roomTokens: input.contextBudgetTokens - (systemTokens + attachedTokens) - rpLayerTokens,
+  };
 
   const messages: AgentPromptMessage[] = [{ role: "system", content: systemMessage }, ...windowedFlow];
   if (input.attachedContextBlock) {
@@ -292,6 +384,7 @@ export function assembleSidechatPrompt(input: {
   return {
     systemMessage,
     messages,
+    autoCompactPressure,
     tokenAccounting: {
       system: systemTokens,
       digest: digestTokens,
@@ -326,12 +419,16 @@ export async function* streamSidechatTurn(
     responseReserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
     toolLoopCeiling: COPILOT_TOOL_LOOP_CEILING,
   };
+  // SC-8c: this turn's auto-compaction pressure — written by the assemble
+  // seam, read by the auto hook the generic loop fires after the turn's
+  // metrics persist. Per-turn state of THIS generator call only.
+  let autoCompactPressure: SidechatAutoCompactPressure | null = null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
     SidechatContextPackage,
     CopilotProfile,
-    AgentAssembledPrompt
+    SidechatAssembledPrompt
   > = {
     logChannelPrefix: "api.sidechat-ooc",
     threadLabel: "ExperienceCopilotThread",
@@ -353,9 +450,13 @@ export async function* streamSidechatTurn(
         ? deps.resolveProfileForChat(thread)
         : resolveBuiltinSidechatOocProfile(deps.db),
 
-    // ── SC-4b/SC-4d assembly: base prompt + STATIC package in the system
-    //  message, frozen events interleaved into the flow (+ pinned context +
-    //  anchor before the turn's own user message) ──
+    // ── SC-4b/SC-4d assembly (digest-aware since SC-8c): base prompt +
+    //  STATIC package in the system message, frozen events interleaved into
+    //  the flow, the digest seated after the pre-boundary RP layer (+ pinned
+    //  context + anchor before the turn's own user message). The assembly's
+    //  auto-compaction pressure is captured for the turn's auto hook — the
+    //  loop fires it only after a COMPLETED turn, by which time this seam
+    //  has run, so the closure below always reads this turn's numbers. ──
     assemble: async ({ thread, request, kindContext: context, agentProfile, history, model }) => {
       const contextItems =
         deps.resolveContextItems && thread.contextLinks.length > 0
@@ -368,7 +469,7 @@ export async function* streamSidechatTurn(
         itemCount: contextItems.length,
         blockLength: attachedContextBlock.length,
       });
-      return assembleSidechatPrompt({
+      const assembled = assembleSidechatPrompt({
         basePrompt: agentProfile.basePrompt,
         context,
         history,
@@ -379,6 +480,8 @@ export async function* streamSidechatTurn(
         responseReserveTokens: limits.responseReserveTokens,
         ...(model !== undefined ? { model } : {}),
       });
+      autoCompactPressure = assembled.autoCompactPressure;
+      return assembled;
     },
 
     // ── No tools until Wave 3 — the empty set, matching the kind's strict
@@ -391,9 +494,21 @@ export async function* streamSidechatTurn(
     getProviderProfile: deps.getProviderProfile,
     getEffectiveProviderProfile: deps.getEffectiveProviderProfile,
     resolveModel: deps.resolveModel,
-    // No autoCompact: compaction is Wave 2's unit; the sidechat's threads
-    // never auto-compact (and the manual compact route refuses the kind with
-    // AGENT_KIND_NOT_WIRED until that unit wires its compactionKinds entry).
+    // SC-8c auto-compaction: the kind's own rule — the discussion against
+    // the room left after the static context and the RP layer — through the
+    // sidechat compaction service, with THIS turn's assembly pressure. The
+    // generic loop fires the hook fire-and-forget after the metrics persist;
+    // absent service (tests, legacy harnesses) → the sidechat never
+    // auto-compacts (the manual route still serves the kind).
+    ...(deps.compaction !== undefined
+      ? {
+          autoCompact: (threadId: string) => {
+            const pressure = autoCompactPressure;
+            if (pressure === null) return Promise.resolve();
+            return deps.compaction!.autoCompactAfterSidechatTurn(threadId, pressure);
+          },
+        }
+      : {}),
     ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
   };
 

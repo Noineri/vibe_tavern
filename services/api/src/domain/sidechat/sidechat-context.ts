@@ -397,8 +397,11 @@ function corrupt(threadId: string, kind: string, seq: number | null, detail: str
 /** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type.
  * `where` names the row in every parser's refusal message. The `rp_sync`
  * case only PARSES — the walk routes that kind through SC-6's coverage
- * (its batch is split per message by summary coverage) before rendering. */
-function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
+ * (its batch is split per message by summary coverage) before rendering.
+ * Exported since SC-8c: the sidechat compaction service maps the SAME
+ * frozen rows (through the SAME validation + refusal path) when it renders
+ * the summarizer transcript's reference events — one derivation. */
+export function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
 	const where = { threadId, kind: entry.kind, seq: entry.seq };
 	switch (entry.kind) {
 		case "rp_sync":

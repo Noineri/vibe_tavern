@@ -63,9 +63,12 @@ import {
  *  the effective profile budget is tighter. */
 const KEEP_WINDOW_MESSAGES = 8;
 
-/** Auto-compaction threshold: fraction of `budgetTokens` that triggers a
- *  background compaction after a turn settles (CM-6). */
-const AUTO_COMPACT_THRESHOLD = 0.8;
+/** Auto-compaction threshold: fraction of the measured space that triggers
+ *  a background compaction after a turn settles (CM-6). The SHELL'S one
+ *  number — every kind's auto rule reuses this constant and never
+ *  re-declares the fraction (SC-8c: the sidechat measures the discussion
+ *  against its remaining room with THIS threshold). */
+export const AUTO_COMPACT_THRESHOLD = 0.8;
 
 export interface CompactCopilotInput {
   threadId: string;
@@ -136,6 +139,31 @@ export interface AgentCompactionSeams<M extends DigestBoundaryMessage> {
   /** Debug-log channel prefix (e.g. "api.experience-copilot"); the suffixes
    *  `.compact.done` / `.auto-compact.error` are appended here. */
   readonly logChannelPrefix: string;
+  /** Optional keep-boundary refinement (SC-8c): kind-specific pairing the
+   *  shell's tool-pair-safe walk does not know about. Receives the kept
+   * window's flow and the cursor the shell's `findSafeCompactionBoundary`
+   * picked; returns the refined cursor (the first index to KEEP). The
+   * sidechat walks back off an assistant head so a question is never split
+   * from its answer. Must only move the cursor BACKWARD (toward 0). */
+  readonly refineKeepBoundary?: (
+    flow: readonly AgentHistoryMessage[],
+    cursor: number,
+  ) => number;
+  /** Optional summarizer-transcript builder (SC-8c): the kind's replacement
+   *  for the default plain conversion of the replaced rows. Receives the
+   *  thread being compacted, the raw rows being summarized (they carry the
+   * rows being summarized (they carry the kind's own columns — the sidechat
+   * reads `seq`), the first KEPT row (the span's exclusive end; null when
+   * the window consumed everything), and whether a prior digest exists (the
+   * sidechat starts its reference-event span at the prior anchor, else at
+   * the timeline start). Returns the transcript flow — the summarizer call
+   * is built from exactly this. */
+  readonly buildSummarizerTranscript?: (input: {
+    readonly threadId: string;
+    readonly toSummarize: readonly M[];
+    readonly keepFirst: M | null;
+    readonly hadPriorDigest: boolean;
+  }) => Promise<AgentFlowMessage[]>;
 }
 
 /** Internal options distinguishing the manual (throw-on-empty) from the
@@ -195,14 +223,27 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
     // No last-used pair → the service cannot resolve a provider/model → skip.
     if (!thread.lastProviderProfileId || !thread.lastModel) return;
 
+    await this.runAutoCompaction(threadId, thread.lastProviderProfileId, thread.lastModel);
+  }
+
+  /** The locked, fire-and-forget compaction run behind EVERY auto gate (the
+   *  shell's `autoCompactAfterTurn` and the sidechat's pressure-based twin
+   * alike): skip-on-empty semantics under the per-thread lock, errors logged
+   * and never re-thrown. Protected so a kind's subclass runs its own gate and
+   * reuses this runner without duplicating the lock/error contract. */
+  protected async runAutoCompaction(
+    threadId: string,
+    providerProfileId: string,
+    model: string,
+  ): Promise<void> {
     await this.locks.runExclusive(
       threadId,
       async () => {
         await this.compactInternal(
           {
             threadId,
-            providerProfileId: thread.lastProviderProfileId ?? undefined,
-            model: thread.lastModel ?? undefined,
+            providerProfileId,
+            model,
           },
           { skipWhenNothingToCompact: true },
         );
@@ -240,9 +281,15 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
     const window = boundary.kept as readonly M[];
 
     const keptFlow = this.seams.storeMessagesToFlow(window);
-    const cursor = keptFlow.length > KEEP_WINDOW_MESSAGES
+    let cursor = keptFlow.length > KEEP_WINDOW_MESSAGES
       ? findSafeCompactionBoundary(keptFlow, KEEP_WINDOW_MESSAGES)
       : 0;
+    // Kind-specific pairing (SC-8c): the sidechat walks the cursor back off
+    // an assistant head so the digest boundary never cuts a question from
+    // its answer; absent → the shell's cursor stands as-is.
+    if (this.seams.refineKeepBoundary) {
+      cursor = this.seams.refineKeepBoundary(keptFlow, cursor);
+    }
     const toSummarize = window.slice(0, cursor);
     const keep = window.slice(cursor);
 
@@ -274,13 +321,23 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
     // being summarized is superseded; the summaries survive in the stubs, and
     // the CURRENT buffers ride in the assembler's context package anyway).
     // This keeps the summarizer call cheap for echo-heavy sessions and agrees
-    // with what the model window showed for those same messages.
-    const toSummarizeFlow = stubHistoricalToolEchoes(
-      this.seams.storeMessagesToFlow(toSummarize).filter(
-        (m): m is AgentFlowMessage => m.role !== "digest",
-      ),
-      { keepUserTurns: 0 },
-    );
+    // with what the model window showed for those same messages. A kind with
+    // its own transcript knowledge (SC-8c: the sidechat interleaves the span's
+    // frozen RP events as reference rows) replaces the whole build through
+    // the seam — the summarizer call is made from exactly what it returns.
+    const toSummarizeFlow = this.seams.buildSummarizerTranscript
+      ? await this.seams.buildSummarizerTranscript({
+          threadId: input.threadId,
+          toSummarize,
+          keepFirst: keep[0] ?? null,
+          hadPriorDigest: priorDigestText !== null,
+        })
+      : stubHistoricalToolEchoes(
+          this.seams.storeMessagesToFlow(toSummarize).filter(
+            (m): m is AgentFlowMessage => m.role !== "digest",
+          ),
+          { keepUserTurns: 0 },
+        );
     const systemPrompt = await this.seams.resolveSystemPrompt();
     const prompt = buildCompactionPrompt(systemPrompt, priorDigestText, toSummarizeFlow);
     const generation = await this.execute({

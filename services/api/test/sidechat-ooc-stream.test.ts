@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,12 +15,16 @@ import {
 	type ExperienceCopilotThreadId,
 } from "@vibe-tavern/domain";
 import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { CopilotProfileResolver } from "../src/domain/interactive/copilot/copilot-profile-resolver.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS } from "../src/domain/interactive/copilot/copilot-limits.js";
 import { getCopilotContextItems } from "../src/domain/agent/agent-context.js";
 import { SIDECHAT_OOC_RECENCY_ANCHOR_TEXT } from "../src/domain/agent/kinds/sidechat-ooc-kind.js";
+import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	streamSidechatTurn,
 	type SidechatStreamDeps,
@@ -208,11 +212,12 @@ async function makeSidechatThread(rpSeed?: string): Promise<{
 async function drainTurn(
 	threadId: string,
 	content: string,
+	depsOverride?: SidechatStreamDeps,
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
 		{ threadId, content, providerProfileId: "prov_1" },
-		deps,
+		depsOverride ?? deps,
 	)) {
 		chunks.push(chunk);
 	}
@@ -410,5 +415,164 @@ describe("streamSidechatTurn (SC-4b)", () => {
 		expect(String(anchorMessage.content)).toBe(SIDECHAT_OOC_RECENCY_ANCHOR_TEXT);
 		const pinnedMessage = capturedMessages[capturedMessages.length - 3]!;
 		expect(String(pinnedMessage.content)).toContain("# Pinned context");
+	});
+});
+
+// ─── SC-8c: the turn after a compaction ─────────────────────────────────
+
+/** The sidechat compaction service over the REAL store with the provider
+ *  boundary faked (injectable executor — no `mock.module`, no network). */
+function makeCompactionService(
+	execute: (input: Record<string, unknown>) => Promise<{ text: string; providerResponse: Record<string, unknown> }>,
+): SidechatOocCompactionService {
+	const profile = makeProviderProfile();
+	const providerProfiles = {
+		getProviderProfile: async () => profile,
+		getProviderModelSettings: async () => null,
+	};
+	return new SidechatOocCompactionService(
+		stores.experienceCopilot,
+		providerProfiles as unknown as ProviderProfileService,
+		execute as unknown as typeof nonstreamingProviderExecute,
+		stores.db,
+	);
+}
+
+describe("streamSidechatTurn after a compaction (SC-8c)", () => {
+	// A deterministic counter (1 char = 1 token) for the auto-rule wiring
+	// assertions; restored after the block (the suite shares one process —
+	// the sidechat-rp-summary overflow suite's pattern).
+	beforeAll(() => {
+		setTokenCountFn((text) => text.length);
+	});
+	afterAll(() => {
+		setTokenCountFn(() => 0);
+	});
+
+	/** The shared fixture: five turns (ten OOC rows) each preceded by an RP
+	 *  advance, so five rp_sync events interleave the OOC rows on the merged
+	 *  timeline; then a manual compaction folds the first pair (the shell's
+	 *  keep-window keeps 8). */
+	async function makeCompactedThread(): Promise<{
+		threadId: ExperienceCopilotThreadId;
+		chatId: ChatId;
+		branchId: ChatBranchId;
+	}> {
+		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED-OPENING");
+		await drainTurn(threadId, "OOC-Q1 first question");
+		for (let turn = 2; turn <= 5; turn++) {
+			await stores.messages.addMessage({
+				chatId,
+				branchId,
+				role: "assistant",
+				authorType: "assistant",
+				content: `RP-ADVANCE-${turn} the story moves on.`,
+			});
+			await drainTurn(threadId, `OOC-Q${turn} discussion continues`);
+		}
+		const service = makeCompactionService(async () => ({
+			text: "DIGEST-BODY-MARKER what was discussed",
+			providerResponse: {},
+		}));
+		await service.compact({ threadId });
+		return { threadId, chatId, branchId };
+	}
+
+	it("a turn after compaction assembles without the guard firing (was: the SC-4d count-check throw)", async () => {
+		const { threadId, chatId, branchId } = await makeCompactedThread();
+		// The digest split is exactly the state the SC-4d guard refused (the
+		// loop's history carries 8 rows, the timeline 11): the digest-aware
+		// flow must assemble it — a FINISH event, never a throw.
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "RP-ADVANCE-6 the story moves on.",
+		});
+		const events = (await drainTurn(threadId, "OOC-Q6 after the digest")).map((chunk) => chunk.event);
+		expect(events).toContain("finish");
+		expect(events).not.toContain("error");
+		// The covered rows left the model window; the digest stands in for
+		// them exactly once.
+		const prompt = promptText();
+		expect(occurrences(prompt, "OOC-Q1 first question")).toBe(0);
+		expect(occurrences(prompt, "DIGEST-BODY-MARKER")).toBe(1);
+	});
+
+	it("after compaction the assembly is static context → RP layer → digest → verbatim tail", async () => {
+		const { threadId, chatId, branchId } = await makeCompactedThread();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "RP-ADVANCE-6 the story moves on.",
+		});
+		await drainTurn(threadId, "OOC-Q6 after the digest");
+
+		// [0] system: the STATIC package — the digest does NOT ride it.
+		const systemMessage = systemMessageText();
+		expect(systemMessage).toContain('<character name="Theron">');
+		expect(systemMessage).not.toContain("# Compacted context (digest)");
+		// [1..2] the pre-boundary RP layer: the first two sync events (their
+		// position predates the keep boundary) as user-role messages.
+		expect(capturedMessages[1]!.role).toBe("user");
+		expect(String(capturedMessages[1]!.content)).toContain('<rp_sync from=');
+		expect(String(capturedMessages[1]!.content)).toContain("RP-SEED-OPENING");
+		expect(String(capturedMessages[2]!.content)).toContain("RP-ADVANCE-2");
+		// [3] the digest: its own user-role message, the shell's digest-section
+		// rendering, seated AFTER the pre-boundary RP layer.
+		expect(capturedMessages[3]!.role).toBe("user");
+		expect(String(capturedMessages[3]!.content)).toContain("# Compacted context (digest)");
+		expect(String(capturedMessages[3]!.content)).toContain("DIGEST-BODY-MARKER");
+		// [4] the verbatim tail begins at the first KEPT OOC row (turn 2's
+		// question); the post-boundary sync events interleave inside the tail.
+		expect(capturedMessages[4]!.role).toBe("user");
+		expect(String(capturedMessages[4]!.content)).toBe("OOC-Q2 discussion continues");
+		const idxAdvance3 = messageIndexContaining("RP-ADVANCE-3");
+		const idxQ3 = messageIndexContaining("OOC-Q3 discussion continues");
+		const idxQ2 = messageIndexContaining("OOC-Q2 discussion continues");
+		expect(idxAdvance3).toBeGreaterThan(idxQ2);
+		expect(idxAdvance3).toBeLessThan(idxQ3);
+		// The turn's own user message rides LAST, after the turn-6 sync event.
+		const idxAdvance6 = messageIndexContaining("RP-ADVANCE-6");
+		const idxQ6 = messageIndexContaining("OOC-Q6 after the digest");
+		expect(idxAdvance6).toBeLessThan(idxQ6);
+		expect(idxQ6).toBe(capturedMessages.length - 1);
+	});
+
+	it("wires the loop's auto hook to the sidechat rule with the assembly's pressure", async () => {
+		const { threadId } = await makeSidechatThread("RP-SEED-AUTO");
+		let executed = 0;
+		const service = makeCompactionService(async () => {
+			executed += 1;
+			return { text: "should not run", providerResponse: {} };
+		});
+		const fired: Array<{ threadId: string; discussionTokens: number; roomTokens: number }> = [];
+		service.autoCompactAfterSidechatTurn = async (firedThreadId, pressure) => {
+			fired.push({
+				threadId: firedThreadId,
+				discussionTokens: pressure.discussionTokens,
+				roomTokens: pressure.roomTokens,
+			});
+		};
+		const events = (await drainTurn(threadId, "auto wiring turn", { ...deps, compaction: service })).map(
+			(chunk) => chunk.event,
+		);
+		expect(events).toContain("finish");
+		// The loop fired the kind's hook exactly once, with the thread id and
+		// this turn's pressure; the tiny fixture discussion sits far below
+		// 80 % of its room, so the gate itself does NOT run the compaction
+		// (the fired numbers are the wiring's proof, not a gate fixture).
+		expect(fired).toHaveLength(1);
+		expect(fired[0]!.threadId).toBe(threadId);
+		expect(fired[0]!.discussionTokens).toBeGreaterThan(0);
+		// The room is the budget minus the static context (base prompt +
+		// package, both non-empty here) minus the RP layer (the seed's sync
+		// event) — strictly below the raw budget.
+		expect(fired[0]!.roomTokens).toBeLessThan(COPILOT_CONTEXT_BUDGET_TOKENS);
+		expect(fired[0]!.roomTokens).toBeGreaterThan(0);
+		expect(executed).toBe(0);
 	});
 });
