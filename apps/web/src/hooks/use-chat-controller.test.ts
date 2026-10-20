@@ -404,15 +404,21 @@ describe("useChatController — generation batch resets", () => {
     seedGenerationBatch();
     useChatStore.setState({ draft: "hello", draftAttachments: [], generations: {}, messageActionId: null });
     seedRpSnapshot();
-    sendChatMessageAction.mockResolvedValue({});
+    let settle!: () => void;
+    sendChatMessageAction.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve; }));
     const { result } = renderHook(() => useChatController());
 
-    await act(async () => { await result.current.handleSend(); });
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend();
+      await Promise.resolve();
+    });
 
     expect(sendChatMessageAction.mock.calls[0]?.slice(0, 4)).toEqual([CHAT, "hello", undefined, undefined]);
     expect(useGenerationQueueStore.getState().batchesByChat[CHAT]).toBeUndefined();
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toBeUndefined();
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toBeUndefined();
+    await act(async () => { settle(); await pending; });
   });
 
   test("no-provider, empty-draft, and already-sending Sends leave queue state untouched", async () => {
@@ -445,15 +451,21 @@ describe("useChatController — generation batch resets", () => {
 
   test("a valid Resend clears the batch, records, and jobs before its unchanged request", async () => {
     seedGenerationBatch();
-    generateReplyAction.mockResolvedValue({});
+    let settle!: () => void;
+    generateReplyAction.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve; }));
     const { result } = renderHook(() => useChatController());
 
-    await act(async () => { await result.current.handleResend(); });
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleResend();
+      await Promise.resolve();
+    });
 
     expect(generateReplyAction).toHaveBeenCalledWith(CHAT, expect.any(AbortSignal));
     expect(useGenerationQueueStore.getState().batchesByChat[CHAT]).toBeUndefined();
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toBeUndefined();
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toBeUndefined();
+    await act(async () => { settle(); await pending; });
   });
 
   test("a no-provider Resend leaves the batch, records, and jobs untouched", async () => {
