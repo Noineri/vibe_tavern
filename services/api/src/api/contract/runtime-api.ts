@@ -52,11 +52,13 @@ export type { ChatSendBody, ChatMessageRuntimeApi } from "./chat-runtime-contrac
 // Experience-copilot contracts live in their own module (extracted for the
 // size ratchet when AS-2c grew the interface — same pattern as the siblings
 // above); re-exported here so every existing import path keeps resolving.
-import type { ExperienceCopilotRuntimeApi } from "./experience-copilot-contracts.js";
+import type { ExperienceCopilotRuntimeApi, AgentThreadProposalsRuntimeApi } from "./experience-copilot-contracts.js";
 export type {
   ExperienceCopilotContextState,
   ExperienceCopilotCompactResult,
   ExperienceCopilotRuntimeApi,
+  AgentThreadProposalResolveWire,
+  AgentThreadProposalsRuntimeApi,
 } from "./experience-copilot-contracts.js";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
@@ -74,17 +76,15 @@ import type {
 	ProviderModelSettings,
 	LorebookLink,
 	ScriptLink,
-	UiSettings,
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, CreateRegexProfileBundleInput, ScriptSafetySettings, UpdateScriptSafetySettings } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, CreateRegexProfileBundleInput } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
 import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-service.js";
 import type { StDirectoryScanResult, StDirectoryImportResult, ImportStreamEvent } from "../../shared/st-directory-scanner.js";
-import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-service.js";
 import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
 import type { ImageGenListing, ImageGenRuntimeApi, SttRuntimeApi, TtsRuntimeApi } from "./profile-runtime-contracts.js";
 export type { ImageGenListing, ImageGenRuntimeApi, SttRuntimeApi, TtsRuntimeApi } from "./profile-runtime-contracts.js";
@@ -419,25 +419,11 @@ export interface AiAssistantRuntimeApi {
 	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }
 
-// ─── Settings ────────────────────────────────────────────────────────
-
-export interface SettingsRuntimeApi {
-	getUiSettings: () => Promise<UiSettings>;
-	updateUiSettings: (body: Record<string, unknown>) => Promise<UiSettings>;
-	/** Script-safety singleton (SCRIPT_SAFETY_PLAN decision 3): one server-stored
-	 *  "don't show again" flag for imported-script warnings, shared across all
-	 *  devices. GET returns the defaults when no row exists yet. */
-	getScriptSafetySettings: () => Promise<ScriptSafetySettings>;
-	updateScriptSafetySettings: (body: UpdateScriptSafetySettings) => Promise<ScriptSafetySettings>;
-}
-
-// ─── Mobile Access ───────────────────────────────────────────────────
-
-export interface MobileAccessRuntimeApi {
-	getMobileAccessInfo: () => Promise<MobileAccessInfo>;
-	regenerateMobileAccessToken: () => Promise<{ token: string }>;
-	revokeMobileAccess: () => Promise<{ token: null }>;
-}
+// ─── Settings + Mobile Access — extracted to settings-contracts.ts for the
+// size ratchet (SC-11); re-exported here so every existing import path keeps
+// resolving (same pattern as skill-contracts.js above).
+import type { SettingsRuntimeApi, MobileAccessRuntimeApi } from "./settings-contracts.js";
+export type { SettingsRuntimeApi, MobileAccessRuntimeApi };
 
 // Co-Author + copilot skill contracts live in their own module (extracted
 // for the size ratchet when AS-8d1 grew the per-kind seam — same pattern as
@@ -850,6 +836,9 @@ export interface RuntimeApi extends TrackerTemplateApi {
 	dice: DiceRuntimeApi;
 	experience: ExperienceRuntimeApi;
 	experienceCopilot: ExperienceCopilotRuntimeApi;
+	/** Thread proposal resolution (SC-11) — the sidechat objective proposals'
+	 * apply/reject slice (its own adapter, like every sub-interface). */
+	agentThreadProposals: AgentThreadProposalsRuntimeApi;
 	copilotProfiles: CopilotProfileRuntimeApi;
 	agentPlan: AgentPlanRuntimeApi;
 	samplerSets: SamplerSetRuntimeApi;

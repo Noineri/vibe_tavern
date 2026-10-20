@@ -74,7 +74,9 @@ export const BUDGETS = {
 	// stub, `satisfies` for the trace literal). Lower when the nominal DI
 	// boundaries become structural.
 	// 1245 (2026-10-15, RO-5): unused casts removed; ratchet lowered to match.
-	asNever: 1245,
+	// 1244 (2026-10-21, SC-11): one insights scene-harness stub typed — the
+	// pre-existing 1-over (1246 at SC-10's HEAD) pays down in this unit.
+	asNever: 1244,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

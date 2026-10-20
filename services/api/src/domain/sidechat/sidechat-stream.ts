@@ -28,9 +28,14 @@
  * active scope, and the branch view the turn's sync ALREADY read ("one view
  * per turn" — a search never runs a second branch read or dry RP assembly).
  * Served only when the resolved profile's tool set enables them; absent
- * mapping (tests, legacy harnesses) → no search tools.
+ * mapping (tests, legacy harnesses) → no search tools. Since SC-11 the
+ * kind also serves `propose_objective` (kinds/sidechat/
+ * sidechat-objective-tools.ts) — the proposal-returning twin that needs no
+ * per-turn state, so it rides the SAME seam and the SAME profile gating
+ * even when the search mapping is absent.
  *
- * NO tools until Wave 3 — since SC-10 the search pair above. Since SC-6 the
+ * NO tools until Wave 3 — since SC-10 the search pair, since SC-11 also the
+ * objective-proposal tool above. Since SC-6 the
  * assembly runs the SHELL's existing budget trim (planHistoryCompaction)
  * over the merged flow: over the shared budget the OLDEST flow entries drop
  * first, RP and discussion alike, in time order. Since SC-8c the flow
@@ -83,6 +88,7 @@ import {
 	type ContextSearchStoreReads,
 } from "../context/context-search-service.js";
 import { buildSidechatSearchTools } from "../agent/kinds/sidechat/sidechat-search-tools.js";
+import { buildSidechatObjectiveTools } from "../agent/kinds/sidechat/sidechat-objective-tools.js";
 import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
@@ -586,33 +592,39 @@ export async function* streamSidechatTurn(
       return assembled;
     },
 
-    // ── SC-10: the kind's first tools — the search pair
+    // ── SC-10 + SC-11: the kind's tools. The search pair
     //  (kinds/sidechat/sidechat-search-tools.ts) over a per-turn session:
     //  the ONE extracted store-reads mapping (NO Co-Author skill catalog —
     //  the sidechat's skills come through `@` pins, SC-5), the chat's active
     //  scope, and THIS turn's branch view (the sync's — never a second
-    //  branch read or dry RP assembly). Served only when the RESOLVED
+    //  branch read or dry RP assembly). SC-11 adds `propose_objective`
+    //  (kinds/sidechat/sidechat-objective-tools.ts), which needs no
+    //  per-turn state and therefore rides the same profile gating even
+    //  when the search mapping is absent. Served only when the RESOLVED
     //  profile's tool set enables them (a tool landed with its toggle off is
-    //  not landed) and the mapping is wired (absent: tests, legacy
-    //  harnesses); the ownership narrowing is the same corruption guard
+    //  not landed); the ownership narrowing is the same corruption guard
     //  resolveProfile uses. ──
-    buildTools: ({ thread, agentProfile }) =>
-      deps.searchStoreReads !== undefined && isChatOwnedAgentThread(thread)
-        ? buildSidechatSearchTools({
-            session: createContextSearchSession(
-              deps.searchStoreReads,
-              async () => {
-                const chat = await deps.context.chats.getById(thread.chatId);
-                return {
-                  activeCharacterId: chat?.characterId ?? null,
-                  activePersonaId: chat?.personaId ?? null,
-                };
-              },
-              () => Promise.resolve(turnBranchView),
-            ),
-            toolSet: agentProfile.toolSet,
-          })
-        : {},
+    buildTools: ({ thread, agentProfile }) => {
+      if (!isChatOwnedAgentThread(thread)) return {};
+      const search =
+        deps.searchStoreReads !== undefined
+          ? buildSidechatSearchTools({
+              session: createContextSearchSession(
+                deps.searchStoreReads,
+                async () => {
+                  const chat = await deps.context.chats.getById(thread.chatId);
+                  return {
+                    activeCharacterId: chat?.characterId ?? null,
+                    activePersonaId: chat?.personaId ?? null,
+                  };
+                },
+                () => Promise.resolve(turnBranchView),
+              ),
+              toolSet: agentProfile.toolSet,
+            })
+          : {};
+      return { ...search, ...buildSidechatObjectiveTools({ toolSet: agentProfile.toolSet }) };
+    },
   };
 
   const streamDeps: AgentStreamDeps<ExperienceCopilotThread> = {

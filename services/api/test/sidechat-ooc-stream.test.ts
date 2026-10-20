@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
+import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import {
 	createStoreContainer,
 	type ProviderProfile,
@@ -22,6 +23,7 @@ import { CopilotProfileResolver } from "../src/domain/interactive/copilot/copilo
 import { COPILOT_CONTEXT_BUDGET_TOKENS } from "../src/domain/interactive/copilot/copilot-limits.js";
 import { getCopilotContextItems } from "../src/domain/agent/agent-context.js";
 import { SIDECHAT_OOC_RECENCY_ANCHOR_TEXT, resolveBuiltinSidechatOocProfile } from "../src/domain/agent/kinds/sidechat-ooc-kind.js";
+import { sidechatObjectiveProposalInputSchema } from "../src/domain/agent/kinds/sidechat/sidechat-objective-tools.js";
 import { buildContextSearchStoreReads } from "../src/domain/context/context-search-store-reads.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
@@ -72,8 +74,10 @@ type CapturedMessage = { role: string; content: unknown };
 let capturedMessages: CapturedMessage[] = [];
 /** SC-10: the fake also records the tool set the loop served (the search
  *  pair's wiring — served-ness and execute results — is asserted through
- *  the REAL buildTools seam, no re-implementation). */
-let capturedTools: Record<string, { execute: (args: unknown) => Promise<unknown> }> = {};
+ *  the REAL buildTools seam, no re-implementation). The execute signature
+ *  keeps the SDK's second parameter (SC-11's propose_objective reads the
+ *  toolCallId from it) typed minimally as what the tests pass. */
+let capturedTools: Record<string, { execute: (args: unknown, options?: { toolCallId: string }) => Promise<unknown> }> = {};
 let fakeReply = REPLY_TEXT;
 
 function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
@@ -797,9 +801,10 @@ describe("streamSidechatTurn search tools (SC-10)", () => {
 
 		const events = (await drainTurn(threadId, "Find that lantern scene")).map((c) => c.event);
 		expect(events).toContain("finish");
-		// SC-10's toggles are ON in the kind's default set and the builtin seed —
-		// both tools are served, nothing else.
-		expect(Object.keys(capturedTools).sort()).toEqual(["read_context_item", "search_context"]);
+		// SC-10's toggles are ON in the kind's default set and the builtin seed,
+		// and SC-11 flipped propose_objective — all three are served, nothing
+		// else.
+		expect(Object.keys(capturedTools).sort()).toEqual(["propose_objective", "read_context_item", "search_context"]);
 
 		const results = await searchTools("lantern");
 		const hit = results.find((r) => r.type === "rp-message");
@@ -893,5 +898,64 @@ describe("streamSidechatTurn search tools (SC-10)", () => {
 		// a broken index).
 		const ownHits = await searchTools("harbour");
 		expect(ownHits.some((r) => r.type === "rp-message")).toBe(true);
+	});
+});
+
+// ─── SC-11: the objective-proposal tool ────────────────────────────────
+
+describe("streamSidechatTurn objective proposal tool (SC-11)", () => {
+	it("serves propose_objective on the seed's toggles; execute returns the pending record proposal keyed by the tool call", async () => {
+		const { threadId } = await makeSidechatThread("The bridge is out.");
+		await drainTurn(threadId, "What should we track next?");
+		// SC-11's toggle is ON in the kind's default set and the builtin seed —
+		// the tool rides the same buildTools seam beside the search pair.
+		const tool = capturedTools["propose_objective"];
+		expect(tool).toBeDefined();
+
+		// The persisted-output contract: a pending objective CREATE proposal
+		// whose id IS the tool call id (the apply/reject route's key), payload
+		// the tool input verbatim (reason omitted when the model omitted it).
+		const proposal = (await tool!.execute(
+			{ description: "Find another way across the ravine", reason: "The map shows a ford" },
+			{ toolCallId: "tc_sc11_1" },
+		)) as RecordProposal;
+		expect(proposal).toEqual({
+			kind: "record",
+			id: "tc_sc11_1",
+			recordType: "objective",
+			op: "create",
+			payload: { description: "Find another way across the ravine", reason: "The map shows a ford" },
+			status: "pending",
+		});
+		const bare = (await tool!.execute(
+			{ description: "Rest at the waystation" },
+			{ toolCallId: "tc_sc11_2" },
+		)) as RecordProposal;
+		expect(bare.payload).toEqual({ description: "Rest at the waystation" });
+	});
+
+	it("the input schema rejects an empty description (the loop's validation contract)", async () => {
+		expect(sidechatObjectiveProposalInputSchema.safeParse({ description: "" }).success).toBe(false);
+		expect(sidechatObjectiveProposalInputSchema.safeParse({ description: " " }).success).toBe(false);
+		expect(sidechatObjectiveProposalInputSchema.safeParse({ description: "Scout the ford" }).success).toBe(true);
+		expect(
+			sidechatObjectiveProposalInputSchema.safeParse({ description: "Scout the ford", reason: "Low water" }).success,
+		).toBe(true);
+	});
+
+	it("a profile with only the objective toggle off serves the search pair but no propose_objective", async () => {
+		const { threadId } = await makeSidechatThread("Toggle-off objective scene.");
+		// The SC-10 pair stays on; SC-11's key is absent (tool sets store only
+		// enabled keys — an absent key IS off). buildTools gates per key on the
+		// resolved profile, so the search pair still serves.
+		const searchOnly = {
+			...(await resolveBuiltinSidechatOocProfile()),
+			toolSet: { search_context: true, read_context_item: true },
+		};
+		await drainTurn(threadId, "toggle check turn", {
+			...deps,
+			resolveProfileForChat: async () => searchOnly,
+		});
+		expect(Object.keys(capturedTools).sort()).toEqual(["read_context_item", "search_context"]);
 	});
 });

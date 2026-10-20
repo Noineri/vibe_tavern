@@ -43,6 +43,8 @@ import { ImagePromptProfileAdapter } from "./image-prompt-profile-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
+import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import type { DiceService } from "../../domain/dice/dice-service.js";
 import type { ExperienceService } from "../../domain/interactive/experience-service.js";
@@ -92,6 +94,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
+	readonly agentThreadProposals: AgentThreadProposalAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -197,5 +200,15 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			scriptSkillService,
 			sidechatSkillService,
 		);
+		// SC-11: the thread-proposal apply/reject slice, wired with the REUSED
+		// insights seams — the insights runtime's add-task member (route mode;
+		// wired above, so its bound member is ready here) and the
+		// ObjectiveService's short-term adder (goals mode; the branded id
+		// enters at that adapter edge).
+		this.agentThreadProposals = new AgentThreadProposalAdapter(stores, {
+			addObjectiveTask: (chatId, body) => this.insights.addObjectiveTask(chatId, body),
+			addShortTermGoal: (chatId, description) =>
+				objectiveService.addShortTermGoal(brandId<ChatId>(chatId), description),
+		});
 	}
 }

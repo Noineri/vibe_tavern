@@ -53,7 +53,7 @@
     "packages/prompt-pipeline/src/assemble.ts": 1285,
     "packages/prompt-pipeline/src/macro-registry.ts": 867,
     "services/api/src/api/adapters/image-gen-adapter.ts": 1477,
-    "services/api/src/api/contract/runtime-api.ts": 858,
+    "services/api/src/api/contract/runtime-api.ts": 847,
     "services/api/src/domain/ai-assistant/ai-assistant-stream.ts": 1075,
     "services/api/src/domain/chat/live-chat-orchestrator.ts": 1025,
     "services/api/src/domain/insights/objective-service.ts": 833,

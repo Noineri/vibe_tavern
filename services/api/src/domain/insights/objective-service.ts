@@ -207,7 +207,7 @@ function goalsRevision(state: ObjectiveState): string {
   return JSON.stringify({ mode: state.mode, longTermGoal: state.longTermGoal, shortTermGoals: state.shortTermGoals });
 }
 
-/** Small FIFO keyed coordinator used for independent LLM and commit lanes. */
+/** Small FIFO keyed coordinator used for independent LLM and commit lanes. forks: 1 — the per-proposal lock in domain/sidechat/sidechat-objective-proposal.ts (SC-11). */
 class ObjectiveKeyedCoordinator {
   private readonly tails = new Map<string, Promise<void>>();
 

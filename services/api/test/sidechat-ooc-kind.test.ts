@@ -144,9 +144,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     // toggle a tool this species does not serve.
     expect(kind.toolSetSchema.safeParse({ write_buffer: true }).success).toBe(false);
     expect(kind.toolSetSchema.safeParse({ run_script_test: true }).success).toBe(false);
-    // SC-10 flipped exactly the search pair (each Wave-3 unit flips its own
-    // keys); propose_objective / todo / read_plan stay off until their units.
-    expect(kind.defaultToolSet).toEqual({ search_context: true, read_context_item: true });
+    // SC-10 flipped the search pair and SC-11 `propose_objective` (each
+    // Wave-3 unit flips its own keys); todo / read_plan stay off until their
+    // units.
+    expect(kind.defaultToolSet).toEqual({ search_context: true, read_context_item: true, propose_objective: true });
   });
 });
 
@@ -163,9 +164,9 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     // loader ladder), byte-identical — no wrapper, no trimming.
     const assetText = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
     expect(seed.basePrompt).toBe(assetText);
-    // SC-10 flipped the search pair; every other toggle stays off until its
-    // unit lands its tool.
-    expect(seed.toolSet).toEqual({ search_context: true, read_context_item: true });
+    // SC-10 flipped the search pair and SC-11 `propose_objective`; every
+    // other toggle stays off until its unit lands its tool.
+    expect(seed.toolSet).toEqual({ search_context: true, read_context_item: true, propose_objective: true });
 
     // The unit's why: the seed passes the wire schema the generic kind seed
     // deliberately fails (empty base → min(1)); pin both sides.

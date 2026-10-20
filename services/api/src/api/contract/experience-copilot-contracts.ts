@@ -6,6 +6,7 @@
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentChatDefaultModelWire } from "@vibe-tavern/api-contracts";
+import type { RecordProposal } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -28,6 +29,14 @@ export interface ExperienceCopilotCompactResult {
  *  NOT the multi-mode AI-assistant. The stream yields SSE-shaped
  *  `{ event, data }` chunks (same contract as `sendMessageStream`) so the route
  *  emits them verbatim through `streamSSE`. */
+
+/** The SC-11 apply/reject response: the resolved proposal with its final
+ *  `status` (`applied` / `rejected`) — the same `RecordProposal` shape the
+ *  tool row carries, so SC-13's review card re-renders from it directly. */
+export interface AgentThreadProposalResolveWire {
+  proposal: RecordProposal;
+}
+
 export interface ExperienceCopilotRuntimeApi {
 	/** Resolve the agent kind serving a stream turn's script — the AS-2c
 	 *  kind-resolution seam. Loads the thread (404 when missing), then the
@@ -174,4 +183,43 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  (read-only). Nulls — never an error — when no profile is active or
 	 *  the active profile has no default model. */
 	agentChatGetDefaultModel: (chatId: string) => Promise<AgentChatDefaultModelWire>;
+}
+
+// ─── Thread proposal resolution (SIDECHAT_PLAN SC-11) ───────────────────────
+//
+// The user-side Accept/Reject of a sidechat `propose_objective` proposal
+// behind `POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,
+// reject}`. Body-less: the proposal payload lives in the addressed tool
+// row, the chat comes from the thread row, and the tracker's on/off +
+// mode are read at ACCEPT time (never at proposal time). The resolution
+// (ownership, typed errors, the reused insights services, the status
+// write through setToolResultOutput) lives in
+// `domain/sidechat/sidechat-objective-proposal.ts`; its own adapter slice
+// (`AgentThreadProposalAdapter`) implements the interface below so the big
+// copilot adapter stays under its size ratchet.
+
+/** The thread-proposal resolution runtime contract — implemented by the
+ *  dedicated `AgentThreadProposalAdapter` (SC-11), consumed by
+ *  `api/routes/agent-thread-proposals.ts`. */
+export interface AgentThreadProposalsRuntimeApi {
+	/** Apply one pending objective proposal: add the item through the reused
+	 *  insights service for the tracker's CURRENT mode (route → a task via
+	 *  the insights runtime's `addObjectiveTask`, goals → a short-term goal
+	 *  via `ObjectiveService.addShortTermGoal`) and mark the tool row
+	 *  `applied`. Typed 409s: `objective_tracker_disabled` (tracker off at
+	 *  Accept time), `objective_proposal_already_resolved` (repeat apply);
+	 *  404 for a foreign/non-proposal toolCallId or a thread that is not a
+	 *  chat-owned `sidechat-ooc` row. */
+	agentThreadApplyObjectiveProposal: (
+		threadId: string,
+		toolCallId: string,
+	) => Promise<AgentThreadProposalResolveWire>;
+
+	/** Reject one pending objective proposal: write nothing to the tracker,
+	 *  mark the tool row `rejected`. Same 404/409 contract as
+	 *  {@link agentThreadApplyObjectiveProposal}. */
+	agentThreadRejectObjectiveProposal: (
+		threadId: string,
+		toolCallId: string,
+	) => Promise<AgentThreadProposalResolveWire>;
 }
