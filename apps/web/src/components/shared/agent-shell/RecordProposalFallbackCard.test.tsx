@@ -33,6 +33,7 @@ describe("RecordProposalFallbackCard (AS-5)", () => {
     const { getByTestId } = render(
       <RecordProposalFallbackCard
         proposal={proposal({ recordType: "never-seen-widget", op: "update", targetId: "w_42" })}
+        threadId="thread-1"
       />,
     );
     const card = getByTestId("record-proposal-fallback-card");
@@ -52,7 +53,7 @@ describe("RecordProposalFallbackCard (AS-5)", () => {
     circular.self = circular;
     let card: ReturnType<typeof render> | null = null;
     expect(() => {
-      card = render(<RecordProposalFallbackCard proposal={proposal({ payload: circular })} />);
+      card = render(<RecordProposalFallbackCard proposal={proposal({ payload: circular })} threadId="thread-1" />);
     }).not.toThrow();
     expect(card!.getByTestId("record-proposal-fallback-payload").textContent).toBe(
       "agent.record_proposal.bad_payload",
@@ -60,7 +61,7 @@ describe("RecordProposalFallbackCard (AS-5)", () => {
   });
 
   it("Accept is disabled with the unsupported-type hint; pending status shows", () => {
-    const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} />);
+    const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
     const accept = getByTestId("record-proposal-fallback-accept");
     expect(accept.getAttribute("disabled")).not.toBeNull();
     expect(accept.getAttribute("title")).toBe("agent.record_proposal.hint");

@@ -147,8 +147,11 @@ export function AgentShell({
   // from the thread owner — a host without the hook (absent) shows NO plan
   // block: the section below stays unmounted and the hook performs no fetch.
   // Both built-in hosts return their script owner, so their plan section
-  // renders exactly as before this seam existed.
-  const scriptId = scriptOwnerId(owner);
+  // renders exactly as before this seam existed. SC-13a: the script id is
+  // derived ONLY for a script owner — a chat owner carries no script id
+  // (`scriptOwnerId` throws for it); the chat path passes its chatId to the
+  // profile modal below instead. This is the shell's ONLY owner-kind branch.
+  const scriptId = owner.kind === "script" ? scriptOwnerId(owner) : undefined;
   // The session effects key on the owner's logical identity, never on the
   // object identity — a fresh-but-equal owner literal must not refetch.
   const ownerKey = agentOwnerKey(owner);
@@ -639,6 +642,7 @@ export function AgentShell({
     <>
       <AgentProfileModal
         scriptId={scriptId}
+        chatId={owner.kind === "chat" ? owner.chatId : undefined}
         agentKind={kind}
         assignedProfileId={assignedProfileId}
         isOpen={profileModalOpen}

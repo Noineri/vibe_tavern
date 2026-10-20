@@ -7,7 +7,7 @@
  * done-card render. The word-diff disclosure and the Apply button are GONE —
  * the inline diff review lives in ExperienceCopilotEditorPanel (CD-5/CD-6).
  */
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 
@@ -15,6 +15,7 @@ useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let AgentActivityCard: typeof import("./AgentActivityCard.js").AgentActivityCard;
+let LocaleProvider: typeof import("../../../i18n/context.js").LocaleProvider;
 
 beforeAll(async () => {
   ({ render } = await import("@testing-library/react"));
@@ -24,7 +25,46 @@ beforeAll(async () => {
   // registry; same pattern as AgentProfileModal.test.tsx).
   await import("../../build/editors/copilot/experience-agent-host.js");
   await import("../../build/editors/script-agent-host.js");
+  // SC-13a: the caption-params fixture host — the only host that returns
+  // `titleParams` (both built-ins return none, pinned by the suites below).
+  const { getAgentHost, registerAgentHost } = await import("../../../lib/agent-host-registry.js");
+  registerAgentHost({
+    kind: "sc13a-caption-host",
+    i18n: {
+      title: "agent_title",
+      placeholder: "agent_input_placeholder",
+      loading: "agent_loading",
+      emptyTitle: "agent_title",
+    },
+    toolKeys: [],
+    profileAssignment: { target: "chat" },
+    bufferSpecs: [],
+    transport: getAgentHost("experience").transport,
+    buildSendOptions: () => ({}),
+    toolCaption: (probe) =>
+      probe.toolName === "caption_probe"
+        ? { titleKey: "copilot_review_hunks_count", titleParams: { n: 3 } }
+        : undefined,
+    recordProposalRenderers: {},
+  });
   ({ AgentActivityCard } = await import("./AgentActivityCard.js"));
+  ({ LocaleProvider } = await import("../../../i18n/context.js"));
+  // The params test mounts the real LocaleProvider: its `t` reads the
+  // process-global i18next singleton at render time, and the provider only
+  // boots it in a post-mount effect (one render too late — the card would
+  // keep the pre-init empty string). Booting here makes the bundled
+  // resources synchronously available from the first render (initAsync is
+  // false); the identity-fallback suites below never read the singleton.
+  const { initI18n } = await import("../../../i18n/i18n.js");
+  initI18n("en");
+});
+
+afterAll(async () => {
+  // R13: the params test below mounts the real LocaleProvider (its effect
+  // boots the process-global i18n singleton at the default locale); restore
+  // the default language so no later assertion in this worker can observe it.
+  const { i18next } = await import("../../../i18n/i18n.js");
+  await i18next.changeLanguage("en");
 });
 
 function activity(over: Partial<AgentToolActivity>): AgentToolActivity {
@@ -289,5 +329,25 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(cards[3]!.parentElement!.textContent).not.toContain("vm_error");
     expect(cards[5]!.parentElement!.textContent).toContain("stalled");
     expect(cards[7]!.parentElement!.textContent).toContain("{not json");
+  });
+});
+
+describe("CopilotActivityCard — caption params (SC-13a)", () => {
+  it("a caption with params renders interpolated", () => {
+    // The fixture host captions `caption_probe` with the hunks-count key
+    // (`{n} hunks pending` in en) plus `{ n: 3 }` — the card renders
+    // `t(titleKey, titleParams)`, so the real LocaleProvider interpolates.
+    // (Without the provider `t` is the identity fallback and params are
+    // unobservable — the ImagePromptTemplatesPane precedent mounts the real
+    // provider at the default locale for the same reason.)
+    const { getByTestId } = render(
+      <LocaleProvider initialLocale="en">
+        <AgentActivityCard
+          kind="sc13a-caption-host"
+          activity={activity({ toolCallId: "p1", toolName: "caption_probe", status: "done", summary: "raw probe output" })}
+        />
+      </LocaleProvider>,
+    );
+    expect(getByTestId("copilot-activity-title").textContent).toBe("3 hunks pending");
   });
 });

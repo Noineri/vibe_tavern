@@ -98,7 +98,10 @@ type DetailMode = "view" | "edit" | "create";
  * the global `modal-store` (which is co-author-specific).
  */
 export interface AgentProfileModalProps {
-	scriptId: string;
+	/** SC-13a: optional since the chat-owned shell passes only its chatId —
+	 *  the script write below is unreachable for chat-target hosts (their
+	 *  footer renders the chat actions instead). */
+	scriptId?: string;
 	/** SC-0g: the chat whose own profile choice a chat-target host writes.
 	 *  Required when the host's `profileAssignment` targets `"chat"`
 	 *  (no production chat host exists yet — SC-13; tests pass a fixture
@@ -281,7 +284,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	};
 
 	const handleAssign = async () => {
-		if (!selected || isSelectedActive) return;
+		if (!selected || isSelectedActive || scriptId === undefined) return;
 		try {
 			// Built-in = unassign (null); a user profile = its id.
 			await setCopilotProfile(scriptId, selected.id === BUILTIN_PROFILE_ID ? null : selected.id);

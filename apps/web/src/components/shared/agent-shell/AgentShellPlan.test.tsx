@@ -79,11 +79,13 @@ mock.module("../ToolbarSelect.js", () => ({
 }));
 
 // The profile modal is pinned in its own suite — stub it so no profile fetch
-// can fire here (the gear is never clicked).
+// can fire here. SC-13a: the stub exposes the ids it received, so the
+// chat-owner test pins the shell's wiring (chatId through, no script id).
 const realProfileModal = await import("./AgentProfileModal.js");
 mock.module("./AgentProfileModal.js", () => ({
 	...realProfileModal,
-	AgentProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="sc0i-profile-modal-stub" /> : null),
+	AgentProfileModal: ({ isOpen, chatId, scriptId }: { isOpen: boolean; chatId?: string; scriptId?: string }) =>
+		(isOpen ? <div data-testid="sc0i-profile-modal-stub" data-chat-id={chatId ?? ""} data-script-id={scriptId ?? ""} /> : null),
 }));
 
 // Radix Popover.Content never mounts under happy-dom — render it inline so
@@ -97,6 +99,7 @@ mock.module("@radix-ui/react-popover", () => ({
 }));
 
 let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentShell: typeof import("./AgentShell.js").AgentShell;
 let registerAgentHost: typeof import("../../../lib/agent-host-registry.js").registerAgentHost;
@@ -125,6 +128,28 @@ const THREAD: ExperienceCopilotThreadWire = {
 	contextLinks: [],
 	todo: [],
 };
+
+// SC-13a: the chat-owned fixture host — chat-only (no editor pane), no plan
+// owner (absent = no plan block, so the bare script hosts' throwing
+// `planOwner` seam is never walked), profile choice written to the chat row.
+function chatDescriptor(kind: string): AgentHostDescriptor {
+	return {
+		kind,
+		i18n: {
+			title: "agent_title",
+			placeholder: "agent_input_placeholder",
+			loading: "agent_loading",
+			emptyTitle: "agent_title",
+			emptySub: "agent_subtitle",
+		},
+		toolKeys: [],
+		profileAssignment: { target: "chat" },
+		bufferSpecs: [],
+		transport: stubTransport(),
+		buildSendOptions: () => ({}),
+		recordProposalRenderers: {},
+	};
+}
 
 function descriptor(kind: string, withPlan: boolean): AgentHostDescriptor {
 	return {
@@ -202,7 +227,7 @@ let unsubs: Array<() => void> = [];
 
 beforeAll(async () => {
 	globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
-	({ render, waitFor } = await import("@testing-library/react"));
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ AgentShell } = await import("./AgentShell.js"));
 	({ registerAgentHost, scriptOwnerId } = await import("../../../lib/agent-host-registry.js"));
 	const experienceApi = await import("../../../api/experience-copilot-api.js");
@@ -220,6 +245,7 @@ beforeAll(async () => {
 	unsubs = [
 		registerAgentHost(descriptor("sc0i-plan-host", true)),
 		registerAgentHost(descriptor("sc0i-bare-host", false)),
+		registerAgentHost(chatDescriptor("sc13a-chat-host")),
 	];
 });
 
@@ -269,5 +295,27 @@ describe("AgentShell plan section from the host (SC-0i)", () => {
 		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
 		expect(planUrls).toHaveLength(0);
 		expect(queryByTestId("agent-plan-panel")).toBeNull();
+	});
+});
+
+// ─── SC-13a: the shell serves a chat-owned host ────────────────────────────
+
+describe("AgentShell chat owner (SC-13a)", () => {
+	it("a chat owner mounts without throwing and the profile modal receives the chat id", async () => {
+		// Pre-SC-13a this render threw: the shell derived the script id
+		// unconditionally (`scriptOwnerId` throws for a chat owner).
+		const { getByTestId } = render(
+			withIsolatedI18n(
+				<AgentShell kind="sc13a-chat-host" owner={{ kind: "chat", chatId: "sc13a-chat", branchId: "branch-1", agentKind: "sc13a-chat" }} isMobile={false} />,
+			),
+		);
+		// Settle signal (same anchor as above): the loaded-session branch.
+		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
+		// The gear opens the profile modal; the stub exposes the ids the
+		// shell passed — the chat id rides through, no script id is derived.
+		fireEvent.click(getByTestId("copilot-profile-gear-btn"));
+		const stub = getByTestId("sc0i-profile-modal-stub");
+		expect(stub.getAttribute("data-chat-id")).toBe("sc13a-chat");
+		expect(stub.getAttribute("data-script-id")).toBe("");
 	});
 });

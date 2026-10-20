@@ -214,9 +214,12 @@ export interface AgentHostBridge {
   setInputPrefill: (prefill: { text: string } | null) => void;
 }
 
-/** Props a per-recordType record-proposal renderer receives. */
+/** Props a per-recordType record-proposal renderer receives. SC-13a: the card
+ *  resolves against its thread (accept/reject land in SC-13c), so the thread
+ *  id rides the props — the fallback ignores it until then. */
 export interface RecordProposalCardProps {
   proposal: RecordProposal;
+  threadId: string;
 }
 
 /**
@@ -355,9 +358,11 @@ export interface AgentHostDescriptor {
   buildSendOptions: (ctx: AgentHostContext) => AgentSendOptions;
   /** AS-8e5: optional per-tool caption — the host translates a machine-shaped
    *  activity (the script `run_script_test` JSON envelope) into an i18n title
-   *  key plus an optional detail line. Undefined = the shell keeps today's
-   *  fallback (the model summary / raw tool-result text). */
-  toolCaption?: (activity: AgentToolActivity) => { titleKey: AgentI18nKey; detail?: string } | undefined;
+   *  key plus an optional detail line. SC-13a: the title may carry
+   *  interpolation params (`titleParams`, rendered through `t(key, params)`);
+   *  `detail` stays the error line — never a normal caption. Undefined = the
+   *  shell keeps today's fallback (the model summary / raw tool-result text). */
+  toolCaption?: (activity: AgentToolActivity) => { titleKey: AgentI18nKey; titleParams?: Record<string, string | number>; detail?: string } | undefined;
   /** SC-0e: optional per-kind model default — consulted ONLY when the kind
    *  has no usable saved binding (no row pair whose profile still exists).
    *  No built-in host defines it in this unit (both keep today's

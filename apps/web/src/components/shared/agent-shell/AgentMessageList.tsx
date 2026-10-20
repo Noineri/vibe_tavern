@@ -1,6 +1,6 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import { isRecordProposal, type AgentProposal, type ExperienceCopilotMessageWire, type RecordProposal } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
   useAgentTurnStore,
@@ -11,10 +11,12 @@ import {
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
-import { agentThreadKey, type AgentKind } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentKind, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
+import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentAskCard } from "./AgentAskCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
+import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
@@ -26,15 +28,31 @@ const EMPTY_FEED: AgentFeedEntry[] = [];
 /** One ordered render item pinned between two flow messages (TA-1, owner
  *  ruling 2026-10-12: ONE accordion per assistant turn hides ALL of that
  *  turn's tool calls). `"accordion"` is the turn's single tool group —
- *  placed at the turn's FIRST non-ask tool activity's slot, collecting every
- *  non-ask activity of the turn (interleaved text does not split it);
- *  `"ask"` is an `ask_user` card kept OUTSIDE the accordion, rendered in
- *  place (TAG-9: it stays interactive). Items within one anchor list keep
+ *  placed at the turn's FIRST non-ask non-proposal tool activity's slot,
+ *  collecting every non-ask non-proposal activity of the turn (interleaved
+ *  text does not split it); `"ask"` is an `ask_user` card and `"proposal"`
+ *  a record-proposal card, both kept OUTSIDE the accordion, rendered in
+ *  place (TAG-9: the ask stays interactive; SC-13a: a settled turn collapses
+ *  its tools into the tools accordion, which would hide the proposal's
+ *  accept/reject behind a closed list). Items within one anchor list keep
  *  their chronological slot order. */
 type CopilotTurnAnchorItem =
   | { kind: "accordion"; activities: AgentToolActivity[] }
-  | { kind: "ask"; activity: AgentToolActivity };
+  | { kind: "ask"; activity: AgentToolActivity }
+  | { kind: "proposal"; activity: AgentToolActivity; proposal: RecordProposal };
 const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
+
+/** SC-13a: narrow a tool activity to the record proposal its output carries
+ *  (parsed through the shared `parseAgentToolOutput`, narrowed by the
+ *  contract's `isRecordProposal`) — undefined for every other tool (asks,
+ *  buffer writes, test digests). Pure. */
+function recordProposalOf(activity: AgentToolActivity): RecordProposal | undefined {
+  const parsed: unknown = parseAgentToolOutput(activity);
+  if (parsed === undefined) return undefined;
+  const candidate = parsed as AgentProposal;
+  if (isRecordProposal(candidate)) return candidate;
+  return undefined;
+}
 
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
@@ -150,6 +168,14 @@ export function AgentMessageList({
           pending.push({ kind: "ask", activity });
           continue;
         }
+        // SC-13a: a record proposal renders in place outside the accordion
+        // (the ask-card precedent) — it never joins the turn's tool group,
+        // so a settled turn cannot hide it behind a closed list.
+        const proposal = recordProposalOf(activity);
+        if (proposal !== undefined) {
+          pending.push({ kind: "proposal", activity, proposal });
+          continue;
+        }
         if (!turnTools) {
           turnTools = [];
           pending.push({ kind: "accordion", activities: turnTools });
@@ -183,7 +209,8 @@ export function AgentMessageList({
     for (const entry of feed) {
       if (entry.kind !== "activity") continue;
       const activity = activityById.get(entry.id);
-      if (activity && !activity.ask) out.push(activity);
+      // SC-13a: asks and record proposals render in place (never inside).
+      if (activity && !activity.ask && recordProposalOf(activity) === undefined) out.push(activity);
     }
     return out;
   }, [feed, activityById]);
@@ -229,10 +256,25 @@ export function AgentMessageList({
     );
   };
 
+  // SC-13a: a record proposal renders through the host's per-recordType
+  // renderer (`host.recordProposalRenderers[proposal.recordType]`), falling
+  // back to the neutral `RecordProposalFallbackCard` for an unknown type
+  // (or an unknown host) — an unrendered op never crashes the feed. The
+  // thread id rides the props (the SC-13c card resolves against its thread).
+  const renderProposalActivity = (activity: AgentToolActivity, proposal: RecordProposal) => {
+    let Renderer: ComponentType<RecordProposalCardProps>;
+    try {
+      Renderer = getAgentHost(kind).recordProposalRenderers[proposal.recordType] ?? RecordProposalFallbackCard;
+    } catch {
+      Renderer = RecordProposalFallbackCard;
+    }
+    return <Renderer key={activity.toolCallId} proposal={proposal} threadId={threadId} />;
+  };
+
   // TA-1: history renders each turn as ONE accordion (at the first tool
-  // activity's slot) plus in-place ask cards, in the items' slot order. Only
-  // the live feed receives `isSending`: historical groups stay collapsed even
-  // while a newer turn is in flight.
+  // activity's slot) plus in-place ask and proposal cards, in the items'
+  // slot order. Only the live feed receives `isSending`: historical groups
+  // stay collapsed even while a newer turn is in flight.
   const renderAnchorItems = (items: readonly CopilotTurnAnchorItem[]) =>
     items.map((item) =>
       item.kind === "accordion" ? (
@@ -242,8 +284,10 @@ export function AgentMessageList({
           kind={kind}
           isSending={false}
         />
-      ) : (
+      ) : item.kind === "ask" ? (
         renderAskActivity(item.activity)
+      ) : (
+        renderProposalActivity(item.activity, item.proposal)
       ),
     );
 
@@ -351,6 +395,13 @@ export function AgentMessageList({
                 if (!activity) continue;
                 if (activity.ask) {
                   rendered.push(renderAskActivity(activity));
+                  continue;
+                }
+                // SC-13a: a live record proposal renders in place outside
+                // the turn's single accordion (the ask-card precedent).
+                const liveProposal = recordProposalOf(activity);
+                if (liveProposal !== undefined) {
+                  rendered.push(renderProposalActivity(activity, liveProposal));
                   continue;
                 }
                 // TA-1: the turn's FIRST non-ask tool activity renders the

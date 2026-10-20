@@ -73,7 +73,7 @@ export function AgentActivityCard({
   // the model-supplied summary (commit-message label), falling back to the
   // tool name / target.
   const title = toolCaption !== undefined
-    ? t(toolCaption.titleKey)
+    ? t(toolCaption.titleKey, toolCaption.titleParams)
     : isRead
       ? activity.readPath!
       : isPlanUpdate

@@ -18,6 +18,9 @@ import { useT } from "../../../i18n/context.js";
 
 export interface RecordProposalFallbackCardProps {
   proposal: RecordProposal;
+  /** SC-13a: the thread the card resolves against (accept/reject land in
+   *  SC-13c) — ignored by the fallback, which never touches the thread. */
+  threadId: string;
 }
 
 /** Defensive payload preview: stringified JSON, or null when unrenderable. */

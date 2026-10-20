@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotMessageWire, RecordProposal } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 
 useDomEnv();
@@ -23,8 +23,38 @@ beforeAll(async () => {
   // descriptor — the real experience host registers kind "experience"
   // (same side-effect pattern as AgentProfileModal.test.tsx).
   await import("../../build/editors/copilot/experience-agent-host.js");
+  // SC-13a: the proposal fixture host — the only host with a registered
+  // record renderer (`test-widget`); both built-ins register none (the
+  // fallback owns every recordType there). Never unregistered — the worker
+  // isolates the module registry (same pattern as the real hosts above).
+  const { getAgentHost, registerAgentHost } = await import("../../../lib/agent-host-registry.js");
+  registerAgentHost({
+    kind: "sc13a-proposal-host",
+    i18n: {
+      title: "agent_title",
+      placeholder: "agent_input_placeholder",
+      loading: "agent_loading",
+      emptyTitle: "agent_title",
+    },
+    toolKeys: [],
+    profileAssignment: { target: "chat" },
+    bufferSpecs: [],
+    transport: getAgentHost("experience").transport,
+    buildSendOptions: () => ({}),
+    recordProposalRenderers: { "test-widget": TestWidgetCard },
+  });
   ({ AgentMessageList } = await import("./AgentMessageList.js"));
 });
+
+// SC-13a: the registered renderer for the `test-widget` record type — pins
+// the renderer-map seam (the card receives the proposal AND the thread id).
+function TestWidgetCard({ proposal, threadId }: { proposal: RecordProposal; threadId: string }) {
+  return (
+    <div data-testid="record-proposal-test-card" data-record-type={proposal.recordType} data-thread-id={threadId}>
+      {JSON.stringify(proposal.payload)}
+    </div>
+  );
+}
 
 function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilotMessageWire {
   return {
@@ -878,6 +908,201 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
       "write_buffer",
       "run_test",
       "ask",
+      "assistant",
+    ]);
+  });
+});
+
+// ─── SC-13a: record proposals in the feed (the ask-card precedent) ──────────
+// A tool activity whose parsed output passes `isRecordProposal` renders IN
+// PLACE, outside the tool accordion — in the live feed and in history alike —
+// through the host's `recordProposalRenderers`, falling back to
+// `RecordProposalFallbackCard` for an unknown recordType. A proposal inside a
+// settled turn's accordion would hide its accept/reject behind a closed list.
+
+const PROPOSAL_ARGS = { payload: { title: "New entry" } };
+
+function proposalCarrier(id: string, toolCallId: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "assistant",
+    content: "",
+    toolCallsJson: JSON.stringify([
+      { type: "tool-call", toolCallId, toolName: "propose_record", input: PROPOSAL_ARGS },
+    ]),
+  });
+}
+
+function proposalToolRow(id: string, toolCallId: string, recordType: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "tool",
+    toolCallId,
+    // The real persisted shape: the `{toolName, output}` wrapper written by
+    // `persistTurn` (the extractor unwraps it; `parseAgentToolOutput` unwraps
+    // it again for the proposal narrow).
+    content: JSON.stringify({
+      toolName: "propose_record",
+      output: {
+        kind: "record",
+        id: toolCallId,
+        recordType,
+        op: "create",
+        payload: PROPOSAL_ARGS.payload,
+        status: "pending",
+      },
+    }),
+  });
+}
+
+describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
+  it("history: a proposal renders in place outside the turn's single accordion (unknown type → fallback)", () => {
+    const { container, getByTestId, getAllByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({ id: "a1", role: "assistant", content: "intro text" }),
+          message({
+            id: "tool1",
+            role: "tool",
+            toolCallId: "c1",
+            content: JSON.stringify({
+              toolName: "write_buffer",
+              output: { target: "rules", proposed: "# R1", summary: "c1 pass" },
+            }),
+          }),
+          proposalCarrier("pa1", "c-prop"),
+          proposalToolRow("ptool1", "c-prop", "never-seen-widget"),
+          message({
+            id: "tool2",
+            role: "tool",
+            toolCallId: "c2",
+            content: JSON.stringify({
+              toolName: "edit_buffer",
+              output: { target: "visual", proposed: "# V2", summary: "c2 pass" },
+            }),
+          }),
+          message({ id: "a3", role: "assistant", content: "closing text" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // Still exactly ONE accordion — the proposal does not split the turn's
+    // tools, and its count covers ONLY the non-proposal tools.
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+    expect(getAllByTestId("copilot-tool-accordion-toggle")[0]!.getAttribute("data-count")).toBe("2");
+    // The unknown recordType renders the fallback card, OUTSIDE the accordion.
+    const fallback = getByTestId("record-proposal-fallback-card");
+    expect(fallback.getAttribute("data-record-type")).toBe("never-seen-widget");
+    expect(fallback.closest("[data-testid='copilot-tool-accordion']")).toBeNull();
+    expect(getByTestId("record-proposal-fallback-payload").textContent).toContain("New entry");
+    // No registered renderer fired (the fixture host owns `test-widget` only).
+    expect(queryByTestId("record-proposal-test-card")).toBeNull();
+
+    const order = Array.from(
+      container.querySelectorAll("[data-testid='copilot-activity-card'], [data-role]"),
+    );
+    expect(order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role"))).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "edit_buffer",
+      "assistant",
+    ]);
+  });
+
+  it("history: a registered recordType renders the host's renderer with the thread id", () => {
+    const { getByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="sc13a-proposal-host" threadId="thread-9"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          proposalCarrier("pa1", "c-prop"),
+          proposalToolRow("ptool1", "c-prop", "test-widget"),
+          message({ id: "a2", role: "assistant", content: "done" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const card = getByTestId("record-proposal-test-card");
+    expect(card.getAttribute("data-record-type")).toBe("test-widget");
+    expect(card.getAttribute("data-thread-id")).toBe("thread-9");
+    expect(card.textContent).toContain("New entry");
+    expect(queryByTestId("record-proposal-fallback-card")).toBeNull();
+  });
+
+  it("live feed: a proposal renders in place outside the single accordion (unknown type → fallback)", () => {
+    useAgentTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [
+          { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" },
+          {
+            toolCallId: "tc-prop",
+            toolName: "propose_record",
+            status: "done",
+            summary: JSON.stringify({
+              toolName: "propose_record",
+              output: {
+                kind: "record",
+                id: "tc-prop",
+                recordType: "never-seen-widget",
+                op: "create",
+                payload: PROPOSAL_ARGS.payload,
+                status: "pending",
+              },
+            }),
+          },
+          { toolCallId: "t2", toolName: "run_test", status: "done", summary: "ok" },
+        ],
+      },
+      feedByThread: {
+        "thread-1": [
+          { kind: "text", id: "text-1", text: "Thinking", closed: true },
+          { kind: "activity", id: "t1" },
+          { kind: "activity", id: "tc-prop" },
+          { kind: "activity", id: "t2" },
+          { kind: "text", id: "text-2", text: "Done", closed: false },
+        ],
+      },
+    });
+
+    const { container, getByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[]}
+        pendingText="ThinkingDone"
+        pendingReasoning=""
+        pendingUserContent="go"
+      />,
+    );
+
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+    expect(getAllByTestId("copilot-tool-accordion-toggle")[0]!.getAttribute("data-count")).toBe("2");
+    // The proposal card renders in place, AFTER the accordion, outside it.
+    const fallback = getByTestId("record-proposal-fallback-card");
+    expect(fallback.getAttribute("data-record-type")).toBe("never-seen-widget");
+    expect(fallback.closest("[data-testid='copilot-tool-accordion']")).toBeNull();
+
+    const order = Array.from(
+      container.querySelectorAll(
+        "[data-testid='copilot-activity-card'], [data-testid='record-proposal-fallback-card'], [data-role]",
+      ),
+    );
+    expect(
+      order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role") ?? "proposal"),
+    ).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "run_test",
+      "proposal",
       "assistant",
     ]);
   });
