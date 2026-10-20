@@ -13,6 +13,9 @@
  * comfyui-second-passes.ts, the error classes in comfyui-errors.ts,
  * and the shared REST listing walkers in comfyui-listing.ts — all
  * re-exported below, so importing this module is unchanged (IG-R2).
+ * The /history completion poll lives in comfyui-history.ts, the WS
+ * live-progress listener in comfyui-progress.ts, and the model-family
+ * ladder in comfyui-model-detection.ts — same re-export rule (IG-R3).
  *
  * Doc gate (every wire fact below live-verified on the owner's ComfyUI
  * 0.36.0 / Stability Matrix instance, 2026-09-18 — probe scripts in
@@ -22,12 +25,6 @@
  *   means the graph was rejected (bad ckpt_name etc.) — surfaced as a
  *   caller-class error (status 400 on the adapter error): the request
  *   content is wrong, not the gateway.
- * - completion: `GET /history/{prompt_id}` — the response is a map keyed
- *   by prompt id; an absent key = still queued/running. Terminal success:
- *   `status.completed === true` with `outputs[nodeId].images[]` entries
- *   `{filename, subfolder, type}`. Terminal failure: `status.status_str
- *   === "error"` with the readable reason inside `status.messages[]` as
- *   the `execution_error` pair's `exception_message`.
  * - download: `GET /view?filename=&subfolder=&type=output` → raw image
  *   bytes (SaveImage emits PNG; MIME sniffs as a fallback).
  * - model list: `GET /models/checkpoints` + `GET /models/diffusion_models`
@@ -36,24 +33,6 @@
  *   server's path VERBATIM (subfolder entries ride the server's own
  *   separator — the round-trip back into `ckpt_name`/`unet_name` must be
  *   byte-identical).
- * - model FAMILY (CG-A3): three metadata stores, first hit wins, every
- *   store degrading silently (a failed store never fails the list): (1)
- *   metadata EMBEDDED in the safetensors header via `GET
- *   /view_metadata/{folder}?filename=` (`ss_base_model_version` /
- *   `modelspec.architecture` — trainer truth, install-agnostic); (2)
- *   `.cm-info.json` sidecars (Stability Matrix, top-level `BaseModel`);
- *   (3) `.civitai.info` sidecars (the civitai download flow, top-level
- *   `baseModel`). Sidecar paths join against `GET
- *   /internal/folder_paths` (ComfyUI's own folder map — root lists per
- *   folder; on a remote host the paths don't exist locally and resolution
- *   auto-degrades to embedded-only). Raw values normalize through
- *   `normalizeComfyFamily` (canonical ecosystem buckets; unrecognized
- *   values pass through verbatim — the honest labeled bucket).
- *   IPT-3 reuses the SAME stores for family detection: `readModelDetectionMetadata`
- *   surfaces the RAW embedded label for one model (mapping happens
- *   detection-side — no picker bucket collapse) plus the folder-roots
- *   sidecar anchor; core ComfyUI exposes NO hash, so the Civitai by-hash
- *   source stays structurally unavailable on this dialect.
  * - sampler/scheduler lists (CG-A3): the `KSampler` node's own combo enums
  *   (`/object_info/KSampler` → `input.required.sampler_name[0]` /
  *   `scheduler[0]`) — bare strings, no aliases/labels.
@@ -69,11 +48,6 @@
  *   a clear message instead of inventing a header ComfyUI would ignore.
  *
  * Card-driven deviations from the a1111 twin (named, verified):
- * - NO sync generation POST: ComfyUI queues asynchronously, so the adapter
- *   polls `/history` until terminal. The poll cadence is a named internal
- *   constant (NOT a user-facing generation parameter — the owner's ban
- *   covers generation params; completion detection is transport mechanics,
- *   same class as the cloud timeout budget).
  * - NO keyless-model path: the graph must name its model (checkpoint or
  *   diffusion model); with neither request model nor profile model the
  *   adapter fails closed (a1111's "server's loaded checkpoint" has no
@@ -89,9 +63,6 @@
  *   error naming the candidates (never a silent guess among many — the
  *   owner's "don't lean on my local data" rule: canonical names are the
  *   ecosystem spec, not a mirror of one install).
- * - NO local timeout: the run continues until terminal state or the
- *   caller's abort (the localExecution contract; the poll delay is
- *   abortable so cancellation is prompt).
  * - v1 ignores (no VT field maps yet): denoise stays the node default 1
  *   (txt2img), batch_size 1, `preview_method`, and the WS preview BINARY
  *   frames (live latent thumbs = the documented fast-follow; the step
@@ -147,7 +118,18 @@ import {
   fetchComfyFaceDetectors,
 } from "./comfyui-second-passes.js";
 import { ComfyImageGenConfigError, ComfyImageGenError } from "./comfyui-errors.js";
-import { fetchComfyComboValues, fetchComfyFolderNames, isObjectLike } from "./comfyui-listing.js";
+import { fetchComfyComboValues, fetchComfyFolderNames } from "./comfyui-listing.js";
+import { fetchOrWrap, setOrUndefined, sniffImageMime } from "./backend-helpers.js";
+import { normalizeComfyBaseUrl, waitForPromptCompletion } from "./comfyui-history.js";
+import type { ComfyHistoryOutputImage } from "./comfyui-history.js";
+import { comfyRunSnapshots, openComfyProgressListener } from "./comfyui-progress.js";
+import {
+  fetchComfyEmbeddedFamilyForDetection,
+  fetchComfyFolderRoots,
+  fetchComfyFolderRootsForDetection,
+  resolveComfyLoraTriggers,
+  resolveComfyModelFamily,
+} from "./comfyui-model-detection.js";
 
 // ─── Moved-out sections, re-exported (IG-R2) ────────────────────────────────
 // Errors, workflow builders, and second passes moved to sibling modules so
@@ -185,183 +167,16 @@ export {
   applyComfyHiresPass,
 } from "./comfyui-second-passes.js";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Moved-out sections, re-exported (IG-R3) ────────────────────────────────
+// The /history completion poll, the WS live-progress listener, and the
+// model-family ladder moved to sibling modules so each stays
+// independently editable; re-exported here so every existing importer
+// of comfyui.js keeps its import list unchanged.
 
-/** Normalize a pasted base URL: trailing slashes and a pasted `…/prompt`
- *  generation path are tolerated (the paste-tolerance discipline). */
-function normalizeComfyBaseUrl(baseUrl: string): string {
-  let normalized = baseUrl.trim().replace(/\/+$/, "");
-  if (normalized.endsWith("/prompt")) {
-    normalized = normalized.slice(0, -"/prompt".length);
-  }
-  return normalized.replace(/\/+$/, "");
-}
+export { COMFY_HISTORY_POLL_INTERVAL_MS } from "./comfyui-history.js";
+export { normalizeComfyFamily } from "./comfyui-model-detection.js";
 
-/** The completion-poll cadence — transport mechanics, not a generation
- *  parameter (see the module doc gate). */
-export const COMFY_HISTORY_POLL_INTERVAL_MS = 250;
-
-/** An abort-aware delay between history polls: the caller's cancel exits
- *  the wait promptly with the raw AbortError (user cancel, not a failure). */
-function abortableDelay(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    function onAbort(): void {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    }
-    signal?.addEventListener("abort", onAbort);
-  });
-}
-
-/** The SaveImage node's output-rows container (top-level node outputs ride
- *  the history entry keyed by node id). */
-interface ComfyHistoryOutputImage {
-  filename: string;
-  subfolder?: string;
-  type?: string;
-}
-
-/** One `/history/{id}` poll response classified: pending (keep polling),
- *  done (the SaveImage output rows), or failed (the execution_error
- *  message). */
-type ComfyPollOutcome =
-  | { kind: "pending" }
-  | { kind: "done"; images: ComfyHistoryOutputImage[] }
-  | { kind: "failed"; message: string };
-
-/** Extract the readable failure reason from a terminal error entry: the
- *  `status.messages` array of `[type, payload]` pairs carries the
- *  `execution_error` payload with `exception_message` (+ node_type /
- *  node_id for locating it). Anything unreadable degrades to the status
- *  string, never an invented message. */
-function classifyHistoryEntry(entry: unknown): ComfyPollOutcome {
-  if (typeof entry !== "object" || entry === null) return { kind: "pending" };
-  const record = entry as Record<string, unknown>;
-  const status = record.status;
-  if (typeof status !== "object" || status === null) return { kind: "pending" };
-  const statusRecord = status as Record<string, unknown>;
-  if (statusRecord.status_str === "error") {
-    let message = "ComfyUI execution error";
-    const messages = statusRecord.messages;
-    if (Array.isArray(messages)) {
-      for (const pair of messages) {
-        if (!Array.isArray(pair) || pair[0] !== "execution_error") continue;
-        const payload = pair[1];
-        if (typeof payload !== "object" || payload === null) continue;
-        const detail = payload as Record<string, unknown>;
-        const parts: string[] = [];
-        if (typeof detail.node_type === "string" && detail.node_type.length > 0) parts.push(detail.node_type);
-        if (typeof detail.exception_message === "string" && detail.exception_message.length > 0) {
-          parts.push(detail.exception_message);
-        }
-        if (parts.length > 0) {
-          message = `ComfyUI execution error: ${parts.join(": ")}`;
-          break;
-        }
-      }
-    }
-    return { kind: "failed", message };
-  }
-  if (statusRecord.completed !== true) return { kind: "pending" };
-  const outputs = record.outputs;
-  if (typeof outputs !== "object" || outputs === null) {
-    return { kind: "failed", message: "ComfyUI completed the prompt but the history entry carries no outputs" };
-  }
-  const nodeOutput = (outputs as Record<string, unknown>)[COMFY_NODE_IDS.saveImage];
-  if (typeof nodeOutput !== "object" || nodeOutput === null) {
-    return { kind: "failed", message: "ComfyUI completed the prompt but the SaveImage node produced no output" };
-  }
-  const images = (nodeOutput as Record<string, unknown>).images;
-  if (!Array.isArray(images) || images.length === 0) {
-    return { kind: "failed", message: "ComfyUI completed the prompt with no saved images" };
-  }
-  const rows: ComfyHistoryOutputImage[] = [];
-  for (const image of images) {
-    if (typeof image !== "object" || image === null) continue;
-    const row = image as Record<string, unknown>;
-    if (typeof row.filename !== "string" || row.filename.length === 0) continue;
-    rows.push({
-      filename: row.filename,
-      ...(typeof row.subfolder === "string" && row.subfolder.length > 0 ? { subfolder: row.subfolder } : {}),
-      ...(typeof row.type === "string" && row.type.length > 0 ? { type: row.type } : {}),
-    });
-  }
-  if (rows.length === 0) {
-    return { kind: "failed", message: "ComfyUI completed the prompt but the saved-image rows are malformed" };
-  }
-  return { kind: "done", images: rows };
-}
-
-/** Await prompt completion by polling `/history/{id}` until terminal —
- *  abortable, no timeout (the localExecution contract). */
-async function waitForPromptCompletion(
-  transport: typeof fetch,
-  endpoint: string,
-  promptId: string,
-  signal: AbortSignal | undefined,
-): Promise<ComfyHistoryOutputImage[]> {
-  for (;;) {
-    const response = await fetchOrWrap(
-      transport,
-      `${endpoint}/history/${encodeURIComponent(promptId)}`,
-      { method: "GET", headers: { Accept: "application/json" }, signal },
-      "history poll",
-      "ComfyUI image-gen",
-      ComfyImageGenError,
-    );
-    if (!response.ok) {
-      const excerpt = await readProviderErrorBody(response);
-      throw new ComfyImageGenError(
-        `ComfyUI history poll failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
-        { status: response.status },
-      );
-    }
-    const parsed: unknown = await response.json().catch(() => null);
-    const entry = typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)[promptId]
-      : undefined;
-    const outcome = classifyHistoryEntry(entry);
-    if (outcome.kind === "done") return outcome.images;
-    if (outcome.kind === "failed") throw new ComfyImageGenError(outcome.message);
-    await abortableDelay(COMFY_HISTORY_POLL_INTERVAL_MS, signal);
-  }
-}
-
-// ─── WS live progress (CG-C1) ────────────────────────────────────────────────
-
-/** One run's live-progress snapshot — what `progress()` publishes. */
-interface ComfyRunSnapshot {
-  promptId: string;
-  progress: number;
-  state?: string;
-}
-
-/** Run snapshots keyed by ENDPOINT, module-level on purpose: every adapter
- *  method call runs on a FRESH backend instance, so the run's generate()
- *  must leave its state where the next poll's instance can read it (the
- *  a1111 twin gets the same for free from the server's own global
- *  /sdapi/v1/progress). One entry per endpoint, overwritten per run: a
- *  local ComfyUI executes one prompt at a time on the GPU and VT drives one
- *  generation at a time (the PG-2 poll-only-while-our-run contract). */
-const comfyRunSnapshots = new Map<string, ComfyRunSnapshot>();
-
-/** Handle to a run's WS listener. */
-interface ComfyProgressListener {
-  /** Bind the queue response's prompt id and replay buffered events — the
-   *  socket opens BEFORE the prompt is queued, so early events can arrive
-   *  pre-bind. */
-  bindPromptId(promptId: string): void;
-  /** Stop listening and close the socket (idempotent). */
-  close(): void;
-}
+// ─── Config ──────────────────────────────────────────────────────────────────
 
 /** The default socket opener — the global WebSocket (Bun's does NOT read
  *  env proxies, so a localhost socket is always direct; correct here).
@@ -370,420 +185,6 @@ interface ComfyProgressListener {
  *  interface for the checker — one documented boundary cast. */
 const defaultOpenWebSocket = (url: string): ImageGenWebSocketLike =>
   new WebSocket(url) as unknown as ImageGenWebSocketLike;
-
-/** http(s) endpoint → ws(s) socket URL with the run's client id. */
-function comfyWsUrl(endpoint: string, clientId: string): string {
-  const wsBase = endpoint.replace(/^http/, "ws");
-  return `${wsBase}/ws?clientId=${encodeURIComponent(clientId)}`;
-}
-
-/** Open the run's WS listener. Best-effort by design (the A3 family-ladder
- *  degradation precedent): a socket that fails to open NEVER fails the
- *  generation — the run simply publishes no progress. */
-function openComfyProgressListener(
-  endpoint: string,
-  clientId: string,
-  openWebSocket: (url: string) => ImageGenWebSocketLike,
-  onJobStarted?: () => void,
-): ComfyProgressListener {
-  let promptId: string | undefined;
-  const buffer: string[] = [];
-  let dead = false;
-  // MR-11: the first step event attributed to THIS run's prompt_id flips
-  // the phase registry to "steps" — exactly once, no matter how many
-  // buffered events replay at bind time.
-  let jobAnnounced = false;
-
-  const applyEvent = (payload: unknown): void => {
-    if (dead || !isObjectLike(payload)) return;
-    const data = payload.data;
-    const dataRecord = isObjectLike(data) ? data : undefined;
-    // ComfyUI broadcasts execution events to EVERY connected socket — only
-    // this run's prompt_id counts (the cross-prompt filter).
-    if (promptId === undefined || dataRecord === undefined || dataRecord.prompt_id !== promptId) return;
-    if (payload.type === "progress") {
-      const value = typeof dataRecord.value === "number" && Number.isFinite(dataRecord.value) ? dataRecord.value : 0;
-      const max = typeof dataRecord.max === "number" && dataRecord.max > 0 ? dataRecord.max : 0;
-      if (max > 0) {
-        const fraction = Math.min(Math.max(value / max, 0), 1);
-        comfyRunSnapshots.set(endpoint, { promptId, progress: fraction, state: `step ${value}/${max}` });
-        if (!jobAnnounced) {
-          jobAnnounced = true;
-          onJobStarted?.();
-        }
-      }
-      return;
-    }
-    // `executing` with node === null and `execution_success` both mean the
-    // prompt finished executing — the bar's 100%. (execution_error is left
-    // alone: the failure surfaces through generate()'s own history
-    // classification; the snapshot is informational.)
-    if ((payload.type === "executing" && dataRecord.node === null) || payload.type === "execution_success") {
-      comfyRunSnapshots.set(endpoint, { promptId, progress: 1 });
-    }
-  };
-
-  const ingest = (raw: string): void => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return; // a malformed frame never breaks the run's progress feed
-    }
-    applyEvent(parsed);
-  };
-
-  let socket: ImageGenWebSocketLike;
-  try {
-    socket = openWebSocket(comfyWsUrl(endpoint, clientId));
-  } catch {
-    // Unopenable socket → a dead listener; the run degrades silently.
-    return { bindPromptId() {}, close() {} };
-  }
-  socket.onmessage = (event) => {
-    // Binary frames are live latent previews — ignored in v1 (documented
-    // fast-follow; the step events are TEXT frames).
-    if (dead || typeof event.data !== "string") return;
-    if (promptId === undefined) {
-      buffer.push(event.data);
-      return;
-    }
-    ingest(event.data);
-  };
-  socket.onclose = () => {
-    dead = true;
-  };
-  socket.onerror = () => {
-    dead = true;
-  };
-
-  return {
-    bindPromptId(id: string): void {
-      if (dead || promptId !== undefined) return;
-      promptId = id;
-      for (const raw of buffer.splice(0)) ingest(raw);
-    },
-    close(): void {
-      if (dead) return;
-      dead = true;
-      socket.onmessage = null;
-      socket.onclose = null;
-      socket.onerror = null;
-      try {
-        socket.close();
-      } catch {
-        // The socket is already gone — nothing to release.
-      }
-    },
-  };
-}
-
-// ─── Model family ladder (CG-A3) ────────────────────────────────────
-
-// Shared with the A1111 dialect since FT-A4: the family buckets and the
-// embedded-metadata field precedence are ecosystem facts — one definition
-// in model-family.ts keeps cross-dialect filter keys identical. The
-// legacy export name stays for the pinned test surface.
-export { normalizeModelFamily as normalizeComfyFamily } from "../model-family.js";
-import { readEmbeddedFamilyValue, normalizeModelFamily } from "../model-family.js";
-import { fetchOrWrap, setOrUndefined, sniffImageMime } from "./backend-helpers.js";
-
-/** Sidecar stores after the embedded metadata misses, in precedence order
- *  (CG-A3, live-verified): `.cm-info.json` (Stability Matrix's store —
- *  top-level `BaseModel`, mirrors civitai plus the user's manual manager
- *  edits) before `.civitai.info` (the civitai download flow's de-facto
- *  standard — top-level `baseModel`). The stem rule on disk: the model
- *  filename minus its weights extension, sitting in the same directory. */
-const COMFY_SIDECAR_STORES = [
-  { suffix: ".cm-info.json", field: "BaseModel" },
-  { suffix: ".civitai.info", field: "baseModel" },
-] as const;
-
-/** GET /view_metadata/{folder}?filename={name} → the metadata dict EMBEDDED
- *  in the safetensors header (trainer truth — the ladder's primary source).
- *  ANY failure degrades silently to undefined (the ladder's rule: an
- *  unreadable store must not fail the model list); the caller's abort is
- *  the one exception and propagates. */
-async function fetchComfyEmbeddedFamily(
-  transport: typeof fetch,
-  endpoint: string,
-  folder: string,
-  name: string,
-  signal: AbortSignal | undefined,
-): Promise<string | undefined> {
-  let parsed: unknown;
-  try {
-    const response = await fetchOrWrap(
-      transport,
-      `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
-      { method: "GET", headers: { Accept: "application/json" }, signal },
-      "model metadata",
-      "ComfyUI image-gen",
-      ComfyImageGenError,
-    );
-    if (!response.ok) return undefined;
-    parsed = await response.json().catch(() => undefined);
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    return undefined;
-  }
-  if (!isObjectLike(parsed)) return undefined;
-  return readEmbeddedFamilyValue(parsed);
-}
-
-/** GET /internal/folder_paths → the folder-name → root-paths map ComfyUI
- *  itself resolves (including launcher-shared dirs via
- *  extra_model_paths.yaml). Officially "frontend use only" — it is a BONUS
- *  source for the sidecar join, so any failure (404 on hardened remotes,
- *  transport error, unexpected shape) degrades silently to undefined and
- *  the ladder stays embedded-only (the plan's remote-host rule). */
-async function fetchComfyFolderRoots(
-  transport: typeof fetch,
-  endpoint: string,
-  signal: AbortSignal | undefined,
-): Promise<Record<string, string[]> | undefined> {
-  let parsed: unknown;
-  try {
-    const response = await fetchOrWrap(
-      transport,
-      `${endpoint}/internal/folder_paths`,
-      { method: "GET", headers: { Accept: "application/json" }, signal },
-      "folder map",
-      "ComfyUI image-gen",
-      ComfyImageGenError,
-    );
-    if (!response.ok) return undefined;
-    parsed = await response.json().catch(() => undefined);
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    return undefined;
-  }
-  if (!isObjectLike(parsed)) return undefined;
-  const out: Record<string, string[]> = {};
-  for (const [folder, roots] of Object.entries(parsed)) {
-    if (Array.isArray(roots)) {
-      const clean = roots.filter((root): root is string => typeof root === "string" && root.length > 0);
-      if (clean.length > 0) out[folder] = clean;
-    }
-  }
-  return out;
-}
-
-/** IPT-3 detection twin of fetchComfyEmbeddedFamily: a 404 IS the honest
- *  no-label answer (the installed core's /view_metadata 404s when the
- *  safetensors header carries no `__metadata__` — server.py returns 404
- *  by design there), so it resolves undefined; every OTHER failure
- *  (non-404 status, transport, unparseable 200 body) THROWS the typed
- *  error so the ladder records the real reason at source (a). The
- *  listing twin keeps its silent degradation — both behaviors are
- *  intentional, one per consumer. */
-async function fetchComfyEmbeddedFamilyForDetection(
-  transport: typeof fetch,
-  endpoint: string,
-  folder: string,
-  name: string,
-  signal: AbortSignal | undefined,
-): Promise<string | undefined> {
-  const response = await fetchOrWrap(
-    transport,
-    `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
-    { method: "GET", headers: { Accept: "application/json" }, signal },
-    "model metadata",
-    "ComfyUI image-gen",
-    ComfyImageGenError,
-  );
-  if (response.status === 404) return undefined;
-  if (!response.ok) {
-    const excerpt = await readProviderErrorBody(response);
-    throw new ComfyImageGenError(
-      `ComfyUI model metadata failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
-      { status: response.status },
-    );
-  }
-  const parsed: unknown = await response.json().catch(() => null);
-  if (!isObjectLike(parsed)) {
-    throw new ComfyImageGenError("ComfyUI /view_metadata response was not a JSON object");
-  }
-  return readEmbeddedFamilyValue(parsed);
-}
-
-/** IPT-3 detection twin of fetchComfyFolderRoots: a 404 is the structural
- *  no-anchor answer (hardened remotes legitimately expose no folder map —
- *  roots stay absent); every other failure returns its REASON so the
- *  reader records it on `sidecarError` and source (b) tells the real
- *  story instead of the structural "no path exposed" text. */
-async function fetchComfyFolderRootsForDetection(
-  transport: typeof fetch,
-  endpoint: string,
-  signal: AbortSignal | undefined,
-): Promise<{ roots?: Record<string, string[]>; error?: string }> {
-  let parsed: unknown;
-  try {
-    const response = await fetchOrWrap(
-      transport,
-      `${endpoint}/internal/folder_paths`,
-      { method: "GET", headers: { Accept: "application/json" }, signal },
-      "folder map",
-      "ComfyUI image-gen",
-      ComfyImageGenError,
-    );
-    if (response.status === 404) return {};
-    if (!response.ok) {
-      const excerpt = await readProviderErrorBody(response);
-      return {
-        error: `ComfyUI folder map failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
-      };
-    }
-    parsed = await response.json().catch(() => null);
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    return {
-      error: `ComfyUI folder map fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-  if (!isObjectLike(parsed)) {
-    return { error: "ComfyUI /internal/folder_paths response was not a JSON object" };
-  }
-  const out: Record<string, string[]> = {};
-  for (const [folder, roots] of Object.entries(parsed)) {
-    if (Array.isArray(roots)) {
-      const clean = roots.filter((root): root is string => typeof root === "string" && root.length > 0);
-      if (clean.length > 0) out[folder] = clean;
-    }
-  }
-  return { roots: out };
-}
-
-/** Read one sidecar store's family field off the local disk: the model's
- *  directory (subfolder part of the id, separators normalized) joined
- *  against each folder root until the file exists and parses. A miss,
- *  unreadable file, or wrong shape returns undefined — the ladder
- *  continues (a remote ComfyUI's roots simply do not exist locally). */
-async function readComfySidecarFamily(
-  roots: readonly string[],
-  name: string,
-  suffix: string,
-  field: string,
-): Promise<string | undefined> {
-  const normalized = name.replace(/\\/g, "/");
-  const slash = normalized.lastIndexOf("/");
-  const file = slash >= 0 ? normalized.slice(slash + 1) : normalized;
-  const stem = file.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
-  if (stem.length === 0) return undefined;
-  const relative = `${slash >= 0 ? `${normalized.slice(0, slash)}/` : ""}${stem}${suffix}`;
-  for (const root of roots) {
-    try {
-      const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
-      const parsed: unknown = JSON.parse(text);
-      if (isObjectLike(parsed)) {
-        const raw = parsed[field];
-        if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
-      }
-    } catch {
-      // Missing or unparseable sidecar — the ladder's next root/store.
-      continue;
-    }
-  }
-  return undefined;
-}
-
-/** Resolve one model's family through the full ladder (CG-A3):
- *  embedded safetensors metadata → `.cm-info.json` → `.civitai.info` →
- *  undefined ("unknown family" bucket). Every store degrades silently;
- *  only the caller's abort propagates. `rootsOf` lazily fetches (once per
- *  listing) the folder-roots map and only when the first sidecar lookup is
- *  actually needed — a fully-embedded resolution costs no extra call. */
-async function resolveComfyModelFamily(
-  transport: typeof fetch,
-  endpoint: string,
-  options: {
-    folder: string;
-    name: string;
-    signal: AbortSignal | undefined;
-    rootsOf: () => Promise<Record<string, string[]> | undefined>;
-  },
-): Promise<string | undefined> {
-  const embedded = normalizeModelFamily(
-    await fetchComfyEmbeddedFamily(transport, endpoint, options.folder, options.name, options.signal),
-  );
-  if (embedded !== undefined) return embedded;
-  const roots = (await options.rootsOf())?.[options.folder] ?? [];
-  if (roots.length === 0) return undefined;
-  for (const store of COMFY_SIDECAR_STORES) {
-    const raw = await readComfySidecarFamily(roots, options.name, store.suffix, store.field);
-    const normalized = normalizeModelFamily(raw);
-    if (normalized !== undefined) return normalized;
-  }
-  return undefined;
-}
-
-/** Trigger-word sidecar stores, in precedence order (CG-C2, live-verified
- *  on the owner's install 2026-09-18): `.cm-info.json` `TrainedWords`
- *  (Stability Matrix's mirror — populated on civitai imports, null on
- *  manual adds) before `.civitai.info` `trainedWords` (the download
- *  flow's own store). No embedded rung: kohya's `ss_tag_frequency` is a
- *  frequency heuristic the owner's leading lora doesn't even carry —
- *  deliberately out (recorded, CG-C3 decision log). */
-const COMFY_LORA_TRIGGER_STORES = [
-  { suffix: ".cm-info.json", field: "TrainedWords" },
-  { suffix: ".civitai.info", field: "trainedWords" },
-] as const;
-
-/** Read one sidecar store's trigger-word array off the local disk — the
- *  same stem/subfolder join as the family store. A missing field, wrong
- *  shape, or all-empty strings returns undefined (the ladder continues);
- *  entries are kept VERBATIM (civitai comma-phrases included). */
-async function readComfySidecarTriggerWords(
-  roots: readonly string[],
-  name: string,
-  suffix: string,
-  field: string,
-): Promise<string[] | undefined> {
-  const normalized = name.replace(/\\/g, "/");
-  const slash = normalized.lastIndexOf("/");
-  const file = slash >= 0 ? normalized.slice(slash + 1) : normalized;
-  const stem = file.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
-  if (stem.length === 0) return undefined;
-  const relative = `${slash >= 0 ? `${normalized.slice(0, slash)}/` : ""}${stem}${suffix}`;
-  for (const root of roots) {
-    try {
-      const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
-      const parsed: unknown = JSON.parse(text);
-      if (isObjectLike(parsed)) {
-        const raw = parsed[field];
-        if (Array.isArray(raw)) {
-          const words = raw.filter((w): w is string => typeof w === "string" && w.trim().length > 0)
-            .map((w) => w.trim());
-          if (words.length > 0) return words;
-        }
-      }
-    } catch {
-      // Missing or unparseable sidecar — the ladder's next root/store.
-      continue;
-    }
-  }
-  return undefined;
-}
-
-/** Resolve one lora's activation words through the sidecar stores (CG-C2):
- *  cm-info → civitai.info → [] (none found). Silent per-store degradation;
- *  only the caller's abort propagates. No transport — the stores are read
- *  off the local disk through the lazily-fetched folder roots. */
-async function resolveComfyLoraTriggers(options: {
-  name: string;
-  signal: AbortSignal | undefined;
-  rootsOf: () => Promise<Record<string, string[]> | undefined>;
-}): Promise<string[]> {
-  const roots = (await options.rootsOf())?.["loras"] ?? [];
-  if (roots.length === 0) return [];
-  for (const store of COMFY_LORA_TRIGGER_STORES) {
-    const words = await readComfySidecarTriggerWords(roots, options.name, store.suffix, store.field);
-    if (words !== undefined) return words;
-  }
-  return [];
-}
-
-// ─── Config ──────────────────────────────────────────────────────────────────
 
 interface ComfyImageGenConfig {
   endpoint: string;

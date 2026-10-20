@@ -15,7 +15,9 @@ import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error
 import { fetchOrWrap } from "./backend-helpers.js";
 import { ComfyImageGenError } from "./comfyui-errors.js";
 
-/** `unknown` → object-like guard; arrays pass — the folder_paths walks fold a top-level array into an empty map, not a user-visible error (SC-5r2). */
+/** `unknown` → object-like guard; arrays pass — the folder_paths walks
+ *  fold a top-level array into an empty map, not a user-visible error
+ *  (SC-5r2). */
 export function isObjectLike(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

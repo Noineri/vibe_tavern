@@ -413,7 +413,19 @@ function buildComfyCommonNodes(
       inputs: { stop_at_clip_layer: -clipSkip, clip: refs.clip },
     };
   }
-  return { graph, resolved: { seed, steps, cfg, samplerName, scheduler, clipSource, width: width ?? COMFY_NODE_DEFAULTS.latentWidth, height: height ?? COMFY_NODE_DEFAULTS.latentHeight } };
+  return {
+    graph,
+    resolved: {
+      seed,
+      steps,
+      cfg,
+      samplerName,
+      scheduler,
+      clipSource,
+      width: width ?? COMFY_NODE_DEFAULTS.latentWidth,
+      height: height ?? COMFY_NODE_DEFAULTS.latentHeight,
+    },
+  };
 }
 
 /** The first-pass resolved values the second-pass subgraphs inherit —
