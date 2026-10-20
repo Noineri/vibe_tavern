@@ -397,7 +397,6 @@ export function useChatController(): ChatControllerActions {
       }
       return "done";
     } catch (error) {
-      onFailure?.(error);
       if (controller.signal.aborted) {
         const snapshot = await refreshAfterAbort(chatId);
         // The backend persists and emits message.appended for a partial fresh
@@ -409,6 +408,7 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
+      onFailure?.(error);
       const settleDraft = () => settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
