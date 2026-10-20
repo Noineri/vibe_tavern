@@ -22,7 +22,11 @@ import type { PromptAssemblyService } from "../prompt/prompt-assembly-service.js
  *
  * The WHOLE branch is returned — no history window, no count limit. Budgeting
  * a window over this view is Wave 2's job (SC-2b/2c); no cap is applied here
- * on purpose.
+ * on purpose. Since SC-6 the freeze also keeps summary-covered messages
+ * (`keepSummaryCoveredMessages`): coverage is the sidechat ASSEMBLY's
+ * read-time rule, never the freeze's — a summary disabled after the first
+ * sync must find its messages in place, not arrive as a new delta at the end
+ * of the timeline.
  */
 export interface RpBranchViewMessage {
   id: string;
@@ -77,12 +81,16 @@ export async function readBranchAsModelSees(
   // RecentMessage carries neither) and the full branch length below.
   const branchMessages = await deps.messages.getMessages(branchId);
 
-  // Same inputs a chat turn uses, with two read-path-only choices:
+  // Same inputs a chat turn uses, with three read-path-only choices:
   // - recentMessageLimit = the FULL branch length, so the chat's
   //   messageHistoryLimit never windows the read (the whole branch is the
   //   contract; budgeting is Wave 2);
   // - dryRun lore activation, so a read never advances sticky/cooldown timed
-  //   state (same dryRun the context-preview path passes).
+  //   state (same dryRun the context-preview path passes);
+  // - keepSummaryCoveredMessages (SC-6), so the freeze keeps EVERY message —
+  //   the RP prompt's summary exclusion is applied when the sidechat
+  //   assembles over this frozen timeline, never at the freeze (a summary
+  //   disabled later must find its messages in place).
   // The empty model string is the established no-model sentinel
   // (session-runtime's buildPipelineContext wrapper); token hints are
   // irrelevant to this text-only read.
@@ -92,6 +100,7 @@ export async function readBranchAsModelSees(
     model: "",
     dryRun: true,
     recentMessageLimit: branchMessages.length,
+    keepSummaryCoveredMessages: true,
   });
 
   const transformed = resolveHistoryAsModelSees(built.context);

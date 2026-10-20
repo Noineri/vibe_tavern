@@ -22,8 +22,11 @@
  * generic loop exactly like the other kinds'.
  *
  * NO tools until Wave 3 (buildTools returns the empty set) and NO
- * compaction/window until Wave 2 (history passes through unwindowed; no
- * auto-compaction is wired) — the plan's explicit cuts for this unit.
+ * auto-compaction until Wave 2's SC-8c (no compaction writer is wired) — the
+ * plan's explicit cuts. Since SC-6 the assembly runs the SHELL's existing
+ * budget trim (planHistoryCompaction) over the merged flow: over the shared
+ * budget the OLDEST flow entries drop first, RP and discussion alike, in
+ * time order.
  */
 
 // fork #1 of script-agent-stream.ts (services/api/src/domain/agent/script-agent/script-agent-stream.ts)
@@ -43,7 +46,7 @@ import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderProfile, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
 import type { CopilotProfile, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
-import { estimateTokens, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import {
@@ -195,13 +198,16 @@ function buildSidechatMessageFlow(
  *  (any digest section) + the SC-3b STATIC package — the volatile context
  *  section with NO timeline in it (SC-4d: the frozen events and the OOC
  *  conversation both ride the message flow, so the model reads ONE
- *  chronological flow); history passes through UNWINDOWED (compaction/
- *  windowing is Wave 2) with the frozen events interleaved as user-role
- *  message bodies placed by the merged timeline's order; the pinned-context
- *  block + the kind's recency anchor inject as trailing user messages
- *  (the CX-3 pattern the other kinds' assemblers use). Pure — every input is
- *  a parameter. */
-function assembleSidechatPrompt(input: {
+ *  chronological flow); the frozen events interleave as user-role message
+ *  bodies placed by the merged timeline's order, and over the shared budget
+ *  the SHELL's existing trim (planHistoryCompaction) drops the OLDEST merged
+ *  flow entries first — RP and discussion alike, in time order (SC-6, owner
+ *  2026-10-20: the assistant loses the start of the story together with the
+ *  talk about it, never one without the other); the pinned-context block +
+ *  the kind's recency anchor inject as trailing user messages (the CX-3
+ *  pattern the other kinds' assemblers use). Pure — every input is a
+ *  parameter; exported so the trim's flow semantics are testable directly. */
+export function assembleSidechatPrompt(input: {
   basePrompt: string;
   context: SidechatContextPackage;
   history: readonly AgentHistoryMessage[];
@@ -210,6 +216,10 @@ function assembleSidechatPrompt(input: {
   attachedContextBlock: string;
   recencyAnchorText: string;
   model?: string;
+  /** The kind's shared owner-fixed budget pair (the seams' limits) — the SC-6
+   *  overflow trim runs against these, never a kind-specific number. */
+  contextBudgetTokens: number;
+  responseReserveTokens: number;
 }): AgentAssembledPrompt {
   if (input.model !== undefined) setModelHint(input.model);
 
@@ -240,14 +250,32 @@ function assembleSidechatPrompt(input: {
 
   const systemTokens = estimateTokens(systemWithoutDigest);
   const digestTokens = digestSectionText ? estimateTokens(digestSectionText) : 0;
-  // Event messages count with the history (SC-4d; Wave 2's SC-9 splits them
-  // into their own segments later).
-  const historyTokens = estimateHistoryTokens(flow);
   const attachedTokens = input.attachedContextBlock
     ? estimateTokens(input.attachedContextBlock) + estimateTokens(input.recencyAnchorText)
     : 0;
 
-  const messages: AgentPromptMessage[] = [{ role: "system", content: systemMessage }, ...flow];
+  // ── SC-6 overflow: the shell's existing budget trim over the MERGED flow.
+  // planHistoryCompaction keeps the largest fitting suffix — the oldest flow
+  // entries drop first, whatever their kind (rp_summary row, rp_message row,
+  // OOC row alike): RP and discussion recede together, in time order, never
+  // one without the other. No sidechat-specific trim, no kind carve-outs;
+  // the attached block is injected AFTER this (the CX-3 rule) but its tokens
+  // are paid here, exactly like the other assemblers' trim.
+  const nonHistoryTokens = systemTokens + digestTokens + attachedTokens;
+  const plan = planHistoryCompaction({
+    messages: flow,
+    nonHistoryTokens,
+    contextBudget: input.contextBudgetTokens,
+    responseReserve: input.responseReserveTokens,
+    countHistoryTokens: estimateHistoryTokens,
+  });
+  const windowedFlow = plan ? plan.messages : flow;
+  const historyTokens = estimateHistoryTokens(windowedFlow);
+  const compactionSummary = plan
+    ? `Kept ${windowedFlow.length} of ${flow.length} flow messages (budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudgetTokens}, reserve=${input.responseReserveTokens}).`
+    : undefined;
+
+  const messages: AgentPromptMessage[] = [{ role: "system", content: systemMessage }, ...windowedFlow];
   if (input.attachedContextBlock) {
     // CX-3: the pinned block rides as a user message immediately before the
     // turn's own user message (so the anchor sits directly under the block).
@@ -271,6 +299,7 @@ function assembleSidechatPrompt(input: {
       attached: attachedTokens,
       total: systemTokens + digestTokens + historyTokens + attachedTokens,
     },
+    ...(compactionSummary !== undefined ? { compactionSummary } : {}),
   };
 }
 
@@ -290,6 +319,13 @@ export async function* streamSidechatTurn(
   deps: SidechatStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
+  // The kind's shared owner-fixed limits — one object feeds both consumers
+  // (the loop's metrics + tool ceiling, and the assembly's SC-6 trim).
+  const limits = {
+    contextBudgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
+    responseReserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
+    toolLoopCeiling: COPILOT_TOOL_LOOP_CEILING,
+  };
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -299,11 +335,7 @@ export async function* streamSidechatTurn(
   > = {
     logChannelPrefix: "api.sidechat-ooc",
     threadLabel: "ExperienceCopilotThread",
-    limits: {
-      contextBudgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
-      responseReserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
-      toolLoopCeiling: COPILOT_TOOL_LOOP_CEILING,
-    },
+    limits,
 
     // ── The kind's turn: RP sync FIRST, then the SC-3b load (static package
     //  + flow-placed events). This seam runs BEFORE the generic loop persists
@@ -343,6 +375,8 @@ export async function* streamSidechatTurn(
         hasUserPush: request.content !== undefined,
         attachedContextBlock,
         recencyAnchorText: getAgentKind("sidechat-ooc").recencyAnchorText,
+        contextBudgetTokens: limits.contextBudgetTokens,
+        responseReserveTokens: limits.responseReserveTokens,
         ...(model !== undefined ? { model } : {}),
       });
     },

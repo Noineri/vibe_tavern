@@ -11,6 +11,7 @@ import type {
 	AgentThreadContextEvent,
 	CharacterStore,
 	ChatStore,
+	ChatSummaryStore,
 	ExperienceCopilotStore,
 	MessageStore,
 	PromptTrace,
@@ -36,6 +37,7 @@ import {
 	type RpVariantSelection,
 	type SelectionChangedPayload,
 } from "./rp-sync.js";
+import { coverRpSyncPayload, createRpSummaryCoverage } from "./rp-summary-coverage.js";
 import {
 	renderCharacterSection,
 	renderCurrentSceneSection,
@@ -110,6 +112,17 @@ import {
  *   payload that does not match its kind's frozen shape THROWS (the
  *   renderer's exhaustiveness guard covers unknown kinds — corrupt payloads
  *   of known kinds surface here instead, never silently pre-filtered).
+ * - RP summaries (SC-6): the branch's summaries are read LIVE on every turn
+ *   (`ChatSummaryStore.listByChatBranch` — the same read the loaders' `getChatSummaries`
+ *   seam makes) and coverage is decided through the RP's own one source
+ *   (`buildChatSummaryContext`, via rp-summary-coverage.ts): an enabled
+ *   summary renders ONCE as `<rp_summary>` at its first covered position,
+ *   its covered frozen messages drop when `excludeSummarized` is on and stay
+ *   raw after the row otherwise, and a disabled/empty summary is ignored.
+ *   Coverage splits an `rp_sync` batch per message. NOTHING is stored — no
+ *   `rp_summary` event is ever written — so editing, disabling or deleting a
+ *   summary in the RP chat changes what the sidechat sees on its next turn,
+ *   in place.
  *
  * Must stay true: NO store writes anywhere (the lore activation inside
  * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
@@ -130,6 +143,8 @@ export interface SidechatContextDeps {
 	messages: Pick<MessageStore, "getMessages" | "getCurrentSceneTarget">;
 	/** The branch's prompt traces (latest first). */
 	traces: Pick<PromptTraceStore, "getTracesByChat">;
+	/** The branch's RP summaries — read LIVE every turn (SC-6). */
+	chatSummaries: Pick<ChatSummaryStore, "listByChatBranch">;
 	/** The thread row + the merged frozen timeline. */
 	experienceCopilot: Pick<ExperienceCopilotStore, "getById" | "listTimeline">;
 	/** The RP assembly service — supplies the send path's own inputs. */
@@ -243,7 +258,14 @@ export async function loadSidechatContext(
 	// the real history rows the generic loop already loaded); each event row
 	// becomes a rendered user-message body tagged with how many messages
 	// precede it, so the flow builder interleaves without seq arithmetic.
+	// `rp_sync` events go through SC-6's coverage first (the summaries are
+	// read live above the walk): covered messages drop per message inside the
+	// batch and an enabled summary renders once at its first covered
+	// position — one stored event can become several rendered rows.
 	const timeline = await deps.experienceCopilot.listTimeline(threadId);
+	const coverage = createRpSummaryCoverage(
+		await deps.chatSummaries.listByChatBranch(chatId, branchId),
+	);
 	let messageCount = 0;
 	const eventMessages: SidechatEventMessage[] = [];
 	for (const entry of timeline) {
@@ -251,10 +273,23 @@ export async function loadSidechatContext(
 			messageCount += 1;
 			continue;
 		}
+		const mapped = mapTimelineEvent(threadId, entry);
+		if (mapped.kind === "rp_sync") {
+			for (const row of coverRpSyncPayload(mapped.payload, coverage)) {
+				eventMessages.push({ precedingMessages: messageCount, content: renderTimelineEvent(row) });
+			}
+			continue;
+		}
 		eventMessages.push({
 			precedingMessages: messageCount,
-			content: renderTimelineEvent(mapTimelineEvent(threadId, entry)),
+			content: renderTimelineEvent(mapped),
 		});
+	}
+	// Enabled summaries whose range never anchored during the walk (beyond
+	// the frozen frontier, or their messages deleted) still render — at the
+	// end of the event flow, never silently dropped.
+	for (const row of coverage.tailRows()) {
+		eventMessages.push({ precedingMessages: messageCount, content: renderTimelineEvent(row) });
 	}
 
 	return { staticPackage, eventMessages, messageCount };
@@ -359,9 +394,11 @@ function corrupt(threadId: string, kind: string, seq: number | null, detail: str
 	);
 }
 
-/** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type. */
+/** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type.
+ * `where` names the row in every parser's refusal message. The `rp_sync`
+ * case only PARSES — the walk routes that kind through SC-6's coverage
+ * (its batch is split per message by summary coverage) before rendering. */
 function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
-	// `where` names the row in every parser's refusal message.
 	const where = { threadId, kind: entry.kind, seq: entry.seq };
 	switch (entry.kind) {
 		case "rp_sync":
@@ -381,9 +418,9 @@ function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): Sid
 		case "branch_forked":
 			return { rowType: "event", kind: "branch_forked", payload: parseBranchForkedPayload(where, entry.payload) };
 	}
-	// No default: the store's kind union is closed. A new kind (e.g. SC-6's
-	// `rp_summary`) makes this switch non-exhaustive at compile time — teach
-	// this mapper before writing that kind.
+	// No default: the store's kind union is closed. A new kind makes this
+	// switch non-exhaustive at compile time — teach this mapper before writing
+	// that kind.
 }
 
 interface EventWhere {

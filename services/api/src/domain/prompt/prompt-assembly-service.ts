@@ -62,6 +62,13 @@ export interface AssemblePromptForChatInput {
   dryRun?: boolean;
   /** One-shot quiet-prompt text to scan after global sources without adding a chat message. */
   quietPrompt?: string;
+  /** SC-6 read-path option: keep summary-covered messages in the window (the
+   *  sidechat branch view freezes EVERY message — summary coverage is applied
+   *  at the sidechat's own assembly over the frozen timeline, never at the
+   *  freeze). Default (undefined/false): the summary exclusion below stays in
+   *  force for every other caller — send, regenerate, context preview, summary
+   *  generation — byte-identical to before SC-6. */
+  keepSummaryCoveredMessages?: boolean;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
    *  (`summarizedFrom < from` chain, count-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity. Threaded into pipelineContext
@@ -412,8 +419,14 @@ export class PromptAssemblyService {
       ? []
       : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
     const { enabledSummaries, isInExcludedSummaryRange } = buildChatSummaryContext(branchSummaries);
+    // SC-6: `keepSummaryCoveredMessages` is the sidechat branch view's
+    // read-path escape hatch ONLY — the view must freeze every message so a
+    // summary disabled later finds its messages in place. Every other caller
+    // keeps the exclusion, byte-identical.
+    const keepSummaryCovered = input.keepSummaryCoveredMessages === true;
     const filteredMessages = branchMessages.filter((message) =>
-      !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
+      !excludedMessageIds.has(message.id as MessageId)
+      && (keepSummaryCovered || !isInExcludedSummaryRange(message.position)),
     );
     // Send/regenerate require the final user turn even when history filters
     // omit it. Summary callers instead choose an exact range and append their

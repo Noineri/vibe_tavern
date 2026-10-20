@@ -22,8 +22,11 @@ import { readBranchAsModelSees, type RpBranchViewDeps } from "../src/domain/side
  *    seam);
  * 3. bound Dice rolls appear inside the message text in the RP prompt's own
  *    wording (the `[Dice]` block), not as raw roll rows;
- * 4. a message inside an enabled excludeSummarized summary range is absent —
- *    hidden from the view the same way the RP prompt hides it;
+ * 4. a message inside an enabled excludeSummarized summary range is FROZEN
+ *    TOO (SC-6: the view freezes every message — coverage is applied when
+ *    the sidechat assembles over the frozen timeline, never at the freeze;
+ *    was: hidden here like the RP prompt hides it, which stranded covered
+ *    messages when a summary was disabled later);
  * 5. the SELECTED variant's text is used (swipes never leak through);
  * 6. variant reasoning is never present anywhere in the view;
  * 7. a foreign branch (and a missing one) resolves to null through the SC-0l
@@ -175,7 +178,7 @@ describe("readBranchAsModelSees (SC-2a)", () => {
 		expect(entry.text).toContain("I sneak past the guards.\n[Dice]\nStealth Check (2d6+1) — Theron: [3,5]+1 = 9. Adjudication: success (hard). Binding constraint: must remain unseen.");
 	});
 
-	it("hides a message inside an enabled excludeSummarized range — same exclusion the RP prompt applies", async () => {
+	it("freezes a message inside an enabled excludeSummarized range (SC-6) — coverage moved to the sidechat assembly", async () => {
 		const { chatId, branchId } = await makeChat();
 		const early = await stores.messages.addMessage({
 			chatId,
@@ -184,7 +187,7 @@ describe("readBranchAsModelSees (SC-2a)", () => {
 			authorType: "user",
 			content: "Early turn that gets summarized away.",
 		});
-		await stores.messages.addMessage({
+		const middle = await stores.messages.addMessage({
 			chatId,
 			branchId,
 			role: "assistant",
@@ -198,8 +201,8 @@ describe("readBranchAsModelSees (SC-2a)", () => {
 			authorType: "user",
 			content: "Final user turn.",
 		});
-		// Enabled summary covering ONLY position 0 (one-based 1..1), with the
-		// summarized range excluded from the prompt — the RP prompt's hiding.
+		// Enabled summary covering ONLY position 0 (one-based 1..1) with the
+		// summarized range excluded — the RP prompt's hiding.
 		await stores.chatSummaries.create({
 			chatId,
 			branchId,
@@ -213,9 +216,16 @@ describe("readBranchAsModelSees (SC-2a)", () => {
 
 		const view = await readBranchAsModelSees(deps, chatId, branchId);
 		expect(view).not.toBeNull();
-		expect(view!.messages.map((m) => m.id)).not.toContain(early.id);
-		expect(view!.messages.map((m) => m.id)).toEqual([expect.any(String), later.id]);
-		expect(view!.messages.map((m) => m.text)).toContain("Later reply that stays.");
+		// WAS (before SC-6): the covered message was absent from the view — the
+		// same exclusion the RP prompt applies, applied at the FREEZE. A message
+		// covered at the first sync was then never frozen, and disabling the
+		// summary later made its messages arrive as "new" at the END of the
+		// timeline, out of order (Wave 1 review, 2026-10-19). NOW: the freeze
+		// keeps EVERY message; the sidechat's own assembly drops covered
+		// messages at read time over this frozen timeline
+		// (sidechat-rp-summary.test.ts pins that side).
+		expect(view!.messages.map((m) => m.id)).toEqual([early.id, middle.id, later.id]);
+		expect(view!.messages.map((m) => m.text)).toContain("Early turn that gets summarized away.");
 	});
 
 	it("uses the SELECTED variant's text after a swipe change", async () => {

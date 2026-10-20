@@ -376,6 +376,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         characters: this.stores.characters,
         messages: this.stores.messages,
         traces: this.stores.traces,
+        chatSummaries: this.stores.chatSummaries,
         experienceCopilot: this.stores.experienceCopilot,
         assembly,
       },

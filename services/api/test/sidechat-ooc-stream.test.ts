@@ -136,6 +136,7 @@ beforeAll(async () => {
 			characters: stores.characters,
 			messages: stores.messages,
 			traces: stores.traces,
+			chatSummaries: stores.chatSummaries,
 			experienceCopilot: stores.experienceCopilot,
 			assembly,
 		},
