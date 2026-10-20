@@ -16,6 +16,9 @@
  * The /history completion poll lives in comfyui-history.ts, the WS
  * live-progress listener in comfyui-progress.ts, and the model-family
  * ladder in comfyui-model-detection.ts — same re-export rule (IG-R3).
+ * The config parser lives in comfyui-config.ts and the read-only
+ * listing methods in comfyui-catalog.ts (IG-R3b: internal moves — the
+ * factory parses and delegates, so no re-export is needed).
  *
  * Doc gate (every wire fact below live-verified on the owner's ComfyUI
  * 0.36.0 / Stability Matrix instance, 2026-09-18 — probe scripts in
@@ -78,23 +81,14 @@ import type {
   ImageGenGeneratedImage,
   ImageGenGenerateRequest,
   ImageGenGenerateResult,
-  ImageGenDitSidecars,
-  ImageGenModelDetectionMetadata,
-  ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenProgressInfo,
-  ImageGenLoraInfo,
-  ImageGenSamplerInfo,
-  ImageGenSchedulerInfo,
-  ImageGenWebSocketLike,
-  ImageGenUpscalerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 import {
   COMFY_DIT_WORKFLOW_SHAPES,
   COMFY_TEMPLATE_SPECS,
-  comfyWeightsBasename,
   resolveComfySidecar,
 } from "./comfy-workflow-templates.js";
 import type { ComfyDitTemplateSpec } from "./comfy-workflow-templates.js";
@@ -107,7 +101,6 @@ import {
   comfyTemplateMarker,
   isComfyManualDitTemplate,
   resolveComfyAutoDiffusionTemplate,
-  resolveComfyListedDiffusionTemplate,
   resolveComfyManualWorkflowTemplate,
 } from "./comfyui-workflows.js";
 import type { ComfySecondPassCtx, ComfyWorkflowGraph } from "./comfyui-workflows.js";
@@ -120,16 +113,22 @@ import {
 import { ComfyImageGenConfigError, ComfyImageGenError } from "./comfyui-errors.js";
 import { fetchComfyComboValues, fetchComfyFolderNames } from "./comfyui-listing.js";
 import { fetchOrWrap, setOrUndefined, sniffImageMime } from "./backend-helpers.js";
-import { normalizeComfyBaseUrl, waitForPromptCompletion } from "./comfyui-history.js";
+import { waitForPromptCompletion } from "./comfyui-history.js";
 import type { ComfyHistoryOutputImage } from "./comfyui-history.js";
 import { comfyRunSnapshots, openComfyProgressListener } from "./comfyui-progress.js";
+import { fetchComfyFolderRoots, resolveComfyModelFamily } from "./comfyui-model-detection.js";
+import { parseConfig } from "./comfyui-config.js";
 import {
-  fetchComfyEmbeddedFamilyForDetection,
-  fetchComfyFolderRoots,
-  fetchComfyFolderRootsForDetection,
-  resolveComfyLoraTriggers,
-  resolveComfyModelFamily,
-} from "./comfyui-model-detection.js";
+  listComfyDitSidecars,
+  listComfyFaceDetectors,
+  listComfyLoras,
+  listComfyModels,
+  listComfySamplers,
+  listComfySchedulers,
+  listComfyUpscalers,
+  listComfyVae,
+  readComfyModelDetectionMetadata,
+} from "./comfyui-catalog.js";
 
 // ─── Moved-out sections, re-exported (IG-R2) ────────────────────────────────
 // Errors, workflow builders, and second passes moved to sibling modules so
@@ -175,43 +174,6 @@ export {
 
 export { COMFY_HISTORY_POLL_INTERVAL_MS } from "./comfyui-history.js";
 export { normalizeComfyFamily } from "./comfyui-model-detection.js";
-
-// ─── Config ──────────────────────────────────────────────────────────────────
-
-/** The default socket opener — the global WebSocket (Bun's does NOT read
- *  env proxies, so a localhost socket is always direct; correct here).
- *  Cast: the global satisfies the seam structurally, but its overloaded
- *  close() and `this`-typed handlers don't line up with the narrow
- *  interface for the checker — one documented boundary cast. */
-const defaultOpenWebSocket = (url: string): ImageGenWebSocketLike =>
-  new WebSocket(url) as unknown as ImageGenWebSocketLike;
-
-interface ComfyImageGenConfig {
-  endpoint: string;
-  model: string | undefined;
-  fetch: typeof fetch;
-  openWebSocket: (url: string) => ImageGenWebSocketLike;
-}
-
-function parseConfig(config: ImageGenAdapterConfig): ComfyImageGenConfig {
-  const endpoint = normalizeComfyBaseUrl(config.endpoint ?? "");
-  if (!endpoint) {
-    throw new ComfyImageGenConfigError(
-      "ComfyUI image-gen config error: `endpoint` is required (the local server's base URL, e.g. http://127.0.0.1:8188)",
-    );
-  }
-  if (config.apiKey !== undefined && config.apiKey.trim() !== "") {
-    throw new ComfyImageGenConfigError(
-      "ComfyUI image-gen config error: ComfyUI core has no authentication — clear the API key field",
-    );
-  }
-  return {
-    endpoint,
-    model: setOrUndefined(config.model),
-    fetch: config.fetch ?? fetch,
-    openWebSocket: config.openWebSocket ?? defaultOpenWebSocket,
-  };
-}
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
@@ -545,227 +507,18 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       return result;
     },
 
-    async listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]> {
-      // The model union (CG-A3): checkpoints ∪ diffusion models — the two
-      // folders the two templates load from. `id` keeps the server's path
-      // VERBATIM (round-trips into ckpt_name/unet_name byte-identically,
-      // subfolder separators included); `label` is the basename without the
-      // weights extension; `template` marks which workflow the adapter
-      // resolves; `family` rides the metadata ladder with silent
-      // degradation (an unreadable store never fails the list).
-      const checkpointNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "checkpoints", signal);
-      const unetNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "diffusion_models", signal);
-      // Folder roots for the sidecar join — fetched lazily, ONCE per
-      // listing, and only when the first model actually needs a sidecar.
-      let folderRoots: Record<string, string[]> | undefined;
-      let folderRootsFetched = false;
-      const rootsOf = async (): Promise<Record<string, string[]> | undefined> => {
-        if (!folderRootsFetched) {
-          folderRoots = await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal);
-          folderRootsFetched = true;
-        }
-        return folderRoots;
-      };
-      const entries: ImageGenModelInfo[] = [];
-      const folders: Array<{ folder: string; names: string[]; template: string }> = [
-        { folder: "checkpoints", names: checkpointNames, template: COMFY_MODEL_TEMPLATES.checkpoint },
-        { folder: "diffusion_models", names: unetNames, template: COMFY_MODEL_TEMPLATES.krea2Dit },
-      ];
-      for (const { folder, names, template } of folders) {
-        for (const name of names) {
-          const family = await resolveComfyModelFamily(cfg.fetch, cfg.endpoint, {
-            folder,
-            name,
-            signal,
-            rootsOf,
-          });
-          const label = comfyWeightsBasename(name);
-          const resolvedTemplate = folder === "diffusion_models"
-            ? resolveComfyListedDiffusionTemplate(family)
-            : template;
-          entries.push({
-            id: name,
-            label: label.length > 0 ? label : name,
-            ...(family !== undefined ? { family } : {}),
-            ...(resolvedTemplate !== undefined ? { template: resolvedTemplate } : {}),
-          });
-        }
-      }
-      return entries;
-    },
-
-    async listSamplers(signal?: AbortSignal): Promise<ImageGenSamplerInfo[]> {
-      // The live KSampler sampler union (CG-A3) — the same /object_info
-      // combo walk template detection uses; bare enums, no aliases.
-      const names = await fetchComfyComboValues(
-        cfg.fetch,
-        cfg.endpoint,
-        "KSampler",
-        "sampler_name",
-        signal,
-      );
-      return names.map((name) => ({ name }));
-    },
-
-    async listSchedulers(signal?: AbortSignal): Promise<ImageGenSchedulerInfo[]> {
-      // The live KSampler scheduler union (CG-A3) — bare enums, no labels.
-      const names = await fetchComfyComboValues(
-        cfg.fetch,
-        cfg.endpoint,
-        "KSampler",
-        "scheduler",
-        signal,
-      );
-      return names.map((name) => ({ name }));
-    },
-
-    async listDitSidecars(signal?: AbortSignal): Promise<ImageGenDitSidecars> {
-      // The live DiT sidecar folders (CG-B1) — the same catalogs the
-      // generate path resolves canonical sidecars against; both fetched in
-      // parallel (independent folders, one round-trip each).
-      const [encoders, vaes] = await Promise.all([
-        fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "text_encoders", signal),
-        fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal),
-      ]);
-      return { encoders, vaes };
-    },
-
-    async listUpscalers(signal?: AbortSignal): Promise<ImageGenUpscalerInfo[]> {
-      // The hires-upscaler vocabulary (FT-A4, comfy dialect): the live
-      // upscale_models folder (the /models route — the per-node combo is
-      // combo-truncated on 0.37+, the checkpoints-list precedent's source).
-      // The chip's Auto ("") is the LATENT path — adapter-side, no entry.
-      const names = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "upscale_models", signal);
-      return names.map((name) => ({ name }));
-    },
-
-    async listVae(signal?: AbortSignal): Promise<string[]> {
-      // IF-7b: the live vae folder — the SAME catalog the DiT sidecar
-      // resolver uses; here it feeds the checkpoint template's VAE-swap
-      // field too (one folder, both templates' vocabulary).
-      return fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal);
-    },
-
-    async listFaceDetectors(signal?: AbortSignal): Promise<string[]> {
-      // The IF-6 chain probe: BOTH links must hold — the Impact Pack's
-      // FaceDetailer node exists AND the ultralytics folder/combo carries
-      // at least one face bbox model. Either miss = [] (the honest
-      // unavailable signal the picker gates on).
-      if (!(await comfyNodeClassExists(cfg.fetch, cfg.endpoint, "FaceDetailer", signal))) return [];
-      return fetchComfyFaceDetectors(cfg.fetch, cfg.endpoint, signal);
-    },
-
-    async listLoras(signal?: AbortSignal): Promise<ImageGenLoraInfo[]> {
-      // The lora list (CG-C2): names from the live LoraLoader combo (what
-      // ComfyUI itself validates at queue time), family through the SAME
-      // three-store ladder as models (folder "loras"), NULL = the ladder
-      // found nothing (the chip's unknown-family bucket — never a guess).
-      const names = await fetchComfyComboValues(
-        cfg.fetch,
-        cfg.endpoint,
-        "LoraLoader",
-        "lora_name",
-        signal,
-      );
-      let folderRoots: Record<string, string[]> | undefined;
-      let folderRootsFetched = false;
-      const rootsOf = async (): Promise<Record<string, string[]> | undefined> => {
-        if (!folderRootsFetched) {
-          folderRoots = await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal);
-          folderRootsFetched = true;
-        }
-        return folderRoots;
-      };
-      const entries: ImageGenLoraInfo[] = [];
-      for (const name of names) {
-        const family = await resolveComfyModelFamily(cfg.fetch, cfg.endpoint, {
-          folder: "loras",
-          name,
-          signal,
-          rootsOf,
-        });
-        // Activation words (owner-directed pull-forward 2026-09-18): the
-        // sidecar stores only — discovered, never hardcoded.
-        const triggerWords = await resolveComfyLoraTriggers({
-          name,
-          signal,
-          rootsOf,
-        });
-        entries.push({ name, family: family ?? null, triggerWords });
-      }
-      return entries;
-    },
-
-    async readModelDetectionMetadata(
-      model: string,
-      signal?: AbortSignal,
-    ): Promise<ImageGenModelDetectionMetadata> {
-      // IPT-3 source (a): locate the model's folder (the listModels union
-      // walk for ONE model — /models/checkpoints before
-      // /models/diffusion_models, the common sync-checkpoint case first),
-      // then read the embedded safetensors `__metadata__` through the
-      // backend's own /view_metadata surface (authoritative trainer
-      // truth). Core ComfyUI exposes NO hash — the Civitai source's
-      // anchor stays absent on this dialect (an honest miss).
-      //
-      // Failure honesty (IPT-3 review): the DETECTION twins below THROW
-      // or carry reasons — the listing helpers' silent degradation stays
-      // for the picker/list paths it was built for. /view_metadata 404 IS
-      // the honest no-label answer (the installed core 404s when the
-      // header carries no __metadata__); /internal/folder_paths 404 is
-      // the structural no-anchor answer (hardened remotes); anything
-      // else records the real reason at the source it failed.
-      const checkpointNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "checkpoints", signal);
-      const folder = checkpointNames.includes(model)
-        ? "checkpoints"
-        : (await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "diffusion_models", signal)).includes(model)
-          ? "diffusion_models"
-          : undefined;
-      if (folder === undefined) {
-        throw new ComfyImageGenConfigError(
-          `ComfyUI model "${model}" is in neither the checkpoints nor the diffusion-models folder — reselect it from the model list`,
-        );
-      }
-      const metadata: ImageGenModelDetectionMetadata = {};
-      // Embedded read: a non-abort failure is CARRIED (metadataError),
-      // not thrown — the folder-map anchor below stays obtainable for
-      // source (b) even when /view_metadata itself errored, and the
-      // rethrow-at-the-end pattern would discard it (the ladder drops
-      // metadata on a reader throw).
-      let embeddedError: Error | undefined;
-      try {
-        const embedded = await fetchComfyEmbeddedFamilyForDetection(
-          cfg.fetch,
-          cfg.endpoint,
-          folder,
-          model,
-          signal,
-        );
-        if (embedded !== undefined) metadata.baseModel = embedded;
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
-        embeddedError = error instanceof Error ? error : new Error(String(error));
-      }
-      // Sidecar join anchor: the folder roots the backend itself reports
-      // via /internal/folder_paths (officially frontend-only — a bonus
-      // source). Fetched EAGERLY: an embedded label that maps is the
-      // common short-circuit, but an embedded miss OR an unmappable
-      // embedded label (e.g. a bare SDXL architecture stamp) must still
-      // let the sidecar source run — the ladder's correctness beats
-      // saving one localhost round-trip. A failed map fetch records its
-      // reason on sidecarError so source (b) tells the real story.
-      const folderMap = await fetchComfyFolderRootsForDetection(cfg.fetch, cfg.endpoint, signal);
-      if (folderMap.error !== undefined) {
-        metadata.sidecarError = folderMap.error;
-      } else {
-        const roots = folderMap.roots?.[folder] ?? [];
-        if (roots.length > 0) metadata.sidecar = { roots, relativeName: model };
-      }
-      if (embeddedError !== undefined) {
-        metadata.metadataError = `backend metadata read failed: ${embeddedError.message}`;
-      }
-      return metadata;
-    },
+    // The read-only catalog listings live in comfyui-catalog.ts (IG-R3b)
+    // — each delegates with the same signature the backend object exposes.
+    listModels: (signal?: AbortSignal) => listComfyModels(cfg, signal),
+    listSamplers: (signal?: AbortSignal) => listComfySamplers(cfg, signal),
+    listSchedulers: (signal?: AbortSignal) => listComfySchedulers(cfg, signal),
+    listDitSidecars: (signal?: AbortSignal) => listComfyDitSidecars(cfg, signal),
+    listUpscalers: (signal?: AbortSignal) => listComfyUpscalers(cfg, signal),
+    listVae: (signal?: AbortSignal) => listComfyVae(cfg, signal),
+    listFaceDetectors: (signal?: AbortSignal) => listComfyFaceDetectors(cfg, signal),
+    listLoras: (signal?: AbortSignal) => listComfyLoras(cfg, signal),
+    readModelDetectionMetadata: (model: string, signal?: AbortSignal) =>
+      readComfyModelDetectionMetadata(cfg, model, signal),
 
     /** Publish the run's WS-fed snapshot (CG-C1). No snapshot (idle
      *  server, socket never opened) = an honest 0 — the poll only runs
