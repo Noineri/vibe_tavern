@@ -10,9 +10,15 @@ import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
-import { showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { getProviderErrorText, showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import {
+  resetGenerationBatch,
+  settleRunningQueueRecordFailure,
+  settlePlainRegenerateRecord,
+  startPlainRegenerateRecord,
+} from "./generation-batch-lifecycle.js";
 import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
@@ -37,10 +43,12 @@ import {
 import { useDiceStore } from "../stores/dice-store.js";
 import { usePerSendPrefillStore } from "../stores/per-send-prefill-store.js";
 import { useExperienceStore } from "../stores/experience-store.js";
-import { DiceApiError } from "../api/dice-api.js";
-import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
+import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { diceConflictCode, experienceConflictCode, gateErrorCode } from "./chat-controller-error-codes.js";
+export { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
+import { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
 import { captureQuickSwitchGenerationMetadata, type GenerationMetadata } from "../lib/generation-metadata.js";
 import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsSending } from "./chat-controller-store-reads.js";
 
@@ -49,71 +57,6 @@ import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsS
 // is nothing bindable, every helper below collapses to "no Dice" so a no-Dice
 // send stays byte-identical to before. Dice can only ever BLOCK a send, never
 // make an otherwise-unsendable draft sendable.
-
-/** Why a send is Dice-blocked. */
-export type DiceSendBlock = "choose" | "actor_mismatch";
-
-const DICE_CONFLICT_CODES = new Set(["stale_revision", "unresolved_choose"]);
-
-// IR-70H Experience bind conflict codes carried on DiceApiError (non-stream
-// HTTP 409 via sendChatMessageError) or ProviderStreamError (SSE error event).
-// These are server-side commit conflicts, not provider failures — the
-// attachment moved under us. Disjoint from DICE_CONFLICT_CODES.
-const EXPERIENCE_CONFLICT_CODES = new Set(["not_found", "already_bound", "stale_queue", "stale_session"]);
-
-/** Extract the dice commit-conflict code from either send-mode error: non-stream
- *  throws {@link DiceApiError} (HTTP 409 body `error.details.code`), stream
- *  throws {@link ProviderStreamError} (SSE error event `code`). */
-function diceConflictCode(error: unknown): string | undefined {
-  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
-  return code !== undefined && DICE_CONFLICT_CODES.has(code) ? code : undefined;
-}
-
-/** Extract the experience bind-conflict code from either send-mode error
- *  (IR-70H). Same transport as {@link diceConflictCode} but checks the four
- *  Experience bind codes — disjoint from the Dice codes. */
-function experienceConflictCode(error: unknown): string | undefined {
-  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
-  return code !== undefined && EXPERIENCE_CONFLICT_CODES.has(code) ? code : undefined;
-}
-
-/** Typed attachment-gate failures (vision / voice transcribe). Non-stream
- *  throws a sentinel-message Error (unwrap.ts maps the 422 `type` body);
- *  stream throws {@link ProviderStreamError} with the SSE `type` in `code`
- *  (sse-parser). Returns "vision_not_supported" |
- *  "voice_transcribe_unavailable" | undefined. */
-function gateErrorCode(error: unknown): "vision_not_supported" | "voice_transcribe_unavailable" | undefined {
-  if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") return "vision_not_supported";
-  if (error instanceof Error && error.message === "VOICE_TRANSCRIBE_UNAVAILABLE") return "voice_transcribe_unavailable";
-  const code = error instanceof ProviderStreamError ? error.code : undefined;
-  return code === "vision_not_supported" || code === "voice_transcribe_unavailable" ? code : undefined;
-}
-
-/** Pure send-gate: the reason the active pending lane blocks a send, or null.
- *  Mirrors the backend bind gate (`bindActiveAndResetInTx`), which rejects an
- *  unresolved `choose` only among INCLUDED unbound rolls (the store already
- *  drops bound rolls) — so excluded rolls neither block nor bind. The actor
- *  check is frontend-only (the backend does not validate actor): a pending roll
- *  captured for an actor that no longer matches the current persona/character
- *  must not bind silently. Exported for the reactive `canSend` in
- *  use-input-area. */
-export function diceSendBlockReason(
-  lane: DiceLaneState | null | undefined,
-  personaId: string | null,
-  characterId: string | null,
-): DiceSendBlock | null {
-  if (!lane) return null;
-  const bindable = lane.rolls.filter((roll) => roll.included);
-  if (bindable.some((roll) => roll.policy === "choose" && roll.finalAttemptId === null)) return "choose";
-  if (
-    bindable.some((roll) =>
-      roll.actor.actorType === "persona" ? roll.actor.actorId !== personaId : roll.actor.actorId !== characterId,
-    )
-  ) {
-    return "actor_mismatch";
-  }
-  return null;
-}
 
 /** Imperative read (at send time) of the dice commit intent + any block, for the
  *  CURRENT `{chatId, branchId}` and the chat's configured `diceMode`. The intent
@@ -317,6 +260,7 @@ export function useChatController(): ChatControllerActions {
      * ChatGenerationState.streamingMessageId.
      */
     streamingMessageId?: string | null,
+    onFailure?: (error: unknown) => void,
   ): Promise<StreamOutcome> {
     const completionTargetBeforeStream = streamingMessageId
       ? null
@@ -463,6 +407,7 @@ export function useChatController(): ChatControllerActions {
       }
       return "done";
     } catch (error) {
+      onFailure?.(error);
       if (controller.signal.aborted) {
         const snapshot = await refreshAfterAbort(chatId);
         // The backend persists and emits message.appended for a partial fresh
@@ -615,6 +560,8 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    resetGenerationBatch(activeChatId);
+
     // DICE-F3: capture the commit intent (only when the active lane has a
     // bindable roll) and enforce the subtractive send gate. The button/Enter
     // path already gates on `canSend` (use-input-area); this is the
@@ -723,6 +670,8 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    resetGenerationBatch(activeChatId);
+
     if (streamResponseRef.current) {
       await executeStreamAction(
         activeChatId,
@@ -828,9 +777,18 @@ export function useChatController(): ChatControllerActions {
     // prior non-stream branch early-returned on abort and skipped this clear,
     // leaving the message permanently busy (MessageBlock.isBusy/isBranching).
     useChatStore.getState().setMessageActionId(messageId);
+    const plainRecordId = startPlainRegenerateRecord(
+      activeChatId,
+      messageId,
+      (() => {
+        const metadata = captureQuickSwitchGenerationMetadata(activeChatId);
+        return { model: metadata.modelId, presetName: metadata.presetName };
+      })(),
+    );
     try {
+      let outcome: StreamOutcome;
       if (streamResponseRef.current) {
-        await executeStreamAction(
+        outcome = await executeStreamAction(
           activeChatId,
           (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
           undefined,
@@ -838,7 +796,7 @@ export function useChatController(): ChatControllerActions {
           messageId,
         );
       } else {
-        await executeNonStreamAction(
+        outcome = await executeNonStreamAction(
           activeChatId,
           (signal) => regenerateMessageAction(activeChatId, messageId, signal),
           {
@@ -850,6 +808,7 @@ export function useChatController(): ChatControllerActions {
           },
         );
       }
+      settlePlainRegenerateRecord(activeChatId, plainRecordId, outcome, getT()("regen_failed"));
     } finally {
       useChatStore.getState().setMessageActionId(null);
     }
@@ -978,6 +937,7 @@ export function useChatController(): ChatControllerActions {
             undefined,
             undefined,
             messageId,
+            (error) => settleRunningQueueRecordFailure(chatId, messageId, getProviderErrorText(error, getT(), "regen_failed")),
           );
         }
         // Non-stream path: same lifecycle contract via executeNonStreamAction.
@@ -989,7 +949,8 @@ export function useChatController(): ChatControllerActions {
           {
             streamingMessageId: messageId,
             suppressCancelToast: true,
-            onError: async () => {
+            onError: async (error) => {
+              settleRunningQueueRecordFailure(chatId, messageId, getProviderErrorText(error, getT(), "regen_failed"));
               await refreshChatSnapshotCache(chatId);
             },
           },

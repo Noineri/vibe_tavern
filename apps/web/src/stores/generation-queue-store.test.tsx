@@ -29,7 +29,7 @@ const { render, act } = await import("@testing-library/react");
 
 
 function resetStore() {
-  useGenerationQueueStore.setState({ jobsByChat: {} });
+  useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
 }
 
 function enq(chatId: string, messageId: string, model: string) {
@@ -83,7 +83,7 @@ describe("Q3 store: sequential state machine", () => {
     expect(jobs[0].id).toBe(b);
   });
 
-  test("clearPending keeps the running job, drops pending + settled", () => {
+  test("clearPending keeps settled jobs while dropping pending work", () => {
     const a = enq("c1", "m1", "a");
     enq("c1", "m1", "b");
     enq("c1", "m1", "c");
@@ -92,7 +92,7 @@ describe("Q3 store: sequential state machine", () => {
     // a=done, b=pending, c=pending
     useGenerationQueueStore.getState().clearPending("c1");
     const jobs = useGenerationQueueStore.getState().jobsByChat["c1"]!;
-    expect(jobs.length).toBe(0); // no running job right now → all dropped
+    expect(jobs.map((job) => job.status)).toEqual(["done"]);
   });
 
   test("clearPending preserves an in-flight running job", () => {

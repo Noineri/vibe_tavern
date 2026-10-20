@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "./chat-store.js";
+import { useSnapshotStore } from "./snapshot-store.js";
 
 /**
  * Chat generation queue — per-chat sequential job list (CHAT_GENERATION_QUEUE_PLAN Q3).
@@ -37,6 +38,8 @@ export interface QueueJob {
   model: string;
   /** Frozen prompt-preset key (null = use the chat's current preset). */
   promptPresetId: string | null;
+  /** Links this executable job to its non-variant timeline record. */
+  recordId?: string;
   status: QueueJobStatus;
   /** Variant index once the job completes and materializes a swipe. */
   variantIndex?: number;
@@ -44,9 +47,28 @@ export interface QueueJob {
   enqueuedAt: number;
 }
 
+export type GenerationRecordOrigin = "regenerate" | "queue";
+export type GenerationRecordStatus = "pending" | "running" | "failed";
+export interface GenerationRecord {
+  id: string;
+  messageId: string;
+  origin: GenerationRecordOrigin;
+  status: GenerationRecordStatus;
+  model: string | null;
+  presetName: string | null;
+  presetId: string | null;
+  error?: string;
+}
+export interface GenerationBatch {
+  messageId: string;
+  variantIdsAtStart: string[];
+}
+
 interface GenerationQueueState {
   /** Jobs keyed by chat id, in enqueue order. */
   jobsByChat: Record<string, QueueJob[]>;
+  batchesByChat: Record<string, GenerationBatch>;
+  recordsByChat: Record<string, GenerationRecord[]>;
 }
 
 export interface EnqueueJobInput {
@@ -54,6 +76,7 @@ export interface EnqueueJobInput {
   messageId: string;
   model: string;
   promptPresetId: string | null;
+  recordId?: string;
 }
 
 export interface GenerationQueueActions {
@@ -74,6 +97,11 @@ export interface GenerationQueueActions {
   markFailed: (jobId: string, error: string) => void;
   /** Remove a single job (used after the runner observes a cancel). */
   removeJob: (jobId: string) => void;
+  startBatch: (chatId: string, messageId: string, variantIds: string[]) => void;
+  addRecord: (chatId: string, record: Omit<GenerationRecord, "id">) => string;
+  updateRecord: (chatId: string, id: string, patch: Partial<GenerationRecord>) => void;
+  removeRecord: (chatId: string, id: string) => void;
+  clearBatch: (chatId: string) => void;
 }
 
 let jobCounter = 0;
@@ -89,6 +117,8 @@ function findChatJobs(state: GenerationQueueState, chatId: string): QueueJob[] {
 export const useGenerationQueueStore = create<GenerationQueueState & GenerationQueueActions>()(
   immer((set) => ({
     jobsByChat: {},
+    batchesByChat: {},
+    recordsByChat: {},
 
     enqueueJob: (input) => {
       const id = nextJobId();
@@ -98,6 +128,7 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
         messageId: input.messageId,
         model: input.model,
         promptPresetId: input.promptPresetId,
+        recordId: input.recordId,
         status: "pending",
         enqueuedAt: Date.now(),
       };
@@ -116,6 +147,7 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
           if (job.status === "pending") {
             // Not started yet — drop it outright.
             jobs.splice(idx, 1);
+            if (job.recordId) removeRecordFromDraft(s, job.chatId, job.recordId);
           } else if (job.status === "running") {
             // In flight — mark cancelled; the runner's abort observer removes it.
             job.status = "cancelled";
@@ -128,8 +160,11 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
       set((s) => {
         const jobs = s.jobsByChat[chatId];
         if (!jobs) return;
-        // Keep only the running job (if any); drop pending + settled.
-        s.jobsByChat[chatId] = jobs.filter((j) => j.status === "running");
+        // Finished variants and failed records remain visible; clear only waiting work.
+        for (const job of jobs) {
+          if (job.status === "pending" && job.recordId) removeRecordFromDraft(s, chatId, job.recordId);
+        }
+        s.jobsByChat[chatId] = jobs.filter((j) => j.status !== "pending");
       }),
 
     clearSettled: (chatId) =>
@@ -142,7 +177,13 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
     markRunning: (jobId) =>
       set((s) => {
         const job = findJob(s, jobId);
-        if (job && job.status === "pending") job.status = "running";
+        if (job && job.status === "pending") {
+          job.status = "running";
+          if (job.recordId) {
+            const record = s.recordsByChat[job.chatId]?.find((item) => item.id === job.recordId);
+            if (record) record.status = "running";
+          }
+        }
       }),
 
     markDone: (jobId, variantIndex) =>
@@ -174,6 +215,28 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
           }
         }
       }),
+    startBatch: (chatId, messageId, variantIds) => set((s) => {
+      if (!s.batchesByChat[chatId]) s.batchesByChat[chatId] = { messageId, variantIdsAtStart: variantIds };
+    }),
+    addRecord: (chatId, record) => {
+      const id = nextJobId();
+      set((s) => { (s.recordsByChat[chatId] ??= []).push({ ...record, id }); });
+      return id;
+    },
+    updateRecord: (chatId, id, patch) => set((s) => {
+      const record = s.recordsByChat[chatId]?.find((item) => item.id === id);
+      if (record) Object.assign(record, patch);
+    }),
+    removeRecord: (chatId, id) => set((s) => {
+      const records = s.recordsByChat[chatId];
+      if (!records) return;
+      s.recordsByChat[chatId] = records.filter((record) => record.id !== id);
+    }),
+    clearBatch: (chatId) => set((s) => {
+      delete s.batchesByChat[chatId];
+      delete s.recordsByChat[chatId];
+      delete s.jobsByChat[chatId];
+    }),
   })),
 );
 
@@ -183,6 +246,12 @@ function findJob(state: GenerationQueueState, jobId: string): QueueJob | undefin
     if (job) return job;
   }
   return undefined;
+}
+
+function removeRecordFromDraft(state: GenerationQueueState, chatId: string, recordId: string): void {
+  const records = state.recordsByChat[chatId];
+  if (!records) return;
+  state.recordsByChat[chatId] = records.filter((record) => record.id !== recordId);
 }
 
 // Dev-only debug global (mirrors the chat-store / snapshot-store pattern) so the
@@ -259,7 +328,9 @@ export function useQueueDisplayTotal(chatId: string | null | undefined): number 
  * referential identity holds when nothing changes).
  */
 export function useQueueJobs(chatId: string | null | undefined): QueueJob[] {
+  const batch = useGenerationQueueStore((s) => (chatId ? s.batchesByChat[chatId] ?? null : null));
+  const isTargetVisible = useSnapshotStore((s) => batch !== null && s.messageOrder.includes(batch.messageId));
   return useGenerationQueueStore(
-    useShallow((s) => (chatId ? s.jobsByChat[chatId] ?? EMPTY : EMPTY)),
+    useShallow((s) => (chatId && isTargetVisible ? s.jobsByChat[chatId] ?? EMPTY : EMPTY)),
   );
 }
