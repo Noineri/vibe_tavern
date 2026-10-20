@@ -112,7 +112,7 @@ afterAll(async () => {
 });
 
 /** Minimal valid `ChatModeAssembleResult` for the fake `assemblePrompt`. */
-function fakeAssembleResult(chatId: string, branchId: string): ChatModeAssembleResult {
+function fakeAssembleResult(chatId: string, branchId: string, model: string): ChatModeAssembleResult {
   return {
     branchId: brandId<ChatBranchId>(branchId),
     prompt: {
@@ -126,7 +126,7 @@ function fakeAssembleResult(chatId: string, branchId: string): ChatModeAssembleR
     promptTraceDraft: {
       chatId,
       branchId,
-      model: "test-model",
+      model,
       presetName: "test",
       assembledLayers: [],
       tokenAccounting: {},
@@ -155,7 +155,11 @@ function makeHarness(chat: TestChat): InstanceType<typeof LiveChatOrchestrator> 
     diceRolls: chat.stores.diceRolls,
     uiSettings: chat.stores.uiSettings,
     experiences: chat.stores.experiences,
-    assemblePrompt: async () => fakeAssembleResult(chat.chatId as string, chat.branchId),
+    assemblePrompt: async (chatId, branchId, options) => fakeAssembleResult(
+      chatId,
+      branchId ?? chat.branchId,
+      options?.model ?? "test-model",
+    ),
     // Typed stubs (the hygiene budget forbids new never-casts): the response
     // builders the append paths call return minimal valid shapes; the rest
     // must never run here. prepareLiveTurn's snapshot is read only for
@@ -278,6 +282,8 @@ describe("provider cuts the stream mid-reply", () => {
     const variants = await chat.stores.messages.getVariants(greeting.id);
     expect(variants).toHaveLength(variantsBefore + 1);
     expect(variants.some((v) => v.content === "A different hello, cut")).toBe(true);
+    const persistedTrace = (await chat.stores.traces.getTracesByChat(chat.chatId as string, chat.branchId, greeting.id))[0]!;
+    expect(JSON.parse(events[metadataAt]!.data)).toEqual({ modelId: persistedTrace.model, presetName: persistedTrace.presetName });
   });
 
   it("a cut before any text arrives stores nothing and the error event carries no partialSaved (unchanged)", async () => {

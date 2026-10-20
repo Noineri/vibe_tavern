@@ -9,6 +9,7 @@ import type { z } from "zod";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
 import { readCoauthorEditorState } from "../lib/coauthor-editor-snapshot.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import type { GenerationMetadata } from "../lib/generation-metadata.js";
 
 export interface StreamOpts {
   signal?: AbortSignal;
@@ -21,7 +22,7 @@ export interface StreamOpts {
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
-  onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
+  onGenerationMetadata?: (info: GenerationMetadata) => void;
 }
 
 /**

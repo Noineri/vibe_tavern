@@ -41,7 +41,7 @@ import { DiceApiError } from "../api/dice-api.js";
 import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
-import { captureQuickSwitchGenerationMetadata } from "../lib/generation-metadata.js";
+import { captureQuickSwitchGenerationMetadata, type GenerationMetadata } from "../lib/generation-metadata.js";
 import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsSending } from "./chat-controller-store-reads.js";
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
@@ -302,8 +302,8 @@ export function useChatController(): ChatControllerActions {
       onStatus: (status: ChatGenerationStatus) => void;
       onChunk: (delta: string) => void;
       onReasoningChunk?: (delta: string) => void;
-       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
-       onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
+      onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+      onGenerationMetadata?: (info: GenerationMetadata) => void;
       onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
       onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { parseSSEStream } from "./sse-parser.js";
+import type { GenerationMetadata } from "./generation-metadata.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
 /**
@@ -46,7 +47,7 @@ describe("parseSSEStream", () => {
 
 	it("forwards generation metadata without treating it as a text delta", async () => {
 		const o = opts();
-		const onGenerationMetadata = mock((_: { modelId: string; presetName: string | null }) => {});
+		const onGenerationMetadata = mock((_: GenerationMetadata) => {});
 		await parseSSEStream({
 			response: sseResponse([
 				"event: generation-metadata\n",

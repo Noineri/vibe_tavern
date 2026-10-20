@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type { ChatGenerationStatus } from "../api/types.js";
+import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
 
@@ -135,7 +136,7 @@ export interface ChatActions {
   appendReasoningText: (chatId: string, delta: string) => void;
 
   /** Store the model and preset resolved for this generation. */
-  setGenerationMetadata: (chatId: string, metadata: { modelId: string | null; presetName: string | null }) => void;
+  setGenerationMetadata: (chatId: string, metadata: GenerationMetadata) => void;
 
   /** Set the generation status string. */
   setGenerationStatus: (chatId: string, status: ChatGenerationStatus) => void;

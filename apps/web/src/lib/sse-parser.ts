@@ -2,6 +2,7 @@ import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { ChatGenerationStatus } from "../api/types.js";
 import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
+import type { GenerationMetadata } from "./generation-metadata.js";
 
 export interface ParseSSEStreamOptions {
   response: Response;
@@ -16,7 +17,7 @@ export interface ParseSSEStreamOptions {
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
-  onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
+  onGenerationMetadata?: (info: GenerationMetadata) => void;
 }
 
 /**

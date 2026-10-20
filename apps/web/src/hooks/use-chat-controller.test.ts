@@ -19,6 +19,7 @@ import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
 import type { BootstrapData } from "../stores/api-actions/bootstrap-actions.js";
+import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -170,6 +171,41 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 		});
 		expect(useChatStore.getState().generations[CHAT]).toMatchObject({ modelId: null, presetName: null });
 	});
+
+	test("stream send exposes server generation metadata until the stream settles", async () => {
+		let settleStream!: () => void;
+		sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: {
+			onGenerationMetadata?: (metadata: GenerationMetadata) => void;
+		}) => {
+			opts.onGenerationMetadata?.({ modelId: "resolved-model", presetName: "Resolved preset" });
+			return new Promise<void>((resolve) => { settleStream = resolve; });
+		});
+		useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+		useChatStore.setState({ draft: "hello" });
+		const { result } = renderHook(() => useChatController());
+
+		let pending!: Promise<void>;
+		await act(async () => {
+			pending = result.current.handleSend();
+			await Promise.resolve();
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({
+			isSending: true,
+			modelId: "resolved-model",
+			presetName: "Resolved preset",
+		});
+
+		await act(async () => {
+			settleStream();
+			await pending;
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({
+			isSending: false,
+			modelId: null,
+			presetName: null,
+		});
+	});
+
   test("success clears messageActionId and isSending", async () => {
     regenerateChatMessage.mockResolvedValue({});
     const { result } = renderHook(() => useChatController());
