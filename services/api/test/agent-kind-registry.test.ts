@@ -53,6 +53,8 @@ function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): Age
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
     recencyAnchorText: "(fake kind pins no context)",
+    // Post-split fake: no legacy copilot-pair inheritance (SC-7).
+    inheritsLegacyCopilotPair: false,
     renderContextPackage: () => "", // required since AS-2b; fakes don't render
   };
 }

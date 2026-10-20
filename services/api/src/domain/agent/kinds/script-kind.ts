@@ -146,6 +146,9 @@ function renderContextPackage(ctx: ScriptAgentContext): string {
 const kind: AgentKind<ScriptAgentContext> = {
   id: "script",
   owner: "script",
+  // Pre-split kind: keeps the legacy ui_settings copilot-pair fallback and
+  // first-insert seed (SC-7, owner decision 2 corrected 2026-10-19).
+  inheritsLegacyCopilotPair: true,
   servesScriptKinds: ["prompt", "dice"],
   basePromptServiceKey: "script_agent_base",
   skillRootId: "script",

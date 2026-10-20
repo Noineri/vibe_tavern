@@ -1,6 +1,13 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
-import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics, AgentKindSettings, ChatAgentSettings } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentChatDefaultModelWire } from "@vibe-tavern/api-contracts";
+import {
+  toThreadWire,
+  toMetricsWire,
+  toMessageWire,
+  toKindSettingsWire,
+  toChatSettingsWire,
+} from "./experience-copilot-wire-mappers.js";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -476,12 +483,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   experienceCopilotGetActive = async (scriptId: string): Promise<ExperienceCopilotThreadWire | null> => {
     const thread = await this.stores.experienceCopilot.getActive(scriptId);
-    return thread ? this.toThreadWire(thread) : null;
+    return thread ? toThreadWire(thread) : null;
   };
 
   experienceCopilotListMessages = async (threadId: string): Promise<ExperienceCopilotMessageWire[]> => {
     const messages = await this.stores.experienceCopilot.listMessages(threadId);
-    return messages.map((m) => this.toMessageWire(m));
+    return messages.map((m) => toMessageWire(m));
   };
 
   experienceCopilotStartNewSession = async (
@@ -489,22 +496,22 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     title?: string,
   ): Promise<ExperienceCopilotThreadWire> => {
     const thread = await this.stores.experienceCopilot.startNewSession(scriptId, title);
-    return this.toThreadWire(thread);
+    return toThreadWire(thread);
   };
 
   experienceCopilotListSessions = async (scriptId: string): Promise<ExperienceCopilotThreadWire[]> => {
     const threads = await this.stores.experienceCopilot.listSessions(scriptId);
-    return threads.map((t) => this.toThreadWire(t));
+    return threads.map((t) => toThreadWire(t));
   };
 
   experienceCopilotActivate = async (sessionId: string): Promise<ExperienceCopilotThreadWire | null> => {
     const thread = await this.stores.experienceCopilot.activate(sessionId);
-    return thread ? this.toThreadWire(thread) : null;
+    return thread ? toThreadWire(thread) : null;
   };
 
   experienceCopilotArchive = async (sessionId: string): Promise<ExperienceCopilotThreadWire | null> => {
     const thread = await this.stores.experienceCopilot.archive(sessionId);
-    return thread ? this.toThreadWire(thread) : null;
+    return thread ? toThreadWire(thread) : null;
   };
 
   experienceCopilotRenameSession = async (
@@ -515,7 +522,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // same storage semantics: trimmed, empty = "no custom title" (the UI then
     // falls back to the auto-numbered label).
     const thread = await this.stores.experienceCopilot.renameSession(sessionId, title.trim());
-    return thread ? this.toThreadWire(thread) : null;
+    return thread ? toThreadWire(thread) : null;
   };
 
   // ─── Chat-owner lifecycle (SIDECHAT_PLAN SC-0b) ────────────────────────────
@@ -536,7 +543,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.requireChatOwnedKind(kind);
     await requireChatBranch(this.stores.chats, chatId, branchId);
     const thread = await this.stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
-    return thread ? this.toThreadWire(thread) : null;
+    return thread ? toThreadWire(thread) : null;
   };
 
   agentChatListSessions = async (
@@ -547,7 +554,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.requireChatOwnedKind(kind);
     await requireChatBranch(this.stores.chats, chatId, branchId);
     const threads = await this.stores.experienceCopilot.listSessionsForChat(chatId, branchId, kind);
-    return threads.map((t) => this.toThreadWire(t));
+    return threads.map((t) => toThreadWire(t));
   };
 
   agentChatStartNewSession = async (
@@ -559,7 +566,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.requireChatOwnedKind(kind);
     await requireChatBranch(this.stores.chats, chatId, branchId);
     const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title);
-    return this.toThreadWire(thread);
+    return toThreadWire(thread);
   };
 
   // ─── Per-kind model settings (SIDECHAT_PLAN SC-0d) ──────────────────────
@@ -575,7 +582,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   agentKindGetSettings = async (kind: string): Promise<AgentKindSettingsWire> => {
     this.requireRegisteredKind(kind);
-    return this.toKindSettingsWire(await this.stores.agentKindSettings.get(kind));
+    // SC-7: the legacy-pair fallback/seed applies only to the pre-split
+    // kinds — the descriptor field is the one source of that fact.
+    const settings = await this.stores.agentKindSettings.get(kind, {
+      inheritLegacyPair: getAgentKind(kind).inheritsLegacyCopilotPair,
+    });
+    return toKindSettingsWire(settings);
   };
 
   agentKindPatchSettings = async (
@@ -583,7 +595,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     body: AgentKindSettingsPatchRequest,
   ): Promise<AgentKindSettingsWire> => {
     this.requireRegisteredKind(kind);
-    return this.toKindSettingsWire(await this.stores.agentKindSettings.patch(kind, body));
+    const settings = await this.stores.agentKindSettings.patch(kind, body, {
+      inheritLegacyPair: getAgentKind(kind).inheritsLegacyCopilotPair,
+    });
+    return toKindSettingsWire(settings);
   };
 
   // ─── Per-(chat, kind) profile choice (SIDECHAT_PLAN SC-0f) ──────────────
@@ -608,7 +623,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // 400 AGENT_KIND_NOT_CHAT_OWNED), then the chat's existence (404).
     this.requireChatOwnedKind(kind);
     await this.requireChat(chatId);
-    return this.toChatSettingsWire(await this.stores.chatAgentSettings.get(chatId, kind));
+    return toChatSettingsWire(await this.stores.chatAgentSettings.get(chatId, kind));
   };
 
   agentChatPatchSettings = async (
@@ -618,7 +633,29 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   ): Promise<AgentChatSettingsWire> => {
     this.requireChatOwnedKind(kind);
     await this.requireChat(chatId);
-    return this.toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
+    return toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
+  };
+
+  // ─── The chat's RP default model (SIDECHAT_PLAN SC-7) ───────────────────
+
+  /** The chat's RP model pair, READ-ONLY (SC-7): the active provider
+   *  profile and its selected/default model — resolved exactly as the RP
+   *  send resolves them (`ProviderProfileService.resolveActiveProviderProfile`
+   *  wraps the SAME `providers.getActive()` store read; the send's model is
+   *  the profile's `defaultModel`). The sidechat host's
+   *  `defaultModelBinding` (SC-13) consumes it as the sidechat agent's first
+   *  default. Nulls — never an error — when no profile is active or the
+   *  active profile has no default model: this is a picker default, and the
+   *  send path keeps its own configuration errors. Only the chat's
+   *  existence is validated (404; the route carries no branch/kind segment,
+   *  so there is no pair to check and no registry error to map). */
+  agentChatGetDefaultModel = async (chatId: string): Promise<AgentChatDefaultModelWire> => {
+    await this.requireChat(chatId);
+    const profile = await this.stores.providers.getActive();
+    return {
+      providerProfileId: profile?.id ?? null,
+      modelName: profile?.defaultModel ?? null,
+    };
   };
 
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
@@ -627,7 +664,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
     }
     return {
-      metrics: thread.contextMetrics ? this.toMetricsWire(thread.contextMetrics) : null,
+      metrics: thread.contextMetrics ? toMetricsWire(thread.contextMetrics) : null,
       autoCompact: thread.autoCompact,
     };
   };
@@ -646,7 +683,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // Re-read so the response reflects the persisted toggle (metrics unchanged).
     const refreshed = await this.stores.experienceCopilot.getById(threadId);
     return {
-      metrics: refreshed?.contextMetrics ? this.toMetricsWire(refreshed.contextMetrics) : null,
+      metrics: refreshed?.contextMetrics ? toMetricsWire(refreshed.contextMetrics) : null,
       autoCompact: refreshed?.autoCompact ?? true,
     };
   };
@@ -692,82 +729,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ...(body.model !== undefined ? { model: body.model } : {}),
       ...(signal ? { signal } : {}),
     });
-    return { digest: this.toMessageWire(digest), metrics: this.toMetricsWire(metrics) };
+    return { digest: toMessageWire(digest), metrics: toMetricsWire(metrics) };
   };
 
-  // ─── Domain → wire mappers (ER-7) ────────────────────────────────────────
-  //
-  // Field-for-field: the store's branded ids are phantom string brands (already
-  // `string`-assignable), so the only job here is the explicit object literal
-  // that pins the nullability contract (nullable fields stay `null`, never
-  // `undefined`).
-
-  private toThreadWire(t: ExperienceCopilotThread): ExperienceCopilotThreadWire {
-    return {
-      id: t.id,
-      scriptId: t.scriptId,
-      draftSessionId: t.draftSessionId,
-      title: t.title,
-      archivedAt: t.archivedAt,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-      metrics: t.contextMetrics ? this.toMetricsWire(t.contextMetrics) : null,
-      contextLinks: t.contextLinks,
-      todo: t.todo,
-    };
-  }
-
-  /** Map the store's parsed metrics (structurally identical to the wire shape)
-   *  into the api-contracts type. Field-for-field so the nullability/union
-   *  contract is explicit (never `undefined`). */
-  private toMetricsWire(m: CopilotContextMetrics): ExperienceCopilotContextMetrics {
-    return {
-      systemTokens: m.systemTokens,
-      digestTokens: m.digestTokens,
-      historyTokens: m.historyTokens,
-      totalTokens: m.totalTokens,
-      attachedTokens: m.attachedTokens,
-      budgetTokens: m.budgetTokens,
-      reserveTokens: m.reserveTokens,
-      source: m.source,
-      measuredAt: m.measuredAt,
-    };
-  }
-
-  private toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMessageWire {
-    return {
-      id: m.id,
-      threadId: m.threadId,
-      role: m.role,
-      content: m.content,
-      toolCallsJson: m.toolCallsJson,
-      toolCallId: m.toolCallId,
-      createdAt: m.createdAt,
-    };
-  }
-
-  /** Map the db store's kind-settings row (structurally identical to the
-   *  wire shape) into the api-contracts type — field-for-field so the
-   *  nullability contract is explicit (nullable fields stay `null`). */
-  private toKindSettingsWire(s: AgentKindSettings): AgentKindSettingsWire {
-    return {
-      agentKind: s.agentKind,
-      providerProfileId: s.providerProfileId,
-      modelName: s.modelName,
-      defaultProfileId: s.defaultProfileId,
-      updatedAt: s.updatedAt,
-    };
-  }
-
-  /** Map the db store's chat-settings row (structurally identical to the
-   *  wire shape) into the api-contracts type — field-for-field so the
-   *  nullability contract is explicit (nullable fields stay `null`). */
-  private toChatSettingsWire(s: ChatAgentSettings): AgentChatSettingsWire {
-    return {
-      chatId: s.chatId,
-      agentKind: s.agentKind,
-      profileId: s.profileId,
-      updatedAt: s.updatedAt,
-    };
-  }
 }

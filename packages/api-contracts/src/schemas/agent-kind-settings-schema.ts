@@ -22,7 +22,10 @@ export const agentKindSettingsSchema = z
     providerProfileId: z.string().nullable(),
     modelName: z.string().nullable(),
     defaultProfileId: z.string().nullable(),
-    updatedAt: z.string(),
+    // The row's (or the legacy fallback's) `updated_at`; `null` when the kind
+    // has neither a row nor the legacy fallback (SC-7: only the two pre-split
+    // kinds inherit it).
+    updatedAt: z.string().nullable(),
   })
   .strict();
 export type AgentKindSettingsWire = z.infer<typeof agentKindSettingsSchema>;

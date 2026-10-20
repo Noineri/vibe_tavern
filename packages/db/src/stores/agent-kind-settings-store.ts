@@ -8,17 +8,23 @@ import { UiSettingsStore } from './ui-settings-store.js';
 
 /**
  * One agent kind's EFFECTIVE settings (SIDECHAT_PLAN SC-0d): the kind's own
- * row when it has one, otherwise the legacy `ui_settings` copilot pair
- * projected through the same shape (see {@link AgentKindSettingsStore.get}).
- * Structurally identical to the api-contracts wire shape; the adapter maps
- * field-for-field (db does not depend on api-contracts).
+ * row when it has one, otherwise — for a kind that inherits the legacy pair
+ * (see {@link ReadOptions.inheritLegacyPair}) — the legacy `ui_settings`
+ * copilot pair projected through the same shape (see
+ * {@link AgentKindSettingsStore.get}). Structurally identical to the
+ * api-contracts wire shape; the adapter maps field-for-field (db does not
+ * depend on api-contracts).
  */
 export interface AgentKindSettings {
   agentKind: string;
   providerProfileId: string | null;
   modelName: string | null;
   defaultProfileId: string | null;
-  updatedAt: string;
+  /** The row's `updated_at`, or the legacy ui_settings row's when the legacy
+   *  fallback applied — `null` when there is neither a row nor a fallback
+   *  (a kind that does not inherit and has nothing stored; the SC-0f
+   *  chat-settings twin's no-row shape). */
+  updatedAt: string | null;
 }
 
 // ─── Input type ───────────────────────────────────────────────────────────────
@@ -26,9 +32,10 @@ export interface AgentKindSettings {
 /**
  * Partial patch for one kind: only the fields present are written (absent
  * keeps the stored value, `null` clears it). On the FIRST insert for a kind
- * the provider/model columns seed from the legacy `ui_settings` copilot pair
+ * that inherits the legacy pair ({@link ReadOptions.inheritLegacyPair}) the
+ * provider/model columns seed from the legacy `ui_settings` copilot pair
  * (owner decision 2: nobody loses their choice) unless the patch itself
- * carries them.
+ * carries them; every other kind's first insert seeds nothing.
  */
 export interface AgentKindSettingsUpdate {
   providerProfileId?: string | null;
@@ -36,17 +43,36 @@ export interface AgentKindSettingsUpdate {
   defaultProfileId?: string | null;
 }
 
+/**
+ * Per-call read/seed options. `inheritLegacyPair` says whether THIS kind
+ * falls back to the legacy `ui_settings` copilot pair when it has no row
+ * (read-time) and seeds its first insert from it (SC-7, owner decision 2
+ * corrected 2026-10-19): only the two pre-split kinds (`experience`,
+ * `script`) do. The FACT lives on the backend `AgentKind` descriptor
+ * (`inheritsLegacyCopilotPair` — services/api); `packages/db` cannot import
+ * it across the dependency graph, so the services/api callers populate this
+ * option from the descriptor per call. Defaults to `false` — the semantics
+ * of every kind registered after the split.
+ */
+export interface ReadOptions {
+  inheritLegacyPair?: boolean;
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 /**
  * Per-agent-kind settings (SC-0d) — one row per kind id.
  *
- * The legacy fallback is READ-TIME, never a seed: `get` on a kind with no row
- * returns the current `ui_settings.copilot_provider_id` / `copilot_model_name`
- * pair (owner decision 2 — a user who chose a model before kinds existed keeps
- * seeing it; no seed SQL writes rows on upgrade). The ui_settings row is read
- * through the {@link UiSettingsStore} so the "missing row → defaults"
- * projection lives in exactly one store per table.
+ * The legacy fallback is READ-TIME, never a seed SQL on upgrade, and applies
+ * ONLY to kinds that inherit it ({@link ReadOptions.inheritLegacyPair} —
+ * `experience` and `script`, the two pre-split kinds; SC-7): `get` on such a
+ * kind with no row returns the current `ui_settings.copilot_provider_id` /
+ * `copilot_model_name` pair (owner decision 2 — a user who chose a model
+ * before kinds existed keeps seeing it), and `patch`'s first insert seeds
+ * the pair columns from it. Every other kind with no row reads nulls and
+ * seeds nothing, so its host's `defaultModelBinding` is actually consulted.
+ * The ui_settings row is read through the {@link UiSettingsStore} so the
+ * "missing row → defaults" projection lives in exactly one store per table.
  */
 export class AgentKindSettingsStore {
   private readonly db: AppDb;
@@ -62,16 +88,27 @@ export class AgentKindSettingsStore {
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
-  /** The kind's row; when the kind has no row yet, the legacy
+  /** The kind's row; when the kind has no row yet: the legacy
    *  `ui_settings` copilot pair (`default_profile_id: null` — the legacy pair
-   *  never carried one) with the ui_settings row's `updated_at`. */
-  async get(kind: string): Promise<AgentKindSettings> {
+   *  never carried one) with the ui_settings row's `updated_at` for a kind
+   *  that inherits it, all-null fields (`updatedAt: null` alike) for one that
+   *  does not. */
+  async get(kind: string, options?: ReadOptions): Promise<AgentKindSettings> {
     const row = await this.db
       .select()
       .from(agentKindSettings)
       .where(eq(agentKindSettings.agentKind, kind))
       .get();
     if (row) return this.mapRow(row);
+    if (options?.inheritLegacyPair !== true) {
+      return {
+        agentKind: kind,
+        providerProfileId: null,
+        modelName: null,
+        defaultProfileId: null,
+        updatedAt: null,
+      };
+    }
     const legacy = await this.uiSettings.get();
     return {
       agentKind: kind,
@@ -85,17 +122,19 @@ export class AgentKindSettingsStore {
   // ─── Write operations ──────────────────────────────────────────────────────
 
   /** Upsert ONE kind's row (SC-0d): fields present in `update` are written,
-   *  absent fields keep their stored value. The first insert for a kind seeds
-   *  the provider/model columns from the legacy pair so a partial first PATCH
-   *  (e.g. a future `default_profile_id` write) never silently drops the
-   *  user's pre-kinds model choice. */
-  async patch(kind: string, update: AgentKindSettingsUpdate): Promise<AgentKindSettings> {
-    const legacy = await this.uiSettings.get();
+   *  absent fields keep their stored value. For a kind that inherits the
+   *  legacy pair, the first insert seeds the provider/model columns from it
+   * so a partial first PATCH (e.g. a future `default_profile_id` write)
+   * never silently drops the user's pre-kinds model choice; every other
+   *  kind's first insert seeds nothing (absent pair columns insert NULL). */
+  async patch(kind: string, update: AgentKindSettingsUpdate, options?: ReadOptions): Promise<AgentKindSettings> {
+    const inheritLegacyPair = options?.inheritLegacyPair === true;
+    const legacy = inheritLegacyPair ? await this.uiSettings.get() : null;
     const now = this.clock.now();
     // Two distinct column sets: the INSERT seeds absent pair columns from the
-    // legacy choice (first-touch row), while the conflict UPDATE writes ONLY
-    // the fields the patch carries — seeding there would clobber the row's
-    // stored values on every partial patch.
+    // legacy choice (first-touch row — only for an inheriting kind), while the
+    // conflict UPDATE writes ONLY the fields the patch carries — seeding there
+    // would clobber the row's stored values on every partial patch.
     const insert: Omit<typeof agentKindSettings.$inferInsert, 'agentKind'> = {
       updatedAt: now,
     };
@@ -105,13 +144,13 @@ export class AgentKindSettingsStore {
     if (update.providerProfileId !== undefined) {
       insert.providerProfileId = update.providerProfileId;
       conflictSet.providerProfileId = update.providerProfileId;
-    } else {
+    } else if (legacy !== null) {
       insert.providerProfileId = legacy.copilotProviderId;
     }
     if (update.modelName !== undefined) {
       insert.modelName = update.modelName;
       conflictSet.modelName = update.modelName;
-    } else {
+    } else if (legacy !== null) {
       insert.modelName = legacy.copilotModelName;
     }
     if (update.defaultProfileId !== undefined) {

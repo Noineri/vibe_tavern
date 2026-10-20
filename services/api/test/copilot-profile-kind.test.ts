@@ -55,6 +55,8 @@ function makeFakeKind(): AgentKind {
     toolSetSchema: z.object({ quill_draft: z.boolean().optional() }).strict(),
     defaultToolSet: { quill_draft: true },
     recencyAnchorText: "Fake-kind recency anchor.",
+    // Post-split fake: no legacy copilot-pair inheritance (SC-7).
+    inheritsLegacyCopilotPair: false,
     renderContextPackage: () => "",
   };
 }

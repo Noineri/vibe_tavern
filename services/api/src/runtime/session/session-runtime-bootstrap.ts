@@ -43,12 +43,17 @@ export async function buildBootstrapState(deps: BootstrapAssemblyDeps): Promise<
   const initialChatId = pickBootstrapChatId(chatOrderItems, (id) => coauthorIds.has(id));
   const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
   // SC-0d: every REGISTERED kind's effective settings — the kind's own row
-  // or the legacy ui_settings copilot pair (the store's read-time
-  // fallback), keyed by kind id so each shell finds its remembered model
-  // in the one bootstrap round-trip.
+  // or, for a kind that inherits it (SC-7: only the two pre-split kinds; the
+  // descriptor field is the one source of that fact), the legacy
+  // ui_settings copilot pair (the store's read-time fallback), keyed by
+  // kind id so each shell finds its remembered model in the one bootstrap
+  // round-trip.
   const agentKindSettings: BootstrapState['agentKindSettings'] = Object.fromEntries(
     await Promise.all(
-      listAgentKinds().map(async (kind) => [kind.id, await stores.agentKindSettings.get(kind.id)]),
+      listAgentKinds().map(async (kind) => [
+        kind.id,
+        await stores.agentKindSettings.get(kind.id, { inheritLegacyPair: kind.inheritsLegacyCopilotPair }),
+      ]),
     ),
   );
   return {

@@ -68,6 +68,8 @@ function makeFakeChatKind(id: string): AgentKind {
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
     recencyAnchorText: "(fake kind pins no context)",
+    // Post-split fake: no legacy copilot-pair inheritance (SC-7).
+    inheritsLegacyCopilotPair: false,
     renderContextPackage: () => "",
   };
 }

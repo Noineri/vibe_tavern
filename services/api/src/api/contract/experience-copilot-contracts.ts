@@ -5,7 +5,7 @@
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentChatDefaultModelWire } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -159,4 +159,19 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  are written (absent keeps the stored value, `null` clears it). Same
 	 *  validation order as {@link agentChatGetSettings}. */
 	agentChatPatchSettings: (chatId: string, kind: string, body: AgentChatSettingsPatchRequest) => Promise<AgentChatSettingsWire>;
+
+	// ─── The chat's RP default model (SIDECHAT_PLAN SC-7) ───────────────────
+	//
+	// The read-only RP model pair behind `GET
+	// /api/agent/chats/:chatId/default-model` — consumed by the sidechat
+	// host's `defaultModelBinding` (SC-13) as the sidechat agent's first
+	// default. No kind segment: every kind's sidechat in the chat shares the
+	// same RP pair, so there is no registry error to map — only the chat's
+	// existence (404).
+
+	/** The chat's RP model pair: the active provider profile and its
+	 *  selected/default model, resolved exactly as the RP send resolves them
+	 *  (read-only). Nulls — never an error — when no profile is active or
+	 *  the active profile has no default model. */
+	agentChatGetDefaultModel: (chatId: string) => Promise<AgentChatDefaultModelWire>;
 }

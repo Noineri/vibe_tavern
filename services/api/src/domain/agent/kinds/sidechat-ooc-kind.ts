@@ -84,6 +84,11 @@ export const SIDECHAT_OOC_RECENCY_ANCHOR_TEXT =
 const kind: AgentKind<undefined> = {
   id: "sidechat-ooc",
   owner: "chat",
+  // Post-split kind: no legacy ui_settings copilot-pair fallback and no
+  // first-insert seed (SC-7) — the sidechat's default model comes from the
+  // host's `defaultModelBinding` (the RP pair, SC-13's consumer), never from
+  // the pre-kinds global choice.
+  inheritsLegacyCopilotPair: false,
   servesScriptKinds: [],
   basePromptServiceKey: "sidechat_ooc_base",
   skillRootId: "sidechat",

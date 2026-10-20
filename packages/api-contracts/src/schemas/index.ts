@@ -19,6 +19,8 @@ export type {
   AgentChatSettingsWire,
   AgentChatSettingsPatchRequest,
 } from "./agent-chat-settings-schema.js";
+export { agentChatDefaultModelSchema } from "./agent-chat-default-model-schema.js";
+export type { AgentChatDefaultModelWire } from "./agent-chat-default-model-schema.js";
 export {
   reviewHunkCountsSchema,
   reviewOutcomeSchema,

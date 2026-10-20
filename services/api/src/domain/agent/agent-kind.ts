@@ -58,6 +58,19 @@ export interface AgentKind<CTX = unknown> {
    */
   readonly owner: AgentKindOwner;
   /**
+   * Whether a kind with NO settings row of its own inherits the legacy
+   * `ui_settings` copilot provider/model pair (SC-7, owner decision 2
+   * corrected 2026-10-19): ONLY the two kinds that existed before per-kind
+   * settings split off (`experience`, `script`) keep that read-time fallback
+   * and the first-insert seed — their users chose a model before kinds
+   * existed. Every later kind reads nulls when it has no row, so its host's
+   * `defaultModelBinding` is actually consulted. This field is the ONE
+   * source of the fact; `packages/db` cannot import it (dependency graph),
+   * so the store takes it as a per-call option the services/api callers
+   * populate from the descriptor.
+   */
+  readonly inheritsLegacyCopilotPair: boolean;
+  /**
    * Which script kinds this species serves — the DATA behind
    * `resolveKindForScript()`: the registry returns the first REGISTERED kind
    * whose `servesScriptKinds` contains the requested script kind, so the
