@@ -230,6 +230,7 @@ describe("Q3 store: narrow selectors do not over-render", () => {
   });
 
   test("owner scenario 1 counts one persisted variant plus running and pending records", () => {
+    setVisibleTarget(["a"]);
     useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
     const regenerate = useGenerationQueueStore.getState().addRecord("c1", {
       messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B", presetId: null,
@@ -238,9 +239,6 @@ describe("Q3 store: narrow selectors do not over-render", () => {
       messageId: "m1", origin: "queue", status: "pending", model: "frozen-c", presetName: "Preset C", presetId: "preset-c",
     });
     useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "frozen-c", promptPresetId: "preset-c", recordId: queued });
-    act(() => {
-      setVisibleTarget(["a"]);
-    });
     let seen!: ReturnType<typeof useGenerationBatchSummary>;
     const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
 
@@ -251,16 +249,44 @@ describe("Q3 store: narrow selectors do not over-render", () => {
     unmount();
   });
 
+  test("a partial variant is excluded from done until its running record settles", () => {
+    setVisibleTarget(["a"]);
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
+    const recordId = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: null, presetId: null,
+    });
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+
+    act(() => {
+      setVisibleTarget(["a", "partial-b"]);
+    });
+    expect(seen.summary).toEqual({ done: 1, failed: 0, running: 1, pending: 0, total: 2 });
+
+    act(() => {
+      useGenerationQueueStore.getState().removeRecord("c1", recordId);
+    });
+    expect(seen.summary).toEqual({ done: 2, failed: 0, running: 0, pending: 0, total: 2 });
+    unmount();
+  });
+
+  test("a failed record retains the target variant position at which it started", () => {
+    setVisibleTarget(["a", "b"]);
+    const recordId = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "failed", model: "bad", presetName: null, presetId: null, error: "provider rate limit",
+    });
+    expect(useGenerationQueueStore.getState().recordsByChat.c1?.find((record) => record.id === recordId))
+      .toMatchObject({ startVariantPosition: 2, status: "failed" });
+  });
+
   test("owner scenario 2 counts three persisted variants plus running and pending records", () => {
+    setVisibleTarget(["a", "b", "c"]);
     useGenerationQueueStore.getState().startBatch("c1", "m1", ["a", "b", "c"]);
     useGenerationQueueStore.getState().addRecord("c1", {
       messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B", presetId: null,
     });
     useGenerationQueueStore.getState().addRecord("c1", {
       messageId: "m1", origin: "queue", status: "pending", model: "frozen-c", presetName: "Preset C", presetId: "preset-c",
-    });
-    act(() => {
-      setVisibleTarget(["a", "b", "c"]);
     });
     let seen!: ReturnType<typeof useGenerationBatchSummary>;
     const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
@@ -305,13 +331,13 @@ describe("Q3 store: narrow selectors do not over-render", () => {
   });
 
   test("a running queue job and its linked running record count once", () => {
+    setVisibleTarget(["a"]);
     useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
     const recordId = useGenerationQueueStore.getState().addRecord("c1", {
       messageId: "m1", origin: "queue", status: "running", model: "frozen", presetName: null, presetId: null,
     });
     const jobId = useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "frozen", promptPresetId: null, recordId });
     useGenerationQueueStore.getState().markRunning(jobId);
-    setVisibleTarget(["a"]);
     let seen!: ReturnType<typeof useGenerationBatchSummary>;
     const { unmount } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
     expect(seen.summary).toEqual({ done: 1, failed: 0, running: 1, pending: 0, total: 2 });

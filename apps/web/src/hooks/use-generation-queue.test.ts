@@ -147,16 +147,21 @@ describe("useGenerationQueue record lifecycle", () => {
   for (const partialVariant of [true, false]) {
     test(`cancelling a running job ${partialVariant ? "keeps" : "does not invent"} a partial server variant`, async () => {
       const outcome = parked<"cancelled">();
-      const { unmount } = renderHook(() => useGenerationQueue(async () => outcome.promise));
+      const signals: AbortSignal[] = [];
+      const { unmount } = renderHook(() => useGenerationQueue(async () => {
+        signals.push(useChatStore.getState().startGeneration(CHAT_A, null, [], MESSAGE).signal);
+        return outcome.promise;
+      }));
 
       await act(async () => {
         enqueueGenerateMore(MESSAGE, "model-a", null);
-        await flushUntil(() => useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.[0]?.status === "running");
+        await flushUntil(() => signals.length === 1);
       });
       const job = useGenerationQueueStore.getState().jobsByChat[CHAT_A]![0]!;
       const recordId = job.recordId!;
       cancelQueueJob(job.id);
-      expect(useChatStore.getState().generations[CHAT_A]).toBeUndefined();
+      expect(signals[0]?.aborted).toBe(true);
+      expect(useChatStore.getState().generations[CHAT_A]).toMatchObject({ isSending: false, abortController: null });
       setServerVariantIds(partialVariant ? ["server-partial"] : []);
       expect(serverVariantIds()).toEqual(partialVariant ? ["server-partial"] : []);
 
@@ -166,6 +171,7 @@ describe("useGenerationQueue record lifecycle", () => {
       });
       expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.find((record) => record.id === recordId)).toBeUndefined();
       expect(serverVariantIds()).toEqual(partialVariant ? ["server-partial"] : []);
+      expect(useChatStore.getState().generations[CHAT_A]).toMatchObject({ isSending: false, abortController: null });
       unmount();
     });
   }

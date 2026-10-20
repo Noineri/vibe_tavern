@@ -51,6 +51,8 @@ export type GenerationRecordStatus = "pending" | "running" | "failed";
 export interface GenerationRecord {
   id: string;
   messageId: string;
+  /** Number of target variants that existed when this generation began. */
+  startVariantPosition: number;
   origin: GenerationRecordOrigin;
   status: GenerationRecordStatus;
   model: string | null;
@@ -105,8 +107,12 @@ export interface GenerationQueueActions {
   /** Remove a single job (used after the runner observes a cancel). */
   removeJob: (jobId: string) => void;
   startBatch: (chatId: string, messageId: string, variantIds: string[]) => void;
-  addRecord: (chatId: string, record: Omit<GenerationRecord, "id">) => string;
-  updateRecord: (chatId: string, id: string, patch: Partial<GenerationRecord>) => void;
+  addRecord: (chatId: string, record: Omit<GenerationRecord, "id" | "startVariantPosition">) => string;
+  updateRecord: (
+    chatId: string,
+    id: string,
+    patch: Partial<Omit<GenerationRecord, "id" | "messageId" | "startVariantPosition">>,
+  ) => void;
   removeRecord: (chatId: string, id: string) => void;
   clearBatch: (chatId: string) => void;
 }
@@ -227,7 +233,10 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
     }),
     addRecord: (chatId, record) => {
       const id = nextJobId();
-      set((s) => { (s.recordsByChat[chatId] ??= []).push({ ...record, id }); });
+      const startVariantPosition = useSnapshotStore.getState().messagesById[record.messageId]?.variants.length ?? 0;
+      set((s) => {
+        (s.recordsByChat[chatId] ??= []).push({ ...record, id, startVariantPosition });
+      });
       return id;
     },
     updateRecord: (chatId, id, patch) => set((s) => {
@@ -330,10 +339,16 @@ export function useGenerationBatchSummary(
   );
   const target = useSnapshotStore((s) => (batch ? s.messagesById[batch.messageId] ?? null : null));
   const isTargetVisible = useSnapshotStore((s) => batch !== null && s.messageOrder.includes(batch.messageId));
-  const done = target?.variants.length ?? 0;
-  const failed = records.filter((record) => record.messageId === batch?.messageId && record.status === "failed").length;
-  const running = records.filter((record) => record.messageId === batch?.messageId && record.status === "running").length;
-  const pending = records.filter((record) => record.messageId === batch?.messageId && record.status === "pending").length;
+  const targetVariantCount = target?.variants.length ?? 0;
+  const targetRecords = records.filter((record) => record.messageId === batch?.messageId);
+  const runningRecords = targetRecords.filter((record) => record.status === "running");
+  const hasArrivedInFlightVariant = runningRecords.some(
+    (record) => targetVariantCount > record.startVariantPosition,
+  );
+  const done = Math.max(0, targetVariantCount - (hasArrivedInFlightVariant ? 1 : 0));
+  const failed = targetRecords.filter((record) => record.status === "failed").length;
+  const running = runningRecords.length;
+  const pending = targetRecords.filter((record) => record.status === "pending").length;
   return {
     visible: batch !== null && isTargetVisible,
     summary: { done, failed, running, pending, total: done + failed + running + pending },
