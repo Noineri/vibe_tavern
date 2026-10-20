@@ -24,6 +24,7 @@ import { resolveProtocol } from "../providers/protocol-registry.js";
 import { validation } from "../../shared/errors.js";
 import type { LiveChatSendInput } from "./live-chat-send-input.js";
 import { assembleReplyPrompt } from "./live-chat-reply-prompt.js";
+import { startProviderStream } from "./live-chat-stream-start.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -204,7 +205,12 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await assembleReplyPrompt(this.chatRuntime, provider, input.chatId, (fn) => this.withTokenContext(provider, fn));
+    const prompt = await assembleReplyPrompt(
+      this.chatRuntime,
+      provider,
+      input.chatId,
+      (fn) => this.withTokenContext(provider, fn),
+    );
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const startedAt = Date.now();
     let reply: string;
@@ -432,7 +438,12 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await assembleReplyPrompt(this.chatRuntime, provider, input.chatId, (fn) => this.withTokenContext(provider, fn));
+    const prompt = await assembleReplyPrompt(
+      this.chatRuntime,
+      provider,
+      input.chatId,
+      (fn) => this.withTokenContext(provider, fn),
+    );
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
@@ -797,35 +808,14 @@ export class LiveChatOrchestrator {
     input: StreamStartInput,
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
-    const startedAt = Date.now();
-    try {
-      const streamResult = await this.executeStream({
-        profile: input.profile,
-        model: input.model,
-        transport: input.transport,
-        prompt,
-        signal: input.signal,
-        // LS-4 capability gate: same rule as the non-stream paths. CPF-2b
-        // fallback: no prefill may ride (mutual exclusion is enforced at
-        // prepareSdkMessages; suppressing the cascade here keeps it honest).
-        prefill: input.continuationFallback
-          ? undefined
-          : resolveEffectivePrefill(input.profile, input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined),
-        ...(input.continuationFallback ? { continuationFallback: true } : {}),
-        tools: input.tools,
-        maxSteps: input.maxSteps,
-        cachedModels: input.visionAssets?.cachedModels,
-        visionModel: input.visionAssets?.visionModel,
-        assetLoader: input.visionAssets?.assetLoader,
-        visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
-        voiceTranscriber: input.voiceTranscriber,
-        onAttachmentDescriptions: input.onAttachmentDescriptions,
-      });
-      return { streamResult, startedAt };
-    } catch (err) {
-      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
-    }
+    return await startProviderStream(
+      {
+        executeStream: this.executeStream,
+        discardPendingPromptTrace: (chatId) => this.chatRuntime.discardPendingPromptTrace(chatId),
+      },
+      input,
+      prompt,
+    );
   }
 
   /**
