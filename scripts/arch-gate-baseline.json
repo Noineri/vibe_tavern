@@ -56,7 +56,6 @@
     "services/api/src/api/contract/runtime-api.ts": 858,
     "services/api/src/domain/ai-assistant/ai-assistant-stream.ts": 1075,
     "services/api/src/domain/chat/live-chat-orchestrator.ts": 1025,
-    "services/api/src/domain/imagegen/backends/a1111.ts": 998,
     "services/api/src/domain/imagegen/backends/comfyui.ts": 850,
     "services/api/src/domain/insights/objective-service.ts": 833,
     "services/api/src/domain/insights/tracker-service.ts": 1170,
