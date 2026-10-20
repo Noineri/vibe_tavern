@@ -50,8 +50,13 @@ const RESERVE_STYLE: CSSProperties = {
 /** SC-0j: the kind-provided segments reuse the fixed segments' fill classes in
  *  fixed-segment order (`bg-accent` = system, `bg-accent-dim` = digest,
  *  `bg-s2` = history), cycling when a kind provides more than three — reuse,
- *  not invention (the reserve hatch keeps RESERVE_STYLE at the tail). */
-const CUSTOM_SEGMENT_FILL_CLASSES = ["bg-accent", "bg-accent-dim", "bg-s2"];
+ *  not invention (the reserve hatch keeps RESERVE_STYLE at the tail).
+ *  SC-13b: the sidechat kind provides FIVE segments, so the cycle extends with
+ *  the existing theme colours `bg-info` and `bg-info-dim` — status colours
+ *  (success, warning, danger) are excluded: they mean a state, not a part.
+ *  Five distinct fills, so every part reads as its own; the fixed
+ *  three-segment meter below is unchanged. */
+const CUSTOM_SEGMENT_FILL_CLASSES = ["bg-accent", "bg-accent-dim", "bg-s2", "bg-info", "bg-info-dim"];
 
 export function AgentContextMeter({
   metrics,
@@ -104,11 +109,17 @@ export function AgentContextMeter({
   const customTooltip =
     showCustomSegments && metrics && customSegments ? (
       <div className="flex flex-col gap-1">
-        {customSegments.map((segment) => {
+        {customSegments.map((segment, index) => {
           const labelKey = segmentLabels?.[segment.key];
+          // SC-13b: each tooltip row carries a small dot in its segment's
+          // fill — the row structure is otherwise the SC-0j one.
+          const fill = CUSTOM_SEGMENT_FILL_CLASSES[index % CUSTOM_SEGMENT_FILL_CLASSES.length];
           return (
             <div key={segment.key} className="flex items-center justify-between gap-3">
-              <span>{labelKey !== undefined ? t(labelKey) : segment.key}</span>
+              <span className="flex items-center gap-1.5">
+                <span data-testid={`copilot-context-segment-dot-${segment.key}`} className={cn("h-2 w-2 shrink-0 rounded-full", fill)} />
+                <span>{labelKey !== undefined ? t(labelKey) : segment.key}</span>
+              </span>
               <span className="tabular-nums text-[11px]">{segment.tokens}</span>
             </div>
           );

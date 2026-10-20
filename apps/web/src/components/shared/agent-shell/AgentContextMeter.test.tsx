@@ -230,3 +230,65 @@ describe("AgentContextMeter kind-provided segments (SC-0j)", () => {
     expect(queryByTestId("copilot-context-track")).toBeDefined();
   });
 });
+
+describe("AgentContextMeter five sidechat fills (SC-13b)", () => {
+  // The sidechat kind's five SC-9 segment keys with the SC-13b label map.
+  // Under test `t()` falls back to the key itself.
+  const sidechatLabels = {
+    context: "sidechat_meter_context",
+    rp_summaries: "sidechat_meter_rp_summaries",
+    rp_messages: "sidechat_meter_rp_messages",
+    digest: "sidechat_meter_digest",
+    discussion: "sidechat_meter_discussion",
+  } as const;
+  const sidechatKeys = ["context", "rp_summaries", "rp_messages", "digest", "discussion"] as const;
+  const expectedFills = ["bg-accent", "bg-accent-dim", "bg-s2", "bg-info", "bg-info-dim"];
+
+  function fiveMetrics() {
+    return metrics({
+      segments: [
+        { key: "context", tokens: 5000 },
+        { key: "rp_summaries", tokens: 2000 },
+        { key: "rp_messages", tokens: 1500 },
+        { key: "digest", tokens: 1000 },
+        { key: "discussion", tokens: 500 },
+      ],
+    });
+  }
+
+  it("renders five distinct fills in segment order (adjacent segments never share)", () => {
+    const { getByTestId } = renderMeter({
+      metrics: fiveMetrics(),
+      segmentLabels: { ...sidechatLabels },
+    });
+
+    const fills = sidechatKeys.map((key) => {
+      const classes = getByTestId(`copilot-context-segment-${key}`).className.split(/\s+/);
+      return expectedFills.find((fill) => classes.includes(fill));
+    });
+    expect(fills).toEqual(expectedFills);
+    expect(new Set(fills).size).toBe(5);
+  });
+
+  it("gives every tooltip row a dot in its segment's fill", () => {
+    const { getByTestId } = renderMeter({
+      metrics: fiveMetrics(),
+      segmentLabels: { ...sidechatLabels },
+    });
+
+    sidechatKeys.forEach((key, index) => {
+      const dot = getByTestId(`copilot-context-segment-dot-${key}`);
+      expect(dot.tagName.toLowerCase()).toBe("span");
+      expect(dot.className.split(/\s+/)).toContain(expectedFills[index]);
+    });
+  });
+
+  it("leaves the fixed three-segment meter byte-identical", () => {
+    const { getByTestId, queryByTestId } = renderMeter();
+
+    expect(getByTestId("copilot-context-segment-system").className.split(/\s+/)).toContain("bg-accent");
+    expect(getByTestId("copilot-context-segment-digest").className.split(/\s+/)).toContain("bg-accent-dim");
+    expect(getByTestId("copilot-context-segment-history").className.split(/\s+/)).toContain("bg-s2");
+    expect(queryByTestId("copilot-context-segment-dot-system")).toBeNull();
+  });
+});

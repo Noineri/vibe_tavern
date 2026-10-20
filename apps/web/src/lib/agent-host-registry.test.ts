@@ -5,6 +5,7 @@ import { describe, expect, it } from "bun:test";
 import {
   AgentHostAlreadyRegisteredError,
   UnknownAgentHostError,
+  chatOwnerTriple,
   getAgentHost,
   registerAgentHost,
   scriptOwnerId,
@@ -167,6 +168,13 @@ describe("agent-host-registry", () => {
       unsubScript();
       unsubChat();
     }
+  });
+
+  it("chatOwnerTriple narrows a chat owner and throws on a script owner (SC-13b)", () => {
+    expect(
+      chatOwnerTriple({ kind: "chat", chatId: "chat-1", branchId: "branch-1", agentKind: "sidechat-ooc" }),
+    ).toEqual({ chatId: "chat-1", branchId: "branch-1", agentKind: "sidechat-ooc" });
+    expect(() => chatOwnerTriple({ kind: "script", scriptId: "s-1" })).toThrow();
   });
 
   it("re-register after unsubscribe works (stale unsubscribe is a no-op)", () => {

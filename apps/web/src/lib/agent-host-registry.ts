@@ -108,12 +108,22 @@ export function agentOwnerKey(owner: AgentThreadOwner): string {
 /**
  * SC-0c: the one-line map-back — script-owned hosts narrow the typed owner
  * to the script id their client fns take. A chat owner here is a wiring bug
- * (no chat-owned host exists yet — SC-13), so it throws instead of silently
- * serving the wrong owner's threads.
+ * (the sidechat host is the chat-owned one — SC-13b), so it throws instead
+ * of silently serving the wrong owner's threads.
  */
 export function scriptOwnerId(owner: AgentThreadOwner): string {
   if (owner.kind !== "script") throw new Error(`Agent host cannot serve a chat-owned thread (kind "${owner.agentKind}")`);
   return owner.scriptId;
+}
+
+/**
+ * SC-13b: the one-line map-back for chat-owned hosts — the twin of
+ * {@link scriptOwnerId}. A script owner here is a wiring bug, so it throws
+ * instead of silently serving the wrong owner's threads.
+ */
+export function chatOwnerTriple(owner: AgentThreadOwner): { chatId: string; branchId: string; agentKind: string } {
+  if (owner.kind !== "chat") throw new Error(`Agent host cannot serve a script-owned thread (script "${owner.scriptId}")`);
+  return { chatId: owner.chatId, branchId: owner.branchId, agentKind: owner.agentKind };
 }
 
 /**

@@ -16,8 +16,10 @@ import type {
   AgentKindSettingsWire,
 } from "@vibe-tavern/api-contracts";
 
-/** One kind's effective settings — the kind's row, or the legacy `ui_settings`
- *  copilot pair when the kind has no row yet (the store's read-time fallback). */
+/** One kind's effective settings — the kind's row; the two pre-split kinds
+ *  (`experience`, `script`) without a row yet read the legacy `ui_settings`
+ *  copilot pair (the store's read-time fallback, SC-7) — every other kind
+ *  without a row reads nulls. */
 export async function getAgentKindSettings(kind: string): Promise<AgentKindSettingsWire> {
   const response = await client.api.agent.kinds[":kind"].settings.$get({
     param: { kind },
