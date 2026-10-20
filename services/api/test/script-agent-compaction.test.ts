@@ -15,6 +15,7 @@
 
 import { describe, expect, it, beforeEach, afterAll } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
+import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type {
   ExperienceCopilotMessage,
   ExperienceCopilotStore,
@@ -27,6 +28,8 @@ import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonst
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { ScriptAgentCompactionService } from "../src/domain/agent/script-agent/script-agent-compaction.js";
 import { ExperienceCopilotCompactionService } from "../src/domain/interactive/copilot/experience-copilot-compaction.js";
+import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
+import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import {
   COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
   COPILOT_COMPACT_TEMPERATURE,
@@ -202,6 +205,12 @@ function transcriptOf(prompt: Record<string, unknown>): string {
   return payload.messages.map((m) => m.content).join("\n");
 }
 
+/** The system message of a captured summarizer call (the resolved prompt). */
+function systemMessageOf(prompt: Record<string, unknown>): string {
+  const payload = prompt.finalPayload as { messages: Array<{ content: string }> };
+  return payload.messages[0].content;
+}
+
 beforeEach(() => {
   setTokenCountFn((text: string) => text.length);
 });
@@ -264,6 +273,76 @@ describe("ScriptAgentCompactionService - summarizer call", () => {
 
     expect(error).not.toBeNull();
     expect(error!.kind).toBe("NotFound");
+  });
+
+  // ── SC-8a: the summarizer prompt is the `script_agent_compaction` service prompt ──
+
+  /** In-memory db with the Default profile, optionally an active profile
+   *  carrying service-prompt overrides (the sp5-service-prompts fixture
+   *  pattern). */
+  async function setupDb(overrides?: Record<string, string>) {
+    const db = await createDb(":memory:");
+    const profileStore = new ServicePromptProfileStore(db);
+    const uiSettings = new UiSettingsStore(db);
+    await profileStore.ensureDefaultServicePromptProfile();
+    if (overrides) {
+      const profile = await profileStore.createServicePromptProfile({ name: "SC-8a", overrides });
+      await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    }
+    return db;
+  }
+
+  it("without a db handle the summarizer prompt is the bundled asset, byte-identical (SC-8a)", async () => {
+    // The no-db path is the pre-SC-8a behavior: the asset's text IS the former
+    // `SCRIPT_AGENT_COMPACTION_SYSTEM_PROMPT` constant, so the system message
+    // must equal the loaded asset exactly (no trim, no trailing delta).
+    const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
+    const calls: Array<Record<string, unknown>> = [];
+    const execute = async (input: Record<string, unknown>) => {
+      calls.push(input);
+      return { text: "script summary", providerResponse: {} };
+    };
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor);
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(getServicePromptAssetFile("script_agent_compaction")).toBe("agent-script/compaction.md");
+    const asset = await loadPromptAsset(getServicePromptAssetFile("script_agent_compaction"));
+    expect(asset.length).toBeGreaterThan(0);
+    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe(asset);
+    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toContain(SCRIPT_PROMPT_MARKER);
+  });
+
+  it("with a db and no override the resolver serves the same asset (SC-8a)", async () => {
+    const db = await setupDb();
+    const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
+    const calls: Array<Record<string, unknown>> = [];
+    const execute = async (input: Record<string, unknown>) => {
+      calls.push(input);
+      return { text: "script summary", providerResponse: {} };
+    };
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor, db);
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe(
+      await loadPromptAsset(getServicePromptAssetFile("script_agent_compaction")),
+    );
+  });
+
+  it("an active-profile `script_agent_compaction` override replaces the summarizer prompt (SC-8a)", async () => {
+    const db = await setupDb({ script_agent_compaction: "CUSTOM SCRIPT COMPACTION PROMPT" });
+    const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
+    const calls: Array<Record<string, unknown>> = [];
+    const execute = async (input: Record<string, unknown>) => {
+      calls.push(input);
+      return { text: "script summary", providerResponse: {} };
+    };
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor, db);
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe("CUSTOM SCRIPT COMPACTION PROMPT");
   });
 });
 

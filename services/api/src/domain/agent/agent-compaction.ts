@@ -5,7 +5,8 @@
  * CM-5 + CM-6): budget-trim + digest-boundary split + tool-pair-safe
  * keep-window + echo stubs + token estimate. Everything KIND-SPECIFIC is
  * injected through {@link AgentCompactionSeams} — the stored-message → flow
- * conversion, the summarizer system prompt, the digest sampler overrides, and
+ * conversion, the summarizer system-prompt resolver (SC-8a: kind service
+ * prompt — profile override else asset), the digest sampler overrides, and
  * the labels/log channels. The experience wiring lives in the old module
  * (`ExperienceCopilotCompactionService`, a thin subclass kept for
  * compatibility; AS-10 removes that shim).
@@ -119,10 +120,13 @@ export interface AgentCompactionSeams<M extends DigestBoundaryMessage> {
   /** Stored messages → history flow, the SAME conversion the kind's stream
    *  uses (the summarizer transcript and the model window must agree). */
   readonly storeMessagesToFlow: (messages: readonly M[]) => AgentHistoryMessage[];
-  /** The kind's summarization system prompt (describes the domain being
-   *  summarized — dense, self-contained, lossless w.r.t. decisions / current
-   *  state / TODOs / tool findings). */
-  readonly systemPrompt: string;
+  /** Resolves the kind's summarization system prompt AT COMPACTION TIME
+   *  (SC-8a) from the kind's own service prompt — the active service-prompt
+   *  profile's override when set, else the bundled asset (byte-identical to
+   *  the pre-SC-8a compile-time constant) — the same resolution ladder
+   *  `resolveSummaryPrompt` uses for the RP chat summary. Resolved per call
+   *  so a profile edit applies to the next compaction without a restart. */
+  readonly resolveSystemPrompt: () => Promise<string>;
   /** Digest sampler overrides (cool + roomy — a reasoning model must not burn
    *  the output cap on thinking alone). */
   readonly overrideTemperature: number;
@@ -277,7 +281,8 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
       ),
       { keepUserTurns: 0 },
     );
-    const prompt = buildCompactionPrompt(this.seams.systemPrompt, priorDigestText, toSummarizeFlow);
+    const systemPrompt = await this.seams.resolveSystemPrompt();
+    const prompt = buildCompactionPrompt(systemPrompt, priorDigestText, toSummarizeFlow);
     const generation = await this.execute({
       profile: effectiveProfile,
       model,

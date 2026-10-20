@@ -15,6 +15,7 @@
 
 import { describe, expect, it, beforeEach } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
+import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
@@ -22,7 +23,11 @@ import type {
   CopilotContextMetrics,
 } from "@vibe-tavern/db";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { ExperienceCopilotCompactionService } from "../src/domain/interactive/copilot/experience-copilot-compaction.js";
+import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
+import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import {
   COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
   COPILOT_COMPACT_TEMPERATURE,
@@ -186,6 +191,12 @@ async function until(cond: () => boolean, timeoutMs = 2000): Promise<void> {
 function transcriptOf(call: { prompt: Record<string, unknown> }): string {
   const payload = call.prompt.finalPayload as { messages: Array<{ content: string }> };
   return payload.messages.map((m) => m.content).join("\n");
+}
+
+/** The system message of a captured summarizer call (the resolved prompt). */
+function systemMessageOf(call: { prompt: Record<string, unknown> }): string {
+  const payload = call.prompt.finalPayload as { messages: Array<{ content: string }> };
+  return payload.messages[0].content;
 }
 
 beforeEach(() => {
@@ -570,5 +581,75 @@ describe("ExperienceCopilotCompactionService — echo stubs (#16)", () => {
     // last two user turns → the estimate stubs it → historyTokens stay far
     // below BIG's own size.
     expect(metricsCalls[0].metrics.historyTokens).toBeLessThan(BIG.length);
+  });
+});
+
+// ─── SC-8a: the summarizer prompt is the `copilot_compaction` service prompt ───
+
+describe("ExperienceCopilotCompactionService — service-prompt resolver (SC-8a)", () => {
+  /** In-memory db with the Default profile, optionally an active profile
+   *  carrying service-prompt overrides (the sp5-service-prompts fixture
+   *  pattern). */
+  async function setupDb(overrides?: Record<string, string>) {
+    const db = await createDb(":memory:");
+    const profileStore = new ServicePromptProfileStore(db);
+    const uiSettings = new UiSettingsStore(db);
+    await profileStore.ensureDefaultServicePromptProfile();
+    if (overrides) {
+      const profile = await profileStore.createServicePromptProfile({ name: "SC-8a", overrides });
+      await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    }
+    return db;
+  }
+
+  it("without a db handle the summarizer prompt is the bundled asset, byte-identical", async () => {
+    // The no-db path is the pre-SC-8a behavior: the asset's text IS the former
+    // `COMPACTION_SYSTEM_PROMPT` constant, so the system message must equal
+    // the loaded asset exactly (no trim, no trailing delta).
+    const { store } = makeStore(makeTurnSequence(20));
+    const executor = makeExecutor({ text: "summary" });
+    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute as unknown as typeof nonstreamingProviderExecute);
+
+    await service.compact({ threadId: "thread_1" });
+
+    const asset = await loadPromptAsset(getServicePromptAssetFile("copilot_compaction"));
+    expect(getServicePromptAssetFile("copilot_compaction")).toBe("experience-copilot/compaction.md");
+    expect(asset.length).toBeGreaterThan(0);
+    expect(systemMessageOf(executor.calls[0])).toBe(asset);
+    expect(systemMessageOf(executor.calls[0])).toContain("interactive experiences");
+  });
+
+  it("with a db and no override the resolver serves the same asset", async () => {
+    const db = await setupDb();
+    const { store } = makeStore(makeTurnSequence(20));
+    const executor = makeExecutor({ text: "summary" });
+    const service = new ExperienceCopilotCompactionService(
+      store,
+      makeProviderProfiles() as unknown as ProviderProfileService,
+      executor.execute as unknown as typeof nonstreamingProviderExecute,
+      db,
+    );
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(systemMessageOf(executor.calls[0])).toBe(
+      await loadPromptAsset(getServicePromptAssetFile("copilot_compaction")),
+    );
+  });
+
+  it("an active-profile `copilot_compaction` override replaces the summarizer prompt", async () => {
+    const db = await setupDb({ copilot_compaction: "CUSTOM COPILOT COMPACTION PROMPT" });
+    const { store } = makeStore(makeTurnSequence(20));
+    const executor = makeExecutor({ text: "summary" });
+    const service = new ExperienceCopilotCompactionService(
+      store,
+      makeProviderProfiles() as unknown as ProviderProfileService,
+      executor.execute as unknown as typeof nonstreamingProviderExecute,
+      db,
+    );
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(systemMessageOf(executor.calls[0])).toBe("CUSTOM COPILOT COMPACTION PROMPT");
   });
 });

@@ -37,7 +37,9 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   // bases (5)
   coauthor_base: "coauthor/base.md",
   copilot_base: "experience-copilot/base.md",
+  copilot_compaction: "experience-copilot/compaction.md",
   script_agent_base: "agent-script/base.md",
+  script_agent_compaction: "agent-script/compaction.md",
   sidechat_ooc_base: "agent-sidechat/ooc.md",
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",

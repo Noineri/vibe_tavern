@@ -108,10 +108,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
     this.compaction = providerProfileService
-      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService)
+      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
       : null;
     this.scriptCompaction = providerProfileService
-      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService)
+      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
       : null;
     this.streamKinds = new Map<AgentKindId, KindStream>([
       ["experience", (threadId, body, signal) => this.streamExperienceThread(threadId, body, signal)],
