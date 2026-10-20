@@ -2,6 +2,9 @@
  * Context-search session — shared lazy per-turn service that projects canonical
  * entities (characters, personas, lorebooks, lore entries, scripts) into
  * {@link ContextSearchIndex} (CE-D1) and exposes `search` + `read` primitives.
+ * Since SC-10 a session wired with a branch view (the sidechat's) also
+ * projects the branch's selected messages as `rp-message` records — current
+ * model-facing text, read back as the message plus its immediate neighbours.
  *
  * Lifecycle: the session is created once per assembled turn, projects all
  * entities into an immutable in-memory FTS5 snapshot on the first search, then
@@ -12,7 +15,9 @@
  * Injected into `buildCoauthorTools` through `ChatModeAssembleInput` (alongside
  * `loreEntityLookup` / `loreDelegate`). The co-author tools
  * `search_context` / `read_context_item` use it to give the model indexed
- * discovery with full canonical content on request.
+ * discovery with full canonical content on request. The sidechat's own thin
+ * twin of those tools (kinds/sidechat/sidechat-search-tools.ts) rides the same
+ * session with a branch view and no Co-Author skill catalog.
  */
 
 import {
@@ -84,6 +89,37 @@ export interface ContextSearchSkillView {
   source: "builtin" | "user";
 }
 
+/** Structural view of one branch message the `rp-message` channel indexes
+ *  (SC-10). `RpBranchViewMessage` (domain/sidechat/rp-branch-view.ts — the
+ *  SC-2a view) satisfies this structurally; the interface stays local so the
+ *  session's tests can pass plain literals, the file's established pattern.
+ *  `text` is the CURRENT text — the message as the RP model sees it NOW
+ *  (macros resolved, prompt-placement regex applied, dice/report blocks),
+ *  never the raw stored `messages.content` (owner decision 1 refined,
+ *  2026-10-20). */
+export interface ContextSearchRpMessageView {
+  id: string;
+  /** 0-based branch position, as stored on the message row. */
+  position: number;
+  role: "system" | "user" | "assistant" | "tool";
+  /** Speaker name (assistant → character, user → persona, else null). */
+  authorName: string | null;
+  /** The message's current model-facing text. */
+  text: string;
+}
+
+/** The branch whose selected messages a session's `rp-message` records index
+ *  (SC-10): the SC-2a view (`readBranchAsModelSees`) the TURN'S SYNC already
+ *  produced. The session CONSUMES this view — it never runs its own branch
+ *  read or RP assembly (the plan's "one view per turn" rule). `RpBranchView`
+ *  satisfies this structurally. */
+export interface ContextSearchBranchView {
+  chatId: string;
+  branchId: string;
+  /** Position order, oldest first (the SC-2a view's contract). */
+  messages: readonly ContextSearchRpMessageView[];
+}
+
 /** Structural read-store subset the session lazily reads. */
 export interface ContextSearchStoreReads {
   // ── Bulk reads for projection (index build) ──
@@ -143,12 +179,50 @@ export interface ContextSearchToolResult {
 
 // ── Canonical read — full content by type ────────────────────────────────────
 
+/** Render one branch message as a labelled block (SC-10's read path). */
+function renderRpMessageBlock(label: string, message: ContextSearchRpMessageView): string {
+  const author = message.authorName !== null ? ` — ${message.authorName}` : "";
+  return `## ${label} — RP message #${message.position + 1} (${message.role}${author})\n${message.text}`;
+}
+
 async function readCanonicalContent(
   stores: ContextSearchStoreReads,
   type: string,
   id: string,
+  /** The session-held branch view — the ONLY source for `rp-message` reads
+   *  (null when the session has no branch wired; the read then misses). */
+  branch: ContextSearchBranchView | null,
 ): Promise<ContextSearchReadResult> {
   switch (type) {
+    case "rp-message": {
+      // The view is position-ordered, so array adjacency IS story adjacency
+      // (positions may have gaps — deletes do not renumber — so the
+      // neighbours are the PREVIOUS/NEXT ENTRIES, never position arithmetic).
+      const index = branch?.messages.findIndex((m) => m.id === id) ?? -1;
+      if (branch === null || index < 0) {
+        throw new Error(`rp-message '${id}' not found in this branch`);
+      }
+      const message = branch.messages[index]!;
+      const before = index > 0 ? branch.messages[index - 1] : null;
+      const after = index + 1 < branch.messages.length ? branch.messages[index + 1] : null;
+      const parts = [
+        `# RP message #${message.position + 1}`,
+        // The explicit current-text marker: the sidechat's prompt also carries
+        // FROZEN rp_sync events, and the model must never confuse this read
+        // with one of those snapshots (the plan's "current text, not a frozen
+        // event" pin).
+        "Current text as the RP model sees it now (macros resolved, prompt regex applied) — not a frozen event copy.",
+        renderRpMessageBlock("This message", message),
+      ];
+      if (before !== null) parts.push(renderRpMessageBlock("Before", before));
+      if (after !== null) parts.push(renderRpMessageBlock("After", after));
+      return {
+        type,
+        id,
+        title: `RP message #${message.position + 1}`,
+        content: parts.join("\n\n"),
+      };
+    }
     case "character": {
       const c = await stores.getCharacter(id);
       if (!c) throw new Error(`character '${id}' not found`);
@@ -286,6 +360,9 @@ function deriveEntryOwner(
 async function projectAllRecords(
   stores: ContextSearchStoreReads,
   activeScope: ContextSearchActiveScope,
+  /** The session-held branch view — SC-10's `rp-message` records; null (the
+   *  Co-Author's sessions) indexes no branch messages. */
+  branch: ContextSearchBranchView | null,
 ): Promise<{ records: IndexedContextRecord[]; boundLorebookIds: Set<string>; boundScriptIds: Set<string> }> {
   // Resolve bound resources for the active character.
   const activeCharId = activeScope.activeCharacterId;
@@ -409,6 +486,30 @@ async function projectAllRecords(
     });
   }
 
+  // Branch messages (SC-10) — the sidechat's own channel: the SELECTED
+  // messages of the thread's branch, at their CURRENT text (the SC-2a view
+  // the turn's sync already produced — macros resolved, prompt regex applied;
+  // since SC-6 the view keeps summary-covered messages, exactly the old
+  // material this search exists to find). Scope `branch:<id>` never matches a
+  // character/persona boost — story text ranks by relevance alone, and no
+  // other branch's messages can appear here (the view is this branch only,
+  // so cross-branch isolation holds by construction).
+  if (branch !== null) {
+    for (const m of branch.messages) {
+      records.push({
+        channel: "branch",
+        type: "rp-message",
+        id: m.id,
+        title: `RP message #${m.position + 1}`,
+        body: m.text,
+        scope: `branch:${branch.branchId}`,
+        ownerId: null,
+        parentId: null,
+        meta: { role: m.role, author: m.authorName, position: String(m.position) },
+      });
+    }
+  }
+
   return { records, boundLorebookIds, boundScriptIds };
 }
 
@@ -424,22 +525,36 @@ export interface ContextSearchSession {
  * Build a context-search session. The index is lazily constructed on the first
  * call to `search` and memoized for the rest of the session's lifetime.
  * `activeScope` is a lazy resolver — called once on the first search so the
- * session avoids a DB read when no search occurs.
+ * session avoids a DB read when no search occurs. `resolveBranchView` (the
+ * sidechat's sessions, SC-10) is likewise lazy: the SC-2a branch view the
+ * TURN'S SYNC already produced, handed to the session — never a second branch
+ * read or dry RP assembly here. A null resolution (or an omitted resolver, the
+ * Co-Author's sessions) indexes no `rp-message` records; an `rp-message` read
+ * then misses with the not-found refusal.
  */
 export function createContextSearchSession(
   stores: ContextSearchStoreReads,
   resolveActiveScope: () => Promise<ContextSearchActiveScope>,
+  resolveBranchView?: () => Promise<ContextSearchBranchView | null>,
 ): ContextSearchSession {
   let index: ContextSearchIndex | null = null;
   let indexReady: Promise<void> | null = null;
   let resolvedScope: ContextSearchActiveScope | null = null;
+  let branchView: ContextSearchBranchView | null | undefined;
+
+  async function ensureBranchView(): Promise<ContextSearchBranchView | null> {
+    if (branchView === undefined) {
+      branchView = resolveBranchView ? await resolveBranchView() : null;
+    }
+    return branchView;
+  }
 
   async function ensureIndex(): Promise<ContextSearchIndex> {
     if (index) return index;
     if (!indexReady) {
       indexReady = (async () => {
         resolvedScope = await resolveActiveScope();
-        const projected = await projectAllRecords(stores, resolvedScope!);
+        const projected = await projectAllRecords(stores, resolvedScope!, await ensureBranchView());
         index = buildContextSearchIndex(projected.records);
       })();
     }
@@ -481,7 +596,15 @@ export function createContextSearchSession(
       // would (a) trigger a full library projection for a single read when the
       // model calls read_context_item without a prior search, and (b) make read
       // depend on resolveActiveScope succeeding even though read needs no scope.
-      return readCanonicalContent(stores, type, id);
+      // The branch view is resolved HERE for `rp-message` reads only (SC-10):
+      // the sidechat's resolver returns the view the turn already holds, so an
+      // rp-message read costs no branch read and no RP assembly either.
+      return readCanonicalContent(
+        stores,
+        type,
+        id,
+        type === "rp-message" ? await ensureBranchView() : null,
+      );
     },
 
     dispose() {

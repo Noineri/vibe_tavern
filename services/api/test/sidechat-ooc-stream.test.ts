@@ -21,7 +21,8 @@ import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { CopilotProfileResolver } from "../src/domain/interactive/copilot/copilot-profile-resolver.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS } from "../src/domain/interactive/copilot/copilot-limits.js";
 import { getCopilotContextItems } from "../src/domain/agent/agent-context.js";
-import { SIDECHAT_OOC_RECENCY_ANCHOR_TEXT } from "../src/domain/agent/kinds/sidechat-ooc-kind.js";
+import { SIDECHAT_OOC_RECENCY_ANCHOR_TEXT, resolveBuiltinSidechatOocProfile } from "../src/domain/agent/kinds/sidechat-ooc-kind.js";
+import { buildContextSearchStoreReads } from "../src/domain/context/context-search-store-reads.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -69,6 +70,10 @@ type CapturedMessage = { role: string; content: unknown };
 
 /** The fake `streamText` records the model-facing messages it was called with. */
 let capturedMessages: CapturedMessage[] = [];
+/** SC-10: the fake also records the tool set the loop served (the search
+ *  pair's wiring — served-ness and execute results — is asserted through
+ *  the REAL buildTools seam, no re-implementation). */
+let capturedTools: Record<string, { execute: (args: unknown) => Promise<unknown> }> = {};
 let fakeReply = REPLY_TEXT;
 
 function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
@@ -168,15 +173,20 @@ beforeAll(async () => {
 		// Type-erased seam: the fake returns the partial FullStream shape the
 		// loop reads (`.stream`, `finishReason`, `usage`), not the SDK's full
 		// result.
-		streamText: ((opts: { messages: CapturedMessage[] }) => {
+		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }> }) => {
 			capturedMessages = opts.messages;
+			capturedTools = opts.tools ?? {};
 			return makeFakeStreamTextResult([{ type: "text-delta", text: fakeReply }]);
 		}) as unknown as SidechatStreamDeps["streamText"],
+		// SC-10: the ONE extracted store-reads mapping over the real stores, no
+		// Co-Author skill catalog — the sidechat's production wiring.
+		searchStoreReads: buildContextSearchStoreReads(stores),
 	};
 });
 
 beforeEach(() => {
 	capturedMessages = [];
+	capturedTools = {};
 	fakeReply = REPLY_TEXT;
 });
 
@@ -737,5 +747,151 @@ describe("streamSidechatTurn meter segments (SC-9)", () => {
 		expect(seg["discussion"]!).toBe(metrics.historyTokens);
 		expect(seg["discussion"]!).toBeGreaterThan(0);
 		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
+	});
+});
+
+// ─── SC-10: the kind's search tools ─────────────────────────────────
+
+/** One search_context result row (the fields the assertions read). */
+interface SearchRow {
+	type: string;
+	id: string;
+	title: string;
+	meta: Record<string, string | null>;
+}
+
+/** Execute the served search_context (the fake's captured tool set) — the
+ *  REAL buildTools wiring, session, mapping and branch view included. */
+async function searchTools(query: string): Promise<SearchRow[]> {
+	const tool = capturedTools["search_context"];
+	if (tool === undefined) throw new Error("fixture: search_context was not served");
+	const out = (await tool.execute({ query })) as { results: SearchRow[] };
+	return out.results;
+}
+
+async function readTool(type: string, id: string): Promise<{ title: string; content: string }> {
+	const tool = capturedTools["read_context_item"];
+	if (tool === undefined) throw new Error("fixture: read_context_item was not served");
+	return (await tool.execute({ type, id })) as { title: string; content: string };
+}
+
+describe("streamSidechatTurn search tools (SC-10)", () => {
+	it("serves the pair on the seed's toggles; a stored {{user}} comes back RESOLVED with neighbours and the current-text mark", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread(
+			"Well met, {{user}}! The lantern room glows.",
+		);
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "I fold the map by the window.",
+		});
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "Theron nods and banks the fire.",
+		});
+
+		const events = (await drainTurn(threadId, "Find that lantern scene")).map((c) => c.event);
+		expect(events).toContain("finish");
+		// SC-10's toggles are ON in the kind's default set and the builtin seed —
+		// both tools are served, nothing else.
+		expect(Object.keys(capturedTools).sort()).toEqual(["read_context_item", "search_context"]);
+
+		const results = await searchTools("lantern");
+		const hit = results.find((r) => r.type === "rp-message");
+		expect(hit).toBeDefined();
+		expect(hit!.title).toBe("RP message #1");
+		expect(hit!.meta.role).toBe("assistant");
+		expect(hit!.meta.author).toBe("Theron");
+		expect(hit!.meta.position).toBe("0");
+
+		// The read returns the CURRENT text (the sync's SC-2a view): the stored
+		// raw `{{user}}` macro arrives RESOLVED — never the raw form — plus the
+		// immediate neighbours in story order, marked as current, not frozen.
+		const item = await readTool("rp-message", hit!.id);
+		expect(item.title).toBe("RP message #1");
+		expect(item.content).toContain("Well met, Sable!");
+		expect(item.content).not.toContain("{{user}}");
+		expect(item.content).toContain("Current text as the RP model sees it now");
+		expect(item.content).toContain("not a frozen event copy");
+		expect(item.content).toContain("## After — RP message #2 (user — Sable)");
+		expect(item.content).toContain("I fold the map by the window.");
+		expect(item.content).not.toContain("Theron nods and banks the fire.");
+	});
+
+	it("a summary-covered RP message is still found — the view keeps what the window dropped", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread(
+			"COVERED-OPENING the pact is sealed at midnight.",
+		);
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The witness speaks.",
+		});
+		await stores.chatSummaries.create({
+			chatId,
+			branchId,
+			label: "SC-10 covered chapter",
+			summarizedFrom: 1,
+			summarizedTo: 1,
+			includeInContext: true,
+			excludeSummarized: true,
+			content: "SC10-SUMMARY the pact scene compressed.",
+		});
+
+		const events = (await drainTurn(threadId, "What happened at midnight?")).map((c) => c.event);
+		expect(events).toContain("finish");
+		// The covered message left the MODEL WINDOW (the summary stands in for
+		// it — SC-6's read-time coverage over the frozen timeline)...
+		const prompt = promptText();
+		expect(prompt).not.toContain("COVERED-OPENING");
+		expect(prompt).toContain("SC10-SUMMARY");
+		// ...but the search still finds it: the whole-branch view (SC-2a, since
+		// SC-6) keeps summary-covered messages — exactly the old material this
+		// search exists to find.
+		const results = await searchTools("midnight");
+		const hit = results.find((r) => r.type === "rp-message");
+		expect(hit).toBeDefined();
+		const item = await readTool("rp-message", hit!.id);
+		expect(item.content).toContain("COVERED-OPENING the pact is sealed at midnight.");
+	});
+
+	it("with the toggles off the tools are not served", async () => {
+		const { threadId } = await makeSidechatThread("Toggle-off scene.");
+		// An explicit profile with EVERY toggle off (the wire schema's `{}`) —
+		// the resolved profile is what buildTools gates on, never the kind's
+		// declarative defaults alone.
+		const allOff = { ...(await resolveBuiltinSidechatOocProfile()), toolSet: {} };
+		const events = (
+			await drainTurn(threadId, "no tools turn", {
+				...deps,
+				resolveProfileForChat: async () => allOff,
+			})
+		).map((c) => c.event);
+		expect(events).toContain("finish");
+		expect(capturedTools).toEqual({});
+	});
+
+	it("other branches never match — the session indexes the thread's branch only", async () => {
+		const own = await makeSidechatThread("OWN-BRANCH the harbour bell rings.");
+		// A SECOND chat+branch (its own sidechat thread) carries a distinctive
+		// keyword; the first thread's turn must not see it in its index.
+		const other = await makeSidechatThread("OTHER-BRANCH the moonpool shatters quietly.");
+		await drainTurn(other.threadId, "other branch turn");
+
+		const events = (await drainTurn(own.threadId, "own branch turn")).map((c) => c.event);
+		expect(events).toContain("finish");
+		const results = await searchTools("moonpool");
+		expect(results.filter((r) => r.type === "rp-message")).toEqual([]);
+		// And the own branch's text IS there (the empty result is isolation, not
+		// a broken index).
+		const ownHits = await searchTools("harbour");
+		expect(ownHits.some((r) => r.type === "rp-message")).toBe(true);
 	});
 });

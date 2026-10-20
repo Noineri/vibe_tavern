@@ -26,6 +26,7 @@ import {
   streamSidechatTurn,
   type SidechatStreamDeps,
 } from "../../domain/sidechat/sidechat-stream.js";
+import { buildContextSearchStoreReads } from "../../domain/context/context-search-store-reads.js";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
@@ -417,6 +418,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
       db: this.stores.db,
+      // SC-10: the ONE extracted store-reads mapping, built WITHOUT the
+      // Co-Author skill catalog — the sidechat's search session indexes the
+      // library + the branch only (its own skills come through `@` pins).
+      searchStoreReads: buildContextSearchStoreReads(this.stores),
       // SC-8c: the sidechat's own compaction service — the stream wires the
       //  auto hook to its discussion-against-room rule.
       ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),

@@ -6,7 +6,7 @@ import type {
 	ExperienceCopilotStore,
 } from "@vibe-tavern/db";
 import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
-import { readBranchAsModelSees, type RpBranchViewDeps, type RpBranchViewMessage } from "./rp-branch-view.js";
+import { readBranchAsModelSees, type RpBranchView, type RpBranchViewDeps, type RpBranchViewMessage } from "./rp-branch-view.js";
 
 /**
  * The RP sync diff (SIDECHAT_PLAN SC-2b) — PURE. New messages are detected
@@ -298,11 +298,15 @@ function buildFrozenVariantTextLookup(entries: readonly AgentThreadTimelineEntry
  *   same way (the needed previous pair sits in a not-yet-visible event); the
  *   throw writes nothing, and the NEXT sync — fresh view, fresh events —
  *   succeeds.
+ *
+ * Returns the SC-2a branch view it already read (SC-10): the turn's search
+ * session consumes THIS view — "one view per turn" — so a search never runs a
+ * second branch read or dry RP assembly.
  */
 export async function syncBeforeUserMessage(
   deps: RpSyncDeps,
   threadId: ExperienceCopilotThreadId,
-): Promise<void> {
+): Promise<RpBranchView> {
   const thread = await deps.experienceCopilot.getById(threadId);
   // isChatOwnedAgentThread (SC-0b/SC-0f) narrows chatId + agentKind to
   // non-null; the store writes branchId together with them, so a null
@@ -335,4 +339,6 @@ export async function syncBeforeUserMessage(
 
   await deps.experienceCopilot.applyRpSync(threadId, (frontier) =>
     computeRpSync(frontier ?? NEVER_SYNCED_FRONTIER, view.messages, frozenLookup));
+
+  return view;
 }

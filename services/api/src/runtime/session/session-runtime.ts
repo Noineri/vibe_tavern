@@ -33,6 +33,7 @@ import { applyCoauthorDraft } from "./session-runtime-coauthor-apply.js";
 export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 import { buildBootstrapState } from "./session-runtime-bootstrap.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
+import { buildContextSearchStoreReads } from "../../domain/context/context-search-store-reads.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
 import {
@@ -760,40 +761,15 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	/**
 	 * Build a lazy per-turn context-search session (CE-D2) for the co-author's
 	 * search_context / read_context_item tools. Projects all canonical entities
-	 * into FTS5 on the first search; the next turn rebuilds from stores.
+	 * into FTS5 on the first search; the next turn rebuilds from stores. Since
+	 * SC-10 the store-reads mapping comes from the ONE shared extractor
+	 * (context-search-store-reads.ts) with the Co-Author skill catalog wired —
+	 * the sidechat's session reads the same mapping without a catalog.
 	 */
 	private buildContextSearchSession(chatId: ChatId): import("../../domain/context/context-search-service.js").ContextSearchSession {
 		const stores = this.stores;
 		return createContextSearchSession(
-			{
-				listAllCharacters: () => stores.characters.listAll(),
-				listAllPersonas: () => stores.personas.listAll(),
-				listAllLorebooks: () => stores.lorebooks.listAllLorebooks(),
-				listEntries: (lorebookId: string) => stores.lorebooks.listEntries(lorebookId),
-				listAllScripts: () => stores.scripts.listAll(),
-				listLorebooksLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
-					stores.lorebooks.listLorebooksLinkedToTarget(targetType, targetId),
-				listScriptsLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
-					stores.scripts.listScriptsLinkedToTarget(targetType, targetId),
-				getCharacter: (id: string) => stores.characters.getById(id),
-				getPersona: (id: string) => stores.personas.getById(id),
-				getLorebook: (id: string) => stores.lorebooks.getLorebook(id),
-				getEntry: (id: string) => stores.lorebooks.getEntry(id),
-				getScript: (id: string) => stores.scripts.getById(id),
-				listSkills: async () => {
-					// CE-D3: project the skill catalog into the search index's skill channel.
-					// getSkillCatalog returns SkillCatalogEntry[] (already user>builtin merged);
-					// map to the narrow ContextSearchSkillView the session expects.
-					const entries = await this.getSkillCatalog();
-					return entries.map((s) => ({
-						id: s.id,
-						name: s.name,
-						description: s.description,
-						manifestPath: s.rootRelativeManifestPath,
-						source: s.source,
-					}));
-				},
-			},
+			buildContextSearchStoreReads(stores, this.getSkillCatalog),
 			async () => {
 				const chat = await stores.chats.getById(chatId);
 				return {

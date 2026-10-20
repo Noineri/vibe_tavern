@@ -560,7 +560,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       },
     }),
 
-    // ── CE-D2: indexed two-step context search ──────────────────────────────
+    // ── CE-D2: indexed two-step context search ────────────────────────────
+    // forks: 1 — kinds/sidechat/sidechat-search-tools.ts (the sidechat's
+    // twin: sidechat descriptions, `rp-message` type, no skill channel).
     // search_context returns compact locator metadata only (no body);
     // read_context_item returns canonical full content for one chosen item.
     // Both are read-only and never mutate state. The session lazily projects

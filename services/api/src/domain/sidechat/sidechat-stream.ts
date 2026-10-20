@@ -21,7 +21,16 @@
  * exactly once — as the real history rows. The reply persists through the
  * generic loop exactly like the other kinds'.
  *
- * NO tools until Wave 3 (buildTools returns the empty set). Since SC-6 the
+ * Since SC-10 the kind serves its first tools: `search_context` /
+ * `read_context_item` (kinds/sidechat/sidechat-search-tools.ts) over a
+ * per-turn `ContextSearchSession` built in the buildTools seam — the ONE
+ * extracted store-reads mapping (no Co-Author skill catalog), the chat's
+ * active scope, and the branch view the turn's sync ALREADY read ("one view
+ * per turn" — a search never runs a second branch read or dry RP assembly).
+ * Served only when the resolved profile's tool set enables them; absent
+ * mapping (tests, legacy harnesses) → no search tools.
+ *
+ * NO tools until Wave 3 — since SC-10 the search pair above. Since SC-6 the
  * assembly runs the SHELL's existing budget trim (planHistoryCompaction)
  * over the merged flow: over the shared budget the OLDEST flow entries drop
  * first, RP and discussion alike, in time order. Since SC-8c the flow
@@ -42,8 +51,9 @@
 // sidechat threads are ALWAYS chat-owned), assemble ← the AS-7 assembly call
 // (replaced by the SC-4b assembly below, reshaped by SC-4d: the STATIC
 // package rides the system message and the frozen events interleave into
-// the message flow), buildTools ← buildScriptAgentTools (empty until Wave 3),
-// limits/logChannelPrefix/streamDeps ← verbatim shape.
+// the message flow), buildTools ← buildScriptAgentTools (SC-10: the sidechat
+// search pair, profile-gated), limits/logChannelPrefix/streamDeps ← verbatim
+// shape.
 
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
@@ -68,6 +78,11 @@ import {
 import { renderAttachedContext, type CopilotContextItem } from "../agent/agent-context.js";
 import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
 import { getAgentKind } from "../agent/agent-kind-registry.js";
+import {
+	createContextSearchSession,
+	type ContextSearchStoreReads,
+} from "../context/context-search-service.js";
+import { buildSidechatSearchTools } from "../agent/kinds/sidechat/sidechat-search-tools.js";
 import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
@@ -76,6 +91,7 @@ import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "
 import { resolveBuiltinSidechatOocProfile } from "../agent/kinds/sidechat-ooc-kind.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../interactive/copilot/copilot-limits.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
+import type { RpBranchView } from "./rp-branch-view.js";
 import {
   loadSidechatContext,
   SIDECHAT_OOC_METER_SEGMENT_KEYS,
@@ -128,6 +144,12 @@ export interface SidechatStreamDeps {
   /** Optional DB handle for the `sidechat_ooc_base` seed override on the
    *  built-in fallback path. */
   readonly db?: AppDb;
+  /** SC-10: the store-reads mapping for the turn's context-search session —
+   *  the ONE extracted mapping (context-search-store-reads.ts), built WITHOUT
+   *  a Co-Author skill catalog (the sidechat's session indexes no skill
+   *  records; its own skills come through `@` pins, SC-5). Absent (tests,
+   *  legacy harnesses) → the stream serves no search tools. */
+  readonly searchStoreReads?: ContextSearchStoreReads;
   /** SC-8c: the kind's own compaction service — present → the stream wires
    *  the loop's autoCompact hook to the sidechat rule (the discussion
    *  against the room left after the static context and the RP layer).
@@ -144,14 +166,16 @@ export interface SidechatStreamDeps {
 /** The turn-start sidechat context — SC-3b's load, reshaped by SC-4d: the
  *  STATIC package string (loaded AFTER the RP sync) + the frozen events as
  *  flow-ready user-message bodies placed by the merged timeline's order.
- *  The package parts are the shape SC-4b's assembly below consumes
- *  directly. */
+ *  Since SC-10 the helper also returns the sync's SC-2a branch view: the
+ *  turn's search session consumes THIS view ("one view per turn") — never a
+ *  second branch read or dry RP assembly per search. The package parts are
+ *  the shape SC-4b's assembly below consumes directly. */
 async function loadSidechatTurnContext(
   deps: SidechatStreamDeps,
   threadId: ExperienceCopilotThread["id"],
-): Promise<SidechatContextPackage> {
-  await syncBeforeUserMessage(deps.sync, threadId);
-  return loadSidechatContext(deps.context, threadId);
+): Promise<SidechatContextPackage & { branchView: RpBranchView }> {
+  const branchView = await syncBeforeUserMessage(deps.sync, threadId);
+  return { ...(await loadSidechatContext(deps.context, threadId)), branchView };
 }
 
 // ─── Assembly (SC-4b, reshaped by SC-4d; digest-aware since SC-8c) ────────
@@ -492,6 +516,10 @@ export async function* streamSidechatTurn(
   // seam, read by the auto hook the generic loop fires after the turn's
   // metrics persist. Per-turn state of THIS generator call only.
   let autoCompactPressure: SidechatAutoCompactPressure | null = null;
+  // SC-10: this turn's branch view — written by the loadContext seam (the
+  // sync's SC-2a view), read by the buildTools seam's search session. Per-turn
+  // state of THIS generator call only, exactly like the pressure above.
+  let turnBranchView: RpBranchView | null = null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -506,8 +534,13 @@ export async function* streamSidechatTurn(
     // ── The kind's turn: RP sync FIRST, then the SC-3b load (static package
     //  + flow-placed events). This seam runs BEFORE the generic loop persists
     //  the user message, which is what puts the frozen delta below the turn's
-    //  own seq on the merged timeline. ──
-    loadContext: (thread) => loadSidechatTurnContext(deps, thread.id),
+    //  own seq on the merged timeline. Since SC-10 the sync's branch view is
+    //  captured for the turn's search session (below). ──
+    loadContext: async (thread) => {
+      const loaded = await loadSidechatTurnContext(deps, thread.id);
+      turnBranchView = loaded.branchView;
+      return loaded;
+    },
 
     // ── Agent profile: sidechat threads are ALWAYS chat-owned (the kind
     //  owns its threads), so the chat chain is the only path — the SC-0f
@@ -553,9 +586,33 @@ export async function* streamSidechatTurn(
       return assembled;
     },
 
-    // ── No tools until Wave 3 — the empty set, matching the kind's strict
-    //  empty tool-set schema (nothing can smuggle a tool in early). ──
-    buildTools: () => ({}),
+    // ── SC-10: the kind's first tools — the search pair
+    //  (kinds/sidechat/sidechat-search-tools.ts) over a per-turn session:
+    //  the ONE extracted store-reads mapping (NO Co-Author skill catalog —
+    //  the sidechat's skills come through `@` pins, SC-5), the chat's active
+    //  scope, and THIS turn's branch view (the sync's — never a second
+    //  branch read or dry RP assembly). Served only when the RESOLVED
+    //  profile's tool set enables them (a tool landed with its toggle off is
+    //  not landed) and the mapping is wired (absent: tests, legacy
+    //  harnesses); the ownership narrowing is the same corruption guard
+    //  resolveProfile uses. ──
+    buildTools: ({ thread, agentProfile }) =>
+      deps.searchStoreReads !== undefined && isChatOwnedAgentThread(thread)
+        ? buildSidechatSearchTools({
+            session: createContextSearchSession(
+              deps.searchStoreReads,
+              async () => {
+                const chat = await deps.context.chats.getById(thread.chatId);
+                return {
+                  activeCharacterId: chat?.characterId ?? null,
+                  activePersonaId: chat?.personaId ?? null,
+                };
+              },
+              () => Promise.resolve(turnBranchView),
+            ),
+            toolSet: agentProfile.toolSet,
+          })
+        : {},
   };
 
   const streamDeps: AgentStreamDeps<ExperienceCopilotThread> = {

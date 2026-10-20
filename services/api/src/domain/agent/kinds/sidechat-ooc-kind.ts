@@ -18,12 +18,14 @@
  * The tool set (SC-5): the wire contract's five toggleable sidechat tools
  * (`search_context`, `read_context_item`, `propose_objective`, `todo`,
  * `read_plan` — {@link sidechatOocToolSetSchema} is the single source for the
- * names) exist as SCHEMA KEYS before their tools: Wave 3 lands each tool and
- * flips its toggle on one by one. Until then every toggle is DISABLED — tool
- * sets store only enabled keys, so the default set and the builtin seed both
- * carry `{}`, and the stream serves no tools (`buildTools` returns the empty
- * set). The strict schema still rejects every foreign key, so no profile can
- * smuggle another kind's tool in.
+ * names) landed as SCHEMA KEYS first; Wave 3 flips each toggle on as its tool
+ * lands. SC-10 flipped `search_context` + `read_context_item` (the kind's
+ * search over the library and the branch — `kinds/sidechat/sidechat-search-tools.ts`);
+ * `propose_objective` / `todo` / `read_plan` stay disabled until their units.
+ * Tool sets store only enabled keys, so the default set and the builtin seed
+ * carry exactly the flipped pair, and the stream serves no tool whose toggle
+ * is off. The strict schema still rejects every foreign key, so no profile
+ * can smuggle another kind's tool in.
  *
  * The seed lives HERE rather than in a separate species module because the
  * sidechat species has nothing else to hold yet — no module def, no tools —
@@ -55,13 +57,13 @@ import { registerAgentKind } from "../agent-kind-registry.js";
  * The kind's declarative tool set — WHICH of the five wire-contract toggles
  * (SIDECHAT_OOC_TOOL_KEYS) the species enables, the sidechat twin of the
  * script kind's `SCRIPT_AGENT_MODULE.toolSet` (the kind module is this
- * species' module home). Every entry is `false` until Wave 3 lands its tool
- * ("enabled as the tools land" — the plan's own semantics); each Wave-3 unit
- * flips exactly its own key to `true`.
+ * species' module home). Every entry starts `false` and each Wave-3 unit
+ * flips exactly its own key to `true` ("enabled as the tools land" — the
+ * plan's own semantics); SC-10 flipped the search pair.
  */
 const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
-  search_context: false,
-  read_context_item: false,
+  search_context: true,
+  read_context_item: true,
   propose_objective: false,
   todo: false,
   read_plan: false,
@@ -70,7 +72,7 @@ const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
 // Project the declarative set through the wire-contract tool keys (the same
 // projection the other kinds use) so the contract stays the single source of
 // truth for toggleable-tool names: the defaultToolSet carries exactly the
-// contract's keys that the species enables — `{}` until Wave 3's first tool.
+// contract's keys that the species enables — the SC-10 search pair today.
 const defaultToolSet: Record<string, boolean> = {};
 for (const key of SIDECHAT_OOC_TOOL_KEYS) {
   if (SIDECHAT_OOC_TOOL_SET[key] === true) defaultToolSet[key] = true;
@@ -156,8 +158,8 @@ export const SIDECHAT_OOC_SEED_NAME = "Sidechat OOC";
  * override replaces the asset base ONLY on this builtin path (SP-5 parity;
  * explicit sidechat profiles never consult it), and a tool set projected
  * through {@link SIDECHAT_OOC_TOOL_KEYS} from the declarative
- * {@link SIDECHAT_OOC_TOOL_SET} — `{}` today (every toggle disabled until
- * Wave 3 lands its tool), flipping each key on exactly as its tool lands.
+ * {@link SIDECHAT_OOC_TOOL_SET} — the SC-10 search pair today (every other
+ * toggle stays off until its Wave-3 unit lands its tool and flips it on).
  * The non-empty asset base is what makes the seed pass the wire
  * profile schema — the generic kind seed's empty base deliberately fails
  * `basePrompt: min(1)` (AS-3), which is why this kind needs its own seed

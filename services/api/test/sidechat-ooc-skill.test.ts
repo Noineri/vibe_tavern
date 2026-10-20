@@ -239,10 +239,11 @@ describe("GET/POST /api/copilot/profiles?kind=sidechat-ooc (SC-5)", () => {
     const sc = await app.request("/api/copilot/profiles?kind=sidechat-ooc");
     expect(sc.status).toBe(200);
     const scBody = (await sc.json()) as { profiles: ProfileWire[] };
-    // The seed is first, chat-side, and carries every toggle disabled ({}).
+    // The seed is first, chat-side, and carries the SC-10 search pair (every
+    // other toggle stays off until its Wave-3 unit lands its tool).
     expect(scBody.profiles[0]?.id).toBe("builtin");
     expect(scBody.profiles[0]?.agentKind).toBe("sidechat-ooc");
-    expect(scBody.profiles[0]?.toolSet).toEqual({});
+    expect(scBody.profiles[0]?.toolSet).toEqual({ search_context: true, read_context_item: true });
     const custom = scBody.profiles.filter((p) => !p.isBuiltIn);
     expect(custom.map((p) => p.name)).toEqual(["Sidechat custom"]);
     for (const p of scBody.profiles) expect(p.agentKind).toBe("sidechat-ooc");
