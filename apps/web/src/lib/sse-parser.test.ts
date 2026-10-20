@@ -44,6 +44,23 @@ describe("parseSSEStream", () => {
 		expect(o.onChunk.mock.calls[0]![0]).toBe("Hel");
 	});
 
+	it("forwards generation metadata without treating it as a text delta", async () => {
+		const o = opts();
+		const onGenerationMetadata = mock((_: { modelId: string; presetName: string | null }) => {});
+		await parseSSEStream({
+			response: sseResponse([
+				"event: generation-metadata\n",
+				'data: {"modelId":"override-model","presetName":"Override preset"}\n\n',
+				'data: {"delta":"Hello"}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onGenerationMetadata,
+		});
+		expect(onGenerationMetadata).toHaveBeenCalledWith({ modelId: "override-model", presetName: "Override preset" });
+		expect(o.onChunk).toHaveBeenCalledTimes(1);
+	});
+
 	it("throws ProviderStreamError with the server's category on an error event", async () => {
 		const o = opts();
 		const promise = parseSSEStream({

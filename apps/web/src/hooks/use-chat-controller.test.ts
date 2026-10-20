@@ -16,8 +16,9 @@ import { describe, test, expect, beforeEach, mock } from "bun:test";
 
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
-import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
+import type { AppSnapshot, DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
+import type { BootstrapData } from "../stores/api-actions/bootstrap-actions.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -122,6 +123,7 @@ function rejectOnAbort(_chatId: ChatId, _messageId: string, opts?: { signal?: Ab
 beforeEach(() => {
   regenerateChatMessage.mockReset();
   sendChatMessageStream.mockReset();
+  sendChatMessageAction.mockReset();
   continueMessageAction.mockReset();
   fetchChat.mockReset();
   toastWarning.mockClear();
@@ -142,9 +144,32 @@ beforeEach(() => {
   useProviderDataStore.setState({
     profiles: [{ id: "p1", isActive: true, defaultModel: "gpt-x" } as never],
   });
+  useBootstrapStore.setState({ data: null });
 });
 
 describe("useChatController — handleRegenerateMessage (non-stream)", () => {
+
+	test("non-stream send snapshots the visible quick-switch model and preset for its generation lifetime", async () => {
+		let resolveSend!: () => void;
+		sendChatMessageAction.mockImplementation(() => new Promise<void>((resolve) => { resolveSend = resolve; }));
+		useChatStore.setState({ draft: "hello" });
+		useSnapshotStore.setState({ activeChat: { id: CHAT, mode: "rp", promptPresetId: "preset-1" } as unknown as AppSnapshot["activeChat"] });
+		useBootstrapStore.setState({ data: { promptPresets: [{ id: "preset-1", name: "Quick preset" }], uiSettings: { userMessageCount: 0 } } as unknown as BootstrapData });
+		const { result } = renderHook(() => useChatController());
+
+		let pending!: Promise<void>;
+		await act(async () => {
+			pending = result.current.handleSend();
+			await Promise.resolve();
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({ modelId: "gpt-x", presetName: "Quick preset" });
+
+		await act(async () => {
+			resolveSend();
+			await pending;
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({ modelId: null, presetName: null });
+	});
   test("success clears messageActionId and isSending", async () => {
     regenerateChatMessage.mockResolvedValue({});
     const { result } = renderHook(() => useChatController());

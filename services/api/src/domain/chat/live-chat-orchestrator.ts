@@ -25,6 +25,7 @@ import { validation } from "../../shared/errors.js";
 import type { LiveChatSendInput } from "./live-chat-send-input.js";
 import { assembleReplyPrompt } from "./live-chat-reply-prompt.js";
 import { startProviderStream } from "./live-chat-stream-start.js";
+import { notifyAssistantAppended, notifyUserMessageCreated } from "./live-chat-events.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -111,7 +112,7 @@ export class LiveChatOrchestrator {
     const prepared = await this.withTokenContext(provider, () =>
       this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit, input.coauthorEditorState),
     );
-    this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
+    notifyUserMessageCreated(this.events, input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
       snapshotMessageCount: prepared.snapshot.messages.length,
@@ -180,7 +181,7 @@ export class LiveChatOrchestrator {
     });
     const snapshot = appended.response;
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
-    this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+    notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
 
     return {
       preparedMessageCount: prepared.snapshot.messages.length,
@@ -256,7 +257,7 @@ export class LiveChatOrchestrator {
       toolResults,
     });
     const snapshot = appended.response;
-    this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+    notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
     return {
       promptMessageCount: countPromptMessages(prompt),
       reply,
@@ -370,7 +371,7 @@ export class LiveChatOrchestrator {
     const prepared = await this.withTokenContext(provider, () =>
       this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit, input.coauthorEditorState),
     );
-    this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
+    notifyUserMessageCreated(this.events, input.chatId, prepared.userMessage);
     // Stored from here on: a later error leaves it in the chat — the client reloads, not restores the draft.
     if (prepared.userMessage) {
       yield { event: "user-message-saved", data: JSON.stringify({ messageId: prepared.userMessage.id }) };
@@ -381,11 +382,12 @@ export class LiveChatOrchestrator {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
         }
       : undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
     });
+    yield { event: "generation-metadata", data: JSON.stringify(generationMetadata) };
 
     if (prepared.coauthorModuleId) {
       yield {
@@ -410,7 +412,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+          notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
@@ -421,7 +423,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+        notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
         return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
@@ -447,11 +449,12 @@ export class LiveChatOrchestrator {
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
     });
+    yield { event: "generation-metadata", data: JSON.stringify(generationMetadata) };
 
     if (prompt.coauthorModuleId) {
       yield {
@@ -476,7 +479,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+          notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
@@ -487,7 +490,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+        notifyAssistantAppended(this.events, this.resolveStrategy, input.chatId, appended.branchId, appended.messageId);
         return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
@@ -519,11 +522,12 @@ export class LiveChatOrchestrator {
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
     });
+    yield { event: "generation-metadata", data: JSON.stringify(generationMetadata) };
 
     if (prompt.coauthorModuleId) {
       yield {
@@ -707,11 +711,12 @@ export class LiveChatOrchestrator {
     );
     const prefill = input.continuationText;
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, prefill, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, prefill, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
     });
+    yield { event: "generation-metadata", data: JSON.stringify(generationMetadata) };
 
     // CPF-2b retry-once: a clean prefill rejection surfaces as drainStream's
     // FIRST `error` event — streamText is lazy, so the 400 rides the stream
@@ -767,16 +772,6 @@ export class LiveChatOrchestrator {
     return strategy.resolveProvider(input);
   }
 
-  private notifyUserMessageCreated(chatId: string, message?: { id: MessageId; content: string }): void {
-    if (!message) return;
-    this.events.emit("message.created", {
-      chatId,
-      messageId: message.id,
-      role: "user",
-      content: message.content,
-    });
-  }
-
   /**
    * LS-1c: run a prompt-assembly-scoped operation with the send profile's
    * token context in scope (LOCAL_SUPPORT_PLAN). While in scope, every
@@ -795,23 +790,15 @@ export class LiveChatOrchestrator {
     );
   }
 
-  private notifyAssistantAppended(chatId: string, branchId: ChatBranchId, messageId: MessageId): void {
-    this.events.emit("message.appended", { chatId, branchId, messageId, role: "assistant" });
-    // Delegate mode-specific post-append work (no-op for RP/coauthor; future
-    // hooks for novel/group). Resolved per-chat from `chat.mode`.
-    void this.resolveStrategy(chatId).then((s) =>
-      s.onMessageAppended({ chatId, messageId, events: this.events }),
-    );
-  }
-
   private async startStream(
     input: StreamStartInput,
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
-  ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
+  ): Promise<{ streamResult: ProviderStreamResult; startedAt: number; generationMetadata: { modelId: string; presetName: string | null } }> {
     return await startProviderStream(
       {
         executeStream: this.executeStream,
         discardPendingPromptTrace: (chatId) => this.chatRuntime.discardPendingPromptTrace(chatId),
+        peekPendingPresetName: (chatId) => this.chatRuntime.peekPendingPresetName?.(chatId) ?? null,
       },
       input,
       prompt,

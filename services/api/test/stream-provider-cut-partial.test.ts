@@ -266,9 +266,14 @@ describe("provider cuts the stream mid-reply", () => {
       chatId: chat.chatId as string,
       messageId: greeting.id,
       profile: TEST_PROFILE,
-      model: "test-model",
+      model: "override-model",
     }));
 
+    const metadataAt = events.findIndex((event) => event.event === "generation-metadata");
+    const firstDeltaAt = events.findIndex((event) => event.event === "text-delta" || event.event === "reasoning-delta");
+    expect(metadataAt).toBeGreaterThanOrEqual(0);
+    expect(metadataAt).toBeLessThan(firstDeltaAt);
+    expect(JSON.parse(events[metadataAt]!.data)).toEqual({ modelId: "override-model", presetName: "test" });
     expect(errorEvent(events).partialSaved).toBe(true);
     const variants = await chat.stores.messages.getVariants(greeting.id);
     expect(variants).toHaveLength(variantsBefore + 1);

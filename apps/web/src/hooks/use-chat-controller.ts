@@ -41,6 +41,8 @@ import { DiceApiError } from "../api/dice-api.js";
 import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { captureQuickSwitchGenerationMetadata } from "../lib/generation-metadata.js";
+import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsSending } from "./chat-controller-store-reads.js";
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
 // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
@@ -271,18 +273,6 @@ export function useChatController(): ChatControllerActions {
   // StreamingReveal is created per-generation, re-created when needed
   const streamingRevealRef = useRef<StreamingReveal | null>(null);
 
-  // --- Store helpers (imperative reads via getState, not subscriptions) ---
-
-  function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
-  function getDraft(): string { return useChatStore.getState().draft; }
-  function getEditingDraft(): string { return useChatStore.getState().editingDraft; }
-  function getEditingMessageId(): string | null { return useChatStore.getState().editingMessageId; }
-
-  // Per-chat helpers
-  function getIsSending(chatId: string): boolean {
-    return useChatStore.getState().generations[chatId]?.isSending ?? false;
-  }
-
   // --- Snapshot cache helpers ---
 
   /** Refetch chat snapshot cache from the canonical source. */
@@ -312,7 +302,8 @@ export function useChatController(): ChatControllerActions {
       onStatus: (status: ChatGenerationStatus) => void;
       onChunk: (delta: string) => void;
       onReasoningChunk?: (delta: string) => void;
-      onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+       onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
       onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
       onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
@@ -356,6 +347,9 @@ export function useChatController(): ChatControllerActions {
         },
         onReasoningDone: () => {
           // Reasoning complete — text stays until snapshot refresh
+        },
+        onGenerationMetadata: (metadata) => {
+          useChatStore.getState().setGenerationMetadata(chatId, metadata);
         },
         onToolCall: (info) => {
           // Capture the full operation INPUT (args) here — onToolCall fires once
@@ -573,6 +567,7 @@ export function useChatController(): ChatControllerActions {
       opts.pendingAttachments,
       opts.streamingMessageId ?? null,
     );
+    useChatStore.getState().setGenerationMetadata(chatId, captureQuickSwitchGenerationMetadata(chatId));
     try {
       await fn(controller.signal);
       const snapshot = useSnapshotStore.getState();

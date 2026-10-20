@@ -604,7 +604,7 @@ export class ChatRuntime {
    *  draft for a chat. Used by the editor-variant path, which must NOT consume
    *  the draft — a subsequent generated variant on the same trace still needs
    *  it. Null when there is no pending trace or no preset was resolved. */
-  private peekPendingPresetName(chatId: ChatId): string | null {
+  peekPendingPresetName(chatId: ChatId): string | null {
     return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
 }

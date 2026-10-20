@@ -24,6 +24,8 @@ export interface ChatGenerationState {
   streamingMessageId: string | null;
   streamingRevealedText: string;
   streamingReasoningText: string;
+  modelId: string | null;
+  presetName: string | null;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
   pendingUserMessageAttachments: Attachment[];
@@ -46,6 +48,8 @@ function defaultGenState(): ChatGenerationState {
     streamingMessageId: null,
     streamingRevealedText: "",
     streamingReasoningText: "",
+    modelId: null,
+    presetName: null,
     generationStatus: "idle" as ChatGenerationStatus,
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],
@@ -129,6 +133,9 @@ export interface ChatActions {
 
   /** Append a reasoning delta. */
   appendReasoningText: (chatId: string, delta: string) => void;
+
+  /** Store the model and preset resolved for this generation. */
+  setGenerationMetadata: (chatId: string, metadata: { modelId: string | null; presetName: string | null }) => void;
 
   /** Set the generation status string. */
   setGenerationStatus: (chatId: string, status: ChatGenerationStatus) => void;
@@ -233,6 +240,14 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     });
   },
 
+  setGenerationMetadata: (chatId, metadata) => {
+    set((s) => {
+      const gen = s.generations[chatId];
+      if (!gen) return {};
+      return { generations: { ...s.generations, [chatId]: { ...gen, ...metadata } } };
+    });
+  },
+
   setGenerationStatus: (chatId, status) => {
     set((s) => {
       const gen = s.generations[chatId];
@@ -266,6 +281,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             streamingMessageId: null,
             streamingRevealedText: "",
             streamingReasoningText: "",
+            modelId: null,
+            presetName: null,
             pendingUserMessageContent: null,
             pendingUserMessageAttachments: [],
             pendingDiceRolls: [],
@@ -293,6 +310,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             streamingMessageId: null,
             streamingRevealedText: "",
             streamingReasoningText: "",
+            modelId: null,
+            presetName: null,
             pendingUserMessageContent: null,
             pendingDiceRolls: [],
             abortController: null,

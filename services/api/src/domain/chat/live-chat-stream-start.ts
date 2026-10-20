@@ -8,6 +8,7 @@ import type { StreamStartInput } from "./continue-fallback.js";
 interface StreamStartDependencies {
   executeStream: typeof streamProviderExecutor;
   discardPendingPromptTrace: (chatId: ChatId) => void;
+  peekPendingPresetName: (chatId: ChatId) => string | null;
 }
 
 /** Runs the provider stream request and discards its pending trace if startup fails. */
@@ -15,7 +16,7 @@ export async function startProviderStream(
   dependencies: StreamStartDependencies,
   input: StreamStartInput,
   prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
-): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
+): Promise<{ streamResult: ProviderStreamResult; startedAt: number; generationMetadata: { modelId: string; presetName: string | null } }> {
   const startedAt = Date.now();
   try {
     const streamResult = await dependencies.executeStream({
@@ -40,7 +41,11 @@ export async function startProviderStream(
       voiceTranscriber: input.voiceTranscriber,
       onAttachmentDescriptions: input.onAttachmentDescriptions,
     });
-    return { streamResult, startedAt };
+    return {
+      streamResult,
+      startedAt,
+      generationMetadata: { modelId: input.model, presetName: dependencies.peekPendingPresetName(brandId<ChatId>(input.chatId)) },
+    };
   } catch (err) {
     dependencies.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
     throw err;

@@ -16,6 +16,7 @@ export interface ParseSSEStreamOptions {
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
+  onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
 }
 
 /**
@@ -179,6 +180,13 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
           opts.onCoauthorModule({
             moduleId: parsed.moduleId as string,
             skillId: parsed.skillId as string | undefined,
+          });
+        }
+      } else if (ev.event === "generation-metadata") {
+        if (opts.onGenerationMetadata && typeof parsed.modelId === "string") {
+          opts.onGenerationMetadata({
+            modelId: parsed.modelId,
+            presetName: typeof parsed.presetName === "string" ? parsed.presetName : null,
           });
         }
       } else {

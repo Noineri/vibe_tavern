@@ -21,6 +21,7 @@ export interface StreamOpts {
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
+  onGenerationMetadata?: (info: { modelId: string; presetName: string | null }) => void;
 }
 
 /**
@@ -86,6 +87,7 @@ export async function streamChatEndpoint(
     onToolInputDelta: opts.onToolInputDelta,
     onToolResult: opts.onToolResult,
     onCoauthorModule: opts.onCoauthorModule,
+    onGenerationMetadata: opts.onGenerationMetadata,
   });
 }
 
