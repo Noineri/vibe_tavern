@@ -4,7 +4,7 @@ useDomEnv();
 
 const { describe, expect, mock, test } = await import("bun:test");
 const React = await import("react");
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { LocaleProvider } = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
@@ -378,9 +378,12 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     await waitFor(() => expect(api.setActive).toHaveBeenCalledWith("p2"));
   });
 
-  test("assist row renders the canon core and the selected-family addendum read-only", async () => {
-    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
-    const { getByTestId } = render(<Harness api={api} />);
+  // SC-8e was → now: the assist row turned editable on live profiles, so
+  // the read-only canon pin moved to the Default profile (owner decision:
+  // Default stays read-only like every other row).
+  test("assist row on the Default profile renders the canon core and the selected-family addendum read-only", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
+    const { getByTestId, queryByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
     await openRow(getByTestId, "assist");
     expect(getByTestId("image-prompt-template-assist-core").textContent).toContain("extract the visible scene");
@@ -388,6 +391,133 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     expect(getByTestId("image-prompt-template-assist-addendum").textContent).toContain("No family addendum");
     await selectFamily(getByTestId, "assist", "Pony");
     await waitFor(() => expect(getByTestId("image-prompt-template-assist-addendum").textContent).toContain("return ordered tags"));
+    // No editors on Default — both assist parts stay read-only canon blocks.
+    expect(queryByRole("textbox", { name: "Extraction core" })).toBeNull();
+    expect(queryByRole("textbox", { name: "Family addendum" })).toBeNull();
+  });
+
+  test("SC-8e: assist core edit → save sends the assist|prose override", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    await openRow(getByTestId, "assist");
+    const row = within(getByTestId("image-prompt-template-row-assist"));
+    const coreEditor = row.getByRole("textbox", { name: "Extraction core" }) as HTMLTextAreaElement;
+    // Seeded with the canon core bytes.
+    expect(coreEditor.value).toBe("extract the visible scene");
+    await act(async () => {
+      fireEvent.change(coreEditor, { target: { value: "my own extraction core" } });
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", {
+      name: "My Profile",
+      overrides: { "assist|prose": { body: "my own extraction core", qualityText: null } },
+    }));
+  });
+
+  test("SC-8e: assist addendum edit saves its family only, other families unaffected", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    await selectFamily(getByTestId, "assist", "Pony");
+    await openRow(getByTestId, "assist");
+    const row = within(getByTestId("image-prompt-template-row-assist"));
+    const addendumEditor = row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement;
+    expect(addendumEditor.value).toBe("return ordered tags");
+    await act(async () => {
+      fireEvent.change(addendumEditor, { target: { value: "my pony addendum" } });
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    // Exactly the pony addendum key — no core key, no other family key.
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", {
+      name: "My Profile",
+      overrides: { "assist|pony": { body: "my pony addendum", qualityText: null } },
+    }));
+  });
+
+  test("SC-8e: resetting the core and the addendum returns canon bytes", async () => {
+    const profile = makeProfile({
+      overrides: {
+        "assist|prose": { body: "my custom core", qualityText: null },
+        "assist|pony": { body: "my custom pony addendum", qualityText: null },
+      },
+    });
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), profile], activeProfileId: "p1" });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    await openRow(getByTestId, "assist");
+    const row = within(getByTestId("image-prompt-template-row-assist"));
+    // Both parts seed from the saved custom tier, each with its own reset.
+    expect((row.getByRole("textbox", { name: "Extraction core" }) as HTMLTextAreaElement).value).toBe("my custom core");
+    await act(async () => {
+      fireEvent.click(row.getByRole("button", { name: "Reset" }));
+    });
+    expect((row.getByRole("textbox", { name: "Extraction core" }) as HTMLTextAreaElement).value).toBe("extract the visible scene");
+    await selectFamily(getByTestId, "assist", "Pony");
+    expect((row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement).value).toBe("my custom pony addendum");
+    await act(async () => {
+      fireEvent.click(row.getByRole("button", { name: "Reset" }));
+    });
+    expect((row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement).value).toBe("return ordered tags");
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", { name: "My Profile", overrides: {} }));
+  });
+
+  test("SC-8e: Default profile keeps both assist parts read-only", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, queryByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-profile-row-default")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(getByTestId("image-prompt-profile-row-default"));
+    });
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    await openRow(getByTestId, "assist");
+    const row = within(getByTestId("image-prompt-template-row-assist"));
+    expect(row.getByTestId("image-prompt-template-assist-core").textContent).toContain("extract the visible scene");
+    expect(queryByRole("textbox", { name: "Extraction core" })).toBeNull();
+    expect(queryByRole("textbox", { name: "Family addendum" })).toBeNull();
+    await selectFamily(getByTestId, "assist", "Pony");
+    await waitFor(() => expect(row.getByTestId("image-prompt-template-assist-addendum").textContent).toContain("return ordered tags"));
+    expect(queryByRole("textbox", { name: "Family addendum" })).toBeNull();
+  });
+
+  test("SC-8e: switching the assist family with a dirty addendum asks before dropping the draft", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, getByRole, queryByText } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    await selectFamily(getByTestId, "assist", "Pony");
+    await openRow(getByTestId, "assist");
+    const row = within(getByTestId("image-prompt-template-row-assist"));
+    const addendumEditor = row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(addendumEditor, { target: { value: "draft pony edit" } });
+    });
+    // Leaving pony with a dirty addendum asks first.
+    await selectFamily(getByTestId, "assist", "Prose");
+    await waitFor(() => expect(queryByText("Discard changes?")).toBeTruthy());
+    // Cancel stays on pony with the draft intact.
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Cancel" }));
+    });
+    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
+    expect((row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement).value).toBe("draft pony edit");
+    // Confirm drops the pony draft and completes the switch to prose.
+    await selectFamily(getByTestId, "assist", "Prose");
+    await waitFor(() => expect(queryByText("Discard changes?")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Confirm" }));
+    });
+    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
+    expect(getByTestId("image-prompt-template-assist-addendum").textContent).toContain("No family addendum");
+    // Switching back shows canon bytes — the draft was dropped, not kept.
+    await selectFamily(getByTestId, "assist", "Pony");
+    expect((row.getByRole("textbox", { name: "Family addendum" }) as HTMLTextAreaElement).value).toBe("return ordered tags");
   });
 
   test("duplicate footer action creates a (copy) profile, activates, and selects it", async () => {

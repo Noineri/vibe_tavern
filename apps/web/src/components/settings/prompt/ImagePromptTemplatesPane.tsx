@@ -39,6 +39,14 @@ import { TextInput } from "../../shared/text-input.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
+import { ASSIST_CORE_KEY, ImagePromptAssistRow, savedAssistEntry } from "./image-prompt-assist-row.js";
+import {
+  normalizeDraftCell,
+  overridesEqual,
+  toWireOverrides,
+  type DraftCell,
+  type DraftOverrides,
+} from "./image-prompt-draft.js";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -53,7 +61,10 @@ import { CSS } from "@dnd-kit/utilities";
  * (decision-6: a per-mode family dropdown, e.g. scene generation → Pony —
  * see reports/IMAGE_PROMPT_TEMPLATES_RESEARCH.md) and opens the
  * template editor + quality layer inside an AnimatedDisclosure. The assist
- * row stays a read-only canon view (core + per-family addendum).
+ * row (ImagePromptAssistRow, fork #1 of the row chrome below) edits the
+ * extraction core (`assist|prose`, one per profile) and the selected
+ * family's addendum (`assist|<family>`) through the same whole-profile
+ * save; Default stays a read-only canon view.
  */
 
 export interface ImagePromptTemplatesPaneSlots {
@@ -90,12 +101,8 @@ export type ImagePromptTemplatesPaneRowId = ImagePromptTemplateRowKeyValue | "as
 
 type SelectedRow = { kind: "template"; rowKey: ImagePromptTemplateRowKeyValue } | { kind: "assist" };
 
-/** One draft cell — the pane-local normalized shape (qualityText always
- *  resolved to string | null; absent key = canon). */
-type DraftCell = { body: string; qualityText: string | null };
-type DraftOverrides = Record<string, DraftCell>;
-
 const ROW_ORDER: readonly ImagePromptTemplateRowKeyValue[] = [...Object.values(IMAGE_GENERATION_MODES), "negative"];
+
 
 function rowLabelKey(rowKey: ImagePromptTemplateRowKeyValue): string {
   return rowKey === "negative" ? "imagePromptTemplates.negative" : `image_gen_mode_${rowKey}`;
@@ -113,34 +120,6 @@ function rowIdFor(row: SelectedRow): ImagePromptTemplatesPaneRowId {
   return row.kind === "assist" ? "assist" : row.rowKey;
 }
 
-function normalizeDraftCell(cell: { body: string; qualityText?: string | null }): DraftCell {
-  return { body: cell.body, qualityText: cell.qualityText ?? null };
-}
-
-function overridesEqual(a: DraftOverrides, b: DraftOverrides): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    const left = a[key];
-    const right = b[key];
-    if ((left?.body ?? "") !== (right?.body ?? "")) return false;
-    if ((left?.qualityText ?? null) !== (right?.qualityText ?? null)) return false;
-  }
-  return true;
-}
-
-/** Save-shape normalization: a blank body means the cell returns to canon
- *  (the cell contract has no blank override — the key is dropped); a blank
- *  quality text clears to canon quality (null). */
-function toWireOverrides(draft: DraftOverrides): UpdateImagePromptProfileRequest["overrides"] {
-  const out: NonNullable<UpdateImagePromptProfileRequest["overrides"]> = {};
-  for (const [key, cell] of Object.entries(draft)) {
-    const body = cell.body.trim();
-    if (body === "") continue;
-    const quality = cell.qualityText?.trim() ?? "";
-    out[key as keyof typeof out] = { body, qualityText: quality === "" ? null : cell.qualityText };
-  }
-  return out;
-}
 
 const SortableProfileRow = React.memo(
   ({
@@ -559,6 +538,7 @@ export function ImagePromptTemplatesPane({
     });
   }, []);
 
+
   const toggleRow = useCallback((rowId: ImagePromptTemplatesPaneRowId) => {
     setExpandedRows((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
   }, []);
@@ -571,6 +551,10 @@ export function ImagePromptTemplatesPane({
     })),
     [families, tDynamic],
   );
+
+  /** SC-8e — the assist row's selected family (the addendum editor follows
+   *  the row's own family selector; the core is family-independent). */
+  const assistFamily = selectedFamilies.assist ?? families[0]?.id;
 
   const footerActions = useMemo(() => {
     if (!detail) return [];
@@ -786,18 +770,21 @@ export function ImagePromptTemplatesPane({
   );
 
   // ─── Detail: mode rows × family dropdown + editor (IPT side, kept) ───────
+  // forks: 1 — the assist row lives in image-prompt-assist-row.tsx (fork #1,
+  // SC-8e ratchet split; the section/disclosure/dropdown chrome there mirrors
+  // this function's row chrome).
 
-  const renderRowDisclosure = (rowId: ImagePromptTemplatesPaneRowId, label: string, isTemplate: boolean) => {
+  const renderRowDisclosure = (rowKey: ImagePromptTemplateRowKeyValue, label: string) => {
+    const rowId: ImagePromptTemplatesPaneRowId = rowKey;
     const family = selectedFamilies[rowId] ?? families[0]?.id;
-    const cell = isTemplate && family ? cellFor(rowId as ImagePromptTemplateRowKeyValue, family) : null;
+    const cell = family ? cellFor(rowKey, family) : null;
     const isOpen = expandedRows[rowId] ?? false;
-    const draftKey = isTemplate && family ? `${rowId}|${family}` : null;
+    const draftKey = family ? `${rowId}|${family}` : null;
     const draftCell = draftKey ? draftOverrides[draftKey] : undefined;
-    const isCustomized = isTemplate && draftCell !== undefined;
+    const isCustomized = draftCell !== undefined;
     const familyInfo = family ? families.find((f) => f.id === family) : undefined;
     const qualityCanon = family ? detail?.catalog.qualityCanon[family] : undefined;
-    const hasQualityLayer = isTemplate && cell !== null && cell.rowKey !== "negative" && familyInfo?.ownQuality === true && qualityCanon !== undefined;
-    const selectedAssistAddendum = family ? detail?.catalog.assist.addenda[family] : undefined;
+    const hasQualityLayer = cell !== null && cell.rowKey !== "negative" && familyInfo?.ownQuality === true && qualityCanon !== undefined;
     return (
       <section key={rowId} data-testid={`image-prompt-template-row-${rowId}`} className="flex flex-col rounded-md border border-border">
         <div className="flex min-w-0 items-center gap-1.5 px-3 py-2.5">
@@ -811,14 +798,12 @@ export function ImagePromptTemplatesPane({
             className="-ml-3 -my-2.5 flex min-w-0 flex-1 items-center gap-1.5 py-2.5 pl-3 text-left"
           >
             <span className={cn("min-w-0 flex-shrink font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isCustomized ? "text-accent-t" : "text-t2")}>{label}</span>
-            {isTemplate && (
-              <span
-                data-testid={`image-prompt-template-status-${rowId}`}
-                role="img"
-                aria-label={t(isCustomized ? "imagePromptTemplates.status.custom" : "imagePromptTemplates.status.canon")}
-                className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isCustomized ? "bg-accent" : "bg-t4")}
-              />
-            )}
+            <span
+              data-testid={`image-prompt-template-status-${rowId}`}
+              role="img"
+              aria-label={t(isCustomized ? "imagePromptTemplates.status.custom" : "imagePromptTemplates.status.canon")}
+              className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isCustomized ? "bg-accent" : "bg-t4")}
+            />
             <span className="ml-auto flex shrink-0 text-t4">
               <Icons.Caret direction={isOpen ? "u" : "d"} />
             </span>
@@ -841,12 +826,12 @@ export function ImagePromptTemplatesPane({
         </div>
         <AnimatedDisclosure open={isOpen}>
           <div className="flex flex-col gap-4 px-3 pb-3">
-            {isTemplate && cell && !isDefaultSelected && (
+            {cell && !isDefaultSelected && (
               <>
                 <AutoTextarea
                   mono
                   value={draftCell?.body ?? cell.customText ?? cell.canonText}
-                  onChange={(event) => draftKey && setCellDraft(rowId as ImagePromptTemplateRowKeyValue, family!, {
+                  onChange={(event) => draftKey && setCellDraft(rowKey, family!, {
                     body: event.target.value,
                     qualityText: draftCell?.qualityText ?? (cell.qualityText ?? null),
                   })}
@@ -859,7 +844,7 @@ export function ImagePromptTemplatesPane({
                   {isCustomized && (
                     <button
                       type="button"
-                      onClick={() => draftKey && family && resetCellDraft(rowId as ImagePromptTemplateRowKeyValue, family)}
+                      onClick={() => draftKey && family && resetCellDraft(rowKey, family)}
                       disabled={saving}
                       className="h-7 cursor-pointer rounded-md border border-border bg-transparent px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-50"
                     >
@@ -876,7 +861,7 @@ export function ImagePromptTemplatesPane({
                       </div>
                       <Toggle
                         checked={(draftCell?.qualityText ?? cell.qualityText) !== null}
-                        onChange={(next) => draftKey && family && setCellDraft(rowId as ImagePromptTemplateRowKeyValue, family, {
+                        onChange={(next) => draftKey && family && setCellDraft(rowKey, family, {
                           body: draftCell?.body ?? cell.customText ?? cell.canonText,
                           qualityText: next ? draftCell?.qualityText ?? cell.qualityText ?? qualityCanon ?? null : null,
                         })}
@@ -894,7 +879,7 @@ export function ImagePromptTemplatesPane({
                         <AutoTextarea
                           mono
                           value={draftCell?.qualityText ?? cell.qualityText ?? qualityCanon ?? ""}
-                          onChange={(event) => draftKey && family && setCellDraft(rowId as ImagePromptTemplateRowKeyValue, family, {
+                          onChange={(event) => draftKey && family && setCellDraft(rowKey, family, {
                             body: draftCell?.body ?? cell.customText ?? cell.canonText,
                             qualityText: event.target.value,
                           })}
@@ -909,7 +894,7 @@ export function ImagePromptTemplatesPane({
                 )}
               </>
             )}
-            {isTemplate && cell && isDefaultSelected && (
+            {cell && isDefaultSelected && (
               <>
                 <div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{cell.customText ?? cell.canonText}</div>
                 {hasQualityLayer && (
@@ -918,18 +903,6 @@ export function ImagePromptTemplatesPane({
                     <div data-testid="image-prompt-template-quality-canon" className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{qualityCanon}</div>
                   </div>
                 )}
-              </>
-            )}
-            {!isTemplate && detail && (
-              <>
-                <div>
-                  <div className={lblCls}>{t("imagePromptTemplates.assistCore")}</div>
-                  <div data-testid="image-prompt-template-assist-core" className={cn(codeQuoteCls, "max-h-56 overflow-auto")}>{detail.catalog.assist.core}</div>
-                </div>
-                <div>
-                  <div className={lblCls}>{t("imagePromptTemplates.assistAddendum")}</div>
-                  <div data-testid="image-prompt-template-assist-addendum" className={cn(codeQuoteCls, "max-h-56 overflow-auto")}>{selectedAssistAddendum ?? t("imagePromptTemplates.noAssistAddendum")}</div>
-                </div>
               </>
             )}
           </div>
@@ -972,8 +945,23 @@ export function ImagePromptTemplatesPane({
               <span className="ml-2 text-t3">{t("imagePromptTemplates.profile.defaultReadOnlyHint")}</span>
             </div>
           )}
-          {ROW_ORDER.map((rowKey) => renderRowDisclosure(rowKey, tDynamic(rowLabelKey(rowKey)), true))}
-          {renderRowDisclosure("assist", t("imagePromptTemplates.assist"), false)}
+          {ROW_ORDER.map((rowKey) => renderRowDisclosure(rowKey, tDynamic(rowLabelKey(rowKey))))}
+          <ImagePromptAssistRow
+            label={t("imagePromptTemplates.assist")}
+            expanded={expandedRows.assist ?? false}
+            onToggle={() => toggleRow("assist")}
+            saving={saving}
+            readOnly={isDefaultSelected}
+            family={assistFamily}
+            familyOptions={familyOptions}
+            onFamilySelect={(nextFamily) => setSelectedFamilies((current) => ({ ...current, assist: nextFamily }))}
+            detail={detail}
+            getDraftBody={(partFamily) => {
+              const key = partFamily === null ? ASSIST_CORE_KEY : `assist|${partFamily}`;
+              return draftOverrides[key]?.body ?? null;
+            }}
+            writeDraft={(apply) => setDraftOverrides((prev) => apply(prev))}
+          />
         </>
       )}
     </div>
