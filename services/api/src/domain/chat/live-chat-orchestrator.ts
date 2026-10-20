@@ -23,6 +23,7 @@ import { providerTokenContextFromProfile, runWithProviderTokenContext } from "..
 import { resolveProtocol } from "../providers/protocol-registry.js";
 import { validation } from "../../shared/errors.js";
 import type { LiveChatSendInput } from "./live-chat-send-input.js";
+import { assembleReplyPrompt } from "./live-chat-reply-prompt.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -203,13 +204,7 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.withTokenContext(provider, () =>
-      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-        model: provider.model,
-        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
-        responseReserve: provider.profile.maxTokens,
-      }),
-    );
+    const prompt = await assembleReplyPrompt(this.chatRuntime, provider, input.chatId, (fn) => this.withTokenContext(provider, fn));
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const startedAt = Date.now();
     let reply: string;
@@ -437,13 +432,7 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.withTokenContext(provider, () =>
-      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-        model: provider.model,
-        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
-        responseReserve: provider.profile.maxTokens,
-      }),
-    );
+    const prompt = await assembleReplyPrompt(this.chatRuntime, provider, input.chatId, (fn) => this.withTokenContext(provider, fn));
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
