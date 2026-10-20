@@ -277,13 +277,15 @@ describe("provider cuts the stream mid-reply", () => {
     const firstDeltaAt = events.findIndex((event) => event.event === "text-delta" || event.event === "reasoning-delta");
     expect(metadataAt).toBeGreaterThanOrEqual(0);
     expect(metadataAt).toBeLessThan(firstDeltaAt);
-    expect(JSON.parse(events[metadataAt]!.data)).toEqual({ modelId: "override-model", presetName: "test" });
+    const metadata = JSON.parse(events[metadataAt]!.data);
+    expect(metadata).toEqual({ modelId: "override-model", presetName: "test" });
     expect(errorEvent(events).partialSaved).toBe(true);
     const variants = await chat.stores.messages.getVariants(greeting.id);
     expect(variants).toHaveLength(variantsBefore + 1);
-    expect(variants.some((v) => v.content === "A different hello, cut")).toBe(true);
-    const persistedTrace = (await chat.stores.traces.getTracesByChat(chat.chatId as string, chat.branchId, greeting.id))[0]!;
-    expect(JSON.parse(events[metadataAt]!.data)).toEqual({ modelId: persistedTrace.model, presetName: persistedTrace.presetName });
+    const persistedVariant = variants.find((variant) => variant.content === "A different hello, cut");
+    expect(persistedVariant).toBeDefined();
+    expect(persistedVariant!.modelId).toBe(metadata.modelId);
+    expect(persistedVariant!.presetName).toBe(metadata.presetName);
   });
 
   it("a cut before any text arrives stores nothing and the error event carries no partialSaved (unchanged)", async () => {
