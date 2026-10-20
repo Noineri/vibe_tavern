@@ -253,7 +253,12 @@ function makeImagePromptTemplates(): ImagePromptProfileDetailResponse["catalog"]
       isCustomized: false,
     }))),
     qualityCanon: { pony: "canon quality pony" },
-    assist: { core: "assist core", addenda: { pony: "pony addendum" } },
+    assist: {
+      core: "assist core",
+      addenda: { pony: "pony addendum" },
+      coreCustom: { text: null, isCustomized: false },
+      addendaCustom: { pony: { text: null, isCustomized: false } },
+    },
   };
 }
 

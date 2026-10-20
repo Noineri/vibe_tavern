@@ -820,9 +820,9 @@ export type ImageGenSamplerSetImport = z.infer<typeof importImageGenSamplerSetSc
 // ─── IPT-3 (IMAGE_PROMPT_TEMPLATES_PLAN): templates pane + families registry ──
 
 /** The row-key axis of the templates surface: a generation mode OR the
- *  shared negative row (mirrors the db-level ImagePromptVariantKey — the
- *  assist core stays a canon asset, quality rides its own column on the
- *  (mode, family) row). */
+ *  shared negative row (mirrors the db-level ImagePromptVariantKey; the
+ *  assist parts ride the profile overrides map's own `assist` row and the
+ *  catalog's assist block, not the per-cell template surface). */
 export const imagePromptTemplateRowKeySchema = z.enum([
   'scene-background',
   'portrait',

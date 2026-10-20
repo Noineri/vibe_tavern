@@ -28,12 +28,13 @@ import { buildCoauthorTools } from "./coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
 import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
-import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
+import { resolveSummaryPrompt } from "../prompt/summary-prompt.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** The assembled co-author history message shape (matches SDK message parts
@@ -556,6 +557,33 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       enabled: true,
       reason: "",
       tokenCount: 0
+    });
+  }
+
+  // SC-8d: a summary build (`input.summary`) resolves the co-author summary
+  // instruction — the strategy IS the co-author mode, so the key decision in
+  // summaryPromptKeyForChatMode lands on `coauthor_summary` here. The
+  // instruction rides the SAME layer id the RP pipeline emits, so
+  // ChatSummaryService's shared `withSummaryPromptAsFinalUserMessage` tail
+  // places it as the final user message for co-author chats exactly as it
+  // does for RP. Normal co-author turns never set `summary` — byte-identical.
+  if (input.summary) {
+    const summaryInstruction = (
+      input.db
+        ? await resolveSummaryPrompt(input.db, "coauthor")
+        : await loadPromptAsset("coauthor/summary.md")
+    ).trim();
+    layers.push({
+      id: PROMPT_LAYER_ID.promptPresetSummary,
+      sourceType: "service_prompt",
+      sourceId: "coauthor_summary",
+      sourceName: "Co-Author Summary Prompt",
+      position: "in_chat",
+      priority: 350,
+      text: summaryInstruction,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(summaryInstruction)
     });
   }
 

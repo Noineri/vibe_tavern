@@ -34,8 +34,9 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   objective_generate_goals: "objective-generate-goals.md",
   objective_check: "objective-check.md",
   scene_generate: "scene-generate.md",
-  // bases (5)
+  // bases (11)
   coauthor_base: "coauthor/base.md",
+  coauthor_summary: "coauthor/summary.md",
   copilot_base: "experience-copilot/base.md",
   copilot_compaction: "experience-copilot/compaction.md",
   script_agent_base: "agent-script/base.md",

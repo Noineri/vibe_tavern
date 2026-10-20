@@ -3394,6 +3394,7 @@
 	"promptManager.servicePrompts.field.scene_generate": "Scene Generate",
 	"promptManager.servicePrompts.field.tracker_template": "Tracker Template",
 	"promptManager.servicePrompts.field.coauthor_base": "Co-Author Base",
+	"promptManager.servicePrompts.field.coauthor_summary": "Co-author summary",
 	"promptManager.servicePrompts.field.copilot_base": "Mini-app AI Assistant Base",
 	"promptManager.servicePrompts.field.copilot_compaction": "Mini-app assistant digest",
 	"promptManager.servicePrompts.field.script_agent_base": "Script AI Assistant Base",

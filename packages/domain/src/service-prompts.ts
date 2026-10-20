@@ -41,8 +41,9 @@ export const SERVICE_PROMPT_FIELDS = {
   objective_generate_goals: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   objective_check: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   scene_generate: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
-  // bases (5)
+  // bases (11)
   coauthor_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  coauthor_summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_compaction: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   script_agent_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
@@ -78,6 +79,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "objective_check",
   "scene_generate",
   "coauthor_base",
+  "coauthor_summary",
   "copilot_base",
   "copilot_compaction",
   "script_agent_base",

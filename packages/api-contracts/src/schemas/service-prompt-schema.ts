@@ -4,33 +4,17 @@ import { SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
 export const servicePromptFieldKeySchema = z.enum(SERVICE_PROMPT_FIELD_KEYS);
 export type ServicePromptFieldKeyValue = z.infer<typeof servicePromptFieldKeySchema>;
 
-export const servicePromptOverridesSchema = z
-  .object({
-    script: z.string().optional(),
-    dice_script: z.string().optional(),
-    lore_entry: z.string().optional(),
-    lore_keys: z.string().optional(),
-    chat_impersonate: z.string().optional(),
-    md_import: z.string().optional(),
-    vision_describe: z.string().optional(),
-    scene_schema: z.string().optional(),
-    scene_rules: z.string().optional(),
-    message_edit: z.string().optional(),
-    message_merge: z.string().optional(),
-    message_tts_annotate: z.string().optional(),
-    regex: z.string().optional(),
-    summary: z.string().optional(),
-    objective_generate: z.string().optional(),
-    objective_generate_goals: z.string().optional(),
-    objective_check: z.string().optional(),
-    scene_generate: z.string().optional(),
-    coauthor_base: z.string().optional(),
-    copilot_base: z.string().optional(),
-    copilot_user_flow: z.string().optional(),
-    interactive_rules: z.string().optional(),
-    interactive_visual: z.string().optional(),
-  })
-  .strict();
+/** SC-8d: the overrides map is DERIVED from the domain's shared key list
+ *  (one source — the pane, the db store, and this contract all read
+ *  SERVICE_PROMPT_FIELD_KEYS). The previous hand-written key list here lagged
+ *  seven keys behind the shared list, so prompts the pane listed refused to
+ *  save with a 400. Strictness is kept via `z.strictObject`: unknown keys —
+ *  the IPT-6-retired `image_*` fields included — are still rejected. */
+const servicePromptOverrideShape = Object.fromEntries(
+  SERVICE_PROMPT_FIELD_KEYS.map((key) => [key, z.string().optional()]),
+) as Record<ServicePromptFieldKeyValue, z.ZodOptional<z.ZodString>>;
+
+export const servicePromptOverridesSchema = z.strictObject(servicePromptOverrideShape);
 export type ServicePromptOverrides = z.infer<typeof servicePromptOverridesSchema>;
 
 export const servicePromptProfileSchema = z.object({

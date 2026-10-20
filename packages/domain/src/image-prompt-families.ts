@@ -90,9 +90,15 @@ export const IMAGE_PROMPT_FAMILIES = {
 export type ImagePromptFamilyId = keyof typeof IMAGE_PROMPT_FAMILIES;
 
 /** The row-key axis of the image variant space: a generation-mode slug,
- *  or the literal `"negative"` for the shared negative row (the quality
- *  layer rides the mode-row column; the assist core is canon-only). */
-export type ImagePromptVariantRowKey = ImageGenerationMode | "negative";
+ *  the literal `"negative"` for the shared negative row, or the literal
+ *  `"assist"` for the assist-instruction row (the quality layer rides the
+ *  mode-row column). SC-8d (owner option B): the assist row's PROSE cell
+ *  (`assist|prose`) is the extraction-core override — ONE per profile,
+ *  applying to every family (prose is the base dialect and has no addendum
+ *  of its own, so its assist cell IS the core); every non-prose family's
+ *  assist cell overrides THAT family's addendum. The prose column can never
+ *  collide with an addendum cell because prose never has an addendum. */
+export type ImagePromptVariantRowKey = ImageGenerationMode | "negative" | "assist";
 
 /** Profile overrides are keyed per cell: `"<rowKey>|<family>"` (IF-1a —
  *  image prompt profiles fork the service-prompt profile machinery, with
@@ -134,7 +140,7 @@ export function parseImagePromptCellKey(key: string): { rowKey: ImagePromptVaria
   if (at <= 0 || at !== key.indexOf(sep)) return null;
   const rowKey = key.slice(0, at);
   const family = key.slice(at + 1);
-  const isRowKey = rowKey === "negative" || Object.values(IMAGE_GENERATION_MODES).includes(rowKey as ImageGenerationMode);
+  const isRowKey = rowKey === "negative" || rowKey === "assist" || Object.values(IMAGE_GENERATION_MODES).includes(rowKey as ImageGenerationMode);
   const isFamily = (IMAGE_PROMPT_FAMILY_IDS as readonly string[]).includes(family);
   return isRowKey && isFamily ? { rowKey: rowKey as ImagePromptVariantRowKey, family: family as ImagePromptFamilyId } : null;
 }

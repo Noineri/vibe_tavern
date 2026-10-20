@@ -6,6 +6,7 @@ import {
   IMAGE_PROMPT_FAMILIES,
   IMAGE_PROMPT_FAMILY_IDS,
   imagePromptCanonFamily,
+  makeImagePromptCellKey,
   type ImagePromptFamilyId,
   type ImagePromptGrammar,
   type ImagePromptOverridesMap,
@@ -22,8 +23,9 @@ import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
  * never re-implements the fallback rule), the user's custom row if any,
  * and the per-row quality column. Alongside: the per-family canon quality
  * blocks (ownQuality families only — no universal fallback) and the assist
- * core + addenda (canon assets, read-only — the assist core is not an
- * override row by the Wave 1 store ruling).
+ * core + addenda with their canon text (assets) and, since SC-8d, each
+ * part's custom tier from the profile's `assist|…` overrides + an
+ * is-customized flag, like the mode cells.
  *
  * Writes ride the variant store directly (adapter boundary): read-modify-
  * write for the quality column (the store upsert is full-row), DELETE =
@@ -58,6 +60,11 @@ export interface PromptTemplateCatalog {
     core: string;
     /** Family id → addendum, non-prose families only (prose IS the base). */
     addenda: Partial<Record<ImagePromptFamilyId, string>>;
+    /** SC-8d: the core's custom tier (`assist|prose` override). */
+    coreCustom: { text: string | null; isCustomized: boolean };
+    /** SC-8d: per-family addendum custom tiers (`assist|<family>` overrides),
+     *  keyed like `addenda` — no entry where no canon addendum exists. */
+    addendaCustom: Partial<Record<ImagePromptFamilyId, { text: string | null; isCustomized: boolean }>>;
   };
 }
 
@@ -152,29 +159,41 @@ export async function buildProfileTemplateCatalog(
       cells.push(await readProfilePromptVariantCell(rowKey, family, overrides, memo));
     }
   }
-  return finishCatalog(cells);
+  return finishCatalog(cells, overrides);
 }
 
 /** Shared tail of both catalog builders: the canon quality blocks + the
- *  assist core and addenda (override-independent). */
+ *  assist core and addenda with their custom tier from the given profile
+ *  overrides (SC-8d: `assist|prose` = the core override, `assist|<family>`
+ *  = that family's addendum override; absent key = canon, flag false). */
 async function finishCatalog(
   cells: ImagePromptTemplateCell[],
+  overrides: ImagePromptProfileOverridesMap,
 ): Promise<PromptTemplateCatalog> {
   const qualityCanon: PromptTemplateCatalog["qualityCanon"] = {};
   const assistAddenda: PromptTemplateCatalog["assist"]["addenda"] = {};
+  const assistAddendaCustom: PromptTemplateCatalog["assist"]["addendaCustom"] = {};
+  const coreCell = overrides[makeImagePromptCellKey("assist", IMAGE_PROMPT_DEFAULT_FAMILY)];
   for (const family of IMAGE_PROMPT_FAMILY_IDS) {
     if (IMAGE_PROMPT_FAMILIES[family].ownQuality) {
       qualityCanon[family] = (await loadPromptAsset(`image-quality.${family}.md`)).trim();
     }
     if (family !== IMAGE_PROMPT_DEFAULT_FAMILY) {
       assistAddenda[family] = (await loadPromptAsset(`image-assist.${family}.md`)).trim();
+      const cell = overrides[makeImagePromptCellKey("assist", family)];
+      assistAddendaCustom[family] = { text: cell?.body ?? null, isCustomized: cell !== undefined };
     }
   }
 
   return {
     cells,
     qualityCanon,
-    assist: { core: (await loadPromptAsset("image-assist.md")).trim(), addenda: assistAddenda },
+    assist: {
+      core: (await loadPromptAsset("image-assist.md")).trim(),
+      addenda: assistAddenda,
+      coreCustom: { text: coreCell?.body ?? null, isCustomized: coreCell !== undefined },
+      addendaCustom: assistAddendaCustom,
+    },
   };
 }
 

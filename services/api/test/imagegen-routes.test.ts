@@ -3707,6 +3707,99 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(assist.calls[1]!.system).toBe(`${core.trim()}\n\n${ponyAddendum.trim()}`);
   });
 
+  // SC-8d (owner option B): the extraction core is ONE override per profile
+  // (`assist|prose` — prose is the base dialect with no addendum of its own),
+  // applying to EVERY family; each family's addendum is its own override
+  // (`assist|<family>`); an emptied part is the key's absence (reset → canon
+  // bytes). With no assist override the IPT-2 composition above is unchanged.
+  test("SC-8d: an edited core reaches every family's assist instruction", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const profile = await scene.stores.imagePromptProfiles.createImagePromptProfile({
+      name: "Assist core override",
+      overrides: { "assist|prose": { body: "MY CUSTOM CORE" } },
+    });
+    await scene.stores.uiSettings.update({ activeImagePromptProfileId: profile.id });
+
+    // Unpinned (prose family): the custom core ALONE.
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.system).toBe("MY CUSTOM CORE");
+
+    // Pinned pony: the custom core + pony's CANON addendum — the core edit
+    // reached a second family.
+    const ponyAddendum = await loadPromptAsset("image-assist.pony.md");
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(2);
+    expect(assist.calls[1]!.system).toBe(`MY CUSTOM CORE\n\n${ponyAddendum.trim()}`);
+  });
+
+  test("SC-8d: an edited addendum reaches only its family", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const profile = await scene.stores.imagePromptProfiles.createImagePromptProfile({
+      name: "Pony addendum override",
+      overrides: { "assist|pony": { body: "MY PONY ADDENDUM" } },
+    });
+    await scene.stores.uiSettings.update({ activeImagePromptProfileId: profile.id });
+    const core = await loadPromptAsset("image-assist.md");
+
+    // Prose: canon core ALONE — the pony addendum override does not leak.
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls[0]!.system).toBe(core.trim());
+
+    // Pony: canon core + the custom addendum.
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls[1]!.system).toBe(`${core.trim()}\n\nMY PONY ADDENDUM`);
+
+    // Qwen: canon core + qwen's CANON addendum — untouched by the pony edit.
+    const qwenAddendum = await loadPromptAsset("image-assist.qwen.md");
+    await scene.stores.imageGen.update(id, { familyOverride: "qwen" });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls[2]!.system).toBe(`${core.trim()}\n\n${qwenAddendum.trim()}`);
+  });
+
+  test("SC-8d: a reset (the assist key saved away) returns the canon bytes", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const profile = await scene.stores.imagePromptProfiles.createImagePromptProfile({
+      name: "Reset me",
+      overrides: { "assist|prose": { body: "MY CUSTOM CORE" } },
+    });
+    await scene.stores.uiSettings.update({ activeImagePromptProfileId: profile.id });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls[0]!.system).toBe("MY CUSTOM CORE");
+
+    // An emptied part is a reset: the saved map no longer carries the key.
+    await scene.stores.imagePromptProfiles.updateImagePromptProfile(profile.id, { overrides: {} });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    const core = await loadPromptAsset("image-assist.md");
+    expect(assist.calls[1]!.system).toBe(core.trim());
+  });
+
   test("FT-B2: prompt draft assembles the family assist instruction, carries an optional hint, and leaves verbatim generation untouched", async () => {
     const assist = makeAssistDeps({ llm1: makeLlmProfile() });
     assist.setExecuteBehavior({ text: "drafted English prompt" });

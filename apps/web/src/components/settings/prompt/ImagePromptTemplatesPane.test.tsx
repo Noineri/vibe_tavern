@@ -78,6 +78,8 @@ function makeCatalog() {
     assist: {
       core: "extract the visible scene",
       addenda: { pony: "return ordered tags" },
+      coreCustom: { text: null, isCustomized: false },
+      addendaCustom: { pony: { text: null, isCustomized: false } },
     },
   };
 }

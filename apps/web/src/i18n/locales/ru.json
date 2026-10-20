@@ -3446,6 +3446,7 @@
 	"promptManager.servicePrompts.field.scene_generate": "Генерация сцены",
 	"promptManager.servicePrompts.field.tracker_template": "Заготовка трекеров (генерация)",
 	"promptManager.servicePrompts.field.coauthor_base": "База соавтора",
+	"promptManager.servicePrompts.field.coauthor_summary": "Сводка соавтора",
 	"promptManager.servicePrompts.field.copilot_base": "База ИИ-помощника мини-приложений",
 	"promptManager.servicePrompts.field.copilot_compaction": "Сводка ИИ-помощника мини-приложений",
 	"promptManager.servicePrompts.field.script_agent_base": "База ИИ-помощника скриптов",

@@ -141,12 +141,15 @@ function toWire(row: {
 /** Per-cell semantic guards + quality normalization on whole-profile saves.
  *  Free rows are ordinary per-family cells. QualityText on families with no
  *  quality layer is refused; trim-empty quality normalizes to null (clear),
- *  like the profile PATCH null-clear convention. */
+ *  like the profile PATCH null-clear convention. SC-8d: assist-row cells
+ *  carry ONLY a body — the assist parts have no quality column, so any
+ *  stray qualityText on them normalizes to null instead of persisting. */
 function validateCells(overrides: ImagePromptProfileOverridesMap): ImagePromptProfileOverridesMap {
   const out: ImagePromptProfileOverridesMap = {};
   for (const [key, cell] of Object.entries(overrides) as Array<[keyof ImagePromptProfileOverridesMap, { body: string; qualityText?: string | null }]>) {
     const [rowKey, family] = key.split("|") as [string, string];
-    let qualityText = cell.qualityText ?? null;
+    const isAssistCell = rowKey === "assist";
+    let qualityText = isAssistCell ? null : cell.qualityText ?? null;
     // Normalize BEFORE the authorship guard: a blank/whitespace quality is a
     // CLEAR (back to canon), harmless on any family — same convention as the
     // IPT-3 upsert boundary.

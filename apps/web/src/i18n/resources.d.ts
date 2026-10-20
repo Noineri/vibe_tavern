@@ -2314,6 +2314,7 @@ export default interface Resources {
     "promptManager.servicePrompts.family.summary": "Memory",
     "promptManager.servicePrompts.field.chat_impersonate_enhance": "Draft Improvement AI",
     "promptManager.servicePrompts.field.coauthor_base": "Co-Author Base",
+    "promptManager.servicePrompts.field.coauthor_summary": "Co-author summary",
     "promptManager.servicePrompts.field.copilot_base": "Mini-app AI Assistant Base",
     "promptManager.servicePrompts.field.copilot_compaction": "Mini-app assistant digest",
     "promptManager.servicePrompts.field.copilot_user_flow": "User Process in Mini-apps",

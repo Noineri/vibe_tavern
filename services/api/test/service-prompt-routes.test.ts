@@ -300,4 +300,46 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
     });
     expect(retiredImageKey.status).toBe(400);
   });
+
+  // SC-8d: the overrides schema is DERIVED from SERVICE_PROMPT_FIELD_KEYS, so
+  // every key the pane lists saves. The old hand-written list refused seven
+  // listed keys (chat_impersonate_enhance, tracker_template, copilot_compaction,
+  // script_agent_base, script_agent_compaction, sidechat_ooc_base,
+  // sidechat_ooc_digest) with a 400 — the pane showed editors that could never
+  // persist. Pin: ALL shared keys round-trip through create AND update, and a
+  // retired key is still refused (strictness kept).
+  test("every SERVICE_PROMPT_FIELD_KEYS key round-trips through create and update; retired keys still 400", async () => {
+    const { app } = await setupAdapter();
+    const overrides = Object.fromEntries(
+      SERVICE_PROMPT_FIELD_KEYS.map((key) => [key, `OVERRIDE-${key}`]),
+    );
+
+    const created = await app.request("/api/service-prompts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "EveryKey", overrides }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { id: string; overrides: Record<string, string> };
+    expect(createdBody.overrides).toEqual(overrides);
+
+    const updatedValues = Object.fromEntries(
+      SERVICE_PROMPT_FIELD_KEYS.map((key) => [key, `UPDATED-${key}`]),
+    );
+    const updated = await app.request(`/api/service-prompts/profiles/${createdBody.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overrides: updatedValues }),
+    });
+    expect(updated.status).toBe(200);
+    const updatedBody = (await updated.json()) as { overrides: Record<string, string> };
+    expect(updatedBody.overrides).toEqual(updatedValues);
+
+    const retiredOnUpdate = await app.request(`/api/service-prompts/profiles/${createdBody.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overrides: { image_assist: "retired" } }),
+    });
+    expect(retiredOnUpdate.status).toBe(400);
+  });
 });
