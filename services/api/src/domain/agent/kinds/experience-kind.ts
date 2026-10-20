@@ -168,6 +168,9 @@ const kind: AgentKind<ExperienceAgentContext> = {
   // first-insert seed (SC-7, owner decision 2 corrected 2026-10-19).
   inheritsLegacyCopilotPair: true,
   servesScriptKinds: ["interactive"],
+  // SC-7b: script-owned — the chat-owner lifecycle rejects this kind before
+  // chat modes are ever consulted, so it serves none.
+  servesChatModes: [],
   basePromptServiceKey: "copilot_base",
   skillRootId: "experience",
   toolSetSchema: copilotToolSetSchema,

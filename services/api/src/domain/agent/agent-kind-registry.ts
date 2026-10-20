@@ -17,7 +17,7 @@
  */
 
 import type { AgentKind, AgentKindId } from "./agent-kind.js";
-import type { ScriptKind } from "@vibe-tavern/domain";
+import type { ChatMode, ScriptKind } from "@vibe-tavern/domain";
 
 /** A kind module tried to register under an id that is already taken. */
 export class AgentKindAlreadyRegisteredError extends Error {
@@ -68,6 +68,19 @@ export class AgentKindNotChatOwnedError extends Error {
   constructor(readonly kindId: AgentKindId) {
     super(`Agent kind "${kindId}" is not chat-owned.`);
     this.name = "AgentKindNotChatOwnedError";
+  }
+}
+
+/** A chat-owned kind does not serve the chat's MODE (SC-7b, owner decision
+ *  8: RP chats only) — the session-create route rejects the pair with a 400
+ *  naming both the kind and the mode. Thrown by
+ *  {@link requireKindServesChatMode}; the reads on such a chat answer empty
+ *  instead (they filter through {@link kindServesChatMode}, never throw). */
+export class AgentKindModeNotServedError extends Error {
+  readonly code = "AGENT_KIND_MODE_NOT_SERVED";
+  constructor(readonly kindId: AgentKindId, readonly mode: ChatMode) {
+    super(`Agent kind "${kindId}" does not serve chat mode "${mode}".`);
+    this.name = "AgentKindModeNotServedError";
   }
 }
 
@@ -128,6 +141,26 @@ export function getChatOwnedAgentKind(id: AgentKindId): AgentKind {
   const kind = getAgentKind(id);
   if (kind.owner !== "chat") throw new AgentKindNotChatOwnedError(id);
   return kind;
+}
+
+/** Whether a kind serves a chat mode — the ONE predicate over the
+ *  descriptor's `servesChatModes` (SC-7b). The create path wraps it in
+ *  {@link requireKindServesChatMode}; the read paths branch on this boolean
+ *  and answer empty, so a chat whose mode changed after its sessions were
+ *  born reads consistently (no session listable, none active) while its
+ *  rows stay intact for the day the mode returns. */
+export function kindServesChatMode(kind: AgentKind, mode: ChatMode): boolean {
+  return kind.servesChatModes.includes(mode);
+}
+
+/** The create-path guard over {@link kindServesChatMode}: a chat-owned kind
+ *  that does not serve the chat's mode throws
+ *  {@link AgentKindModeNotServedError} (the route maps it to the shared 400
+ *  `{ error, code }` shape naming the kind and the mode). Lives here, beside
+ *  the data it reads, so no adapter or route holds a second copy of the
+ *  mode-membership comparison. */
+export function requireKindServesChatMode(kind: AgentKind, mode: ChatMode): void {
+  if (!kindServesChatMode(kind, mode)) throw new AgentKindModeNotServedError(kind.id, mode);
 }
 
 /**

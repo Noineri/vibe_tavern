@@ -57,6 +57,8 @@ function makeFakeKind(): AgentKind {
     recencyAnchorText: "Fake-kind recency anchor.",
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,
+    // SC-7b: script-owned fake — serves no chat mode.
+    servesChatModes: [],
     renderContextPackage: () => "",
   };
 }

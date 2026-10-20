@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { createStoreContainer, type StoreContainer, type Chat } from "@vibe-tavern/db";
+import { CHAT_MODE, type ChatMode } from "@vibe-tavern/domain";
 import { Hono } from "hono";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { createAgentChatSessionsRoutes } from "../src/api/routes/agent-chat-sessions.js";
@@ -36,6 +37,11 @@ import "../src/domain/agent/kinds/script-kind.js";
  *    unsubscribe — the registry has no reset); an UNWIRED kind proves the
  *    dispatch target by throwing inside it, and a thread whose stored kind
  *    is no longer registered proves the typed registry error.
+ * 6. SC-7b chat-mode guard: the fake kind serves `rp` only — create on an
+ *    rp chat works as before, create on a `coauthor` chat is the typed 400
+ *    `AGENT_KIND_MODE_NOT_SERVED` naming the kind and the mode (no row
+ *    born), and the READ routes on a coauthor chat answer empty (list →
+ *    `[]`, active → `null`), never an error.
  *
  * Tests that COUNT sessions get a FRESH chat each (the store container is
  * shared per file) so counts pin this test's threads alone.
@@ -51,6 +57,9 @@ function makeFakeChatKind(): AgentKind {
     id: FAKE_CHAT_KIND_ID,
     owner: "chat",
     servesScriptKinds: [],
+    // SC-7b: the fake serves rp only — the real chat-owned kind's
+    // declaration, so the mode-guard tests exercise the same value.
+    servesChatModes: [CHAT_MODE.rp],
     basePromptServiceKey: `${FAKE_CHAT_KIND_ID}_base`,
     skillRootId: FAKE_CHAT_KIND_ID,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
@@ -82,9 +91,10 @@ let threadRoutes: Hono;
 let characterId: string;
 let unregisterFakeKind: () => void;
 
-/** A fresh chat (own main branch) — the isolation unit for session counts. */
-async function newChat(title: string): Promise<Chat> {
-  return stores.chats.createChat({ characterId, title, promptPresetId: null });
+/** A fresh chat (own main branch) — the isolation unit for session counts.
+ *  `mode` defaults to the store's `rp` (every pre-SC-7b test's chat). */
+async function newChat(title: string, mode?: ChatMode): Promise<Chat> {
+  return stores.chats.createChat({ characterId, title, promptPresetId: null, ...(mode !== undefined ? { mode } : {}) });
 }
 
 function chatUrl(chat: Chat, kind: string, branchId = chat.activeBranchId as string): string {
@@ -230,6 +240,48 @@ describe("chat-owner lifecycle routes (SC-0b)", () => {
       { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) },
     );
     expect(foreignCreate.status).toBe(404);
+  });
+});
+
+describe("the chat-mode guard (SC-7b)", () => {
+  test("create on an rp chat works — the kind serves rp, byte-identical to the pre-guard flow", async () => {
+    const chat = await newChat("RP mode served", CHAT_MODE.rp);
+    const res = await postSession(chat, FAKE_CHAT_KIND_ID, { title: "RP talk" });
+    expect(res.status).toBe(200);
+    const thread = (await res.json()) as WireThread;
+    expect(thread.title).toBe("RP talk");
+    // The created session IS listable — the read path ran the store read.
+    const sessions = (await (await chatRoutes.request(`${chatUrl(chat, FAKE_CHAT_KIND_ID)}/sessions`)).json()) as WireThread[];
+    expect(sessions.map((s) => s.id)).toEqual([thread.id]);
+  });
+
+  test("create on a coauthor chat is a 400 AGENT_KIND_MODE_NOT_SERVED naming the kind and the mode, leaving no row", async () => {
+    const chat = await newChat("Coauthor mode refused", CHAT_MODE.coauthor);
+    const res = await postSession(chat, FAKE_CHAT_KIND_ID);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body.code).toBe("AGENT_KIND_MODE_NOT_SERVED");
+    // The error names BOTH halves of the refused pair.
+    expect(body.error).toContain(FAKE_CHAT_KIND_ID);
+    expect(body.error).toContain("coauthor");
+    // The refusal left nothing behind (the store, not the route, proves it).
+    expect(
+      await stores.experienceCopilot.getActiveForChat(chat.id, chat.activeBranchId as string, FAKE_CHAT_KIND_ID),
+    ).toBeNull();
+  });
+
+  test("list on a coauthor chat returns an empty list, not an error", async () => {
+    const chat = await newChat("Coauthor list empty", CHAT_MODE.coauthor);
+    const res = await chatRoutes.request(`${chatUrl(chat, FAKE_CHAT_KIND_ID)}/sessions`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  test("active on a coauthor chat reads null — the read twin of the empty list", async () => {
+    const chat = await newChat("Coauthor active null", CHAT_MODE.coauthor);
+    const res = await chatRoutes.request(`${chatUrl(chat, FAKE_CHAT_KIND_ID)}/active`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toBeNull();
   });
 });
 

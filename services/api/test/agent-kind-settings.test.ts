@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 import { Hono } from "hono";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { createAgentKindSettingsRoutes } from "../src/api/routes/agent-kind-settings.js";
@@ -62,6 +63,9 @@ function makeFakeKind(id: string, inheritsLegacyCopilotPair: boolean): AgentKind
     defaultToolSet: { fake_tool: true },
     recencyAnchorText: "(fake kind pins no context)",
     inheritsLegacyCopilotPair,
+    // SC-7b: the fakes serve rp chats (the value is irrelevant to the
+    // settings routes — mode-blind — but mirrors the real chat-owned kind).
+    servesChatModes: [CHAT_MODE.rp],
     renderContextPackage: () => "",
   };
 }
@@ -251,5 +255,25 @@ describe("the bootstrap payload carries the per-kind map (SC-0d)", () => {
     // SC-7: the post-split kind's entry carries its (seedless) row's nulls.
     expect(boot.agentKindSettings["sidechat-ooc"].providerProfileId).toBeNull();
     expect(boot.agentKindSettings["sidechat-ooc"].modelName).toBeNull();
+  });
+
+  test("the map carries each kind's served chat modes — the SC-7b wire field", async () => {
+    const runtime = new SessionRuntime(stores, { getActiveProviderProfile: async () => null });
+    // Same harness shape as the sibling test: an awaited character create
+    // settles the fire-and-forget chat-order seed before the bootstrap read.
+    await runtime.character.createFromScratch({
+      name: "Kind modes bootstrap probe",
+      description: "a probe character",
+      firstMessage: "Hello there!",
+    });
+    const boot = await runtime.getBootstrapState();
+
+    // The one source mirrored onto the wire: the real chat-owned kind serves
+    // rp only; the script-owned built-ins serve none (SC-7b: unaffected);
+    // the registered fake mirrors its own declaration.
+    expect(boot.agentKindSettings["sidechat-ooc"].servesChatModes).toEqual([CHAT_MODE.rp]);
+    expect(boot.agentKindSettings["experience"].servesChatModes).toEqual([]);
+    expect(boot.agentKindSettings["script"].servesChatModes).toEqual([]);
+    expect(boot.agentKindSettings[FAKE_KIND_ID].servesChatModes).toEqual([CHAT_MODE.rp]);
   });
 });

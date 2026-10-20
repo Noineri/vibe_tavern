@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { createStoreContainer, type StoreContainer, type Chat, type ProviderProfile } from "@vibe-tavern/db";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 import { Hono } from "hono";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { createAgentChatSettingsRoutes } from "../src/api/routes/agent-chat-settings.js";
@@ -68,6 +69,9 @@ function makeFakeChatKind(id: string): AgentKind {
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
     recencyAnchorText: "(fake kind pins no context)",
+    // SC-7b: the fakes serve rp chats (this suite's chats are rp; the
+    // stream-hop thread is born straight through the store anyway).
+    servesChatModes: [CHAT_MODE.rp],
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,
     renderContextPackage: () => "",

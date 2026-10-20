@@ -93,7 +93,7 @@ const PROFILES = [
 ] as unknown as ProviderProfileRecord[];
 
 function kindEntry(kind: string, providerProfileId: string | null, modelName: string | null): AgentKindSettingsWire {
-	return { agentKind: kind, providerProfileId, modelName, defaultProfileId: null, updatedAt: "" };
+	return { agentKind: kind, providerProfileId, modelName, defaultProfileId: null, updatedAt: "", servesChatModes: [] };
 }
 
 function seedStores(map: Record<string, AgentKindSettingsWire>): void {

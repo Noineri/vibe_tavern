@@ -11,6 +11,7 @@
  */
 
 import type { ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics, AgentKindSettings, ChatAgentSettings } from "@vibe-tavern/db";
+import type { ChatMode } from "@vibe-tavern/domain";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, AgentKindSettingsWire, AgentChatSettingsWire } from "@vibe-tavern/api-contracts";
 
 export function toThreadWire(t: ExperienceCopilotThread): ExperienceCopilotThreadWire {
@@ -57,16 +58,22 @@ export function toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMes
   };
 }
 
-/** Map the db store's kind-settings row (structurally identical to the
- *  wire shape) into the api-contracts type — field-for-field so the
- *  nullability contract is explicit (nullable fields stay `null`). */
-export function toKindSettingsWire(s: AgentKindSettings): AgentKindSettingsWire {
+/** Map the db store's kind-settings row into the api-contracts type —
+ *  field-for-field so the nullability contract is explicit (nullable fields
+ *  stay `null`). The one NON-row field is SC-7b's `servedChatModes`: chat
+ *  modes are registry/descriptor facts, never stored, so the caller passes
+ *  the kind's `servesChatModes` (the one source) beside the row. */
+export function toKindSettingsWire(
+  s: AgentKindSettings,
+  servesChatModes: readonly ChatMode[],
+): AgentKindSettingsWire {
   return {
     agentKind: s.agentKind,
     providerProfileId: s.providerProfileId,
     modelName: s.modelName,
     defaultProfileId: s.defaultProfileId,
     updatedAt: s.updatedAt,
+    servesChatModes: [...servesChatModes],
   };
 }
 

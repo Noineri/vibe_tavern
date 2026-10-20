@@ -39,6 +39,7 @@
  */
 
 import { dirname, resolve } from "node:path";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 import type { AppDb } from "@vibe-tavern/db";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import { sidechatOocToolSetSchema, SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
@@ -90,6 +91,12 @@ const kind: AgentKind<undefined> = {
   // the pre-kinds global choice.
   inheritsLegacyCopilotPair: false,
   servesScriptKinds: [],
+  // SC-7b (owner decision 8: RP chats only): the sidechat exists beside RP
+  // chats — its context loader reads the RP branch view and the frozen RP
+  // events, so a coauthor (or future-mode) chat is not served. One source:
+  // the session-create guard, the empty-read filter and the bootstrap kind
+  // map's wire field all read this value.
+  servesChatModes: [CHAT_MODE.rp],
   basePromptServiceKey: "sidechat_ooc_base",
   skillRootId: "sidechat",
   toolSetSchema: sidechatOocToolSetSchema,

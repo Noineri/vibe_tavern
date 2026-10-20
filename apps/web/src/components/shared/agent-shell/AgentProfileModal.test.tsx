@@ -321,6 +321,7 @@ function seedKindDefault(defaultProfileId: string | null): void {
 					modelName: null,
 					defaultProfileId,
 					updatedAt: "",
+					servesChatModes: [],
 				},
 			},
 			isArmServer: false,

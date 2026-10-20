@@ -150,6 +150,9 @@ const kind: AgentKind<ScriptAgentContext> = {
   // first-insert seed (SC-7, owner decision 2 corrected 2026-10-19).
   inheritsLegacyCopilotPair: true,
   servesScriptKinds: ["prompt", "dice"],
+  // SC-7b: script-owned — the chat-owner lifecycle rejects this kind before
+  // chat modes are ever consulted, so it serves none.
+  servesChatModes: [],
   basePromptServiceKey: "script_agent_base",
   skillRootId: "script",
   toolSetSchema: scriptAgentToolSetSchema,

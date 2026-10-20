@@ -1221,6 +1221,7 @@ describe("ExperienceCopilotShell — provider binding persistence (SC-0e: per-ki
             modelName,
             defaultProfileId: null,
             updatedAt: "",
+            servesChatModes: [],
           },
         },
       },

@@ -291,6 +291,7 @@ describe("patchAgentKindSettingsAction (SC-0e)", () => {
             modelName: "m2",
             defaultProfileId: null,
             updatedAt: "2026-01-01T00:00:00.000Z",
+            servesChatModes: [],
           },
         },
         isArmServer: false,
@@ -306,6 +307,7 @@ describe("patchAgentKindSettingsAction (SC-0e)", () => {
       modelName: "m1",
       defaultProfileId: null,
       updatedAt: "2026-02-02T00:00:00.000Z",
+      servesChatModes: [],
     };
     const result = await patchAgentKindSettingsAction("experience", { providerProfileId: "p1", modelName: "m1" }, async () => updated);
     expect(result).toBe(updated);
@@ -322,6 +324,7 @@ describe("patchAgentKindSettingsAction (SC-0e)", () => {
       modelName: "m1",
       defaultProfileId: null,
       updatedAt: "2026-02-02T00:00:00.000Z",
+      servesChatModes: [],
     };
     const result = await patchAgentKindSettingsAction("experience", { providerProfileId: "p1" }, async () => updated);
     expect(result).toBe(updated);

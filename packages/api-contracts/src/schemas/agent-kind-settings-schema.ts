@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 
 /**
  * Per-agent-kind settings wire contracts (SIDECHAT_PLAN SC-0d) — the
@@ -26,6 +27,14 @@ export const agentKindSettingsSchema = z
     // has neither a row nor the legacy fallback (SC-7: only the two pre-split
     // kinds inherit it).
     updatedAt: z.string().nullable(),
+    // SC-7b (owner decision 8): the chat modes this kind's sessions serve —
+    // a REGISTRY fact carried on the settings entry (never stored, never
+    // patched): the server always emits the descriptor's `servesChatModes`,
+    // so the wire map exists before its first web consumer (SC-13 hides the
+    // sidechat panel/entry from this field, not a second hard-coded mode
+    // check). Values are `CHAT_MODE`'s (the chat row's own vocabulary — the
+    // same derivation the domain type uses, no second hand-typed list).
+    servesChatModes: z.array(z.enum(Object.values(CHAT_MODE))),
   })
   .strict();
 export type AgentKindSettingsWire = z.infer<typeof agentKindSettingsSchema>;

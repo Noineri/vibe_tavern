@@ -11,6 +11,7 @@ import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import type { SessionSnapshot, BootstrapState } from "../../api/contract/session-types.js";
 import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 import { listAgentKinds } from "../../domain/agent/agent-kind-registry.js";
+import { toKindSettingsWire } from "../../api/adapters/experience-copilot-wire-mappers.js";
 
 /** The runtime-owned seams the assembly needs (satisfied by SessionRuntime
  *  members — the coordinator remains the single caller). */
@@ -47,12 +48,18 @@ export async function buildBootstrapState(deps: BootstrapAssemblyDeps): Promise<
   // descriptor field is the one source of that fact), the legacy
   // ui_settings copilot pair (the store's read-time fallback), keyed by
   // kind id so each shell finds its remembered model in the one bootstrap
-  // round-trip.
+  // round-trip. SC-7b: each entry also carries the kind's served chat modes
+  // (from the descriptor — never stored), mapped through the SAME row→wire
+  // mapper the settings routes use, so the bootstrap map is the wire shape
+  // from one source, not a structural twin of the db row.
   const agentKindSettings: BootstrapState['agentKindSettings'] = Object.fromEntries(
     await Promise.all(
       listAgentKinds().map(async (kind) => [
         kind.id,
-        await stores.agentKindSettings.get(kind.id, { inheritLegacyPair: kind.inheritsLegacyCopilotPair }),
+        toKindSettingsWire(
+          await stores.agentKindSettings.get(kind.id, { inheritLegacyPair: kind.inheritsLegacyCopilotPair }),
+          kind.servesChatModes,
+        ),
       ]),
     ),
   );

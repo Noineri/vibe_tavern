@@ -2,6 +2,7 @@ import type { Context, TypedResponse } from "hono";
 import {
   UnknownAgentKindError,
   AgentKindNotChatOwnedError,
+  AgentKindModeNotServedError,
 } from "../../domain/agent/agent-kind-registry.js";
 
 /**
@@ -21,7 +22,11 @@ export function mapAgentKindError(
   c: Context,
   err: unknown,
 ): TypedResponse<{ error: string; code: string }, 400, "json"> | null {
-  if (err instanceof UnknownAgentKindError || err instanceof AgentKindNotChatOwnedError) {
+  if (
+    err instanceof UnknownAgentKindError ||
+    err instanceof AgentKindNotChatOwnedError ||
+    err instanceof AgentKindModeNotServedError
+  ) {
     return c.json({ error: err.message, code: err.code }, 400);
   }
   return null;

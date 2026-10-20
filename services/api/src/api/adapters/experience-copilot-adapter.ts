@@ -41,9 +41,11 @@ import {
   resolveKindForScript,
   getAgentKind,
   getChatOwnedAgentKind,
+  requireKindServesChatMode,
+  kindServesChatMode,
   AgentKindNotWiredError,
 } from "../../domain/agent/agent-kind-registry.js";
-import type { AgentKindId } from "../../domain/agent/agent-kind.js";
+import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
@@ -530,9 +532,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   /** The kind param of the chat-owner routes: a REGISTERED kind that owns its
    *  threads. Both failures are the registry's typed errors
    *  (`UnknownAgentKindError` / `AgentKindNotChatOwnedError`) — the route maps
-   *  them to a 400; validated FIRST because it needs no store I/O. */
-  private requireChatOwnedKind(kindId: string): void {
-    getChatOwnedAgentKind(kindId);
+   *  them to a 400; validated FIRST because it needs no store I/O. Returns
+   *  the resolved kind so the caller can read further descriptor facts
+   *  (SC-7b's `servesChatModes`) without a second lookup. */
+  private requireChatOwnedKind(kindId: string): AgentKind {
+    return getChatOwnedAgentKind(kindId);
   }
 
   agentChatGetActive = async (
@@ -540,8 +544,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     branchId: string,
     kind: string,
   ): Promise<ExperienceCopilotThreadWire | null> => {
-    this.requireChatOwnedKind(kind);
-    await requireChatBranch(this.stores.chats, chatId, branchId);
+    const agentKind = this.requireChatOwnedKind(kind);
+    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
+    // SC-7b: a chat whose mode the kind does not serve READS empty — the
+    // active twin of the sessions list's empty array, so a chat whose mode
+    // changed after its sessions were born never shows an active session
+    // its own list omits (the rows stay; the mode may change back).
+    if (!kindServesChatMode(agentKind, chat.mode)) return null;
     const thread = await this.stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
     return thread ? toThreadWire(thread) : null;
   };
@@ -551,8 +560,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     branchId: string,
     kind: string,
   ): Promise<ExperienceCopilotThreadWire[]> => {
-    this.requireChatOwnedKind(kind);
-    await requireChatBranch(this.stores.chats, chatId, branchId);
+    const agentKind = this.requireChatOwnedKind(kind);
+    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
+    // SC-7b: listing on a chat whose mode the kind does not serve answers
+    // EMPTY, not an error — reads never 400 on the mode (only the create
+    // path does; see agentChatStartNewSession).
+    if (!kindServesChatMode(agentKind, chat.mode)) return [];
     const threads = await this.stores.experienceCopilot.listSessionsForChat(chatId, branchId, kind);
     return threads.map((t) => toThreadWire(t));
   };
@@ -563,8 +576,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     kind: string,
     title?: string,
   ): Promise<ExperienceCopilotThreadWire> => {
-    this.requireChatOwnedKind(kind);
-    await requireChatBranch(this.stores.chats, chatId, branchId);
+    const agentKind = this.requireChatOwnedKind(kind);
+    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
+    // SC-7b: a chat-owned session is born only on a mode the kind serves —
+    // the registry's typed error, mapped by the route to the shared 400
+    // `{ error, code }` shape naming the kind and the mode. Runs before the
+    // store write, so a refused create leaves no row behind.
+    requireKindServesChatMode(agentKind, chat.mode);
     const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title);
     return toThreadWire(thread);
   };
@@ -575,30 +593,34 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  kind's remembered default exists regardless of who owns its threads);
    *  an unregistered kind is the registry's typed `UnknownAgentKindError`,
    *  validated FIRST (no store I/O) and mapped by the route to the shared
-   *  400 shape. */
-  private requireRegisteredKind(kindId: string): void {
-    getAgentKind(kindId);
+   *  400 shape. Returns the resolved kind so the caller reads further
+   *  descriptor facts (SC-7b's `servesChatModes`) without a second lookup. */
+  private requireRegisteredKind(kindId: string): AgentKind {
+    return getAgentKind(kindId);
   }
 
   agentKindGetSettings = async (kind: string): Promise<AgentKindSettingsWire> => {
-    this.requireRegisteredKind(kind);
+    const agentKind = this.requireRegisteredKind(kind);
     // SC-7: the legacy-pair fallback/seed applies only to the pre-split
     // kinds — the descriptor field is the one source of that fact.
     const settings = await this.stores.agentKindSettings.get(kind, {
-      inheritLegacyPair: getAgentKind(kind).inheritsLegacyCopilotPair,
+      inheritLegacyPair: agentKind.inheritsLegacyCopilotPair,
     });
-    return toKindSettingsWire(settings);
+    // SC-7b: the entry carries the kind's served chat modes (the wire map
+    // SC-13 hides the sidechat entry from) — read from the descriptor, the
+    // one source, never stored.
+    return toKindSettingsWire(settings, agentKind.servesChatModes);
   };
 
   agentKindPatchSettings = async (
     kind: string,
     body: AgentKindSettingsPatchRequest,
   ): Promise<AgentKindSettingsWire> => {
-    this.requireRegisteredKind(kind);
+    const agentKind = this.requireRegisteredKind(kind);
     const settings = await this.stores.agentKindSettings.patch(kind, body, {
-      inheritLegacyPair: getAgentKind(kind).inheritsLegacyCopilotPair,
+      inheritLegacyPair: agentKind.inheritsLegacyCopilotPair,
     });
-    return toKindSettingsWire(settings);
+    return toKindSettingsWire(settings, agentKind.servesChatModes);
   };
 
   // ─── Per-(chat, kind) profile choice (SIDECHAT_PLAN SC-0f) ──────────────

@@ -22,7 +22,7 @@
 
 import { describe, test, expect, afterAll } from "bun:test";
 import { z } from "zod";
-import { SCRIPT_KIND, type ScriptKind } from "@vibe-tavern/domain";
+import { SCRIPT_KIND, CHAT_MODE, type ChatMode, type ScriptKind } from "@vibe-tavern/domain";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { EXPERIENCE_COPILOT_MODULE } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { SCRIPT_AGENT_MODULE } from "../src/domain/agent/script-agent/script-agent-module.js";
@@ -32,9 +32,12 @@ import {
   getAgentKind,
   getAgentKindOf,
   resolveKindForScript,
+  kindServesChatMode,
+  requireKindServesChatMode,
   AgentKindAlreadyRegisteredError,
   UnknownAgentKindError,
   NoAgentKindForScriptKindError,
+  AgentKindModeNotServedError,
 } from "../src/domain/agent/agent-kind-registry.js";
 import type { ExperienceAgentContext } from "../src/domain/agent/kinds/experience-kind.js";
 // Side-effect import: registers the real experience kind (delegation shell).
@@ -55,7 +58,29 @@ function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): Age
     recencyAnchorText: "(fake kind pins no context)",
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,
+    // SC-7b: script-owned fakes serve no chat mode (the chat-owner
+    // lifecycle rejects them before modes are consulted).
+    servesChatModes: [],
     renderContextPackage: () => "", // required since AS-2b; fakes don't render
+  };
+}
+
+/** A chat-owned fake kind serving explicit modes — the SC-7b guard's
+ *  minimal probe (the same AS-2a pattern: register through the public API,
+ *  unsubscribe in afterAll). */
+function makeFakeChatKind(id: string, servesChatModes: readonly ChatMode[]): AgentKind {
+  return {
+    id,
+    owner: "chat",
+    servesScriptKinds: [],
+    servesChatModes,
+    basePromptServiceKey: `${id}_base`,
+    skillRootId: id,
+    toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
+    defaultToolSet: { fake_tool: true },
+    recencyAnchorText: "(fake kind pins no context)",
+    inheritsLegacyCopilotPair: false,
+    renderContextPackage: () => "",
   };
 }
 
@@ -162,6 +187,40 @@ describe("agent-kind registry (AS-2a)", () => {
     }
     expect(caught).toBeInstanceOf(NoAgentKindForScriptKindError);
     expect((caught as NoAgentKindForScriptKindError).scriptKind).toBe("bogus");
+  });
+});
+
+describe("chat-mode serving (SC-7b)", () => {
+  test("requireKindServesChatMode passes a served mode and throws AgentKindModeNotServedError carrying the kind and the mode", () => {
+    const fake = makeFakeChatKind("fake-rp-only", [CHAT_MODE.rp]);
+    unsubscribes.push(registerAgentKind(fake));
+
+    // A served mode passes both spellings of the check.
+    expect(kindServesChatMode(fake, CHAT_MODE.rp)).toBe(true);
+    expect(() => requireKindServesChatMode(fake, CHAT_MODE.rp)).not.toThrow();
+
+    // An unserved mode: the boolean reads false; the guard throws the typed
+    // error carrying BOTH halves of the refused pair.
+    expect(kindServesChatMode(fake, CHAT_MODE.coauthor)).toBe(false);
+    let caught: unknown;
+    try {
+      requireKindServesChatMode(fake, CHAT_MODE.coauthor);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentKindModeNotServedError);
+    const error = caught as AgentKindModeNotServedError;
+    expect(error.kindId).toBe("fake-rp-only");
+    expect(error.mode).toBe(CHAT_MODE.coauthor);
+    expect(error.code).toBe("AGENT_KIND_MODE_NOT_SERVED");
+    expect(error.message).toContain("fake-rp-only");
+    expect(error.message).toContain("coauthor");
+  });
+
+  test("the script-owned built-ins carry empty servesChatModes — SC-7b leaves them unaffected", () => {
+    for (const id of ["experience", "script"] as const) {
+      expect(getAgentKind(id).servesChatModes).toEqual([]);
+    }
   });
 });
 

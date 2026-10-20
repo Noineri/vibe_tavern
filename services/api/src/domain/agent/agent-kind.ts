@@ -18,7 +18,7 @@
  */
 
 import type { ZodType } from "zod";
-import type { ScriptKind } from "@vibe-tavern/domain";
+import type { ChatMode, ScriptKind } from "@vibe-tavern/domain";
 
 /**
  * Stable kind id ("experience" today; "script" registers in AS-7). Plain
@@ -78,6 +78,21 @@ export interface AgentKind<CTX = unknown> {
    * a switch anywhere.
    */
   readonly servesScriptKinds: readonly ScriptKind[];
+  /**
+   * Which chat MODES a chat-owned kind serves (SC-7b, owner decision 8:
+   * RP chats only) — the chat-mode twin of {@link servesScriptKinds}:
+   * `sidechat-ooc` serves `rp` alone, so creating its session on a
+   * `coauthor` chat is a typed 400 (`AGENT_KIND_MODE_NOT_SERVED`) and the
+   * read routes on such a chat answer empty. Script-owned kinds carry `[]`
+   * — the chat-owner lifecycle rejects them before this field is ever read
+   * (`AGENT_KIND_NOT_CHAT_OWNED`), so the modes of a script kind are
+   * meaningless, not defaulted. This field is the ONE source of the fact:
+   * the session-create guard, the empty-read filter and the bootstrap kind
+   * map's wire field all read it from here, never from a second table.
+   * Values come from `CHAT_MODE` (`packages/domain`, the chat row's own
+   * vocabulary) so a kind can never declare a mode a chat cannot be.
+   */
+  readonly servesChatModes: readonly ChatMode[];
   /**
    * Service-prompt key whose global override replaces this kind's built-in
    * base prompt on the builtin-profile path (see service-prompt-resolver;

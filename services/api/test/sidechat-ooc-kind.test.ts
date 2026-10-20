@@ -35,7 +35,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
-import { SCRIPT_KIND } from "@vibe-tavern/domain";
+import { CHAT_MODE, SCRIPT_KIND } from "@vibe-tavern/domain";
 import { copilotProfileSchema, SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
@@ -44,6 +44,7 @@ import {
   getAgentKind,
   getChatOwnedAgentKind,
   resolveKindForScript,
+  kindServesChatMode,
   AgentKindNotChatOwnedError,
 } from "../src/domain/agent/agent-kind-registry.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
@@ -109,6 +110,16 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     for (const scriptKind of [SCRIPT_KIND.interactive, SCRIPT_KIND.prompt, SCRIPT_KIND.dice]) {
       expect(resolveKindForScript(scriptKind).id).not.toBe("sidechat-ooc");
     }
+  });
+
+  test("serves rp chats only — the SC-7b declaration (owner decision 8)", () => {
+    const kind = getAgentKind("sidechat-ooc");
+    // The ONE source: the descriptor's value is the plan's settled fact
+    // (RP chats only), spelled in CHAT_MODE's vocabulary. The create guard,
+    // the empty-read filter and the bootstrap wire field all read this.
+    expect(kind.servesChatModes).toEqual([CHAT_MODE.rp]);
+    expect(kindServesChatMode(kind, CHAT_MODE.rp)).toBe(true);
+    expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
   test("the five Wave-3 toggles are known keys, all disabled until their tools land (SC-5)", () => {
