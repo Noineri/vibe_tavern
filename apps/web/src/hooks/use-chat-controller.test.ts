@@ -28,6 +28,7 @@ const { act, renderHook } = await import("@testing-library/react");
 
 // --- chat-api stubs (the functions the non-stream path crosses) ---
 const regenerateChatMessage = mock();
+const regenerateChatMessageStream = mock();
 const sendChatMessageStream = mock();
 const fetchChat = mock();
 const sendChatMessageAction = mock();
@@ -71,7 +72,7 @@ mock.module("sonner", () => ({
 	toast: toastMock,
 }));
 mock.module("../api/chat-api.js", () => {
-	return { ...realChatApi, regenerateChatMessage, sendChatMessageStream, fetchChat };
+  return { ...realChatApi, regenerateChatMessage, regenerateChatMessageStream, sendChatMessageStream, fetchChat };
 });
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend
@@ -105,6 +106,7 @@ const { useSnapshotStore } = await import("../stores/snapshot-store.js");
 const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
 const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-actions.js");
 const { useExperienceStore } = await import("../stores/experience-store.js");
+const { useGenerationQueueStore } = await import("../stores/generation-queue-store.js");
 
 const CHAT = "chat-1" as ChatId;
 const MSG = "msg-1";
@@ -123,6 +125,7 @@ function rejectOnAbort(_chatId: ChatId, _messageId: string, opts?: { signal?: Ab
 
 beforeEach(() => {
   regenerateChatMessage.mockReset();
+  regenerateChatMessageStream.mockReset();
   sendChatMessageStream.mockReset();
   sendChatMessageAction.mockReset();
   continueMessageAction.mockReset();
@@ -146,9 +149,58 @@ beforeEach(() => {
     profiles: [{ id: "p1", isActive: true, defaultModel: "gpt-x" } as never],
   });
   useBootstrapStore.setState({ data: null });
+  useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
 });
 
 describe("useChatController — handleRegenerateMessage (non-stream)", () => {
+
+  test("plain regenerate keeps the provider-facing failure text on its record", async () => {
+    regenerateChatMessage.mockRejectedValue(new ProviderStreamError("provider says no", "rate_limit"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleRegenerateMessage(MSG); });
+
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toMatchObject([{
+      messageId: MSG, origin: "regenerate", status: "failed", error: "provider says no",
+    }]);
+    expect(toastError.mock.calls[0]![0]).toBe("provider says no");
+  });
+
+  test("stream metadata replaces the plain regenerate record's quick-switch guess", async () => {
+    useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+    let settle!: () => void;
+    regenerateChatMessageStream.mockImplementation((_chatId: unknown, _messageId: unknown, opts: {
+      onGenerationMetadata?: (metadata: GenerationMetadata) => void;
+    }) => {
+      opts.onGenerationMetadata?.({ modelId: "resolved-model", presetName: "Resolved preset" });
+      return new Promise<void>((resolve) => { settle = resolve; });
+    });
+    const { result } = renderHook(() => useChatController());
+    let pending!: Promise<void>;
+
+    await act(async () => {
+      pending = result.current.handleRegenerateMessage(MSG);
+      await Promise.resolve();
+    });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toMatchObject([{
+      model: "resolved-model", presetName: "Resolved preset", status: "running",
+    }]);
+
+    await act(async () => { settle(); await pending; });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toEqual([]);
+  });
+
+  test("continue does not create or clear a generation record", async () => {
+    const recordId = useGenerationQueueStore.getState().addRecord(CHAT, {
+      messageId: MSG, origin: "regenerate", status: "failed", model: "m", presetName: null, presetId: null, error: "kept",
+    });
+    continueMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleContinueMessage(MSG); });
+
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.[0]?.id).toBe(recordId);
+  });
 
 	test("non-stream send snapshots the visible quick-switch model and preset for its generation lifetime", async () => {
 		let resolveSend!: () => void;

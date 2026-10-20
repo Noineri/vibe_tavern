@@ -123,6 +123,7 @@ async function pump(chatId: string): Promise<void> {
         ?.find((j) => j.id === job.id);
       if (fresh?.status === "cancelled") {
         useGenerationQueueStore.getState().removeJob(job.id);
+        if (job.recordId) useGenerationQueueStore.getState().removeRecord(chatId, job.recordId);
         continue;
       }
 
@@ -132,11 +133,14 @@ async function pump(chatId: string): Promise<void> {
           if (job.recordId) useGenerationQueueStore.getState().removeRecord(chatId, job.recordId);
           break;
         case "failed":
-          useGenerationQueueStore.getState().markFailed(job.id, "generation_failed");
+          const error = job.recordId
+            ? useGenerationQueueStore.getState().recordsByChat[chatId]?.find((item) => item.id === job.recordId)?.error
+            : undefined;
+          useGenerationQueueStore.getState().markFailed(job.id, error ?? "regen_failed");
           if (job.recordId) {
             const record = useGenerationQueueStore.getState().recordsByChat[chatId]?.find((item) => item.id === job.recordId);
             if (record?.status === "running") {
-              useGenerationQueueStore.getState().updateRecord(chatId, job.recordId, { status: "failed", error: "generation_failed" });
+              useGenerationQueueStore.getState().updateRecord(chatId, job.recordId, { status: "failed", error: error ?? "regen_failed" });
             }
           }
           break;

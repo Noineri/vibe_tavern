@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import { useChatStore } from "./chat-store.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 
 /**
@@ -22,9 +21,9 @@ import { useSnapshotStore } from "./snapshot-store.js";
  *
  * The standalone FIRST regenerate (job #0) is NOT enqueued here — it stays a
  * single-flight action in {@link useChatController.handleRegenerateMessage}.
- * Only "Generate more" clicks (job #2 onward) feed this store. Therefore a
- * non-empty store ⟺ the user has clicked "Generate more" ⟺ the manager pill
- * is visible (D10).
+ * Only "Generate more" clicks (job #2 onward) feed executable jobs. The batch
+ * state remembers that intent independently, so manager visibility survives a
+ * drained, cleared, or cancelled job list until the next Send/Resend reset.
  */
 
 export type QueueJobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
@@ -62,6 +61,14 @@ export interface GenerationRecord {
 export interface GenerationBatch {
   messageId: string;
   variantIdsAtStart: string[];
+}
+
+export interface GenerationBatchSummary {
+  done: number;
+  failed: number;
+  running: number;
+  pending: number;
+  total: number;
 }
 
 interface GenerationQueueState {
@@ -302,6 +309,7 @@ export function useHasActiveQueue(chatId: string | null | undefined): boolean {
 }
 
 const EMPTY: QueueJob[] = [];
+const EMPTY_RECORDS: GenerationRecord[] = [];
 
 /**
  * Conceptual display count for the manager pill: queue jobs PLUS one if a
@@ -313,12 +321,23 @@ const EMPTY: QueueJob[] = [];
  * provided for the pill's `{done}/{total}` text where `total` should read as
  * the user-perceived queue length including the running item.
  */
-export function useQueueDisplayTotal(chatId: string | null | undefined): number {
-  const queued = useQueueCount(chatId);
-  const isSending = useChatStore(
-    useShallow((s) => (chatId ? !!s.generations[chatId]?.isSending : false)),
+export function useGenerationBatchSummary(
+  chatId: string | null | undefined,
+): { visible: boolean; summary: GenerationBatchSummary } {
+  const batch = useGenerationQueueStore((s) => (chatId ? s.batchesByChat[chatId] ?? null : null));
+  const records = useGenerationQueueStore(
+    useShallow((s) => (chatId ? s.recordsByChat[chatId] ?? EMPTY_RECORDS : EMPTY_RECORDS)),
   );
-  return queued + (isSending ? 1 : 0);
+  const target = useSnapshotStore((s) => (batch ? s.messagesById[batch.messageId] ?? null : null));
+  const isTargetVisible = useSnapshotStore((s) => batch !== null && s.messageOrder.includes(batch.messageId));
+  const done = target?.variants.length ?? 0;
+  const failed = records.filter((record) => record.messageId === batch?.messageId && record.status === "failed").length;
+  const running = records.filter((record) => record.messageId === batch?.messageId && record.status === "running").length;
+  const pending = records.filter((record) => record.messageId === batch?.messageId && record.status === "pending").length;
+  return {
+    visible: batch !== null && isTargetVisible,
+    summary: { done, failed, running, pending, total: done + failed + running + pending },
+  };
 }
 
 /**

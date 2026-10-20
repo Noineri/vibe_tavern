@@ -15,7 +15,7 @@ import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import {
   useQueueJobs,
-  useQueueDisplayTotal,
+  useGenerationBatchSummary,
   useHasActiveQueue,
   type QueueJob,
 } from "../../stores/generation-queue-store.js";
@@ -28,11 +28,9 @@ import {
 /**
  * Pinned queue manager (CHAT_GENERATION_QUEUE_PLAN Q4b).
  *
- * Sits as a sibling above the composer in PlayMode. Hidden entirely while the
- * queue store is empty (the standalone first regenerate, job #0, is NOT tracked
- * here — so the store only populates once the user clicks "Generate more"). The
- * first queued job reveals the pill; expanding it shows the per-job list with
- * cancel / clear / add-current affordances.
+ * Sits as a sibling above the composer in PlayMode. A batch begins at the first
+ * Generate more click; it remains visible after work drains until Send/Resend
+ * resets it, provided its target stays in the visible branch.
  *
  * Layout:
  *  - Desktop: a left-aligned pill; expanding opens an UPWARD popover anchored to
@@ -46,25 +44,21 @@ import {
 export function QueueManager(): ReactNode {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const jobs = useQueueJobs(activeChatId);
-  const total = useQueueDisplayTotal(activeChatId);
+  const { visible, summary } = useGenerationBatchSummary(activeChatId);
   const isActive = useHasActiveQueue(activeChatId);
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(false);
   const { t } = useT();
 
-  // Empty queue (job #0 not tracked) → render nothing, UNLESS the popover is
-  // already open (e.g. the user just cleared the last pending job): then keep
-  // the panel mounted so it can show a brief "queue empty" frame instead of
-  // vanishing mid-interaction. The pill appears on the first "Generate more"
-  // click, which is exactly when the user has signaled intent to queue ≥ 1.
-  if (jobs.length < 1 && !expanded) return null;
+  // A plain regenerate never creates a batch, while a drained/cleared/cancelled
+  // batch stays visible until the next real Send or Resend.
+  if (!visible) return null;
 
-  const done = jobs.filter((j) => j.status === "done").length;
   // Counter-only label: the spinning regen icon conveys "generating", so a
   // trailing noun is redundant — and a noun after a Russian counter ("0/6
   // generating…") is grammatically wrong without plural-form logic. Keeping
   // the pill locale-agnostic (done/total only) sidesteps both issues.
-  const pillLabel = jobs.length < 1 ? "" : `${done}/${total}`;
+  const pillLabel = `${summary.done}/${summary.total}`;
 
   return (
     <div className="absolute bottom-full left-1.5 z-20 mb-1 flex items-center gap-1.5">

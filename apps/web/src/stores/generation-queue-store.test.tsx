@@ -1,5 +1,6 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
+import type { AppMessage } from "../api/types.js";
 
 import { useDomEnv } from "../../test/dom-env.js";
 import {
@@ -8,9 +9,14 @@ import {
   useQueueForMessage,
   useQueueJobStatus,
   useHasActiveQueue,
+  useGenerationBatchSummary,
 } from "./generation-queue-store.js";
+import { useSnapshotStore } from "./snapshot-store.js";
 
 useDomEnv();
+
+const originalSnapshotState = useSnapshotStore.getState();
+afterAll(() => { useSnapshotStore.setState(originalSnapshotState, true); });
 
 const { render, act } = await import("@testing-library/react");
 
@@ -138,6 +144,11 @@ function StatusSubscriber({ jobId }: { jobId: string }) {
   return null;
 }
 
+function BatchSummarySubscriber({ chatId, onRead }: { chatId: string; onRead: (value: ReturnType<typeof useGenerationBatchSummary>) => void }) {
+  onRead(useGenerationBatchSummary(chatId));
+  return null;
+}
+
 describe("Q3 store: narrow selectors do not over-render", () => {
   beforeEach(() => {
     resetStore();
@@ -208,5 +219,38 @@ describe("Q3 store: narrow selectors do not over-render", () => {
     function C() { seen = useQueueCount("nope"); return null; }
     render(<C />);
     expect(seen).toBe(0);
+  });
+
+  test("owner scenarios count server variants plus records exactly once and hide only without a visible batch target", () => {
+    useGenerationQueueStore.getState().startBatch("c1", "m1", ["a"]);
+    const regenerate = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B", presetId: null,
+    });
+    const queued = useGenerationQueueStore.getState().addRecord("c1", {
+      messageId: "m1", origin: "queue", status: "pending", model: "frozen-c", presetName: "Preset C", presetId: "preset-c",
+    });
+    useGenerationQueueStore.getState().enqueueJob({ chatId: "c1", messageId: "m1", model: "frozen-c", promptPresetId: "preset-c", recordId: queued });
+    act(() => {
+      useSnapshotStore.setState({
+        messageOrder: ["m1"],
+        messagesById: { m1: { id: "m1", variants: [{ id: "a" }] } } as unknown as Record<string, AppMessage>,
+      });
+    });
+    let seen!: ReturnType<typeof useGenerationBatchSummary>;
+    const { rerender } = render(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+
+    expect(seen).toEqual({ visible: true, summary: { done: 1, failed: 0, running: 1, pending: 1, total: 3 } });
+    expect(useGenerationQueueStore.getState().batchesByChat.c1?.variantIdsAtStart).toEqual(["a"]);
+    expect(useGenerationQueueStore.getState().recordsByChat.c1?.find((record) => record.id === regenerate)).toMatchObject({ origin: "regenerate", status: "running", model: "resolved-b", presetName: "Preset B" });
+
+    act(() => {
+      useSnapshotStore.setState({ messagesById: { m1: { id: "m1", variants: [{ id: "a" }, { id: "b" }, { id: "c" }] } } as unknown as Record<string, AppMessage> });
+    });
+    rerender(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(seen.summary).toEqual({ done: 3, failed: 0, running: 1, pending: 1, total: 5 });
+
+    act(() => { useSnapshotStore.setState({ messageOrder: [] }); });
+    rerender(<BatchSummarySubscriber chatId="c1" onRead={(value) => { seen = value; }} />);
+    expect(seen.visible).toBe(false);
   });
 });

@@ -1,4 +1,17 @@
 import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
+import type { ChatId } from "@vibe-tavern/domain";
+import type { AppSnapshot } from "../api/types.js";
+import { fetchChatAction } from "../stores/api-actions/chat-actions.js";
+
+/** Refresh helpers shared by every record settlement path in the controller. */
+export async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
+  return fetchChatAction(chatId);
+}
+
+export async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  return refreshChatSnapshotCache(chatId);
+}
 
 export function resetGenerationBatch(chatId: string): void {
   useGenerationQueueStore.getState().clearBatch(chatId);

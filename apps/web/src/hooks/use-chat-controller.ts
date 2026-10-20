@@ -4,7 +4,7 @@ import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
 import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
-import type { AppMessage, AppSnapshot, ChatGenerationStatus } from "../api/types.js";
+import type { AppMessage, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
@@ -14,10 +14,13 @@ import { getProviderErrorText, showProviderErrorToast } from "../lib/provider-er
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
+  refreshAfterAbort,
+  refreshChatSnapshotCache,
   resetGenerationBatch,
   settleRunningQueueRecordFailure,
   settlePlainRegenerateRecord,
   startPlainRegenerateRecord,
+  updatePlainRegenerateRecordMetadata,
 } from "./generation-batch-lifecycle.js";
 import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
@@ -25,7 +28,6 @@ import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type RegenerateOverride } from "@vibe-tavern/api-contracts";
 import {
-  fetchChatAction,
   sendChatMessageAction,
   regenerateMessageAction,
   continueMessageAction,
@@ -218,20 +220,6 @@ export function useChatController(): ChatControllerActions {
 
   // --- Snapshot cache helpers ---
 
-  /** Refetch chat snapshot cache from the canonical source. */
-  async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
-    return fetchChatAction(chatId);
-  }
-
-  /**
-   * After an abort, the backend needs a moment to save the partial variant
-   * before we fetch the snapshot.
-   */
-  async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
-    await new Promise((r) => setTimeout(r, 200));
-    return refreshChatSnapshotCache(chatId);
-  }
-
   // --- Common streaming helper ---
 
   /**
@@ -261,6 +249,7 @@ export function useChatController(): ChatControllerActions {
      */
     streamingMessageId?: string | null,
     onFailure?: (error: unknown) => void,
+    onGenerationMetadata?: (metadata: GenerationMetadata) => void,
   ): Promise<StreamOutcome> {
     const completionTargetBeforeStream = streamingMessageId
       ? null
@@ -294,6 +283,7 @@ export function useChatController(): ChatControllerActions {
         },
         onGenerationMetadata: (metadata) => {
           useChatStore.getState().setGenerationMetadata(chatId, metadata);
+          onGenerationMetadata?.(metadata);
         },
         onToolCall: (info) => {
           // Capture the full operation INPUT (args) here — onToolCall fires once
@@ -560,8 +550,6 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
-    resetGenerationBatch(activeChatId);
-
     // DICE-F3: capture the commit intent (only when the active lane has a
     // bindable roll) and enforce the subtractive send gate. The button/Enter
     // path already gates on `canSend` (use-input-area); this is the
@@ -570,6 +558,8 @@ export function useChatController(): ChatControllerActions {
     if (dice.blockReason) {
       return;
     }
+
+    resetGenerationBatch(activeChatId);
 
     // IR-73D: capture the experience attachment commit intent (only when the
     // active scope has a valid server-queued attachment). Subtractive: when
@@ -787,6 +777,7 @@ export function useChatController(): ChatControllerActions {
     );
     try {
       let outcome: StreamOutcome;
+      let failureText = getT()("regen_failed");
       if (streamResponseRef.current) {
         outcome = await executeStreamAction(
           activeChatId,
@@ -794,6 +785,11 @@ export function useChatController(): ChatControllerActions {
           undefined,
           undefined,
           messageId,
+          (error) => { failureText = getProviderErrorText(error, getT(), "regen_failed"); },
+          (metadata) => updatePlainRegenerateRecordMetadata(activeChatId, plainRecordId, {
+            model: metadata.modelId,
+            presetName: metadata.presetName,
+          }),
         );
       } else {
         outcome = await executeNonStreamAction(
@@ -803,12 +799,13 @@ export function useChatController(): ChatControllerActions {
             streamingMessageId: messageId,
             onError: async (error) => {
               await refreshChatSnapshotCache(activeChatId);
-              toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
+              failureText = getProviderErrorText(error, getT(), "regen_failed");
+              toast.error(failureText);
             },
           },
         );
       }
-      settlePlainRegenerateRecord(activeChatId, plainRecordId, outcome, getT()("regen_failed"));
+      settlePlainRegenerateRecord(activeChatId, plainRecordId, outcome, failureText);
     } finally {
       useChatStore.getState().setMessageActionId(null);
     }
