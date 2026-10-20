@@ -3,11 +3,15 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../api/types.js";
 import { fetchChatAction } from "../stores/api-actions/chat-actions.js";
 
-/** Refresh helpers shared by every record settlement path in the controller. */
+/** Refetch chat snapshot cache from the canonical source. */
 export async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
   return fetchChatAction(chatId);
 }
 
+/**
+ * After an abort, the backend needs a moment to save the partial variant
+ * before we fetch the snapshot.
+ */
 export async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
   await new Promise((resolve) => setTimeout(resolve, 200));
   return refreshChatSnapshotCache(chatId);
