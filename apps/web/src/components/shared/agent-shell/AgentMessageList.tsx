@@ -11,7 +11,7 @@ import {
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
-import { agentThreadKey, getAgentHost, type AgentKind, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentAskCard } from "./AgentAskCard.js";
@@ -291,6 +291,19 @@ export function AgentMessageList({
       ),
     );
 
+  // SC-16: the host's message actions for persisted assistant bubbles —
+  // resolved once per kind (unknown kind = no row, never a throw). Pending
+  // and feed bubbles below render without actions (the RP row hides its
+  // actions while generating).
+  const messageActions = useMemo<AgentMessageAction[] | undefined>(() => {
+    try {
+      const declared = getAgentHost(kind).messageActions;
+      return declared !== undefined && declared.length > 0 ? declared : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [kind]);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -355,6 +368,7 @@ export function AgentMessageList({
               <AgentMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
+                messageActions={messageActions}
               />
             </Fragment>
           ))}

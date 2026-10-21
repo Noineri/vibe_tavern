@@ -427,6 +427,27 @@ describe("ExperienceCopilotMessageList", () => {
     ]);
   });
 
+  it("a host without message actions renders no action row (SC-16 — built-ins stay byte-identical)", () => {
+    // The experience host declares no `messageActions` — its assistant
+    // bubbles render exactly as before (the row owns the `copilot-message-actions`
+    // test id, so its absence pins the no-row contract).
+    const { queryByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "Make it scarier" }),
+          message({ id: "a1", role: "assistant", content: "Here are the rules" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(getByText("Here are the rules")).toBeDefined();
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
   it("renders the empty state when there is nothing to show", () => {
     const { getByText } = render(
       <AgentMessageList

@@ -41,6 +41,9 @@ import {
   startAgentChatSession,
 } from "../../../api/agent-chat-api.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
+import { useChatStore } from "../../../stores/chat-store.js";
+import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
+import { Icons } from "../../shared/icons.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 
 /**
@@ -121,6 +124,20 @@ function sidechatDefaultModelBinding(ctx: AgentDefaultModelContext): {
 }
 
 /**
+ * SC-16: copy a sidechat assistant reply into the RP composer. Empty draft →
+ * `setDraft(text)`; non-empty → append on a new line. Nothing is sent (no
+ * transport call, no turn state touched). Fresh `getState()` reads — the
+ * handler runs outside render (the render-closure rule). The mobile tab
+ * returns to `"chat"` unconditionally: the store is mobile-only (desktop
+ * never reads it) and `setTab` no-ops when already on `"chat"`.
+ */
+function copySidechatReplyToComposer(text: string): void {
+  const { draft, setDraft } = useChatStore.getState();
+  setDraft(draft.length === 0 ? text : `${draft}\n${text}`);
+  useSidechatMobileStore.getState().setTab("chat");
+}
+
+/**
  * Storage key prefix for the per-chat open state (chat id appended) — the ONE
  * spelling both surfaces share (SC-14's desktop panel, SC-15's mobile tabs).
  * Lives with the host (the pair's owner module), not with either surface, so
@@ -193,4 +210,14 @@ registerAgentHost({
   // SC-13c: the objective proposal card renders `recordType: "objective"`
   // in place; every other recordType still falls back to the AS-5 card.
   recordProposalRenderers: { objective: ObjectiveProposalCard },
+  // SC-16: «В поле ввода РП» under each assistant reply — the RP row's copy
+  // icon (`Icons.Copy`, the action-row language) with the composer handler.
+  messageActions: [
+    {
+      labelKey: "sidechat_copy_to_composer",
+      icon: Icons.Copy,
+      onSelect: copySidechatReplyToComposer,
+      testId: "sidechat-copy-to-composer",
+    },
+  ],
 });

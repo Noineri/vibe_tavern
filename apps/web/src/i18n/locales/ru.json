@@ -2685,6 +2685,7 @@
 	"sidechat_meter_discussion": "Обсуждение",
 	"sidechat_toggle_label": "Сайдчат",
 	"sidechat_close_label": "Закрыть сайдчат",
+	"sidechat_copy_to_composer": "В поле ввода РП",
 	"copilot_review_model_editing": "ИИ вносит изменения…",
 	"copilot_review_revert": "Отменить изменения",
 	"copilot_review_hunks_skipped": "Пропущено ханков: {n} — текст изменился",

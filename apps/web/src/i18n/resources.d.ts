@@ -3080,6 +3080,7 @@ export default interface Resources {
     "sidebar_unnamed_branch": "Unnamed branch",
     "sidebar_your_persona": "Your Persona",
     "sidechat_close_label": "Close sidechat",
+    "sidechat_copy_to_composer": "To RP input",
     "sidechat_empty_hint": "Ask about the plot, characters, or reply options.",
     "sidechat_input_placeholder": "Ask about the story…",
     "sidechat_meter_context": "Context",

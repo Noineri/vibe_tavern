@@ -4,9 +4,11 @@
  * its caption count from `coveredCount`. The user/assistant bubble path is
  * covered by the message-list test; this file isolates the role-dispatch.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
 
@@ -19,6 +21,23 @@ mock.module("../../../lib/markdown.js", () => ({
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
+// Mutable viewport override (the SC-16 row branches on it) — same pattern as
+// sidechat-host.test.tsx so both halves agree.
+let mobileOverride = false;
+const realMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realMobile,
+  useIsMobile: () => mobileOverride,
+}));
+
+// Radix Tooltip never anchors under happy-dom — render children inline (the
+// same mock the message-list test uses; this file pins the row, not tooltips).
+const realTooltip = await import("../Tooltip.js");
+mock.module("../Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let AgentMessageBlock: typeof import("./AgentMessageBlock.js").AgentMessageBlock;
@@ -26,6 +45,13 @@ let AgentMessageBlock: typeof import("./AgentMessageBlock.js").AgentMessageBlock
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
   ({ AgentMessageBlock } = await import("./AgentMessageBlock.js"));
+  // The sidechat host self-registers on import (module-load registration) —
+  // the wiring test below resolves its declared action by kind.
+  await import("../../chat/sidechat/sidechat-host.js");
+});
+
+beforeEach(() => {
+  mobileOverride = false;
 });
 
 function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
@@ -93,5 +119,138 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
     );
 
     expect(container.innerHTML).toBe("");
+  });
+});
+
+// ─── SC-16: the host's message-action row ───────────────────────────────────
+// A host-declared action renders under ASSISTANT bubbles only (desktop:
+// hover/focus-within reveal, cloned from the RP row; mobile: always-visible
+// 44px button). Hosts that declare none render byte-identically.
+
+function assistantMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+  return {
+    id: "a1",
+    threadId: "thread-1",
+    role: "assistant",
+    content: "Consider asking about her brother",
+    toolCallsJson: null,
+    toolCallId: null,
+    createdAt: "",
+    ...over,
+  };
+}
+
+function fixtureAction(onSelect: (text: string) => void): AgentMessageAction {
+  return {
+    labelKey: "copy",
+    icon: () => (
+      <svg data-testid="fixture-action-icon" />
+    ),
+    onSelect,
+    testId: "fixture-action",
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
+  it("renders the action row under an assistant bubble (desktop hover/focus reveal chrome)", () => {
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    const row = getByTestId("copilot-message-actions");
+    expect(row).toBeDefined();
+    // The reveal row clones the RP desktop container + the focus-within arm
+    // the owner quote settles (hover AND keyboard focus).
+    const reveal = row.firstElementChild!;
+    expect(reveal.className).toContain("opacity-0");
+    expect(reveal.className).toContain("group-hover:opacity-100");
+    expect(reveal.className).toContain("focus-within:opacity-100");
+    // Icon-only button with the label as its accessible name (the tooltip
+    // content is mocked to children — the aria-label carries the assertion).
+    const button = getByTestId("fixture-action");
+    expect(button.getAttribute("aria-label")).toBe("copy");
+    expect(button.className).toContain("px-[7px]");
+    expect(getByTestId("fixture-action-icon")).toBeDefined();
+  });
+
+  it("clicking the action forwards the message text", () => {
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    fireEvent.click(getByTestId("fixture-action"));
+    expect(seen).toEqual(["Consider asking about her brother"]);
+  });
+
+  it("renders no row for a user message even when actions are declared", () => {
+    const { queryByTestId, getByText } = render(
+      <AgentMessageBlock
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(getByText("What should I say?")).toBeDefined();
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("renders no row (byte-identical) when actions are absent or empty", () => {
+    const bare = render(<AgentMessageBlock message={assistantMsg()} />);
+    const empty = render(
+      <AgentMessageBlock message={assistantMsg()} messageActions={[]} />,
+    );
+    const userShaped = render(
+      <AgentMessageBlock
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(bare.queryByTestId("copilot-message-actions")).toBeNull();
+    expect(empty.container.innerHTML).toBe(bare.container.innerHTML);
+    expect(userShaped.queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("mobile renders an always-visible 44px button (no opacity gate)", () => {
+    mobileOverride = true;
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    const row = getByTestId("copilot-message-actions");
+    const reveal = row.firstElementChild!;
+    expect(reveal.className).not.toContain("opacity-0");
+    const button = getByTestId("fixture-action");
+    expect(button.className).toContain("h-11");
+    expect(button.className).toContain("w-11");
+    expect(button.getAttribute("aria-label")).toBe("copy");
+    fireEvent.click(button);
+    expect(seen).toEqual(["Consider asking about her brother"]);
+  });
+
+  it("the sidechat host's declared action renders and copies the reply into the RP draft", async () => {
+    const { getAgentHost } = await import("../../../lib/agent-host-registry.js");
+    const { SIDECHAT_AGENT_KIND } = await import("../../../api/agent-kind-served-modes.js");
+    const { useChatStore } = await import("../../../stores/chat-store.js");
+    const { useSidechatMobileStore } = await import("../../../stores/sidechat-mobile-store.js");
+    const host = getAgentHost(SIDECHAT_AGENT_KIND);
+    expect(host.messageActions).toHaveLength(1);
+    expect(host.messageActions![0]!.labelKey).toBe("sidechat_copy_to_composer");
+    expect(host.messageActions![0]!.testId).toBe("sidechat-copy-to-composer");
+
+    // Non-empty draft: the user is mid-typing — the reply lands on a new line.
+    useChatStore.setState({ draft: "Already typed" });
+    useSidechatMobileStore.setState({ tab: "sidechat" });
+    const { getByTestId } = render(
+      <AgentMessageBlock message={assistantMsg()} messageActions={host.messageActions} />,
+    );
+    fireEvent.click(getByTestId("sidechat-copy-to-composer"));
+    expect(useChatStore.getState().draft).toBe("Already typed\nConsider asking about her brother");
+    expect(useSidechatMobileStore.getState().tab).toBe("chat");
+    useChatStore.setState({ draft: "" });
+    useSidechatMobileStore.setState({ tab: "chat" });
   });
 });

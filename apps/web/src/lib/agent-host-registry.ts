@@ -314,6 +314,20 @@ export type { CopilotAskAnswerInput, CopilotStreamOpts } from "../api/experience
 export type AgentI18nKey = keyof Resources["en"];
 
 /**
+ * SC-16: one per-message action rendered under ASSISTANT bubbles only (user
+ *  bubbles never carry actions). The label key resolves through `useT` (the
+ *  tooltip + aria-label), the icon is an `Icons.*` entry, and the handler
+ *  receives the message text. The block renders the row only when the array
+ *  is present and non-empty — hosts that omit it render byte-identically.
+ */
+export interface AgentMessageAction {
+  labelKey: AgentI18nKey;
+  icon: ComponentType<{ className?: string }>;
+  onSelect: (text: string) => void;
+  testId: string;
+}
+
+/**
  * SC-0g: where a host's assistant-profile choice is written — the single
  * seam the shared profile modal branches on (no kind literal in the shell).
  * Script-owned hosts write `scripts.copilot_profile_id` (the modal's
@@ -393,6 +407,10 @@ export interface AgentHostDescriptor {
    *  unit (the first consumer is the sidechat kind, Wave 1 — SC-6); absent =
    *  the meter renders its fixed system/digest/history segments as today. */
   meterSegmentLabels?: Record<string, AgentI18nKey>;
+  /** SC-16: optional message actions under assistant bubbles (absent = no
+   *  row — both built-in hosts omit it, so their surfaces stay
+   *  byte-identical). */
+  messageActions?: AgentMessageAction[];
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;

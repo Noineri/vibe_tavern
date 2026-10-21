@@ -2645,6 +2645,7 @@
 	"sidechat_meter_discussion": "Discussion",
 	"sidechat_toggle_label": "Sidechat",
 	"sidechat_close_label": "Close sidechat",
+	"sidechat_copy_to_composer": "To RP input",
 	"copilot_review_model_editing": "AI is editing…",
 	"copilot_review_revert": "Undo changes",
 	"copilot_review_hunks_skipped": "Skipped {n} hunks: the text has changed",

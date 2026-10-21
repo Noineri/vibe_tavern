@@ -43,6 +43,9 @@ import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { getAgentHost } from "../../../lib/agent-host-registry.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useChatStore } from "../../../stores/chat-store.js";
+import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
+import { Icons } from "../../shared/icons.js";
 import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -486,6 +489,55 @@ describe("sidechat-host — default model binding (SC-13b)", () => {
     const { result } = renderHook(() => useAgentModelBinding(SIDECHAT_AGENT_KIND, CHAT_OWNER));
     await waitFor(() => expect(result.current.providerProfileId).toBe("p2"));
     expect(result.current.model).toBe("m2");
+  });
+});
+
+// ── Copy to composer ────────────────────────────────────────────────────────
+
+describe("sidechat-host — copy to composer (SC-16)", () => {
+  function copyAction() {
+    const host = getAgentHost(SIDECHAT_AGENT_KIND);
+    expect(host.messageActions).toHaveLength(1);
+    return host.messageActions![0]!;
+  }
+
+  it("declares the copy action (label key, the RP row's copy icon, test id)", () => {
+    const action = copyAction();
+    expect(action.labelKey).toBe("sidechat_copy_to_composer");
+    expect(action.icon).toBe(Icons.Copy);
+    expect(action.testId).toBe("sidechat-copy-to-composer");
+  });
+
+  it("empty draft → the reply text is set", () => {
+    useChatStore.setState({ draft: "" });
+    copyAction().onSelect("Consider asking about her brother");
+    expect(useChatStore.getState().draft).toBe("Consider asking about her brother");
+    useChatStore.setState({ draft: "" });
+  });
+
+  it("non-empty draft → the reply is appended on a new line", () => {
+    useChatStore.setState({ draft: "Already typed" });
+    copyAction().onSelect("Consider asking about her brother");
+    expect(useChatStore.getState().draft).toBe("Already typed\nConsider asking about her brother");
+    useChatStore.setState({ draft: "" });
+  });
+
+  it("sends nothing (no transport call, no turn state)", () => {
+    useChatStore.setState({ draft: "" });
+    copyAction().onSelect("Consider asking about her brother");
+    expect(fetchRouter.mock.calls).toEqual([]);
+    expect(useAgentTurnStore.getState().turnsByThread).toEqual({});
+    useChatStore.setState({ draft: "" });
+  });
+
+  it("switches the mobile tab back to Chat", () => {
+    useChatStore.setState({ draft: "" });
+    useSidechatMobileStore.setState({ tab: "sidechat" });
+    copyAction().onSelect("Consider asking about her brother");
+    expect(useSidechatMobileStore.getState().tab).toBe("chat");
+    expect(useChatStore.getState().draft).toBe("Consider asking about her brother");
+    useChatStore.setState({ draft: "" });
+    useSidechatMobileStore.setState({ tab: "chat" });
   });
 });
 
