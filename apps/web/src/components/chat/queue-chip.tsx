@@ -2,9 +2,7 @@ import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import type { GenerationBatchSummary } from "../../stores/generation-queue-store.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-
-const RING_RADIUS = 7;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+import { QueueProgressRing } from "./queue-progress-ring.js";
 
 function clampSegment(value: number, limit: number): number {
   return Math.min(Math.max(value, 0), limit);
@@ -18,8 +16,6 @@ export const QueueChip = forwardRef<HTMLButtonElement, {
   const total = Math.max(summary.total, 0);
   const done = clampSegment(summary.done, total);
   const failed = clampSegment(summary.failed, total - done);
-  const doneLength = total > 0 ? (done / total) * RING_CIRCUMFERENCE : 0;
-  const failedLength = total > 0 ? (failed / total) * RING_CIRCUMFERENCE : 0;
   const settled = summary.running === 0 && summary.pending === 0;
   const showsCheck = total > 0 && settled && summary.failed === 0;
   const failureText = t("queue_chip_failures", { count: summary.failed });
@@ -38,38 +34,7 @@ export const QueueChip = forwardRef<HTMLButtonElement, {
       )}
       aria-label={ariaLabel}
     >
-      <svg
-        aria-hidden="true"
-        data-testid="queue-chip-ring"
-        className={cn(mobile ? "h-5 w-5" : "h-4 w-4", summary.running > 0 && "animate-spin-slow")}
-        viewBox="0 0 18 18"
-      >
-        <circle className="stroke-border" cx="9" cy="9" fill="none" r={RING_RADIUS} strokeWidth="2.4" />
-        <circle
-          data-testid="queue-chip-done-arc"
-          className="stroke-accent"
-          cx="9"
-          cy="9"
-          fill="none"
-          r={RING_RADIUS}
-          strokeDasharray={`${doneLength} ${RING_CIRCUMFERENCE}`}
-          strokeLinecap="round"
-          strokeWidth="2.4"
-          transform="rotate(-90 9 9)"
-        />
-        <circle
-          data-testid="queue-chip-failed-arc"
-          className="stroke-danger-text"
-          cx="9"
-          cy="9"
-          fill="none"
-          r={RING_RADIUS}
-          strokeDasharray={`${failedLength} ${RING_CIRCUMFERENCE}`}
-          strokeDashoffset={-doneLength}
-          strokeLinecap="round"
-          strokeWidth="2.4"
-          transform="rotate(-90 9 9)"
-        />
+      <QueueProgressRing done={done} failed={failed} total={total} className={mobile ? "h-5 w-5" : "h-4 w-4"} running={summary.running > 0} testIdPrefix="queue-chip">
         {showsCheck && (
           <path
             data-testid="queue-chip-check"
@@ -81,7 +46,7 @@ export const QueueChip = forwardRef<HTMLButtonElement, {
             strokeWidth="1.8"
           />
         )}
-      </svg>
+      </QueueProgressRing>
       <span className="whitespace-nowrap">{t("queue_chip_progress", { done: summary.done, total: summary.total })}</span>
       {settled && summary.failed > 0 && <span data-testid="queue-chip-failures" className="whitespace-nowrap text-danger-text">{failureText}</span>}
     </button>

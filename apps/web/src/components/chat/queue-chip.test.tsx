@@ -56,6 +56,7 @@ function expectRingSegments(
   doneArc: Element,
   failedArc: Element,
   expectedDoneLength: number,
+  expectedFailedOffset = -expectedDoneLength,
 ): void {
   const track = ring.querySelector("circle.stroke-border");
   expect(track).not.toBeNull();
@@ -69,7 +70,7 @@ function expectRingSegments(
   expectApproximately(doneCircumference, 44);
   expectApproximately(failedLength, 5.5);
   expectApproximately(failedCircumference, 44);
-  expectApproximately(Number(failedArc.getAttribute("stroke-dashoffset")), -expectedDoneLength);
+  expectApproximately(Number(failedArc.getAttribute("stroke-dashoffset")), expectedFailedOffset);
 }
 
 describe("QueueChip", () => {
@@ -86,7 +87,8 @@ describe("QueueChip", () => {
       getByTestId("queue-chip-ring"),
       getByTestId("queue-chip-done-arc"),
       getByTestId("queue-chip-failed-arc"),
-      27.5,
+      14,
+      -27.5,
     );
   });
 

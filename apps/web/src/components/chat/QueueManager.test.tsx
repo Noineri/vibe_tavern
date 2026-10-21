@@ -148,7 +148,10 @@ describe("QueueManager QS-3 batch summary", () => {
       fireEvent.click(getByRole("button", { name: /Generation queue/ }));
     });
 
-    expect(getByText("More variants")).not.toBeNull();
+    const timelineHeader = getByText("More variants");
+    const popover = timelineHeader.parentElement?.parentElement;
+    expect(popover?.getAttribute("class")).toContain("w-80");
+    expect(popover?.getAttribute("data-side")).toBe("top");
   });
 
   test("hides when the batch target leaves message order", () => {
