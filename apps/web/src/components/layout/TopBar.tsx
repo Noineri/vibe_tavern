@@ -10,6 +10,11 @@ import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
+import { useSidechatOpen } from "../../stores/sidechat-open-store.js";
+import { selectSidechatServedChatModes } from "../../api/agent-kind-served-modes.js";
+import { selectSidechatOwner } from "../chat/sidechat/sidechat-host.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MediaMenu } from "../chat/MediaMenu.js";
@@ -78,6 +83,33 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   // --- Store actions ---
   const setMode = useNavigationStore((s) => s.setMode);
 
+  // ── Mobile sidechat entry (SC-16f) ────────────────────────────────────────
+  // The compact bar's sidechat icon button (the mobile entry — the edge
+  // handle is gone, it covered message text). Same gates as PlayMode's
+  // mobile branch: play mode, a served chat mode, a real owner, a chat.
+  const activeChat = useSnapshotStore((s) => s.activeChat);
+  const activeBranch = useSnapshotStore((s) => s.activeBranch);
+  const sidechatChatId = activeChat?.id ?? null;
+  const sidechatChatMode = activeChat?.mode ?? "rp";
+  const sidechatServed = selectSidechatServedChatModes(bootstrapData?.agentKindSettings).includes(sidechatChatMode);
+  const sidechatOwner = selectSidechatOwner(
+    sidechatChatId === null ? null : { id: sidechatChatId },
+    activeBranch === null ? null : { id: activeBranch.id },
+  );
+  const [sidechatOpen, setSidechatOpen] = useSidechatOpen(sidechatChatId);
+  const setSidechatTab = useSidechatMobileStore((s) => s.setTab);
+  const sidechatAvailable = mode === "play" && sidechatServed && sidechatOwner !== null && sidechatChatId !== null;
+  const toggleSidechat = () => {
+    if (sidechatOpen) {
+      // Close touches only the open flag — the mobile tab stays where it
+      // is (PlayMode's own close resets it).
+      setSidechatOpen(false);
+    } else {
+      setSidechatOpen(true);
+      setSidechatTab("sidechat");
+    }
+  };
+
   // ── Mobile: compact TopBar ──
   if (isMobile) {
     return (
@@ -99,7 +131,24 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
         </div>
         {characterId && <MediaMenu characterId={characterId} characterName={characterName} />}
         {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
-        <div className="cursor-pointer rounded-full bg-mode-switch-bg px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-mode-switch-text transition-colors duration-150 hover:bg-mode-switch-hover-bg hover:text-mode-switch-hover-text"
+        {sidechatAvailable && (
+          <CustomTooltip content={t("sidechat_toggle_label")}>
+            <button
+              type="button"
+              data-testid="topbar-sidechat-toggle"
+              aria-label={t("sidechat_toggle_label")}
+              aria-pressed={sidechatOpen}
+              onClick={toggleSidechat}
+              className={cn(
+                "flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[6px] transition-colors active:bg-s3 [&_svg]:h-[13px] [&_svg]:w-[13px]",
+                sidechatOpen ? "bg-accent-dim text-accent" : "text-t3",
+              )}
+            >
+              <Icons.sidechatDiscuss />
+            </button>
+          </CustomTooltip>
+        )}
+        <div className="shrink-0 cursor-pointer rounded-full bg-mode-switch-bg px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-mode-switch-text transition-colors duration-150 hover:bg-mode-switch-hover-bg hover:text-mode-switch-hover-text"
           onClick={() => setMode(mode === 'build' ? 'play' : 'build')}>
           {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
         </div>

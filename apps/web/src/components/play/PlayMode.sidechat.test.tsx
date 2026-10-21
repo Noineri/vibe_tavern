@@ -2,9 +2,12 @@
  * PlayMode mobile sidechat tabs (SIDECHAT_PLAN, Wave 4 / SC-15).
  *
  * Pins the unit's outcome on the mobile branch only:
- * - the right-edge handle opens the sidechat AND switches to «Sidechat»;
- * - the × on the «Sidechat» tab closes back to «Chat» (same persisted open
- *   key as the desktop panel);
+ * - opening through the shared store (the top-bar button's effect, pinned
+ *   in TopBar.test.tsx) shows the tabs with the Sidechat tab active;
+ * - the close control on the Sidechat tab closes back to Chat (same
+ *   persisted open key as the desktop panel);
+ * - no edge handle is rendered anymore (SC-16f removed it — the top-bar
+ *   button is the mobile entry now);
  * - both panes stay mounted across tab switches — the chat pane keeps its
  *   DOM identity and state (scroll survival's structural half; happy-dom
  *   has no layout, so scroll offsets themselves are unassertable here);
@@ -182,13 +185,12 @@ beforeEach(() => {
 
 // ── Handle → tabs → switch ──────────────────────────────────────────────────
 
-describe("PlayMode mobile sidechat — handle opens + switches (SC-15)", () => {
-  it("closed: the touch handle shows, no tabs, chat pane visible", () => {
+describe("PlayMode mobile sidechat — open shows tabs + Sidechat (SC-15/SC-16f)", () => {
+  it("closed: no edge handle, no tabs, chat pane visible", () => {
     const { getByTestId, queryByRole, queryByTestId } = render(<PlayMode />);
-    const handle = getByTestId("sidechat-toggle");
-    expect(handle.getAttribute("aria-label")).toBe("sidechat_toggle_label");
-    expect(handle.getAttribute("class")).toContain("h-11");
-    expect(handle.getAttribute("class")).toContain("w-11");
+    // SC-16f: the touch handle is gone — the top bar owns the mobile entry.
+    expect(queryByTestId("sidechat-toggle")).toBeNull();
+    expect(queryByTestId("sidechat-closed")).toBeNull();
     expect(queryByRole("tablist")).toBeNull();
     expect(queryByTestId("sidechat-shell-stub")).toBeNull();
     const chatPane = getByTestId("sidechat-mobile-pane-chat");
@@ -196,9 +198,13 @@ describe("PlayMode mobile sidechat — handle opens + switches (SC-15)", () => {
     expect(getByTestId("message-list")).toBeDefined();
   });
 
-  it("tapping the handle opens the sidechat AND activates the Sidechat tab", () => {
+  it("the top-bar entry (store open + Sidechat tab) shows the tabs with Sidechat active", () => {
     const { getByTestId, getByRole } = render(<PlayMode />);
-    fireEvent.click(getByTestId("sidechat-toggle"));
+    // The entry itself is pinned in TopBar.test.tsx — here its effect.
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+      useSidechatMobileStore.getState().setTab("sidechat");
+    });
 
     expect(getByRole("tablist")).toBeDefined();
     const chatTab = getByRole("tab", { name: "coauthor.tabs.chat" });
@@ -233,7 +239,10 @@ describe("PlayMode mobile sidechat — handle opens + switches (SC-15)", () => {
 
   it("tapping the Chat tab switches back while both panes stay mounted", () => {
     const { getByTestId, getByRole } = render(<PlayMode />);
-    fireEvent.click(getByTestId("sidechat-toggle"));
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+      useSidechatMobileStore.getState().setTab("sidechat");
+    });
 
     fireEvent.click(getByRole("tab", { name: "coauthor.tabs.chat" }));
     expect(getByRole("tab", { name: "coauthor.tabs.chat" }).getAttribute("aria-selected")).toBe(
@@ -258,7 +267,10 @@ describe("PlayMode mobile sidechat — handle opens + switches (SC-15)", () => {
 describe("PlayMode mobile sidechat — × closes back to Chat (SC-15)", () => {
   it("× hides the tabs and returns to Chat", () => {
     const { getByTestId, getByRole, queryByRole, queryByTestId } = render(<PlayMode />);
-    fireEvent.click(getByTestId("sidechat-toggle"));
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+      useSidechatMobileStore.getState().setTab("sidechat");
+    });
     expect(getByRole("tablist")).toBeDefined();
 
     fireEvent.click(getByTestId("agent-shell-tab-close"));
@@ -267,9 +279,13 @@ describe("PlayMode mobile sidechat — × closes back to Chat (SC-15)", () => {
     expect(getByTestId("sidechat-mobile-pane-chat").getAttribute("class")).not.toContain("hidden");
     expect(getByTestId("message-list")).toBeDefined();
     expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("false");
-    // The shared tab state is back on Chat — reopening lands on Sidechat again.
+    // The shared tab state is back on Chat — reopening through the entry
+    // (store + tab, like the top-bar button) lands on Sidechat again.
     expect(useSidechatMobileStore.getState().tab).toBe("chat");
-    fireEvent.click(getByTestId("sidechat-toggle"));
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+      useSidechatMobileStore.getState().setTab("sidechat");
+    });
     expect(getByRole("tab", { name: "sidechat_toggle_label" }).getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -281,7 +297,10 @@ describe("PlayMode mobile sidechat — × closes back to Chat (SC-15)", () => {
 describe("PlayMode mobile sidechat — pane state survives tab switches (SC-15)", () => {
   it("the chat pane keeps its DOM identity + probe value across switches", () => {
     const { getByTestId, getByRole } = render(<PlayMode />);
-    fireEvent.click(getByTestId("sidechat-toggle"));
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+      useSidechatMobileStore.getState().setTab("sidechat");
+    });
 
     const probe = getByTestId("chat-probe-input") as HTMLInputElement;
     fireEvent.change(probe, { target: { value: "draft in progress" } });

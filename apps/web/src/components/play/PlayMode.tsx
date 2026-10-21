@@ -26,7 +26,6 @@ import {
 // pane below resolves its shell descriptor by kind at render time, exactly
 // like SC-14's desktop panel does.
 import { selectSidechatOwner } from "../chat/sidechat/sidechat-host.js";
-import { SidechatHandle } from "../chat/sidechat/SidechatHandle.js";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 
 export function PlayMode() {
@@ -66,8 +65,9 @@ export function PlayMode() {
  * The RP chat surface on mobile with the sidechat open-capable (SIDECHAT_PLAN,
  * Wave 4 / SC-15) — the mobile twin of SC-14's desktop panel.
  *
- * - Closed: the chat pane plus the touch-sized right-edge handle; tapping it
- *   opens the sidechat AND switches the mobile tab to «Sidechat».
+ * - Closed: the chat pane alone; the compact top bar's sidechat button opens
+ *   the sidechat AND switches the mobile tab to Sidechat (SC-16f removed the
+ *   right-edge handle — it covered message text edge to edge).
  * - Open: a `[Chat][Sidechat]` tab row (built from `AgentShellTabButton`,
  *   like the co-author `[Chat][Doc]` row — `CoauthorMode.tsx:121-130`) sits
  *   directly under the top bar. Both panes stay MOUNTED across tab switches;
@@ -88,10 +88,6 @@ function PlayModeMobileSidechat({
   const { t } = useT();
   const tab = useSidechatMobileStore((s) => s.tab);
   const setTab = useSidechatMobileStore((s) => s.setTab);
-  const openSidechat = () => {
-    setOpen(true);
-    setTab("sidechat");
-  };
   const closeSidechat = () => {
     setOpen(false);
     setTab("chat");
@@ -137,9 +133,6 @@ function PlayModeMobileSidechat({
           </div>
         )}
       </div>
-      {!open && (
-        <SidechatHandle variant="touch" label={t("sidechat_toggle_label")} onOpen={openSidechat} />
-      )}
     </div>
   );
 }
