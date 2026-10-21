@@ -16,7 +16,7 @@ useDomEnv();
 
 const { act, fireEvent, render } = await import("@testing-library/react");
 const { QueueTimeline } = await import("./queue-timeline.js");
-const { LocaleProvider } = await import("../../i18n/context.js");
+const { LocaleProvider, useT } = await import("../../i18n/context.js");
 const { i18next, initI18n } = await import("../../i18n/i18n.js");
 
 initI18n("en");
@@ -105,8 +105,16 @@ function interpolate(resource: string, count: number): string {
   return resource.replace("{count}", String(count));
 }
 
-function translateFold(count: number): string {
-  return i18next.t("queue_timeline_folded", { count } as unknown as undefined);
+function FoldLabel({ count }: { count: number }) {
+  const { t } = useT();
+  return <span data-testid="queue-timeline-fold-label">{t("queue_timeline_folded", { count })}</span>;
+}
+
+function translateFold(count: number, locale: "en" | "ru"): string {
+  const view = render(<LocaleProvider initialLocale={locale}><FoldLabel count={count} /></LocaleProvider>);
+  const label = view.getByTestId("queue-timeline-fold-label").textContent ?? "";
+  view.unmount();
+  return label;
 }
 
 describe("QueueTimeline desktop", () => {
@@ -175,13 +183,16 @@ describe("QueueTimeline desktop", () => {
     expect(accent?.getAttribute("data-displayed-node-count")).toBe("7");
     expect(view.getByRole("button", { name: "Hide finished variants" }).getAttribute("aria-expanded")).toBe("true");
 
-    expect(translateFold(1)).toBe(interpolate(en.queue_timeline_folded_one, 1));
-    expect(translateFold(2)).toBe(interpolate(en.queue_timeline_folded_other, 2));
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Hide finished variants" })); });
+    expect(view.getByRole("button", { name: "Show finished variants" }).getAttribute("aria-expanded")).toBe("false");
+
+    expect(translateFold(1, "en")).toBe(interpolate(en.queue_timeline_folded_one, 1));
+    expect(translateFold(2, "en")).toBe(interpolate(en.queue_timeline_folded_other, 2));
     await act(async () => { await i18next.changeLanguage("ru"); });
-    expect(translateFold(1)).toBe(interpolate(ru.queue_timeline_folded_one, 1));
-    expect(translateFold(2)).toBe(interpolate(ru.queue_timeline_folded_few, 2));
-    expect(translateFold(5)).toBe(interpolate(ru.queue_timeline_folded_many, 5));
-    expect(translateFold(1.5)).toBe(interpolate(ru.queue_timeline_folded_other, 1.5));
+    expect(translateFold(1, "ru")).toBe(interpolate(ru.queue_timeline_folded_one, 1));
+    expect(translateFold(2, "ru")).toBe(interpolate(ru.queue_timeline_folded_few, 2));
+    expect(translateFold(5, "ru")).toBe(interpolate(ru.queue_timeline_folded_many, 5));
+    expect(translateFold(1.5, "ru")).toBe(interpolate(ru.queue_timeline_folded_other, 1.5));
   });
 
   test("keeps failure anchored before running, discloses its exact error, and cancels pending, queue-running, and plain running work", async () => {
@@ -276,6 +287,9 @@ describe("QueueTimeline desktop", () => {
     expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:nth-child(2)")?.getAttribute("class")).toBe("shrink-0 whitespace-nowrap");
     expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:last-child")?.getAttribute("class")).toContain("min-w-0 truncate text-t3");
     expect(view.getByTestId("queue-timeline-running-ring").getAttribute("class")).toBe("h-4 w-4 animate-spin-slow");
+    const dasharray = view.getByTestId("queue-timeline-running-done-arc").getAttribute("stroke-dasharray")?.split(" ").map(Number);
+    expect(dasharray?.[0]).toBe(14);
+    expect(Math.abs((dasharray?.[1] ?? 0) - 44)).toBeLessThanOrEqual(0.1);
     expect(view.getAllByRole("button", { name: "Cancel generation" })[0]?.getAttribute("class")).toContain("h-6 w-6");
     await act(async () => { fireEvent.click(view.getByRole("button", { name: "Show error details" })); });
     expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("px-3 pb-2 pl-[38px]");

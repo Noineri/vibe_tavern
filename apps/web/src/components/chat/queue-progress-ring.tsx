@@ -15,11 +15,12 @@ type QueueProgressRingProps = {
   total?: number;
   className: string;
   running?: boolean;
+  indeterminateArc?: boolean;
   testIdPrefix: "queue-chip" | "queue-timeline-running";
 };
 
 /** Shared queue indicator geometry; the chip and desktop running node stay in the same SVG family. */
-export function QueueProgressRing({ children, done, failed, total, className, running = false, testIdPrefix }: QueueProgressRingProps): ReactNode {
+export function QueueProgressRing({ children, done, failed, total, className, running = false, indeterminateArc = false, testIdPrefix }: QueueProgressRingProps): ReactNode {
   const isRunning = running;
   const safeTotal = Math.max(total ?? 0, 0);
   const safeDone = clampSegment(done ?? 0, safeTotal);
@@ -37,7 +38,7 @@ export function QueueProgressRing({ children, done, failed, total, className, ru
         cy="9"
         fill="none"
         r={RING_RADIUS}
-        strokeDasharray={isRunning ? `14 ${RING_CIRCUMFERENCE}` : `${doneLength} ${RING_CIRCUMFERENCE}`}
+        strokeDasharray={indeterminateArc ? `14 ${RING_CIRCUMFERENCE}` : `${doneLength} ${RING_CIRCUMFERENCE}`}
         strokeLinecap="round"
         strokeWidth="2.4"
         transform="rotate(-90 9 9)"

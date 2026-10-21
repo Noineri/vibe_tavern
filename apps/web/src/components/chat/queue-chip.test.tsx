@@ -87,7 +87,7 @@ describe("QueueChip", () => {
       getByTestId("queue-chip-ring"),
       getByTestId("queue-chip-done-arc"),
       getByTestId("queue-chip-failed-arc"),
-      14,
+       27.5,
       -27.5,
     );
   });
