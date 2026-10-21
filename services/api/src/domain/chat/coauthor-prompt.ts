@@ -30,6 +30,7 @@ import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
 import { estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
@@ -46,13 +47,6 @@ import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 type CoauthorHistoryMessage =
   | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
   | { role: "tool"; content: ToolResultPart[] };
-
-/** Narrow opaque JSON read from tool_calls_json back to AI SDK options. */
-function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as ToolCallPart["providerOptions"]
-    : undefined;
-}
 
 /**
  * Render the 'Available skills' catalog section (Wave 2 / CTX-S4). Metadata

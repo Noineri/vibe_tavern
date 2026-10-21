@@ -25,6 +25,7 @@ import { buildContextMetrics, type AgentTokenAccounting } from "./agent-context-
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { resolveProviderFetchForProfile } from "../providers/provider-fetch-factory.js";
 import { createMappedStream, mapFinish } from "../../infrastructure/ai/stream-helpers.js";
+import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import type { ProviderStreamChunk } from "../../infrastructure/ai/provider-execution-types.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
@@ -35,13 +36,15 @@ import { resolveDigestBoundary, type AgentHistoryMessage } from "./agent-prompt.
 // ─── Persisted tool payload shapes (store round-trip) ────────────────────────
 
 /** Persisted tool-call row, serialized into `tool_calls_json` on an assistant
- *  message. `providerOptions` are intentionally omitted — they are not needed
- *  for cross-turn history (the SDK re-derives them from the live model). */
+ *  message. `providerOptions` carries the provider's replay metadata (Gemini 3
+ *  `thoughtSignature`, aggregator per-call metadata) that a resumed turn must
+ *  send back with the call — absent when the provider sent none. */
 export interface AgentPersistedToolCall {
   type: "tool-call";
   toolCallId: string;
   toolName: string;
   input: unknown;
+  providerOptions?: ToolCallPart["providerOptions"];
 }
 
 /** Persisted tool-result payload, serialized into the `content` of a tool
@@ -351,7 +354,23 @@ export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
     if (m.toolCallsJson) {
       try {
         const parsed = JSON.parse(m.toolCallsJson) as unknown;
-        if (Array.isArray(parsed)) msg.toolCalls = parsed as ToolCallPart[];
+        if (Array.isArray(parsed)) {
+          // Narrow the stored replay metadata through the shared helper (the
+          // same one the Co-Author converter uses): a valid object passes
+          // through, anything else (absent field, primitive, array) drops to
+          // absent — never an empty object on the replayed part.
+          msg.toolCalls = parsed.map((call): ToolCallPart => {
+            const c = call as AgentPersistedToolCall;
+            const providerOptions = asToolProviderOptions(c.providerOptions);
+            return {
+              type: "tool-call",
+              toolCallId: c.toolCallId,
+              toolName: c.toolName,
+              input: c.input,
+              ...(providerOptions ? { providerOptions } : {}),
+            };
+          });
+        }
       } catch {
         // Invalid JSON — skip tool calls for this message.
       }
@@ -397,7 +416,13 @@ function toModelMessages(
  *  text row, losing the interleaving). */
 type AgentTurnSegment =
   | { kind: "text"; text: string }
-  | { kind: "toolCall"; toolCallId: string; toolName: string; args: Record<string, unknown> }
+  | {
+      kind: "toolCall";
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      providerOptions?: ToolCallPart["providerOptions"];
+    }
   | { kind: "toolResult"; toolCallId: string; toolName: string; output: unknown; isError: boolean };
 
 /** Persist the assistant half of the turn as chronologically ordered rows: a
@@ -432,6 +457,7 @@ async function persistTurn(
         toolCallId: seg.toolCallId,
         toolName: seg.toolName,
         input: seg.args,
+        ...(seg.providerOptions ? { providerOptions: seg.providerOptions } : {}),
       });
       continue;
     }
@@ -658,11 +684,16 @@ export async function* streamAgentTurn<
         reasoningAccumulator += chunk.textDelta;
         yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
       } else if (chunk.type === "tool-call") {
+        // Replay metadata (Gemini 3 thoughtSignature, aggregator per-call
+        // metadata) rides `chunk.providerOptions` — carried onto the segment
+        // when present; absent stays absent (never an empty object), so a
+        // resumed turn can send the call back signed.
         segments.push({
           kind: "toolCall",
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: chunk.args,
+          ...(chunk.providerOptions ? { providerOptions: chunk.providerOptions } : {}),
         });
         debug("tool-call", { threadId: request.threadId, toolCallId: chunk.toolCallId, toolName: chunk.toolName });
         yield {

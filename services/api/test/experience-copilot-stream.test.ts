@@ -1330,6 +1330,241 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Provider replay metadata on persisted tool calls (Gemini 3 thoughtSignature)
+//
+// Gemini 3 requires every replayed function call to carry its thoughtSignature
+// (through aggregators the signature rides the same per-call provider
+// metadata). The loop must persist `chunk.providerOptions` onto the stored
+// call and replay it inside the assistant content's tool-call part — a
+// resumed `ask_user` turn replays the question's call, unsigned = refused.
+// Known limit: a question stored BEFORE this fix has no signature to restore.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — provider replay metadata on tool calls", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  /** fullStream tool-call part carrying `providerMetadata` — what the SDK
+   *  emits for Gemini 3 (the thoughtSignature rides the call) and what
+   *  createMappedStream renames to the chunk's `providerOptions`. */
+  const toolCallWithSignature = (toolCallId: string, toolName: string, args: Record<string, unknown>) =>
+    ({
+      type: "tool-call",
+      toolCallId,
+      toolName,
+      input: args,
+      providerMetadata: { google: { thoughtSignature: `sig_${toolCallId}` } },
+    });
+
+  /** Flatten captured modelMessages into every assistant tool-call part. */
+  function assistantToolCallParts(modelMessages: Array<{ role: string; content: unknown }>): Array<Record<string, unknown>> {
+    return modelMessages
+      .flatMap((m) =>
+        m.role === "assistant" && Array.isArray(m.content) ? (m.content as Array<Record<string, unknown>>) : [])
+      .filter((p) => p.type === "tool-call");
+  }
+
+  it("persists a tool call's providerOptions into tool_calls_json (the chunk's metadata is not dropped)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCallWithSignature("tc_sig_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_sig_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "help me", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const row = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson);
+    expect(row).toBeDefined();
+    expect(JSON.parse(row!.toolCallsJson!)).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "tc_sig_1",
+        toolName: "suggest_visual_binding",
+        input: { reason: "dice roller" },
+        providerOptions: { google: { thoughtSignature: "sig_tc_sig_1" } },
+      },
+    ]);
+  });
+
+  it("persists byte-identical tool_calls_json when the provider sends no metadata (no empty providerOptions)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCall("tc_plain_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_plain_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "help me", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const row = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson);
+    expect(row).toBeDefined();
+    // String-identity pin (not toEqual on parsed JSON): the serialized row is
+    // byte-identical to a pre-fix row — no providerOptions key at all.
+    expect(row!.toolCallsJson).toBe(
+      JSON.stringify([
+        { type: "tool-call", toolCallId: "tc_plain_1", toolName: "suggest_visual_binding", input: { reason: "dice roller" } },
+      ]),
+    );
+  });
+
+  it("round-trips: the NEXT turn's model window replays the call with its providerOptions inside the assistant content", async () => {
+    const store = createFakeStore(makeThread());
+    // Turn 1: the model calls a tool whose call carries replay metadata.
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCallWithSignature("tc_rt_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_rt_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "first", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Turn 2: capture the model window streamed to the provider.
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "next", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const part = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_rt_1");
+    expect(part).toEqual({
+      type: "tool-call",
+      toolCallId: "tc_rt_1",
+      toolName: "suggest_visual_binding",
+      input: { reason: "dice roller" },
+      providerOptions: { google: { thoughtSignature: "sig_tc_rt_1" } },
+    });
+  });
+
+  it("an ask_user resume replays the question's call WITH its replay metadata (Gemini 3: unsigned = refused)", async () => {
+    const store = createFakeStore(makeThread());
+    // Question turn: ends on the ask_user call (stopWhen), which carried the
+    // signature in its provider metadata.
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          textDelta("One thing first:"),
+          toolCallWithSignature("tc_ask_sig", "ask_user", { question: "Blue or green?" }),
+          toolResult("tc_ask_sig", "ask_user", { status: "awaiting_answer", question: "Blue or green?" }),
+        ],
+      });
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The persisted question turn kept the metadata on the ask call.
+    const askRow = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson?.includes("ask_user"));
+    expect(JSON.parse(askRow!.toolCallsJson!)).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "tc_ask_sig",
+        toolName: "ask_user",
+        input: { question: "Blue or green?" },
+        providerOptions: { google: { thoughtSignature: "sig_tc_ask_sig" } },
+      },
+    ]);
+
+    // The answer resumes from the persisted history (no new user row) — the
+    // replayed ask call must still carry its signature.
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("Blue it is.")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_ask_sig", text: "blue" }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const askPart = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_ask_sig");
+    expect(askPart).toBeDefined();
+    expect(askPart!.providerOptions).toEqual({ google: { thoughtSignature: "sig_tc_ask_sig" } });
+  });
+
+  it("an OLD row without providerOptions replays exactly as before — no key, never an empty object", async () => {
+    const store = createFakeStore(makeThread());
+    // Pre-fix shape: a question turn stored BEFORE providerOptions existed —
+    // nothing can restore its lost signature; the replay must simply match
+    // the old behavior (the part carries no providerOptions at all).
+    store.messages.push(
+      {
+        id: "msg_old_q",
+        threadId: "thread_1",
+        role: "assistant",
+        content: "One question first:",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "tc_ask_old", toolName: "ask_user", input: { question: "Blue or green?" } },
+        ]),
+        toolCallId: null,
+        createdAt: "2025-01-01T00:00:00.000Z",
+      },
+      {
+        id: "msg_old_r",
+        threadId: "thread_1",
+        role: "tool",
+        content: JSON.stringify({ toolName: "ask_user", output: { status: "awaiting_answer", question: "Blue or green?" } }),
+        toolCallsJson: null,
+        toolCallId: "tc_ask_old",
+        createdAt: "2025-01-01T00:00:01.000Z",
+      },
+    );
+
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("Blue it is.")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_ask_old", text: "blue" }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const part = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_ask_old");
+    expect(part).toEqual({
+      type: "tool-call",
+      toolCallId: "tc_ask_old",
+      toolName: "ask_user",
+      input: { question: "Blue or green?" },
+    });
+    expect("providerOptions" in part!).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PM-2/PM-3: agent-plan wiring + durable prompt context
 // ═══════════════════════════════════════════════════════════════════════════
 
