@@ -392,6 +392,31 @@ describe("QueueTimeline mobile", () => {
     expect(Array.from(expandedRows).map((row) => row.querySelectorAll("i.bg-accent").length)).toEqual([2, 2, 2, 2, 2, 1, 0, 0]);
   });
 
+  test("continues the mobile accent through an expanded failure before a later finished variant", async () => {
+    setMessage([0]);
+    startBatch([0]);
+    addRecord("failed", "provider/model-failed", "A deliberately long provider error detail that wraps across the disclosure height");
+    setMessage([0, 1]);
+    const view = renderMobileTimeline();
+
+    expect(rowLabels(view.container)).toEqual(["Variant 1model-0 · Preset 0", "!Errormodel-failed · Scenario", "Variant 2model-1 · Preset 1"]);
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Show error details" })); });
+    const disclosure = view.container.querySelector<HTMLElement>("[data-queue-timeline-error-disclosure]");
+    const accent = disclosure?.querySelector<HTMLElement>("[data-queue-timeline-error-accent]");
+    expect(accent?.getAttribute("class")).toBe("absolute inset-y-0 left-[25px] z-0 w-0.5 bg-accent");
+  });
+
+  test("keeps an expanded mobile failure after the last finished variant neutral", async () => {
+    setMessage([0]);
+    startBatch([0]);
+    addRecord("failed", "provider/model-failed", "A deliberately long provider error detail that wraps across the disclosure height");
+    const view = renderMobileTimeline();
+
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Show error details" })); });
+    const disclosure = view.container.querySelector<HTMLElement>("[data-queue-timeline-error-disclosure]");
+    expect(disclosure?.querySelector("[data-queue-timeline-error-accent]")).toBeNull();
+  });
+
   test("renders Russian phone copy with the mockup text rungs and no authored truncation", async () => {
     setMessage([0, 1, 2, 3, 4]);
     startBatch([0, 1, 2, 3]);
