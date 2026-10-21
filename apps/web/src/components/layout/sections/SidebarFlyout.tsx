@@ -42,6 +42,7 @@ import { useT } from "../../../i18n/context.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
 import { SidebarBranchRename } from "./SidebarBranchRename.js";
+import { openDeleteBranchConfirm } from "../../../lib/branch-sidechat-confirm.js";
 
 /** Collapsed sidebar strip right edge — the former `fixed left-[54px]` value. */
 const COLLAPSED_STRIP_RIGHT_X = 54;
@@ -290,10 +291,13 @@ export function SidebarFlyout({
                                   onClick={(e) => {
                                     if (!canAct) return;
                                     e.stopPropagation();
-                                    setConfirmDestroy({
-                                      title: t("sidebar_delete_branch"),
-                                      body: t("sidebar_delete_branch_body"),
-                                      confirmLabel: t("sidebar_delete_branch"),
+                                    // SC-21: same shared helper as RichChatRow — the summary is
+                                    // fetched when the confirm opens; on failure it opens plain.
+                                    void openDeleteBranchConfirm({
+                                      t,
+                                      chatId: activeChatId,
+                                      branchId: activeBranchId,
+                                      setConfirmDestroy,
                                       onConfirm: () => void chat.handleDeleteActiveBranch(),
                                     });
                                   }}

@@ -37,6 +37,7 @@ import type { CharacterControllerActions } from "../../../hooks/use-character-co
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import { SidebarBranchRename } from "./SidebarBranchRename.js";
 import { SidebarChatRename } from "./SidebarChatRename.js";
+import { openDeleteBranchConfirm } from "../../../lib/branch-sidechat-confirm.js";
 
 export interface RichChatRowProps {
   chatItem: ChatListItem;
@@ -258,10 +259,15 @@ export function RichChatRow({
                     onClick={(event) => {
                       if (!canAct) return;
                       event.stopPropagation();
-                      setConfirmDestroy({
-                        title: t("sidebar_delete_branch"),
-                        body: t("sidebar_delete_branch_body"),
-                        confirmLabel: t("sidebar_delete_branch"),
+                      // SC-21: the summary is fetched when the confirm opens;
+                      // on any failure the confirm opens without the append.
+                      // chatItem is the ACTIVE chat here (this popover renders
+                      // only when isActive), so its id names the chat being deleted from.
+                      void openDeleteBranchConfirm({
+                        t,
+                        chatId: chatItem.id,
+                        branchId: activeBranchId,
+                        setConfirmDestroy,
                         onConfirm: () => void chat.handleDeleteActiveBranch(),
                       });
                     }}

@@ -16,14 +16,18 @@
  * chat confirm) are NOT unit-tested here; they are covered by the slice
  * typecheck gate + the end-of-slice live visual check.
  */
-import { describe, it, expect, mock } from "bun:test";
+import { afterAll, beforeEach, describe, it, expect, mock } from "bun:test";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render, fireEvent, waitFor } = await import("@testing-library/react");
+
+// SC-21: the delete-branch confirm now fetches the sidechat summary when it
+// opens (best-effort — a failure opens today's confirm). Patched fetch is
+// restored before every test and after the file (R3).
 
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
@@ -44,6 +48,32 @@ import type { CharacterControllerActions } from "../../../hooks/use-character-co
 import type { ChatBranch, ChatBranchId } from "@vibe-tavern/domain";
 
 const { RichChatRow } = await import("./RichChatRow.js");
+
+const originalFetch = globalThis.fetch;
+
+type FetchImplementation = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => ReturnType<typeof fetch>;
+
+function respondSummary(status: number, body: unknown): void {
+  globalThis.fetch = Object.assign(
+    mock<FetchImplementation>(async () => {
+      return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    }),
+    { preconnect: originalFetch.preconnect },
+  );
+}
+
+beforeEach(() => {
+  // Default: no sidechat sessions — keeps the pre-SC-21 delete test on
+  // today's body; the SC-21 cases below re-patch per test.
+  respondSummary(200, { hasSessions: false, count: 0 });
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const chatItem = {
   id: "chat-1",
@@ -178,14 +208,37 @@ describe("RichChatRow", () => {
     expect(delBtn.className).toContain("cursor-not-allowed");
   });
 
-  it("delete-branch fires setConfirmDestroy when enabled (non-root active branch, >1 branch)", () => {
+  it("delete-branch fires setConfirmDestroy when enabled (non-root active branch, >1 branch)", async () => {
     const { container, setConfirmDestroy } = renderRow({ activeBranchId: "br-2", branches: TWO_BRANCHES });
     fireEvent.click(branchChip(container));
     const delBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("sidebar_delete_branch_short")) as HTMLElement;
     expect(delBtn.getAttribute("aria-disabled")).toBe("false");
     fireEvent.click(delBtn);
-    expect(setConfirmDestroy).toHaveBeenCalledTimes(1);
+    // SC-21: the confirm opens after the best-effort summary fetch.
+    await waitFor(() => expect(setConfirmDestroy).toHaveBeenCalledTimes(1));
     expect(setConfirmDestroy.mock.calls[0][0]).toMatchObject({ title: "sidebar_delete_branch", confirmLabel: "sidebar_delete_branch" });
+  });
+
+  it("SC-21: delete-branch confirm appends the sidechat warning when the branch has sessions", async () => {
+    respondSummary(200, { hasSessions: true, count: 2 });
+    const { container, setConfirmDestroy } = renderRow({ activeBranchId: "br-2", branches: TWO_BRANCHES });
+    fireEvent.click(branchChip(container));
+    const delBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("sidebar_delete_branch_short")) as HTMLElement;
+    fireEvent.click(delBtn);
+    await waitFor(() => expect(setConfirmDestroy).toHaveBeenCalledTimes(1));
+    expect(setConfirmDestroy.mock.calls[0][0].body).toBe(
+      "sidebar_delete_branch_body sidebar_delete_branch_sidechat_warning",
+    );
+  });
+
+  it("SC-21: delete-branch confirm keeps today's body when the branch has no sessions", async () => {
+    respondSummary(200, { hasSessions: false, count: 0 });
+    const { container, setConfirmDestroy } = renderRow({ activeBranchId: "br-2", branches: TWO_BRANCHES });
+    fireEvent.click(branchChip(container));
+    const delBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("sidebar_delete_branch_short")) as HTMLElement;
+    fireEvent.click(delBtn);
+    await waitFor(() => expect(setConfirmDestroy).toHaveBeenCalledTimes(1));
+    expect(setConfirmDestroy.mock.calls[0][0].body).toBe("sidebar_delete_branch_body");
   });
 
   it("an outside mousedown closes the open branch popover", () => {

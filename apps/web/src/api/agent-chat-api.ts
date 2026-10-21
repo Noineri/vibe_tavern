@@ -16,7 +16,7 @@
  */
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import type { AgentThreadEventWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type { AgentBranchForkSidechatResult, AgentBranchSidechatSummary, AgentThreadEventWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 /** The single active thread for a (chat, branch, kind) triple, or null when none exists. */
 export async function getAgentChatActive(
@@ -65,6 +65,44 @@ export async function startAgentChatSession(
   const response = await client.api.agent.chats[":chatId"].branches[":branchId"][":kind"].session.$post({
     param: { chatId, branchId, kind: agentKind },
     json: title ? { title } : {},
+  });
+  return unwrapRpc(response);
+}
+
+/**
+ * Branch-sidechat fork pair (SC-21) — the chat-owner twin of the SC-0b
+ * lifecycle fns above, against the SC-20 routes:
+ *
+ *   GET  /api/agent/chats/:chatId/branches/:branchId/sidechat-summary
+ *   POST /api/agent/chats/:chatId/branches/:branchId/fork-sidechat  { targetBranchId }
+ *
+ * The summary feeds the fork/delete confirms (does this branch own ACTIVE
+ * chat-owned sidechat sessions?). The fork copies the source branch's
+ * (`:branchId`) active threads onto the target — the target must be a CHILD
+ * of the source (its `parent_branch_id`), else the typed 400
+ * `target_branch_not_child_of_source` surfaces through `unwrapRpc`.
+ */
+
+/** Whether the branch owns any ACTIVE (non-archived) chat-owned sidechat sessions. */
+export async function getBranchSidechatSummary(
+  chatId: string,
+  branchId: string,
+): Promise<AgentBranchSidechatSummary> {
+  const response = await client.api.agent.chats[":chatId"].branches[":branchId"]["sidechat-summary"].$get({
+    param: { chatId, branchId },
+  });
+  return unwrapRpc(response);
+}
+
+/** Copy the source branch's active sidechat threads onto the target branch (its child). */
+export async function forkBranchSidechat(
+  chatId: string,
+  sourceBranchId: string,
+  targetBranchId: string,
+): Promise<AgentBranchForkSidechatResult> {
+  const response = await client.api.agent.chats[":chatId"].branches[":branchId"]["fork-sidechat"].$post({
+    param: { chatId, branchId: sourceBranchId },
+    json: { targetBranchId },
   });
   return unwrapRpc(response);
 }

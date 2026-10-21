@@ -5,6 +5,7 @@ import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt,
 import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import { activateBranch, createChat, deleteBranch, renameBranch, deleteChat, clearChat, deleteChatMessage, deleteMessageVariant, editChatMessage, fetchChat, forkBranch, generateReply, generateChatSummary, listChatSummaries, reorderChatSummaries, createChatSummary, updateChatSummary, deleteChatSummary, updateMemorySettings, updateInsightsConfig, generateObjectiveTasks, checkObjectiveCompletion, addObjectiveTask, updateObjectiveTask, reorderObjectiveTasks, deleteObjectiveTask, setObjectiveDescription, setObjectiveMode, updateObjectiveLongTermGoal, addObjectiveShortTermGoal, updateObjectiveShortTermGoal, deleteObjectiveShortTermGoal, selectObjectiveShortTermGoal, updateObjectiveConfig, previewScene, generateScene, editScene, deleteScene, cancelScene, getSceneStatus, startSceneBackfill, getSceneBackfillStatus, cancelSceneBackfill, retrySceneBackfill, saveChatSummary, summarizeChat, regenerateChatMessage, continueChatMessage, continueChatMessageStream, renameChat, setGreetingIndex, setCoauthorContextLinks, listCoauthorModules, setCoauthorModule, createCoauthorModule, updateCoauthorModule, deleteCoauthorModule, selectMessageVariant, sendChatMessage, setChatPersona } from "../../api/chat-api.js";
 import type { AppSnapshot } from "../../api/types.js";
+import { forkBranchSidechat } from "../../api/agent-chat-api.js";
 import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../api/types.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useMessageAiEditorStore } from "../message-ai-editor-store.js";
@@ -369,14 +370,41 @@ function forkRequestKey(chatId: ChatId, fromMessageId?: string): string {
   return `${chatId}::${fromMessageId ?? "head"}`;
 }
 
-export async function forkBranchAction(chatId: ChatId, fromMessageId?: string): Promise<void> {
+/** Options for {@link forkBranchAction}. */
+export interface ForkBranchOptions {
+  /**
+   * Copy the source branch's ACTIVE sidechat sessions into the new branch
+   * after the fork (SC-21). Runs INSIDE the deduped fork request, so two
+   * rapid fork clicks still fork once and copy once; the copy is
+   * best-effort — a failed POST toasts and the fork itself stands.
+   */
+  copySidechat?: boolean;
+}
+
+export async function forkBranchAction(chatId: ChatId, fromMessageId?: string, opts?: ForkBranchOptions): Promise<void> {
   const key = forkRequestKey(chatId, fromMessageId);
   const pending = pendingForks.get(key);
   if (pending) return pending;
 
   const request = (async () => {
+    // The copy source is whatever branch is active when the fork executes.
+    // The fork makes the new branch a child of exactly that branch, so the
+    // fork-sidechat child-of-source contract holds by construction.
+    const sourceBranchId = opts?.copySidechat ? useSnapshotStore.getState().activeBranch?.id ?? null : null;
     const snapshot = await forkBranch(chatId, fromMessageId);
     syncSnapshot(snapshot);
+    if (opts?.copySidechat && sourceBranchId) {
+      // Read the target back from the store: the fork activates the new
+      // branch, and syncSnapshot just ingested it (sync read, fresh value).
+      const targetBranchId = useSnapshotStore.getState().activeBranch?.id ?? null;
+      if (targetBranchId) {
+        try {
+          await forkBranchSidechat(chatId, sourceBranchId, targetBranchId);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Failed to copy the sidechat into the new branch");
+        }
+      }
+    }
   })();
   pendingForks.set(key, request);
 

@@ -91,6 +91,12 @@ mock.module("../i18n/locale-helpers.js", () => ({
 	),
 }));
 
+// SC-21: handleFork is a thin delegate to forkBranchFlow (the gate + timer
+// live there per the file-size ratchet) — stubbed so this file pins the
+// wiring while branch-fork.test.ts pins the gate itself.
+const forkBranchFlow = mock();
+mock.module("./branch-fork.js", () => ({ forkBranchFlow }));
+
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
 const { ProviderStreamError, markUserMessageSaved } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
@@ -1170,5 +1176,27 @@ describe("useChatController — lorebook overflow toast (P21, stream done path)"
     await act(async () => { await result.current.handleSend(); });
 
     expect(toastWarning).not.toHaveBeenCalled();
+  });
+});
+
+describe("useChatController — handleFork delegation (SC-21)", () => {
+  test("passes the active chat id and message id through to forkBranchFlow", async () => {
+    forkBranchFlow.mockReset();
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleFork(MSG); });
+
+    expect(forkBranchFlow).toHaveBeenCalledTimes(1);
+    expect(forkBranchFlow).toHaveBeenCalledWith(CHAT, MSG);
+  });
+
+  test("no active chat ⇒ returns early without touching forkBranchFlow", async () => {
+    forkBranchFlow.mockReset();
+    useChatStore.setState({ activeChatId: null });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleFork(MSG); });
+
+    expect(forkBranchFlow).not.toHaveBeenCalled();
   });
 });

@@ -126,6 +126,27 @@ describe("agent-chat-api — a chat owner calls the chat routes", () => {
 	});
 });
 
+describe("agent-chat-api — branch-sidechat fork pair (SC-21)", () => {
+	it("getBranchSidechatSummary GETs the sidechat-summary route and returns the summary", async () => {
+		if (chatOwner.kind !== "chat") throw new Error("fixture must be a chat owner");
+		respondWith(200, { hasSessions: true, count: 2 });
+		const summary = await chatApi.getBranchSidechatSummary(chatOwner.chatId, chatOwner.branchId);
+		expect(capturedUrl).toContain(`/api/agent/chats/${chatOwner.chatId}/branches/${chatOwner.branchId}/sidechat-summary`);
+		expect(capturedInit?.method ?? "GET").toBe("GET");
+		expect(summary).toEqual({ hasSessions: true, count: 2 });
+	});
+
+	it("forkBranchSidechat POSTs the fork-sidechat route with the target branch", async () => {
+		if (chatOwner.kind !== "chat") throw new Error("fixture must be a chat owner");
+		respondWith(200, { copiedThreads: [{ threadId: "thread-new-1", agentKind: "sidechat-ooc" }] });
+		const result = await chatApi.forkBranchSidechat(chatOwner.chatId, chatOwner.branchId, "branch-2");
+		expect(capturedUrl).toContain(`/api/agent/chats/${chatOwner.chatId}/branches/${chatOwner.branchId}/fork-sidechat`);
+		expect(capturedInit?.method).toBe("POST");
+		expect(JSON.parse(String(capturedInit?.body))).toEqual({ targetBranchId: "branch-2" });
+		expect(result.copiedThreads).toHaveLength(1);
+	});
+});
+
 describe("agent host transport — a script owner calls the script routes", () => {
 	it("getActiveThread maps { kind: \"script\", scriptId } to the script active route", async () => {
 		respondWith(200, threadWire("thread-script-1"));

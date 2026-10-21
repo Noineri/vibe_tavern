@@ -2,11 +2,24 @@ import { create } from "zustand";
 import type { ReactNode } from "react";
 import type { BuildTab } from "../components/build/BuildMode.js";
 
+/** Tone of a shell confirm dialog: `destructive` (default) renders the
+ * danger primary + danger-outline secondary; `calm` (SC-21 fork confirm)
+ * renders the accent primary + neutral secondary, with Cancel unchanged. */
+export type ConfirmDialogTone = "destructive" | "calm";
+
 export interface ConfirmDestroyDialog {
   title: string;
   body: ReactNode;
   confirmLabel: string;
   onConfirm: () => void;
+  /** Optional secondary action (lesser scope than the primary), rendered
+   * between Cancel and the primary confirm. Both fields must be provided
+   * together; omit both for a two-button confirm. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  /** Visual tone; defaults to `destructive`. Every existing caller omits
+   * it, so their rendered classes stay byte-identical. */
+  tone?: ConfirmDialogTone;
 }
 
 /** Character-editor authoring surface: classic form fields or the Vibe MD

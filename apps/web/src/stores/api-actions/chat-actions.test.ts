@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { ChatId, CharacterId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot, ChatListItem } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
@@ -13,6 +13,7 @@ import { useContextPreviewStore } from "../context-preview-store.js";
 // (spread), so the switchModeAction tests in this file are unaffected.
 const deleteChatMock = mock();
 const forkBranchMock = mock();
+const forkBranchSidechatMock = mock();
 const generateObjectiveTasksMock = mock();
 const generateReplyMock = mock();
 const sendChatMessageMock = mock();
@@ -21,6 +22,7 @@ const fetchBootstrapMock = mock(async () => undefined);
 const realInsightsCompletionActions = await import("./insights-completion-actions.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
 const realChatApi = await import("../../api/chat-api.js");
+const realAgentChatApi = await import("../../api/agent-chat-api.js");
 
 const updateChatDynamicPromptMock = mock();
 const selectMessageVariantMock = mock();
@@ -44,6 +46,10 @@ mock.module("../../api/chat-api.js", () => ({
   sendChatMessage: sendChatMessageMock,
   updateChatDynamicPrompt: updateChatDynamicPromptMock,
   selectMessageVariant: selectMessageVariantMock,
+}));
+mock.module("../../api/agent-chat-api.js", () => ({
+  ...realAgentChatApi,
+  forkBranchSidechat: forkBranchSidechatMock,
 }));
 mock.module("sonner", () => ({
   ...realSonner,
@@ -103,6 +109,7 @@ function seed(chats: ChatListItem[], activeId: string | null = null): void {
 beforeEach(() => {
   deleteChatMock.mockReset();
   forkBranchMock.mockReset();
+  forkBranchSidechatMock.mockReset();
   generateObjectiveTasksMock.mockReset();
   generateReplyMock.mockReset();
   sendChatMessageMock.mockReset();
@@ -232,6 +239,66 @@ describe("forkBranchAction", () => {
     forkBranchMock.mockResolvedValueOnce({});
     await forkBranchAction(chatId("chat-1"), "message-1");
     expect(forkBranchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("forkBranchAction copySidechat (SC-21)", () => {
+  /** Seed the store's active branch (the copy SOURCE) and resolve the fork
+   *  with a snapshot whose active branch (the copy TARGET) is `targetId`. */
+  function seedForkBranches(sourceId: string, targetId: string): void {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeBranch: { id: sourceId, chatId: chatId("chat-1") },
+    } as unknown as AppSnapshot);
+    forkBranchMock.mockResolvedValueOnce({
+      activeBranch: { id: targetId, chatId: chatId("chat-1") },
+    } as unknown as AppSnapshot);
+  }
+
+  test("without the flag the sidechat is never copied (today's flow)", async () => {
+    seedForkBranches("br-1", "br-2");
+    await forkBranchAction(chatId("chat-1"), "message-1");
+    expect(forkBranchMock).toHaveBeenCalledTimes(1);
+    expect(forkBranchSidechatMock).not.toHaveBeenCalled();
+  });
+
+  test("with the flag the copy POSTs source→target AFTER the fork, in that order", async () => {
+    seedForkBranches("br-1", "br-2");
+    forkBranchSidechatMock.mockResolvedValueOnce({ copiedThreads: [] });
+    await forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
+    expect(forkBranchMock).toHaveBeenCalledTimes(1);
+    expect(forkBranchSidechatMock).toHaveBeenCalledTimes(1);
+    expect(forkBranchSidechatMock).toHaveBeenCalledWith(chatId("chat-1"), "br-1", "br-2");
+    expect(forkBranchMock.mock.invocationCallOrder[0]).toBeLessThan(
+      forkBranchSidechatMock.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  test("a failed copy toasts and the fork still stands (no rollback, no throw)", async () => {
+    seedForkBranches("br-1", "br-2");
+    forkBranchSidechatMock.mockRejectedValueOnce(new Error("copy offline"));
+    await forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
+    expect(toastErrorMock).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).toHaveBeenCalledWith("copy offline");
+    expect(useSnapshotStore.getState().activeBranch?.id).toBe("br-2" as ChatBranchId);
+  });
+
+  test("two rapid flagged forks ride one request: one fork, one copy", async () => {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeBranch: { id: "br-1", chatId: chatId("chat-1") },
+    } as unknown as AppSnapshot);
+    let resolveFork: (snapshot: AppSnapshot) => void = () => {};
+    forkBranchMock.mockImplementationOnce(() => new Promise<AppSnapshot>((resolve) => { resolveFork = resolve; }));
+    forkBranchSidechatMock.mockResolvedValueOnce({ copiedThreads: [] });
+
+    const first = forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
+    const duplicate = forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
+    expect(forkBranchMock).toHaveBeenCalledTimes(1);
+    resolveFork({ activeBranch: { id: "br-2", chatId: chatId("chat-1") } } as unknown as AppSnapshot);
+    await Promise.all([first, duplicate]);
+
+    expect(forkBranchMock).toHaveBeenCalledTimes(1);
+    expect(forkBranchSidechatMock).toHaveBeenCalledTimes(1);
+    expect(forkBranchSidechatMock).toHaveBeenCalledWith(chatId("chat-1"), "br-1", "br-2");
   });
 });
 

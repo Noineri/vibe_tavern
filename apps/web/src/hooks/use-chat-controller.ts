@@ -13,6 +13,7 @@ import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { forkBranchFlow } from "./branch-fork.js";
 import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
@@ -29,7 +30,6 @@ import {
   deleteVariantAction,
   switchChatAction,
   selectVariantAction,
-  forkBranchAction,
   activateBranchAction,
   deleteBranchAction,
   renameBranchAction,
@@ -909,24 +909,16 @@ export function useChatController(): ChatControllerActions {
     void selectVariantAction(activeChatId, messageId, variantIndex);
   }
 
+  /**
+   * Fork the active branch — delegates to `forkBranchFlow`, where the SC-21
+   * sidechat confirm gate and the feedback timer live (file-size ratchet:
+   * this file may only shrink by extraction). All three fork call sites go
+   * through here, so no per-caller wiring.
+   */
   async function handleFork(messageId?: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
-
-    // Forking a long branch can take seconds. Avoid a distracting flash for
-    // fast requests, but make the originating message visibly busy when it
-    // crosses the interaction-feedback threshold.
-    const feedbackTimer = messageId == null
-      ? null
-      : window.setTimeout(() => useChatStore.getState().setMessageActionId(messageId), 200);
-    try {
-      await forkBranchAction(activeChatId, messageId);
-    } finally {
-      if (feedbackTimer != null) window.clearTimeout(feedbackTimer);
-      if (messageId != null && useChatStore.getState().messageActionId === messageId) {
-        useChatStore.getState().setMessageActionId(null);
-      }
-    }
+    await forkBranchFlow(activeChatId, messageId);
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
