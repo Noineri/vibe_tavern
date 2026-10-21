@@ -323,12 +323,13 @@ describe("QueueTimeline mobile", () => {
     const footer = view.getByRole("button", { name: /One more/ });
 
     expect(timeline?.getAttribute("class")).toContain("max-h-[50vh] overflow-y-auto py-1");
-    expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toContain("left-[25px]");
+    expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toBe("absolute bottom-4 left-[25px] top-4 w-0.5 bg-border");
     expect(finished?.getAttribute("class")).toContain("min-h-12");
     expect(finished?.getAttribute("class")).toContain("px-4");
+    expect(finished?.getAttribute("class")).toContain("text-[calc(var(--ui-fs)-2px)]");
     expect(finished?.querySelector("button span:first-child")?.getAttribute("class")).toContain("h-5 w-5");
     expect(metadata?.textContent).toContain("a-deliberately-long-model-name-for-mobile-wrapping · A deliberately long preset name that must remain fully readable");
-    expect(metadata?.getAttribute("class")).toContain("whitespace-normal");
+    expect(metadata?.getAttribute("class")).toBe("min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-4px)] text-t3");
     expect(metadata?.getAttribute("class")).not.toContain("truncate");
     expect(metadata?.getAttribute("class")).not.toContain("overflow-hidden");
     expect(view.getByTestId("queue-timeline-running-ring").getAttribute("class")).toBe("h-5 w-5 animate-spin-slow");
@@ -337,6 +338,7 @@ describe("QueueTimeline mobile", () => {
     expect(footer.getAttribute("class")).toContain("min-h-12");
     expect(footer.getAttribute("class")).toContain("px-4");
     expect(footer.getAttribute("class")).toContain("py-2");
+    expect(footer.getAttribute("class")).toContain("text-[calc(var(--ui-fs)-2px)]");
     expect(footer.textContent).toContain("One morea-deliberately-long-footer-model-name-for-mobile-wrapping · A deliberately long footer preset name that must remain fully readable");
     expect(footer.querySelector("[data-queue-timeline-metadata]")?.getAttribute("class")).toContain("whitespace-normal");
     const errorControl = view.getByRole("button", { name: "Show error details" });
@@ -344,22 +346,59 @@ describe("QueueTimeline mobile", () => {
     await act(async () => { fireEvent.click(errorControl); });
     expect(view.getByRole("button", { name: "Hide error details" }).getAttribute("aria-expanded")).toBe("true");
     expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("px-4 pb-2.5 pl-12");
+    expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("text-[calc(var(--ui-fs)-3px)]");
     await act(async () => { fireEvent.click(footer); });
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.at(-1)?.messageId).toBe(MESSAGE_ID);
     expect(closes).toBe(0);
   });
 
-  test("keeps fold disclosure truthful and uses mobile rows after expansion", async () => {
+  test("ends collapsed and expanded mobile accent at the later finished node", async () => {
     setMessage([0, 1, 2, 3, 4]);
     startBatch([0, 1, 2, 3]);
+    addRecord("failed", "provider/model-failed");
+    addRecord("running", "provider/model-running");
+    addRecord("pending", "provider/model-pending");
     const view = renderMobileTimeline();
 
     const fold = view.getByRole("button", { name: "Show finished variants" });
     expect(fold.getAttribute("class")).toContain("min-h-12");
     expect(fold.getAttribute("class")).toContain("px-4");
     expect(fold.querySelector("span:last-child")?.getAttribute("class")).toContain("h-10 w-10");
+    const collapsedRows = view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-fold], [data-queue-timeline-row]");
+    expect(Array.from(collapsedRows).map((row) => row.querySelectorAll("i.bg-accent").length)).toEqual([2, 1, 0, 0, 0]);
+    expect(fold.querySelector("i.bg-accent")?.getAttribute("class")).toContain("top-3");
+    expect(collapsedRows[1]?.querySelector("i.bg-accent")?.getAttribute("class")).toContain("bottom-1/2");
     await act(async () => { fireEvent.click(fold); });
     expect(view.getByRole("button", { name: "Hide finished variants" }).getAttribute("aria-expanded")).toBe("true");
-    expect(view.container.querySelector("[data-queue-timeline-row=finished]")?.getAttribute("class")).toContain("min-h-12");
+    const expandedRows = view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-fold], [data-queue-timeline-row]");
+    expect(Array.from(expandedRows).map((row) => row.querySelectorAll("i.bg-accent").length)).toEqual([2, 2, 2, 2, 2, 1, 0, 0, 0]);
+    const finishedRows = view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-row=finished]");
+    expect(Array.from(finishedRows).map((row) => row.getAttribute("class")?.includes("min-h-12"))).toEqual([true, true, true, true, true]);
+  });
+
+  test("renders Russian phone copy with the mockup text rungs and no authored truncation", async () => {
+    setMessage([0, 1, 2, 3, 4]);
+    startBatch([0, 1, 2, 3]);
+    addRecord("failed", "provider/model-failed", "provider failure detail");
+    addRecord("running", "provider/model-running");
+    addRecord("pending", "provider/model-pending");
+    await i18next.changeLanguage("ru");
+    const view = renderMobileTimeline(undefined, "ru");
+    const baseRung = "text-[calc(var(--ui-fs)-2px)]";
+
+    expect(view.getByText(ru.queue_timeline_title).getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(ru.queue_chip_progress.replace("{done}", "5").replace("{total}", "8")).getAttribute("class")).toContain(baseRung);
+    expect(view.getByRole("button", { name: ru.queue_timeline_clear }).getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(interpolate(ru.queue_timeline_folded_few, 4)).parentElement?.getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(ru.queue_timeline_variant.replace("{n}", "5")).parentElement?.parentElement?.parentElement?.getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(ru.queue_timeline_error).parentElement?.parentElement?.getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(ru.queue_timeline_writing).parentElement?.parentElement?.getAttribute("class")).toContain(baseRung);
+    expect(view.getByText(ru.queue_timeline_waiting).parentElement?.parentElement?.getAttribute("class")).toContain(baseRung);
+    const footer = view.getByRole("button", { name: new RegExp(ru.queue_timeline_one_more_mobile) });
+    expect(view.getByText(ru.queue_timeline_one_more_mobile).parentElement?.parentElement?.getAttribute("class")).toContain(baseRung);
+    expect(footer.getAttribute("class")).not.toContain("truncate");
+    expect(Array.from(view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-metadata]")).every((metadata) => metadata.getAttribute("class") === "min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-4px)] text-t3")).toBe(true);
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: ru.queue_timeline_error_detail_show_aria })); });
+    expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("text-[calc(var(--ui-fs)-3px)]");
   });
 });
