@@ -89,6 +89,8 @@ function genState(streamingMessageId: string | null): ChatGenerationState {
     streamingMessageId,
     streamingRevealedText: "",
     streamingReasoningText: "",
+    modelId: null,
+    presetName: null,
     generationStatus: streamingMessageId !== null ? "streaming" : "idle",
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],

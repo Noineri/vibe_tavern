@@ -4,23 +4,31 @@ import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
 import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
-import type { AppMessage, AppSnapshot, ChatGenerationStatus } from "../api/types.js";
+import type { AppMessage, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
-import { showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { getProviderErrorText, showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { forkBranchFlow } from "./branch-fork.js";
+import {
+  refreshAfterAbort,
+  refreshChatSnapshotCache,
+  resetGenerationBatch,
+  settleRunningQueueRecordFailure,
+  settlePlainRegenerateRecord,
+  startPlainRegenerateRecord,
+  updatePlainRegenerateRecordMetadata,
+} from "./generation-batch-lifecycle.js";
 import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type RegenerateOverride } from "@vibe-tavern/api-contracts";
 import {
-  fetchChatAction,
   sendChatMessageAction,
   regenerateMessageAction,
   continueMessageAction,
@@ -37,81 +45,20 @@ import {
 import { useDiceStore } from "../stores/dice-store.js";
 import { usePerSendPrefillStore } from "../stores/per-send-prefill-store.js";
 import { useExperienceStore } from "../stores/experience-store.js";
-import { DiceApiError } from "../api/dice-api.js";
-import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
+import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { diceConflictCode, experienceConflictCode, gateErrorCode } from "./chat-controller-error-codes.js";
+export { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
+import { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
+import { captureQuickSwitchGenerationMetadata, type GenerationMetadata } from "../lib/generation-metadata.js";
+import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsSending } from "./chat-controller-store-reads.js";
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
 // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
 // is nothing bindable, every helper below collapses to "no Dice" so a no-Dice
 // send stays byte-identical to before. Dice can only ever BLOCK a send, never
 // make an otherwise-unsendable draft sendable.
-
-/** Why a send is Dice-blocked. */
-export type DiceSendBlock = "choose" | "actor_mismatch";
-
-const DICE_CONFLICT_CODES = new Set(["stale_revision", "unresolved_choose"]);
-
-// IR-70H Experience bind conflict codes carried on DiceApiError (non-stream
-// HTTP 409 via sendChatMessageError) or ProviderStreamError (SSE error event).
-// These are server-side commit conflicts, not provider failures — the
-// attachment moved under us. Disjoint from DICE_CONFLICT_CODES.
-const EXPERIENCE_CONFLICT_CODES = new Set(["not_found", "already_bound", "stale_queue", "stale_session"]);
-
-/** Extract the dice commit-conflict code from either send-mode error: non-stream
- *  throws {@link DiceApiError} (HTTP 409 body `error.details.code`), stream
- *  throws {@link ProviderStreamError} (SSE error event `code`). */
-function diceConflictCode(error: unknown): string | undefined {
-  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
-  return code !== undefined && DICE_CONFLICT_CODES.has(code) ? code : undefined;
-}
-
-/** Extract the experience bind-conflict code from either send-mode error
- *  (IR-70H). Same transport as {@link diceConflictCode} but checks the four
- *  Experience bind codes — disjoint from the Dice codes. */
-function experienceConflictCode(error: unknown): string | undefined {
-  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
-  return code !== undefined && EXPERIENCE_CONFLICT_CODES.has(code) ? code : undefined;
-}
-
-/** Typed attachment-gate failures (vision / voice transcribe). Non-stream
- *  throws a sentinel-message Error (unwrap.ts maps the 422 `type` body);
- *  stream throws {@link ProviderStreamError} with the SSE `type` in `code`
- *  (sse-parser). Returns "vision_not_supported" |
- *  "voice_transcribe_unavailable" | undefined. */
-function gateErrorCode(error: unknown): "vision_not_supported" | "voice_transcribe_unavailable" | undefined {
-  if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") return "vision_not_supported";
-  if (error instanceof Error && error.message === "VOICE_TRANSCRIBE_UNAVAILABLE") return "voice_transcribe_unavailable";
-  const code = error instanceof ProviderStreamError ? error.code : undefined;
-  return code === "vision_not_supported" || code === "voice_transcribe_unavailable" ? code : undefined;
-}
-
-/** Pure send-gate: the reason the active pending lane blocks a send, or null.
- *  Mirrors the backend bind gate (`bindActiveAndResetInTx`), which rejects an
- *  unresolved `choose` only among INCLUDED unbound rolls (the store already
- *  drops bound rolls) — so excluded rolls neither block nor bind. The actor
- *  check is frontend-only (the backend does not validate actor): a pending roll
- *  captured for an actor that no longer matches the current persona/character
- *  must not bind silently. Exported for the reactive `canSend` in
- *  use-input-area. */
-export function diceSendBlockReason(
-  lane: DiceLaneState | null | undefined,
-  personaId: string | null,
-  characterId: string | null,
-): DiceSendBlock | null {
-  if (!lane) return null;
-  const bindable = lane.rolls.filter((roll) => roll.included);
-  if (bindable.some((roll) => roll.policy === "choose" && roll.finalAttemptId === null)) return "choose";
-  if (
-    bindable.some((roll) =>
-      roll.actor.actorType === "persona" ? roll.actor.actorId !== personaId : roll.actor.actorId !== characterId,
-    )
-  ) {
-    return "actor_mismatch";
-  }
-  return null;
-}
 
 /** Imperative read (at send time) of the dice commit intent + any block, for the
  *  CURRENT `{chatId, branchId}` and the chat's configured `diceMode`. The intent
@@ -271,33 +218,7 @@ export function useChatController(): ChatControllerActions {
   // StreamingReveal is created per-generation, re-created when needed
   const streamingRevealRef = useRef<StreamingReveal | null>(null);
 
-  // --- Store helpers (imperative reads via getState, not subscriptions) ---
-
-  function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
-  function getDraft(): string { return useChatStore.getState().draft; }
-  function getEditingDraft(): string { return useChatStore.getState().editingDraft; }
-  function getEditingMessageId(): string | null { return useChatStore.getState().editingMessageId; }
-
-  // Per-chat helpers
-  function getIsSending(chatId: string): boolean {
-    return useChatStore.getState().generations[chatId]?.isSending ?? false;
-  }
-
   // --- Snapshot cache helpers ---
-
-  /** Refetch chat snapshot cache from the canonical source. */
-  async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
-    return fetchChatAction(chatId);
-  }
-
-  /**
-   * After an abort, the backend needs a moment to save the partial variant
-   * before we fetch the snapshot.
-   */
-  async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
-    await new Promise((r) => setTimeout(r, 200));
-    return refreshChatSnapshotCache(chatId);
-  }
 
   // --- Common streaming helper ---
 
@@ -313,6 +234,7 @@ export function useChatController(): ChatControllerActions {
       onChunk: (delta: string) => void;
       onReasoningChunk?: (delta: string) => void;
       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+      onGenerationMetadata?: (info: GenerationMetadata) => void;
       onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
       onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
@@ -326,6 +248,8 @@ export function useChatController(): ChatControllerActions {
      * ChatGenerationState.streamingMessageId.
      */
     streamingMessageId?: string | null,
+    onFailure?: (error: unknown) => void,
+    onGenerationMetadata?: (metadata: GenerationMetadata) => void,
   ): Promise<StreamOutcome> {
     const completionTargetBeforeStream = streamingMessageId
       ? null
@@ -356,6 +280,10 @@ export function useChatController(): ChatControllerActions {
         },
         onReasoningDone: () => {
           // Reasoning complete — text stays until snapshot refresh
+        },
+        onGenerationMetadata: (metadata) => {
+          useChatStore.getState().setGenerationMetadata(chatId, metadata);
+          onGenerationMetadata?.(metadata);
         },
         onToolCall: (info) => {
           // Capture the full operation INPUT (args) here — onToolCall fires once
@@ -480,6 +408,7 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
+      onFailure?.(error);
       const settleDraft = () => settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
@@ -573,6 +502,7 @@ export function useChatController(): ChatControllerActions {
       opts.pendingAttachments,
       opts.streamingMessageId ?? null,
     );
+    useChatStore.getState().setGenerationMetadata(chatId, captureQuickSwitchGenerationMetadata(chatId));
     try {
       await fn(controller.signal);
       const snapshot = useSnapshotStore.getState();
@@ -628,6 +558,8 @@ export function useChatController(): ChatControllerActions {
     if (dice.blockReason) {
       return;
     }
+
+    resetGenerationBatch(activeChatId);
 
     // IR-73D: capture the experience attachment commit intent (only when the
     // active scope has a valid server-queued attachment). Subtractive: when
@@ -727,6 +659,8 @@ export function useChatController(): ChatControllerActions {
       toast.error(getT()("resend_unavailable_no_provider"));
       return;
     }
+
+    resetGenerationBatch(activeChatId);
 
     if (streamResponseRef.current) {
       await executeStreamAction(
@@ -833,28 +767,45 @@ export function useChatController(): ChatControllerActions {
     // prior non-stream branch early-returned on abort and skipped this clear,
     // leaving the message permanently busy (MessageBlock.isBusy/isBranching).
     useChatStore.getState().setMessageActionId(messageId);
+    const plainRecordId = startPlainRegenerateRecord(
+      activeChatId,
+      messageId,
+      (() => {
+        const metadata = captureQuickSwitchGenerationMetadata(activeChatId);
+        return { model: metadata.modelId, presetName: metadata.presetName };
+      })(),
+    );
     try {
+      let outcome: StreamOutcome;
+      let failureText = getT()("regen_failed");
       if (streamResponseRef.current) {
-        await executeStreamAction(
+        outcome = await executeStreamAction(
           activeChatId,
           (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
           undefined,
           undefined,
           messageId,
+          (error) => { failureText = getProviderErrorText(error, getT(), "regen_failed"); },
+          (metadata) => updatePlainRegenerateRecordMetadata(activeChatId, plainRecordId, {
+            model: metadata.modelId,
+            presetName: metadata.presetName,
+          }),
         );
       } else {
-        await executeNonStreamAction(
+        outcome = await executeNonStreamAction(
           activeChatId,
           (signal) => regenerateMessageAction(activeChatId, messageId, signal),
           {
             streamingMessageId: messageId,
             onError: async (error) => {
               await refreshChatSnapshotCache(activeChatId);
-              toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
+              failureText = getProviderErrorText(error, getT(), "regen_failed");
+              toast.error(failureText);
             },
           },
         );
       }
+      settlePlainRegenerateRecord(activeChatId, plainRecordId, outcome, failureText);
     } finally {
       useChatStore.getState().setMessageActionId(null);
     }
@@ -975,6 +926,7 @@ export function useChatController(): ChatControllerActions {
             undefined,
             undefined,
             messageId,
+            (error) => settleRunningQueueRecordFailure(chatId, messageId, getProviderErrorText(error, getT(), "regen_failed")),
           );
         }
         // Non-stream path: same lifecycle contract via executeNonStreamAction.
@@ -986,7 +938,8 @@ export function useChatController(): ChatControllerActions {
           {
             streamingMessageId: messageId,
             suppressCancelToast: true,
-            onError: async () => {
+            onError: async (error) => {
+              settleRunningQueueRecordFailure(chatId, messageId, getProviderErrorText(error, getT(), "regen_failed"));
               await refreshChatSnapshotCache(chatId);
             },
           },

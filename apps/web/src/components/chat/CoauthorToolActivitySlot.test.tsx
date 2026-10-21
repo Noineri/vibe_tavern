@@ -68,6 +68,8 @@ const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState 
 	streamingMessageId: null,
 	streamingRevealedText: "",
 	streamingReasoningText: "",
+	modelId: null,
+	presetName: null,
 	generationStatus: "streaming" as ChatGenerationState["generationStatus"],
 	pendingUserMessageContent: null,
 	pendingUserMessageAttachments: [],

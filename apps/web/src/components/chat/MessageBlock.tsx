@@ -1,7 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
-import { resolveModelLabel } from "../../lib/model-resolve.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
@@ -52,6 +51,7 @@ import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
 import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
+import { deriveVariantPickerItems } from "./variants/variant-picker-items.js";
 import { PendingUserMessage } from "./pending/pending-user-message.js";
 import { PendingAssistantMessage } from "./pending/pending-assistant-message.js";
 
@@ -191,12 +191,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // stars key on it so they survive variant deletion / index compaction.
   const pickerItems = useMemo(() => {
     if (variantCount <= 6) return EMPTY_PICKER_ITEMS;
-    return variants.map((v) => ({
-      variantId: v.id,
-      displayIndex: v.variantIndex + 1,
-      modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
-      presetName: v.presetName ?? null,
-    }));
+    return deriveVariantPickerItems(variants);
   }, [variants, variantCount]);
 
   // ── Display-mode regex seam (RX-13) ──────────────────────────────────────
