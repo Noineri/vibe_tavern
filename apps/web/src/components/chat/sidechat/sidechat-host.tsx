@@ -38,6 +38,7 @@ import {
 import {
   getAgentChatActive,
   listAgentChatSessions,
+  listAgentThreadEvents,
   startAgentChatSession,
 } from "../../../api/agent-chat-api.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
@@ -183,6 +184,9 @@ registerAgentHost({
       return getAgentChatActive(triple.chatId, triple.branchId, triple.agentKind);
     },
     listMessages: listExperienceCopilotMessages,
+    // SC-19b: only the sidechat host wires the events read — the two
+    // built-in hosts omit it and render exactly as today (no separators).
+    listEvents: listAgentThreadEvents,
     startSession: (owner, title?) => {
       const triple = chatOwnerTriple(owner);
       return startAgentChatSession(triple.chatId, triple.branchId, triple.agentKind, title);

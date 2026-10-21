@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type {
+  AgentThreadEventWire,
   ExperienceCopilotContextLink,
   ExperienceCopilotContextTargetType,
   ExperienceCopilotMessageWire,
@@ -123,6 +124,11 @@ export function AgentShell({
   // ── Session lifecycle state ──────────────────────────────────────────────
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ExperienceCopilotMessageWire[]>([]);
+  // SC-19b: the thread's frozen context events (merged-timeline order) —
+  // fetched whenever messages refetch, rendered as separators by the list.
+  // A host without `transport.listEvents` leaves this empty forever, so its
+  // feed renders exactly as today.
+  const [events, setEvents] = useState<AgentThreadEventWire[]>([]);
   const [sessions, setSessions] = useState<ExperienceCopilotThreadWire[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -298,6 +304,21 @@ export function AgentShell({
   }
   const bridge = bridgeRef.current;
 
+  // SC-19b: the events read is best-effort and host-optional — a failure (or
+  // a host without the member) leaves the separators empty, never the
+  // session. Called everywhere messages refetch (load / settle / switch);
+  // a brand-new session starts with no events.
+  const fetchEvents = useCallback(async (id: string): Promise<AgentThreadEventWire[]> => {
+    if (!transport.listEvents) return [];
+    try {
+      return await transport.listEvents(id);
+    } catch {
+      // Best-effort — a transient events failure leaves the separators
+      // empty rather than surfacing a spurious error.
+      return [];
+    }
+  }, [transport]);
+
   // ── Session load (mount + retry) ─────────────────────────────────────────
   const loadSession = useCallback(async () => {
     setSessionLoading(true);
@@ -310,19 +331,21 @@ export function AgentShell({
         setThreadTodo(active.todo); // TAG-8 (restored PM-7): seed the checklist panel
         const msgs = await transport.listMessages(active.id);
         setMessages(msgs);
+        setEvents(await fetchEvents(active.id));
       } else {
         const thread = await transport.startSession(ownerRef.current);
         setThreadId(thread.id);
         setContextLinks(thread.contextLinks ?? []); // CX-6: a fresh thread has no pins
         setThreadTodo(thread.todo); // TAG-8 (restored PM-7): a fresh thread has no checklist
         setMessages([]);
+        setEvents([]);
       }
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : t("agent_load_session_error"));
     } finally {
       setSessionLoading(false);
     }
-  }, [ownerKey, transport]);
+  }, [ownerKey, transport, fetchEvents]);
 
   // Session list (active + archived) for the switcher. Fetched in parallel with
   // `loadSession` on mount, then refetched after every switch/new so the active
@@ -365,7 +388,10 @@ export function AgentShell({
         // Best-effort refetch — swallow so a transient list failure leaves the
         // last-known messages on screen rather than surfacing a spurious error.
       });
-  }, [threadId, transport, host, scriptId, hostProps, bridge]);
+    // SC-19b: the separators refetch alongside the messages (a host without
+    // the member keeps its empty list — no separators, exactly as today).
+    void fetchEvents(threadId).then(setEvents);
+  }, [threadId, transport, host, scriptId, hostProps, bridge, fetchEvents]);
 
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
@@ -434,13 +460,14 @@ export function AgentShell({
         setThreadTodo(activated.todo); // TAG-8 (restored PM-7): switch → that thread's checklist
         const msgs = await transport.listMessages(targetThreadId);
         setMessages(msgs);
+        setEvents(await fetchEvents(targetThreadId));
         await fetchSessions();
       } catch {
         // Best-effort — leave threadId/messages unchanged and surface the error.
         toast.error(t("agent_switch_error"));
       }
     },
-    [ctrl.isSending, fetchSessions, transport, t],
+    [ctrl.isSending, fetchSessions, fetchEvents, transport, t],
   );
 
   const handleNewSession = useCallback(async () => {
@@ -451,6 +478,7 @@ export function AgentShell({
       setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
       setThreadTodo(thread.todo); // TAG-8 (restored PM-7): new session → no checklist
       setMessages([]);
+      setEvents([]); // a brand-new session has no frozen events yet
       await fetchSessions();
     } catch {
       // Best-effort — leave threadId/messages unchanged and surface the error.
@@ -582,6 +610,7 @@ export function AgentShell({
             kind={kind}
             threadId={threadId}
             messages={messages}
+            events={events}
             pendingText={ctrl.pendingText}
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}

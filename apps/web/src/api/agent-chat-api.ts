@@ -16,7 +16,7 @@
  */
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type { AgentThreadEventWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 /** The single active thread for a (chat, branch, kind) triple, or null when none exists. */
 export async function getAgentChatActive(
@@ -38,6 +38,19 @@ export async function listAgentChatSessions(
 ): Promise<ExperienceCopilotThreadWire[]> {
   const response = await client.api.agent.chats[":chatId"].branches[":branchId"][":kind"].sessions.$get({
     param: { chatId, branchId, kind: agentKind },
+  });
+  return unwrapRpc(response);
+}
+
+/** All frozen context events for a thread, in merged-timeline order (SC-19b) —
+ *  the sidechat host's transport member behind `AgentHostTransport.listEvents`:
+ *  each `{ id, kind, payload, beforeMessageId }` the events route serves,
+ *  rendered by the shell as timeline separators around the message feed. */
+export async function listAgentThreadEvents(
+  threadId: string,
+): Promise<AgentThreadEventWire[]> {
+  const response = await client.api.agent.threads[":threadId"].events.$get({
+    param: { threadId },
   });
   return unwrapRpc(response);
 }

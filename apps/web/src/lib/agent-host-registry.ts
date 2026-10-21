@@ -19,6 +19,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type {
   AgentReviewSnapshot,
+  AgentThreadEventWire,
   ExperienceCopilotLaunchContext,
   ExperienceCopilotStep,
   ExperienceCopilotThreadWire,
@@ -258,6 +259,12 @@ export interface AgentHostTransport {
   getActiveThread: (owner: AgentThreadOwner) => Promise<ExperienceCopilotThreadWire | null>;
   /** All messages for a thread, oldest → newest. */
   listMessages: typeof listExperienceCopilotMessages;
+  /** SC-19b: a thread's frozen context events in merged-timeline order
+   *  (`GET /api/agent/threads/:threadId/events`) — the shell fetches it
+   *  whenever it refetches messages and renders each event as a timeline
+   *  separator around the feed. OPTIONAL: only the sidechat host wires it;
+   *  hosts without the member render exactly as today (no separators). */
+  listEvents?: (threadId: string) => Promise<AgentThreadEventWire[]>;
   /** Archive the current active thread (if any) and start a fresh one. */
   startSession: (owner: AgentThreadOwner, title?: string) => Promise<ExperienceCopilotThreadWire>;
   /** All sessions (active + archived) for an owner, newest first. */

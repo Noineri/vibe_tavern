@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { isRecordProposal, type AgentProposal, type ExperienceCopilotMessageWire, type RecordProposal } from "@vibe-tavern/api-contracts";
+import { isRecordProposal, type AgentProposal, type AgentThreadEventWire, type ExperienceCopilotMessageWire, type RecordProposal } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
   useAgentTurnStore,
@@ -14,6 +14,7 @@ import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
+import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { AgentAskCard } from "./AgentAskCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
 import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
@@ -24,6 +25,7 @@ import { useT } from "../../../i18n/context.js";
 
 const EMPTY: AgentToolActivity[] = [];
 const EMPTY_FEED: AgentFeedEntry[] = [];
+const EMPTY_EVENTS: AgentThreadEventWire[] = [];
 
 /** One ordered render item pinned between two flow messages (TA-1, owner
  *  ruling 2026-10-12: ONE accordion per assistant turn hides ALL of that
@@ -99,6 +101,13 @@ export interface AgentMessageListProps {
    *  (undefined) falls back to the shared `agent_subtitle` line, exactly
    *  as before, so existing hosts render byte-identically without it. */
   emptySub?: string;
+  /** SC-19b: the thread's frozen context events in merged-timeline order —
+   *  each renders as a one-line separator right BEFORE its anchor message
+   *  (`beforeMessageId`); a null anchor (or an anchor naming no visible
+   *  message) renders at the end, after the persisted rows. Omitted/empty =
+   *  no separators — hosts without `transport.listEvents` render exactly as
+   *  today. */
+  events?: AgentThreadEventWire[];
 }
 
 export function AgentMessageList({
@@ -113,6 +122,7 @@ export function AgentMessageList({
   pendingAskAnswer = null,
   emptyTitle,
   emptySub,
+  events = EMPTY_EVENTS,
 }: AgentMessageListProps) {
   const { t } = useT();
   const activities = useAgentTurnStore(
@@ -317,6 +327,32 @@ export function AgentMessageList({
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
 
+  // SC-19b: frozen events interleave as separators BEFORE their anchor
+  // message; a null anchor — or an anchor naming no visible row — trails at
+  // the end, after the persisted rows (before the live pending rows, which
+  // only exist mid-turn and are cleared on the settle+refetch that refreshes
+  // these events).
+  const { eventAnchors, trailingEvents } = useMemo(() => {
+    const anchors = new Map<string, AgentThreadEventWire[]>();
+    const trailing: AgentThreadEventWire[] = [];
+    if (events.length === 0) return { eventAnchors: anchors, trailingEvents: trailing };
+    const visibleIds = new Set(visibleMessages.map((entry) => entry.message.id));
+    for (const event of events) {
+      const anchor = event.beforeMessageId;
+      if (anchor !== null && visibleIds.has(anchor)) {
+        const list = anchors.get(anchor);
+        if (list) list.push(event);
+        else anchors.set(anchor, [event]);
+      } else {
+        trailing.push(event);
+      }
+    }
+    return { eventAnchors: anchors, trailingEvents: trailing };
+  }, [events, visibleMessages]);
+
+  const renderEventSeparators = (list: readonly AgentThreadEventWire[] | undefined) =>
+    list?.map((event) => <AgentTimelineSeparator key={event.id} event={event} />);
+
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -332,6 +368,7 @@ export function AgentMessageList({
 
   const contentCount =
     visibleMessages.length +
+    events.length +
     (hasPendingUserContent ? 1 : 0) +
     feed.length;
 
@@ -341,6 +378,7 @@ export function AgentMessageList({
 
   const isEmpty =
     visibleMessages.length === 0 &&
+    events.length === 0 &&
     !hasPendingUserContent &&
     !hasPendingText &&
     !pendingReasoning &&
@@ -364,6 +402,7 @@ export function AgentMessageList({
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
+              {renderEventSeparators(eventAnchors.get(entry.message.id))}
               {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
               <AgentMessageBlock
                 message={entry.message}
@@ -374,6 +413,8 @@ export function AgentMessageList({
           ))}
 
           {renderAnchorItems(trailingItems)}
+
+          {renderEventSeparators(trailingEvents)}
 
           {hasPendingUserContent && (
             <AgentMessageBlock
