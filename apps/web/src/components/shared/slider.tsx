@@ -22,10 +22,34 @@ export interface SliderProps<Value extends SliderValue = SliderValue> {
 	className?: string;
 }
 
-const sizeClasses: Record<SliderSize, { track: string; thumb: string }> = {
-	md: { track: "h-1", thumb: "h-[14px] w-[14px]" },
-	sm: { track: "h-1", thumb: "h-3 w-3" },
-	xs: { track: "h-[3px]", thumb: "h-2.5 w-2.5" },
+const sizeClasses: Record<SliderSize, {
+	horizontalTrack: string;
+	verticalTrack: string;
+	thumb: string;
+	horizontalRoot: string;
+	verticalRoot: string;
+}> = {
+	md: {
+		horizontalTrack: "h-1",
+		verticalTrack: "w-1",
+		thumb: "h-[14px] w-[14px]",
+		horizontalRoot: "h-[14px]",
+		verticalRoot: "w-[14px]",
+	},
+	sm: {
+		horizontalTrack: "h-1",
+		verticalTrack: "w-1",
+		thumb: "h-3 w-3",
+		horizontalRoot: "h-3",
+		verticalRoot: "w-3",
+	},
+	xs: {
+		horizontalTrack: "h-[3px]",
+		verticalTrack: "w-[3px]",
+		thumb: "h-2.5 w-2.5",
+		horizontalRoot: "h-2.5",
+		verticalRoot: "w-2.5",
+	},
 };
 
 function toSliderValue(value: number | readonly number[]): SliderValue {
@@ -69,7 +93,7 @@ export function Slider<Value extends SliderValue>({
 				data-slider-thumb
 				className={cn(
 					"group/thumb rounded-full border-2 border-surface bg-accent transition-transform duration-100",
-					"hover:scale-[1.15] data-[dragging]:scale-[1.15] group-data-[focused]:ring-4 group-data-[focused]:ring-accent/35",
+					"hover:scale-[1.15] data-[dragging]:scale-[1.15] has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-accent/35",
 					dimensions.thumb,
 				)}
 			/>
@@ -94,7 +118,10 @@ export function Slider<Value extends SliderValue>({
 			} : undefined}
 			className={cn(
 				"group relative touch-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
-				orientation === "horizontal" ? "h-11 w-full" : "h-full min-h-11 w-11",
+				orientation === "horizontal"
+					? "w-full [@media(pointer:coarse)]:h-11"
+					: "h-full min-h-11 [@media(pointer:coarse)]:w-11",
+				orientation === "horizontal" ? dimensions.horizontalRoot : dimensions.verticalRoot,
 				className,
 			)}
 		>
@@ -105,9 +132,13 @@ export function Slider<Value extends SliderValue>({
 				)}
 			>
 				<BaseSlider.Track
+					data-slider-track
 					className={cn(
 						"relative overflow-hidden rounded-full bg-s3",
-						orientation === "horizontal" ? `w-full ${dimensions.track}` : `h-full ${dimensions.track.replace("h-", "w-")}`,
+						orientation === "horizontal"
+							? "w-full"
+							: "h-full",
+						orientation === "horizontal" ? dimensions.horizontalTrack : dimensions.verticalTrack,
 					)}
 				>
 					<BaseSlider.Indicator className="rounded-full bg-accent" />

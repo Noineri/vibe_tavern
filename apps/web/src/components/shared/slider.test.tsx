@@ -124,6 +124,19 @@ describe("Slider", () => {
 		expect(onValueCommitted).toHaveBeenCalledTimes(4);
 	});
 
+	it("snaps an off-grid controlled value to the next step through Base UI keyboard interaction", () => {
+		const onValueChange = mock();
+		const { container } = render(
+			<ControlledSlider initialValue={5} onValueChange={onValueChange} />,
+		);
+		const rangeInput = input(container, "volume-input");
+
+		expect(rangeInput.value).toBe("5");
+		fireEvent.keyDown(rangeInput, { key: "ArrowRight" });
+		expect(onValueChange).toHaveBeenLastCalledWith(8);
+		expect(rangeInput.value).toBe("8");
+	});
+
 	it("commits once for a drivable nested input interaction", () => {
 		const onValueCommitted = mock();
 		const { container } = render(<ControlledSlider onValueCommitted={onValueCommitted} />);
@@ -146,7 +159,7 @@ describe("Slider", () => {
 		expect(rangeInput.value).toBe("4");
 	});
 
-	it("uses the approved size, orientation, and coarse-pointer hit-area classes", () => {
+	it("uses compact fine-pointer geometry, static track dimensions, and orientation-specific coarse hit areas", () => {
 		const { container } = render(
 			<div>
 				<Slider value={1} min={0} max={2} step={1} aria-label="Medium" onValueChange={() => {}} />
@@ -161,18 +174,72 @@ describe("Slider", () => {
 					orientation="vertical"
 					onValueChange={() => {}}
 				/>
+				<Slider
+					value={1}
+					min={0}
+					max={2}
+					step={1}
+					aria-label="Vertical small"
+					size="sm"
+					orientation="vertical"
+					onValueChange={() => {}}
+				/>
+				<Slider
+					value={1}
+					min={0}
+					max={2}
+					step={1}
+					aria-label="Vertical extra small"
+					size="xs"
+					orientation="vertical"
+					onValueChange={() => {}}
+				/>
 			</div>,
 		);
 		const roots = container.querySelectorAll<HTMLElement>("[data-slider-root]");
+		const tracks = container.querySelectorAll<HTMLElement>("[data-slider-track]");
+		const thumbs = container.querySelectorAll<HTMLElement>("[data-slider-thumb]");
 
-		expect(roots).toHaveLength(4);
-		expect(roots[0].classList.contains("h-11")).toBe(true);
-		expect(roots[1].classList.contains("h-11")).toBe(true);
-		expect(roots[2].classList.contains("h-11")).toBe(true);
-		expect(roots[0].querySelector("[data-slider-thumb]")!.classList.contains("h-[14px]")).toBe(true);
-		expect(roots[1].querySelector("[data-slider-thumb]")!.classList.contains("h-3")).toBe(true);
-		expect(roots[2].querySelector("[data-slider-thumb]")!.classList.contains("h-2.5")).toBe(true);
-		expect(roots[3].getAttribute("data-orientation")).toBe("vertical");
-		expect(roots[3].classList.contains("w-11")).toBe(true);
+		expect(roots).toHaveLength(6);
+		expect(tracks).toHaveLength(6);
+		expect(thumbs).toHaveLength(6);
+
+		const horizontalRootClasses = ["h-[14px]", "h-3", "h-2.5"];
+		const verticalRootClasses = ["w-[14px]", "w-3", "w-2.5"];
+		const thumbClasses = ["h-[14px]", "h-3", "h-2.5"];
+		const horizontalTrackClasses = ["h-1", "h-1", "h-[3px]"];
+		const verticalTrackClasses = ["w-1", "w-1", "w-[3px]"];
+
+		for (let index = 0; index < 3; index += 1) {
+			expect(roots[index]!.classList.contains(horizontalRootClasses[index]!)).toBe(true);
+			expect(roots[index]!.classList.contains("h-11")).toBe(false);
+			expect(roots[index]!.classList.contains("[@media(pointer:coarse)]:h-11")).toBe(true);
+			expect(thumbs[index]!.classList.contains(thumbClasses[index]!)).toBe(true);
+			expect(tracks[index]!.classList.contains(horizontalTrackClasses[index]!)).toBe(true);
+		}
+
+		for (let index = 0; index < 3; index += 1) {
+			const sliderIndex = index + 3;
+			expect(roots[sliderIndex]!.getAttribute("data-orientation")).toBe("vertical");
+			expect(roots[sliderIndex]!.classList.contains(verticalRootClasses[index]!)).toBe(true);
+			expect(roots[sliderIndex]!.classList.contains("w-11")).toBe(false);
+			expect(roots[sliderIndex]!.classList.contains("[@media(pointer:coarse)]:w-11")).toBe(true);
+			expect(thumbs[sliderIndex]!.classList.contains(thumbClasses[index]!)).toBe(true);
+			expect(tracks[sliderIndex]!.classList.contains(verticalTrackClasses[index]!)).toBe(true);
+		}
+	});
+
+	it("puts the 3 px accent halo on the thumb only when its nested input is focus-visible", () => {
+		const { container } = render(
+			<Slider value={1} min={0} max={2} step={1} aria-label="Focus" onValueChange={() => {}} />,
+		);
+		const thumb = container.querySelector<HTMLElement>("[data-slider-thumb]");
+
+		if (!thumb) throw new Error("Missing slider thumb");
+		expect(thumb.querySelector('input[type="range"]')).not.toBeNull();
+		expect(thumb.classList.contains("has-[input:focus-visible]:ring-[3px]")).toBe(true);
+		expect(thumb.classList.contains("has-[input:focus-visible]:ring-accent/35")).toBe(true);
+		expect(thumb.className.includes("ring-4")).toBe(false);
+		expect(thumb.className.includes("group-data-[focused]:ring")).toBe(false);
 	});
 });
