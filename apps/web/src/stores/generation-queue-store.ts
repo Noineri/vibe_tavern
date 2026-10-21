@@ -320,6 +320,22 @@ export function useHasActiveQueue(chatId: string | null | undefined): boolean {
 const EMPTY: QueueJob[] = [];
 const EMPTY_RECORDS: GenerationRecord[] = [];
 
+/** Shared batch summary rule for the queue manager and queue-row timeline. */
+export function deriveGenerationBatchSummary(
+  targetVariantCount: number,
+  records: readonly GenerationRecord[],
+): GenerationBatchSummary {
+  const runningRecords = records.filter((record) => record.status === "running");
+  const hasArrivedInFlightVariant = runningRecords.some(
+    (record) => targetVariantCount > record.startVariantPosition,
+  );
+  const done = Math.max(0, targetVariantCount - (hasArrivedInFlightVariant ? 1 : 0));
+  const failed = records.filter((record) => record.status === "failed").length;
+  const running = runningRecords.length;
+  const pending = records.filter((record) => record.status === "pending").length;
+  return { done, failed, running, pending, total: done + failed + running + pending };
+}
+
 /**
  * Durable batch summary from the persisted batch target's snapshot variants and generation records.
  * Visibility requires both a batch and its target to remain in `messageOrder`.
@@ -337,17 +353,9 @@ export function useGenerationBatchSummary(
   const isTargetVisible = useSnapshotStore((s) => batch !== null && s.messageOrder.includes(batch.messageId));
   const targetVariantCount = target?.variants.length ?? 0;
   const targetRecords = records.filter((record) => record.messageId === batch?.messageId);
-  const runningRecords = targetRecords.filter((record) => record.status === "running");
-  const hasArrivedInFlightVariant = runningRecords.some(
-    (record) => targetVariantCount > record.startVariantPosition,
-  );
-  const done = Math.max(0, targetVariantCount - (hasArrivedInFlightVariant ? 1 : 0));
-  const failed = targetRecords.filter((record) => record.status === "failed").length;
-  const running = runningRecords.length;
-  const pending = targetRecords.filter((record) => record.status === "pending").length;
   return {
     visible: batch !== null && isTargetVisible,
-    summary: { done, failed, running, pending, total: done + failed + running + pending },
+    summary: deriveGenerationBatchSummary(targetVariantCount, targetRecords),
   };
 }
 
