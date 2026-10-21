@@ -148,7 +148,7 @@ describe("QueueManager QS-3 batch summary", () => {
       fireEvent.click(getByRole("button", { name: /Generation queue/ }));
     });
 
-    expect(getByText("Queue empty")).not.toBeNull();
+    expect(getByText("More variants")).not.toBeNull();
   });
 
   test("hides when the batch target leaves message order", () => {

@@ -24,6 +24,7 @@ import {
   clearQueuePending,
 } from "../../hooks/use-generation-queue.js";
 import { QueueChip } from "./queue-chip.js";
+import { QueueTimeline } from "./queue-timeline.js";
 
 /**
  * Pinned queue manager (CHAT_GENERATION_QUEUE_PLAN Q4b).
@@ -60,7 +61,7 @@ export function QueueManager(): ReactNode {
         </Popover.Trigger>
         {!isMobile && (
           <Popover.Portal container={getModalPortal() ?? undefined}>
-            <DesktopPopoverContent jobs={jobs} onClose={() => setExpanded(false)} />
+            <DesktopPopoverContent onClose={() => setExpanded(false)} />
           </Popover.Portal>
         )}
       </Popover.Root>
@@ -195,8 +196,7 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
 
 // ── Desktop: upward popover (Radix Popover) ─────────────────────────────
 
-function DesktopPopoverContent({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
-  const { t } = useT();
+function DesktopPopoverContent({ onClose }: { onClose: () => void }): ReactNode {
   return (
     <Popover.Content
       side="top"
@@ -204,18 +204,7 @@ function DesktopPopoverContent({ jobs, onClose }: { jobs: QueueJob[]; onClose: (
       sideOffset={4}
       className="glass-blur z-[220] max-w-[calc(100vw-2rem)] w-80 overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
     >
-      {jobs.length < 1 ? (
-        <div className="px-3 py-6 text-center text-[calc(var(--ui-fs)-3px)] text-t3">{t("queue_empty")}</div>
-      ) : (
-        <>
-          <ManagerHeader jobs={jobs} onClose={onClose} />
-          <div className="max-h-64 overflow-y-auto">
-            {jobs.map((job, i) => (
-              <JobRow key={job.id} job={job} index={i} onClose={onClose} />
-            ))}
-          </div>
-        </>
-      )}
+      <QueueTimeline onClose={onClose} />
     </Popover.Content>
   );
 }
