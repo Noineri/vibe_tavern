@@ -5,7 +5,7 @@
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
@@ -186,6 +186,32 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  event is the newest row. A script-owned / draft thread → `[]`; a
 	 *  missing thread is the 404 `notFound` (the sibling convention). */
 	agentThreadListEvents: (threadId: string) => Promise<AgentThreadEventWire[]>;
+
+	// ─── Branch-sidechat fork + summary (SIDECHAT_PLAN Wave 5 / SC-20) ─────
+	//
+	// The route pair behind `POST …/branches/:branchId/fork-sidechat` and
+	// `GET …/branches/:branchId/sidechat-summary` — the chat-owner family of
+	// SC-0b's session routes. The whole fork (ownership, the typed 400 for a
+	// non-child target, the id remap, the store copy, the plan copy) lives in
+	// domain/sidechat/branch-sidechat-fork.ts; these members are thin wiring.
+
+	/** Copy the source branch's ACTIVE chat-owned threads (every kind the
+	 *  store has rows for) onto `targetBranchId`, with the branch plan; the
+	 *  source is never modified, archived sessions are not copied, metrics
+	 *  reset. 404 for a missing chat / source / target branch (the SC-0b
+	 *  family); the typed 400 `target_branch_not_child_of_source` when the
+	 *  target's `parent_branch_id` is not the source (or its fork point no
+	 *  longer resolves there). Returns the copied threads. */
+	agentBranchForkSidechat: (
+		chatId: string,
+		sourceBranchId: string,
+		targetBranchId: string,
+	) => Promise<AgentBranchForkSidechatResult>;
+
+	/** Whether the branch has any ACTIVE (non-archived) chat-owned thread
+	 *  sessions, and how many — SC-21's web confirms read this before
+	 *  offering the fork. Same 404 pair as the fork. */
+	agentBranchSidechatSummary: (chatId: string, branchId: string) => Promise<AgentBranchSidechatSummary>;
 }
 
 // ─── Thread proposal resolution (SIDECHAT_PLAN SC-11) ───────────────────────

@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
 import {
   toThreadWire,
   toMetricsWire,
@@ -34,6 +34,7 @@ import { ExperienceCopilotCompactionService } from "../../domain/interactive/cop
 import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/script-agent-compaction.js";
 import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-compaction.js";
 import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
+import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -692,6 +693,35 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  the one-pass anchor computation all live there. */
   agentThreadListEvents = async (threadId: string): Promise<AgentThreadEventWire[]> =>
     listAgentThreadEvents({ store: this.stores.experienceCopilot }, threadId);
+
+  // ─── Branch-sidechat fork + summary (SIDECHAT_PLAN SC-20) ────────────────
+
+  /** SC-20: the fork + summary pair — thin wiring over the domain module
+   *  (branch-sidechat-fork.ts), which owns the ownership guards, the typed
+   *  400, the id remap, the store copy, and the plan copy. */
+  private forkDeps() {
+    return {
+      chats: this.stores.chats,
+      messages: this.stores.messages,
+      experienceCopilot: this.stores.experienceCopilot,
+      plans: this.stores.agentPlans,
+    };
+  }
+
+  agentBranchForkSidechat = async (
+    chatId: string,
+    sourceBranchId: string,
+    targetBranchId: string,
+  ): Promise<AgentBranchForkSidechatResult> => {
+    const copied = await forkBranchSidechat(this.forkDeps(), chatId, sourceBranchId, targetBranchId);
+    return { copiedThreads: copied.map((thread) => ({ threadId: thread.threadId, agentKind: thread.agentKind })) };
+  };
+
+  agentBranchSidechatSummary = async (
+    chatId: string,
+    branchId: string,
+  ): Promise<AgentBranchSidechatSummary> =>
+    summarizeBranchSidechat(this.forkDeps(), chatId, branchId);
 
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);

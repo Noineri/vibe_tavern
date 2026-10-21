@@ -1,4 +1,4 @@
-import { and, eq, isNull, desc } from 'drizzle-orm';
+import { and, eq, isNull, desc, asc } from 'drizzle-orm';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -6,6 +6,7 @@ import { brandId, type ExperienceCopilotThreadId, type ExperienceCopilotMessageI
 import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
+import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -193,6 +194,26 @@ export class ExperienceCopilotStore {
         ),
       )
       .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
+      .all();
+    return rows.map((r) => mapThread(r));
+  }
+
+  /** Every ACTIVE (unarchived) chat-owned thread on one branch, across ALL
+   *  agent kinds, oldest first (createdAt, then id as tiebreaker). Kinds are
+   *  NEVER enumerated by the caller — whatever kinds have active threads on
+   *  the branch are what this returns. Script/draft rows never match. */
+  async listActiveChatThreadsForBranch(chatId: string, branchId: string): Promise<ExperienceCopilotThread[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          isNull(experienceCopilotThreads.archivedAt),
+        ),
+      )
+      .orderBy(asc(experienceCopilotThreads.createdAt), asc(experienceCopilotThreads.id))
       .all();
     return rows.map((r) => mapThread(r));
   }
@@ -597,6 +618,26 @@ export class ExperienceCopilotStore {
         .where(eq(experienceCopilotThreads.id, threadId))
         .run();
     });
+  }
+
+  // ─── Branch-sidechat fork copy (SIDECHAT_PLAN SC-20) ───────────────────
+
+  /**
+   * Copy ONE chat-owned thread onto another branch of the same chat (SC-20) —
+   * the thin seam over `experience-copilot-fork-copy.ts` (extracted at the
+   * arch-gate cap); the copy's full contract is documented there.
+   */
+  async forkChatThreadToBranch(
+    sourceThreadId: string,
+    targetBranchId: string,
+    remap: ForkThreadRemap,
+  ): Promise<ExperienceCopilotThread | null> {
+    return forkChatThreadToBranch(
+      { db: this.db, clock: this.clock, idGen: this.idGen, allocateSeq: (tx, threadId, now) => this.allocateSeqAndTouchThread(tx, threadId, now) },
+      sourceThreadId,
+      targetBranchId,
+      remap,
+    );
   }
 
   // ─── Context metrics / auto-compact (CM-2) ─────────────────────────────────

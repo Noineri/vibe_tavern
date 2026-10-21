@@ -189,13 +189,19 @@ export type {
   ExperienceCopilotMessage,
   AppendMessageInput,
 } from './experience-copilot-store.js';
+export { forkChatThreadToBranch } from './experience-copilot-fork-copy.js';
+export type {
+  ForkEventPayloadDecision,
+  ForkThreadCopyDeps,
+  ForkThreadRemap,
+} from './experience-copilot-fork-copy.js';
 export type {
   CopilotContextMetrics,
   CopilotContextLink,
   CopilotMeterSegment,
   CopilotTodoItem,
 } from './experience-copilot-row-parse.js';
-export { AGENT_THREAD_CONTEXT_EVENT_KINDS } from './agent-thread-context-events.js';
+export { AGENT_THREAD_CONTEXT_EVENT_KINDS, parseFrontier } from './agent-thread-context-events.js';
 export type {
   AgentThreadContextEvent,
   AgentThreadContextEventKind,
