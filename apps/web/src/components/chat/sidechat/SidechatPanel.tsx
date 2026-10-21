@@ -49,10 +49,12 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 // Module-load registration of the `sidechat-ooc` host (SC-13b) — the shell
 // below resolves its descriptor by kind at render time.
-import { selectSidechatOwner } from "./sidechat-host.js";
+import { selectSidechatOwner, SIDECHAT_OPEN_KEY_PREFIX } from "./sidechat-host.js";
+import { SidechatHandle } from "./SidechatHandle.js";
 
-/** Storage key prefix for the per-chat open state (chat id appended). */
-export const SIDECHAT_OPEN_KEY_PREFIX = "vt.sidechat.open.";
+// Re-exported for any importer that reached the key through the panel — the
+// single spelling lives in `sidechat-host.ts` (shared with the mobile tabs).
+export { SIDECHAT_OPEN_KEY_PREFIX };
 
 /** Storage key for the one global width preference (all chats share it). */
 export const SIDECHAT_WIDTH_KEY = "vt.sidechat.width";
@@ -139,21 +141,9 @@ export function SidechatPanel() {
   const label = t("sidechat_toggle_label");
 
   if (!open) {
-    return (
-      <div className="relative w-0 shrink-0" data-testid="sidechat-closed">
-        <CustomTooltip content={label} side="left">
-          <button
-            type="button"
-            aria-label={label}
-            data-testid="sidechat-toggle"
-            onClick={() => setOpen(true)}
-            className="absolute top-1/2 right-0 flex h-11 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-l-md border border-r-0 border-border bg-surface text-t3 shadow-[-4px_0_12px_rgba(0,0,0,.25)] transition-colors hover:bg-s2 hover:text-t1"
-          >
-            <Icons.Caret direction="l" />
-          </button>
-        </CustomTooltip>
-      </div>
-    );
+    // The closed affordance lives in `SidechatHandle` (shared with SC-15's
+    // mobile tabs) — same markup, same key, no fork.
+    return <SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />;
   }
 
   return (

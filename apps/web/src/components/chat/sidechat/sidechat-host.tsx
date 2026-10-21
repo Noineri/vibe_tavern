@@ -120,6 +120,15 @@ function sidechatDefaultModelBinding(ctx: AgentDefaultModelContext): {
   };
 }
 
+/**
+ * Storage key prefix for the per-chat open state (chat id appended) — the ONE
+ * spelling both surfaces share (SC-14's desktop panel, SC-15's mobile tabs).
+ * Lives with the host (the pair's owner module), not with either surface, so
+ * the two never fork the key. Default closed; read through
+ * `use-persisted-boolean.ts` (re-reads on chat switch, never cross-writes).
+ */
+export const SIDECHAT_OPEN_KEY_PREFIX = "vt.sidechat.open.";
+
 registerAgentHost({
   kind: SIDECHAT_AGENT_KIND,
   i18n: {

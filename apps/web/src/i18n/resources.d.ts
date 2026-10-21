@@ -3079,6 +3079,7 @@ export default interface Resources {
     "sidebar_timeline_branches": "Timeline branches",
     "sidebar_unnamed_branch": "Unnamed branch",
     "sidebar_your_persona": "Your Persona",
+    "sidechat_close_label": "Close sidechat",
     "sidechat_empty_hint": "Ask about the plot, characters, or reply options.",
     "sidechat_input_placeholder": "Ask about the story…",
     "sidechat_meter_context": "Context",

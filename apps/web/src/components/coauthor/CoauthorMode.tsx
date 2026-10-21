@@ -178,6 +178,9 @@ interface TabButtonProps {
   badge?: boolean;
 }
 
+// forks: 1 — apps/web/src/components/shared/agent-shell/AgentShellTabButton.tsx
+// (fork #1 of this file-private primitive; SC-15 names its `onClose` +
+// `closeLabel` deviation in that file's header).
 function TabButton({ label, active, onClick, pulse, badge }: TabButtonProps) {
   return (
     <button

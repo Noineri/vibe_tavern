@@ -2684,6 +2684,7 @@
 	"sidechat_meter_digest": "Сводка обсуждения",
 	"sidechat_meter_discussion": "Обсуждение",
 	"sidechat_toggle_label": "Сайдчат",
+	"sidechat_close_label": "Закрыть сайдчат",
 	"copilot_review_model_editing": "ИИ вносит изменения…",
 	"copilot_review_revert": "Отменить изменения",
 	"copilot_review_hunks_skipped": "Пропущено ханков: {n} — текст изменился",
