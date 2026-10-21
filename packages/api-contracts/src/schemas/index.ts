@@ -3,6 +3,8 @@ export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
 export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
 export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
+export { agentThreadEventSchema } from "./agent-thread-event-schema.js";
+export type { AgentThreadEventWire } from "./agent-thread-event-schema.js";
 export {
   agentKindSettingsSchema,
   agentKindSettingsPatchSchema,

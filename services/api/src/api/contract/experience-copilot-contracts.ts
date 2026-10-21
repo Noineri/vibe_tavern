@@ -5,7 +5,7 @@
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire } from "@vibe-tavern/api-contracts";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
@@ -168,6 +168,24 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  are written (absent keeps the stored value, `null` clears it). Same
 	 *  validation order as {@link agentChatGetSettings}. */
 	agentChatPatchSettings: (chatId: string, kind: string, body: AgentChatSettingsPatchRequest) => Promise<AgentChatSettingsWire>;
+
+	// ─── Agent-thread frozen events (SIDECHAT_PLAN Wave 5 / SC-19a) ─────────
+	//
+	// The per-thread events read behind `GET
+	// /api/agent/threads/:threadId/events` — the chat-owned twin family of
+	// the SC-11 proposal routes (same `/api/agent/threads/:threadId/...`
+	// prefix). The messages route is untouched: the message wire carries no
+	// `seq`, so the events get their own route with a server-computed anchor.
+
+	/** A chat-owned thread's frozen context events in merged-timeline order
+	 *  (SC-1 `listTimeline`), each `{ id, kind, payload, beforeMessageId }`:
+	 *  the payload is the event mapped through the SAME parser the context
+	 *  loader uses (`mapTimelineEvent`, sidechat-context.ts — one derivation,
+	 *  its corrupt-payload refusal included); `beforeMessageId` is the first
+	 *  message row after the event on the merged timeline, `null` when the
+	 *  event is the newest row. A script-owned / draft thread → `[]`; a
+	 *  missing thread is the 404 `notFound` (the sibling convention). */
+	agentThreadListEvents: (threadId: string) => Promise<AgentThreadEventWire[]>;
 }
 
 // ─── Thread proposal resolution (SIDECHAT_PLAN SC-11) ───────────────────────

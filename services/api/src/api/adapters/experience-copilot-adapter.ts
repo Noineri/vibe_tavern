@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire } from "@vibe-tavern/api-contracts";
 import {
   toThreadWire,
   toMetricsWire,
@@ -33,6 +33,7 @@ import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
 import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/script-agent-compaction.js";
 import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-compaction.js";
+import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -685,6 +686,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     await this.requireChat(chatId);
     return toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
   };
+
+  /** SC-19a: the events route's read — thin wiring over the domain walk
+   *  (sidechat-events.ts): ownership, the loader's own payload mapper, and
+   *  the one-pass anchor computation all live there. */
+  agentThreadListEvents = async (threadId: string): Promise<AgentThreadEventWire[]> =>
+    listAgentThreadEvents({ store: this.stores.experienceCopilot }, threadId);
 
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);
