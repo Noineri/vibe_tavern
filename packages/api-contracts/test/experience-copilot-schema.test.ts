@@ -163,6 +163,26 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
       attachedVariants: [{ messageId: "", variantId: "mvar_1a" }],
     })).toThrow();
   });
+
+  test("a 65-element attachedVariants array validates — the length cap is gone (SC-21b)", () => {
+    // Was: `.max(64)` (SC-17) claimed to mirror the pinned-context links'
+    // bound — which itself claimed to mirror the co-author's, and the
+    // co-author has none. Now: the cap was invented provenance (no owner
+    // decision set it), dropped by owner review 2026-10-21; attaching every
+    // variant of a message with 65+ swipes must not fail validation.
+    // Element validation is unchanged (still strict messageId/variantId).
+    const pairs = Array.from({ length: 65 }, (_, i) => ({
+      messageId: `msg_${i}`,
+      variantId: `mvar_${i}`,
+    }));
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "compare every take",
+      providerProfileId: "p1",
+      attachedVariants: pairs,
+    });
+    expect(parsed.attachedVariants).toHaveLength(65);
+    expect(parsed.attachedVariants?.[64]).toEqual({ messageId: "msg_64", variantId: "mvar_64" });
+  });
 });
 
 // ─── TAG-5: split-turn answer mode on the stream request body ─────────────────
@@ -692,13 +712,15 @@ describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-
     ).toThrow();
   });
 
-  test("set schema accepts a valid array and rejects extras/oversize", () => {
+  test("set schema accepts a valid array and rejects extras; a 65-link body validates — the length cap is gone (SC-21b)", () => {
     const links = [{ targetType: "skill" as const, targetId: "my-skill" }];
     expect(setCopilotContextLinksSchema.parse({ links })).toEqual({ links });
     expect(() => setCopilotContextLinksSchema.parse({ links, extra: 1 })).toThrow();
-    expect(() =>
-      setCopilotContextLinksSchema.parse({ links: Array.from({ length: 65 }, () => links[0]) }),
-    ).toThrow();
+    // Was: 65 links rejected (`.max(64)` claimed to mirror the co-author's
+    // pragmatic bound — which never existed). Now: invented provenance,
+    // dropped by owner review 2026-10-21; element validation is unchanged.
+    const many = Array.from({ length: 65 }, () => links[0]);
+    expect(setCopilotContextLinksSchema.parse({ links: many })).toEqual({ links: many });
   });
 });
 

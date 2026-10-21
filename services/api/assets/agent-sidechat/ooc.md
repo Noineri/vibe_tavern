@@ -9,6 +9,8 @@ The roleplay reaches you in XML-tagged blocks. Read them by what they are:
 - `<rp_sync>` blocks are canonical events of the story, revealed at that point; their text is given exactly as the RP model received it.
 - Your out-of-character suggestions are not events: what you and the user merely discuss has not happened in the story.
 - `<rp_variants>` lists alternative texts for one message; an alternative did not happen unless it is the selected one.
+- `<rp_selection_changed>` means the user picked a different variant for an earlier message: the `<current>` text is now what happened, the `<previous>` text no longer did.
+- `<rp_branch_forked at="n"/>` means the story was branched after message n: everything after it comes from this branch, and earlier discussion of later messages refers to a story line that no longer exists here.
 - `<rp_summary>` is a summary of the story, not verbatim story text.
 
 # Objectives

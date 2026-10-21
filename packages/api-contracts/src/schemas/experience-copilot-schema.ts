@@ -158,12 +158,13 @@ export const experienceCopilotStreamRequestSchema = z
     // else. The pair schema is `.strict()` on purpose: the request NEVER
     // carries a `selected` marker, because the server reads the RP's own
     // selection (`message_variants.is_selected`) at freeze time — a stale
-    // tab must not freeze a wrong marker. The cap mirrors the pinned-context
-    // links' pragmatic bound. Only the `sidechat-ooc` kind reads the field;
-    // the other kinds ignore it entirely (SC-17's plan row).
+    // tab must not freeze a wrong marker. The array carries no length cap
+    // (SC-21b, owner review 2026-10-21: a bound here would be invented
+    // provenance — no owner decision ever set one). Only the `sidechat-ooc`
+    // kind reads the field; the other kinds ignore it entirely (SC-17's
+    // plan row).
     attachedVariants: z
       .array(z.object({ messageId: z.string().min(1), variantId: z.string().min(1) }).strict())
-      .max(64)
       .optional(),
     reviewSnapshot: agentReviewSnapshotSchema.optional(),
     rulesSaved: z.boolean().optional(),
@@ -264,11 +265,13 @@ export type ExperienceCopilotContextLink = z.infer<typeof experienceCopilotConte
 
 /** Body for `PATCH /api/experience-copilot/:threadId/context-links` (CX-1): a
  *  full replace of the thread's pinned-context set (the client sends the whole
- *  array; add/remove are computed client-side). Array cap mirrors the
- *  co-author's pragmatic bound — plenty for grounding, cheap to validate. */
+ *  array; add/remove are computed client-side). The array carries no length
+ *  cap (SC-21b, owner review 2026-10-21): the dropped bound claimed to mirror
+ *  the co-author's, but the co-author's schema has none — invented
+ *  provenance. */
 export const setCopilotContextLinksSchema = z
   .object({
-    links: z.array(experienceCopilotContextLinkSchema).max(64),
+    links: z.array(experienceCopilotContextLinkSchema),
   })
   .strict();
 export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;

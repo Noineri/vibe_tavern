@@ -211,6 +211,21 @@ describe("the sidechat_ooc_base asset — SC-4a pin", () => {
     const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
     expect(text.trim().length).toBeGreaterThan(0);
   });
+
+  // SC-21b (owner review 2026-10-21): the model also receives
+  // `<rp_selection_changed>` (SC-2c) and `<rp_branch_forked` (SC-20) blocks,
+  // and the base prompt must explain every tag it can meet. The seed's
+  // basePrompt is byte-identical to this asset (asserted above), so pinning
+  // the asset text pins the base prompt.
+  test("explains the selection-change and branch-fork tags (SC-21b)", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
+    expect(text).toContain(
+      '- `<rp_selection_changed>` means the user picked a different variant for an earlier message: the `<current>` text is now what happened, the `<previous>` text no longer did.',
+    );
+    expect(text).toContain(
+      '- `<rp_branch_forked at="n"/>` means the story was branched after message n: everything after it comes from this branch, and earlier discussion of later messages refers to a story line that no longer exists here.',
+    );
+  });
 });
 
 // ─── The skill roots (SC-5) ──────────────────────────────────────────────
