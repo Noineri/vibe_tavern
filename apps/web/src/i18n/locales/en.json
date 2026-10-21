@@ -292,6 +292,7 @@
 	"sidebar_rename": "Rename",
 	"sidebar_timeline_branches": "Timeline branches",
 	"sidebar_unnamed_branch": "Unnamed branch",
+	"sidebar_main_branch": "Main",
 	"sidebar_fork_short": "Branch",
 	"sidebar_delete_branch": "Delete branch",
 	"sidebar_delete_branch_short": "Delete",

@@ -2,10 +2,10 @@
  * Pure positioning + date-format helpers shared by the layout shells.
  *
  * Extracted from `Sidebar.tsx` (SF-3) so the co-author shell fork can consume
- * them without copying. The desktop `Sidebar` is the only consumer today (the
- * mobile `Rail` renders via a bottom-sheet, not a portaled popover, and shows
- * no dates in its rows); `CoauthorSidebar` / `CoauthorRail` will import from
- * here when they land (SF-4 / SF-5).
+ * them without copying. Consumers: the desktop `Sidebar` family and, since
+ * RAIL_DRILL_IN RD-2, the mobile character-chats panel (dates on chat/branch
+ * rows, the branch-delete rule); `CoauthorSidebar` / `CoauthorRail` import from
+ * here as they land (SF-4 / SF-5).
  *
  * All functions are pure — no component state, no store reads. DOM-geometry
  * helpers take the trigger element and return viewport-relative coords for a
@@ -13,6 +13,7 @@
  * is a CSS backdrop root — see the in-component comment on charSwitcherPos).
  */
 
+import type { ChatBranch, ChatBranchId } from "@vibe-tavern/domain";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
 /** Resolve a character tab's avatar URL (folder avatar when migrated). Pure. */
@@ -40,4 +41,22 @@ export function formatRelativeTime(value: string | null | undefined): string {
 	if (diffSec < 86400) return rtf.format(-Math.round(diffSec / 3600), "hour");
 	if (diffSec < 604800) return rtf.format(-Math.round(diffSec / 86400), "day");
 	return formatShortDate(value);
+}
+
+/**
+ * Whether the ACTIVE branch of a chat may be deleted from the chat UI: never
+ * the root (main timeline) branch, and never when it is the only branch.
+ *
+ * The one home of this rule — the desktop sidebar's chat row, its collapsed
+ * flyout and the phone/tablet character-chats panel all read it, so the
+ * «Delete» control (enabled state, tooltip / toast) cannot drift between them.
+ * `useChatController.handleDeleteActiveBranch` re-checks the root case itself.
+ */
+export function canDeleteActiveBranch(
+	branches: readonly Pick<ChatBranch, "id" | "parentBranchId">[],
+	activeBranchId: ChatBranchId | null,
+): boolean {
+	const rootBranch = branches.find((b) => b.parentBranchId === null);
+	const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
+	return !activeIsRoot && branches.length > 1;
 }

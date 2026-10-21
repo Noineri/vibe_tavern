@@ -3071,6 +3071,7 @@ export default interface Resources {
     "sidebar_fork_short": "Branch",
     "sidebar_import_character": "Import character (PNG/JSON)",
     "sidebar_import_chat": "Import chat (JSONL)",
+    "sidebar_main_branch": "Main",
     "sidebar_new_chat_active_char": "New chat for active character",
     "sidebar_no_characters": "No characters yet — import a card to start.",
     "sidebar_prompt_manager": "Prompt Manager",

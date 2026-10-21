@@ -24,6 +24,14 @@
  *  - `emptyTitleKey`: i18n key for the no-chats empty state (coauthor characters
  *    can have zero chats; RP characters always have ≥1).
  *
+ * Looks (RAIL_DRILL_IN RD-2) follow the desktop compact-sidebar flyout
+ * (`SidebarFlyout.tsx`), sized for touch: flat chat rows (no card), the active
+ * chat tinted with a 3 px accent bar, line 2 «when · N msgs»; the active RP
+ * chat's line 2 ends with a branch-count badge that collapses / expands the
+ * branches block (open by default — `character-chats-branches.tsx`). Inactive
+ * chats keep their «↳ active branch» line. Mockup:
+ * `RAIL_DRILL_IN_mockups/rail-drill-in.html`, screen 2.
+ *
  * The ⋮ context menus are `ActionSheet` instances (Base UI Drawers). Rendered
  * inside a host `BottomSheet` they stack as nested drawers (Base UI sets
  * `data-nested-drawer-open` on the host's popup); the panel has no DOM of its
@@ -44,10 +52,12 @@ import { SearchInput } from "../../shared/SearchInput.js";
 import { ActionSheet, type ActionSheetItem } from "../../shared/ActionSheet.js";
 import { activateBranchAction, renameBranchAction } from "../../../stores/api-actions/chat-actions.js";
 import { useRowActions } from "../hooks/use-row-actions.js";
+import { formatRelativeTime } from "../sidebar-utils.js";
 import { useT } from "../../../i18n/context.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import { useLastNonNull } from "../../../hooks/use-last-non-null.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
+import { ChatBranchesBlock, type BranchActionsController } from "./character-chats-branches.js";
 
 export interface CharacterChatsPanelProps {
 	/** Mode-filtered chat list for this character. */
@@ -64,6 +74,12 @@ export interface CharacterChatsPanelProps {
 	mode: "rp" | "coauthor";
 	/** Character controller (rename + the useRowActions surface). */
 	character: CharacterControllerActions;
+	/**
+	 * Chat controller slice behind the branches block's «Branch» / «Delete»
+	 * buttons. RP hosts pass it; Co-Author never does (it has no branches), so
+	 * the actions row cannot appear there.
+	 */
+	chat?: BranchActionsController;
 	setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
 	openChatImport: () => void;
 	onSwitchChat: (id: ChatId) => void;
@@ -74,7 +90,7 @@ export interface CharacterChatsPanelProps {
 export function CharacterChatsPanel({
 	chats, activeChatId, branches, activeBranchId,
 	withBranches, emptyTitleKey, mode,
-	character, setConfirmDestroy, openChatImport,
+	character, chat, setConfirmDestroy, openChatImport,
 	onSwitchChat, onCreateChat,
 }: CharacterChatsPanelProps) {
 	const { t, tDynamic } = useT();
@@ -91,7 +107,11 @@ export function CharacterChatsPanel({
 	const [renameDraft, setRenameDraft] = useState("");
 	const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
 	const [branchRenameDraft, setBranchRenameDraft] = useState("");
-	const [branchesOpen, setBranchesOpen] = useState<ChatId | null>(null);
+	// The active chat's branches block is OPEN by default; the badge collapses it.
+	// Tracks the chats whose block the user collapsed (not the open ones).
+	const [collapsedBranchChats, setCollapsedBranchChats] = useState<readonly ChatId[]>([]);
+	const toggleBranches = (chatId: ChatId) =>
+		setCollapsedBranchChats((cur) => (cur.includes(chatId) ? cur.filter((id) => id !== chatId) : [...cur, chatId]));
 
 	// useRowActions is called HERE so the rename menu items close over this
 	// panel's rename setters and drive the inline inputs below.
@@ -148,7 +168,7 @@ export function CharacterChatsPanel({
 			</div>
 
 			{/* ── Chat list ── */}
-			<div className="max-h-[55vh] overflow-y-auto px-2 pb-3">
+			<div className="max-h-[55vh] overflow-y-auto pb-3">
 				{chats.length === 0 ? (
 					<div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
 						<div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat className="h-5 w-5" /></div>
@@ -162,103 +182,97 @@ export function CharacterChatsPanel({
 						<button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
 					</div>
 				) : (
-					filtered.map((ch) => (
-						<div
-							key={ch.id}
-							className={cn(
-								"group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
-								ch.id === activeChatId ? "bg-accent-dim border border-accent/30" : "bg-s2/30 active:bg-s3",
-							)}
-							onClick={() => { onSwitchChat(ch.id); }}
-						>
-							{renamingChatId === ch.id ? (
-								<InlineRenameInput
-									className="mb-px"
-									value={renameDraft}
-									autoFocus
-									onChange={(e) => setRenameDraft(e.target.value)}
-									onClick={(e) => e.stopPropagation()}
-									onBlur={commitRename}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-										else if (e.key === "Escape") { e.preventDefault(); setRenamingChatId(null); }
-									}}
-								/>
-							) : (
-								<span className={cn("min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
-									{ch.title}
-								</span>
-							)}
-							<span className="min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-4px)] text-t3">
-								{ch.subtitle}
-							</span>
-
-							{/* Chat three-dot menu — enlarged touch target */}
-							<button type="button"
-								className={cn(
-									"absolute right-1 top-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
-									chatMenuId === ch.id && "text-t1 bg-s3",
-								)}
-								onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setBranchMenuId(null); }}
-							>
-								<Ic.ellipsis />
-							</button>
-
-							{/* Branches — active chat only (data lives in the snapshot) */}
-							{withBranches && ch.id === activeChatId && branches.length > 0 && (
-								<>
-									<button type="button"
-										className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
-										onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
-									>
-										<Ic.branch /> {t("branch_count", { count: branches.length })}
-									</button>
-									{branchesOpen === ch.id && (
-										<div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
-											{branches.map((b) => {
-												const isRenamingThisBranch = renamingBranch?.branchId === b.id && renamingBranch?.chatId === ch.id;
-												return (
-													<div
-														key={b.id}
-														className={cn(
-															"flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
-															b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3",
-														)}
-														onClick={(e) => { if (!isRenamingThisBranch) { e.stopPropagation(); void activateBranchAction(ch.id, b.id); } }}
-													>
-														<span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
-														{isRenamingThisBranch ? (
-															<InlineRenameInput
-																className="mb-px"
-																value={branchRenameDraft}
-																autoFocus
-																onChange={(e) => setBranchRenameDraft(e.target.value)}
-																onClick={(e) => e.stopPropagation()}
-																onBlur={commitBranchRename}
-																onKeyDown={(e) => {
-																	if (e.key === "Enter") { e.preventDefault(); commitBranchRename(); }
-																	else if (e.key === "Escape") { e.preventDefault(); setRenamingBranch(null); }
-																}}
-															/>
-														) : (
-															<span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
-														)}
-														<button type="button" className={cn("ml-auto shrink-0 cursor-pointer items-center justify-center rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1", branchMenuId?.branchId === b.id && "text-t1 bg-s3")} onClick={(e) => { e.stopPropagation(); setChatMenuId(null); setBranchMenuId({ chatId: ch.id, branchId: b.id, label: b.label }); }}>
-															<Ic.ellipsis />
-														</button>
-													</div>
-												);
-											})}
-										</div>
+					filtered.map((ch) => {
+						const isActive = ch.id === activeChatId;
+						// Branches data lives in the snapshot, so it exists for the active chat only.
+						const showBranches = withBranches && isActive && branches.length > 0;
+						const branchesOpen = showBranches && !collapsedBranchChats.includes(ch.id);
+						return (
+							<div key={ch.id}>
+								<div
+									className={cn(
+										"group relative mx-1.5 flex min-h-[48px] cursor-pointer items-center gap-1.5 rounded-lg py-1.5 pl-3 pr-1 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
+										isActive ? "bg-accent-dim" : "active:bg-s3",
 									)}
-								</>
-							)}
-							{/* For inactive chats — show the active-branch label */}
-							{ch.id !== activeChatId && ch.activeBranchLabel && (
-								<span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
-							)}
-						</div>
-					))
+									onClick={() => { onSwitchChat(ch.id); }}
+								>
+									{isActive && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />}
+									<div className="flex min-w-0 flex-1 flex-col">
+										{renamingChatId === ch.id ? (
+											<InlineRenameInput
+												className="mb-px"
+												value={renameDraft}
+												autoFocus
+												onChange={(e) => setRenameDraft(e.target.value)}
+												onClick={(e) => e.stopPropagation()}
+												onBlur={commitRename}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+													else if (e.key === "Escape") { e.preventDefault(); setRenamingChatId(null); }
+												}}
+											/>
+										) : (
+											<span className={cn("min-w-0 truncate text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t1")}>
+												{ch.title}
+											</span>
+										)}
+										{/* Line 2 — the flyout's «when · N msgs», plus the branch badge on the active RP chat */}
+										{/* Wraps instead of overflowing: with Russian strings the 260px rail leaves ~190px for «relative time · N msgs [badge]». */}
+										<div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[calc(var(--ui-fs)-3px)] text-t3">
+											<span className="shrink-0 whitespace-nowrap tabular-nums">{formatRelativeTime(ch.updatedAt)}</span>
+											<span className="shrink-0 text-t4">·</span>
+											<span className="shrink-0 whitespace-nowrap tabular-nums">{ch.messageCount} {t("msgs_short")}</span>
+											{showBranches && (
+												<button
+													type="button"
+													className="relative inline-flex shrink-0 cursor-pointer items-center gap-[3px] rounded border border-border2 px-[5px] py-px font-ui tabular-nums text-t3 transition-colors duration-100 before:absolute before:-inset-2 before:content-[''] active:bg-s3 active:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
+													aria-label={t("sidebar_chat_branches")}
+													aria-expanded={branchesOpen}
+													onClick={(e) => { e.stopPropagation(); toggleBranches(ch.id); }}
+												>
+													<Icons.Stack /> {branches.length}
+												</button>
+											)}
+										</div>
+										{/* For inactive chats — show the active-branch label */}
+										{!isActive && ch.activeBranchLabel && (
+											<span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
+										)}
+									</div>
+
+									{/* Chat three-dot menu — enlarged touch target */}
+									<button type="button"
+										className={cn(
+											"flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
+											chatMenuId === ch.id && "text-t1 bg-s3",
+										)}
+										onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setBranchMenuId(null); }}
+									>
+										<Ic.ellipsis />
+									</button>
+								</div>
+
+								{/* Branches — active RP chat only, open by default */}
+								{branchesOpen && (
+									<ChatBranchesBlock
+										chatTitle={ch.title}
+										branches={branches}
+										activeBranchId={activeBranchId}
+										menuBranchId={branchMenuId?.chatId === ch.id ? branchMenuId.branchId : null}
+										renamingBranchId={renamingBranch?.chatId === ch.id ? renamingBranch.branchId : null}
+										renameDraft={branchRenameDraft}
+										onRenameDraftChange={setBranchRenameDraft}
+										onRenameCommit={commitBranchRename}
+										onRenameCancel={() => setRenamingBranch(null)}
+										onActivate={(branchId) => { void activateBranchAction(ch.id, branchId); }}
+										onOpenMenu={(b) => { setChatMenuId(null); setBranchMenuId({ chatId: ch.id, branchId: b.id, label: b.label }); }}
+										chat={chat}
+										setConfirmDestroy={setConfirmDestroy}
+									/>
+								)}
+							</div>
+						);
+					})
 				)}
 			</div>
 

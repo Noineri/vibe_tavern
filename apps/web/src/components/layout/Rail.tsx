@@ -522,6 +522,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           emptyTitleKey="sidebar_send_a_message"
           mode="rp"
           character={character}
+          chat={chat}
           setConfirmDestroy={setConfirmDestroy}
           openChatImport={() => chatImportRef.current?.openPicker()}
           onClose={() => setSheetCharId(null)}

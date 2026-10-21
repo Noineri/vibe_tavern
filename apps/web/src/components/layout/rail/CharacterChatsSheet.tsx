@@ -30,6 +30,7 @@ import { useT } from "../../../i18n/context.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import { CharacterChatsPanel } from "./character-chats-panel.js";
+import type { BranchActionsController } from "./character-chats-branches.js";
 
 export interface CharacterChatsSheetProps {
 	/** null = closed (the sheet renders nothing). */
@@ -50,6 +51,8 @@ export interface CharacterChatsSheetProps {
 	mode: "rp" | "coauthor";
 	/** Character controller (rename + the useRowActions surface). */
 	character: CharacterControllerActions;
+	/** Chat controller slice for the branches block's «Branch» / «Delete» (RP hosts only; Co-Author omits it). */
+	chat?: BranchActionsController;
 	setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
 	openChatImport: () => void;
 	onClose: () => void;
@@ -61,7 +64,7 @@ export function CharacterChatsSheet({
 	characterId, characterName, characterAvatarSrc,
 	chats, activeChatId, branches, activeBranchId,
 	withBranches, emptyTitleKey, mode,
-	character, setConfirmDestroy, openChatImport,
+	character, chat, setConfirmDestroy, openChatImport,
 	onClose, onSwitchChat, onCreateChat,
 }: CharacterChatsSheetProps) {
 	const { t } = useT();
@@ -93,6 +96,7 @@ export function CharacterChatsSheet({
 					emptyTitleKey={emptyTitleKey}
 					mode={mode}
 					character={character}
+					chat={chat}
 					setConfirmDestroy={setConfirmDestroy}
 					openChatImport={openChatImport}
 					onSwitchChat={onSwitchChat}

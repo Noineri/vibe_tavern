@@ -298,6 +298,7 @@
 	"sidebar_rename": "Переименовать",
 	"sidebar_timeline_branches": "Ветки таймлайна",
 	"sidebar_unnamed_branch": "Безымянная ветка",
+	"sidebar_main_branch": "Основная",
 	"sidebar_fork_short": "Ветка",
 	"sidebar_delete_branch": "Удалить ветку",
 	"sidebar_delete_branch_short": "Удалить",
