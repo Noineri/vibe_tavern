@@ -376,6 +376,22 @@ describe("QueueTimeline mobile", () => {
     expect(Array.from(finishedRows).map((row) => row.getAttribute("class")?.includes("min-h-12"))).toEqual([true, true, true, true, true]);
   });
 
+  test("ends an expanded fold at its final early variant before later work begins", async () => {
+    setMessage([0, 1, 2, 3, 4]);
+    startBatch([0, 1, 2, 3, 4]);
+    addRecord("running", "provider/model-running");
+    addRecord("pending", "provider/model-pending");
+    const view = renderMobileTimeline();
+
+    const fold = view.getByRole("button", { name: "Show finished variants" });
+    const collapsedRows = view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-fold], [data-queue-timeline-row]");
+    expect(Array.from(collapsedRows).map((row) => row.querySelectorAll("i.bg-accent").length)).toEqual([1, 0, 0]);
+
+    await act(async () => { fireEvent.click(fold); });
+    const expandedRows = view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-fold], [data-queue-timeline-row]");
+    expect(Array.from(expandedRows).map((row) => row.querySelectorAll("i.bg-accent").length)).toEqual([2, 2, 2, 2, 2, 1, 0, 0]);
+  });
+
   test("renders Russian phone copy with the mockup text rungs and no authored truncation", async () => {
     setMessage([0, 1, 2, 3, 4]);
     startBatch([0, 1, 2, 3]);
