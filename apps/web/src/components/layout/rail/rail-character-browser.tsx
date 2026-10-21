@@ -1,7 +1,8 @@
 /**
- * RailCharacterBrowser — the phone rail drawer's body in play mode (header +
- * scrolling content; the host keeps the bottom quick-actions panel). Two
- * screens, mockup `RAIL_DRILL_IN_mockups/rail-drill-in.html` (owner-approved):
+ * RailCharacterBrowser — the phone rail drawer's body (header + scrolling
+ * content; the host keeps its own bottom quick-actions panel): the RP rail in
+ * play mode and the Co-Author rail mount this same component. Two screens,
+ * mockup `RAIL_DRILL_IN_mockups/rail-drill-in.html` (owner-approved):
  *
  *  - Screen 1 «characters»: header (hamburger, title, «+» create, import icon),
  *    the search + sort + tag-filter row, and one row per character — avatar,
@@ -26,8 +27,8 @@
  *
  * Presentational otherwise: the host owns the sheets (character menu, tag
  * filter), the import pickers and the controllers, and passes callbacks.
- * Built so the Co-Author rail can mount the same browser with its own mode
- * parameters (`mode`, `withBranches`, `emptyTitleKey`, no `chat`).
+ * Mode parameters (`mode`, `withBranches`, `emptyTitleKey`, `chat`) are the host's:
+ * the Co-Author rail passes its own — no branches, no `chat`, its chats only.
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { Drawer } from "@base-ui/react/drawer";
@@ -70,7 +71,7 @@ export interface RailCharacterBrowserProps {
 	characters: readonly RailBrowserCharacter[];
 	/** The searched, tag-filtered, sorted list screen 1 renders. */
 	visibleCharacters: readonly RailBrowserCharacter[];
-	/** Every chat (`chatMeta.chats`); the browser buckets it by mode itself. */
+	/** Every chat (`useChatList()` — the sidebar list, independent of any active chat); the browser buckets it by mode itself. */
 	chats: readonly ChatListItem[];
 	selectedCharacterId: string | null;
 	activeChatId: ChatId | null;

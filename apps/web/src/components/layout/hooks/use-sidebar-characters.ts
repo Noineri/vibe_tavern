@@ -44,7 +44,7 @@ export interface UseSidebarCharactersArgs {
 		updatedAt: string;
 		tags?: readonly string[] | null;
 	}>;
-	/** Full chat list (typically `chatMeta?.chats ?? []`). Mode-filtered internally. */
+	/** Full chat list (`useChatList()` — the sidebar list, which does not depend on an active chat). Mode-filtered internally. */
 	readonly allChats: readonly ChatListItem[];
 	/** Live character-search query (local UI state owned by the caller). */
 	readonly query: string;

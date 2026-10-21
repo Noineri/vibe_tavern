@@ -28,7 +28,7 @@ import { useNavigationStore } from "../../../stores/index.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 
 export interface UseSidebarChatsArgs {
-	/** Full chat list (typically `chatMeta?.chats ?? []`). */
+	/** Full chat list (`useChatList()` — the sidebar list, which does not depend on an active chat). */
 	readonly allChats: readonly ChatListItem[];
 	/**
 	 * The character to scope to. `null` leaves the list unscoped (all chats).
