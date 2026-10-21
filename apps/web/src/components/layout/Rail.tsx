@@ -22,13 +22,13 @@ const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId:
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
+import { useChatList } from "../../stores/snapshot-store.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 import { useLastNonNull } from "../../hooks/use-last-non-null.js";
-import type { ChatListItem } from "../../api/types.js";
 
 
 function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
@@ -58,7 +58,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? [];
   const chatMeta = useChatMeta();
-  const chats: ChatListItem[] = chatMeta?.chats ?? [];
+  // The chat list is the sidebar list, independent of any active chat. NOT
+  // `chatMeta?.chats`: `useChatMeta()` is null without an active chat, which
+  // would blank every character's count and chat list in the drawer.
+  const chats = useChatList();
   const branches = chatMeta?.branches ?? [];
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
 

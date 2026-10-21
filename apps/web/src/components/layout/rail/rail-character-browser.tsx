@@ -277,8 +277,10 @@ function CharacterScreen({
 				</div>
 			</div>
 
-			{/* Body — the panel (chat search, chats, branches, ⋮ menus); the whole column scrolls on short screens */}
-			<div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-2">
+			{/* Body — the panel (chat search, chats, branches, ⋮ menus). A flex column that
+			    does not scroll itself: the panel's search stays pinned and its list ("fill")
+			    takes the remaining height and scrolls. */}
+			<div className="flex min-h-0 flex-1 flex-col pt-2">
 				<CharacterChatsPanel
 					chats={sectionChats}
 					activeChatId={activeChatId}
@@ -293,6 +295,7 @@ function CharacterScreen({
 					openChatImport={openChatImport}
 					onSwitchChat={onSwitchChat}
 					onCreateChat={() => onCreateChat(screenCharacter.id)}
+					listSizing="fill"
 				/>
 			</div>
 		</div>

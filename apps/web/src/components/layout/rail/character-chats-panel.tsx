@@ -24,6 +24,10 @@
  *  - `emptyTitleKey`: i18n key for the no-chats empty state (coauthor characters
  *    can have zero chats; RP characters always have ≥1).
  *
+ * Height: the chat list sizes itself per host via `listSizing` — "sheet" (the
+ * default) keeps the bottom-sheet cap, "fill" takes the host column's remaining
+ * height and scrolls inside it (the rail drawer).
+ *
  * Looks (RAIL_DRILL_IN RD-2) follow the desktop compact-sidebar flyout
  * (`SidebarFlyout.tsx`), sized for touch: flat chat rows (no card), the active
  * chat tinted with a 3 px accent bar, line 2 «when · N msgs»; the active RP
@@ -59,6 +63,21 @@ import { useLastNonNull } from "../../../hooks/use-last-non-null.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import { ChatBranchesBlock, type BranchActionsController } from "./character-chats-branches.js";
 
+/**
+ * The chat list's box, per host:
+ *  - "sheet": capped at 55vh — for a host that sizes itself around its content
+ *    (the tablet `BottomSheet`); a short list stays short.
+ *  - "fill": takes the remaining height of the host's flex column (the host
+ *    must be a `flex-col` with `min-h-0`) and scrolls inside it — a cap would
+ *    leave an empty band above the rail drawer's bottom panel on a tall phone.
+ */
+const LIST_SIZING = {
+	sheet: "max-h-[55vh] overflow-y-auto pb-3",
+	fill: "min-h-0 flex-1 overflow-y-auto pb-3",
+} as const;
+
+export type CharacterChatsListSizing = keyof typeof LIST_SIZING;
+
 export interface CharacterChatsPanelProps {
 	/** Mode-filtered chat list for this character. */
 	chats: readonly ChatListItem[];
@@ -85,13 +104,15 @@ export interface CharacterChatsPanelProps {
 	onSwitchChat: (id: ChatId) => void;
 	/** The empty state's «new chat» button. */
 	onCreateChat: () => void;
+	/** How the chat list sizes itself in its host (default "sheet" — the bottom-sheet cap). */
+	listSizing?: CharacterChatsListSizing;
 }
 
 export function CharacterChatsPanel({
 	chats, activeChatId, branches, activeBranchId,
 	withBranches, emptyTitleKey, mode,
 	character, chat, setConfirmDestroy, openChatImport,
-	onSwitchChat, onCreateChat,
+	onSwitchChat, onCreateChat, listSizing = "sheet",
 }: CharacterChatsPanelProps) {
 	const { t, tDynamic } = useT();
 
@@ -168,7 +189,7 @@ export function CharacterChatsPanel({
 			</div>
 
 			{/* ── Chat list ── */}
-			<div className="max-h-[55vh] overflow-y-auto pb-3">
+			<div className={LIST_SIZING[listSizing]}>
 				{chats.length === 0 ? (
 					<div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
 						<div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat className="h-5 w-5" /></div>
