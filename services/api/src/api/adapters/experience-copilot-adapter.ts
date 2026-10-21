@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentChatDefaultModelWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest } from "@vibe-tavern/api-contracts";
 import {
   toThreadWire,
   toMetricsWire,
@@ -676,28 +676,6 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.requireChatOwnedKind(kind);
     await this.requireChat(chatId);
     return toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
-  };
-
-  // ─── The chat's RP default model (SIDECHAT_PLAN SC-7) ───────────────────
-
-  /** The chat's RP model pair, READ-ONLY (SC-7): the active provider
-   *  profile and its selected/default model — resolved exactly as the RP
-   *  send resolves them (`ProviderProfileService.resolveActiveProviderProfile`
-   *  wraps the SAME `providers.getActive()` store read; the send's model is
-   *  the profile's `defaultModel`). The sidechat host's
-   *  `defaultModelBinding` (SC-13) consumes it as the sidechat agent's first
-   *  default. Nulls — never an error — when no profile is active or the
-   *  active profile has no default model: this is a picker default, and the
-   *  send path keeps its own configuration errors. Only the chat's
-   *  existence is validated (404; the route carries no branch/kind segment,
-   *  so there is no pair to check and no registry error to map). */
-  agentChatGetDefaultModel = async (chatId: string): Promise<AgentChatDefaultModelWire> => {
-    await this.requireChat(chatId);
-    const profile = await this.stores.providers.getActive();
-    return {
-      providerProfileId: profile?.id ?? null,
-      modelName: profile?.defaultModel ?? null,
-    };
   };
 
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {

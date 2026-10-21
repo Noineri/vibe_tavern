@@ -36,7 +36,6 @@ import { createExperienceCopilotRoutes } from "./experience-copilot.js";
 import { createAgentChatSessionsRoutes } from "./agent-chat-sessions.js";
 import { createAgentKindSettingsRoutes } from "./agent-kind-settings.js";
 import { createAgentChatSettingsRoutes } from "./agent-chat-settings.js";
-import { createAgentChatDefaultModelRoutes } from "./agent-chat-default-model.js";
 import { createAgentThreadProposalRoutes } from "./agent-thread-proposals.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
@@ -69,7 +68,6 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createAgentChatSessionsRoutes(runtime.experienceCopilot))
     .route("/", createAgentKindSettingsRoutes(runtime.experienceCopilot))
     .route("/", createAgentChatSettingsRoutes(runtime.experienceCopilot))
-    .route("/", createAgentChatDefaultModelRoutes(runtime.experienceCopilot))
     .route("/", createAgentThreadProposalRoutes(runtime.agentThreadProposals))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
