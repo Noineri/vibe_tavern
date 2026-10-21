@@ -2643,6 +2643,7 @@
 	"sidechat_meter_rp_messages": "RP messages",
 	"sidechat_meter_digest": "Discussion digest",
 	"sidechat_meter_discussion": "Discussion",
+	"sidechat_toggle_label": "Sidechat",
 	"copilot_review_model_editing": "AI is editing…",
 	"copilot_review_revert": "Undo changes",
 	"copilot_review_hunks_skipped": "Skipped {n} hunks: the text has changed",

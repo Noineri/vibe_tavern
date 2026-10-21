@@ -83,7 +83,9 @@ export interface ChatModePackage {
 export const CHAT_MODE_PACKAGES: readonly ChatModePackage[] = [
 	{
 		chatMode: "rp",
-		play: { surface: "PlayMode", leftChrome: "default", topBar: "default" },
+		// SC-14: the desktop sidechat panel (the coauthor package's
+		// CoauthorEditor is the other rightPanel consumer).
+		play: { surface: "PlayMode", leftChrome: "default", topBar: "default", rightPanel: "Sidechat" },
 		build: { surface: "BuildMode", leftChrome: "default", topBar: "default" },
 		routes: { play: "/play", build: "/build" },
 	},

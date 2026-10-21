@@ -3088,6 +3088,7 @@ export default interface Resources {
     "sidechat_meter_rp_summaries": "RP summaries",
     "sidechat_read_caption": "Opened: {title}",
     "sidechat_search_caption": "Search: {query} — {count} found",
+    "sidechat_toggle_label": "Sidechat",
     "skip": "Skip",
     "sort_alphabetical": "Alphabetical",
     "sort_recent": "Recent",

@@ -22,6 +22,7 @@ import { PlayMode } from "../components/play/PlayMode.js";
 import { BuildMode } from "../components/build/BuildMode.js";
 import { CoauthorMode } from "../components/coauthor/CoauthorMode.js";
 import { CoauthorEditorPanel } from "../components/coauthor/CoauthorEditorPanel.js";
+import { SidechatPanel } from "../components/chat/sidechat/SidechatPanel.js";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Rail } from "../components/layout/Rail.js";
 import { CoauthorSidebar } from "../components/coauthor/CoauthorSidebar.js";
@@ -103,6 +104,8 @@ describe("surface-parts catalog", () => {
 
 		it("right panels", () => {
 			expect(SURFACE_RIGHT_PANELS.CoauthorEditor).toBe(CoauthorEditorPanel);
+			// SC-14: the rp play slot's desktop sidechat panel.
+			expect(SURFACE_RIGHT_PANELS.Sidechat).toBe(SidechatPanel);
 		});
 	});
 });

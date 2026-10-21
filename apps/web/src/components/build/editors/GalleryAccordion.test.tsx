@@ -40,9 +40,10 @@ let FloatingGalleryViewers: typeof import("./FloatingGalleryViewers.js").Floatin
 let useFloatingGalleryStore: typeof import("../../../stores/floating-gallery-store.js").useFloatingGalleryStore;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ GalleryAccordion } = await import("./GalleryAccordion.js"));
   ({ FloatingGalleryViewers } = await import("./FloatingGalleryViewers.js"));
   ({ useFloatingGalleryStore } = await import("../../../stores/floating-gallery-store.js"));
@@ -130,7 +131,7 @@ describe("GalleryAccordion floating viewer across a character switch", () => {
     useFloatingGalleryStore.setState({ viewers: [] });
   });
 
-  it("keeps A's image with B's accordion collapsed AND open", () => {
+  it("keeps A's image with B's accordion collapsed AND open", async () => {
     const view = render(
       <>
         <GalleryAccordion characterId="char-A" />
@@ -152,7 +153,11 @@ describe("GalleryAccordion floating viewer across a character switch", () => {
         <FloatingGalleryViewers />
       </>,
     );
-    expect(view.queryByAltText("A one")).toBeNull();
+    // AnimatePresence holds A's exiting grid briefly; waitFor polls until it
+    // is gone (the CoauthorCharacterForm.test.tsx precedent). SC-14: the
+    // persisted hook re-reads B's key on the switch, so B is genuinely
+    // collapsed here — no longer A's leaked open state.
+    await waitFor(() => expect(view.queryByAltText("A one")).toBeNull());
     const kept = view.getByTestId("floating-viewer");
     expect(kept.getAttribute("data-src")).toContain("characters/char-A/assets/row-a1");
     expect(kept.getAttribute("data-src")).not.toContain("char-B");
