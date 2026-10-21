@@ -119,14 +119,29 @@ describe("deriveQueueRows", () => {
   });
 
   test("excludes an arrived partial variant while its record remains running", () => {
-    const result = deriveQueueRows({
-      variants: [variant("a", 0), variant("partial-b", 1)],
+    const variants = [variant("a", 0), variant("partial-b", 1)];
+    const runningRecord = record("running-b", "running", 1);
+    const whileRunning = deriveQueueRows({
+      variants,
       selectedVariantIndex: 1,
       batch: batch(["a"]),
-      records: [record("running-b", "running", 1)],
+      records: [runningRecord],
     });
 
-    expect(result.rows.map((row) => row.kind)).toEqual(["finished", "finished", "running"]);
-    expect(result.summary).toEqual({ done: 1, failed: 0, running: 1, pending: 0, total: 2 });
+    expect(whileRunning.rows.map((row) => row.kind)).toEqual(["finished", "running"]);
+    expect(whileRunning.rows[0]).toMatchObject({ kind: "finished", item: { variantId: brandId<MessageVariantId>("a") } });
+    expect(whileRunning.rows[1]).toMatchObject({ kind: "running", record: { id: "running-b", startVariantPosition: 1 } });
+    expect(whileRunning.summary).toEqual({ done: 1, failed: 0, running: 1, pending: 0, total: 2 });
+
+    const afterRunningRecordRemoval = deriveQueueRows({
+      variants,
+      selectedVariantIndex: 1,
+      batch: batch(["a"]),
+      records: [],
+    });
+
+    expect(afterRunningRecordRemoval.rows.map((row) => row.kind)).toEqual(["finished", "finished"]);
+    expect(afterRunningRecordRemoval.rows[1]).toMatchObject({ kind: "finished", item: { variantId: brandId<MessageVariantId>("partial-b") } });
+    expect(afterRunningRecordRemoval.summary).toEqual({ done: 2, failed: 0, running: 0, pending: 0, total: 2 });
   });
 });

@@ -41,6 +41,9 @@ export function deriveQueueRows(input: {
   if (!input.batch) return emptyQueueRows();
 
   const targetRecords = input.records.filter((record) => record.messageId === input.batch?.messageId);
+  const runningVariantPositions = new Set(
+    targetRecords.filter((record) => record.status === "running").map((record) => record.startVariantPosition),
+  );
   const finished = deriveVariantPickerItems(input.variants).map((item, index) => ({
     kind: "finished" as const,
     item,
@@ -62,7 +65,7 @@ export function deriveQueueRows(input: {
   for (let position = 0; position <= finished.length; position += 1) {
     if (position > 0) {
       const row = finished[position - 1];
-      if (!foldedIds.has(row.item.variantId)) rows.push(row);
+      if (!foldedIds.has(row.item.variantId) && !runningVariantPositions.has(position - 1)) rows.push(row);
     }
     const failures = failedByAnchor.get(position);
     if (failures) rows.push(...failures);
