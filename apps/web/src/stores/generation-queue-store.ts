@@ -281,7 +281,7 @@ if (typeof window !== "undefined") {
 // field changes (e.g. an error on job A) do not re-render a subscriber that
 // only reads job B's status.
 
-/** Total jobs for a chat (all statuses). Drives pill visibility (≥1 = show). */
+/** Raw legacy job-list selector: total jobs for a chat, retained for job-oriented consumers and tests. */
 export function useQueueCount(chatId: string | null | undefined): number {
   return useGenerationQueueStore(
     useShallow((s) => (chatId ? s.jobsByChat[chatId]?.length ?? 0 : 0)),
@@ -321,14 +321,10 @@ const EMPTY: QueueJob[] = [];
 const EMPTY_RECORDS: GenerationRecord[] = [];
 
 /**
- * Conceptual display count for the manager pill: queue jobs PLUS one if a
- * generation is currently in flight for the chat (the standalone job #0 or a
- * running queue job). Per D10 the pill is shown when this is ≥ 2 — i.e. an
- * in-flight generation coexists with at least one queued job. In practice
- * this hook is rarely needed (the store is empty until the first "Generate
- * more", so {@link useQueueCount} ≥ 1 is the simpler pill gate); it is
- * provided for the pill's `{done}/{total}` text where `total` should read as
- * the user-perceived queue length including the running item.
+ * Durable batch summary from the persisted batch target's snapshot variants and generation records.
+ * Visibility requires both a batch and its target to remain in `messageOrder`.
+ * `done` counts target variants while excluding an arrived variant for a still-running record;
+ * `failed`, `running`, and `pending` come from records, and `total` is their sum with `done`.
  */
 export function useGenerationBatchSummary(
   chatId: string | null | undefined,
