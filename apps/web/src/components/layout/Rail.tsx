@@ -1,17 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ListSortToggle } from "../shared/ListSortToggle.js";
-import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import React, { useEffect, useRef, useState } from "react";
 import { Ic } from "../shared/icons.js";
-import { InlineRenameInput } from "../shared/InlineRenameInput.js";
-import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { initials } from "./app-shell-helpers.js";
 import { Ico, NavRow } from "./rail/rail-primitives.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "./rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "./rail/RailCollapsedStrip.js";
 import { CharacterChatsSheet } from "./rail/CharacterChatsSheet.js";
+import { RailCharacterBrowser } from "./rail/rail-character-browser.js";
 import { Drawer } from "@base-ui/react/drawer";
 import { getApplicationModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
@@ -25,7 +21,6 @@ const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId:
   resolveEntityAvatarUrl({ kind: "characters", id: c.id, avatarExt: c.avatarExt, avatarAssetId: c.avatarAssetId, updatedAt: c.updatedAt });
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { activateBranchAction, renameBranchAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useCharacterStore } from "../../stores/character-store.js";
@@ -51,6 +46,10 @@ function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
+// The character ⋮ menu never renames anything; `useRowActions` still requires
+// the four rename setters (the chat / branch menus that call them live in the
+// character-chats panel, which owns its own `useRowActions`).
+const noop = () => {};
 
 export function Rail({ hidden }: { hidden?: boolean }) {
   const { t, tDynamic } = useT();
@@ -65,6 +64,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
   // Branches are only available for the active chat (loaded via snapshot)
   const activeChatBranches = activeChatId ? branches : [];
+  // The drawer opens on this character's chats (null without an active chat).
+  const activeChatCharacterId = activeChatId ? chatMeta?.activeChat.characterId ?? null : null;
   const buildPanels = useBuildPanels();
 
   const character = useCharacterController();
@@ -76,36 +77,25 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // via imperative `openPicker()` refs (see IF-6 of IMPORT_MOBILE_FLOW_PLAN.md).
   const characterImportRef = useRef<CharacterImportMobileHandle>(null);
   const chatImportRef = useRef<ChatImportMobileHandle>(null);
-  const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
   // The character whose chats are shown in the CharacterChatsSheet (tablet
   // bottom sheet launched from a collapsed-strip avatar tap). null = closed.
   const [sheetCharId, setSheetCharId] = useState<string | null>(null);
 
-  // Context menus
+  // Character ⋮ menu (opened from the character screen's header)
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
-  const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
-  const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
-  // Freeze the menu ids so the closing ActionSheet keeps rendering its last
+  // Freeze the menu id so the closing ActionSheet keeps rendering its last
   // content during the Base UI exit transition (menuId → null on close;
   // without this the sheet would empty mid-slide). See use-last-non-null.ts.
   const frozenCharMenuId = useLastNonNull(charMenuId);
-  const frozenChatMenuId = useLastNonNull(chatMenuId);
-  const frozenBranchMenuId = useLastNonNull(branchMenuId);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
   // Sort mode lives in the navigation store; query + tags are local UI state.
   // Tags are filtered via a bottom sheet rather than a dropdown — the Rail
   // panel is a backdrop-blur root, so a portaled combobox (Sidebar's approach)
   // would be awkward on mobile; a bottom sheet is the native-mobile pattern.
-  const characterSortMode = useNavigationStore((s) => s.characterSortMode);
-  const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
   const [charQuery, setCharQuery] = useState("");
   const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
   const [tagsSheetOpen, setTagsSheetOpen] = useState(false);
-
-  // Chat rename
-  const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
 
   // Hamburger force-open from TopBar
   const forceOpen = useNavigationStore((s) => s.railForceOpen);
@@ -126,19 +116,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     selectedTags: charSelectedTags,
   });
 
-  // Active character — its chats are derived via the shared useSidebarChats
-  // hook (character-scope + mode split), which is also where the rail's
-  // mode-awareness lands: previously the rail rendered every chat for the
-  // active character regardless of mode (the never-integrated mode work).
-  // The rail has no chat search box (SF-1 scope), so query is ""; the desktop
-  // sort mode from the nav store still applies via the hook.
-  const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
-  const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
-
-  // Chats for the CharacterChatsSheet. Falls back to activeCharId so the hook
-  // stays stable when the sheet is closed (sheetCharId === null); when the
-  // sheet is open on a different character, this returns that character's chats.
-  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId ?? activeCharId, query: "" });
+  // Chats for the CharacterChatsSheet — the shared useSidebarChats hook
+  // (character-scope + mode split). While the sheet is closed (null) the result
+  // is unused; when open on a character, this returns that character's chats.
+  // The drawer's character screens derive theirs inside RailCharacterBrowser.
+  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId, query: "" });
   const sheetChar = sheetCharId ? allCharacters.find((c) => c.id === sheetCharId) ?? null : null;
 
   // Drawer open/close is driven by Base UI Drawer.Root — exit animation +
@@ -149,42 +131,18 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const toggle = () => setExpanded((v) => !v);
   const close = () => setExpanded(false);
 
-  const commitRename = () => {
-    const nextTitle = renameDraft.trim();
-    if (nextTitle && renamingChatId) {
-      void character.handleRenameChat(renamingChatId, nextTitle);
-    }
-    setRenamingChatId(null);
-  };
-
-  // Branch rename — mirrors chat-rename's inline-input pattern, but targets
-  // renameBranchAction(chatId, branchId, label). renamingBranchId holds the
-  // exact {chatId, branchId} being edited so the inline input knows which row
-  // to replace.
-  const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
-  const [branchRenameDraft, setBranchRenameDraft] = useState("");
-
-  // Context-menu action builders (character / chat / branch). The hook is
-  // mode-agnostic — rename and delete are offered for every chat. Branch menu
-  // is RP-only in practice (co-author has no branches, so this Rail's
-  // co-author fork never calls buildBranchMenuItems).
+  // Context-menu action builders — only the character menu is built here (the
+  // hook is mode-agnostic; chat / branch menus are the panel's).
   const rowActions = useRowActions({
     mode: "rp",
     character,
     setConfirmDestroy,
-    setRenamingChatId,
-    setRenameDraft,
-    setRenamingBranch,
-    setBranchRenameDraft,
+    setRenamingChatId: noop,
+    setRenameDraft: noop,
+    setRenamingBranch: noop,
+    setBranchRenameDraft: noop,
     openChatImport: () => chatImportRef.current?.openPicker(),
   });
-  const commitBranchRename = () => {
-    const nextLabel = branchRenameDraft.trim();
-    if (nextLabel && renamingBranch) {
-      void renameBranchAction(renamingBranch.chatId, renamingBranch.branchId, nextLabel);
-    }
-    setRenamingBranch(null);
-  };
 
   return (
     <>
@@ -246,216 +204,61 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         <Drawer.Backdrop className="rail-backdrop fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm" />
         <Drawer.Viewport className="fixed inset-0 z-[300]">
           <Drawer.Popup className="rail-popup glass-blur fixed left-0 top-0 bottom-0 flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl">
-            {/* Header */}
-            <div className="flex h-[48px] shrink-0 items-center border-b border-border px-3">
-              <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
-                   onClick={toggle}>
-                <Ic.menu />
-              </div>
-              <Drawer.Title className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
-                {mode === "build" ? t("editor") : t("characters")}
-              </Drawer.Title>
-            </div>
-
-            {/* Scrollable content */}
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
-              {mode === "build" ? (
-                buildPanels.map((panel) => (
-                  <RailRow key={panel.id} icon={panel.icon} label={tDynamic(panel.labelKey)}
-                       onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
-                ))
-              ) : (
-                <>
-                  {/* Create + Import grid */}
-                  <div className="grid grid-cols-2 gap-1.5 px-1">
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}>
-                      <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
-                    </div>
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { characterImportRef.current?.openPicker(); close(); }}>
-                      <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
-                    </div>
+            {mode === "build" ? (
+              <>
+                {/* Header */}
+                <div className="flex h-[48px] shrink-0 items-center border-b border-border px-3">
+                  <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
+                       onClick={toggle}>
+                    <Ic.menu />
                   </div>
-                  <div className="my-1 h-px bg-border" />
+                  <Drawer.Title className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
+                    {t("editor")}
+                  </Drawer.Title>
+                </div>
 
-                  {/* Search + sort + tag-filter row. No section header on mobile
-                      — just the controls, compact. Tags open a bottom sheet. */}
-                  <div className="flex items-center gap-1.5 px-1">
-                    <SearchInput
-                      className="min-w-0 flex-1"
-                      value={charQuery}
-                      onChange={(e) => setCharQuery(e.target.value)}
-                      placeholder={t("search_name_placeholder")}
-                    />
-                    <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} className="shrink-0" />
-                    <div className="relative shrink-0">
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex h-[30px] w-8 items-center justify-center rounded border bg-s2 transition-colors active:bg-s3",
-                          tagsSheetOpen || charSelectedTags.length > 0 ? "border-accent text-accent-t" : "border-border text-t3",
-                        )}
-                        onClick={() => setTagsSheetOpen(true)}
-                        aria-label={t("filter_by_tags")}
-                      >
-                        <Ic.filter />
-                      </button>
-                      {charSelectedTags.length > 0 && (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-ui text-[9px] font-bold text-on-accent">
-                          {charSelectedTags.length}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {visibleChars.length === 0 && (
-                    <div className="px-3 py-6 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-                      {t("search_no_results")}
-                    </div>
-                  )}
-
-                  {visibleChars.map((c) => (
-                    <React.Fragment key={c.id}>
-                      {/* Character row — soft card */}
-                      <div
-                        className={cn(
-                          "group relative flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
-                          selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "bg-s2/30",
-                        )}
-                        onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
-                      >
-                        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-                          {charAvatarSrc(c) ? <img className="h-full w-full object-cover" src={charAvatarSrc(c)!} alt={c.name} /> : initials(c.name)}
-                        </div>
-                        <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
-                        {/* Three-dot menu button */}
-                        <button type="button"
-                          className={cn(
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
-                            charMenuId === c.id && "text-t1 bg-s3",
-                          )}
-                          onClick={(e) => { e.stopPropagation(); setCharMenuId(c.id); setChatMenuId(null); }}
-                        >
-                          <Ic.ellipsis />
-                        </button>
-                      </div>
-
-                      {/* Chats for active character */}
-                      {c.id === selectedCharacterId && (
-                        <div className={cn(
-                          "ml-3 flex flex-col gap-1 border-l-2 pl-2 py-1 transition-colors",
-                          sectionChats.some(ch => ch.id === activeChatId) ? "border-accent/50" : "border-border"
-                        )}>
-                          {sectionChats.map((ch) => (
-                            <div key={ch.id}
-                                 className={cn(
-                                   "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
-                                   ch.id === activeChatId
-                                     ? "bg-accent-dim border border-accent/30"
-                                     : "bg-s2/30 active:bg-s3",
-                                 )}
-                                 onClick={() => { void chat.handleSwitchChat(ch.id); }}>
-                              {renamingChatId === ch.id ? (
-                                <InlineRenameInput
-                                  className="mb-px"
-                                  value={renameDraft}
-                                  autoFocus
-                                  onChange={(e) => setRenameDraft(e.target.value)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onBlur={commitRename}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                                    else if (e.key === "Escape") { e.preventDefault(); setRenamingChatId(null); }
-                                  }}
-                                />
-                              ) : (
-                                <span className={cn("min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
-                                  {ch.title}
-                                </span>
-                              )}
-                              <span className="min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-4px)] text-t3">
-                                {ch.subtitle}
-                              </span>
-
-                              {/* Chat three-dot menu — enlarged touch target */}
-                              <button type="button"
-                                className={cn(
-                                  "absolute right-1 top-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
-                                  chatMenuId === ch.id && "text-t1 bg-s3",
-                                )}
-                                onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setCharMenuId(null); }}
-                              >
-                                <Ic.ellipsis />
-                              </button>
-
-                              {/* Branches — active chat only (data lives in the snapshot) */}
-                              {ch.id === activeChatId && activeChatBranches.length > 0 && (
-                                <>
-                                <button type="button"
-                                  className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
-                                  onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
-                                >
-                                  <Ic.branch /> {t("branch_count", { count: activeChatBranches.length })}
-                                </button>
-                                {branchesOpen === ch.id && (
-                                  <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
-                                    {activeChatBranches.map((b) => {
-                                      const isRenamingThisBranch = renamingBranch?.branchId === b.id && renamingBranch?.chatId === ch.id;
-                                      return (
-                                      <div
-                                        key={b.id}
-                                        className={cn(
-                                          "flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
-                                          b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3"
-                                        )}
-                                        onClick={(e) => { if (!isRenamingThisBranch) { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); } }}
-                                      >
-                                        <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
-                                        {isRenamingThisBranch ? (
-                                          <InlineRenameInput
-                                            className="mb-px"
-                                            value={branchRenameDraft}
-                                            autoFocus
-                                            onChange={(e) => setBranchRenameDraft(e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            onBlur={commitBranchRename}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") { e.preventDefault(); commitBranchRename(); }
-                                              else if (e.key === "Escape") { e.preventDefault(); setRenamingBranch(null); }
-                                            }}
-                                          />
-                                        ) : (
-                                          <span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
-                                        )}
-                                        <button type="button" className={cn("ml-auto shrink-0 cursor-pointer items-center justify-center rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1", branchMenuId?.branchId === b.id && "text-t1 bg-s3")} onClick={(e) => { e.stopPropagation(); setCharMenuId(null); setChatMenuId(null); setBranchMenuId({ chatId: ch.id as ChatId, branchId: b.id as ChatBranchId, label: b.label }); }}>
-                                          <Ic.ellipsis />
-                                        </button>
-                                      </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                                </>
-                              )}
-                              {/* For inactive chats — show the branch label */}
-                              {ch.id !== activeChatId && ch.activeBranchLabel && (
-                                <span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
-                              )}
-                            </div>
-                          ))}
-                          {/* + New chat */}
-                          <div key={`new-chat-${c.id}`}
-                               className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
-                               onClick={() => { void character.handleCreateChat(c.id); }}>
-                            <Ic.plus /> {t("new_chat")}
-                          </div>
-                        </div>
-                      )}
-                    </React.Fragment>
+                {/* Scrollable content */}
+                <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
+                  {buildPanels.map((panel) => (
+                    <RailRow key={panel.id} icon={panel.icon} label={tDynamic(panel.labelKey)}
+                         onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
                   ))}
-                </>
-              )}
-            </div>
+                </div>
+              </>
+            ) : (
+              // Play mode: two screens — the character list and one character's chats.
+              <RailCharacterBrowser
+                open={expanded}
+                activeCharacterId={activeChatCharacterId}
+                characters={allCharacters}
+                visibleCharacters={visibleChars}
+                chats={chats}
+                selectedCharacterId={selectedCharacterId}
+                activeChatId={activeChatId}
+                branches={activeChatBranches}
+                activeBranchId={activeBranchId}
+                filters={{
+                  query: charQuery,
+                  onQueryChange: setCharQuery,
+                  tagCount: charSelectedTags.length,
+                  tagsSheetOpen,
+                  onOpenTags: () => setTagsSheetOpen(true),
+                }}
+                onClose={close}
+                onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}
+                onImportCharacter={() => { characterImportRef.current?.openPicker(); close(); }}
+                onOpenCharacterMenu={setCharMenuId}
+                mode="rp"
+                withBranches={true}
+                emptyTitleKey="sidebar_send_a_message"
+                character={character}
+                chat={chat}
+                setConfirmDestroy={setConfirmDestroy}
+                openChatImport={() => chatImportRef.current?.openPicker()}
+                onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
+                onCreateChat={(characterId) => { void character.handleCreateChat(characterId); }}
+              />
+            )}
 
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
@@ -476,23 +279,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         items={frozenCharMenuId ? rowActions.buildCharMenuItems(frozenCharMenuId, allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : []}
         onClose={() => setCharMenuId(null)}
       />
-      <ActionSheet
-        open={chatMenuId !== null}
-        title={frozenChatMenuId ? (sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : ""}
-        items={frozenChatMenuId ? rowActions.buildChatMenuItems(frozenChatMenuId, sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : []}
-        onClose={() => setChatMenuId(null)}
-      />
-      <ActionSheet
-        open={branchMenuId !== null}
-        title={frozenBranchMenuId ? (frozenBranchMenuId.label || t("sidebar_unnamed_branch")) : ""}
-        items={frozenBranchMenuId ? rowActions.buildBranchMenuItems({ chatId: frozenBranchMenuId.chatId, branchId: frozenBranchMenuId.branchId, label: frozenBranchMenuId.label }) : []}
-        onClose={() => setBranchMenuId(null)}
-      />
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
       {/* Multi-select tag picker — the mobile-native alternative to the desktop
           Sidebar's portaled tag combobox. Stays open while toggling so the user
-          can pick several tags; backdrop tap or swipe-down dismisses. */}
+          can pick several; backdrop tap or swipe-down dismisses. */}
       <TagFilterSheet
         open={tagsSheetOpen}
         selectedTags={charSelectedTags}
@@ -506,9 +297,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
       {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
       {/* Launched from a collapsed-strip avatar tap — lists the character's chats
-          (+ branches for the active chat) in a bottom sheet. Quick-access picker
-          for the tablet rail; the expanded 260px panel still carries the full
-          tree for search/sort/tag-filter. */}
+          (+ branches for the active chat) in a bottom sheet: the same
+          CharacterChatsPanel the expanded drawer's character screen renders. */}
       {sheetCharId && sheetChar && (
         <CharacterChatsSheet
           characterId={sheetCharId}

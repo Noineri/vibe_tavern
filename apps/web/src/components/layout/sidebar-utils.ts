@@ -4,7 +4,8 @@
  * Extracted from `Sidebar.tsx` (SF-3) so the co-author shell fork can consume
  * them without copying. Consumers: the desktop `Sidebar` family and, since
  * RAIL_DRILL_IN RD-2, the mobile character-chats panel (dates on chat/branch
- * rows, the branch-delete rule); `CoauthorSidebar` / `CoauthorRail` import from
+ * rows, the branch-delete rule) and, since RD-3, the rail's character browser
+ * (the «N chats · when» summary); `CoauthorSidebar` / `CoauthorRail` import from
  * here as they land (SF-4 / SF-5).
  *
  * All functions are pure — no component state, no store reads. DOM-geometry
@@ -14,6 +15,7 @@
  */
 
 import type { ChatBranch, ChatBranchId } from "@vibe-tavern/domain";
+import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
 /** Resolve a character tab's avatar URL (folder avatar when migrated). Pure. */
@@ -59,4 +61,49 @@ export function canDeleteActiveBranch(
 	const rootBranch = branches.find((b) => b.parentBranchId === null);
 	const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
 	return !activeIsRoot && branches.length > 1;
+}
+
+/**
+ * What the phone rail's character list shows under a character's name: how many
+ * chats its screen lists and when the newest one was last touched.
+ */
+export interface CharacterChatsSummary {
+	readonly count: number;
+	/** `updatedAt` of the most recently updated chat; null with no chats (or no parsable timestamp). */
+	readonly newestUpdatedAt: string | null;
+}
+
+/**
+ * Summary of ONE character's chats. Feed it the chats the character's screen
+ * lists (the active chat's mode bucket from `useSidebarChats`' `sectionChats`),
+ * so the count on the list row equals the rows on the screen it opens — the
+ * mode rule lives in that hook only.
+ */
+export function summarizeCharacterChats(chats: readonly Pick<ChatListItem, "updatedAt">[]): CharacterChatsSummary {
+	let newestUpdatedAt: string | null = null;
+	let newestMs = Number.NEGATIVE_INFINITY;
+	for (const chat of chats) {
+		const ms = Date.parse(chat.updatedAt);
+		if (Number.isNaN(ms) || ms <= newestMs) continue;
+		newestMs = ms;
+		newestUpdatedAt = chat.updatedAt;
+	}
+	return { count: chats.length, newestUpdatedAt };
+}
+
+/**
+ * {@link summarizeCharacterChats} for every character at once, in one pass
+ * over an already mode-bucketed, unscoped chat list. A character without chats
+ * has no entry — read it as `summarizeCharacterChats([])`.
+ */
+export function summarizeChatsByCharacter(
+	chats: readonly Pick<ChatListItem, "characterId" | "updatedAt">[],
+): ReadonlyMap<string, CharacterChatsSummary> {
+	const byCharacter = new Map<string, Pick<ChatListItem, "characterId" | "updatedAt">[]>();
+	for (const chat of chats) {
+		const bucket = byCharacter.get(chat.characterId);
+		if (bucket) bucket.push(chat);
+		else byCharacter.set(chat.characterId, [chat]);
+	}
+	return new Map([...byCharacter].map(([characterId, list]) => [characterId, summarizeCharacterChats(list)] as const));
 }
