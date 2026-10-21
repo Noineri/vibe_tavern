@@ -12,9 +12,10 @@
  * - Rendered ONLY where the served-modes selector allows (a co-author chat has
  *   no sidechat — nothing hard-codes the chat mode) and never on mobile (SC-15
  *   owns the mobile tabs) or while no chat+branch is active.
- * - Open state is per chat (`vt.sidechat.open.<chatId>`, default closed); the
- *   hook re-reads on chat switch and never writes the previous chat's value
- *   under the new chat's key (see `use-persisted-boolean.ts`).
+ * - Open state is per chat (`vt.sidechat.open.<chatId>`, default closed) and
+ *   lives in the shared `sidechat-open-store.ts` (SC-18a) — the hook below
+ *   re-reads on chat switch and never writes the previous chat's value
+ *   under the new chat's key.
  * - Width is one global numeric preference (`vt.sidechat.width`, default 400,
  *   min 320, max 50% of the viewport) shared by all chats — owned by the
  *   shared `ResizableSidePane` primitive (persisted hook, live-max clamp,
@@ -41,7 +42,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { ResizableSidePane } from "../../shared/resizable-side-pane.js";
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
-import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
+import { useSidechatOpen } from "../../../stores/sidechat-open-store.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
@@ -72,7 +73,7 @@ export function SidechatPanel() {
   const chatId = activeChat?.id ?? null;
   const chatMode = activeChat?.mode ?? "rp";
   const served = selectSidechatServedChatModes(agentKindSettings).includes(chatMode);
-  const [open, setOpen] = usePersistedBoolean(`${SIDECHAT_OPEN_KEY_PREFIX}${chatId ?? ""}`, false);
+  const [open, setOpen] = useSidechatOpen(chatId);
 
   const owner = selectSidechatOwner(
     chatId === null ? null : { id: chatId },

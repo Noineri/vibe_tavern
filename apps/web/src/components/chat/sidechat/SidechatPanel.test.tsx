@@ -43,6 +43,7 @@ import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { SIDECHAT_WIDTH_KEY } from "./SidechatPanel.js";
+import { useSidechatOpenStore } from "../../../stores/sidechat-open-store.js";
 
 useDomEnv();
 
@@ -217,6 +218,9 @@ beforeEach(() => {
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
   localStorage.clear();
+  // The open flag is shared process state now (SC-18a) — reset it alongside
+  // localStorage so no test reads the previous test's in-memory entry.
+  useSidechatOpenStore.setState({ openByChat: {} });
   setViewportWidth(1024);
   seedStores({ [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]) });
   seedChat(CHAT_A, BRANCH_A);
@@ -343,6 +347,21 @@ describe("sidechat-panel — per-chat open state (SC-14)", () => {
 
     expect(getByTestId("sidechat-panel")).toBeDefined();
     await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeDefined());
+  });
+
+  it("an outside store write opens the closed panel (SC-18a)", async () => {
+    const { getByTestId, queryByTestId } = render(withIsolatedI18n(<SidechatPanel />));
+    await flushSessionLoad();
+    expect(queryByTestId("sidechat-panel")).toBeNull();
+
+    // SC-18's future entry opens through the store, not through the panel.
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+    });
+    await flushSessionLoad();
+    expect(getByTestId("sidechat-panel")).toBeDefined();
+    await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeDefined());
+    expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("true");
   });
 
   it("switching chat A (open) → chat B (stored closed) shows B closed and leaves B's stored value untouched", async () => {

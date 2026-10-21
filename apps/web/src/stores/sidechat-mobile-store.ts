@@ -6,9 +6,9 @@ import { create } from "zustand";
  *
  * A tiny shared UI store (not `PlayMode` local state) so SC-16 can switch the
  * tab from inside the sidechat (the copy-to-composer entry returns to `Chat`).
- * Ephemeral: defaults to `"chat"`, never persisted. The OPEN state stays where
- * SC-14 put it (the per-chat `vt.sidechat.open.<chatId>` localStorage key) —
- * this store only picks the visible pane while open.
+ * Ephemeral: defaults to `"chat"`, never persisted. The OPEN state lives in
+ * SC-18a's `sidechat-open-store.ts` (the per-chat `vt.sidechat.open.<chatId>`
+ * localStorage key) — this store only picks the visible pane while open.
  */
 export type SidechatMobileTab = "chat" | "sidechat";
 

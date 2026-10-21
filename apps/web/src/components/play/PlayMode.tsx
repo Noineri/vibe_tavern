@@ -15,7 +15,7 @@ import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
 import { useAutoNarrate } from "../../hooks/use-auto-narrate.js";
 import { useElementHeight } from "../../hooks/use-element-height.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { usePersistedBoolean } from "../../hooks/use-persisted-boolean.js";
+import { useSidechatOpen } from "../../stores/sidechat-open-store.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import {
@@ -25,7 +25,7 @@ import {
 // Module-load registration of the `sidechat-ooc` host (SC-13b) — the mobile
 // pane below resolves its shell descriptor by kind at render time, exactly
 // like SC-14's desktop panel does.
-import { selectSidechatOwner, SIDECHAT_OPEN_KEY_PREFIX } from "../chat/sidechat/sidechat-host.js";
+import { selectSidechatOwner } from "../chat/sidechat/sidechat-host.js";
 import { SidechatHandle } from "../chat/sidechat/SidechatHandle.js";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 
@@ -40,13 +40,10 @@ export function PlayMode() {
   // The served-modes gate is SC-13b's selector, shared with SC-14's panel: a
   // co-author chat (or a missing bootstrap map) sees no tabs, no handle.
   const served = selectSidechatServedChatModes(agentKindSettings).includes(chatMode);
-  // The SAME persisted open key as the desktop panel (`vt.sidechat.open.*`):
-  // opening on one surface opens the other. Never written under the wrong
-  // chat's key (the hook re-reads on chat switch — see use-persisted-boolean).
-  const [sidechatOpen, setSidechatOpen] = usePersistedBoolean(
-    `${SIDECHAT_OPEN_KEY_PREFIX}${chatId ?? ""}`,
-    false,
-  );
+  // The SAME open flag as the desktop panel (SC-18a's shared store): opening
+  // on one surface opens the other. Never written under the wrong chat's key
+  // (the store re-reads on chat switch — see sidechat-open-store.ts).
+  const [sidechatOpen, setSidechatOpen] = useSidechatOpen(chatId);
   const owner = selectSidechatOwner(
     chatId === null ? null : { id: chatId },
     activeBranch === null ? null : { id: activeBranch.id },

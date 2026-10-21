@@ -30,6 +30,7 @@ import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
+import { useSidechatOpenStore } from "../../stores/sidechat-open-store.js";
 import { SIDECHAT_AGENT_KIND } from "../../api/agent-kind-served-modes.js";
 
 useDomEnv();
@@ -121,11 +122,12 @@ mock.module("../shared/Tooltip.js", () => ({
 }));
 
 let render: typeof import("@testing-library/react").render;
+let act: typeof import("@testing-library/react").act;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let PlayMode: typeof import("./PlayMode.js").PlayMode;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, act, fireEvent } = await import("@testing-library/react"));
   ({ PlayMode } = await import("./PlayMode.js"));
 });
 
@@ -170,6 +172,9 @@ function seedChat(chat: ActiveChat, branch: ActiveBranch): void {
 beforeEach(() => {
   mobileOverride = true;
   localStorage.clear();
+  // The open flag is shared process state now (SC-18a) — reset it alongside
+  // localStorage so no test reads the previous test's in-memory entry.
+  useSidechatOpenStore.setState({ openByChat: {} });
   useSidechatMobileStore.setState({ tab: "chat" });
   seedStores({ [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]) });
   seedChat(CHAT_A, BRANCH_A);
@@ -208,6 +213,22 @@ describe("PlayMode mobile sidechat — handle opens + switches (SC-15)", () => {
       "hidden",
     );
     expect(getByTestId("sidechat-shell-stub")).toBeDefined();
+  });
+
+  it("an outside store write shows the tabs (SC-18a)", () => {
+    const { getByTestId, getByRole, queryByRole, queryByTestId } = render(<PlayMode />);
+    expect(queryByRole("tablist")).toBeNull();
+    expect(queryByTestId("sidechat-shell-stub")).toBeNull();
+
+    // SC-18's future entry opens through the store, not through the handle —
+    // the tabs appear (the mobile tab itself stays where it was: switching
+    // it is SC-18's entry behavior, not this unit's).
+    act(() => {
+      useSidechatOpenStore.getState().setOpen("chat-a", true);
+    });
+    expect(getByRole("tablist")).toBeDefined();
+    expect(getByTestId("sidechat-shell-stub")).toBeDefined();
+    expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("true");
   });
 
   it("tapping the Chat tab switches back while both panes stay mounted", () => {
