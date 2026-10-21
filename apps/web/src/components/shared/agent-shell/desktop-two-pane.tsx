@@ -87,7 +87,7 @@ export function AgentShellDesktopTwoPane({ kind, chatPane, editorPane }: AgentSh
             moment it is pressed (not left hidden in the collapsed pane): the
             collapsed steady state holds exactly one handle — the expand tab.
             The tab itself is immediate on the flag, not delayed to the end
-            of the close glide, so expand is never dead for 0.18 s. */}
+            of the close glide, so expand is never dead for 0.25 s. */}
         {!collapsed && (
           <SidechatHandle
             key="agent-assistant-collapse"

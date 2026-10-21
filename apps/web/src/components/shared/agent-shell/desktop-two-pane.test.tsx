@@ -150,7 +150,7 @@ describe("desktop-two-pane — collapse/expand (SC-16c)", () => {
 
     // The close slide runs (SC-16e: the box holds its width while the
     // slider glides out); the chevron unmounts at once while the expand
-    // tab is immediate on the flag (never dead for the 0.18 s slide).
+    // tab is immediate on the flag (never dead for the 0.25 s slide).
     expect(utils.getByTestId("agent-assistant-panel-script").style.width).toBe("440px");
     expect(utils.getByTestId("agent-assistant-slide-script").style.transform).toBe(
       "translateX(-100%)",

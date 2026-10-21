@@ -11,7 +11,7 @@
  * contract the primitive absorbs):
  *   - opening takes the final width in ONE step (no width transition
  *     remains on the pane) while the slider parks off-screen, then slides
- *     to rest on the 0.18 s transform curve only after the paint gate (the
+ *     to rest on the 0.25 s transform curve only after the paint gate (the
  *     opening-commit offset + the post-kick rest);
  *   - closing holds the final width while the slider glides out, then
  *     unmounts at the slider's own transform `transitionend` and shows the
@@ -164,17 +164,17 @@ describe("resizable-side-pane — open/close slide (SC-16b, SC-16e)", () => {
     const pane = utils.getByTestId(PANE);
     expect(pane.style.width).toBe("400px");
     const tokens = classTokens(pane);
-    expect(tokens.includes("transition-[width_0.18s_ease-out]")).toBe(false);
+    expect(tokens.includes("transition-[width_0.25s_ease-out]")).toBe(false);
     expect(tokens.includes("transition-none")).toBe(false);
     expect(utils.queryByTestId(CLOSED)).toBeNull();
     const slide = utils.getByTestId(SLIDE);
     expect(slide.style.transform).toBe("translateX(100%)");
     const slideTokens = classTokens(slide);
-    expect(slideTokens).toContain("transition-[transform_0.18s_ease-out]");
+    expect(slideTokens).toContain("transition-[transform_0.25s_ease-out]");
     expect(slideTokens).toContain("motion-reduce:transition-none");
     expect(slideTokens.includes("transition-none")).toBe(false);
 
-    // ...and the paint-gate kick slides it to rest (same 0.18 s curve).
+    // ...and the paint-gate kick slides it to rest (same 0.25 s curve).
     await flushKick();
     expect(utils.getByTestId(PANE).style.width).toBe("400px");
     expect(utils.getByTestId(SLIDE).style.transform).toBe("");
@@ -255,7 +255,7 @@ describe("resizable-side-pane — drag line (SC-16b)", () => {
     fireEvent.mouseUp(window);
 
     expect(classTokens(utils.getByTestId(SLIDE)).includes("transition-none")).toBe(false);
-    expect(classTokens(utils.getByTestId(SLIDE))).toContain("transition-[transform_0.18s_ease-out]");
+    expect(classTokens(utils.getByTestId(SLIDE))).toContain("transition-[transform_0.25s_ease-out]");
     expect(localStorage.getItem(WIDTH_KEY)).toBe("500");
   });
 

@@ -22,9 +22,11 @@ import { cn } from "../../lib/cn.js";
  * - the open/close slide: the pane's inline WIDTH takes its final value in
  *   ONE step on open (and releases it in one step after the close slide), so
  *   the neighbouring column re-lays out exactly once per open/close; the
- *   visible glide is a `transform` slide (`translateX` on the rail flyouts'
- *   0.18 s `ease-out` curve — no new curve) inside an `overflow-hidden` clip
- *   frame, so no per-frame layout ever runs. While the line is held the slide
+ *   visible glide is a `transform` slide (`translateX` on the shared accordion
+ *   curve — `AnimatedDisclosure`'s 0.25 s `easeOut`, retimed from the rail
+ *   flyouts' 0.18 s curve per owner review 2026-10-21: the slide felt too
+ *   fast, match the accordion feel) inside an `overflow-hidden` clip frame,
+ *   so no per-frame layout ever runs. While the line is held the slide
  *   transition is off (the pane tracks the pointer with no animation).
  *   Under `prefers-reduced-motion` both directions are instant: the
  *   `motion-reduce:transition-none` class kills the CSS while the
@@ -43,8 +45,8 @@ import { cn } from "../../lib/cn.js";
  * Closing keeps the pane mounted at its final width while the slider glides
  * out. The primary path is the slider's own `transitionend`, filtered to
  * `event.target === currentTarget` + `propertyName === "transform"` so child
- * transitions inside the content never unmount the pane; a 200 ms timeout
- * (0.18 s + margin) covers commits that animate nothing. Only then does the
+ * transitions inside the content never unmount the pane; a 280 ms timeout
+ * (0.25 s + margin) covers commits that animate nothing. Only then does the
  * outer box release the width (the neighbour widens in one step) and the
  * caller renders `closedView` (the sidechat's closed handle) — unless
  * `keepMounted` is set (SC-16c: the script/mini-app assistant panes flip the
@@ -93,8 +95,8 @@ export interface ResizableSidePaneProps {
 /** Plan-settled: the pane never takes more than half the window. */
 const MAX_VIEWPORT_RATIO = 0.5;
 
-/** 0.18 s slide + margin — fallback only; `transitionend` is the primary close path. */
-const CLOSE_FALLBACK_MS = 200;
+/** 0.25 s slide + margin — fallback only; `transitionend` is the primary close path. */
+const CLOSE_FALLBACK_MS = 280;
 
 /** System reduced-motion query (the dice-faces / Logo JS idiom). */
 const REDUCED_MOTION_MQ = "(prefers-reduced-motion: reduce)";
@@ -335,7 +337,7 @@ export function ResizableSidePane({
             "flex h-full w-full flex-col",
             dragging
               ? "transition-none"
-              : "transition-[transform_0.18s_ease-out] motion-reduce:transition-none",
+              : "transition-[transform_0.25s_ease-out] motion-reduce:transition-none",
           )}
         >
           {children}
