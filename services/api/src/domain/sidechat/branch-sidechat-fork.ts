@@ -88,6 +88,13 @@ import {
  */
 export const FORK_TARGET_NOT_CHILD_OF_SOURCE_CODE = "target_branch_not_child_of_source";
 
+/** The fork target must be the FRESHLY CREATED child branch of the UI's
+ *  fork action — it cannot carry a sidechat session yet (owner 2026-10-21:
+ *  an occupied target is an impossible scenario in the real flow). A caller
+ *  that reaches this refusal misused the route, and misuse must fail LOUD —
+ *  never silently archive/replace the target's existing conversation. */
+export const FORK_TARGET_THREAD_ACTIVE_CODE = "target_branch_thread_active";
+
 /** One copied thread on the fork result: the new thread's id and its agent
  *  kind (the kind is copied from the source thread by the store). */
 export interface CopiedSidechatThread {
@@ -327,6 +334,24 @@ function forkTargetNotChild(chatId: string, sourceBranchId: string, targetBranch
 	);
 }
 
+function forkTargetOccupied(
+	chatId: string,
+	sourceBranchId: string,
+	targetBranchId: string,
+	activeThreads: number,
+): never {
+	throw validation(
+		`Branch '${targetBranchId}' (fork of '${sourceBranchId}', chat '${chatId}') already has ` +
+			`${activeThreads} active chat-owned thread(s): the fork target must be the freshly created branch — ` +
+			"a sidechat copy never replaces an existing conversation.",
+		{
+			code: FORK_TARGET_THREAD_ACTIVE_CODE,
+			sourceBranchId,
+			targetBranchId,
+		},
+	);
+}
+
 /**
  * Fork a branch's sidechat onto one of its child branches (SC-20): copy every
  * ACTIVE chat-owned thread of the source branch onto the target branch and
@@ -362,6 +387,14 @@ export async function forkBranchSidechat(
 		forkTargetNotChild(chatId, sourceBranch.id, targetBranch.id);
 	}
 	const forkPosition = forkMessage.position;
+
+	// The occupied-target refusal (see FORK_TARGET_THREAD_ACTIVE_CODE): the
+	// UI forks into a branch it just created, so an ACTIVE thread on the
+	// target means route misuse — typed 400, nothing copied.
+	const occupied = await deps.experienceCopilot.listActiveChatThreadsForBranch(chatId, targetBranch.id);
+	if (occupied.length > 0) {
+		forkTargetOccupied(chatId, sourceBranch.id, targetBranch.id, occupied.length);
+	}
 
 	const remap = buildForkIdRemap({
 		sourceMessages,

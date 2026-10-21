@@ -13,8 +13,9 @@ import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 // Pins the row copy's mechanical facts the domain tests observe only
 // end-to-end: the identity remap copies payloads byte-for-byte, the trailing
 // event takes the NEXT seq (so post-copy appends continue the sequence),
-// metrics reset, links/todo copy verbatim, the target's same-kind active
-// sibling archives (never deletes), a missing source is null, a script-owned
+// metrics reset, links/todo copy verbatim, an occupied target slot THROWS
+// (the partial index, fail-loud — never replaces the existing conversation),
+// a missing source is null, a script-owned
 // source is refused, and the source thread is untouched. The id-REMAP itself
 // (payload re-keying, frontier derivation) is services/api's domain and is
 // pinned in services/api/test/branch-sidechat-fork.test.ts.
@@ -103,7 +104,9 @@ describe("ExperienceCopilotStore.listActiveChatThreadsForBranch (SC-20)", () => 
 
 describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
   test("copies messages + events (identity remap), appends the trailing event on the NEXT seq, metrics reset, source untouched", async () => {
-    const { store } = await setup();
+    // Three real branch rows (the FK): the main copy target, the fresh slot
+    // for the drop-behavior call below, and the source.
+    const { store } = await setup("chat_1", ["brnch_1", "brnch_2", "brnch_3"]);
     const thread = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
     await store.appendMessage(thread.id, { role: "user", content: "one" });
     await store.appendContextEvent(thread.id, "rp_sync", { fromPosition: 0, toPosition: 0, messages: [] });
@@ -150,8 +153,10 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     const appended = await store.appendMessage(copied!.id, { role: "user", content: "after" });
     expect(appended.seq).toBe(4);
 
-    // The drop decision leaves the row out entirely.
-    const dropped = await store.forkChatThreadToBranch(thread.id, "brnch_2", {
+    // The drop decision leaves the row out entirely. (A FRESH target slot —
+    // the occupied-target case is its own test below; the drop behavior does
+    // not depend on the slot.)
+    const dropped = await store.forkChatThreadToBranch(thread.id, "brnch_3", {
       ...identityRemap({ at: 0 }),
       eventPayload: (kind) => (kind === "rp_sync" ? { drop: true } : { payloadJson: null }),
     });
@@ -166,19 +171,25 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
    	expect((await store.listTimeline(thread.id)).length).toBe(3);
   });
 
-  test("the target's same-kind active sibling archives (at-most-one-active), others untouched", async () => {
+  test("an occupied target slot THROWS (the partial index, fail-loud) — the existing conversation is never replaced", async () => {
     const { store } = await setup();
     const source = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
     const existing = await store.startNewChatSession("chat_1", "brnch_2", "sidechat-ooc");
     await store.appendMessage(existing.id, { role: "user", content: "old" });
 
-    const copied = await store.forkChatThreadToBranch(source.id, "brnch_2", identityRemap({ at: 0 }));
+    // Was: the copy silently archived the sibling (archive-then-insert). Now
+    // (owner 2026-10-21: an occupied target is an impossible scenario in the
+    // real flow — the UI forks into a freshly created branch): the insert
+    // violates the at-most-one-active partial index and THROWS — misuse fails
+    // loud, the target's existing conversation stays active and untouched.
+    await expect(
+      store.forkChatThreadToBranch(source.id, "brnch_2", identityRemap({ at: 0 })),
+    ).rejects.toThrow();
 
     const sessions = await store.listSessionsForChat("chat_1", "brnch_2", "sidechat-ooc");
     const active = sessions.filter((session) => session.archivedAt === null);
-    expect(active.map((session) => session.id)).toEqual([copied!.id]);
-    const archivedSibling = sessions.find((session) => session.id === existing.id);
-    expect(archivedSibling!.archivedAt).not.toBeNull(); // archived, not deleted
+    expect(active.map((session) => session.id)).toEqual([existing.id]);
+    expect(await store.listMessages(existing.id)).toHaveLength(1);
   });
 
   test("a missing source → null; a script-owned source → refused", async () => {

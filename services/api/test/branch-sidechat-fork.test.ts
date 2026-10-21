@@ -16,6 +16,7 @@ import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "../src/domain/sidechat/rp-sync.js";
 import {
 	FORK_TARGET_NOT_CHILD_OF_SOURCE_CODE,
+	FORK_TARGET_THREAD_ACTIVE_CODE,
 	forkBranchSidechat,
 	summarizeBranchSidechat,
 	type BranchSidechatForkDeps,
@@ -382,6 +383,40 @@ describe("forkBranchSidechat (SC-20)", () => {
 		).catch((err: unknown) => err);
 		expect(isDomainError(foreignChat)).toBe(true);
 		expect((foreignChat as { kind?: string }).kind).toBe("NotFound");
+	});
+
+	it("a target that already has an active sidechat thread → the typed 400, nothing copied, the target's conversation untouched", async () => {
+		const { chatId, sourceBranchId } = await makeChat();
+		const m1 = await stores.messages.addMessage({
+			chatId,
+			branchId: sourceBranchId,
+			role: "user",
+			authorType: "user",
+			content: "seed",
+		});
+		const child = await stores.chats.forkBranch(chatId, m1.id);
+
+		// The impossible-in-the-UI scenario (owner 2026-10-21: the fork target
+		// is always the freshly created branch) — reached only by route misuse.
+		// The refusal is typed and LOUD; a copy never replaces a conversation.
+		const occupied = await stores.experienceCopilot.startNewChatSession(chatId, child.id, "sidechat-ooc");
+		await stores.experienceCopilot.appendMessage(occupied.id, { role: "user", content: "stay" });
+
+		const refusal = await forkBranchSidechat(forkDeps, chatId, sourceBranchId, child.id).catch(
+			(err: unknown) => err,
+		);
+		expect(isDomainError(refusal)).toBe(true);
+		expect((refusal as { kind?: string }).kind).toBe("Validation");
+		expect((refusal as { details?: Record<string, unknown> }).details).toMatchObject({
+			code: FORK_TARGET_THREAD_ACTIVE_CODE,
+		});
+
+		// Nothing was copied and the occupied target kept its conversation.
+		const targetSessions = await stores.experienceCopilot.listSessionsForChat(chatId, child.id, "sidechat-ooc");
+		expect(targetSessions.filter((session) => session.archivedAt === null).map((session) => session.id)).toEqual([
+			occupied.id,
+		]);
+		expect(await stores.experienceCopilot.listMessages(occupied.id)).toHaveLength(1);
 	});
 
 	it("archived sessions are not copied; only the ACTIVE thread lands on the target", async () => {

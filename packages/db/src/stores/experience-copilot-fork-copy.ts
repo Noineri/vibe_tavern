@@ -8,7 +8,7 @@
 // stay owned by the store family, and every write still goes through ONE
 // synchronous transaction opened here.
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import type { StoreClock, StoreIdGenerator } from '../persistence.js';
@@ -58,11 +58,13 @@ export interface ForkThreadCopyDeps {
  * routed through the pure `remap` hooks so id references can be re-keyed to
  * the target branch's message/variant ids and post-fork-point rows dropped),
  * write the remapped frontier, then append `remap.trailingEvent` with the
- * next allocated seq — all inside ONE synchronous transaction, with the
- * target's same-(chat, branch, kind) active sibling archived first (the
- * `startNewChatSession` archive-then-insert pattern, so the at-most-one-
- * active invariant holds without destroying the sibling — it stays in the
- * sessions list, archived).
+ * next allocated seq — all inside ONE synchronous transaction. The caller
+ * guarantees the target slot is EMPTY (the fork orchestrator's typed
+ * `target_branch_thread_active` refusal fires first, owner 2026-10-21: the
+ * UI forks into a freshly created branch); the at-most-one-active partial
+ * unique index is the final fail-loud guard if that contract is ever
+ * broken — an occupied target makes the insert THROW, never silently
+ * replace the existing conversation.
  *
  * contextLinksJson and todoJson copy verbatim (thread-scoped JSON, no
  * message-id references); lastProviderProfileId/lastModel and autoCompact
@@ -101,21 +103,10 @@ export async function forkChatThreadToBranch(
   const now = deps.clock.now();
   const newId = deps.idGen.next('expcop_thread');
   deps.db.transaction((tx) => {
-    // Archive-then-insert (the at-most-one-active pattern): a target-side
-    // active sibling of the SAME kind steps aside — archived, never deleted.
-    tx
-      .update(experienceCopilotThreads)
-      .set({ archivedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(experienceCopilotThreads.chatId, sourceChatId),
-          eq(experienceCopilotThreads.branchId, targetBranchId),
-          eq(experienceCopilotThreads.agentKind, sourceAgentKind),
-          isNull(experienceCopilotThreads.archivedAt),
-        ),
-      )
-      .run();
-
+    // The target slot is the caller's contract (see the header): no
+    // archive-then-insert here — the partial unique index enforces
+    // at-most-one-active and THROWS on violation (fail-loud, never a silent
+    // replacement of the target's existing conversation).
     tx
       .insert(experienceCopilotThreads)
       .values({
