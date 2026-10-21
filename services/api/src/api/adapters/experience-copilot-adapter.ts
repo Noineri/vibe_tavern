@@ -399,6 +399,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         experienceCopilot: this.stores.experienceCopilot,
         assembly,
       },
+      // SC-17: the variant-attach freeze — the same stores/assembly the sync
+      // and context seams read, plus the store's frozen-event append.
+      attach: {
+        chats: this.stores.chats,
+        messages: this.stores.messages,
+        assembly,
+        experienceCopilot: this.stores.experienceCopilot,
+      },
       getProviderProfile: (id: string) => this.stores.providers.getById(id),
       getEffectiveProviderProfile: async (id: string, model: string) => {
         const profile = await this.stores.providers.getById(id);

@@ -13,7 +13,12 @@
  * loadContext seam — BEFORE the generic loop persists the user message and
  * BEFORE the SC-3b loader's `listTimeline` read, so this turn's freshly
  * frozen RP delta sits at a seq BELOW the user message's on the merged
- * timeline. Since SC-4d (variant A) the system message carries the loader's
+ * timeline; since SC-17 the same seam also freezes the turn's ATTACHED RP
+ * VARIANTS (`attachedVariants` → `variants_attached` events, one per
+ * attached message in position order, texts transformed through SC-2a's
+ * reader, `selected` read from the RP's own state, all-or-nothing on
+ * validation) between the sync and the load.
+ * Since SC-4d (variant A) the system message carries the loader's
  * STATIC package only (character/persona/active_lore/objectives/
  * current_scene); the frozen events ride the MESSAGE FLOW as their own
  * user-role message bodies, placed by the merged timeline's order (the
@@ -104,7 +109,8 @@ import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "
 import { resolveBuiltinSidechatOocProfile } from "../agent/kinds/sidechat-ooc-kind.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../interactive/copilot/copilot-limits.js";
 import { RpSyncThreadNotChatOwnedError, syncBeforeUserMessage, type RpSyncDeps } from "./rp-sync.js";
-import type { RpBranchView } from "./rp-branch-view.js";
+import { attachVariantsBeforeUserMessage, type VariantAttachDeps } from "./sidechat-variant-attach.js";
+import type { AttachedVariantPair, RpBranchView } from "./rp-branch-view.js";
 import {
   loadSidechatContext,
   SIDECHAT_OOC_METER_SEGMENT_KEYS,
@@ -128,6 +134,15 @@ export interface SidechatStreamDeps {
    *  traces / experienceCopilot / assembly) — passed through verbatim to
    *  {@link loadSidechatContext} after the sync. */
   readonly context: SidechatContextDeps;
+  /** SC-17: the variant-attach freeze's deps (the "discuss in the sidechat"
+   *  flow — the SC-2a reader deps + the thread row read + the frozen-event
+   *  append) — passed through verbatim to
+   *  {@link attachVariantsBeforeUserMessage}
+   *  between the sync and the SC-3b load, only on turns that carry
+   *  `attachedVariants`. In production the same store instances the sync and
+   *  context seams read; the seam exists so the freeze is its own typed
+   *  contract, not a widening of the sync's. */
+  readonly attach: VariantAttachDeps;
   /** Resolve a raw provider profile by id. */
   readonly getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
   /** Resolve the effective profile (base + per-model overlay). */
@@ -190,12 +205,28 @@ export interface SidechatStreamDeps {
  *  Since SC-10 the helper also returns the sync's SC-2a branch view: the
  *  turn's search session consumes THIS view ("one view per turn") — never a
  *  second branch read or dry RP assembly per search. The package parts are
- *  the shape SC-4b's assembly below consumes directly. */
+ *  the shape SC-4b's assembly below consumes directly.
+ *
+ *  Since SC-17 the turn may carry attached RP variants (`attachedVariants`,
+ *  the request's pairs): they freeze BETWEEN the sync and the SC-3b load —
+ *  above the sync's events, below the user message the generic loop persists
+ *  next, and already visible to the load's listTimeline read so THIS turn's
+ *  prompt carries the frozen `<rp_variants>` rows. */
 async function loadSidechatTurnContext(
   deps: SidechatStreamDeps,
   threadId: ExperienceCopilotThread["id"],
+  attachedVariants?: readonly AttachedVariantPair[],
 ): Promise<SidechatContextPackage & { branchView: RpBranchView }> {
   const branchView = await syncBeforeUserMessage(deps.sync, threadId);
+  // SC-17: the variant-attach freeze — AFTER SC-2c's sync (its events land at
+  // seqs above the sync's delta), BEFORE the loop persists the user message
+  // (they anchor below it on the merged timeline) and BEFORE the SC-3b
+  // loader's listTimeline read (this turn's prompt already sees them). A
+  // foreign pair throws the typed validation before any freeze — the turn
+  // refuses, nothing is written.
+  if (attachedVariants !== undefined && attachedVariants.length > 0) {
+    await attachVariantsBeforeUserMessage(deps.attach, threadId, attachedVariants);
+  }
   return { ...(await loadSidechatContext(deps.context, threadId)), branchView };
 }
 
@@ -552,13 +583,15 @@ export async function* streamSidechatTurn(
     threadLabel: "ExperienceCopilotThread",
     limits,
 
-    // ── The kind's turn: RP sync FIRST, then the SC-3b load (static package
-    //  + flow-placed events). This seam runs BEFORE the generic loop persists
-    //  the user message, which is what puts the frozen delta below the turn's
-    //  own seq on the merged timeline. Since SC-10 the sync's branch view is
-    //  captured for the turn's search session (below). ──
+    // ── The kind's turn: RP sync FIRST, then the SC-17 variant-attach freeze
+    //  (only on turns that carry `attachedVariants`), then the SC-3b load
+    //  (static package + flow-placed events). This seam runs BEFORE the
+    //  generic loop persists the user message, which is what puts the frozen
+    //  delta — sync and attached variants alike — below the turn's own seq on
+    //  the merged timeline. Since SC-10 the sync's branch view is captured for
+    //  the turn's search session (below). ──
     loadContext: async (thread) => {
-      const loaded = await loadSidechatTurnContext(deps, thread.id);
+      const loaded = await loadSidechatTurnContext(deps, thread.id, request.attachedVariants);
       turnBranchView = loaded.branchView;
       return loaded;
     },

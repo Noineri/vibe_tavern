@@ -129,6 +129,40 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
       },
     })).toThrow();
   });
+
+  // ─── SC-17: attached RP variants (the "discuss in the sidechat" wire arm) ───
+
+  test("accepts attachedVariants as plain (messageId, variantId) pairs", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [
+        { messageId: "msg_1", variantId: "mvar_1a" },
+        { messageId: "msg_1", variantId: "mvar_1b" },
+        { messageId: "msg_2", variantId: "mvar_2a" },
+      ],
+    });
+    expect(parsed.attachedVariants).toEqual([
+      { messageId: "msg_1", variantId: "mvar_1a" },
+      { messageId: "msg_1", variantId: "mvar_1b" },
+      { messageId: "msg_2", variantId: "mvar_2a" },
+    ]);
+  });
+
+  test("a pair carrying a selected marker is rejected — the request can never set it (SC-17)", () => {
+    // The pair schema is strict: `selected` is not a wire field. The server
+    // reads the RP's own `message_variants.is_selected` at freeze time.
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [{ messageId: "msg_1", variantId: "mvar_1a", selected: true }],
+    })).toThrow();
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [{ messageId: "", variantId: "mvar_1a" }],
+    })).toThrow();
+  });
 });
 
 // ─── TAG-5: split-turn answer mode on the stream request body ─────────────────

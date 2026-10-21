@@ -64,6 +64,13 @@ export interface ExperienceCopilotStreamRequest {
   testFeedback?: Record<string, unknown> | null;
   /** Latest Try-panel roster, grants, settings and seed for diagnostic tools. */
   launchContext?: ExperienceCopilotLaunchContext;
+  /** SC-17 — RP variants attached to this sidechat turn, as plain
+   *  (messageId, variantId) pairs (wire twin of the api-contracts
+   *  `attachedVariants`; the pair carries NO selected marker — the server
+   *  reads the RP's own `message_variants.is_selected` at freeze time).
+   *  Only the `sidechat-ooc` kind reads the field; the other kinds ignore
+   *  it entirely. */
+  attachedVariants?: { messageId: string; variantId: string }[];
   /** Latest per-target proposal review outcomes supplied by the editor. */
   reviewSnapshot?: AgentReviewSnapshot;
   /** Whether the live rules buffer has been saved independently of its review outcome. */

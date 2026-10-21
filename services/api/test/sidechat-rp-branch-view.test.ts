@@ -7,7 +7,12 @@ import { brandId, REGEX_PLACEMENT, type ChatBranchId, type ChatId } from "@vibe-
 import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
-import { readBranchAsModelSees, type RpBranchViewDeps } from "../src/domain/sidechat/rp-branch-view.js";
+import {
+	ATTACHED_VARIANT_NOT_IN_BRANCH_CODE,
+	readBranchAsModelSees,
+	type RpBranchViewDeps,
+} from "../src/domain/sidechat/rp-branch-view.js";
+import { isDomainError, type DomainError } from "../src/shared/errors.js";
 
 /**
  * SC-2a — readBranchAsModelSees: the branch exactly as the RP model is given
@@ -280,5 +285,102 @@ describe("readBranchAsModelSees (SC-2a)", () => {
 		expect(view!.chatId).toBe(own.chatId);
 		expect(view!.branchId).toBe(own.branchId);
 		expect(Array.isArray(view!.messages)).toBe(true);
+	});
+});
+
+describe("readBranchAsModelSees named variants (SC-17)", () => {
+	it("returns a named variant's text through the SAME transform — a raw {{user}} arrives resolved, never raw", async () => {
+		const { chatId, branchId } = await makeChat();
+		const msg = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "first take greets {{user}}",
+			variants: ["first take greets {{user}}", "second take greets {{user}}"],
+			selectedVariantIndex: 0,
+		});
+		await stores.messages.selectVariant(msg.id, 1);
+		const variants = await stores.messages.getVariants(msg.id);
+		// The NON-selected alternative (index 0 after the swipe) is the named
+		// pair — the case the attach flow exists for.
+		const alternative = variants.find((v) => !v.isSelected)!;
+
+		const view = await readBranchAsModelSees(deps, chatId, branchId, [
+			{ messageId: msg.id, variantId: alternative.id },
+		]);
+		expect(view).not.toBeNull();
+		expect(view!.namedVariants).toHaveLength(1);
+		const named = view!.namedVariants![0]!;
+		expect(named.messageId).toBe(msg.id);
+		expect(named.variantId).toBe(alternative.id);
+		expect(named.position).toBe(0);
+		// The SAME per-message transform the selected text gets — the macro is
+		// resolved, the raw {{user}} never leaves the reader.
+		expect(named.text).toBe("first take greets Sable");
+		// The RP's own marker read from the store row (the request named only
+		// the pair — there is no marker to pass).
+		expect(named.selected).toBe(false);
+		// The view's own messages stay the SELECTED-variant read (SC-2a
+		// unchanged — the named arm adds, never rewrites).
+		expect(view!.messages[0]!.text).toBe("second take greets Sable");
+		// Without named pairs the view carries no namedVariants at all.
+		const plain = await readBranchAsModelSees(deps, chatId, branchId);
+		expect(plain!.namedVariants).toBeUndefined();
+	});
+
+	it("throws the typed validation for a foreign message and for a foreign variant — nothing partial returned", async () => {
+		const own = await makeChat();
+		const other = await makeChat();
+		const ownMsg = await stores.messages.addMessage({
+			chatId: own.chatId,
+			branchId: own.branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "own message",
+			variants: ["own message", "own alternative"],
+			selectedVariantIndex: 0,
+		});
+		const otherMsg = await stores.messages.addMessage({
+			chatId: other.chatId,
+			branchId: other.branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "other chat's message",
+		});
+		const ownVariants = await stores.messages.getVariants(ownMsg.id);
+		const otherVariants = await stores.messages.getVariants(otherMsg.id);
+
+		const expectRefusal = async (pair: { messageId: string; variantId: string }): Promise<DomainError> => {
+			let thrown: unknown;
+			try {
+				await readBranchAsModelSees(deps, own.chatId, own.branchId, [pair]);
+			} catch (err) {
+				thrown = err;
+			}
+			expect(isDomainError(thrown)).toBe(true);
+			const error = thrown as DomainError;
+			expect(error.kind).toBe("Validation");
+			expect(error.details?.code).toBe(ATTACHED_VARIANT_NOT_IN_BRANCH_CODE);
+			return error;
+		};
+
+		// A message of ANOTHER chat's branch.
+		const foreignMessage = await expectRefusal({
+			messageId: otherMsg.id,
+			variantId: otherVariants[0]!.id,
+		});
+		expect(foreignMessage.details?.messageId).toBe(otherMsg.id);
+		// A variant of ANOTHER message in the SAME branch (attached under the
+		// wrong message id).
+		await expectRefusal({ messageId: ownMsg.id, variantId: otherVariants[0]!.id });
+		// A variant id that exists nowhere.
+		await expectRefusal({ messageId: ownMsg.id, variantId: "mvar_does_not_exist" });
+		// The own branch's VALID pair still resolves after the refusals (the
+		// reader state is untouched — every check ran on its own read).
+		const view = await readBranchAsModelSees(deps, own.chatId, own.branchId, [
+			{ messageId: ownMsg.id, variantId: ownVariants[1]!.id },
+		]);
+		expect(view!.namedVariants![0]!.text).toBe("own alternative");
 	});
 });

@@ -153,6 +153,18 @@ export const experienceCopilotStreamRequestSchema = z
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),
+    // SC-17 — the "discuss in the sidechat" server side: RP variants attached to
+    // this sidechat turn, as plain (messageId, variantId) pairs — nothing
+    // else. The pair schema is `.strict()` on purpose: the request NEVER
+    // carries a `selected` marker, because the server reads the RP's own
+    // selection (`message_variants.is_selected`) at freeze time — a stale
+    // tab must not freeze a wrong marker. The cap mirrors the pinned-context
+    // links' pragmatic bound. Only the `sidechat-ooc` kind reads the field;
+    // the other kinds ignore it entirely (SC-17's plan row).
+    attachedVariants: z
+      .array(z.object({ messageId: z.string().min(1), variantId: z.string().min(1) }).strict())
+      .max(64)
+      .optional(),
     reviewSnapshot: agentReviewSnapshotSchema.optional(),
     rulesSaved: z.boolean().optional(),
     visualSaved: z.boolean().optional(),

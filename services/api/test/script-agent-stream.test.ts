@@ -365,3 +365,31 @@ describe("streamScriptAgentTurn - auto-compaction", () => {
     expect(compactCalls).toEqual([]);
   });
 });
+
+describe("streamScriptAgentTurn - SC-17 attachedVariants", () => {
+  it("a script thread ignores the field entirely — the turn runs unchanged and nothing is frozen", async () => {
+    const store = createFakeStore(makeThread());
+    const events = await drain(
+      streamScriptAgentTurn(
+        {
+          threadId: "thread_1",
+          content: "tweak it",
+          providerProfileId: "prov_1",
+          // The SC-17 field rides the shared stream body; the script kind
+          // never reads it (the fake store exposes no event/timeline methods —
+          // any freeze attempt would crash here, which IS the pin).
+          attachedVariants: [
+            { messageId: "msg_anywhere", variantId: "mvar_anywhere" },
+          ],
+        },
+        makeDeps(store),
+      ),
+    );
+
+    expect(events).toContain("finish");
+    // The turn persisted exactly its own user row + reply — no event rows,
+    // no validation of the (foreign) pairs: the field is inert for the kind.
+    expect(promptText()).toContain("STORED-CODE-MARKER");
+    expect(promptText()).not.toContain("msg_anywhere");
+  });
+});

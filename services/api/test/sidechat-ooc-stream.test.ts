@@ -27,8 +27,13 @@ import { SIDECHAT_OOC_RECENCY_ANCHOR_TEXT, resolveBuiltinSidechatOocProfile } fr
 import { sidechatObjectiveProposalInputSchema } from "../src/domain/agent/kinds/sidechat/sidechat-objective-tools.js";
 import { buildContextSearchStoreReads } from "../src/domain/context/context-search-store-reads.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
+import {
+	ATTACHED_VARIANT_NOT_IN_BRANCH_CODE,
+	type AttachedVariantPair,
+} from "../src/domain/sidechat/rp-branch-view.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { isDomainError, type DomainError } from "../src/shared/errors.js";
 import {
 	streamSidechatTurn,
 	type SidechatStreamDeps,
@@ -154,6 +159,14 @@ beforeAll(async () => {
 			experienceCopilot: stores.experienceCopilot,
 			assembly,
 		},
+		// SC-17: the variant-attach freeze — the production wiring's same
+		// stores/assembly over the real container.
+		attach: {
+			chats: stores.chats,
+			messages: stores.messages,
+			assembly,
+			experienceCopilot: stores.experienceCopilot,
+		},
 		getProviderProfile: async () => profile,
 		getEffectiveProviderProfile: async () => profile,
 		resolveModel: () => ({}) as LanguageModel,
@@ -231,10 +244,16 @@ async function drainTurn(
 	threadId: string,
 	content: string,
 	depsOverride?: SidechatStreamDeps,
+	attachedVariants?: readonly AttachedVariantPair[],
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
-		{ threadId, content, providerProfileId: "prov_1" },
+		{
+			threadId,
+			content,
+			providerProfileId: "prov_1",
+			...(attachedVariants !== undefined ? { attachedVariants: [...attachedVariants] } : {}),
+		},
 		depsOverride ?? deps,
 	)) {
 		chunks.push(chunk);
@@ -1050,5 +1069,177 @@ describe("streamSidechatTurn checklist + branch-plan read (SC-12)", () => {
 		// own checklist column carries the full rewritten list.
 		const thread = await stores.experienceCopilot.getById(threadId);
 		expect(thread?.todo).toEqual(items);
+	});
+});
+
+// ─── SC-17: attaching RP variants to a sidechat turn ──────────────────
+
+describe("streamSidechatTurn attached variants (SC-17)", () => {
+	/** A chat-owned thread whose branch carries msgA (TWO variants — the
+	 *  selected one plus an alternative, both with a raw {{user}} macro) and
+	 *  msgB after it (one variant), plus the variant rows for pair building. */
+	async function makeAttachFixture(): Promise<{
+		threadId: ExperienceCopilotThreadId;
+		msgA: { id: string; selectedId: string; alternativeId: string };
+		msgB: { id: string; variantId: string };
+	}> {
+		const { threadId, chatId, branchId } = await makeSidechatThread();
+		const a = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The door creaks open before {{user}}.",
+			variants: ["The door creaks open before {{user}}.", "The door SLAMS open before {{user}}."],
+			selectedVariantIndex: 0,
+		});
+		const b = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The bard tunes his lute.",
+		});
+		const aVariants = await stores.messages.getVariants(a.id);
+		const bVariants = await stores.messages.getVariants(b.id);
+		const aSelected = aVariants.find((v) => v.isSelected)!;
+		const aAlternative = aVariants.find((v) => !v.isSelected)!;
+		return {
+			threadId,
+			msgA: { id: a.id, selectedId: aSelected.id, alternativeId: aAlternative.id },
+			msgB: { id: b.id, variantId: bVariants[0]!.id },
+		};
+	}
+
+	/** The thread's variants_attached events (payload cast to the frozen shape). */
+	async function attachedEvents(
+		threadId: ExperienceCopilotThreadId,
+	): Promise<Array<{ seq: number; payload: { position: number; variants: Array<{ text: string; selected: boolean }> } }>> {
+		const timeline = await stores.experienceCopilot.listTimeline(threadId);
+		return timeline
+			.filter((entry) => entry.rowType === "event" && entry.kind === "variants_attached")
+			.map((entry) => entry as {
+				seq: number;
+				payload: { position: number; variants: Array<{ text: string; selected: boolean }> };
+			});
+	}
+
+	it("freezes ONE event per attached message in POSITION order, texts transformed, selected from the DB — and the RP selection never changes", async () => {
+		const { threadId, msgA, msgB } = await makeAttachFixture();
+		// The RP's own selection at freeze time (the request cannot set it — the
+		// pair schema has no marker field at all).
+		const selectionBefore = (await stores.messages.getVariants(msgA.id)).map(
+			(v) => ({ id: v.id, isSelected: v.isSelected }),
+		);
+
+		// Pairs given in REVERSE position order (msgB before msgA, and msgA's
+		// alternative before its selected variant): event order and the
+		// selected marker must come from the branch and the store, never from
+		// this array's order.
+		const chunks = await drainTurn(threadId, "Compare those two takes for me", undefined, [
+			{ messageId: msgB.id, variantId: msgB.variantId },
+			{ messageId: msgA.id, variantId: msgA.alternativeId },
+			{ messageId: msgA.id, variantId: msgA.selectedId },
+		]);
+		expect(chunks.map((c) => c.event)).toContain("finish");
+
+		const events = await attachedEvents(threadId);
+		// ONE event per attached MESSAGE (msgA's two variants share one event;
+		// two messages never share one) — two events, not three.
+		expect(events).toHaveLength(2);
+		// POSITION order, never request order: msgA (position 0) froze first.
+		expect(events[0]!.payload.position).toBe(0);
+		expect(events[1]!.payload.position).toBe(1);
+
+		// msgA's event carries BOTH variants; each text is the TRANSFORMED one
+		// (the raw {{user}} never reaches the store or the model) and each
+		// `selected` flag is the RP's OWN marker read from message_variants.
+		const aVariants = events[0]!.payload.variants;
+		expect(aVariants).toHaveLength(2);
+		const alternative = aVariants.find((v) => v.text.includes("SLAMS"))!;
+		const selected = aVariants.find((v) => !v.text.includes("SLAMS"))!;
+		expect(alternative.text).toBe("The door SLAMS open before Sable.");
+		expect(alternative.selected).toBe(false);
+		expect(selected.text).toBe("The door creaks open before Sable.");
+		expect(selected.selected).toBe(true);
+		expect(events[1]!.payload.variants).toEqual([
+			{ text: "The bard tunes his lute.", selected: true },
+		]);
+
+		// Freeze order on the merged timeline: after the sync's rp_sync event,
+		// BEFORE this turn's user message row (mirrors the sync's anchoring).
+		const timeline = await stores.experienceCopilot.listTimeline(threadId);
+		const seqOf = (predicate: (entry: (typeof timeline)[number]) => boolean): number => {
+			const entry = timeline.find(predicate)!;
+			if (entry.rowType !== "event" && entry.rowType !== "message") throw new Error("fixture: bad row");
+			if (entry.seq === null) throw new Error("fixture: expected an allocated seq");
+			return entry.seq;
+		};
+		const userSeq = seqOf((entry) => entry.rowType === "message" && entry.role === "user");
+		const syncSeq = seqOf((entry) => entry.rowType === "event" && entry.kind === "rp_sync");
+		expect(syncSeq).toBeLessThan(events[0]!.seq);
+		expect(events[0]!.seq).toBeLessThan(events[1]!.seq);
+		expect(events[1]!.seq).toBeLessThan(userSeq);
+
+		// THIS turn's prompt already carries the frozen rows (the freeze ran
+		// before the SC-3b loader's timeline read) — rendered, not raw.
+		const prompt = promptText();
+		expect(prompt).toContain('<rp_variants position="0">');
+		expect(prompt).toContain("The door SLAMS open before Sable.");
+		expect(prompt).not.toContain("{{user}}");
+
+		// The RP selection NEVER changes: identical isSelected per variant id.
+		const selectionAfter = (await stores.messages.getVariants(msgA.id)).map(
+			(v) => ({ id: v.id, isSelected: v.isSelected }),
+		);
+		expect(selectionAfter).toEqual(selectionBefore);
+		expect(selectionAfter.filter((v) => v.isSelected)).toHaveLength(1);
+	});
+
+	it("a foreign message (another chat's branch) is a typed 400 and NOTHING is frozen — the valid pair in the same request included", async () => {
+		const own = await makeAttachFixture();
+		const foreign = await makeAttachFixture();
+
+		let thrown: unknown;
+		try {
+			await drainTurn(own.threadId, "discuss this", undefined, [
+				{ messageId: own.msgA.id, variantId: own.msgA.selectedId },
+			{ messageId: foreign.msgA.id, variantId: foreign.msgA.selectedId },
+			]);
+		} catch (err) {
+			thrown = err;
+		}
+		expect(isDomainError(thrown)).toBe(true);
+		const error = thrown as DomainError;
+		expect(error.kind).toBe("Validation");
+		expect(error.details?.code).toBe(ATTACHED_VARIANT_NOT_IN_BRANCH_CODE);
+		expect(error.details?.messageId).toBe(foreign.msgA.id);
+
+		// All-or-nothing: not even the VALID pair froze, no event of any kind,
+		// and the turn refused before its user message persisted.
+		expect(await attachedEvents(own.threadId)).toEqual([]);
+		const timeline = await stores.experienceCopilot.listTimeline(own.threadId);
+		expect(timeline.filter((entry) => entry.rowType === "message" && entry.role === "user")).toEqual([]);
+	});
+
+	it("a foreign variant (another message's variant, same branch) is the same typed 400 with nothing frozen", async () => {
+		const { threadId, msgA, msgB } = await makeAttachFixture();
+
+		let thrown: unknown;
+		try {
+			// msgB's variant attached under msgA's message id — the variant does
+			// not belong to that message.
+			await drainTurn(threadId, "discuss this", undefined, [
+				{ messageId: msgA.id, variantId: msgB.variantId },
+			]);
+		} catch (err) {
+			thrown = err;
+		}
+		expect(isDomainError(thrown)).toBe(true);
+		const error = thrown as DomainError;
+		expect(error.kind).toBe("Validation");
+		expect(error.details?.code).toBe(ATTACHED_VARIANT_NOT_IN_BRANCH_CODE);
+		expect(error.details?.variantId).toBe(msgB.variantId);
+		expect(await attachedEvents(threadId)).toEqual([]);
 	});
 });
