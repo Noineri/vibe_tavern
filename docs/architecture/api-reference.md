@@ -1245,7 +1245,7 @@ Stateless endpoints that drive UNSAVED rules source through the real sandbox/ker
 
 ## Experience Copilot
 
-The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`. Script-owned threads of BOTH kinds (`experience` and `script`) use these endpoints; each request resolves the thread to its kind through its script row (draft threads resolve to `experience`) — see [Agent Shell](./agent-shell.md).
+The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`. Threads of ALL THREE kinds use these per-thread endpoints; each request resolves the thread to its kind through the stored `agent_kind` first (chat-owned threads), else through its script row (draft threads resolve to `experience`) — see [Agent Shell](./agent-shell.md). Script-owned sessions (both kinds) use the script lifecycle below; chat-owned sessions use the [chat-owned routes](#chat-owned-agents-sidechat).
 
 ### Sessions
 
@@ -1284,7 +1284,7 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 { "answer": { "toolCallId": "...", "text": "yes, use the keyboard" }, "providerProfileId": "..." }
 ```
 
-`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual`/`code` drafts are the editors' current unsaved sources — the backend prefers them over last-persisted buffers so the agent is never blind to in-progress edits. The experience kind reads `rules`/`visual` (plus `rulesSaved`/`visualSaved`, `step`, `testFeedback`, `launchContext`, `reviewSnapshot`); the script kind reads `code` (plus `codeSaved`) and treats `scriptKind` as advisory telemetry — the STORED script kind selects the API-knowledge section. Both share `content`/`answer` and the provider/model pair.
+`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual`/`code` drafts are the editors' current unsaved sources — the backend prefers them over last-persisted buffers so the agent is never blind to in-progress edits. The experience kind reads `rules`/`visual` (plus `rulesSaved`/`visualSaved`, `step`, `testFeedback`, `launchContext`, `reviewSnapshot`); the script kind reads `code` (plus `codeSaved`) and treats `scriptKind` as advisory telemetry — the STORED script kind selects the API-knowledge section. Both share `content`/`answer` and the provider/model pair. A chat-owned `sidechat-ooc` thread additionally reads `attachedVariants` (see [the sidechat stream field](#stream-field-sidechat-threads)).
 
 ### Kind errors (stream assert + compact)
 
@@ -1308,11 +1308,82 @@ The stream route resolves the thread's kind BEFORE sending SSE headers, and the 
 
 ### Profiles
 
-CRUD under `/api/copilot/profiles` (see the copilot profile schemas); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. User profiles carry `basePrompt` + `toolSet` toggles validated against the owning kind's registered schema (a wrong-kind set is a 422 `copilot_profile_invalid_tool_set`): the experience keys are the 9 `copilotToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`); the script keys are the 6 `scriptAgentToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_script_test`, `plan`, `read_plan`, `ask_user`). `read_skill_file` is in neither set (always on, never gated); `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot/profiles` (see the copilot profile schemas); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. User profiles carry `basePrompt` + `toolSet` toggles validated against the owning kind's registered schema (a wrong-kind set is a 422 `copilot_profile_invalid_tool_set`): the experience keys are the 9 `copilotToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`); the script keys are the 6 `scriptAgentToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_script_test`, `plan`, `read_plan`, `ask_user`); the sidechat keys are the 5 `sidechatOocToolSetSchema` keys (`search_context`, `read_context_item`, `propose_objective`, `todo`, `read_plan`). `read_skill_file` is in neither script/experience set (always on, never gated); `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
 
 ### Skills
 
 Per-kind skill libraries under `/api/copilot/skills` (mirroring the profile routes); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. `GET /api/copilot/skills` lists the merged built-in + user catalog (metadata only, no file bodies); `GET /api/copilot/skills/:id` reads one entry (404 when absent); `POST /api/copilot/skills/import` uploads a multipart skill where each file part's field name is its relative path (e.g. `my-skill/SKILL.md`) and returns 201; `DELETE /api/copilot/skills/:id` removes one user skill directory (a pure built-in is rejected).
+
+---
+
+## Chat-Owned Agents (sidechat)
+
+The chat-owned arm of the agent shell: agent threads owned by a chat branch instead of a script, with `sidechat-ooc` (the RP-chat sidechat) the first kind. Architecture: [Agent Shell](./agent-shell.md). Chat-owned threads ride the owner-agnostic per-thread routes above (`/api/experience-copilot/:threadId/...`, dispatched to their kind through the stored `agent_kind`); the routes below are the chat/branch-scoped families, all under `/api/agent/`.
+
+### Sessions
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/branches/:branchId/:kind/active` | The kind's active thread on that branch, or `null` |
+| `GET /api/agent/chats/:chatId/branches/:branchId/:kind/sessions` | Session list for the switcher (`[]` when the chat's mode is not served) |
+| `POST /api/agent/chats/:chatId/branches/:branchId/:kind/session` | Start a new session (archives same-owner siblings); optional body `{ title? }` |
+
+The `:kind` segment is validated through the agent-kind registry: an unregistered kind is a 400 `UNKNOWN_AGENT_KIND`, a script-owned kind a 400 `AGENT_KIND_NOT_CHAT_OWNED`, and a chat-owned kind on a chat whose mode it does not serve a 400 `AGENT_KIND_MODE_NOT_SERVED` — all the same `{ error, code }` JSON shape. A missing chat, a missing branch, or a branch of another chat is a 404.
+
+### Kind settings (model + default profile)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/kinds/:kind/settings` | The kind's remembered model binding + profile default |
+| `PATCH /api/agent/kinds/:kind/settings` | Partial write; `.strict()` body |
+
+**GET response:** `{ agentKind, providerProfileId, modelName, defaultProfileId, updatedAt, servesChatModes }` (nullable fields are `null`, never `undefined`). **PATCH body:** `{ providerProfileId?, modelName?, defaultProfileId? }` — absent keeps the stored value, `null` clears one. Every registered kind is addressable (script- and chat-owned alike); an unregistered kind is a 400 `UNKNOWN_AGENT_KIND`.
+The binding is a remembered UI default, not a server override — the stream keeps taking provider/model per request. A kind with no row reads the legacy shared copilot pair ONLY if it is one of the two pre-split kinds (`experience`, `script`); every later kind reads nulls so its host's default model applies. `servesChatModes` is a registry fact carried on the wire (also in the bootstrap payload's per-kind map), never patched.
+
+### Chat settings (profile choice per chat)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/:kind/settings` | The chat's own profile choice for that kind |
+| `PATCH /api/agent/chats/:chatId/:kind/settings` | Partial write; `.strict()` body |
+
+**GET response:** `{ chatId, agentKind, profileId, updatedAt }` (`profileId`/`updatedAt` `null` on a pair with no row). **PATCH body:** `{ profileId? }` — `null` clears the choice (follow the kind default), the sentinel `"builtin"` pins the kind's built-in profile for this chat. The stream's chat-owned profile chain: chat row → kind default → built-in; a dangling id falls through, never errors. Kind errors as above; a missing chat is a 404.
+
+### Branch plan
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/branches/:branchId/plan` | `{ plan }` — the stored branch plan, or the empty plan when none is stored yet |
+| `PUT /api/agent/chats/:chatId/branches/:branchId/plan` | Full-replace write (`{ plan }`), same validation as the script plan |
+
+The chat-branch twin of [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan): two `active` tasks are a 422 `agent_plan_multiple_active`, an unusable shape a 422 `agent_plan_invalid`; a missing chat/branch (or a branch of another chat) is a 404. The sidechat kind reads this plan read-only through its `read_plan` tool — no plan-write tool exists for it.
+
+### Thread events
+
+`GET /api/agent/threads/:threadId/events` — for a chat-owned thread, its frozen context events in merged-timeline order, each `{ id, kind, payload, beforeMessageId }`.
+`kind` is one of `rp_sync` / `variants_attached` / `selection_changed` / `branch_forked`; `payload` is the event mapped through the same parser the sidechat context loader uses (a corrupt stored payload surfaces as an error, never a silent skip); `beforeMessageId` anchors each event to the first message row after it on the merged timeline, `null` when the event is the newest row — the web interleaves separators without a `seq` on the message wire (the shared messages route above is unchanged). A script-owned or draft thread answers `[]`; a missing thread is a 404.
+
+### Objective proposals (apply / reject)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/agent/threads/:threadId/proposals/:toolCallId/apply` | Accept a pending `propose_objective` proposal into the chat's objective tracker |
+| `POST /api/agent/threads/:threadId/proposals/:toolCallId/reject` | Reject it (tracker untouched) |
+
+Body-less: the proposal payload lives in the addressed tool row. The thread must be a chat-owned `sidechat-ooc` thread and the `toolCallId` a `propose_objective` row of it — anything else (missing, foreign, non-proposal) is a 404. Only a `pending` proposal resolves: a second apply/reject (double click, second tab) is the 409 `objective_proposal_already_resolved`. Apply reads the tracker at Accept time: tracker off → the 409 `objective_tracker_disabled`; mode `route` adds a task, mode `goals` adds a short-term goal (the insights services reused verbatim; a mode switched after the proposal wins). **Response:** `{ proposal }` — the record proposal with its final `status` (`applied` / `rejected`), also written back into the tool row so a reload shows the resolution.
+
+### Branch sidechat fork + summary
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/agent/chats/:chatId/branches/:branchId/fork-sidechat` | Copy the branch's ACTIVE sidechat threads + branch plan onto the target branch |
+| `GET /api/agent/chats/:chatId/branches/:branchId/sidechat-summary` | `{ hasSessions, count }` — ACTIVE chat-owned sessions on the branch, for the fork/delete confirms |
+
+**Fork body:** `{ targetBranchId }`. **Response:** `{ copiedThreads: [{ threadId, agentKind }] }` — the kinds the store actually had ACTIVE source threads for. The fork point comes from the target branch row (`parent_branch_id` must name the source): a target that is not a child is the 400 `target_branch_not_child_of_source`, a target that already has an active same-kind thread the 400 `target_branch_thread_active` (nothing is copied, the existing conversation stays). The copy re-keys id references onto the fork's new message ids, so the copy's first RP sync appends nothing for the copied history; frozen text is untouched. A missing chat/branch on either side is a 404.
+
+### Stream field (sidechat threads)
+
+`POST /api/experience-copilot/:threadId/stream` gains `attachedVariants?: Array<{ messageId, variantId }>` — RP variants attached to this sidechat turn as plain pairs; only the `sidechat-ooc` kind reads the field (the other kinds ignore it entirely). The request never carries a `selected` marker — the server reads the RP's own selection at freeze time. A message or variant outside the thread's own chat + branch is the typed 400 `attached_variant_not_in_branch` and nothing is frozen (the user message is not persisted). The pinned-context `PATCH /api/experience-copilot/:threadId/context-links` is reused as-is for the sidechat's `@` pins (characters, personas, lorebooks, scripts, skills), resolved by id at assembly time like every kind's.
 
 ---
 
