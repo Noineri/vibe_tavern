@@ -194,7 +194,10 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
           job.status = "running";
           if (job.recordId) {
             const record = s.recordsByChat[job.chatId]?.find((item) => item.id === job.recordId);
-            if (record) record.status = "running";
+            if (record) {
+              record.status = "running";
+              record.startVariantPosition = useSnapshotStore.getState().messagesById[job.messageId]?.variants.length ?? 0;
+            }
           }
         }
       }),
