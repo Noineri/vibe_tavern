@@ -23,15 +23,33 @@ const TARGET_B = "target-b";
 const initialChatState = useChatStore.getState();
 const initialQueueState = useGenerationQueueStore.getState();
 const initialSnapshotState = useSnapshotStore.getState();
+const originalMatchMedia = window.matchMedia;
+let mobileViewport = false;
+
+function matchMedia(query: string): MediaQueryList {
+  return {
+    matches: mobileViewport && query === "(max-width: 768px)",
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  };
+}
 
 afterAll(async () => {
   useChatStore.setState(initialChatState, true);
   useGenerationQueueStore.setState(initialQueueState, true);
   useSnapshotStore.setState(initialSnapshotState, true);
+  window.matchMedia = originalMatchMedia;
   await i18next.changeLanguage("en");
 });
 
 beforeEach(() => {
+  mobileViewport = false;
+  window.matchMedia = matchMedia;
   useChatStore.setState({ activeChatId: CHAT_A });
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
   useSnapshotStore.setState({ messageOrder: [], messagesById: {} });
@@ -41,7 +59,7 @@ function setVisibleTarget(messageId: string, variantIds: string[]): void {
   useSnapshotStore.setState({
     messageOrder: [messageId],
     messagesById: {
-      [messageId]: { id: messageId, variants: variantIds.map((id) => ({ id })) } as AppMessage,
+      [messageId]: { id: messageId, variants: variantIds.map((id, variantIndex) => ({ id, variantIndex, isSelected: variantIndex === 0 })) } as AppMessage,
     },
   });
 }
@@ -152,6 +170,25 @@ describe("QueueManager QS-3 batch summary", () => {
     const popover = timelineHeader.parentElement?.parentElement;
     expect(popover?.getAttribute("class")).toContain("w-80");
     expect(popover?.getAttribute("data-side")).toBe("top");
+  });
+
+  test("opens the real mobile BottomSheet with durable timeline rows after the executable queue drains", async () => {
+    mobileViewport = true;
+    setVisibleTarget(TARGET_A, ["a", "b"]);
+    useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a", "b"]);
+
+    const view = renderQueueManager();
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: /Generation queue/ }));
+    });
+
+    const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
+    expect(sheet).not.toBeNull();
+    expect(sheet?.querySelector("[data-queue-timeline]"))?.not.toBeNull();
+    expect(sheet?.textContent).toContain("More variants");
+    expect(sheet?.textContent).toContain("Variant 1");
+    expect(sheet?.textContent).toContain("Variant 2");
+    expect(sheet?.querySelector("[data-queue-timeline]")?.getAttribute("class")).toContain("max-h-[50vh]");
   });
 
   test("hides when the batch target leaves message order", () => {

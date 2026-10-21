@@ -97,6 +97,10 @@ function renderTimeline(onClose = () => undefined, locale: "en" | "ru" = "en") {
   return render(<LocaleProvider initialLocale={locale}><QueueTimeline onClose={onClose} /></LocaleProvider>);
 }
 
+function renderMobileTimeline(onClose = () => undefined, locale: "en" | "ru" = "en") {
+  return render(<LocaleProvider initialLocale={locale}><QueueTimeline mobile onClose={onClose} /></LocaleProvider>);
+}
+
 function rowLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll<HTMLElement>("[data-queue-timeline-row], [data-queue-timeline-fold]")).map((row) => row.textContent ?? "");
 }
@@ -293,5 +297,69 @@ describe("QueueTimeline desktop", () => {
     expect(view.getAllByRole("button", { name: "Cancel generation" })[0]?.getAttribute("class")).toContain("h-6 w-6");
     await act(async () => { fireEvent.click(view.getByRole("button", { name: "Show error details" })); });
     expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("px-3 pb-2 pl-[38px]");
+  });
+});
+
+describe("QueueTimeline mobile", () => {
+  test("renders durable rows with full second-line metadata, phone geometry, and working controls", async () => {
+    setMessage([0]);
+    const message = useSnapshotStore.getState().messagesById[MESSAGE_ID]!;
+    message.variants[0]!.modelId = "provider/a-deliberately-long-model-name-for-mobile-wrapping";
+    message.variants[0]!.presetName = "A deliberately long preset name that must remain fully readable";
+    startBatch([0]);
+    addRecord("failed", "provider/a-deliberately-long-failed-model-name-for-mobile-wrapping", "exact failure detail");
+    addRecord("running", "provider/a-deliberately-long-running-model-name-for-mobile-wrapping");
+    const pending = addRecord("pending", "provider/a-deliberately-long-pending-model-name-for-mobile-wrapping");
+    useGenerationQueueStore.getState().enqueueJob({ chatId: CHAT, messageId: MESSAGE_ID, model: "provider/a-deliberately-long-pending-model-name-for-mobile-wrapping", promptPresetId: null, recordId: pending });
+    useProviderDataStore.setState({ profiles: [{ id: "profile", isActive: true, defaultModel: "provider/a-deliberately-long-footer-model-name-for-mobile-wrapping" }] } as typeof initialProviderData);
+    useBootstrapStore.setState({ data: { promptPresets: [{ id: "preset", name: "A deliberately long footer preset name that must remain fully readable" }] } } as typeof initialBootstrap);
+    useSnapshotStore.setState({ activeChat: { promptPresetId: "preset" } as AppSnapshot["activeChat"] });
+
+    let closes = 0;
+    const view = renderMobileTimeline(() => { closes += 1; });
+    const timeline = view.container.querySelector<HTMLElement>("[data-queue-timeline]");
+    const finished = view.container.querySelector<HTMLElement>("[data-queue-timeline-row=finished]");
+    const metadata = finished?.querySelector<HTMLElement>("[data-queue-timeline-metadata]");
+    const footer = view.getByRole("button", { name: /One more/ });
+
+    expect(timeline?.getAttribute("class")).toContain("max-h-[50vh] overflow-y-auto py-1");
+    expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toContain("left-[25px]");
+    expect(finished?.getAttribute("class")).toContain("min-h-12");
+    expect(finished?.getAttribute("class")).toContain("px-4");
+    expect(finished?.querySelector("button span:first-child")?.getAttribute("class")).toContain("h-5 w-5");
+    expect(metadata?.textContent).toContain("a-deliberately-long-model-name-for-mobile-wrapping · A deliberately long preset name that must remain fully readable");
+    expect(metadata?.getAttribute("class")).toContain("whitespace-normal");
+    expect(metadata?.getAttribute("class")).not.toContain("truncate");
+    expect(metadata?.getAttribute("class")).not.toContain("overflow-hidden");
+    expect(view.getByTestId("queue-timeline-running-ring").getAttribute("class")).toBe("h-5 w-5 animate-spin-slow");
+    expect(view.getByTestId("variant-star-1").getAttribute("class")).toContain("h-10 w-10");
+    expect(view.getAllByRole("button", { name: "Cancel generation" })[0]?.getAttribute("class")).toContain("h-10 w-10");
+    expect(footer.getAttribute("class")).toContain("min-h-12");
+    expect(footer.getAttribute("class")).toContain("px-4");
+    expect(footer.getAttribute("class")).toContain("py-2");
+    expect(footer.textContent).toContain("One morea-deliberately-long-footer-model-name-for-mobile-wrapping · A deliberately long footer preset name that must remain fully readable");
+    expect(footer.querySelector("[data-queue-timeline-metadata]")?.getAttribute("class")).toContain("whitespace-normal");
+    const errorControl = view.getByRole("button", { name: "Show error details" });
+    expect(errorControl.getAttribute("class")).toContain("h-10 w-10");
+    await act(async () => { fireEvent.click(errorControl); });
+    expect(view.getByRole("button", { name: "Hide error details" }).getAttribute("aria-expanded")).toBe("true");
+    expect(view.container.querySelector("[data-queue-timeline-error]")?.getAttribute("class")).toContain("px-4 pb-2.5 pl-12");
+    await act(async () => { fireEvent.click(footer); });
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.at(-1)?.messageId).toBe(MESSAGE_ID);
+    expect(closes).toBe(0);
+  });
+
+  test("keeps fold disclosure truthful and uses mobile rows after expansion", async () => {
+    setMessage([0, 1, 2, 3, 4]);
+    startBatch([0, 1, 2, 3]);
+    const view = renderMobileTimeline();
+
+    const fold = view.getByRole("button", { name: "Show finished variants" });
+    expect(fold.getAttribute("class")).toContain("min-h-12");
+    expect(fold.getAttribute("class")).toContain("px-4");
+    expect(fold.querySelector("span:last-child")?.getAttribute("class")).toContain("h-10 w-10");
+    await act(async () => { fireEvent.click(fold); });
+    expect(view.getByRole("button", { name: "Hide finished variants" }).getAttribute("aria-expanded")).toBe("true");
+    expect(view.container.querySelector("[data-queue-timeline-row=finished]")?.getAttribute("class")).toContain("min-h-12");
   });
 });

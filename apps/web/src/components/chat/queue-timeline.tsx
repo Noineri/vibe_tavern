@@ -17,13 +17,13 @@ import { QueueProgressRing } from "./queue-progress-ring.js";
 import { useQueueRows, type FinishedQueueRow, type QueueRow } from "./queue-rows.js";
 import { VariantStarButton } from "./variants/variant-jump.js";
 
-type QueueTimelineProps = { onClose: () => void };
+type QueueTimelineProps = { mobile?: boolean; onClose: () => void };
 type TimelineFoldRow = { kind: "fold"; rows: FinishedQueueRow[] };
 const EMPTY_JOBS: readonly never[] = [];
 const EMPTY_PRESETS: readonly never[] = [];
 
-/** Desktop timeline B for the durable generation batch, deliberately separate from the QS-7 mobile sheet. */
-export function QueueTimeline({ onClose }: QueueTimelineProps): ReactNode {
+/** Durable timeline B rendered in the desktop Popover or mobile BottomSheet shell. */
+export function QueueTimeline({ mobile = false, onClose }: QueueTimelineProps): ReactNode {
   const { t } = useT();
   const activeChatId = useChatStore((state) => state.activeChatId);
   const batch = useGenerationQueueStore((state) => activeChatId ? state.batchesByChat[activeChatId] ?? null : null);
@@ -76,24 +76,34 @@ export function QueueTimeline({ onClose }: QueueTimelineProps): ReactNode {
   const timelineChatId = activeChatId;
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5" data-queue-timeline-header>
+      <div className={cn("flex items-center gap-2 border-b border-border", mobile ? "px-4 py-2.5" : "px-3 py-2.5")} data-queue-timeline-header>
         <span className="shrink-0 whitespace-nowrap font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{t("queue_timeline_title")}</span>
         <span className="shrink-0 whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">{t("queue_chip_progress", { done: rowsResult.summary.done, total: rowsResult.summary.total })}</span>
         {hasPending && <button type="button" onClick={() => { clearQueuePending(); onClose(); }} className="ml-auto shrink-0 whitespace-nowrap rounded px-2 py-1 text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-danger-text">{t("queue_timeline_clear")}</button>}
       </div>
-      <div className="relative max-h-64 overflow-y-auto py-1" data-queue-timeline>
-        <div className="absolute bottom-4 left-[19px] top-4 w-0.5 bg-border" aria-hidden="true" data-queue-timeline-track><i className="block w-full bg-accent" data-queue-timeline-accent data-last-finished-node={lastFinishedNode} data-displayed-node-count={displayedNodeCount} style={{ height: `${accentHeight}%` }} /></div>
-        {renderedRows.map((row) => row.kind === "fold" ? (
-          <FoldRow key="fold" rows={row.rows} messageId={timelineBatch.messageId} open={foldOpen} onToggle={() => setFoldOpen((open) => !open)} onSelect={selectVariant} />
-        ) : row.kind === "finished" ? (
-          <FinishedRow key={row.item.variantId} row={row} messageId={timelineBatch.messageId} onSelect={selectVariant} />
+      <div className={mobile ? "relative max-h-[50vh] overflow-y-auto py-1" : "relative max-h-64 overflow-y-auto py-1"} data-queue-timeline>
+        {mobile ? (
+          <div className="absolute bottom-0 left-[25px] top-0 w-0.5 bg-border" aria-hidden="true" data-queue-timeline-track />
         ) : (
-          <RecordRow key={row.record.id} row={row} ref={row.record.id === runningId ? runningRef : undefined} expanded={expandedError === row.record.id} onToggleError={() => setExpandedError((value) => value === row.record.id ? null : row.record.id)} jobId={jobs.find((job) => job.recordId === row.record.id)?.id} />
+          <div className="absolute bottom-4 left-[19px] top-4 w-0.5 bg-border" aria-hidden="true" data-queue-timeline-track><i className="block w-full bg-accent" data-queue-timeline-accent data-last-finished-node={lastFinishedNode} data-displayed-node-count={displayedNodeCount} style={{ height: `${accentHeight}%` }} /></div>
+        )}
+        {renderedRows.map((row, index) => row.kind === "fold" ? (
+          <FoldRow key="fold" rows={row.rows} messageId={timelineBatch.messageId} open={foldOpen} mobile={mobile} accentBefore={index <= lastFinishedNode} accentAfter={index < lastFinishedNode} onToggle={() => setFoldOpen((open) => !open)} onSelect={selectVariant} />
+        ) : row.kind === "finished" ? (
+          <FinishedRow key={row.item.variantId} row={row} messageId={timelineBatch.messageId} mobile={mobile} accentBefore={index <= lastFinishedNode} accentAfter={index < lastFinishedNode} onSelect={selectVariant} />
+        ) : (
+          <RecordRow key={row.record.id} row={row} mobile={mobile} accentBefore={index <= lastFinishedNode} accentAfter={index < lastFinishedNode} ref={row.record.id === runningId ? runningRef : undefined} expanded={expandedError === row.record.id} onToggleError={() => setExpandedError((value) => value === row.record.id ? null : row.record.id)} jobId={jobs.find((job) => job.recordId === row.record.id)?.id} />
         ))}
       </div>
-      <button type="button" onClick={addCurrent} className="flex w-full min-w-0 items-center gap-1.5 border-t border-border px-3 py-[9px] text-left font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:bg-s2">
-        <Icons.Plus /><span className="shrink-0 whitespace-nowrap">{t("queue_timeline_one_more")}</span><span className="min-w-0 truncate" title={footerLabel}>{footerLabel}</span>
-      </button>
+      {mobile ? (
+        <button type="button" onClick={addCurrent} className="flex min-h-12 w-full min-w-0 items-center gap-1.5 border-t border-border px-4 py-2 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:bg-s2">
+          <Icons.Plus /><span className="flex min-w-0 flex-1 flex-col gap-px"><span className="whitespace-normal">{t("queue_timeline_one_more_mobile")}</span><span data-queue-timeline-metadata className="min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-2px)] text-t3">{footerLabel}</span></span>
+        </button>
+      ) : (
+        <button type="button" onClick={addCurrent} className="flex w-full min-w-0 items-center gap-1.5 border-t border-border px-3 py-[9px] text-left font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:bg-s2">
+          <Icons.Plus /><span className="shrink-0 whitespace-nowrap">{t("queue_timeline_one_more")}</span><span className="min-w-0 truncate" title={footerLabel}>{footerLabel}</span>
+        </button>
+      )}
     </>
   );
 
@@ -118,23 +128,28 @@ export function QueueTimeline({ onClose }: QueueTimelineProps): ReactNode {
   }
 }
 
-function FoldRow({ rows, messageId, open, onToggle, onSelect }: { rows: FinishedQueueRow[]; messageId: string; open: boolean; onToggle: () => void; onSelect: (row: FinishedQueueRow) => void }): ReactNode {
-  const { t } = useT();
-  return <><button type="button" onClick={onToggle} aria-expanded={open} aria-label={t(open ? "queue_timeline_fold_hide_aria" : "queue_timeline_fold_show_aria")} className="relative flex min-h-9 w-full items-center gap-2.5 px-3 py-1.5 text-left text-[calc(var(--ui-fs)-3px)] text-t2 hover:bg-s2" data-queue-timeline-fold><span className="z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-accent bg-glass-bg text-[9px] text-accent">{rows.length}</span><span className="min-w-0 flex-1">{t("queue_timeline_folded", { count: rows.length })}</span><span className="flex h-6 w-6 shrink-0 items-center justify-center text-t3"><Icons.Caret direction={open ? "u" : "d"} /></span></button><AnimatedDisclosure open={open}><div>{rows.map((row) => <FinishedRow key={row.item.variantId} row={row} messageId={messageId} onSelect={onSelect} />)}</div></AnimatedDisclosure></>;
+function MobileTrackSegment({ before, after }: { before: boolean; after: boolean }): ReactNode {
+  return <>{before && <i aria-hidden className="absolute bottom-1/2 left-[25px] top-0 z-0 w-0.5 bg-accent" />}{after && <i aria-hidden className="absolute bottom-0 left-[25px] top-1/2 z-0 w-0.5 bg-accent" />}</>;
 }
 
-function FinishedRow({ row, messageId, onSelect }: { row: FinishedQueueRow; messageId: string; onSelect: (row: FinishedQueueRow) => void }): ReactNode {
+function FoldRow({ rows, messageId, open, mobile, accentBefore, accentAfter, onToggle, onSelect }: { rows: FinishedQueueRow[]; messageId: string; open: boolean; mobile: boolean; accentBefore: boolean; accentAfter: boolean; onToggle: () => void; onSelect: (row: FinishedQueueRow) => void }): ReactNode {
+  const { t } = useT();
+  return <><button type="button" onClick={onToggle} aria-expanded={open} aria-label={t(open ? "queue_timeline_fold_hide_aria" : "queue_timeline_fold_show_aria")} className={mobile ? "relative flex min-h-12 w-full items-center gap-2.5 px-4 py-1.5 text-left text-[calc(var(--ui-fs)-3px)] text-t2 hover:bg-s2" : "relative flex min-h-9 w-full items-center gap-2.5 px-3 py-1.5 text-left text-[calc(var(--ui-fs)-3px)] text-t2 hover:bg-s2"} data-queue-timeline-fold>{mobile && <MobileTrackSegment before={accentBefore} after={accentAfter} />}<span className={mobile ? "z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-accent bg-glass-bg text-[9px] text-accent" : "z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-accent bg-glass-bg text-[9px] text-accent"}>{rows.length}</span><span className="min-w-0 flex-1 whitespace-normal">{t("queue_timeline_folded", { count: rows.length })}</span><span className={mobile ? "flex h-10 w-10 shrink-0 items-center justify-center text-t3" : "flex h-6 w-6 shrink-0 items-center justify-center text-t3"}><Icons.Caret direction={open ? "u" : "d"} /></span></button><AnimatedDisclosure open={open}><div>{rows.map((row, index) => <FinishedRow key={row.item.variantId} row={row} messageId={messageId} mobile={mobile} accentBefore={mobile} accentAfter={mobile && (index < rows.length - 1 || accentAfter)} onSelect={onSelect} />)}</div></AnimatedDisclosure></>;
+}
+
+function FinishedRow({ row, messageId, mobile, accentBefore, accentAfter, onSelect }: { row: FinishedQueueRow; messageId: string; mobile: boolean; accentBefore: boolean; accentAfter: boolean; onSelect: (row: FinishedQueueRow) => void }): ReactNode {
   const { t } = useT();
   const metadata = row.item.presetName ? `${row.item.modelLabel} · ${row.item.presetName}` : row.item.modelLabel;
-  return <div className="relative flex min-h-9 items-center gap-2.5 px-3 py-1.5 text-[calc(var(--ui-fs)-3px)]" data-queue-timeline-row="finished" data-selected={row.selected}><button type="button" onClick={() => onSelect(row)} className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", row.selected ? "text-accent-t" : "text-t2")}><span className="z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Icons.check /></span><span className="shrink-0 whitespace-nowrap">{t("queue_timeline_variant", { n: row.item.displayIndex })}</span><span className="min-w-0 truncate text-t3" title={metadata}>{metadata}</span></button>{messageId && <VariantStarButton messageId={brandId<MessageId>(messageId)} variantId={row.item.variantId} displayIndex={row.item.displayIndex} className="h-6 w-6" />}</div>;
+  if (!mobile) return <div className="relative flex min-h-9 items-center gap-2.5 px-3 py-1.5 text-[calc(var(--ui-fs)-3px)]" data-queue-timeline-row="finished" data-selected={row.selected}><button type="button" onClick={() => onSelect(row)} className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", row.selected ? "text-accent-t" : "text-t2")}><span className="z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Icons.check /></span><span className="shrink-0 whitespace-nowrap">{t("queue_timeline_variant", { n: row.item.displayIndex })}</span><span className="min-w-0 truncate text-t3" title={metadata}>{metadata}</span></button>{messageId && <VariantStarButton messageId={brandId<MessageId>(messageId)} variantId={row.item.variantId} displayIndex={row.item.displayIndex} className="h-6 w-6" />}</div>;
+  return <div className="relative flex min-h-12 items-center gap-2.5 px-4 py-1.5 text-[calc(var(--ui-fs)-3px)]" data-queue-timeline-row="finished" data-selected={row.selected}><MobileTrackSegment before={accentBefore} after={accentAfter} /><button type="button" onClick={() => onSelect(row)} className={cn("flex min-w-0 flex-1 items-center gap-2.5 text-left", row.selected ? "text-accent-t" : "text-t2")}><span className="z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Icons.check /></span><span className="flex min-w-0 flex-1 flex-col gap-px"><span className="shrink-0 whitespace-nowrap">{t("queue_timeline_variant", { n: row.item.displayIndex })}</span><span data-queue-timeline-metadata className="min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-2px)] text-t3">{metadata}</span></span></button>{messageId && <VariantStarButton messageId={brandId<MessageId>(messageId)} variantId={row.item.variantId} displayIndex={row.item.displayIndex} className="h-10 w-10" />}</div>;
 }
 
-function RecordRow({ row, expanded, onToggleError, jobId, ref }: { row: Exclude<QueueRow, FinishedQueueRow>; expanded: boolean; onToggleError: () => void; jobId?: string; ref?: React.Ref<HTMLDivElement> }): ReactNode {
+function RecordRow({ row, mobile, accentBefore, accentAfter, expanded, onToggleError, jobId, ref }: { row: Exclude<QueueRow, FinishedQueueRow>; mobile: boolean; accentBefore: boolean; accentAfter: boolean; expanded: boolean; onToggleError: () => void; jobId?: string; ref?: React.Ref<HTMLDivElement> }): ReactNode {
   const { t } = useT();
   const record = row.record;
   const modelLabel = record.model ? resolveModelLabel(record.model) : "";
   const metadata = `${modelLabel}${record.presetName ? ` · ${record.presetName}` : ""}`;
   const cancel = () => { if (jobId) cancelQueueJob(jobId); else if (record.status === "running") useChatStore.getState().abortGeneration(useChatStore.getState().activeChatId!); };
   const label = record.status === "failed" ? t("queue_timeline_error") : record.status === "running" ? t("queue_timeline_writing") : t("queue_timeline_waiting");
-  return <div ref={ref}><div className="relative flex min-h-9 items-center gap-2.5 px-3 py-1.5 text-[calc(var(--ui-fs)-3px)]" data-queue-timeline-row={record.status}><span className="z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-glass-bg">{record.status === "failed" ? <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-danger-text text-[10px] text-danger-text">!</span> : record.status === "running" ? <QueueProgressRing className="h-4 w-4" running indeterminateArc testIdPrefix="queue-timeline-running" /> : <span className="h-4 w-4 rounded-full border-2 border-t4" />}</span><span className={cn("flex min-w-0 flex-1 items-baseline gap-1.5", record.status === "failed" && "text-danger-text", record.status === "running" && "text-accent-t")}><span className="shrink-0 whitespace-nowrap">{label}</span><span className="min-w-0 truncate text-t3" title={metadata}>{metadata}</span></span>{record.status === "failed" ? <button type="button" onClick={onToggleError} aria-expanded={expanded} aria-label={t(expanded ? "queue_timeline_error_detail_hide_aria" : "queue_timeline_error_detail_show_aria")} className="flex h-6 w-6 shrink-0 items-center justify-center text-t3"><Icons.Caret direction={expanded ? "u" : "d"} /></button> : <button type="button" onClick={cancel} aria-label={t("queue_timeline_cancel_aria")} className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 hover:bg-s2 hover:text-danger-text"><Icons.Close /></button>}</div>{record.status === "failed" && <AnimatedDisclosure open={expanded}><div className="px-3 pb-2 pl-[38px] text-[calc(var(--ui-fs)-3px)] leading-snug text-danger-text" data-queue-timeline-error>{record.error}</div></AnimatedDisclosure>}</div>;
+  return <div ref={ref}><div className={mobile ? "relative flex min-h-12 items-center gap-2.5 px-4 py-1.5 text-[calc(var(--ui-fs)-3px)]" : "relative flex min-h-9 items-center gap-2.5 px-3 py-1.5 text-[calc(var(--ui-fs)-3px)]"} data-queue-timeline-row={record.status}>{mobile && <MobileTrackSegment before={accentBefore} after={accentAfter} />}<span className={mobile ? "z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-glass-bg" : "z-[1] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-glass-bg"}>{record.status === "failed" ? <span className={mobile ? "flex h-5 w-5 items-center justify-center rounded-full border-2 border-danger-text text-[10px] text-danger-text" : "flex h-4 w-4 items-center justify-center rounded-full border-2 border-danger-text text-[10px] text-danger-text"}>!</span> : record.status === "running" ? <QueueProgressRing className={mobile ? "h-5 w-5" : "h-4 w-4"} running indeterminateArc testIdPrefix="queue-timeline-running" /> : <span className={mobile ? "h-5 w-5 rounded-full border-2 border-t4" : "h-4 w-4 rounded-full border-2 border-t4"} />}</span><span className={cn("flex min-w-0 flex-1", mobile ? "flex-col items-start gap-px" : "items-baseline gap-1.5", record.status === "failed" && "text-danger-text", record.status === "running" && "text-accent-t")}><span className="shrink-0 whitespace-nowrap">{label}</span><span data-queue-timeline-metadata className={mobile ? "min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-2px)] text-t3" : "min-w-0 truncate text-t3"} title={mobile ? undefined : metadata}>{metadata}</span></span>{record.status === "failed" ? <button type="button" onClick={onToggleError} aria-expanded={expanded} aria-label={t(expanded ? "queue_timeline_error_detail_hide_aria" : "queue_timeline_error_detail_show_aria")} className={mobile ? "flex h-10 w-10 shrink-0 items-center justify-center text-t3" : "flex h-6 w-6 shrink-0 items-center justify-center text-t3"}><Icons.Caret direction={expanded ? "u" : "d"} /></button> : <button type="button" onClick={cancel} aria-label={t("queue_timeline_cancel_aria")} className={mobile ? "flex h-10 w-10 shrink-0 items-center justify-center rounded text-t3 hover:bg-s2 hover:text-danger-text" : "flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 hover:bg-s2 hover:text-danger-text"}><Icons.Close /></button>}</div>{record.status === "failed" && <AnimatedDisclosure open={expanded}><div className={mobile ? "px-4 pb-2.5 pl-12 text-[calc(var(--ui-fs)-1px)] leading-snug text-danger-text" : "px-3 pb-2 pl-[38px] text-[calc(var(--ui-fs)-3px)] leading-snug text-danger-text"} data-queue-timeline-error>{record.error}</div></AnimatedDisclosure>}</div>;
 }
