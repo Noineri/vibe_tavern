@@ -5,6 +5,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useGenerationQueueStore } from "../../stores/generation-queue-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { enqueueGenerateMore, useGenerationQueue } from "../../hooks/use-generation-queue.js";
 
 useDomEnv();
 
@@ -68,6 +69,24 @@ function renderQueueManager() {
   return render(<LocaleProvider initialLocale="en"><QueueManager /></LocaleProvider>);
 }
 
+function parked<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  return { promise: new Promise<T>((done) => { resolve = done; }), resolve };
+}
+
+async function flushUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  expect(predicate()).toBe(true);
+}
+
+function QueueRunner({ runJob }: { runJob: Parameters<typeof useGenerationQueue>[0] }): null {
+  useGenerationQueue(runJob);
+  return null;
+}
+
 function expectCounter(getByRole: ReturnType<typeof render>["getByRole"], text: string): void {
   const button = getByRole("button", { name: /Generation queue/ });
   const counter = button.querySelector("span");
@@ -120,6 +139,52 @@ describe("QueueManager QS-3 batch summary", () => {
     const { getByRole } = renderQueueManager();
 
     expectCounter(getByRole, "1 of 2");
+  });
+
+  test("keeps completed variants visible when the real pump hands off to the next queued job", async () => {
+    const b = parked<"done">();
+    const c = parked<"done">();
+    const calls: string[] = [];
+    setVisibleTarget(TARGET_A, ["a"]);
+    const view = render(
+      <LocaleProvider initialLocale="en">
+        <QueueManager />
+        <QueueRunner runJob={async (_chatId, _messageId, override) => {
+          calls.push(override?.model ?? "");
+          return calls.length === 1 ? b.promise : c.promise;
+        }} />
+      </LocaleProvider>,
+    );
+
+    await act(async () => {
+      enqueueGenerateMore(TARGET_A, "model-b", null);
+      enqueueGenerateMore(TARGET_A, "model-c", null);
+      await flushUntil(() => calls.length === 1);
+    });
+
+    await act(async () => {
+      setVisibleTarget(TARGET_A, ["a", "b"]);
+      b.resolve("done");
+      await flushUntil(() => calls.length === 2);
+    });
+
+    const running = useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.find((record) => record.status === "running");
+    expect(running).toMatchObject({ model: "model-c", startVariantPosition: 2 });
+    expectCounter(view.getByRole, "2 of 3");
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: /Generation queue/ }));
+    });
+    const rows = [...view.baseElement.querySelectorAll<HTMLElement>("[data-queue-timeline-row]")];
+    expect(rows.map((row) => row.getAttribute("data-queue-timeline-row"))).toEqual(["finished", "finished", "running"]);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Variant 1"),
+      expect.stringContaining("Variant 2"),
+      expect.stringContaining("Writing"),
+    ]);
+
+    c.resolve("done");
+    view.unmount();
   });
 
   test("keeps a drained batch mounted with its localized persisted 2 of 2 summary", () => {
