@@ -176,23 +176,35 @@ describe("MessageShell discuss-in-sidechat entry (SC-18)", () => {
     cleanup();
   });
 
-  test("mobile: one variant attaches at once from the icon row", () => {
+  // SC-18c (owner 2026-10-21): the mobile row no longer carries the discuss
+  // trigger — the entry lives in the "..." sheet. Was: the icon row attached
+  // at once. Now: the sheet item attaches at once, with no chooser.
+  test("mobile: one variant attaches at once from the sheet item (no row trigger)", () => {
     useIsMobile.mockReturnValue(true);
     const onDiscussInSidechat = mock((_scope: "selected" | "all") => {});
     const view = renderWithTooltip(React.createElement(MessageShell, discussProps(1, onDiscussInSidechat)));
-    const trigger = view.baseElement.querySelector('[data-testid="discuss-sidechat-trigger"]') as HTMLElement;
-    expect(trigger).not.toBeNull();
-    fireEvent.click(trigger);
+    expect(view.container.querySelector('[data-testid="discuss-sidechat-trigger"]'), "no row trigger on mobile").toBeNull();
+    fireEvent.click(view.container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement);
+    const popup = document.querySelector(".bs-popup") as HTMLElement;
+    const item = [...popup.querySelectorAll("button")].find((b) => b.textContent === TOOLTIP_KEY) as HTMLElement;
+    fireEvent.click(item);
     expect(onDiscussInSidechat).toHaveBeenCalledTimes(1);
     expect(onDiscussInSidechat.mock.calls[0]?.[0]).toBe("selected");
+    expect(view.baseElement.querySelector('[data-testid="discuss-scope-all"]'), "no chooser for a single variant").toBeNull();
     cleanup();
   });
 
-  test("mobile: several variants open the bottom sheet choice", async () => {
+  // SC-18c: was the row trigger opening the choice sheet. Now the "..."
+  // sheet item opens the scope chooser after the action sheet closes.
+  test("mobile: several variants open the chooser from the sheet item", async () => {
     useIsMobile.mockReturnValue(true);
     const onDiscussInSidechat = mock((_scope: "selected" | "all") => {});
     const view = renderWithTooltip(React.createElement(MessageShell, discussProps(2, onDiscussInSidechat)));
-    fireEvent.click(view.baseElement.querySelector('[data-testid="discuss-sidechat-trigger"]') as HTMLElement);
+    fireEvent.click(view.container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement);
+    const popup = document.querySelector(".bs-popup") as HTMLElement;
+    const item = [...popup.querySelectorAll("button")].find((b) => b.textContent === TOOLTIP_KEY) as HTMLElement;
+    fireEvent.click(item);
+    expect(onDiscussInSidechat, "the flow fires only after the chooser picks").not.toHaveBeenCalled();
 
     const all = await view.findByTestId("discuss-scope-all");
     expect(all.textContent).toContain(ALL_KEY);

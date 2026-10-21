@@ -173,6 +173,7 @@ function MobileMenuButton({ onToggle }: { onToggle: () => void }) {
   return (
     <div className="relative ml-auto">
       <div
+        data-testid="mobile-actions-menu-btn"
         className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded text-t3 transition-colors active:bg-s2"
         onClick={onToggle}
       >

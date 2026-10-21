@@ -339,13 +339,19 @@ describe("SC-18 discuss in sidechat (MessageBlock wiring)", () => {
     expect(readSidechatOpen(CHAT)).toBe(true);
   });
 
+  // SC-18c (owner 2026-10-21): the mobile row no longer carries the discuss
+  // trigger — the "..." sheet item attaches the single variant at once.
   test("mobile: the entry parks the chip, opens the sidechat AND switches to the Sidechat tab", async () => {
     useIsMobile.mockReturnValue(true);
     useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1", SINGLE, 0)], "rp"));
     useChatStore.getState().setActiveChatId(asChatId(CHAT));
 
     const view = await renderBlock("m1");
-    fireEvent.click(view.container.querySelector(TRIGGER) as HTMLElement);
+    expect(view.container.querySelector(TRIGGER), "no row trigger on mobile (SC-18c)").toBeNull();
+    fireEvent.click(view.container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement);
+    const popup = document.querySelector(".bs-popup") as HTMLElement;
+    const item = [...popup.querySelectorAll("button")].find((b) => b.textContent === "discuss_in_sidechat_tooltip") as HTMLElement;
+    fireEvent.click(item);
 
     expect(readPendingVariantAttachments(CHAT, "b1")).toEqual([
       { messageId: "m1", variantId: "m1-v0", variantNumber: 1, selected: true },
@@ -354,13 +360,18 @@ describe("SC-18 discuss in sidechat (MessageBlock wiring)", () => {
     expect(useSidechatMobileStore.getState().tab).toBe("sidechat");
   });
 
+  // SC-18c: the "..." sheet item opens the scope chooser after the action
+  // sheet closes (was: the row trigger opened the choice directly).
   test("mobile: the sheet choice parks every variant and switches the tab", async () => {
     useIsMobile.mockReturnValue(true);
     useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1", TRIPLE, 1)], "rp"));
     useChatStore.getState().setActiveChatId(asChatId(CHAT));
 
     const view = await renderBlock("m1");
-    fireEvent.click(view.container.querySelector(TRIGGER) as HTMLElement);
+    fireEvent.click(view.container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement);
+    const popup = document.querySelector(".bs-popup") as HTMLElement;
+    const item = [...popup.querySelectorAll("button")].find((b) => b.textContent === "discuss_in_sidechat_tooltip") as HTMLElement;
+    fireEvent.click(item);
     fireEvent.click(await view.findByTestId("discuss-scope-all"));
 
     expect(readPendingVariantAttachments(CHAT, "b1")).toHaveLength(3);

@@ -6,7 +6,7 @@ import { Icons } from "../shared/icons.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AssistantContextHeader } from "./AssistantContextHeader.js";
 import { ImageGenMessageMenu } from "./ImageGenMessageMenu.js";
-import { DiscussInSidechatMenu } from "./DiscussInSidechatMenu.js";
+import { DiscussInSidechatMenu, DiscussScopeSheet } from "./DiscussInSidechatMenu.js";
 import { DesktopMessageActions, MobileMessageActions } from "./message-shell-actions.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
@@ -210,6 +210,9 @@ export function MessageShell(props: MessageShellProps) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // SC-18c: the chooser for the sheet discuss item (several variants) —
+  // opened by the sheet item's action AFTER the action sheet closes.
+  const [discussChooserOpen, setDiscussChooserOpen] = useState(false);
 
   // IG-16: the image-generation menu rides both action rows (desktop +
   // mobile) on every message — any message can anchor a generation, and the
@@ -253,6 +256,14 @@ export function MessageShell(props: MessageShellProps) {
   const deleteLabel = t("delete");
   const resendLabel = t("resend");
   const continueLabel = t("continue_tooltip");
+  const aiEditTooltip = tDynamic("message_ai_editor_tooltip");
+  const aiAnnotateTooltip = tDynamic("message_ai_editor_mode_annotate");
+  const discussTooltip = t("discuss_in_sidechat_tooltip");
+  // Narrowed once: the sheet items and the chooser share these gates with
+  // the discussMenu trigger above (sibling shells pass no callback).
+  const onDiscussInSidechat = actions.onDiscussInSidechat;
+  const canDiscuss = canDiscussInSidechat === true && onDiscussInSidechat !== undefined;
+  const onAiAnnotate = actions.onAiAnnotate;
 
   // Resolve slots for each position
   const slotsAfterReasoning = resolveMessageSlots("after_reasoning", slotCtx);
@@ -343,6 +354,7 @@ export function MessageShell(props: MessageShellProps) {
             {isMobile && !isEditing && !isGenerating && (
               <div className={cn("relative", isUser ? "mr-auto" : "ml-auto")}>
                 <div
+                  data-testid="mobile-actions-menu-btn"
                   className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded text-t3 transition-colors active:bg-s2"
                   onClick={() => setMobileMenuOpen(v => !v)}
                 >
@@ -372,12 +384,58 @@ export function MessageShell(props: MessageShellProps) {
                   action: actions.onDelete,
                 },
               ] : [
+                // SC-18c (owner 2026-10-21): the mobile row fits the swipe
+                // switcher plus three 44px buttons, so branch / narrate /
+                // AI editor / annotate / discuss live here; continue moved
+                // to the row. Order mirrors the row's natural order.
+                ...(canBranch
+                  ? [
+                      {
+                        icon: <Icons.Branch />,
+                        label: branchLabel,
+                        action: actions.onBranch,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
                 ...(actions.onNarrate
                   ? [
                       {
                         icon: narrating ? <Icons.stopSquare /> : <Icons.speaker />,
                         label: narrating ? t("narrate_stop") : t("narrate_action"),
                         action: actions.onNarrate,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canAiEdit
+                  ? [
+                      {
+                        icon: <Icons.Sparkles />,
+                        label: aiEditTooltip,
+                        action: actions.onAiEdit,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canAiAnnotate && onAiAnnotate
+                  ? [
+                      {
+                        icon: <Icons.Sparkles />,
+                        label: aiAnnotateTooltip,
+                        action: onAiAnnotate,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canDiscuss && onDiscussInSidechat
+                  ? [
+                      {
+                        icon: <Icons.sidechatDiscuss />,
+                        label: discussTooltip,
+                        // The ActionSheet closes first (its onClick runs
+                        // onClose before the action): one variant attaches at
+                        // once, several open the scope chooser below.
+                        action: () => {
+                          if (variantCount <= 1) onDiscussInSidechat("selected");
+                          else setDiscussChooserOpen(true);
+                        },
                       } as ActionSheetItem,
                     ]
                   : []),
@@ -391,19 +449,6 @@ export function MessageShell(props: MessageShellProps) {
                   label: editLabel,
                   action: actions.onEdit,
                 },
-                // LS-4a: Continue lives next to Edit. The mobile three-dot
-                // menu is a labeled ActionSheet (icon-only isn't representable
-                // there) — the owner's icon-only/no-label spec is the desktop
-                // row shape.
-                ...(canContinue && actions.onContinue
-                  ? [
-                      {
-                        icon: <Icons.fastForward />,
-                        label: continueLabel,
-                        action: actions.onContinue,
-                      } as ActionSheetItem,
-                    ]
-                  : []),
                 {
                   icon: <Icons.Trash />,
                   label: deleteLabel,
@@ -411,6 +456,17 @@ export function MessageShell(props: MessageShellProps) {
                   action: actions.onDelete,
                 },
               ]) satisfies ActionSheetItem[]}
+            />
+          )}
+
+          {/* SC-18c: scope chooser for the sheet discuss item (mobile only —
+              desktop keeps the popover trigger in the row). Rendered beside
+              the action sheet, opened after it closes (never stacked). */}
+          {isMobile && canDiscuss && onDiscussInSidechat && (
+            <DiscussScopeSheet
+              open={discussChooserOpen}
+              onClose={() => setDiscussChooserOpen(false)}
+              onSelect={onDiscussInSidechat}
             />
           )}
 
@@ -479,8 +535,8 @@ export function MessageShell(props: MessageShellProps) {
               </DesktopSlotMessageActions>
             ) : (
             <DesktopMessageActions
-              aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
-              aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
+              aiEditTooltip={aiEditTooltip}
+              aiAnnotateTooltip={aiAnnotateTooltip}
               canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canAiEdit={canAiEdit}
@@ -507,7 +563,7 @@ export function MessageShell(props: MessageShellProps) {
               variantControlsRef={variantControlsRef}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
-              onAiAnnotate={actions.onAiAnnotate}
+              onAiAnnotate={onAiAnnotate}
               onBranch={actions.onBranch}
               onContinue={actions.onContinue}
               onCopy={actions.onCopy}
@@ -541,6 +597,8 @@ export function MessageShell(props: MessageShellProps) {
               canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canBranch={canBranch}
+              canContinue={canContinue}
+              continueTooltip={continueLabel}
               canRegenerate={canRegenerate}
               canResend={canResend}
               canSwitchVariant={canSwitchVariant}
@@ -555,8 +613,9 @@ export function MessageShell(props: MessageShellProps) {
               selectedVariantIndex={selectedVariantIndex}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
-              onAiAnnotate={actions.onAiAnnotate}
+              onAiAnnotate={onAiAnnotate}
               onBranch={actions.onBranch}
+              onContinue={actions.onContinue}
               onNarrate={actions.onNarrate}
               narrating={narrating}
               narrateTooltip={t("narrate_tooltip")}

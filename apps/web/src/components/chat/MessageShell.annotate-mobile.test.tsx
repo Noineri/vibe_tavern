@@ -23,7 +23,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 }));
 
 const { MessageShell } = await import("./MessageShell.js");
-const { render, cleanup } = await import("@testing-library/react");
+const { fireEvent, render, cleanup } = await import("@testing-library/react");
 const Tooltip = await import("@radix-ui/react-tooltip");
 const TooltipProvider = (Tooltip as unknown as { Provider: React.ComponentType<{ children: React.ReactNode }> }).Provider ?? (Tooltip as unknown as { TooltipProvider: React.ComponentType<{ children: React.ReactNode }> }).TooltipProvider ?? (({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children));
 
@@ -86,15 +86,27 @@ function renderWithTooltip(ui: React.ReactElement) {
   return render(React.createElement(TooltipProvider as never, null, ui));
 }
 
-describe("MessageShell annotate button — mobile row (TPE-14)", () => {
-  test("mobile-annotate-btn renders on greetings, hidden otherwise", async () => {
+// SC-18c (owner 2026-10-21): annotate leaves the mobile row for the "..."
+// sheet. Was: `mobile-annotate-btn` rendered in the row. Now: no row button;
+// the sheet item carries the label and fires the action.
+describe("MessageShell annotate entry — mobile sheet (TPE-14, SC-18c)", () => {
+  test("no row button; the sheet item fires onAiAnnotate", async () => {
+    let called = 0;
     const withAnnotate = renderWithTooltip(React.createElement(MessageShell, makeProps({
       canAiAnnotate: true,
-      actions: { ...makeProps().actions, onAiAnnotate: () => {} },
+      actions: { ...makeProps().actions, onAiAnnotate: () => { called += 1; } },
     })));
-    const btn = withAnnotate.container.querySelector('[data-testid="mobile-annotate-btn"]');
-    expect(btn).not.toBeNull();
-    expect(btn?.getAttribute("aria-label")).toBe("message_ai_editor_mode_annotate");
+    expect(withAnnotate.container.querySelector('[data-testid="mobile-annotate-btn"]'), "no row button on mobile").toBeNull();
+
+    const trigger = withAnnotate.container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement;
+    expect(trigger, "the ... menu trigger must render").not.toBeNull();
+    fireEvent.click(trigger);
+    const popup = document.querySelector(".bs-popup") as HTMLElement;
+    expect(popup, "the action sheet popup must open").not.toBeNull();
+    const item = [...popup.querySelectorAll("button")].find((b) => b.textContent === "message_ai_editor_mode_annotate");
+    expect(item, "the sheet carries the annotate entry").toBeTruthy();
+    fireEvent.click(item!);
+    expect(called).toBe(1);
     cleanup();
 
     const withoutAnnotate = renderWithTooltip(React.createElement(MessageShell, makeProps()));

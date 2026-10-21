@@ -161,6 +161,30 @@ export function DiscussInSidechatMenu({ variant, variantCount, disabled = false,
   );
 }
 
+// ─── Standalone scope chooser (SC-18c: the mobile action row no longer carries
+// ─── the discuss trigger, so the message "..." sheet opens this chooser when
+// ─── several variants exist — same rows, same keys, same onSelect contract).
+// ─── The caller opens it AFTER its own sheet closes (no stacked overlays).
+// ────────────────────────────────────────────────────────────────────────────
+
+export function DiscussScopeSheet({ open, onClose, onSelect }: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (scope: DiscussScope) => void;
+}) {
+  const { t } = useT();
+  const tooltip = t("discuss_in_sidechat_tooltip");
+  const pick = (scope: DiscussScope): void => {
+    onClose();
+    onSelect(scope);
+  };
+  return (
+    <BottomSheet open={open} onClose={onClose} title={tooltip}>
+      <DiscussScopeBody onPick={pick} />
+    </BottomSheet>
+  );
+}
+
 // ─── Shared body (desktop popover + mobile sheet) ────────────────────────────
 
 function DiscussScopeBody({ onPick }: {

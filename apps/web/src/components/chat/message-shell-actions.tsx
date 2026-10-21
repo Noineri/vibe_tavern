@@ -190,6 +190,8 @@ export function MobileMessageActions(props: {
   canAiAnnotate?: boolean;
   branchLabel: string;
   canBranch: boolean;
+  canContinue?: boolean;
+  continueTooltip?: string;
   canRegenerate: boolean;
   canResend: boolean;
   canSwitchVariant: boolean;
@@ -209,6 +211,7 @@ export function MobileMessageActions(props: {
   onAiEdit: () => void;
   onAiAnnotate?: () => void;
   onBranch: () => void;
+  onContinue?: () => void;
   onNarrate?: () => void;
   narrating?: boolean;
   narrateTooltip?: string;
@@ -218,12 +221,40 @@ export function MobileMessageActions(props: {
 }) {
   const {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
-    branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
+    branchLabel, canBranch, canContinue, continueTooltip, canRegenerate, canResend, canSwitchVariant,
     imageMenu, discussMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onAiEdit, onAiAnnotate, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onAiAnnotate, onBranch, onContinue, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
+
+  // SC-18c (owner 2026-10-21): the assistant row fits the swipe switcher plus
+  // at most three 44px buttons — branch / narrate / AI editor / annotate /
+  // discuss move to the "..." sheet, continue joins the row from the sheet.
+  // User rows keep their existing controls untouched.
+  if (!isUser) {
+    return (
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="flex min-w-0 justify-start">
+          {!isGreeting && canSwitchVariant && variantControls}
+        </div>
+        <div className="flex justify-end gap-1">
+          {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
+          {imageMenu}
+          {canContinue && onContinue && (
+            <button type="button" aria-label={continueTooltip} disabled={isBusy} data-testid="mobile-continue-btn" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onContinue(); }} title={continueTooltip}>
+              <Icons.fastForward />
+            </button>
+          )}
+          {canRegenerate && (
+            <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
+              <Icons.Regen />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2">
