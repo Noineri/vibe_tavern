@@ -28,6 +28,7 @@ import { useT } from "../../../i18n/context.js";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import { canDeleteActiveBranch, formatShortDate } from "../sidebar-utils.js";
+import { openDeleteBranchConfirm } from "../../../lib/branch-sidechat-confirm.js";
 
 /** The slice of the chat controller the block's two actions call. */
 export type BranchActionsController = Pick<ChatControllerActions, "handleFork" | "handleDeleteActiveBranch">;
@@ -138,10 +139,14 @@ export function ChatBranchesBlock({
 						aria-disabled={!canDelete}
 						onClick={() => {
 							if (!canDelete) { toast.info(t("sidebar_switch_to_non_main")); return; }
-							setConfirmDestroy({
-								title: t("sidebar_delete_branch"),
-								body: t("sidebar_delete_branch_body"),
-								confirmLabel: t("sidebar_delete_branch"),
+							// SC-21 merge: the same shared helper as RichChatRow and the
+							// sidebar flyout — the sidechat warning appends to the body
+							// when the branch has sessions (fetched on open, best-effort).
+							void openDeleteBranchConfirm({
+								t,
+								chatId: branches.find((b) => b.id === activeBranchId)?.chatId ?? null,
+								branchId: activeBranchId,
+								setConfirmDestroy,
 								onConfirm: () => void chat.handleDeleteActiveBranch(),
 							});
 						}}

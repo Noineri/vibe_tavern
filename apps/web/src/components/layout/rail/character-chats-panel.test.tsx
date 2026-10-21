@@ -23,7 +23,7 @@
  * `BottomSheet` / `ActionSheet` run real (Base UI Drawer mounts under
  * happy-dom), so the nested ⋮ sheets are exercised as nested drawers.
  */
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { brandId, type ChatBranch, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
@@ -58,6 +58,21 @@ mock.module("sonner", () => ({
 }));
 
 const { CharacterChatsSheet } = await import("./CharacterChatsSheet.js");
+
+// SC-21 merge: the panel's delete goes through `openDeleteBranchConfirm`
+// (best-effort summary fetch first). These mocks make the fetch deterministic
+// for the delete tests and restore the real fetch afterwards (R3).
+const originalFetch = globalThis.fetch;
+
+function respondSummary(body: unknown): void {
+	globalThis.fetch = mock(async () =>
+		new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+	) as unknown as typeof fetch;
+}
+
+afterAll(() => {
+	globalThis.fetch = originalFetch;
+});
 
 beforeEach(() => {
 	activateBranchAction.mockClear();
@@ -539,13 +554,19 @@ describe("CharacterChatsSheet — branch actions (fork / delete)", () => {
 		expect(view.onSwitchChat).not.toHaveBeenCalled();
 	});
 
-	it("«Delete» on a side branch raises the flyout's confirm; confirming deletes the active branch", () => {
+	it("«Delete» on a side branch raises the flyout's confirm; confirming deletes the active branch", async () => {
+		// Was (RD-2): the confirm opened synchronously. Now (SC-21 merge) the
+		// handler resolves the best-effort summary first — a deterministic
+		// mocked summary + parking on the resolved state (waitFor), same
+		// boundary: the dialog shape and the confirm's effect.
+		respondSummary({ hasSessions: false, count: 0 });
 		const view = renderSheet({ activeBranchId: BR_ALT });
 		const del = buttonWithText(view, "sidebar_delete_branch_short");
 		expect(del.getAttribute("aria-disabled")).toBe("false");
 		expect(del.className).not.toContain("opacity-45");
 		fireEvent.click(del);
-		expect(view.setConfirmDestroy).toHaveBeenCalledTimes(1);
+		const { waitFor } = await import("@testing-library/react");
+		await waitFor(() => expect(view.setConfirmDestroy).toHaveBeenCalledTimes(1));
 		const dialog = view.setConfirmDestroy.mock.calls[0][0];
 		expect(dialog).toMatchObject({
 			title: "sidebar_delete_branch",
