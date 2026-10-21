@@ -237,8 +237,8 @@ describe("controller attachedVariants body (SC-18)", () => {
   });
 });
 
-describe("sidechatDiscuss icon (SC-18, owner 2026-10-21 variant B)", () => {
-  test("the glyph matches the picked paths exactly", () => {
+describe("sidechatDiscuss icon (SC-21c, owner 2026-10-22 re-pick)", () => {
+  test("the glyph matches the re-picked dotless paths exactly", () => {
     const view = render(<Ic.sidechatDiscuss />);
     const svg = view.container.querySelector("svg");
     expect(svg).not.toBeNull();
@@ -248,9 +248,19 @@ describe("sidechatDiscuss icon (SC-18, owner 2026-10-21 variant B)", () => {
     expect(svg?.getAttribute("stroke-width")).toBe("1.5");
     expect(svg?.getAttribute("stroke-linecap")).toBe("round");
     expect(svg?.getAttribute("stroke-linejoin")).toBe("round");
-    const paths = [...(svg?.querySelectorAll("path") ?? [])].map((p) => p.getAttribute("d"));
-    expect(paths).toContain("M9 11H5.2L2.5 13.3V3.5A1.5 1.5 0 0 1 4 2h8.5A1.5 1.5 0 0 1 14 3.5V7.2");
-    expect(paths).toContain("M9.4 14.7a2.6 2.6 0 0 1 5.2 0");
+    // Two paths in order: the bubble (outlined — no own fill/stroke, it
+    // inherits the wrapper's stroke) then the filled shoulders.
+    const paths = [...(svg?.querySelectorAll("path") ?? [])].map((p) => ({
+      d: p.getAttribute("d"),
+      fill: p.getAttribute("fill"),
+      stroke: p.getAttribute("stroke"),
+    }));
+    expect(paths).toEqual([
+      { d: "M7 10.5H4.6L2 12.8V3.3A1.3 1.3 0 0 1 3.3 2h7.9A1.3 1.3 0 0 1 12.5 3.3V5", fill: null, stroke: null },
+      { d: "M8.4 15.6A3.6 3.2 0 0 1 15.6 15.6Z", fill: "currentColor", stroke: "none" },
+    ]);
+    // The filled head is the ONLY circle — the dotless re-pick left no dot
+    // circles anywhere in the glyph.
     const circles = [...(svg?.querySelectorAll("circle") ?? [])].map((c) => ({
       cx: c.getAttribute("cx"),
       cy: c.getAttribute("cy"),
@@ -258,12 +268,7 @@ describe("sidechatDiscuss icon (SC-18, owner 2026-10-21 variant B)", () => {
       fill: c.getAttribute("fill"),
       stroke: c.getAttribute("stroke"),
     }));
-    expect(circles.filter((c) => c.fill === "currentColor" && c.stroke === "none")).toEqual([
-      { cx: "5.4", cy: "6.4", r: ".85", fill: "currentColor", stroke: "none" },
-      { cx: "8.2", cy: "6.4", r: ".85", fill: "currentColor", stroke: "none" },
-      { cx: "11", cy: "6.4", r: ".85", fill: "currentColor", stroke: "none" },
-    ]);
-    expect(circles).toContainEqual({ cx: "12", cy: "9.9", r: "1.4", fill: null, stroke: null });
+    expect(circles).toEqual([{ cx: "12", cy: "8.8", r: "2", fill: "currentColor", stroke: "none" }]);
     cleanup();
   });
 });
