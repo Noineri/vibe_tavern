@@ -10,9 +10,10 @@
  *
  * Pins (the four named SC-14 steps, plus the served-modes gate):
  *   - the closed handle opens the panel; the chevron flips `<` → `>`;
- *   - (SC-16b adaptation) closing keeps the pane mounted at width 0 until its
- *     own width `transitionend`, then unmounts — the assertions below pin the
- *     glide frame and the post-transition unmount, same intent as before;
+ *   - (SC-16b adaptation, SC-16e slide rework) closing keeps the pane mounted
+ *     at full width while the slider glides out, then unmounts at the
+ *     slider's own transform `transitionend` — the assertions below pin the
+ *     slide frame and the post-transition unmount, same intent as before;
  *   - per-chat open state is restored (seeded open renders open);
  *   - switching chat A (open) → chat B (stored closed) shows B closed and
  *     leaves B's stored value untouched (never a cross-write);
@@ -259,18 +260,20 @@ function withIsolatedI18n(node: ReactNode) {
 }
 
 /**
- * Dispatch the pane's own width `transitionend` (the SC-16b close path).
- * happy-dom 20.14.5 ships `TransitionEvent` but drops `propertyName` from
- * its init dict, and RTL forwards init straight into the constructor — so
- * `fireEvent.transitionEnd(el, { propertyName })` can never satisfy the
- * pane's property filter. A plain bubbling Event with the expando assigned
- * is what real browsers deliver; dispatch inside `act` so React flushes.
+ * Dispatch the slider's own transform `transitionend` (SC-16e: the close
+ * path moved from the pane's width transition to the slider's transform
+ * transition). happy-dom 20.14.5 ships `TransitionEvent` but drops
+ * `propertyName` from its init dict, and RTL forwards init straight into
+ * the constructor — so `fireEvent.transitionEnd(el, { propertyName })` can
+ * never satisfy the slider's property filter. A plain bubbling Event with
+ * the expando assigned is what real browsers deliver; dispatch ON the
+ * slider (`target === currentTarget`) inside `act` so React flushes.
  */
-function endWidthTransition(el: HTMLElement): void {
+function endSlideTransition(el: HTMLElement): void {
   const end = new Event("transitionend", { bubbles: true, cancelable: true }) as Event & {
     propertyName?: string;
   };
-  end.propertyName = "width";
+  end.propertyName = "transform";
   act(() => {
     el.dispatchEvent(end);
   });
@@ -325,12 +328,14 @@ describe("sidechat-panel — handle opens/closes (SC-14)", () => {
     expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("true");
 
     fireEvent.click(getByTestId("sidechat-toggle"));
-    // The close glide (SC-16b) keeps the pane mounted at width 0 until its
-    // own width transition ends — then it unmounts and the handle returns.
+    // The close slide (SC-16e) keeps the pane mounted at full width while
+    // the slider glides out — then it unmounts at the slider's own
+    // transform transition end and the handle returns.
     const closing = getByTestId("sidechat-panel");
-    expect(closing.style.width).toBe("0px");
+    expect(closing.style.width).toBe("400px");
+    expect(getByTestId("sidechat-slide").style.transform).toBe("translateX(100%)");
     expect(queryByTestId("sidechat-closed")).toBeNull();
-    endWidthTransition(closing);
+    endSlideTransition(getByTestId("sidechat-slide"));
     expect(queryByTestId("sidechat-panel")).toBeNull();
     expect(getByTestId("sidechat-closed")).toBeDefined();
     expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("false");
@@ -377,10 +382,11 @@ describe("sidechat-panel — per-chat open state (SC-14)", () => {
       seedChat(CHAT_B, BRANCH_B);
     });
 
-    // B starts its close glide immediately (width 0, still mounted), and B's
-    // stored value is untouched — the pane unmounts at the transition end.
-    expect(getByTestId("sidechat-panel").style.width).toBe("0px");
-    endWidthTransition(getByTestId("sidechat-panel"));
+    // B starts its close slide immediately (full width held, still mounted),
+    // and B's stored value is untouched — the pane unmounts at the slider's
+    // transform transition end.
+    expect(getByTestId("sidechat-panel").style.width).toBe("400px");
+    endSlideTransition(getByTestId("sidechat-slide"));
     expect(getByTestId("sidechat-closed")).toBeDefined();
     expect(queryByTestId("sidechat-panel")).toBeNull();
     expect(localStorage.getItem("vt.sidechat.open.chat-b")).toBe("false");

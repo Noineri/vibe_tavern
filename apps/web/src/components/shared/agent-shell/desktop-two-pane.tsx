@@ -79,6 +79,7 @@ export function AgentShellDesktopTwoPane({ kind, chatPane, editorPane }: AgentSh
         className="border-r border-border"
         panelTestId={`agent-assistant-panel-${kind}`}
         resizeHandleTestId={`agent-assistant-resize-${kind}`}
+        slideTestId={`agent-assistant-slide-${kind}`}
       >
         {/* Collapse chevron on the pane's right edge — above the drag line
             (children paint after the primitive's strip at the same z), so a

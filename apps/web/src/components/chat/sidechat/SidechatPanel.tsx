@@ -93,6 +93,7 @@ export function SidechatPanel() {
       className="border-l border-border/50 bg-surface"
       panelTestId="sidechat-panel"
       resizeHandleTestId="sidechat-resize"
+      slideTestId="sidechat-slide"
       // The closed affordance lives in `SidechatHandle` (shared with SC-15's
       // mobile tabs) — same markup, same key, no fork; the pane renders it
       // once the close glide ends.

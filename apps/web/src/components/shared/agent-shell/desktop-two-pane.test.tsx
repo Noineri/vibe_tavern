@@ -23,7 +23,8 @@
  *
  * L1: paths repo-relative (relative imports + a viewport override restored in
  * afterAll); restores in beforeEach (localStorage, viewport); waits are the
- * open-kick drain + a width `transitionend` dispatch (never a sleep);
+ * paint-gate slide-kick drain + a transform `transitionend` dispatch
+ * (never a sleep);
  * queries via render()'s returned utils (`within` for the dual-surface
  * test); every assertion pins a stable state (post-kick widths, the
  * post-transition hidden frame). No `mock.module` (no third-party seam is
@@ -93,7 +94,7 @@ function renderTwoPane(kind: string) {
   );
 }
 
-/** Drain the open-kick `setTimeout(0)` inside `act` (a resolved-state wait, never a sleep). */
+/** Drain the paint-gate slide kick `setTimeout(0)` inside `act` (a resolved-state wait, never a sleep). */
 async function flushKick() {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -105,16 +106,18 @@ function classTokens(el: HTMLElement): string[] {
 }
 
 /**
- * Dispatch the pane's own width `transitionend` (the close path). happy-dom
- * drops `propertyName` from the TransitionEvent init dict, so a plain
- * bubbling Event with the expando assigned is what the pane filters on;
- * dispatch inside `act` so React flushes.
+ * Dispatch the slider's own transform `transitionend` (SC-16e: the close
+ * path moved from the pane's width transition to the slider's transform
+ * transition). happy-dom drops `propertyName` from the TransitionEvent init
+ * dict, so a plain bubbling Event with the expando assigned is what the
+ * slider filters on; dispatch ON the slider (`target === currentTarget`)
+ * inside `act` so React flushes.
  */
-function endWidthTransition(el: HTMLElement): void {
+function endSlideTransition(el: HTMLElement): void {
   const end = new Event("transitionend", { bubbles: true, cancelable: true }) as Event & {
     propertyName?: string;
   };
-  end.propertyName = "width";
+  end.propertyName = "transform";
   act(() => {
     el.dispatchEvent(end);
   });
@@ -145,16 +148,20 @@ describe("desktop-two-pane — collapse/expand (SC-16c)", () => {
     expect(toggleChevronStyle(chevron)).toContain("rotate(180deg)");
     fireEvent.click(chevron);
 
-    // The close glide runs; the chevron unmounts at once while the expand
-    // tab is immediate on the flag (never dead for the 0.18 s glide).
-    expect(utils.getByTestId("agent-assistant-panel-script").style.width).toBe("0px");
+    // The close slide runs (SC-16e: the box holds its width while the
+    // slider glides out); the chevron unmounts at once while the expand
+    // tab is immediate on the flag (never dead for the 0.18 s slide).
+    expect(utils.getByTestId("agent-assistant-panel-script").style.width).toBe("440px");
+    expect(utils.getByTestId("agent-assistant-slide-script").style.transform).toBe(
+      "translateX(-100%)",
+    );
     expect(utils.queryByTestId("assistant-collapse")).toBeNull();
     expect(utils.getByTestId("assistant-closed")).toBeDefined();
     // The draft is already intact mid-glide (same node, value kept) — the
     // settle below must not remount it either (the keepMounted contract).
     expect((utils.getByTestId("chat-script-draft") as HTMLInputElement).value).toBe("half-written turn");
     expect(utils.getByTestId("chat-script-draft")).toBe(draft);
-    endWidthTransition(utils.getByTestId("agent-assistant-panel-script"));
+    endSlideTransition(utils.getByTestId("agent-assistant-slide-script"));
 
     // Settled: the SAME draft node stays in the document, hidden, with the
     // turn marker beside it; the editor column never moved.
@@ -221,7 +228,7 @@ describe("desktop-two-pane — script/mini-app independence (SC-16c)", () => {
     // Collapse scripts only (scoped queries — both surfaces render handles).
     const scriptSurface = utils.getByTestId("surface-script");
     fireEvent.click(within(scriptSurface).getByTestId("assistant-toggle"));
-    endWidthTransition(within(scriptSurface).getByTestId("agent-assistant-panel-script"));
+    endSlideTransition(within(scriptSurface).getByTestId("agent-assistant-slide-script"));
     expect(classTokens(within(scriptSurface).getByTestId("agent-assistant-panel-script"))).toContain("hidden");
     expect(within(scriptSurface).getByTestId("assistant-closed")).toBeDefined();
 
