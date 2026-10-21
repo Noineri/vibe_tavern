@@ -2664,6 +2664,7 @@
 	"agent_editor_aria": "Редактор ИИ-помощника",
 	"agent_tab_chat": "Чат",
 	"agent_tab_edit": "Правка",
+	"agent_assistant_toggle_label": "Помощник",
 	"agent_input_placeholder": "Спросите ИИ-помощника…",
 	"agent_provider": "Провайдер",
 	"agent_provider_select": "Выбрать провайдера",

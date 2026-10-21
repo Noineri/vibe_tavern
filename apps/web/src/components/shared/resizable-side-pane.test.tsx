@@ -19,6 +19,10 @@
  *   - double-click resets to the default through the clamp/write path;
  *   - drag persists and clamps (min, live 50% max), on either edge; a window
  *     resize re-clamps without touching the stored intent.
+ *   - SC-16c `keepMounted`: a closed pane stays mounted and hidden (children
+ *   alive, the strip mounted but inert, `closedView` ignored) and reopens
+ *   onto the stored width; without it the SC-16b unmount contract above is
+ *   unchanged.
  *
  * Runner: bun:test with scoped happy-dom.
  */
@@ -292,5 +296,69 @@ describe("resizable-side-pane — width restore + clamp (SC-14)", () => {
     });
     expect(utils.getByTestId(PANE).style.width).toBe("400px");
     expect(localStorage.getItem(WIDTH_KEY)).toBe("500");
+  });
+});
+
+// ── keepMounted: the SC-16c assistant-pane contract ─────────────────────────
+
+describe("resizable-side-pane — keepMounted collapse (SC-16c)", () => {
+  function mountedPaneElement(open: boolean) {
+    return (
+      <ResizableSidePane
+        open={open}
+        keepMounted
+        storageKey={WIDTH_KEY}
+        defaultWidth={400}
+        minWidth={320}
+        resizeEdge="right"
+        panelTestId={PANE}
+        resizeHandleTestId={RESIZE}
+        closedView={<div data-testid={CLOSED}>closed</div>}
+      >
+        <div>content</div>
+      </ResizableSidePane>
+    );
+  }
+
+  it("close glides to 0, then stays mounted and hidden with no closed view", async () => {
+    const utils = render(mountedPaneElement(true));
+    await flushKick();
+    expect(utils.getByTestId(PANE).style.width).toBe("400px");
+
+    utils.rerender(mountedPaneElement(false));
+    // The close glide still runs first (the pane is heading to 0, mounted).
+    const closing = utils.getByTestId(PANE);
+    expect(closing.style.width).toBe("0px");
+    expect(utils.queryByTestId(CLOSED)).toBeNull();
+
+    endWidthTransition(closing, "width");
+    // Settled: the same aside flipped to hidden — children alive, the strip
+    // mounted but inert under display:none, and the closed view never
+    // renders (the caller overlays its own expand tab).
+    const hidden = utils.getByTestId(PANE);
+    expect(hidden.style.width).toBe("0px");
+    expect(classTokens(hidden)).toContain("hidden");
+    expect(classTokens(hidden).includes("flex")).toBe(false);
+    expect(hidden.textContent).toContain("content");
+    expect(utils.queryByTestId(CLOSED)).toBeNull();
+    expect(utils.getByTestId(RESIZE)).toBeDefined();
+  });
+
+  it("a keepMounted pane closed on first mount renders hidden, then reopens onto the stored width", async () => {
+    localStorage.setItem(WIDTH_KEY, "450");
+    const utils = render(mountedPaneElement(false));
+    // No glide to wait for on first mount: hidden immediately, intent kept.
+    const hidden = utils.getByTestId(PANE);
+    expect(classTokens(hidden)).toContain("hidden");
+    expect(hidden.textContent).toContain("content");
+    expect(utils.queryByTestId(CLOSED)).toBeNull();
+
+    utils.rerender(mountedPaneElement(true));
+    expect(utils.getByTestId(PANE).style.width).toBe("0px");
+    await flushKick();
+    const pane = utils.getByTestId(PANE);
+    expect(pane.style.width).toBe("450px");
+    expect(classTokens(pane).includes("hidden")).toBe(false);
+    expect(utils.getByTestId(RESIZE)).toBeDefined();
   });
 });

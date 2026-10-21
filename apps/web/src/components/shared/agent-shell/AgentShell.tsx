@@ -33,6 +33,7 @@ import { AgentMessageList } from "./AgentMessageList.js";
 import { AgentInputArea } from "./AgentInputArea.js";
 import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
+import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
 
 /**
@@ -733,10 +734,12 @@ export function AgentShell({
     );
   }
 
+  // SC-16c: the desktop two-pane layout (resizable + collapsible assistant
+  // pane, per-kind memory) lives in the sibling module — this shell keeps
+  // the shared pane content, the mobile branch and the chat-only branch.
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 w-[440px] shrink-0 flex-col border-r border-border">{chatPane}</div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{editorPane}</div>
+      <AgentShellDesktopTwoPane kind={kind} chatPane={chatPane} editorPane={editorPane} />
       {modals}
     </div>
   );

@@ -24,6 +24,7 @@ export default interface Resources {
     "agent.record_proposal.status_pending": "Pending",
     "agent.record_proposal.unsupported_title": "Unsupported proposal",
     "agent_archived": "Archived",
+    "agent_assistant_toggle_label": "Assistant",
     "agent_binding_save_error": "Couldn't save the model selection — it may reset next time",
     "agent_cancel": "Cancel",
     "agent_code": "Code",

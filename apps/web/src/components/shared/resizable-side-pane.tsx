@@ -33,7 +33,11 @@ import { cn } from "../../lib/cn.js";
  * currentTarget` + `propertyName === "width"` so child transitions inside the
  * content never unmount the pane; a 200 ms timeout (0.18 s + margin) covers
  * commits that animate nothing. After that the pane unmounts and the caller
- * renders `closedView` (the sidechat's closed handle).
+ * renders `closedView` (the sidechat's closed handle) — unless `keepMounted`
+ * is set (SC-16c: the script/mini-app assistant panes flip the same aside
+ * to `hidden` at width 0 instead of unmounting, so a running turn, the
+ * input draft and the scroll position survive a collapse; the caller
+ * renders its own expand tab elsewhere).
  *
  * The pane never clips its children itself: the edge chrome's outset shadows
  * must survive at full width, so squeezing content carries its own
@@ -54,6 +58,13 @@ export interface ResizableSidePaneProps {
   readonly children: ReactNode;
   /** Rendered instead of the pane once the close glide ends (default: nothing). */
   readonly closedView?: ReactNode;
+  /**
+   * SC-16c: keep the pane mounted while closed — after the close glide the
+   * pane renders as a `hidden` zero-width aside (children alive) instead of
+   * unmounting, and `closedView` is ignored (the caller overlays its own
+   * expand tab). Absent/false = the SC-16b sidechat contract byte-identical.
+   */
+  readonly keepMounted?: boolean;
   /** Extends the pane chrome (`cn` is join-only — appended, never replaced). */
   readonly className?: string;
   /** Test hook for the pane element (suites pin behaviour through it). */
@@ -99,6 +110,7 @@ export function ResizableSidePane({
   resizeEdge,
   children,
   closedView,
+  keepMounted = false,
   className,
   panelTestId,
   resizeHandleTestId,
@@ -248,7 +260,22 @@ export function ResizableSidePane({
     setVisible(false);
   };
 
-  if (!visible) return <>{closedView ?? null}</>;
+  // SC-16c: the assistant panes hide instead of unmounting. `closedHidden`
+  // flips only on the settled frame (the close glide above still runs first),
+  // and the aside element NEVER branches — open, gliding and hidden frames
+  // render the identical JSX (same strip, same children order), so React
+  // updates props in place and no child (turn feed, draft, scroll) ever
+  // remounts. Verified the hard way: an early shape rendered a separate
+  // hidden aside at settle, and the child-array shift across the swap
+  // remounted the content and lost the draft — the suite pins the draft on
+  // the same node now. `hidden` takes no layout space, so the editor never
+  // shifts; the drag strip stays mounted inside it (inert under
+  // display:none — no pointer or a11y presence), because removing it at
+  // settle would be another child-array shift. `closedView` is ignored (the
+  // caller overlays its own expand tab); without `keepMounted` the SC-16b
+  // unmount contract below is byte-identical.
+  const closedHidden = keepMounted && !visible;
+  if (!visible && !keepMounted) return <>{closedView ?? null}</>;
 
   // While held the width tracks the pointer with no transition; otherwise the
   // glide state drives (open kick, close glide, resize re-clamp, reset).
@@ -257,9 +284,14 @@ export function ResizableSidePane({
     <aside
       data-testid={panelTestId}
       onTransitionEnd={onWidthTransitionEnd}
-      style={{ width: renderedWidth }}
+      style={{ width: closedHidden ? 0 : renderedWidth }}
+      // `flex`/`hidden` are exclusive by construction (never composed
+      // together — `cn` is join-only, so stacking both would resolve by
+      // stylesheet order instead of intent); the direction/shrink tokens
+      // are inert without a flex display and stay put in both frames.
       className={cn(
-        "relative flex shrink-0 flex-col",
+        "relative shrink-0 flex-col",
+        closedHidden ? "hidden" : "flex",
         dragging ? "transition-none" : "transition-[width_0.18s_ease-out] motion-reduce:transition-none",
         className,
       )}

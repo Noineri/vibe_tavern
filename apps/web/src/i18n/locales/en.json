@@ -2624,6 +2624,7 @@
 	"agent_editor_aria": "AI assistant editor",
 	"agent_tab_chat": "Chat",
 	"agent_tab_edit": "Edit",
+	"agent_assistant_toggle_label": "Assistant",
 	"agent_input_placeholder": "Ask the AI assistant…",
 	"agent_provider": "Provider",
 	"agent_provider_select": "Select provider",
