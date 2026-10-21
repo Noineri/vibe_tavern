@@ -1,19 +1,22 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ListSortToggle } from "../shared/ListSortToggle.js";
-import type { ChatId } from "@vibe-tavern/domain";
+/**
+ * CoauthorRail — the phone / tablet rail of the Co-Author surface: the collapsed
+ * strip (+ its tablet chats sheet) and the expanded drawer. The drawer's body is
+ * the same two-screen `RailCharacterBrowser` the RP rail mounts (character list
+ * ↔ one character's chats), with the Co-Author parameters — no branches, its own
+ * chats, "new chat" creates a Co-Author chat. The drawer keeps ITS OWN bottom
+ * panel (modules, skills, provider, interface).
+ */
+import { useEffect, useRef, useState } from "react";
 import { Ic } from "../shared/icons.js";
-import { InlineRenameInput } from "../shared/InlineRenameInput.js";
-import { SearchInput } from "../shared/SearchInput.js";
-import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { initials } from "../layout/app-shell-helpers.js";
 import { Ico, NavRow } from "../layout/rail/rail-primitives.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "../layout/rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "../layout/rail/RailCollapsedStrip.js";
 import { CharacterChatsSheet } from "../layout/rail/CharacterChatsSheet.js";
+import { RailCharacterBrowser } from "../layout/rail/rail-character-browser.js";
 import { Drawer } from "@base-ui/react/drawer";
-import { getModalPortal } from "../shared/modal-helpers.js";
+import { getApplicationModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
 import { useRowActions } from "../layout/hooks/use-row-actions.js";
@@ -25,14 +28,19 @@ const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId:
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
+import { useChatList } from "../../stores/snapshot-store.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useLastNonNull } from "../../hooks/use-last-non-null.js";
-import type { ChatListItem } from "../../api/types.js";
 
-
+// Co-Author intentionally does not surface JSONL chat import, so every
+// `openChatImport` handed to the browser, the tablet sheet and `useRowActions`
+// is a no-op. The character ⋮ menu never renames anything; `useRowActions` still
+// requires the four rename setters (the chat menu that calls them lives in the
+// character-chats panel, which owns its own `useRowActions`).
+const noop = () => {};
 
 export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const { t } = useT();
@@ -40,7 +48,11 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? [];
   const chatMeta = useChatMeta();
-  const chats: ChatListItem[] = chatMeta?.chats ?? [];
+  // The chat list is the sidebar list, independent of any active chat. NOT
+  // `chatMeta?.chats` — the same single source the RP rail reads (`Rail.tsx`).
+  const chats = useChatList();
+  // The drawer opens on this character's chats (null without an active chat).
+  const activeChatCharacterId = activeChatId ? chatMeta?.activeChat.characterId ?? null : null;
 
   const character = useCharacterController();
   const chat = useChatController();
@@ -48,34 +60,24 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
 
   const [expanded, setExpanded] = useState(false);
   const characterImportRef = useRef<CharacterImportMobileHandle>(null);
-  // Co-author mode intentionally does not surface JSONL chat import, so the
-  // `openChatImport` callback passed to useRowActions / CharacterChatsSheet is a no-op.
   // The character whose chats are shown in the CharacterChatsSheet (tablet bottom
   // sheet launched from a collapsed-strip avatar tap). null = closed.
   const [sheetCharId, setSheetCharId] = useState<string | null>(null);
 
-  // Context menus
+  // Character ⋮ menu (opened from the character screen's header)
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
-  const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
-  // Freeze the menu ids so the closing ActionSheet keeps rendering its last
+  // Freeze the menu id so the closing ActionSheet keeps rendering its last
   // content during the Base UI exit transition (menuId → null on close).
   const frozenCharMenuId = useLastNonNull(charMenuId);
-  const frozenChatMenuId = useLastNonNull(chatMenuId);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
   // Sort mode lives in the navigation store; query + tags are local UI state.
   // Tags are filtered via a bottom sheet rather than a dropdown — the Rail
   // panel is a backdrop-blur root, so a portaled combobox (Sidebar's approach)
   // would be awkward on mobile; a bottom sheet is the native-mobile pattern.
-  const characterSortMode = useNavigationStore((s) => s.characterSortMode);
-  const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
   const [charQuery, setCharQuery] = useState("");
   const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
   const [tagsSheetOpen, setTagsSheetOpen] = useState(false);
-
-  // Chat rename
-  const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
 
   // Hamburger force-open from TopBar
   const forceOpen = useNavigationStore((s) => s.railForceOpen);
@@ -96,18 +98,11 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
     selectedTags: charSelectedTags,
   });
 
-  // Active character — its chats are derived via the shared useSidebarChats
-  // hook (character-scope + mode split), which is also where the rail's
-  // mode-awareness lands: previously the rail rendered every chat for the
-  // active character regardless of mode (the never-integrated mode work).
-  // The rail has no chat search box (SF-1 scope), so query is ""; the desktop
-  // sort mode from the nav store still applies via the hook.
-  const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
-  const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
-
-  // Chats for the CharacterChatsSheet. Falls back to activeCharId so the hook
-  // stays stable when the sheet is closed (sheetCharId === null).
-  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId ?? activeCharId, query: "" });
+  // Chats for the CharacterChatsSheet — the shared useSidebarChats hook
+  // (character-scope + mode split). While the sheet is closed (null) the result
+  // is unused; when open on a character, this returns that character's chats.
+  // The drawer's character screens derive theirs inside RailCharacterBrowser.
+  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId, query: "" });
   const sheetChar = sheetCharId ? allCharacters.find((c) => c.id === sheetCharId) ?? null : null;
 
   // Drawer open/close driven by Base UI Drawer.Root — exit animation + unmount
@@ -116,26 +111,18 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const toggle = () => setExpanded((v) => !v);
   const close = () => setExpanded(false);
 
-  const commitRename = () => {
-    const nextTitle = renameDraft.trim();
-    if (nextTitle && renamingChatId) {
-      void character.handleRenameChat(renamingChatId, nextTitle);
-    }
-    setRenamingChatId(null);
-  };
-
-  // Context-menu action builders (character / chat). The hook is
-  // mode-agnostic — rename and delete are offered for every chat. Co-author
-  // has no branches, so buildBranchMenuItems is never called here.
+  // Context-menu action builders — only the character menu is built here (the
+  // hook is mode-agnostic; the chat menu is the panel's). Co-author has no
+  // branches, so buildBranchMenuItems is never called.
   const rowActions = useRowActions({
     mode: "coauthor",
     character,
     setConfirmDestroy,
-    setRenamingChatId,
-    setRenameDraft,
-    setRenamingBranch: () => {},
-    setBranchRenameDraft: () => {},
-    openChatImport: () => {},
+    setRenamingChatId: noop,
+    setRenameDraft: noop,
+    setRenamingBranch: noop,
+    setBranchRenameDraft: noop,
+    openChatImport: noop,
   });
 
   return (
@@ -185,159 +172,47 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       )}
 
       {/* ═══ EXPANDED OVERLAY PANEL ═══ */}
-      <Drawer.Portal container={getModalPortal() ?? document.body}>
+      {/* App-level host, NOT the overlay stack: the rail must never chase the
+       *  topmost sheet anchor — a stack-top change mid-session would re-target
+       *  this portal and tear the rail down (SHEET_PORTAL_SELF_TARGETING). The
+       *  panel's chat ⋮ sheets open from INSIDE this popup, so this holds for
+       *  Co-Author exactly as for the RP rail. */}
+      <Drawer.Portal container={getApplicationModalPortal() ?? document.body}>
         <Drawer.Backdrop className="rail-backdrop fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm" />
         <Drawer.Viewport className="fixed inset-0 z-[300]">
           <Drawer.Popup className="rail-popup glass-blur fixed left-0 top-0 bottom-0 flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl">
-            {/* Header */}
-            <div className="flex h-[48px] shrink-0 items-center border-b border-border px-3">
-              <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
-                   onClick={toggle}>
-                <Ic.menu />
-              </div>
-              <Drawer.Title className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
-                {t("characters")}
-              </Drawer.Title>
-            </div>
-
-            {/* Scrollable content */}
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
-                <>
-                  {/* Create + Import grid */}
-                  <div className="grid grid-cols-2 gap-1.5 px-1">
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}>
-                      <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
-                    </div>
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { characterImportRef.current?.openPicker(); close(); }}>
-                      <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
-                    </div>
-                  </div>
-                  <div className="my-1 h-px bg-border" />
-
-                  {/* Search + sort + tag-filter row. No section header on mobile
-                      — just the controls, compact. Tags open a bottom sheet. */}
-                  <div className="flex items-center gap-1.5 px-1">
-                    <SearchInput
-                      className="min-w-0 flex-1"
-                      value={charQuery}
-                      onChange={(e) => setCharQuery(e.target.value)}
-                      placeholder={t("search_name_placeholder")}
-                    />
-                    <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} className="shrink-0" />
-                    <div className="relative shrink-0">
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex h-[30px] w-8 items-center justify-center rounded border bg-s2 transition-colors active:bg-s3",
-                          tagsSheetOpen || charSelectedTags.length > 0 ? "border-accent text-accent-t" : "border-border text-t3",
-                        )}
-                        onClick={() => setTagsSheetOpen(true)}
-                        aria-label={t("filter_by_tags")}
-                      >
-                        <Ic.filter />
-                      </button>
-                      {charSelectedTags.length > 0 && (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-ui text-[9px] font-bold text-on-accent">
-                          {charSelectedTags.length}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {visibleChars.length === 0 && (
-                    <div className="px-3 py-6 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-                      {t("search_no_results")}
-                    </div>
-                  )}
-
-                  {visibleChars.map((c) => (
-                    <React.Fragment key={c.id}>
-                      {/* Character row — soft card */}
-                      <div
-                        className={cn(
-                          "group relative flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
-                          selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "bg-s2/30",
-                        )}
-                        onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
-                      >
-                        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-                          {charAvatarSrc(c) ? <img className="h-full w-full object-cover" src={charAvatarSrc(c)!} alt={c.name} /> : initials(c.name)}
-                        </div>
-                        <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
-                        {/* Three-dot menu button */}
-                        <button type="button"
-                          className={cn(
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
-                            charMenuId === c.id && "text-t1 bg-s3",
-                          )}
-                          onClick={(e) => { e.stopPropagation(); setCharMenuId(c.id); setChatMenuId(null); }}
-                        >
-                          <Ic.ellipsis />
-                        </button>
-                      </div>
-
-                      {/* Chats for active character */}
-                      {c.id === selectedCharacterId && (
-                        <div className={cn(
-                          "ml-3 flex flex-col gap-1 border-l-2 pl-2 py-1 transition-colors",
-                          sectionChats.some(ch => ch.id === activeChatId) ? "border-accent/50" : "border-border"
-                        )}>
-                          {sectionChats.map((ch) => (
-                            <div key={ch.id}
-                                 className={cn(
-                                   "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
-                                   ch.id === activeChatId
-                                     ? "bg-accent-dim border border-accent/30"
-                                     : "bg-s2/30 active:bg-s3",
-                                 )}
-                                 onClick={() => { void chat.handleSwitchChat(ch.id); }}>
-                              {renamingChatId === ch.id ? (
-                                <InlineRenameInput
-                                  className="mb-px"
-                                  value={renameDraft}
-                                  autoFocus
-                                  onChange={(e) => setRenameDraft(e.target.value)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onBlur={commitRename}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                                    else if (e.key === "Escape") { e.preventDefault(); setRenamingChatId(null); }
-                                  }}
-                                />
-                              ) : (
-                                <span className={cn("min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
-                                  {ch.title}
-                                </span>
-                              )}
-                              <span className="min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-4px)] text-t3">
-                                {ch.subtitle}
-                              </span>
-
-                              {/* Chat three-dot menu — enlarged touch target */}
-                              <button type="button"
-                                className={cn(
-                                  "absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
-                                  chatMenuId === ch.id && "text-t1 bg-s3",
-                                )}
-                                onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setCharMenuId(null); }}
-                              >
-                                <Ic.ellipsis />
-                              </button>
-                            </div>
-                          ))}
-                          {/* + New chat */}
-                          <div key={`new-chat-${c.id}`}
-                               className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
-                               onClick={() => { void character.handleCreateChat(c.id, "coauthor"); }}>
-                            <Ic.plus /> {t("new_chat")}
-                          </div>
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </>
-            </div>
+            {/* Two screens — the character list and one character's chats. Co-Author
+                has no branches: no `chat`, `withBranches={false}`, an empty branch list. */}
+            <RailCharacterBrowser
+              open={expanded}
+              activeCharacterId={activeChatCharacterId}
+              characters={allCharacters}
+              visibleCharacters={visibleChars}
+              chats={chats}
+              selectedCharacterId={selectedCharacterId}
+              activeChatId={activeChatId}
+              branches={[]}
+              activeBranchId={null}
+              filters={{
+                query: charQuery,
+                onQueryChange: setCharQuery,
+                tagCount: charSelectedTags.length,
+                tagsSheetOpen,
+                onOpenTags: () => setTagsSheetOpen(true),
+              }}
+              onClose={close}
+              onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}
+              onImportCharacter={() => { characterImportRef.current?.openPicker(); close(); }}
+              onOpenCharacterMenu={setCharMenuId}
+              mode="coauthor"
+              withBranches={false}
+              emptyTitleKey="coauthor.list_empty"
+              character={character}
+              setConfirmDestroy={setConfirmDestroy}
+              openChatImport={noop}
+              onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
+              onCreateChat={(characterId) => { void character.handleCreateChat(characterId, "coauthor"); }}
+            />
 
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
@@ -351,18 +226,12 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       </Drawer.Portal>
       </Drawer.Root>
 
-      {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
+      {/* ═══ BOTTOM SHEET (character context menu) ═══ */}
       <ActionSheet
         open={charMenuId !== null}
         title={frozenCharMenuId ? (allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : ""}
         items={frozenCharMenuId ? rowActions.buildCharMenuItems(frozenCharMenuId, allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : []}
         onClose={() => setCharMenuId(null)}
-      />
-      <ActionSheet
-        open={chatMenuId !== null}
-        title={frozenChatMenuId ? (sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : ""}
-        items={frozenChatMenuId ? rowActions.buildChatMenuItems(frozenChatMenuId, sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : []}
-        onClose={() => setChatMenuId(null)}
       />
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
@@ -398,7 +267,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
           mode="coauthor"
           character={character}
           setConfirmDestroy={setConfirmDestroy}
-          openChatImport={() => {}}
+          openChatImport={noop}
           onClose={() => setSheetCharId(null)}
           onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
           onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined, "coauthor"); }}

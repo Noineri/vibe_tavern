@@ -31,7 +31,7 @@ import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
-import { formatShortDate } from "../sidebar-utils.js";
+import { canDeleteActiveBranch, formatShortDate } from "../sidebar-utils.js";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
@@ -246,9 +246,7 @@ export function RichChatRow({
               <Icons.Branch /> {t("sidebar_fork_short")}
             </button>
             {(() => {
-              const rootBranch = branches.find((b) => b.parentBranchId === null);
-              const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
-              const canAct = !activeIsRoot && branches.length > 1;
+              const canAct = canDeleteActiveBranch(branches, activeBranchId);
               return (
                 <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
                   <button className={cn(

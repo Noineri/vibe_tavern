@@ -28,7 +28,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import type { ChatBranch, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
-import { formatRelativeTime, formatShortDate } from "../sidebar-utils.js";
+import { canDeleteActiveBranch, formatRelativeTime, formatShortDate } from "../sidebar-utils.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { cn } from "../../../lib/cn.js";
@@ -117,6 +117,8 @@ export function SidebarFlyout({
   const tab = flyoutCharId ? characterTabs.find(tc => tc.id === flyoutCharId) : undefined;
   const q = chatQuery.trim().toLowerCase();
   const filtered = q ? flyoutChats.filter(c => c.title.toLowerCase().includes(q)) : flyoutChats;
+  // The shared «can the active branch be deleted» rule (also read by RichChatRow and the mobile panel).
+  const canDeleteBranch = canDeleteActiveBranch(branches, activeBranchId);
 
   return (
     <Popover.Root
@@ -275,38 +277,31 @@ export function SidebarFlyout({
                           >
                             <Icons.Branch /> {t("sidebar_fork_short")}
                           </button>
-                          {(() => {
-                            const rootBranch = branches.find((b) => b.parentBranchId === null);
-                            const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
-                            const canAct = !activeIsRoot && branches.length > 1;
-                            return (
-                              <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
-                                <button
-                                  className={cn(
-                                    "inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3",
-                                    !canAct && "cursor-not-allowed opacity-45",
-                                  )}
-                                  type="button"
-                                  aria-disabled={!canAct}
-                                  onClick={(e) => {
-                                    if (!canAct) return;
-                                    e.stopPropagation();
-                                    // SC-21: same shared helper as RichChatRow — the summary is
-                                    // fetched when the confirm opens; on failure it opens plain.
-                                    void openDeleteBranchConfirm({
-                                      t,
-                                      chatId: activeChatId,
-                                      branchId: activeBranchId,
-                                      setConfirmDestroy,
-                                      onConfirm: () => void chat.handleDeleteActiveBranch(),
-                                    });
-                                  }}
-                                >
-                                  <Icons.Trash /> {t("sidebar_delete_branch_short")}
-                                </button>
-                              </CustomTooltip>
-                            );
-                          })()}
+                          <CustomTooltip content={canDeleteBranch ? "" : t("sidebar_switch_to_non_main")}>
+                            <button
+                              className={cn(
+                                "inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3",
+                                !canDeleteBranch && "cursor-not-allowed opacity-45",
+                              )}
+                              type="button"
+                              aria-disabled={!canDeleteBranch}
+                              onClick={(e) => {
+                                if (!canDeleteBranch) return;
+                                e.stopPropagation();
+                                // SC-21: same shared helper as RichChatRow — the summary is
+                                // fetched when the confirm opens; on failure it opens plain.
+                                void openDeleteBranchConfirm({
+                                  t,
+                                  chatId: activeChatId,
+                                  branchId: activeBranchId,
+                                  setConfirmDestroy,
+                                  onConfirm: () => void chat.handleDeleteActiveBranch(),
+                                });
+                              }}
+                            >
+                              <Icons.Trash /> {t("sidebar_delete_branch_short")}
+                            </button>
+                          </CustomTooltip>
                         </div>
                       </div>
                     )}
