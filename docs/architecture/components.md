@@ -49,6 +49,7 @@
 | `<AiAssistantShell>` | Hand-built assistant modal chrome | `ai-assistant/AiAssistantShell.tsx` | Shared header/content/footer shell with responsive structured actions |
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
+| `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
 
 ---
 
@@ -913,6 +914,44 @@ The modal persists the last-used model per mode in `localStorage` so the lightbu
 **Settle animation is once-per-roll:** a `useRef<Set>` of seen `rollKey`s gates the `dice-settle` class (per-die stagger via `animationDelay`). Re-rendering an existing rollKey drops the class; a fresh rollKey re-animates. Both a CSS `@media (prefers-reduced-motion: reduce)` block and a JS `window.matchMedia` guard snap to the final state under reduced motion with the `aria-live` announcement intact. `DiceFace` exposes a lower-level `tone` (`"default" | "max" | "min"`) if you need to override the auto-derived tint.
 
 **Accessibility:** `role="list"`/`role="listitem"`, an `aria-label` enumerating every face (`dice_faces_enumeration`), and a visually-hidden full enumeration so the `+N more` overflow never hides results from screen readers. The d% glyph additionally renders a mono `%` badge.
+
+---
+
+## ResizableSidePane
+
+**File:** `resizable-side-pane.tsx` — the ONE home of side-column behaviour (SC-16b). First consumer: the desktop sidechat panel; SC-16c reuses it for scripts, mini-apps and the co-author editor. Never copy its drag/clamp/glide logic into a panel — wire this instead.
+
+```tsx
+<ResizableSidePane
+  open={open}
+  storageKey="vt.sidechat.width"
+  defaultWidth={400}
+  minWidth={320}
+  resizeEdge="left"
+  className="border-l border-border/50 bg-surface"
+  panelTestId="sidechat-panel"
+  resizeHandleTestId="sidechat-resize"
+  closedView={<SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />}
+>
+  {content}
+</ResizableSidePane>
+```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `open` | `boolean` | Presence: false starts the close glide, true mounts and opens |
+| `storageKey` | `string` | `usePersistedNumber` key for the one shared width preference |
+| `defaultWidth` | `number` | Resting width (px) — also the double-click reset target |
+| `minWidth` | `number` | Static floor (px) — enforced on read, write, drag and reset |
+| `resizeEdge` | `"left" \| "right"` | Which pane edge carries the drag line (drag sign follows the edge) |
+| `children` | `ReactNode` | Pane content — squeezing content must carry its own `overflow-hidden` + `min-w-0` (the pane never clips: edge chrome outset shadows must survive) |
+| `closedView` | `ReactNode?` | Rendered instead of the pane once the close glide ends (default: nothing) |
+| `className` | `string?` | Extends the pane chrome (`cn` is join-only — appended, never replaced) |
+| `panelTestId` / `resizeHandleTestId` | `string?` | Test hooks for the pane element and the drag line |
+
+Owns the 6 px `col-resize` drag line (GalleryViewer mousedown → window mousemove/mouseup pattern), the clamp (static min, max = half the live window, resize re-clamps without touching stored intent), the persisted width, the double-click reset, and the open/close width glide (`transition-[width_0.18s_ease-out]` — the rail flyouts' `flyoutIn` curve; off while held; `motion-reduce:transition-none` + instant mount logic under `prefers-reduced-motion`). Close keeps the pane mounted until its own width `transitionend` (child transitions filtered by target + property; 200 ms timeout fallback), then unmounts.
+
+**When to use:** any side column that resizes and glides (sidechat, SC-16c panes). NOT for overlays/popovers (use `Modal`/Radix) or mobile sheets (use `BottomSheet`/`ActionSheet`).
 
 ---
 

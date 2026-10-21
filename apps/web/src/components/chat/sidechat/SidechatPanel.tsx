@@ -16,10 +16,9 @@
  *   hook re-reads on chat switch and never writes the previous chat's value
  *   under the new chat's key (see `use-persisted-boolean.ts`).
  * - Width is one global numeric preference (`vt.sidechat.width`, default 400,
- *   min 320, max 50% of the viewport) shared by all chats. The static min lives
- *   in the persisted hook (clamped on read); the relative max is enforced at
- *   render/drag time from `window.innerWidth` — the clamp source, read live so
- *   a window resize re-clamps without touching the stored intent.
+ *   min 320, max 50% of the viewport) shared by all chats — owned by the
+ *   shared `ResizableSidePane` primitive (persisted hook, live-max clamp,
+ *   resize re-clamp without touching the stored intent).
  * - The closed tab is an overlay straddling nothing: it sits fully inside the
  *   chat column's right edge (the AppShell root clips anything past the edge),
  *   24 px wide and 44 px tall at vertical center — message text (centered,
@@ -27,23 +26,22 @@
  *   stretch of the scrollbar track is overlaid, the track stays usable above
  *   and below. Reserving layout space instead would shift the chat on every
  *   toggle.
- * - The drag strip reuses the GalleryViewer viewport-pan pattern (mousedown on
- *   the strip → window mousemove/mouseup with a start ref) — no pointer
- *   capture, no new pattern. The slide-in reuses the rail flyouts' curve
- *   (`flyoutIn 0.18s ease-out`, see SidebarFlyout/CoauthorSidebarFlyout) — no
- *   new curve.
+ * - Sizing, drag and open/close motion live in the shared `ResizableSidePane`
+ *   primitive (SC-16b): the left-edge drag line (the GalleryViewer
+ *   viewport-pan pattern), the width glide on the rail flyouts' curve, the
+ *   double-click reset — no copy of that code remains here.
  * - Panel content is the `AgentShell` chat-only form EXACTLY (the host has no
  *   editor pane, so the shell renders the mini-app assistant's chat pane with
  *   no restyle): session switcher, meter, profile gear, model picker,
  *   checklist, plan block, feed, input.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentShell } from "../../shared/agent-shell/AgentShell.js";
 import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { ResizableSidePane } from "../../shared/resizable-side-pane.js";
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
-import { usePersistedBoolean, usePersistedNumber } from "../../../hooks/use-persisted-boolean.js";
+import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
@@ -65,17 +63,6 @@ export const SIDECHAT_DEFAULT_WIDTH = 400;
 /** Minimum panel width (px) — plan-settled, enforced by the persisted hook. */
 export const SIDECHAT_MIN_WIDTH = 320;
 
-/** Live viewport width for the relative max (subscribers re-render on resize). */
-function readViewportWidth(): number {
-  if (typeof window === "undefined") return 1024;
-  return window.innerWidth || 1024;
-}
-
-/** The 50% max at clamp time, never below the static min. */
-function maxWidthFor(viewportWidth: number): number {
-  return Math.max(SIDECHAT_MIN_WIDTH, Math.floor(viewportWidth / 2));
-}
-
 export function SidechatPanel() {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -86,51 +73,6 @@ export function SidechatPanel() {
   const chatMode = activeChat?.mode ?? "rp";
   const served = selectSidechatServedChatModes(agentKindSettings).includes(chatMode);
   const [open, setOpen] = usePersistedBoolean(`${SIDECHAT_OPEN_KEY_PREFIX}${chatId ?? ""}`, false);
-  const [width, setWidth] = usePersistedNumber(SIDECHAT_WIDTH_KEY, SIDECHAT_DEFAULT_WIDTH, {
-    min: SIDECHAT_MIN_WIDTH,
-  });
-  const [viewportWidth, setViewportWidth] = useState(readViewportWidth);
-  useEffect(() => {
-    const onResize = () => setViewportWidth(readViewportWidth());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  const liveMax = maxWidthFor(viewportWidth);
-  const effectiveWidth = Math.min(Math.max(width, SIDECHAT_MIN_WIDTH), liveMax);
-
-  // Border drag (GalleryViewer viewport-pan pattern): mousedown records the
-  // start, window-level move/up listeners carry the gesture so fast pointer
-  // travel off the 6 px strip never drops it.
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const onDragMove = useCallback(
-    (event: MouseEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const raw = drag.startWidth + (drag.startX - event.clientX);
-      setWidth(Math.min(Math.max(raw, SIDECHAT_MIN_WIDTH), maxWidthFor(readViewportWidth())));
-    },
-    [setWidth],
-  );
-  const onDragEnd = useCallback(() => {
-    dragRef.current = null;
-    setDragging(false);
-  }, []);
-  useEffect(() => {
-    if (!dragging) return;
-    window.addEventListener("mousemove", onDragMove);
-    window.addEventListener("mouseup", onDragEnd);
-    return () => {
-      window.removeEventListener("mousemove", onDragMove);
-      window.removeEventListener("mouseup", onDragEnd);
-    };
-  }, [dragging, onDragMove, onDragEnd]);
-  const onDragStart = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    dragRef.current = { startX: event.clientX, startWidth: effectiveWidth };
-    setDragging(true);
-  };
 
   const owner = selectSidechatOwner(
     chatId === null ? null : { id: chatId },
@@ -140,26 +82,23 @@ export function SidechatPanel() {
 
   const label = t("sidechat_toggle_label");
 
-  if (!open) {
-    // The closed affordance lives in `SidechatHandle` (shared with SC-15's
-    // mobile tabs) — same markup, same key, no fork.
-    return <SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />;
-  }
-
   return (
-    <aside
-      className="relative flex shrink-0 animate-[flyoutIn_0.18s_ease-out] flex-col border-l border-border/50 bg-surface"
-      style={{ width: effectiveWidth }}
-      data-testid="sidechat-panel"
+    <ResizableSidePane
+      open={open}
+      storageKey={SIDECHAT_WIDTH_KEY}
+      defaultWidth={SIDECHAT_DEFAULT_WIDTH}
+      minWidth={SIDECHAT_MIN_WIDTH}
+      resizeEdge="left"
+      className="border-l border-border/50 bg-surface"
+      panelTestId="sidechat-panel"
+      resizeHandleTestId="sidechat-resize"
+      // The closed affordance lives in `SidechatHandle` (shared with SC-15's
+      // mobile tabs) — same markup, same key, no fork; the pane renders it
+      // once the close glide ends.
+      closedView={<SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />}
     >
-      {/* Width drag strip on the left border (col-resize); the close handle
-          below sits above it, so a press on the chevron toggles instead. */}
-      <div
-        data-testid="sidechat-resize"
-        onMouseDown={onDragStart}
-        className={`absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-col-resize select-none ${dragging ? "bg-accent" : "bg-transparent hover:bg-accent/60"}`}
-      />
-      {/* Close handle on the panel's left edge (vertically centered). */}
+      {/* Close handle on the panel's left edge (vertically centered); it sits
+          above the drag line, so a press on the chevron toggles instead. */}
       <div className="absolute top-1/2 left-0 z-10 -translate-y-1/2">
         <CustomTooltip content={label} side="left">
           <button
@@ -173,9 +112,9 @@ export function SidechatPanel() {
           </button>
         </CustomTooltip>
       </div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />
       </div>
-    </aside>
+    </ResizableSidePane>
   );
 }

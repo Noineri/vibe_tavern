@@ -10,6 +10,9 @@
  *
  * Pins (the four named SC-14 steps, plus the served-modes gate):
  *   - the closed handle opens the panel; the chevron flips `<` → `>`;
+ *   - (SC-16b adaptation) closing keeps the pane mounted at width 0 until its
+ *     own width `transitionend`, then unmounts — the assertions below pin the
+ *     glide frame and the post-transition unmount, same intent as before;
  *   - per-chat open state is restored (seeded open renders open);
  *   - switching chat A (open) → chat B (stored closed) shows B closed and
  *     leaves B's stored value untouched (never a cross-write);
@@ -252,6 +255,24 @@ function withIsolatedI18n(node: ReactNode) {
 }
 
 /**
+ * Dispatch the pane's own width `transitionend` (the SC-16b close path).
+ * happy-dom 20.14.5 ships `TransitionEvent` but drops `propertyName` from
+ * its init dict, and RTL forwards init straight into the constructor — so
+ * `fireEvent.transitionEnd(el, { propertyName })` can never satisfy the
+ * pane's property filter. A plain bubbling Event with the expando assigned
+ * is what real browsers deliver; dispatch inside `act` so React flushes.
+ */
+function endWidthTransition(el: HTMLElement): void {
+  const end = new Event("transitionend", { bubbles: true, cancelable: true }) as Event & {
+    propertyName?: string;
+  };
+  end.propertyName = "width";
+  act(() => {
+    el.dispatchEvent(end);
+  });
+}
+
+/**
  * Drain the chained async `loadSession` microtasks (and React's scheduler
  * macrotasks) inside `act`, so the shell's thread/messages updates are
  * captured and do not emit React 19 "not wrapped in act" warnings.
@@ -300,6 +321,12 @@ describe("sidechat-panel — handle opens/closes (SC-14)", () => {
     expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("true");
 
     fireEvent.click(getByTestId("sidechat-toggle"));
+    // The close glide (SC-16b) keeps the pane mounted at width 0 until its
+    // own width transition ends — then it unmounts and the handle returns.
+    const closing = getByTestId("sidechat-panel");
+    expect(closing.style.width).toBe("0px");
+    expect(queryByTestId("sidechat-closed")).toBeNull();
+    endWidthTransition(closing);
     expect(queryByTestId("sidechat-panel")).toBeNull();
     expect(getByTestId("sidechat-closed")).toBeDefined();
     expect(localStorage.getItem("vt.sidechat.open.chat-a")).toBe("false");
@@ -331,7 +358,10 @@ describe("sidechat-panel — per-chat open state (SC-14)", () => {
       seedChat(CHAT_B, BRANCH_B);
     });
 
-    // B shows closed immediately, and B's stored value is untouched.
+    // B starts its close glide immediately (width 0, still mounted), and B's
+    // stored value is untouched — the pane unmounts at the transition end.
+    expect(getByTestId("sidechat-panel").style.width).toBe("0px");
+    endWidthTransition(getByTestId("sidechat-panel"));
     expect(getByTestId("sidechat-closed")).toBeDefined();
     expect(queryByTestId("sidechat-panel")).toBeNull();
     expect(localStorage.getItem("vt.sidechat.open.chat-b")).toBe("false");
