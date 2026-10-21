@@ -8,8 +8,12 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 useDomEnv();
 
-const { act, render } = await import("@testing-library/react");
+const { act, fireEvent, render } = await import("@testing-library/react");
 const { QueueManager } = await import("./QueueManager.js");
+const { LocaleProvider } = await import("../../i18n/context.js");
+const { i18next, initI18n } = await import("../../i18n/i18n.js");
+
+initI18n("en");
 
 const CHAT_A = brandId<ChatId>("chat-a");
 const CHAT_B = brandId<ChatId>("chat-b");
@@ -20,10 +24,11 @@ const initialChatState = useChatStore.getState();
 const initialQueueState = useGenerationQueueStore.getState();
 const initialSnapshotState = useSnapshotStore.getState();
 
-afterAll(() => {
+afterAll(async () => {
   useChatStore.setState(initialChatState, true);
   useGenerationQueueStore.setState(initialQueueState, true);
   useSnapshotStore.setState(initialSnapshotState, true);
+  await i18next.changeLanguage("en");
 });
 
 beforeEach(() => {
@@ -41,15 +46,19 @@ function setVisibleTarget(messageId: string, variantIds: string[]): void {
   });
 }
 
+function renderQueueManager() {
+  return render(<LocaleProvider initialLocale="en"><QueueManager /></LocaleProvider>);
+}
+
 function expectCounter(getByRole: ReturnType<typeof render>["getByRole"], text: string): void {
-  const button = getByRole("button", { name: "queue_title" });
+  const button = getByRole("button", { name: /Generation queue/ });
   const counter = button.querySelector("span");
   expect(counter?.textContent).toBe(text);
 }
 
 describe("QueueManager QS-3 batch summary", () => {
   test("renders nothing when the active chat has no batch", () => {
-    const { container } = render(<QueueManager />);
+    const { container } = renderQueueManager();
 
     expect(container.firstChild).toBeNull();
   });
@@ -60,12 +69,12 @@ describe("QueueManager QS-3 batch summary", () => {
     });
     setVisibleTarget(TARGET_A, ["a"]);
 
-    const { container } = render(<QueueManager />);
+    const { container } = renderQueueManager();
 
     expect(container.firstChild).toBeNull();
   });
 
-  test("renders 1/3 for one persisted variant plus running and pending records", () => {
+  test("renders localized 1 of 3 for one persisted variant plus running and pending records", () => {
     setVisibleTarget(TARGET_A, ["a"]);
     useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a"]);
     useGenerationQueueStore.getState().addRecord(CHAT_A, {
@@ -76,12 +85,12 @@ describe("QueueManager QS-3 batch summary", () => {
     });
     useGenerationQueueStore.getState().enqueueJob({ chatId: CHAT_A, messageId: TARGET_A, model: "model-c", promptPresetId: null, recordId: pendingId });
 
-    const { getByRole } = render(<QueueManager />);
+    const { getByRole } = renderQueueManager();
 
-    expectCounter(getByRole, "1/3");
+    expectCounter(getByRole, "1 of 3");
   });
 
-  test("deduplicates a linked running queue job and record into 1/2", () => {
+  test("deduplicates a linked running queue job and record into localized 1 of 2", () => {
     setVisibleTarget(TARGET_A, ["a"]);
     useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a"]);
     const recordId = useGenerationQueueStore.getState().addRecord(CHAT_A, {
@@ -90,20 +99,20 @@ describe("QueueManager QS-3 batch summary", () => {
     const jobId = useGenerationQueueStore.getState().enqueueJob({ chatId: CHAT_A, messageId: TARGET_A, model: "model-b", promptPresetId: null, recordId });
     useGenerationQueueStore.getState().markRunning(jobId);
 
-    const { getByRole } = render(<QueueManager />);
+    const { getByRole } = renderQueueManager();
 
-    expectCounter(getByRole, "1/2");
+    expectCounter(getByRole, "1 of 2");
   });
 
-  test("keeps a drained batch mounted with its persisted 2/2 summary", () => {
+  test("keeps a drained batch mounted with its localized persisted 2 of 2 summary", () => {
     setVisibleTarget(TARGET_A, ["a", "b"]);
     useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a", "b"]);
 
-    const { getByRole } = render(<QueueManager />);
+    const { getByRole } = renderQueueManager();
 
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]).toBeUndefined();
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toBeUndefined();
-    expectCounter(getByRole, "2/2");
+    expectCounter(getByRole, "2 of 2");
   });
 
   test("keeps the batch mounted after clear and cancel leave no pending or running jobs", () => {
@@ -120,17 +129,32 @@ describe("QueueManager QS-3 batch summary", () => {
     const cancelJob = useGenerationQueueStore.getState().enqueueJob({ chatId: CHAT_A, messageId: TARGET_A, model: "model-d", promptPresetId: null, recordId: cancelRecord });
     useGenerationQueueStore.getState().cancelJob(cancelJob);
 
-    const { getByRole } = render(<QueueManager />);
+    const { getByRole } = renderQueueManager();
 
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]).toEqual([]);
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toEqual([]);
-    expectCounter(getByRole, "2/2");
+    expectCounter(getByRole, "2 of 2");
+  });
+
+  test("keeps the chip above the composer and opens the desktop popover", async () => {
+    setVisibleTarget(TARGET_A, ["a"]);
+    useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a"]);
+
+    const { container, getByRole, getByText } = renderQueueManager();
+    const placement = container.querySelector("div.absolute.bottom-full.left-1\\.5.z-20.mb-1");
+    expect(placement?.getAttribute("class")).toContain("absolute bottom-full left-1.5 z-20 mb-1");
+
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: /Generation queue/ }));
+    });
+
+    expect(getByText("Queue empty")).not.toBeNull();
   });
 
   test("hides when the batch target leaves message order", () => {
     setVisibleTarget(TARGET_A, ["a"]);
     useGenerationQueueStore.getState().startBatch(CHAT_A, TARGET_A, ["a"]);
-    const { container } = render(<QueueManager />);
+    const { container } = renderQueueManager();
 
     expect(container.firstChild).not.toBeNull();
     act(() => { useSnapshotStore.setState({ messageOrder: [] }); });
@@ -141,7 +165,7 @@ describe("QueueManager QS-3 batch summary", () => {
     setVisibleTarget(TARGET_B, ["a"]);
     useGenerationQueueStore.getState().startBatch(CHAT_B, TARGET_B, ["a"]);
 
-    const { container } = render(<QueueManager />);
+    const { container } = renderQueueManager();
 
     expect(container.firstChild).toBeNull();
   });

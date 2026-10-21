@@ -16,7 +16,6 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import {
   useQueueJobs,
   useGenerationBatchSummary,
-  useHasActiveQueue,
   type QueueJob,
 } from "../../stores/generation-queue-store.js";
 import {
@@ -24,6 +23,7 @@ import {
   cancelQueueJob,
   clearQueuePending,
 } from "../../hooks/use-generation-queue.js";
+import { QueueChip } from "./queue-chip.js";
 
 /**
  * Pinned queue manager (CHAT_GENERATION_QUEUE_PLAN Q4b).
@@ -38,44 +38,25 @@ import {
  *  - Mobile: a left-aligned pill; tapping opens a full-width bottom sheet
  *    (reuses the Rail.tsx z-[501] pattern), so it never fights the keyboard.
  *
- * The pill pulses while any job is pending or running (source-agnostic: covers
- * non-stream `streamResponse`-off runs via useHasActiveQueue → isSending).
+ * The ring spins only while a batch record is running; pending work remains
+ * still so waiting-only batches do not imply active generation.
  */
 export function QueueManager(): ReactNode {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const jobs = useQueueJobs(activeChatId);
   const { visible, summary } = useGenerationBatchSummary(activeChatId);
-  const isActive = useHasActiveQueue(activeChatId);
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(false);
-  const { t } = useT();
 
   // A plain regenerate never creates a batch, while a drained/cleared/cancelled
   // batch stays visible until the next real Send or Resend.
   if (!visible) return null;
 
-  // Counter-only label: the spinning regen icon conveys "generating", so a
-  // trailing noun is redundant — and a noun after a Russian counter ("0/6
-  // generating…") is grammatically wrong without plural-form logic. Keeping
-  // the pill locale-agnostic (done/total only) sidesteps both issues.
-  const pillLabel = `${summary.done}/${summary.total}`;
-
   return (
     <div className="absolute bottom-full left-1.5 z-20 mb-1 flex items-center gap-1.5">
       <Popover.Root open={expanded} onOpenChange={setExpanded}>
         <Popover.Trigger asChild>
-          <button
-            type="button"
-            className={cn(
-              "glass-blur flex items-center gap-1.5 rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
-            )}
-            aria-expanded={expanded}
-            aria-label={t("queue_title")}
-          >
-            <Icons.regen className={cn(isActive && "animate-spin-slow")} />
-            {pillLabel && <span className={cn(isActive && "text-accent-t")}>{pillLabel}</span>}
-            <Icons.Caret direction={expanded ? "d" : "u"} />
-          </button>
+          <QueueChip summary={summary} mobile={isMobile} />
         </Popover.Trigger>
         {!isMobile && (
           <Popover.Portal container={getModalPortal() ?? undefined}>
