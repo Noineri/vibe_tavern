@@ -373,6 +373,48 @@ describe("CopilotProfileModal — list", () => {
 	});
 });
 
+describe("CopilotProfileModal — name never cut (SC-16d)", () => {
+	it("renders the name and the pills in separate lines", async () => {
+		const { getByTestId } = renderModal();
+		await flush(getByTestId);
+		const nameEl = getByTestId("copilot-profile-row-name-builtin");
+		const pillsEl = getByTestId("copilot-profile-row-pills-builtin");
+		expect(nameEl.textContent).toContain("Experience Authoring");
+		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
+		// Separate lines: neither element contains the other; both hang off
+		// the same row container.
+		expect(nameEl.contains(pillsEl)).toBe(false);
+		expect(pillsEl.contains(nameEl)).toBe(false);
+		expect(nameEl.parentElement?.parentElement).toBe(pillsEl.parentElement);
+	});
+
+	it("the name element wraps (no truncate)", async () => {
+		const { getByTestId } = renderModal();
+		await flush(getByTestId);
+		const classes = getByTestId("copilot-profile-row-name-builtin").className.split(/\s+/);
+		expect(classes).not.toContain("truncate");
+		expect(classes).toContain("whitespace-normal");
+		expect(classes).toContain("break-words");
+	});
+
+	it("a row without pills renders no pill line", async () => {
+		const { getByTestId, queryByTestId } = renderModal();
+		await flush(getByTestId);
+		// A script-host user row carries neither the built-in pill nor the
+		// kind-default pill (script hosts leave defaultProfileId undefined).
+		expect(getByTestId("copilot-profile-row-name-cprof_1").textContent).toContain("Card games");
+		expect(queryByTestId("copilot-profile-row-pills-cprof_1")).toBeNull();
+	});
+
+	it("the id line still truncates", async () => {
+		const { getByTestId } = renderModal();
+		await flush(getByTestId);
+		const idEl = getByTestId("copilot-profile-row-id-builtin");
+		expect(idEl.textContent).toBe("builtin");
+		expect(idEl.className.split(/\s+/)).toContain("truncate");
+	});
+});
+
 describe("CopilotProfileModal — duplicate built-in", () => {
 	it("opens a create editor pre-filled with the seed + copy suffix", async () => {
 		const { getByTestId } = renderModal();
@@ -563,6 +605,19 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
+	});
+
+	it("a chat-target built-in default row shows both pills on the pill line (SC-16d)", async () => {
+		const { getByTestId } = renderChatModal(null, null);
+		await flush(getByTestId);
+		// Null kind default → the built-in seed is the default (SC-0g mirror)
+		// AND built-in: both pills render, on their own line below the name.
+		const nameEl = getByTestId("copilot-profile-row-name-builtin");
+		const pillsEl = getByTestId("copilot-profile-row-pills-builtin");
+		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
+		expect(pillsEl.textContent).toContain("copilot_profile_default");
+		expect(nameEl.contains(pillsEl)).toBe(false);
+		expect(pillsEl.contains(nameEl)).toBe(false);
 	});
 
 	it("each button swaps to its state label when the selection already holds that state", async () => {

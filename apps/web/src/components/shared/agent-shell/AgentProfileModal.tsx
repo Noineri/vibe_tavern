@@ -554,26 +554,36 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 									)}
 								/>
 								<div className="min-w-0 flex-1 py-2">
+									{/* SC-16d: the name owns line 1 alone (wraps, never
+									// cuts); the pills own line 2 (only when present); the
+									// machine id stays a single-line truncate on line 3. */}
 									<div className="flex min-w-0 items-center gap-1.5">
-										<span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}>
+										<span
+											data-testid={`copilot-profile-row-name-${p.id}`}
+											className={cn("whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}
+										>
 											{isActive ? "★ " : ""}{p.name}
 										</span>
-										{p.isBuiltIn && (
-											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
-												{t("copilot_profile_built_in")}
-											</span>
-										)}
-										{/* SC-0g: chat-target hosts mark the kind-default row (a
-										// second authored pill, same canon shape as built-in).
-										// Script hosts leave defaultProfileId undefined —
-										// no badge, rows byte-identical to before. */}
-										{defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID) && (
-											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
-												{t("copilot_profile_default")}
-											</span>
-										)}
 									</div>
-									<div className="mt-0.5 truncate font-mono text-[10px] text-t4">{p.id}</div>
+									{/* SC-0g: chat-target hosts mark the kind-default row (a
+									// second authored pill, same canon shape as built-in).
+									// Script hosts leave defaultProfileId undefined —
+									// no badge, rows byte-identical to before. */}
+									{(p.isBuiltIn || (defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID))) && (
+										<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
+											{p.isBuiltIn && (
+												<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+													{t("copilot_profile_built_in")}
+												</span>
+											)}
+											{defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID) && (
+												<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+													{t("copilot_profile_default")}
+												</span>
+											)}
+										</div>
+									)}
+									<div data-testid={`copilot-profile-row-id-${p.id}`} className="mt-0.5 truncate font-mono text-[10px] text-t4">{p.id}</div>
 								</div>
 								{!p.isBuiltIn && (
 									<div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
