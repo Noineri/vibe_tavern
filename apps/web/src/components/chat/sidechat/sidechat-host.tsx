@@ -43,8 +43,13 @@ import {
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
+import {
+  readPendingVariantAttachments,
+  useSidechatVariantAttachmentsStore,
+} from "../../../stores/sidechat-variant-attachments-store.js";
 import { Icons } from "../../shared/icons.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { SidechatVariantChips } from "./SidechatVariantChips.js";
 
 /**
  * The sidechat's thread owner for the active chat + active branch (SC-14's
@@ -190,7 +195,32 @@ registerAgentHost({
     renameSession: renameExperienceCopilotSession,
     setContextLinks: setExperienceCopilotContextLinks,
   },
-  buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
+  // SC-18: the pending variant chips ride the next turn as `attachedVariants`
+  // (plain pairs — the `selected` marker is chip copy only, never the wire).
+  // Chat-only host: no editor pane, so no bridge session — the base is always
+  // `{}` and the chips are the whole options object when any are pending.
+  buildSendOptions: (ctx) => {
+    const base = ctx.bridge.session?.buildSendOptions() ?? {};
+    const triple = chatOwnerTriple(ctx.owner);
+    const pending = readPendingVariantAttachments(triple.chatId, triple.branchId);
+    if (pending.length === 0) return base;
+    return {
+      ...base,
+      attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })),
+    };
+  },
+  // SC-18: a successful send clears the pending chips, a failed (or
+  // cancelled) send keeps them for a retry.
+  onSendSettled: (ctx, ok) => {
+    if (!ok) return;
+    const triple = chatOwnerTriple(ctx.owner);
+    useSidechatVariantAttachmentsStore.getState().clearVariantAttachments(triple.chatId, triple.branchId);
+  },
+  // SC-18: the pending chips row inside the composer's input card.
+  composerTopSlot: (ctx) => {
+    const triple = chatOwnerTriple(ctx.owner);
+    return <SidechatVariantChips chatId={triple.chatId} branchId={triple.branchId} />;
+  },
   // SC-0i: the sidechat's plan is branch-owned (the shell's plan section
   // reads/writes the branch route through this owner).
   planOwner: (ctx: AgentPlanOwnerContext) => {

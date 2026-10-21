@@ -35,6 +35,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
     pinnedContext,
     onPinContext,
     onUnpinContext,
+    topSlot,
   } = props;
 
   const [draft, setDraft] = useState("");
@@ -164,6 +165,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
 
         {/* CX-6: pinned-context pills between the toolbar row and the input. */}
         <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        {topSlot}
 
         {/* Input row. */}
         <div className="flex items-end gap-2">

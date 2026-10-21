@@ -1,3 +1,6 @@
+// forks: 1 — DiscussInSidechatMenu (components/chat/DiscussInSidechatMenu.tsx)
+//   (the «Discuss in the sidechat» scope choice: trigger + desktop popover /
+//   mobile sheet cloned, two option rows instead of the modes + toggle).
 /**
  * Message-action image-generation menu (IMAGE_GENERATION_PLAN IG-16).
  *

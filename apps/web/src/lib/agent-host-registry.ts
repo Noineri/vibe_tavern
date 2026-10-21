@@ -162,6 +162,12 @@ export interface AgentSendOptions {
   reviewSnapshot?: AgentReviewSnapshot;
   rulesSaved?: boolean;
   visualSaved?: boolean;
+  /** SC-18 — RP variants attached to this turn as plain (messageId,
+   *  variantId) pairs (wire twin of the api-contracts `attachedVariants`;
+   *  the pair carries NO selected marker — the server reads the RP's own
+   *  selection at freeze time, the schema rejects anything else). Only the
+   *  `sidechat-ooc` kind reads the field; the other kinds ignore it. */
+  attachedVariants?: { messageId: string; variantId: string }[];
 }
 
 /**
@@ -380,6 +386,20 @@ export interface AgentHostDescriptor {
    *  cannot close over component state); AS-6c-ii types them as
    *  {@link AgentSendOptions} (owned by this registry). */
   buildSendOptions: (ctx: AgentHostContext) => AgentSendOptions;
+  /** SC-18: the send-outcome hook — the shell calls it after every turn
+   *  settles (both the composer send and the ask-answer continuation) with
+   *  whether the stream completed. Lets a host clear per-turn attachments
+   *  on success while keeping them for a retry on failure. Absent = the
+   *  host holds no per-turn send state (both built-in script hosts omit
+   *  it, so their surfaces stay byte-identical). */
+  onSendSettled?: (ctx: AgentHostContext, ok: boolean) => void;
+  /** SC-18: an optional row rendered inside the composer's input card above
+   *  the textarea (beside the pinned-context pills) — the host's per-turn
+   *  attachments (the sidechat's variant chips). Absent = no row (both
+   *  built-in script hosts omit it). Pure: runs during the shell's render,
+   *  so no hooks inside the function body itself (the returned component
+   *  owns its hooks). */
+  composerTopSlot?: (ctx: AgentHostContext) => ReactNode;
   /** AS-8e5: optional per-tool caption — the host translates a machine-shaped
    *  activity (the script `run_script_test` JSON envelope) into an i18n title
    *  key plus an optional detail line. SC-13a: the title may carry

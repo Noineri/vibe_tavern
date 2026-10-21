@@ -25,7 +25,6 @@
     "apps/web/src/components/build/editors/LorebookEditor.tsx": 942,
     "apps/web/src/components/chat/ImageGenFineTuningChip.tsx": 1463,
     "apps/web/src/components/chat/MessageAiEditorModal.tsx": 865,
-    "apps/web/src/components/chat/MessageShell.tsx": 924,
     "apps/web/src/components/chat/NarrationPlaylist.tsx": 895,
     "apps/web/src/components/context/SummaryTab.tsx": 1045,
     "apps/web/src/components/dev/ThemeTuner.tsx": 1926,

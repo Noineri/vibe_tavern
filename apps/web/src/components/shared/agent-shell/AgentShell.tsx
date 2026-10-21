@@ -348,8 +348,16 @@ export function AgentShell({
 
   // ── Stream controller ────────────────────────────────────────────────────
   // Refetch persisted messages after each turn settles: the live `pendingText`
-  // is cleared and the persisted assistant message takes over.
-  const handleTurnSettled = useCallback(() => {
+  // is cleared and the persisted assistant message takes over. SC-18: the
+  // host learns the outcome first (its per-turn attachments clear on success
+  // and stay for a retry on failure) — built fresh at call time from the
+  // ref-carried owner (the outcome lands after awaits, never the render
+  // closure); the only caller is the controller's settle path below.
+  const handleTurnSettled = useCallback((ok: boolean) => {
+    host.onSendSettled?.(
+      { owner: ownerRef.current, scriptId, threadId, isSending: false, hostProps, bridge },
+      ok,
+    );
     if (!threadId) return;
     transport.listMessages(threadId)
       .then(setMessages)
@@ -357,14 +365,16 @@ export function AgentShell({
         // Best-effort refetch — swallow so a transient list failure leaves the
         // last-known messages on screen rather than surfacing a spurious error.
       });
-  }, [threadId, transport]);
+  }, [threadId, transport, host, scriptId, hostProps, bridge]);
 
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
   // renders as a card at its anchor boundary.
   const copilotContext = useCopilotContext({
     threadId,
-    onCompacted: handleTurnSettled,
+    // A compaction is not a send (SC-18): the pending chips stay for the
+    // next turn — the `false` outcome keeps them, the refetch still runs.
+    onCompacted: () => handleTurnSettled(false),
     compactProvider: {
       ...(providerProfileId ? { providerProfileId } : {}),
       ...(model ? { model } : {}),
@@ -397,6 +407,9 @@ export function AgentShell({
     hostProps,
     bridge,
   };
+  // SC-18: the host's row inside the composer's input card (the sidechat's
+  // variant chips; undefined for hosts that define no slot).
+  const composerTopSlot = host.composerTopSlot?.(hostCtx);
   const sendWithOptions = (dispatch: (opts?: AgentSendOptions) => void) => {
     bridge.session?.onBeforeSend();
     dispatch(host.buildSendOptions(hostCtx));
@@ -595,6 +608,7 @@ export function AgentShell({
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
+              topSlot={composerTopSlot}
             />
           ) : (
             <AgentInputArea
@@ -611,6 +625,7 @@ export function AgentShell({
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
+              topSlot={composerTopSlot}
             />
           )}
         </>

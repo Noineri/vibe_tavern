@@ -56,8 +56,11 @@ export interface UseAgentControllerArgs {
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
-  /** Called after a turn settles (done/cancelled/failed) so the shell can refetch persisted messages. */
-  onTurnSettled?: () => void;
+  /** Called after a turn settles (done/cancelled/failed) so the shell can refetch persisted messages.
+   *  SC-18: carries whether the stream COMPLETED (`true`) or failed/was
+   *  cancelled (`false`) — the shell's host hook clears per-turn
+   *  attachments on success and keeps them for a retry on failure. */
+  onTurnSettled?: (ok: boolean) => void;
   /** CM-7: feed the segmented context metrics from the `finish` SSE event to
    *  the shell's meter immediately (before any context refetch round-trips).
    *  Null when the finish event carried no/ill-formed metrics. */
@@ -413,6 +416,9 @@ export function useAgentController(
             ...(opts?.reviewSnapshot !== undefined ? { reviewSnapshot: opts.reviewSnapshot } : {}),
             ...(opts?.rulesSaved !== undefined ? { rulesSaved: opts.rulesSaved } : {}),
             ...(opts?.visualSaved !== undefined ? { visualSaved: opts.visualSaved } : {}),
+            // SC-18: the sidechat host maps its pending variant chips here;
+            // absent = not sent (the schema caps the list at 64 pairs).
+            ...(opts?.attachedVariants !== undefined ? { attachedVariants: opts.attachedVariants } : {}),
           },
           {
             signal: controller.signal,
@@ -433,7 +439,7 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
-        onTurnSettled?.();
+        onTurnSettled?.(true);
       } catch (error) {
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
@@ -444,7 +450,9 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
-        onTurnSettled?.();
+        // A cancelled turn is NOT a success (SC-18): the pending chips stay
+        // for a retry — same as a failure.
+        onTurnSettled?.(false);
       } finally {
         abortRef.current = null;
         setPendingUserContent("");
@@ -515,6 +523,9 @@ export function useAgentController(
             ...(opts?.reviewSnapshot !== undefined ? { reviewSnapshot: opts.reviewSnapshot } : {}),
             ...(opts?.rulesSaved !== undefined ? { rulesSaved: opts.rulesSaved } : {}),
             ...(opts?.visualSaved !== undefined ? { visualSaved: opts.visualSaved } : {}),
+            // SC-18: the pending chips ride the continuation too (the next
+            // stream call carries them, whichever path it takes).
+            ...(opts?.attachedVariants !== undefined ? { attachedVariants: opts.attachedVariants } : {}),
           },
           {
             signal: controller.signal,
@@ -533,7 +544,7 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
-        onTurnSettled?.();
+        onTurnSettled?.(true);
       } catch (error) {
         // A failure BEFORE the stream opened (validation 400, network) means
         // the backend never rewrote the ask row — roll the optimistic flip
@@ -550,7 +561,7 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
-        onTurnSettled?.();
+        onTurnSettled?.(false);
       } finally {
         abortRef.current = null;
       }

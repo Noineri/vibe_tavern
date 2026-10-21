@@ -133,6 +133,12 @@ export const Ic = {
   // triangles, the owner's "fast-forward" glyph, stroke-outline to match the
   // action-row icon language (copy/edit/regen).
   fastForward:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M2.5 3.5v9L9 8z"/><path d="M8.5 3.5v9L15 8z"/></svg>,
+  // Speech bubble with three dots + a little person — the «Discuss in the
+  // sidechat» RP-message entry (SIDECHAT_PLAN SC-18, owner 2026-10-21 picked
+  // variant B of three drawn): the bubble's lower-right corner is left open
+  // for the person, the dots are filled, the person is stroke-outline — the
+  // hand-drawn set's style (16-space, 1.5 stroke, round caps and joins).
+  sidechatDiscuss:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11H5.2L2.5 13.3V3.5A1.5 1.5 0 0 1 4 2h8.5A1.5 1.5 0 0 1 14 3.5V7.2"/><circle cx="5.4" cy="6.4" r=".85" fill="currentColor" stroke="none"/><circle cx="8.2" cy="6.4" r=".85" fill="currentColor" stroke="none"/><circle cx="11" cy="6.4" r=".85" fill="currentColor" stroke="none"/><circle cx="12" cy="9.9" r="1.4"/><path d="M9.4 14.7a2.6 2.6 0 0 1 5.2 0"/></svg>,
   // Lucide `Volume2` — speaker for TTS narration; stroke 2 for toolbar legibility.
   speaker: (props?: { className?: string }) => <Volume2 size={13} strokeWidth={2} {...props} />,
   // Lucide `VolumeX` — muted twin of `speaker` for the playlist volume rail (RD-4).

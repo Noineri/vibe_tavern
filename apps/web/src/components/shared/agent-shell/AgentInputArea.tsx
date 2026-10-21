@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 import { composerCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../icons.js";
@@ -49,6 +49,9 @@ export interface AgentInputAreaProps {
   onPinContext?: (item: MentionAutocompleteItem) => void;
   /** CX-6: fired when a pill's × is clicked. */
   onUnpinContext?: (targetType: string, targetId: string) => void;
+  /** SC-18: an optional host row inside the input card above the textarea
+   *  (the sidechat's attached-variant chips). Default absent — no row. */
+  topSlot?: ReactNode;
 }
 
 export function AgentInputArea(props: AgentInputAreaProps) {
@@ -64,6 +67,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     pinnedContext,
     onPinContext,
     onUnpinContext,
+    topSlot,
   } = props;
 
   const [draft, setDraft] = useState("");
@@ -133,6 +137,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5">
       <div ref={cardRef} className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
         <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        {topSlot}
         <AutoTextarea
           bare
           className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
