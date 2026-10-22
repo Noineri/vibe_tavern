@@ -7,9 +7,11 @@ import { Slider } from "../shared/slider.js";
  * primitive: non-finite values fall back to min, values stay in bounds, and
  * reversed endpoints render in ascending order.
  */
-export function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
+export function DualRangeSlider({ min, max, from, to, disabled, label, formatValue, onChange }: {
   min: number; max: number; from: number; to: number;
   disabled?: boolean;
+  label?: string;
+  formatValue?: (from: number, to: number) => string;
   onChange: (from: number, to: number) => void;
 }) {
   const clampValue = (value: number) => Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
@@ -18,6 +20,9 @@ export function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
 
   return (
     <Slider
+      appearance="field"
+      label={label}
+      formatValue={formatValue ? ([start, end]) => formatValue(start, end) : undefined}
       value={[safeFrom, safeTo]}
       min={min}
       max={max}
