@@ -110,16 +110,9 @@ const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
 // ─── Optional numeric field (TextInput inputMode=numeric — the empty-able
 //     numeric; no NumberInput because it requires a concrete number) ────────
 
-// ─── Slider+number field (IG-CF13: the ProviderSamplerPanel SamplerField
-//     taken VERBATIM per the owner's 2026-09-16 ruling — take the existing
-//     LLM implementation, don't reshape it). The CF5 "empty box /
-//     clear-to-undefined" optionality was supervisor spec invention, not an
-//     owner requirement — killed. The cell is NumberInput (h-[30px] w-[60px]
-//     hideControls — its own self-clamping), the label is the uppercase micro
-//     canon, and the display value is `value ?? min` exactly like the LLM
-//     panel. Untouched params still don't send until edited. Seed keeps the
-//     plain OptionalNumberField above (a full seed-range slider is meaningless —
-//     owner-approved).
+// Shared parameter field adapter (SL-10). The layer's own value falls back
+// to the range minimum for display only; untouched params remain unsent.
+// Integer-step controls round typed fractions; fractional controls stay exact.
 
 function SamplerSliderField({
   label,
@@ -137,34 +130,17 @@ function SamplerSliderField({
   rangeTestId: string;
   cellTestId: string;
 }) {
-  const val = value ?? range.min;
   return (
-    <div className="min-w-0">
-      <label className={lblCls}>{label}</label>
-      <div className="flex items-center gap-2">
-        <Slider
-          value={val}
-          min={range.min}
-          max={range.max}
-          step={range.step}
-          onValueChange={onChange}
-          aria-label={label}
-          inputTestId={rangeTestId}
-          className="min-w-0 flex-1"
-        />
-        <div className="w-[60px] shrink-0" data-testid={cellTestId}>
-          <NumberInput
-            className="h-[30px] w-[60px]"
-            min={range.min}
-            max={range.max}
-            step={range.step}
-            value={val}
-            onChange={onChange}
-            hideControls
-          />
-        </div>
-      </div>
-    </div>
+    <SliderField
+      label={label}
+      value={value ?? range.min}
+      min={range.min}
+      max={range.max}
+      step={range.step}
+      onChange={(next) => onChange(Number.isInteger(range.step) ? Math.round(next) : next)}
+      rangeTestId={rangeTestId}
+      numberTestId={cellTestId}
+    />
   );
 }
 
