@@ -670,16 +670,12 @@ export function useSummaryTab({
       {/* ── Range ── */}
       <section>
         <div className={lblCls}>{t("summary_range_label")}</div>
-        <div className="rounded-lg border border-border bg-input-bg p-4">
-          <DualRangeSlider min={1} max={maxMessage} from={rangeFrom} to={rangeTo} disabled={generating} onChange={handleRangeChange} />
-          <div className="flex items-center justify-between font-ui text-[11px] text-t4">
-            <span>{t("summary_msg_label", { n: rangeFrom })}</span>
-            <span className="rounded-full bg-accent-dim px-2 py-1 text-accent-t">
-              {t("summary_messages_count", { count: Math.max(0, rangeTo - rangeFrom + 1) })}
-            </span>
-            <span>{t("summary_msg_label", { n: rangeTo })}</span>
-          </div>
-        </div>
+        <DualRangeSlider
+          min={1} max={maxMessage} from={rangeFrom} to={rangeTo}
+          disabled={generating} onChange={handleRangeChange}
+          label={t("summary_range_field_label")}
+          formatValue={(from, to) => t("summary_range_value", { from, to, count: to - from + 1 })}
+        />
       </section>
 
       {/* ── Exclude toggle ── */}

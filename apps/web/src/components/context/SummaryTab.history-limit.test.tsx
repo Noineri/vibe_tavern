@@ -128,6 +128,24 @@ async function expectHistoryLimitCommit(value: "7" | "9"): Promise<void> {
 }
 
 describe("SummaryTab history limit", () => {
+	for (const mobile of [false, true]) {
+		it(`renders the ${mobile ? "mobile" : "desktop"} message range as a labeled field without captions or an extra box`, async () => {
+			mobileViewport = mobile;
+			let view!: ReturnType<typeof render>;
+			await act(async () => { view = render(<Harness />); });
+			const range = view.getByTestId("range-start-input");
+			const shell = range.closest<HTMLElement>("[data-slider-field-shell]");
+			if (!shell) throw new Error("Missing message range field");
+			const section = shell.closest("section");
+			expect(view.getByText("summary_range_label").parentElement).toBe(section);
+			expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("summary_range_field_label");
+			expect(shell.querySelector("[data-slider-field-value]")?.textContent).toBe("summary_range_value");
+			expect(shell.parentElement).toBe(section);
+			expect(section?.querySelector(".bg-input-bg, .p-4, .rounded-full")).toBeNull();
+			expect(view.queryByText(/summary_msg_label|summary_messages_count/)).toBeNull();
+		});
+	}
+
 	it("keeps desktop slider ticks local and persists through the real memory-settings PATCH", async () => {
 		await expectHistoryLimitCommit("7");
 	});
