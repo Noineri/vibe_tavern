@@ -12,8 +12,8 @@ import type { AgentMessageAction, AgentMessageMarkup } from "../../../lib/agent-
 /**
  * One experience-copilot message bubble (ER-11c). Props-driven presentation:
  * the shell owns the message list; this component renders a single wire message
- * with role-based chrome (assistant vs user), plus the CM-9 compaction digest
- * card (role === "digest").
+ * with role-based chrome (flat assistant text vs the right-aligned user
+ * bubble, AP-4), plus the CM-9 compaction digest card (role === "digest").
  *
  * Fork of `CoauthorMessageBlock`, simplified for the copilot's wire shape: a
  * message is just `{ id, threadId, role, content, toolCallsJson, toolCallId,
@@ -33,9 +33,9 @@ export interface AgentMessageBlockProps {
    *  and for a digest with no attributable count. */
   coveredCount?: number | null;
   /** SC-16: the host's message actions — rendered as a row under ASSISTANT
-   *  bubbles only (user bubbles never carry them). Absent/empty = the bubble
+   *  messages only (user bubbles never carry them). Absent/empty = the message
    *  renders exactly as before (the fragment adds no DOM). The list passes
-   *  this only for persisted messages — pending/streaming bubbles render no
+   *  this only for persisted messages — pending/streaming messages render no
    *  row (the RP row hides its actions while generating). */
   messageActions?: AgentMessageAction[];
 }
@@ -57,40 +57,64 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // nothing here (a zero-height bubble would be visually orphaned).
   if (message.content.trim().length === 0) return null;
 
-  // SC-16: assistant bubbles only — user messages never carry actions.
+  // SC-16: assistant messages only — user messages never carry actions.
   const actions = !isUser && messageActions !== undefined && messageActions.length > 0 ? messageActions : undefined;
 
-  return (
-    <>
-    <div className={cn("flex gap-2.5", isUser ? "flex-row-reverse" : "flex-row", actions !== undefined && "group")} data-role={message.role}>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-s3">
-        {isUser ? (
-          <Icons.User className="h-4 w-4 text-t3" />
-        ) : (
-          <Icons.Sparkles className="h-4 w-4 text-accent-t" />
-        )}
-      </div>
-      <div
-        className={cn(
-          // min-w-0: the bubble is a flex item, so its automatic min-width is
-          // the content's min-content — for a code block that is the LONGEST
-          // line, which beat max-w-[80%] and blew the chat sideways (fix:
-          // code-block overflow). min-w-0 lets the bubble shrink; .md-pre then
-          // gets a bounded containing block and scrolls INTERNALLY as designed.
-          "max-w-[80%] min-w-0 rounded-lg px-3.5 py-2.5",
-          isUser ? "bg-user-bg" : "bg-s2",
-        )}
-      >
-        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
-          {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
-           * code, paths, ids) wrap instead of spilling past the bubble edge.
-           * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
-           * internal scroll with preserved indentation (lib/markdown contract).
-           * AP-2: no em override here — the agent-rp / agent-plain Markdown
-           * variants own `em` (RP colors vs plain typography). */}
-          <Markdown text={message.content} variant={messageMarkup === "rp-colors" ? "agent-rp" : "agent-plain"} />
+  // AP-4: the shared message body — the inner text container keeps `min-w-0`,
+  // the `overflow-wrap:anywhere` / `[&_.md-pre]:[overflow-wrap:normal]` pair,
+  // and the AP-2 Markdown variant below. Only the chrome around it differs
+  // per role: the user keeps the bubble, the assistant renders flat.
+  const body = (
+    <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
+      {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
+       * code, paths, ids) wrap instead of spilling past the bubble edge.
+       * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
+       * internal scroll with preserved indentation (lib/markdown contract).
+       * AP-2: no em override here — the agent-rp / agent-plain Markdown
+       * variants own `em` (RP colors vs plain typography). */}
+      <Markdown text={message.content} variant={messageMarkup === "rp-colors" ? "agent-rp" : "agent-plain"} />
+    </div>
+  );
+
+  // AP-4 (mockup §1): user messages keep the right-aligned `bg-user-bg`
+  // bubble, no avatar, `max-w-[85%]`.
+  if (isUser) {
+    return (
+      <div className="flex flex-row-reverse" data-role={message.role}>
+        <div
+          className={cn(
+            // min-w-0: the bubble is a flex item, so its automatic min-width is
+            // the content's min-content — for a code block that is the LONGEST
+            // line, which beat max-w-[85%] and blew the chat sideways (fix:
+            // code-block overflow). min-w-0 lets the bubble shrink; .md-pre then
+            // gets a bounded containing block and scrolls INTERNALLY as designed.
+            "max-w-[85%] min-w-0 rounded-lg bg-user-bg px-3.5 py-2.5",
+          )}
+        >
+          {body}
         </div>
       </div>
+    );
+  }
+
+  // AP-4 (mockup §1): assistant messages render flat — no avatar, no bubble
+  // chrome, full row width. The per-turn caption («✦ {host title}») above the
+  // turn's first visible text is the list's concern (it owns the turn
+  // boundaries); this block stays caption-agnostic.
+  return (
+    <>
+    <div
+      className={cn(
+        // min-w-0: the row is a flex item of the feed column — without it a
+        // wide code block's min-content width beats the row and blows the
+        // chat sideways (the same code-block overflow fix the user bubble
+        // above carries).
+        "min-w-0",
+        actions !== undefined && "group",
+      )}
+      data-role={message.role}
+    >
+      {body}
     </div>
     {actions !== undefined && <MessageActionRow actions={actions} text={message.content} />}
     </>
@@ -112,15 +136,17 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
  * - mobile button: `MobileMessageActions`' icon button (`h-11 w-11` = 44px
  *   hit area, `[&_svg]:h-5 [&_svg]:w-5`, `title` + `aria-label`) — always
  *   visible (no opacity gate), same as the RP mobile row.
- * Alignment: `pl-[38px]` = the avatar column (w-7 = 28px + gap-2.5 = 10px)
- * so the row sits under the bubble, not under the avatar.
+ * Alignment: none (AP-4) — the feed is flat, with no avatar column to align
+ * to, so the row sits at the text edge with no left offset (the `pl-[38px]`
+ * avatar-column offset is gone: w-7 = 28px + gap-2.5 = 10px no longer exists
+ * in the block above).
  */
 function MessageActionRow({ actions, text }: { actions: AgentMessageAction[]; text: string }) {
   const { t } = useT();
   const isMobile = useIsMobile();
   if (isMobile) {
     return (
-      <div className="pl-[38px]" data-testid="copilot-message-actions">
+      <div data-testid="copilot-message-actions">
         <div className="mt-1 flex items-center gap-1">
           {actions.map((action) => {
             const label = t(action.labelKey);
@@ -145,7 +171,7 @@ function MessageActionRow({ actions, text }: { actions: AgentMessageAction[]; te
     );
   }
   return (
-    <div className="pl-[38px]" data-testid="copilot-message-actions">
+    <div data-testid="copilot-message-actions">
       <div className="relative mt-1.5 flex items-center gap-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
         {actions.map((action) => {
           const label = t(action.labelKey);

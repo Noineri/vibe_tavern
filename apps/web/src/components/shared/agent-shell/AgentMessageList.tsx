@@ -59,6 +59,19 @@ function recordProposalOf(activity: AgentToolActivity): RecordProposal | undefin
   return undefined;
 }
 
+/** AP-4: the flat assistant feed's per-turn caption («✦ {host title}»,
+ *  mockup §1) — a quiet secondary small `font-ui` line, NOT a heading, with
+ *  mockup spacing above the turn's first visible text segment. Rendered by
+ *  the list (the block stays caption-agnostic); the title is the host
+ *  descriptor's existing title, resolved through `useT` — no new i18n key. */
+function AgentHostCaption({ title }: { title: string }) {
+  return (
+    <div className="mb-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3" data-testid="copilot-host-caption">
+      ✦ {title}
+    </div>
+  );
+}
+
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
  * owns the persisted message list and the two-buffer state; this component
@@ -376,6 +389,17 @@ export function AgentMessageList({
     }
   }, [kind]);
 
+  // AP-4: the host's title for the flat assistant caption («✦ {host title}»,
+  // mockup §1) — resolved like the actions above (unknown kind = no caption,
+  // never a throw; no new i18n key — the descriptor's existing title).
+  const hostTitle = useMemo<string | null>(() => {
+    try {
+      return t(getAgentHost(kind).i18n.title);
+    } catch {
+      return null;
+    }
+  }, [kind, t]);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -388,6 +412,45 @@ export function AgentMessageList({
   const visibleMessages = orderMessagesWithDigests(messages);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
+
+  // AP-4: one caption per assistant turn, above the turn's first VISIBLE text
+  // segment (a turn that starts with hidden tool calls shows it above its
+  // first rendered text; a turn with no visible text shows none). Turns are
+  // delimited by user rows — the same boundary the TA-1 anchor pass above
+  // uses. Digest rows never touch the flag (the anchor pass does not flush
+  // on them either); only user rows reset it, only non-empty assistant rows
+  // set it. Tool rows are absent here by construction
+  // (`orderMessagesWithDigests` keeps user/assistant/digest only).
+  const captionMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    let turnHasVisibleText = false;
+    for (const entry of visibleMessages) {
+      const m = entry.message;
+      if (m.role === "user") {
+        turnHasVisibleText = false;
+        continue;
+      }
+      if (m.role === "assistant" && m.content.trim().length > 0 && !turnHasVisibleText) {
+        ids.add(m.id);
+        turnHasVisibleText = true;
+      }
+    }
+    return ids;
+  }, [visibleMessages]);
+
+  // AP-4: the live feed and pending text continue the current turn — they
+  // earn the caption only when the turn has shown no visible persisted text
+  // yet (the same first-visible-segment rule). An optimistic pending user
+  // row opens a fresh turn, so a reply streaming after it is trivially first.
+  const liveTurnHasVisibleText = useMemo(() => {
+    if (hasPendingUserContent) return false;
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      const m = visibleMessages[i]!.message;
+      if (m.role === "user") return false;
+      if (m.role === "assistant" && m.content.trim().length > 0) return true;
+    }
+    return false;
+  }, [visibleMessages, hasPendingUserContent]);
 
   // SC-19b: frozen events interleave as separators BEFORE their anchor
   // message; a null anchor — or an anchor naming no visible row — trails at
@@ -466,12 +529,24 @@ export function AgentMessageList({
             <Fragment key={entry.message.id}>
               {renderEventSeparators(eventAnchors.get(entry.message.id))}
               {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
-              <AgentMessageBlock
-                message={entry.message}
-                messageMarkup={messageMarkup}
-                coveredCount={entry.coveredCount}
-                messageActions={messageActions}
-              />
+              {captionMessageIds.has(entry.message.id) && hostTitle !== null ? (
+                <div className="flex min-w-0 flex-col">
+                  <AgentHostCaption title={hostTitle} />
+                  <AgentMessageBlock
+                    message={entry.message}
+                    messageMarkup={messageMarkup}
+                    coveredCount={entry.coveredCount}
+                    messageActions={messageActions}
+                  />
+                </div>
+              ) : (
+                <AgentMessageBlock
+                  message={entry.message}
+                  messageMarkup={messageMarkup}
+                  coveredCount={entry.coveredCount}
+                  messageActions={messageActions}
+                />
+              )}
             </Fragment>
           ))}
 
@@ -508,6 +583,10 @@ export function AgentMessageList({
           {(() => {
             const rendered = [];
             let accordionPlaced = false;
+            // AP-4: the feed is the current turn — its first VISIBLE text
+            // segment carries the turn caption when the turn has shown no
+            // persisted text yet (the same list rule as the persisted pass).
+            let liveCaptionTitle: string | null = liveTurnHasVisibleText ? null : hostTitle;
             for (const entry of feed) {
               if (entry.kind === "activity") {
                 const activity = activityById.get(entry.id);
@@ -550,9 +629,11 @@ export function AgentMessageList({
               // Post-settle: the controller clears `pendingText`, so feed text
               // is suppressed while refetched history owns the persisted rows.
               if (!hasPendingText) continue;
-              rendered.push(
+              const showLiveCaption = liveCaptionTitle !== null && entry.text.trim().length > 0;
+              const liveTitle = liveCaptionTitle;
+              if (showLiveCaption) liveCaptionTitle = null;
+              const segment = (
                 <AgentMessageBlock
-                  key={entry.id}
                   messageMarkup={messageMarkup}
                   message={{
                     id: entry.id,
@@ -563,26 +644,51 @@ export function AgentMessageList({
                     toolCallId: null,
                     createdAt: "",
                   }}
-                />,
+                />
               );
+              if (showLiveCaption && liveTitle !== null) {
+                rendered.push(
+                  <div key={entry.id} className="flex min-w-0 flex-col">
+                    <AgentHostCaption title={liveTitle} />
+                    {segment}
+                  </div>,
+                );
+              } else {
+                rendered.push(<Fragment key={entry.id}>{segment}</Fragment>);
+              }
             }
             return rendered;
           })()}
 
-          {hasPendingText && feed.length === 0 && (
-            <AgentMessageBlock
-              messageMarkup={messageMarkup}
-              message={{
-                id: "__pending-assistant",
-                threadId,
-                role: "assistant",
-                content: pendingText,
-                toolCallsJson: null,
-                toolCallId: null,
-                createdAt: "",
-              }}
-            />
-          )}
+          {hasPendingText && feed.length === 0 && (() => {
+            const pendingBlock = (
+              <AgentMessageBlock
+                messageMarkup={messageMarkup}
+                message={{
+                  id: "__pending-assistant",
+                  threadId,
+                  role: "assistant",
+                  content: pendingText,
+                  toolCallsJson: null,
+                  toolCallId: null,
+                  createdAt: "",
+                }}
+              />
+            );
+            // AP-4: the pending reply is its turn's first visible text when
+            // the turn has shown no persisted text yet (same list rule) — it
+            // earns the caption; otherwise it streams bare under the
+            // captioned turn.
+            if (!liveTurnHasVisibleText && hostTitle !== null) {
+              return (
+                <div className="flex min-w-0 flex-col">
+                  <AgentHostCaption title={hostTitle} />
+                  {pendingBlock}
+                </div>
+              );
+            }
+            return pendingBlock;
+          })()}
         </div>
       </div>
 

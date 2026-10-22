@@ -1194,3 +1194,167 @@ describe("ExperienceCopilotMessageList — message markup (AP-2)", () => {
     expect(container.querySelector(".md-agent")).not.toBeNull();
   });
 });
+
+// ─── AP-4: flat assistant captions («✦ {host title}» once per turn) ─────────
+// The caption sits above its turn's first VISIBLE text segment (mockup §1):
+// a turn opening with hidden tool calls captions its first rendered text; a
+// turn with no visible text shows none. Identity i18n renders the experience
+// host's title key verbatim, so the caption reads "✦ agent_title" — the
+// descriptor's existing title, never a new i18n key.
+
+function captionCarrier(id: string, toolCallId: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "assistant",
+    content: "",
+    toolCallsJson: JSON.stringify([
+      { type: "tool-call", toolCallId, toolName: "write_buffer", input: { buffer: "rules" } },
+    ]),
+  });
+}
+
+function captionToolRow(id: string, toolCallId: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "tool",
+    toolCallId,
+    content: JSON.stringify({
+      toolName: "write_buffer",
+      output: { target: "rules", proposed: "# R1", summary: "wrote" },
+    }),
+  });
+}
+
+describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () => {
+  it("renders one caption per assistant turn above its first visible text", () => {
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "first" }),
+          message({ id: "a1", role: "assistant", content: "first reply" }),
+          message({ id: "a2", role: "assistant", content: "second reply" }),
+          message({ id: "u2", role: "user", content: "second" }),
+          message({ id: "a3", role: "assistant", content: "third reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // Two turns → two captions (the second text of turn 1 earns none).
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(2);
+    expect(captions[0]!.textContent).toBe("✦ agent_title");
+    expect(captions[1]!.textContent).toBe("✦ agent_title");
+    // Each caption sits directly above its segment (tight wrapper, not the
+    // column gap): the next sibling holds the turn's first text.
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("first reply");
+    expect(captions[1]!.nextElementSibling!.textContent).toContain("third reply");
+  });
+
+  it("a turn starting with hidden tool calls shows the caption above its first rendered text", () => {
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          captionCarrier("c1", "c1"),
+          captionToolRow("t1", "c1"),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(1);
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("visible reply");
+  });
+
+  it("an assistant turn with no visible text shows no caption", () => {
+    const { queryByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          captionCarrier("c1", "c1"),
+          captionToolRow("t1", "c1"),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryByTestId("copilot-host-caption")).toBeNull();
+    // The turn shape itself is intact (its tools still accordion).
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+  });
+
+  it("the pending streaming reply carries the caption when the turn has no visible text yet", () => {
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText="streaming reply…"
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(1);
+    expect(captions[0]!.textContent).toBe("✦ agent_title");
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("streaming reply…");
+  });
+
+  it("no caption on the pending reply when the turn already showed persisted text", () => {
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "earlier reply" }),
+        ]}
+        pendingText="streaming more…"
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // The one caption belongs to the persisted turn text; the streaming tail
+    // runs bare beneath it.
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(1);
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("earlier reply");
+  });
+
+  it("live feed text segments: caption on the first visible segment only", () => {
+    useAgentTurnStore.setState({
+      feedByThread: {
+        "thread-1": [
+          { kind: "text", id: "text-1", text: "Step one", closed: true },
+          { kind: "text", id: "text-2", text: "Step two", closed: false },
+        ],
+      },
+    });
+
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText="Step oneStep two"
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(1);
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("Step one");
+  });
+});
