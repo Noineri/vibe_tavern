@@ -83,6 +83,19 @@ function typeInto(editor: HTMLInputElement, text: string) {
   fireEvent.keyDown(editor, { key: "Enter" });
 }
 
+function biasRow(view: ReturnType<typeof render>): HTMLElement {
+  const row = range(view, "logit_bias_label #42").closest<HTMLElement>(".group.rounded-lg");
+  if (!row) throw new Error("Missing logit bias row");
+  return row;
+}
+
+function biasButton(view: ReturnType<typeof render>, text: string): HTMLButtonElement {
+  const button = Array.from(biasRow(view).querySelectorAll("button"))
+    .find((candidate) => candidate.textContent?.trim() === text);
+  if (!button) throw new Error(`Missing logit bias button ${text}`);
+  return button;
+}
+
 function ControlledAiGenParamsRow({ onTemperatureChange }: { onTemperatureChange: (value: number) => void }) {
   const [temperature, setTemperature] = useState(0.7);
   return (
@@ -99,6 +112,65 @@ function ControlledAiGenParamsRow({ onTemperatureChange }: { onTemperatureChange
 }
 
 describe("SL-3 settings slider sites", () => {
+  it("steps logit bias by ten and clamps both shortcut bounds", () => {
+    const onChange = mock();
+    const entry = { tokenId: 42, bias: 10, model: "model-a" };
+    const view = render(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-a" />);
+
+    fireEvent.click(biasButton(view, "−"));
+    expect(onChange).toHaveBeenNthCalledWith(1, [{ ...entry, bias: 0 }]);
+    view.rerender(<LogitBiasPanel entries={[{ ...entry, bias: 95 }]} onChange={onChange} supported model="model-a" />);
+    fireEvent.click(biasButton(view, "+"));
+    expect(onChange).toHaveBeenNthCalledWith(2, [{ ...entry, bias: 100 }]);
+    view.rerender(<LogitBiasPanel entries={[{ ...entry, bias: -95 }]} onChange={onChange} supported model="model-a" />);
+    fireEvent.click(biasButton(view, "−"));
+    expect(onChange).toHaveBeenNthCalledWith(3, [{ ...entry, bias: -100 }]);
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("bans a logit bias token and hides the ban shortcut at minus one hundred", () => {
+    const onChange = mock();
+    const entry = { tokenId: 42, bias: 10, model: "model-a" };
+    const view = render(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-a" />);
+
+    fireEvent.click(biasButton(view, "🚫"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith([{ ...entry, bias: -100 }]);
+    view.rerender(<LogitBiasPanel entries={[{ ...entry, bias: -100 }]} onChange={onChange} supported model="model-a" />);
+    expect(biasRow(view).textContent?.includes("🚫")).toBe(false);
+  });
+
+  it("disables all logit bias shortcuts for stale and disabled rows without writes", () => {
+    const onChange = mock();
+    const entry = { tokenId: 42, bias: 10, model: "model-a" };
+    const view = render(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-b" />);
+
+    for (const disabled of [false, true]) {
+      view.rerender(<LogitBiasPanel entries={[entry]} onChange={onChange} supported disabled={disabled} model={disabled ? "model-a" : "model-b"} />);
+      for (const text of ["−", "+", "🚫"]) {
+        const button = biasButton(view, text);
+        expect(button.disabled).toBe(true);
+        fireEvent.click(button);
+      }
+      expect(onChange).not.toHaveBeenCalled();
+    }
+  });
+
+  it("preserves signed logit bias values and their success danger and neutral colors", () => {
+    const onChange = mock();
+    const entry = { tokenId: 42, bias: 20, model: "model-a" };
+    const view = render(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-a" />);
+    const cases = [[20, "+20", "text-success"], [-35, "-35", "text-danger"], [0, "0", "text-t3"]] as const;
+
+    for (const [bias, text, color] of cases) {
+      view.rerender(<LogitBiasPanel entries={[{ ...entry, bias }]} onChange={onChange} supported model="model-a" />);
+      const value = biasRow(view).querySelector("span.w-10");
+      expect(value?.textContent).toBe(text);
+      expect(value?.classList.contains(color)).toBe(true);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("updates a logit bias entry immediately and suppresses stale and disabled rows", () => {
     const onChange = mock();
     const entry = { tokenId: 42, bias: 10, model: "model-a" };
