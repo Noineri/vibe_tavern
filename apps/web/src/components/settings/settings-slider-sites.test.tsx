@@ -29,6 +29,8 @@ let fireEvent: typeof import("@testing-library/react").fireEvent;
 let LogitBiasPanel: typeof import("./provider/LogitBiasPanel.js").LogitBiasPanel;
 let MobileSettings: typeof import("./popovers/MobileSettings.js").MobileSettings;
 let AiGenParamsRow: typeof import("../shared/ai-assistant/AiGenParamsRow.js").AiGenParamsRow;
+const originalSuppressImportWarnings = useScriptSafetySettingsStore.getState().suppressImportWarnings;
+const originalAiGenParamsOpen = localStorage.getItem("ai:gen-params:open");
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
@@ -43,8 +45,9 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  localStorage.removeItem("ai:gen-params:open");
-  useScriptSafetySettingsStore.setState({ suppressImportWarnings: null });
+  if (originalAiGenParamsOpen === null) localStorage.removeItem("ai:gen-params:open");
+  else localStorage.setItem("ai:gen-params:open", originalAiGenParamsOpen);
+  useScriptSafetySettingsStore.setState({ suppressImportWarnings: originalSuppressImportWarnings });
 });
 
 function range(view: ReturnType<typeof render>, name: string): HTMLInputElement {
