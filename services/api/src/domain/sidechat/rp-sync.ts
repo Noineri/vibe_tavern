@@ -45,6 +45,14 @@ export interface RpSyncMessagePayload {
   role: RpBranchViewMessage["role"];
   authorName: string | null;
   variantId: string | null;
+  /** The model that wrote the message's selected variant (the variant row's
+   *  `model_id`); null when the row has none. SC-23a: renders as the
+   *  `model` attribute, omitted entirely when null (a user message). */
+  model: string | null;
+  /** The prompt preset that wrote it (the variant row's `preset_name`);
+   *  null when none. SC-23a: renders as the `preset` attribute, omitted
+   *  entirely when null. */
+  preset: string | null;
   text: string;
 }
 
@@ -62,17 +70,24 @@ export interface RpSyncPayload {
   messages: RpSyncMessagePayload[];
 }
 
-/** The selected variant of one message, as frozen in an event payload. */
+/** The selected variant of one message, as frozen in an event payload.
+ *  Since SC-23a each pair also carries what wrote the variant — the frozen
+ *  provenance of the text, null on events frozen before the unit. */
 export interface RpVariantSelection {
   variantId: string;
   text: string;
+  /** The model that wrote this variant; null when unknown (a pre-SC-23a
+   *  event, or a variant row with no model). */
+  model: string | null;
+  /** The prompt preset that wrote this variant; null when unknown. */
+  preset: string | null;
 }
 
 /**
  * `selection_changed` payload: a message already in `frontier.selected`
  * whose view `variantId` differs. `previous` is the FROZEN pair — its text
- * comes from the caller's frozen-event payloads via
- * {@link FrozenVariantTextLookup}, never re-read from the live message
+ * and provenance come from the caller's frozen-event payloads via
+ * {@link FrozenVariantLookup}, never re-read from the live message
  * (an edit never fires; only a different selected variant does).
  */
 export interface SelectionChangedPayload {
@@ -87,15 +102,26 @@ export type RpSyncPlannedEvent =
   | { kind: "rp_sync"; payload: RpSyncPayload }
   | { kind: "selection_changed"; payload: SelectionChangedPayload };
 
+/** A frozen variant's facts as the stored events carry them (SC-23a): the
+ *  model-view text plus what wrote it. `model`/`preset` are null for events
+ *  frozen before SC-23a — provenance is only ever what was frozen, never
+ *  re-derived from the live rows. */
+export interface FrozenVariantRecord {
+  text: string;
+  model: string | null;
+  preset: string | null;
+}
+
 /**
- * Supplies the FROZEN text of a (messageId, variantId) pair the frontier
- * claims was already synced — the previous text of a `selection_changed`
+ * Supplies the FROZEN facts of a (messageId, variantId) pair the frontier
+ * claims was already synced — the previous pair of a `selection_changed`
  * event. SC-2c builds it from the thread's stored rp_sync / selection_changed
- * payloads (both carry `{ messageId, variantId, text }` triples: rp_sync in
- * `messages`, selection_changed in `previous` AND `current` — a swipe chain
- * re-freezes each intermediate variant as some event's `current`).
+ * payloads (both freeze `{ messageId, variantId, text, model, preset }`
+ * records: rp_sync in `messages`, selection_changed in `previous` AND
+ * `current` — a swipe chain re-freezes each intermediate variant as some
+ * event's `current`).
  */
-export type FrozenVariantTextLookup = (messageId: string, variantId: string) => string | null;
+export type FrozenVariantLookup = (messageId: string, variantId: string) => FrozenVariantRecord | null;
 
 /** The diff's result: events to append + the frontier to store (wholesale). */
 export interface RpSyncDiff {
@@ -136,7 +162,7 @@ export interface RpSyncDiff {
 export function computeRpSync(
   frontier: AgentThreadRpFrontier,
   view: readonly RpBranchViewMessage[],
-  frozenLookup: FrozenVariantTextLookup,
+  frozenLookup: FrozenVariantLookup,
 ): RpSyncDiff {
   // The view is documented position-ordered (SC-2a sorts), but the event
   // contracts below are cheap to make self-sustaining — sort a local copy.
@@ -161,6 +187,8 @@ export function computeRpSync(
           role: message.role,
           authorName: message.authorName,
           variantId: message.variantId,
+          model: message.modelId,
+          preset: message.presetName,
           text: message.text,
         })),
       },
@@ -173,8 +201,8 @@ export function computeRpSync(
     if (frozenVariantId === undefined || message.variantId === null) continue;
     if (message.variantId === frozenVariantId) continue;
 
-    const previousText = frozenLookup(message.id, frozenVariantId);
-    if (previousText === null) {
+    const previous = frozenLookup(message.id, frozenVariantId);
+    if (previous === null) {
       throw new Error(
         `computeRpSync: frozen text missing for message ${message.id} variant ${frozenVariantId} — ` +
           "the frontier claims it was synced, but the frozen events do not carry its text",
@@ -186,8 +214,18 @@ export function computeRpSync(
       payload: {
         messageId: message.id,
         position: message.position,
-        previous: { variantId: frozenVariantId, text: previousText },
-        current: { variantId: message.variantId, text: message.text },
+        previous: {
+          variantId: frozenVariantId,
+          text: previous.text,
+          model: previous.model,
+          preset: previous.preset,
+        },
+        current: {
+          variantId: message.variantId,
+          text: message.text,
+          model: message.modelId,
+          preset: message.presetName,
+        },
       },
     });
   }
@@ -238,21 +276,28 @@ export interface RpSyncDeps extends RpBranchViewDeps {
 const NEVER_SYNCED_FRONTIER: AgentThreadRpFrontier = { lastPosition: -1, selected: {} };
 
 /**
- * Build the frozen-text lookup from the thread's STORED frozen payloads
+ * Build the frozen-variant lookup from the thread's STORED frozen payloads
  * (SC-2c): every `rp_sync` event freezes its `messages[]` as
- * (messageId, variantId) → text, and every `selection_changed` event freezes
- * both its `previous` and `current` pairs (a swipe chain re-freezes each
- * intermediate variant as some event's current). Structurally invalid
- * payloads contribute nothing — the lookup is LENIENT by design, because
- * corruption surfaces where it matters: a needed-pair miss inside
+ * (messageId, variantId) → { text, model, preset }, and every
+ * `selection_changed` event freezes both its `previous` and `current` pairs
+ * (a swipe chain re-freezes each intermediate variant as some event's
+ * current). `model`/`preset` are null on pre-SC-23a rows (the fields did not
+ * exist — provenance is what was frozen, nothing re-derived). Structurally
+ * invalid payloads contribute nothing — the lookup is LENIENT by design,
+ * because corruption surfaces where it matters: a needed-pair miss inside
  * {@link computeRpSync}, which throws rather than emit an event with a
  * silently omitted previous.
  */
-function buildFrozenVariantTextLookup(entries: readonly AgentThreadTimelineEntry[]): FrozenVariantTextLookup {
-  const texts = new Map<string, string>();
-  const freeze = (messageId: unknown, variantId: unknown, text: unknown): void => {
-    if (typeof messageId !== "string" || typeof variantId !== "string" || typeof text !== "string") return;
-    texts.set(`${messageId}\u0000${variantId}`, text);
+function buildFrozenVariantLookup(entries: readonly AgentThreadTimelineEntry[]): FrozenVariantLookup {
+  const records = new Map<string, FrozenVariantRecord>();
+  const freeze = (messageId: unknown, variantId: unknown, record: unknown): void => {
+    if (typeof messageId !== "string" || typeof variantId !== "string" || !isRecord(record)) return;
+    if (typeof record.text !== "string") return;
+    records.set(`${messageId}\u0000${variantId}`, {
+      text: record.text,
+      model: typeof record.model === "string" ? record.model : null,
+      preset: typeof record.preset === "string" ? record.preset : null,
+    });
   };
   for (const entry of entries) {
     if (entry.rowType !== "event") continue;
@@ -260,17 +305,17 @@ function buildFrozenVariantTextLookup(entries: readonly AgentThreadTimelineEntry
       if (!isRecord(entry.payload) || !Array.isArray(entry.payload.messages)) continue;
       for (const message of entry.payload.messages) {
         if (!isRecord(message)) continue;
-        freeze(message.id, message.variantId, message.text);
+        freeze(message.id, message.variantId, message);
       }
     } else if (entry.kind === "selection_changed") {
       if (!isRecord(entry.payload)) continue;
       for (const pair of [entry.payload.previous, entry.payload.current]) {
         if (!isRecord(pair)) continue;
-        freeze(entry.payload.messageId, pair.variantId, pair.text);
+        freeze(entry.payload.messageId, pair.variantId, pair);
       }
     }
   }
-  return (messageId, variantId) => texts.get(`${messageId}\u0000${variantId}`) ?? null;
+  return (messageId, variantId) => records.get(`${messageId}\u0000${variantId}`) ?? null;
 }
 
 /**
@@ -335,7 +380,7 @@ export async function syncBeforeUserMessage(
   }
 
   const timeline = await deps.experienceCopilot.listTimeline(threadId);
-  const frozenLookup = buildFrozenVariantTextLookup(timeline);
+  const frozenLookup = buildFrozenVariantLookup(timeline);
 
   await deps.experienceCopilot.applyRpSync(threadId, (frontier) =>
     computeRpSync(frontier ?? NEVER_SYNCED_FRONTIER, view.messages, frozenLookup));

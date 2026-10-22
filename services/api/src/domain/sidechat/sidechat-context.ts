@@ -493,6 +493,8 @@ function parseRpSyncPayload(where: EventWhere, payload: unknown): RpSyncPayload 
 		const role = raw.role;
 		const authorName = raw.authorName ?? null;
 		const variantId = raw.variantId ?? null;
+		const model = raw.model ?? null;
+		const preset = raw.preset ?? null;
 		const text = raw.text;
 		if (typeof id !== "string" || typeof position !== "number" || typeof text !== "string") {
 			corrupt(where.threadId, where.kind, where.seq, "message id/position/text not strings/number");
@@ -508,7 +510,13 @@ function parseRpSyncPayload(where: EventWhere, payload: unknown): RpSyncPayload 
 		if (variantId !== null && typeof variantId !== "string") {
 			corrupt(where.threadId, where.kind, where.seq, "variantId is neither string nor null");
 		}
-		return { id, position, role, authorName, variantId, text };
+		if (model !== null && typeof model !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "model is neither string nor null");
+		}
+		if (preset !== null && typeof preset !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "preset is neither string nor null");
+		}
+		return { id, position, role, authorName, variantId, model, preset, text };
 	});
 	const fromPosition = payload.fromPosition;
 	const toPosition = payload.toPosition;
@@ -526,7 +534,21 @@ function parseVariantsAttachedPayload(where: EventWhere, payload: unknown): Vari
 		if (!isRecord(raw) || typeof raw.text !== "string" || typeof raw.selected !== "boolean") {
 			corrupt(where.threadId, where.kind, where.seq, "variant text/selected missing");
 		}
-		return { text: raw.text, selected: raw.selected };
+		// SC-23a provenance — absent on events frozen before the unit, so
+		// each normalizes to null (the attribute renders only when non-null).
+		const number = raw.number ?? null;
+		const model = raw.model ?? null;
+		const preset = raw.preset ?? null;
+		if (number !== null && typeof number !== "number") {
+			corrupt(where.threadId, where.kind, where.seq, "variant number is neither number nor null");
+		}
+		if (model !== null && typeof model !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "variant model is neither string nor null");
+		}
+		if (preset !== null && typeof preset !== "string") {
+			corrupt(where.threadId, where.kind, where.seq, "variant preset is neither string nor null");
+		}
+		return { text: raw.text, selected: raw.selected, number, model, preset };
 	});
 	return { position: payload.position, variants };
 }
@@ -547,7 +569,16 @@ function parseVariantSelection(where: EventWhere, raw: unknown): RpVariantSelect
 	if (!isRecord(raw) || typeof raw.variantId !== "string" || typeof raw.text !== "string") {
 		corrupt(where.threadId, where.kind, where.seq, "previous/current variant pair missing");
 	}
-	return { variantId: raw.variantId, text: raw.text };
+	// SC-23a provenance — absent on events frozen before the unit → null.
+	const model = raw.model ?? null;
+	const preset = raw.preset ?? null;
+	if (model !== null && typeof model !== "string") {
+		corrupt(where.threadId, where.kind, where.seq, "previous/current model is neither string nor null");
+	}
+	if (preset !== null && typeof preset !== "string") {
+		corrupt(where.threadId, where.kind, where.seq, "previous/current preset is neither string nor null");
+	}
+	return { variantId: raw.variantId, text: raw.text, model, preset };
 }
 
 function parseBranchForkedPayload(where: EventWhere, payload: unknown): BranchForkedPayload {

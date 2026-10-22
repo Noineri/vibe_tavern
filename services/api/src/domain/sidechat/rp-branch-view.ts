@@ -61,6 +61,14 @@ export interface RpBranchViewMessage {
   /** The message's currently SELECTED variant (swipe) id; null when the
    *  message has no variants (not expected — every insert creates one). */
   variantId: string | null;
+  /** The model that wrote the SELECTED variant (the variant row's
+   *  `model_id`); null when the row has none — a user message, a hand-seeded
+   *  row. The frozen payloads' `model` (SC-23a); read with the variant,
+   *  never re-derived. */
+  modelId: string | null;
+  /** The prompt preset that wrote the SELECTED variant (the variant row's
+   *  `preset_name`); null when none. The frozen payloads' `preset` (SC-23a). */
+  presetName: string | null;
   /** The transformed content — regex → macros → dice / report blocks. */
   text: string;
 }
@@ -98,6 +106,15 @@ export interface RpBranchViewNamedVariant {
   readonly text: string;
   /** The RP's own `message_variants.is_selected` for THIS variant. */
   readonly selected: boolean;
+  /** The variant row's 0-based `variant_index` — the RP UI's variant number
+   *  is `variantIndex + 1`, what `<variant number>` freezes (SC-23a). */
+  readonly variantIndex: number;
+  /** The model that wrote this variant (the row's `model_id`); null when the
+   *  row has none (SC-23a — the frozen `model` attribute). */
+  readonly modelId: string | null;
+  /** The prompt preset that wrote this variant (the row's `preset_name`);
+   *  null when none (SC-23a — the frozen `preset` attribute). */
+  readonly presetName: string | null;
 }
 
 /** Typed-validation code (SC-17): a requested pair does not resolve within
@@ -176,6 +193,7 @@ export async function readBranchAsModelSees(
     // send path's own last-user-turn safeguard, which also re-uses an
     // existing branch message id) — so the position lookup always hits.
     const position = positionById.get(message.id)!;
+    const selected = variantsByMessage.get(message.id)?.find((variant) => variant.isSelected);
     return {
       id: message.id,
       position,
@@ -187,8 +205,12 @@ export async function readBranchAsModelSees(
           : null,
       // The selected variant IS the message's content (messages.content is
       // synced with it on every select/edit) — the id rides along for
-      // downstream pinning; variant reasoning is never read here.
-      variantId: variantsByMessage.get(message.id)?.find((variant) => variant.isSelected)?.id ?? null,
+      // downstream pinning; variant reasoning is never read here. The row's
+      // model/preset ride the SAME lookup (SC-23a): the selected variant's
+      // own provenance, never re-derived elsewhere.
+      variantId: selected?.id ?? null,
+      modelId: selected?.modelId ?? null,
+      presetName: selected?.presetName ?? null,
       text: message.content,
     };
   });
@@ -305,6 +327,9 @@ function transformNamedVariants(
       position: message.position,
       text: row.content,
       selected: variant.isSelected,
+      variantIndex: variant.variantIndex,
+      modelId: variant.modelId,
+      presetName: variant.presetName,
     });
   }
   return resolved;

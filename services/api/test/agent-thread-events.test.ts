@@ -78,7 +78,9 @@ async function seedSidechatThread(): Promise<ExperienceCopilotThread> {
 }
 
 // Valid frozen payloads (the shapes the loader's parser accepts — one per
-// kind that seeds the interleaved layout below).
+// kind that seeds the interleaved layout below). Pre-SC-23a shapes on
+// purpose: no model/preset/number anywhere — the loader NORMALIZES absent
+// to null (the expected values below carry the nulls explicitly).
 const rpSyncPayload = {
 	fromPosition: 0,
 	toPosition: 0,
@@ -104,6 +106,31 @@ const selectionChangedPayload = {
 	previous: { variantId: "v_a", text: "She waits." },
 	current: { variantId: "v_b", text: "She crosses." },
 };
+
+/** The wire payload each seed maps to — SC-23a's provenance fields are
+ *  absent on the stored rows, so the loader's parser emits them as null
+ *  (never a refusal, never a silently dropped key). */
+function normalized(payload: typeof rpSyncPayload): typeof rpSyncPayload;
+function normalized(payload: typeof variantsAttachedPayload): typeof variantsAttachedPayload;
+function normalized(payload: typeof selectionChangedPayload): typeof selectionChangedPayload;
+function normalized(
+	payload: typeof rpSyncPayload | typeof variantsAttachedPayload | typeof selectionChangedPayload,
+): typeof rpSyncPayload | typeof variantsAttachedPayload | typeof selectionChangedPayload {
+	if ("messages" in payload) {
+		return {
+			...payload,
+			messages: payload.messages.map((message) => ({ ...message, model: null, preset: null })),
+		};
+	}
+	if ("variants" in payload) {
+		return { ...payload, variants: payload.variants.map((variant) => ({ ...variant, number: null, model: null, preset: null })) };
+	}
+	return {
+		...payload,
+		previous: { ...payload.previous, model: null, preset: null },
+		current: { ...payload.current, model: null, preset: null },
+	};
+}
 
 interface EventsResponseItem {
 	id: string;
@@ -138,13 +165,14 @@ describe("GET /api/agent/threads/:threadId/events (SC-19a)", () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual([
 			// Before the first message — BOTH consecutive events anchor the
-			// same next message.
-			{ id: evA.id, kind: "rp_sync", payload: rpSyncPayload, beforeMessageId: msg1.id },
+			// same next message. SC-23a: the pre-unit stored payloads surface
+			// with their provenance fields normalized to null.
+			{ id: evA.id, kind: "rp_sync", payload: normalized(rpSyncPayload), beforeMessageId: msg1.id },
 			{ id: evA2.id, kind: "branch_forked", payload: branchForkedPayload, beforeMessageId: msg1.id },
 			// Between messages — the first message row after the event.
-			{ id: evB.id, kind: "variants_attached", payload: variantsAttachedPayload, beforeMessageId: msg2.id },
+			{ id: evB.id, kind: "variants_attached", payload: normalized(variantsAttachedPayload), beforeMessageId: msg2.id },
 			// After the last message (the newest row) — null.
-			{ id: evC.id, kind: "selection_changed", payload: selectionChangedPayload, beforeMessageId: null },
+			{ id: evC.id, kind: "selection_changed", payload: normalized(selectionChangedPayload), beforeMessageId: null },
 		]);
 	});
 
@@ -170,11 +198,13 @@ describe("GET /api/agent/threads/:threadId/events (SC-19a)", () => {
 
 		expect(items.map((item) => item.kind)).toEqual(loaderMapped.map((mapped) => mapped.kind));
 		expect(items.map((item) => item.payload)).toEqual(loaderMapped.map((mapped) => mapped.payload));
-		// And the round trip is lossless against the seeded frozen payloads.
+		// And the round trip is lossless against the seeded frozen payloads,
+		// through SC-23a's null normalization (the stored rows predate the
+		// provenance fields — the wire carries them as null).
 		expect(items.map((item) => item.payload)).toEqual([
-			rpSyncPayload,
-			variantsAttachedPayload,
-			selectionChangedPayload,
+			normalized(rpSyncPayload),
+			normalized(variantsAttachedPayload),
+			normalized(selectionChangedPayload),
 		]);
 	});
 

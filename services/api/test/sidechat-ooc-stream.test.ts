@@ -1111,16 +1111,26 @@ describe("streamSidechatTurn attached variants (SC-17)", () => {
 		};
 	}
 
+	/** One frozen variant row — the stored `variants_attached` payload's item
+	 *  shape since SC-23a (provenance fields included). */
+	interface AttachedVariantRow {
+		text: string;
+		selected: boolean;
+		number: number;
+		model: string | null;
+		preset: string | null;
+	}
+
 	/** The thread's variants_attached events (payload cast to the frozen shape). */
 	async function attachedEvents(
 		threadId: ExperienceCopilotThreadId,
-	): Promise<Array<{ seq: number; payload: { position: number; variants: Array<{ text: string; selected: boolean }> } }>> {
+	): Promise<Array<{ seq: number; payload: { position: number; variants: AttachedVariantRow[] } }>> {
 		const timeline = await stores.experienceCopilot.listTimeline(threadId);
 		return timeline
 			.filter((entry) => entry.rowType === "event" && entry.kind === "variants_attached")
 			.map((entry) => entry as {
 				seq: number;
-				payload: { position: number; variants: Array<{ text: string; selected: boolean }> };
+				payload: { position: number; variants: AttachedVariantRow[] };
 			});
 	}
 
@@ -1163,7 +1173,9 @@ describe("streamSidechatTurn attached variants (SC-17)", () => {
 		expect(selected.text).toBe("The door creaks open before Sable.");
 		expect(selected.selected).toBe(true);
 		expect(events[1]!.payload.variants).toEqual([
-			{ text: "The bard tunes his lute.", selected: true },
+			// SC-23a: the single-variant message's row — number 1
+			// (variantIndex 0 + 1), no model/preset on this fixture's seed.
+			{ text: "The bard tunes his lute.", selected: true, number: 1, model: null, preset: null },
 		]);
 
 		// Freeze order on the merged timeline: after the sync's rp_sync event,
@@ -1241,5 +1253,49 @@ describe("streamSidechatTurn attached variants (SC-17)", () => {
 		expect(error.details?.code).toBe(ATTACHED_VARIANT_NOT_IN_BRANCH_CODE);
 		expect(error.details?.variantId).toBe(msgB.variantId);
 		expect(await attachedEvents(threadId)).toEqual([]);
+	});
+
+	it("an attached variant freezes its number and the model/preset that wrote it (SC-23a) — and the prompt renders them", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread();
+		// addMessage records model/preset on the SELECTED variant only — so the
+		// chosen take (index 0) carries provenance and the alternative (index 1)
+		// carries none: both halves of the pin in one message.
+		const msg = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The chosen regeneration.",
+			variants: ["The chosen regeneration.", "The discarded take."],
+			selectedVariantIndex: 0,
+			modelId: "flash-latest",
+			presetName: "Agentic Narrator",
+		});
+		const variants = await stores.messages.getVariants(msg.id);
+		const selected = variants.find((v) => v.isSelected)!;
+		const alternative = variants.find((v) => !v.isSelected)!;
+
+		const chunks = await drainTurn(threadId, "Which model wrote each take?", undefined, [
+			{ messageId: msg.id, variantId: selected.id },
+			{ messageId: msg.id, variantId: alternative.id },
+		]);
+		expect(chunks.map((c) => c.event)).toContain("finish");
+
+		// The frozen payload: number = variantIndex + 1 per variant, model/preset
+		// straight off the variant rows (null on the alternative's row).
+		const events = await attachedEvents(threadId);
+		expect(events).toHaveLength(1);
+		expect(events[0]!.payload.variants).toEqual([
+			{ text: "The chosen regeneration.", selected: true, number: 1, model: "flash-latest", preset: "Agentic Narrator" },
+			{ text: "The discarded take.", selected: false, number: 2, model: null, preset: null },
+		]);
+
+		// The rendered prompt carries the attributes — number on both variants,
+		// model/preset only where the row has them.
+		const prompt = promptText();
+		expect(prompt).toContain(
+			'<variant selected="true" number="1" model="flash-latest" preset="Agentic Narrator">The chosen regeneration.</variant>',
+		);
+		expect(prompt).toContain('<variant selected="false" number="2">The discarded take.</variant>');
 	});
 });

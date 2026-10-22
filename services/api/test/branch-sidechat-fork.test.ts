@@ -190,6 +190,8 @@ describe("forkBranchSidechat (SC-20)", () => {
 					role: "assistant",
 					authorName: "Theron",
 					variantId: await selectedVariantOf(targetM1.id),
+					model: null,
+					preset: null,
 					text: "The tavern door swings open.",
 				},
 				{
@@ -198,6 +200,8 @@ describe("forkBranchSidechat (SC-20)", () => {
 					role: "user",
 					authorName: "Sable",
 					variantId: await selectedVariantOf(targetM2.id),
+					model: null,
+					preset: null,
 					text: "I step inside.",
 				},
 			],
@@ -283,6 +287,8 @@ describe("forkBranchSidechat (SC-20)", () => {
 					role: "assistant",
 					authorName: "Theron",
 					variantId: await selectedVariantOf(m3.id),
+					model: null,
+					preset: null,
 					text: "A new turn on the fork.",
 				},
 			],
@@ -325,8 +331,8 @@ describe("forkBranchSidechat (SC-20)", () => {
 		expect(events[2]!.payload).toEqual({
 			messageId: targetM1.id,
 			position: 0,
-			previous: { variantId: before, text: "first take" },
-			current: { variantId: after, text: "second take" },
+			previous: { variantId: before, text: "first take", model: null, preset: null },
+			current: { variantId: after, text: "second take", model: null, preset: null },
 		});
 		expect(await stores.experienceCopilot.getFrontier(copyId)).toEqual({
 			lastPosition: 0,

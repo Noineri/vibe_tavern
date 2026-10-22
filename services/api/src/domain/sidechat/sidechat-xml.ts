@@ -16,14 +16,14 @@
  *   <objectives mode="route|goals">…</objectives>
  *   <current_scene>…</current_scene>
  *   <rp_sync from="a" to="b">
- *   <rp_message position="n" role="assistant|user" author="…">text</rp_message>
+ *   <rp_message position="n" role="assistant|user" author="…" model="…" preset="…">text</rp_message>
  *   </rp_sync>
  *   <rp_selection_changed position="n">
  *   <previous>…</previous>
  *   <current>…</current>
  *   </rp_selection_changed>
  *   <rp_variants position="n">
- *   <variant selected="true|false">…</variant>
+ *   <variant selected="true|false" number="n" model="…" preset="…">…</variant>
  *   </rp_variants>
  *   <rp_branch_forked at="n"/>
  *   <rp_summary from="a" to="b">…</rp_summary>
@@ -40,11 +40,15 @@
  * EMPTY SECTIONS: every section renderer returns `string | null`, and null
  * means "omit" — an empty tag is never emitted; SC-3b drops the nulls.
  * Emptiness is exact (`=== ""` / empty list): whitespace-only content is
- * content. The one attribute-level exception: `persona` renders its
+ * content. The attribute-level exceptions: `persona` renders its
  * `pronouns` attribute ONLY when the value exists (an empty `pronouns=""`
  * would carry no information; the tag itself still renders when the text is
- * non-empty). `rp_message`'s `author` is the opposite: the grammar pins a
- * fixed three-attribute shape, so a null authorName renders as `author=""`.
+ * non-empty). `rp_message`'s `author` is the opposite: the grammar pins it
+ * always present, so a null authorName renders as `author=""`. SC-23a's
+ * provenance attributes follow the `pronouns` pattern — `model` and
+ * `preset` on `<rp_message>` (after `author`), `number`, `model`, `preset`
+ * on `<variant>` (after `selected`) render ONLY when the value exists, so a
+ * user message and an event frozen before SC-23a render without them.
  *
  * TIMELINE ORDER: renderTimelineSection takes the merged listTimeline EVENT
  * list (SC-1: seq ascending, NULL-seq rows first) AS GIVEN and renders it in
@@ -52,10 +56,12 @@
  * the store's listTimeline contract; SC-4d's flow builder consumes that
  * merged order and does not re-derive it.
  *
- * WRITERS NOT YET LANDED: `variants_attached` (SC-20), `branch_forked`
- * (SC-20), and `rp_summary` (SC-6) have no store writers yet — their input
- * payload types below are defined per the inventory semantics, and this
- * renderer renders ALL kinds regardless.
+ * WRITERS: `variants_attached` is written by SC-17's freeze
+ * (sidechat-variant-attach.ts) and `selection_changed`/`rp_sync` by the RP
+ * sync (rp-sync.ts SC-2c); `branch_forked` (SC-20) has a writer, and
+ * `rp_summary` still has NONE (SC-6 renders summaries live from coverage,
+ * never stores them) — that kind's input payload type below is defined per
+ * the inventory semantics, and this renderer renders ALL kinds regardless.
  *
  * TIMELINE IS EVENTS-ONLY (SC-4d, variant A): the renderer no longer renders
  * OOC message rows — the sidechat's own conversation reaches the model
@@ -112,12 +118,26 @@ export interface ObjectivesSectionInput {
  * `variants_attached` payload — an alternative variant attached to a message.
  * The renderer's input shape per the inventory: each variant carries its own
  * `selected` flag (the alternatives render `selected="false"`, the chosen one
- * `selected="true"`). The STORED payload shape is owned by the future writer
- * (SC-20); SC-3b maps it onto this input.
+ * `selected="true"`) plus, since SC-23a, its provenance: `number` (the RP
+ * UI's variant number, `variantIndex + 1`), `model`, and `preset` — each
+ * null on events frozen before SC-23a and then omitted from the tag. The
+ * stored payload is written by the SC-17 freeze
+ * (sidechat-variant-attach.ts); sidechat-context.ts parses stored rows back
+ * onto this input.
  */
 export interface VariantsAttachedPayload {
 	readonly position: number;
-	readonly variants: readonly { readonly text: string; readonly selected: boolean }[];
+	readonly variants: readonly {
+		readonly text: string;
+		readonly selected: boolean;
+		/** The variant number the RP UI shows (`variantIndex + 1`); null on
+		 *  pre-SC-23a events — the attribute renders only when non-null. */
+		readonly number: number | null;
+		/** The model that wrote this variant; null when the row has none. */
+		readonly model: string | null;
+		/** The prompt preset that wrote this variant; null when none. */
+		readonly preset: string | null;
+	}[];
 }
 
 /** `branch_forked` payload — the message position the fork happened at
@@ -246,20 +266,32 @@ export function renderTimelineEvent(entry: SidechatTimelineEvent): string {
 }
 
 function renderRpSyncEvent(payload: RpSyncPayload): string {
-	const messages = payload.messages.map(
-		(message) =>
+	const messages = payload.messages.map((message) => {
+		// SC-23a provenance — appended after author, each rendered only when
+		// the value exists (a user message and pre-SC-23a events carry none).
+		const provenance =
+			(message.model !== null ? ` model="${escapeXmlAttribute(message.model)}"` : "") +
+			(message.preset !== null ? ` preset="${escapeXmlAttribute(message.preset)}"` : "");
+		return (
 			`<rp_message position="${message.position}" role="${escapeXmlAttribute(message.role)}" ` +
-			`author="${escapeXmlAttribute(message.authorName ?? "")}">${escapeXmlText(message.text)}</rp_message>`,
-	);
+			`author="${escapeXmlAttribute(message.authorName ?? "")}"${provenance}>${escapeXmlText(message.text)}</rp_message>`
+		);
+	});
 	return [`<rp_sync from="${payload.fromPosition}" to="${payload.toPosition}">`, ...messages, "</rp_sync>"].join(
 		"\n",
 	);
 }
 
 function renderVariantsAttachedEvent(payload: VariantsAttachedPayload): string {
-	const variants = payload.variants.map(
-		(variant) => `<variant selected="${variant.selected ? "true" : "false"}">${escapeXmlText(variant.text)}</variant>`,
-	);
+	const variants = payload.variants.map((variant) => {
+		// SC-23a: the variant's number and provenance — each rendered only
+		// when the value exists (pre-SC-23a events carry none of the three).
+		const attrs =
+			(variant.number !== null ? ` number="${variant.number}"` : "") +
+			(variant.model !== null ? ` model="${escapeXmlAttribute(variant.model)}"` : "") +
+			(variant.preset !== null ? ` preset="${escapeXmlAttribute(variant.preset)}"` : "");
+		return `<variant selected="${variant.selected ? "true" : "false"}"${attrs}>${escapeXmlText(variant.text)}</variant>`;
+	});
 	return [`<rp_variants position="${payload.position}">`, ...variants, "</rp_variants>"].join("\n");
 }
 

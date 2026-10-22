@@ -3,7 +3,7 @@ import type { AgentThreadRpFrontier } from "@vibe-tavern/db";
 import type { RpBranchViewMessage } from "../src/domain/sidechat/rp-branch-view.js";
 import {
 	computeRpSync,
-	type FrozenVariantTextLookup,
+	type FrozenVariantLookup,
 	type RpSyncPayload,
 	type RpSyncPlannedEvent,
 	type SelectionChangedPayload,
@@ -26,7 +26,7 @@ import {
  */
 
 function viewMessage(id: string, position: number, text: string, variantId = `${id}-v1`): RpBranchViewMessage {
-	return { id, position, role: "user", authorName: "Sable", variantId, text };
+	return { id, position, role: "user", authorName: "Sable", variantId, modelId: null, presetName: null, text };
 }
 
 /** The standard three-message view all frontier fixtures below assume was
@@ -47,10 +47,15 @@ function syncedFrontier(): AgentThreadRpFrontier {
 	};
 }
 
-/** A frozen-text lookup over a plain `"<messageId>/<variantId>"` table —
- *  the stand-in for SC-2c's lookup built from stored event payloads. */
-function frozenTable(entries: Record<string, string>): FrozenVariantTextLookup {
-	return (messageId, variantId) => entries[`${messageId}/${variantId}`] ?? null;
+/** A frozen-variant lookup over a plain `"<messageId>/<variantId>"` table
+ *  of texts — the stand-in for SC-2c's lookup built from stored event
+ *  payloads (SC-23a: every frozen text carries null provenance here; the
+ *  provenance-carrying case has its own test below). */
+function frozenTable(entries: Record<string, string>): FrozenVariantLookup {
+	return (messageId, variantId) => {
+		const text = entries[`${messageId}/${variantId}`];
+		return text === undefined ? null : { text, model: null, preset: null };
+	};
 }
 
 /** Narrow a planned event to its payload (test-side narrowing guards). */
@@ -74,11 +79,13 @@ describe("computeRpSync (SC-2b)", () => {
 		const payload = asRpSync(diff.events[0]);
 		expect(payload.fromPosition).toBe(0);
 		expect(payload.toPosition).toBe(2);
-		// Exactly these fields, no extras — the payload is SC-3a's contract.
+		// Exactly these fields, no extras — the payload is SC-3a's contract
+		// (SC-23a: every message carries model/preset, null when the variant
+		// row has none — these fixtures were seeded without either).
 		expect(payload.messages).toEqual([
-			{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", text: "The tavern door swings open." },
-			{ id: "m2", position: 1, role: "user", authorName: "Sable", variantId: "m2-v1", text: "I step inside." },
-			{ id: "m3", position: 2, role: "assistant", authorName: "Theron", variantId: "m3-v1", text: "Welcome, traveler." },
+			{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", model: null, preset: null, text: "The tavern door swings open." },
+			{ id: "m2", position: 1, role: "user", authorName: "Sable", variantId: "m2-v1", model: null, preset: null, text: "I step inside." },
+			{ id: "m3", position: 2, role: "assistant", authorName: "Theron", variantId: "m3-v1", model: null, preset: null, text: "Welcome, traveler." },
 		]);
 		expect(diff.frontier).toEqual({
 			lastPosition: 2,
@@ -98,7 +105,7 @@ describe("computeRpSync (SC-2b)", () => {
 		expect(payload.fromPosition).toBe(3);
 		expect(payload.toPosition).toBe(3);
 		expect(payload.messages).toEqual([
-			{ id: "m4", position: 3, role: "user", authorName: "Sable", variantId: "m4-v1", text: "A new turn arrives." },
+			{ id: "m4", position: 3, role: "user", authorName: "Sable", variantId: "m4-v1", model: null, preset: null, text: "A new turn arrives." },
 		]);
 		expect(diff.frontier).toEqual({
 			lastPosition: 3,
@@ -116,8 +123,8 @@ describe("computeRpSync (SC-2b)", () => {
 		expect(asSelectionChanged(diff.events[0])).toEqual({
 			messageId: "m2",
 			position: 1,
-			previous: { variantId: "m2-v1", text: "I step inside." },
-			current: { variantId: "m2-v2", text: "I slip inside, quietly." },
+			previous: { variantId: "m2-v1", text: "I step inside.", model: null, preset: null },
+			current: { variantId: "m2-v2", text: "I slip inside, quietly.", model: null, preset: null },
 		});
 		// The frontier now freezes the NEW variant — no re-fire next sync;
 		// lastPosition is untouched (no new message).
@@ -222,5 +229,48 @@ describe("computeRpSync (SC-2b)", () => {
 		expect(payload.toPosition).toBe(3);
 		expect(payload.messages.map((message) => message.id)).toEqual(["m9"]);
 		expect(diff.frontier).toEqual({ lastPosition: 5, selected: { m1: "m1-v1", m9: "m9-v1" } });
+	});
+
+	it("a view message's modelId/presetName ride the rp_sync payload as model/preset (SC-23a)", () => {
+		const view = [
+			{ ...viewMessage("m4", 3, "A reply with provenance."), role: "assistant" as const, authorName: "Theron", modelId: "flash-latest", presetName: "Agentic Narrator" },
+			{ ...viewMessage("m5", 4, "A reply without a preset."), role: "assistant" as const, authorName: "Theron", modelId: "flash-latest" },
+			viewMessage("m6", 5, "A user turn — never has a model."),
+		];
+
+		const diff = computeRpSync(syncedFrontier(), view, frozenTable({}));
+
+		const payload = asRpSync(diff.events[0]);
+		expect(payload.messages).toEqual([
+			{ id: "m4", position: 3, role: "assistant", authorName: "Theron", variantId: "m4-v1", model: "flash-latest", preset: "Agentic Narrator", text: "A reply with provenance." },
+			{ id: "m5", position: 4, role: "assistant", authorName: "Theron", variantId: "m5-v1", model: "flash-latest", preset: null, text: "A reply without a preset." },
+			{ id: "m6", position: 5, role: "user", authorName: "Sable", variantId: "m6-v1", model: null, preset: null, text: "A user turn — never has a model." },
+		]);
+	});
+
+	it("a selection_changed carries the FROZEN pair's model/preset as previous and the view row's as current (SC-23a)", () => {
+		const view = baseView();
+		view[1] = {
+			...view[1]!,
+			variantId: "m2-v2",
+			text: "I slip inside, quietly.",
+			modelId: "flash-latest",
+			presetName: "Agentic Narrator",
+		};
+
+		// The frozen record for m2/m2-v1 carries its own provenance — what
+		// was frozen when that variant was synced, never re-derived.
+		const diff = computeRpSync(syncedFrontier(), view, (messageId, variantId) =>
+			messageId === "m2" && variantId === "m2-v1"
+				? { text: "I step inside.", model: "old-model-pro", preset: null }
+				: null,
+		);
+
+		expect(asSelectionChanged(diff.events[0])).toEqual({
+			messageId: "m2",
+			position: 1,
+			previous: { variantId: "m2-v1", text: "I step inside.", model: "old-model-pro", preset: null },
+			current: { variantId: "m2-v2", text: "I slip inside, quietly.", model: "flash-latest", preset: "Agentic Narrator" },
+		});
 	});
 });

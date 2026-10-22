@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	createStoreContainer,
+	type AgentThreadContextEvent,
 	type MessageVariantSceneRecord,
 	type StoreContainer,
 } from "@vibe-tavern/db";
@@ -12,6 +13,7 @@ import {
 	defaultObjectiveState,
 	OBJECTIVE_MODE,
 	OBJECTIVE_TASK_STATUS,
+	type AgentThreadContextEventId,
 	type ChatBranchId,
 	type ChatId,
 	type ExperienceCopilotThreadId,
@@ -22,7 +24,8 @@ import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-serv
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "../src/domain/sidechat/rp-sync.js";
-import { loadSidechatContext, type SidechatContextDeps } from "../src/domain/sidechat/sidechat-context.js";
+import { loadSidechatContext, mapTimelineEvent, type SidechatContextDeps } from "../src/domain/sidechat/sidechat-context.js";
+import { renderTimelineEvent } from "../src/domain/sidechat/sidechat-xml.js";
 
 /**
  * SC-3b — loadSidechatContext on REAL rows (in-memory store container, the
@@ -374,5 +377,112 @@ describe("loadSidechatContext (SC-3b)", () => {
 		// The timeline's message rows are exactly the flow's real messages: the
 		// one OOC aside (its text renders nowhere in the static package).
 		expect(pkg.messageCount).toBe(1);
+	});
+
+	it("a frozen assistant reply carries the model and preset that wrote it; a user reply carries neither (SC-23a)", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The model-written reply.",
+			modelId: "flash-latest",
+			presetName: "Agentic Narrator",
+		});
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "The user-written turn.",
+		});
+
+		await syncBeforeUserMessage(syncDeps, threadId);
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+
+		// End-to-end: variant row (model_id/preset_name) → view → rp_sync
+		// payload → rendered XML. The assistant line carries both attributes;
+		// the user line (its variant row has no model) carries neither.
+		expect(pkg.eventMessages[0]!.content).toBe(
+			[
+				'<rp_sync from="0" to="1">',
+				'<rp_message position="0" role="assistant" author="Theron" model="flash-latest" preset="Agentic Narrator">The model-written reply.</rp_message>',
+				'<rp_message position="1" role="user" author="Sable">The user-written turn.</rp_message>',
+				"</rp_sync>",
+			].join("\n"),
+		);
+	});
+
+	it("events frozen BEFORE SC-23a (no model/preset/number in the stored JSON) parse and render without the attributes — never a refusal", () => {
+		// The exact stored payload shapes this unit's writers produced before
+		// SC-23a — raw pre-unit JSON, no provenance keys anywhere.
+		const oldRpSync: AgentThreadContextEvent = {
+			id: brandId<AgentThreadContextEventId>("evt_old_rp_sync"),
+			threadId: brandId<ExperienceCopilotThreadId>("thread_old"),
+			seq: 1,
+			kind: "rp_sync",
+			payload: {
+				fromPosition: 0,
+				toPosition: 0,
+				messages: [
+					{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", text: "The pre-unit reply." },
+				],
+			},
+			createdAt: "2026-01-01T00:00:00.000Z",
+		};
+		const oldVariants: AgentThreadContextEvent = {
+			id: brandId<AgentThreadContextEventId>("evt_old_variants"),
+			threadId: brandId<ExperienceCopilotThreadId>("thread_old"),
+			seq: 2,
+			kind: "variants_attached",
+			payload: {
+				position: 0,
+				variants: [
+					{ text: "The pre-unit take.", selected: false },
+					{ text: "The pre-unit chosen.", selected: true },
+				],
+			},
+			createdAt: "2026-01-01T00:00:00.000Z",
+		};
+		const oldSelection: AgentThreadContextEvent = {
+			id: brandId<AgentThreadContextEventId>("evt_old_selection"),
+			threadId: brandId<ExperienceCopilotThreadId>("thread_old"),
+			seq: 3,
+			kind: "selection_changed",
+			payload: {
+				messageId: "m1",
+				position: 0,
+				previous: { variantId: "m1-v1", text: "The pre-unit reply." },
+				current: { variantId: "m1-v2", text: "The pre-unit swipe." },
+			},
+			createdAt: "2026-01-01T00:00:00.000Z",
+		};
+
+		// The SAME parse + render path the loader runs — absent keys normalize
+		// to null and the tags render exactly as they did before the unit.
+		expect(renderTimelineEvent(mapTimelineEvent("thread_old", oldRpSync))).toBe(
+			[
+				'<rp_sync from="0" to="0">',
+				'<rp_message position="0" role="assistant" author="Theron">The pre-unit reply.</rp_message>',
+				"</rp_sync>",
+			].join("\n"),
+		);
+		expect(renderTimelineEvent(mapTimelineEvent("thread_old", oldVariants))).toBe(
+			[
+				'<rp_variants position="0">',
+				'<variant selected="false">The pre-unit take.</variant>',
+				'<variant selected="true">The pre-unit chosen.</variant>',
+				"</rp_variants>",
+			].join("\n"),
+		);
+		expect(renderTimelineEvent(mapTimelineEvent("thread_old", oldSelection))).toBe(
+			[
+				'<rp_selection_changed position="0">',
+				"<previous>The pre-unit reply.</previous>",
+				"<current>The pre-unit swipe.</current>",
+				"</rp_selection_changed>",
+			].join("\n"),
+		);
 	});
 });

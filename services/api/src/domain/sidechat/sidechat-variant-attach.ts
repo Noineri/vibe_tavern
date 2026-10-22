@@ -12,10 +12,14 @@
  *
  * WHAT IS FROZEN (the owner-settled shape, SC-3a/SC-3b's payload contract):
  * ONE `variants_attached` event PER attached message — the stored payload and
- * its renderer carry one message (`{ position, variants: [{ text, selected }] }`,
- * sidechat-xml.ts `VariantsAttachedPayload`, parsed back by
- * sidechat-context.ts `parseVariantsAttachedPayload`) — so variants of two
- * messages never share an event. Events are appended in MESSAGE POSITION
+ * its renderer carry one message (`{ position, variants: [{ text, selected,
+ * number, model, preset }] }`, sidechat-xml.ts `VariantsAttachedPayload`,
+ * parsed back by sidechat-context.ts `parseVariantsAttachedPayload`) — so
+ * variants of two messages never share an event. Since SC-23a each variant
+ * also freezes its NUMBER (`variantIndex + 1`, the variant number the RP UI
+ * shows — `<variant number>`, so the assistant can name a swipe) and the
+ * MODEL/PRESET that wrote it (the same store row's `model_id` /
+ * `preset_name`). Events are appended in MESSAGE POSITION
  * order, never request array order. Each text goes through SC-2a's shared
  * reader (`readBranchAsModelSees` named-variants arm — the same
  * buildPipelineContext inputs and resolveHistoryAsModelSees per-message
@@ -133,6 +137,11 @@ export async function attachVariantsBeforeUserMessage(
 			variants: group.map((variant) => ({
 				text: variant.text,
 				selected: variant.selected,
+				// SC-23a: the variant's number (the RP UI's `variantIndex + 1`)
+				// and provenance, read from the same store row as the text.
+				number: variant.variantIndex + 1,
+				model: variant.modelId,
+				preset: variant.presetName,
 			})),
 		});
 	}

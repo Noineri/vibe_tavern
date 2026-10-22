@@ -137,9 +137,9 @@ describe("syncBeforeUserMessage (SC-2c)", () => {
 			fromPosition: 0,
 			toPosition: 2,
 			messages: [
-				{ id: m1.id, position: 0, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m1.id), text: "The tavern door swings open." },
-				{ id: m2.id, position: 1, role: "user", authorName: "Sable", variantId: await selectedVariantOf(m2.id), text: "I step inside." },
-				{ id: m3.id, position: 2, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m3.id), text: "Welcome, traveler." },
+				{ id: m1.id, position: 0, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m1.id), model: null, preset: null, text: "The tavern door swings open." },
+				{ id: m2.id, position: 1, role: "user", authorName: "Sable", variantId: await selectedVariantOf(m2.id), model: null, preset: null, text: "I step inside." },
+				{ id: m3.id, position: 2, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m3.id), model: null, preset: null, text: "Welcome, traveler." },
 			],
 		});
 		expect(await stores.experienceCopilot.getFrontier(threadId)).toEqual({
@@ -185,7 +185,7 @@ describe("syncBeforeUserMessage (SC-2c)", () => {
 			fromPosition: 2,
 			toPosition: 2,
 			messages: [
-				{ id: m3.id, position: 2, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m3.id), text: "A new turn arrives." },
+				{ id: m3.id, position: 2, role: "assistant", authorName: "Theron", variantId: await selectedVariantOf(m3.id), model: null, preset: null, text: "A new turn arrives." },
 			],
 		});
 		expect(await stores.experienceCopilot.getFrontier(threadId)).toMatchObject({ lastPosition: 2 });
@@ -339,8 +339,8 @@ describe("syncBeforeUserMessage (SC-2c)", () => {
 		expect(events[1]!.payload).toEqual({
 			messageId: message.id,
 			position: 0,
-			previous: { variantId: v1, text: "first take" },
-			current: { variantId: v2, text: "second take" },
+			previous: { variantId: v1, text: "first take", model: null, preset: null },
+			current: { variantId: v2, text: "second take", model: null, preset: null },
 		});
 
 		await stores.messages.selectVariant(message.id, 2);
@@ -354,8 +354,8 @@ describe("syncBeforeUserMessage (SC-2c)", () => {
 		expect(events[2]!.payload).toEqual({
 			messageId: message.id,
 			position: 0,
-			previous: { variantId: v2, text: "second take" },
-			current: { variantId: v3, text: "third take" },
+			previous: { variantId: v2, text: "second take", model: null, preset: null },
+			current: { variantId: v3, text: "third take", model: null, preset: null },
 		});
 		expect(await stores.experienceCopilot.getFrontier(threadId)).toEqual({
 			lastPosition: 0,

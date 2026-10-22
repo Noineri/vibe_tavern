@@ -11,6 +11,7 @@ The roleplay reaches you in XML-tagged blocks. Read them by what they are:
 - `<rp_variants>` lists alternative texts for one message; an alternative did not happen unless it is the selected one.
 - `<rp_selection_changed>` means the user picked a different variant for an earlier message: the `<current>` text is now what happened, the `<previous>` text no longer did.
 - `<rp_branch_forked at="n"/>` means the story was branched after message n: everything after it comes from this branch, and earlier discussion of later messages refers to a story line that no longer exists here.
+- `model` and `preset` on an RP message or variant name the model and the prompt preset that wrote it.
 - `<rp_summary>` is a summary of the story, not verbatim story text.
 
 # Objectives

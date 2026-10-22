@@ -383,4 +383,45 @@ describe("readBranchAsModelSees named variants (SC-17)", () => {
 		]);
 		expect(view!.namedVariants![0]!.text).toBe("own alternative");
 	});
+
+	it("carries each variant's model/preset and the named variant's number source (SC-23a)", async () => {
+		const { chatId, branchId } = await makeChat();
+		// addMessage records model/preset on the SELECTED variant only: the
+		// chosen take (index 0) has provenance, the alternative (index 1) none.
+		const msg = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "first take",
+			variants: ["first take", "second take"],
+			selectedVariantIndex: 0,
+			modelId: "flash-latest",
+			presetName: "Agentic Narrator",
+		});
+		const variants = await stores.messages.getVariants(msg.id);
+		const selected = variants.find((v) => v.isSelected)!;
+		const alternative = variants.find((v) => !v.isSelected)!;
+
+		const view = await readBranchAsModelSees(deps, chatId, branchId, [
+			{ messageId: msg.id, variantId: alternative.id },
+		]);
+		expect(view).not.toBeNull();
+
+		// The message arm: the SELECTED variant's provenance rides the view row
+		// (the frozen rp_sync payloads' `model`/`preset`).
+		const entry = view!.messages.find((m) => m.id === msg.id)!;
+		expect(entry.variantId).toBe(selected.id);
+		expect(entry.modelId).toBe("flash-latest");
+		expect(entry.presetName).toBe("Agentic Narrator");
+
+		// The named arm: the variant's OWN row is the source — variantIndex
+		// (the +1 happens at the freeze), and this variant's own null
+		// provenance (an alternative created without a model), never the
+		// selected sibling's.
+		const named = view!.namedVariants![0]!;
+		expect(named.variantIndex).toBe(alternative.variantIndex);
+		expect(named.modelId).toBeNull();
+		expect(named.presetName).toBeNull();
+	});
 });

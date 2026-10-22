@@ -19,9 +19,12 @@ import { z } from "zod";
  * - `rp_sync` / `selection_changed` → `RpSyncPayload` / `SelectionChangedPayload`
  *   (domain/sidechat/rp-sync.ts); the message `role` is the four-value chat
  *   role set the loader's parser enforces (anything else is refused, not
- *   widened here).
+ *   widened here). Since SC-23a the messages and the selection pairs carry
+ *   `model` / `preset` (nullable) — the loader NORMALIZES absent to null, so
+ *   the wire always carries the keys.
  * - `variants_attached` / `branch_forked` → `VariantsAttachedPayload` /
- *   `BranchForkedPayload` (domain/sidechat/sidechat-xml.ts).
+ *   `BranchForkedPayload` (domain/sidechat/sidechat-xml.ts); each variant
+ *   also carries `number` / `model` / `preset` (nullable, same normalization).
  *
  * `rp_summary` is NOT here on purpose: summaries are never stored as
  * events (SC-6 renders them live from coverage), so no stored row maps to
@@ -39,6 +42,8 @@ const rpSyncPayloadSchema = z.object({
       role: z.enum(["system", "user", "assistant", "tool"]),
       authorName: z.string().nullable(),
       variantId: z.string().nullable(),
+      model: z.string().nullable(),
+      preset: z.string().nullable(),
       text: z.string(),
     }),
   ),
@@ -54,6 +59,9 @@ const variantsAttachedPayloadSchema = z
         .object({
           text: z.string(),
           selected: z.boolean(),
+          number: z.number().nullable(),
+          model: z.string().nullable(),
+          preset: z.string().nullable(),
         })
         .readonly(),
     ).readonly(),
@@ -65,6 +73,8 @@ const variantsAttachedPayloadSchema = z
 const variantSelectionSchema = z.object({
   variantId: z.string(),
   text: z.string(),
+  model: z.string().nullable(),
+  preset: z.string().nullable(),
 });
 
 /** `selection_changed` payload wire — mirrors `SelectionChangedPayload`

@@ -69,7 +69,7 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
 }
 
 function rpSyncMessage(id: string, text: string, authorName: string | null = null) {
-  return { id, position: 1, role: "assistant" as const, authorName, variantId: null, text };
+  return { id, position: 1, role: "assistant" as const, authorName, variantId: null, model: null, preset: null, text };
 }
 
 function rpSyncEvent(
@@ -96,8 +96,8 @@ function variantsEvent(id: string, beforeMessageId: string | null): AgentThreadE
     payload: {
       position: 5,
       variants: [
-        { text: "frozen variant one", selected: false },
-        { text: "frozen variant two", selected: true },
+        { text: "frozen variant one", selected: false, number: null, model: null, preset: null },
+        { text: "frozen variant two", selected: true, number: null, model: null, preset: null },
       ],
     },
     beforeMessageId,
@@ -111,8 +111,8 @@ function selectionEvent(id: string, beforeMessageId: string | null): AgentThread
     payload: {
       messageId: "rp-msg-1",
       position: 7,
-      previous: { variantId: "v-prev", text: "the previous reply" },
-      current: { variantId: "v-cur", text: "the current reply" },
+      previous: { variantId: "v-prev", text: "the previous reply", model: null, preset: null },
+      current: { variantId: "v-cur", text: "the current reply", model: null, preset: null },
     },
     beforeMessageId,
   };

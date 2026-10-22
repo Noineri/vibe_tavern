@@ -112,6 +112,8 @@ describe("sidechat XML renderers (SC-3a)", () => {
 								role: "assistant",
 								authorName: `Theron "Cook"`,
 								variantId: "m1-v1",
+								model: null,
+								preset: null,
 								text: `It's <done> & "settled"`,
 							},
 						],
@@ -168,8 +170,8 @@ describe("sidechat XML renderers (SC-3a)", () => {
 						fromPosition: 0,
 						toPosition: 1,
 						messages: [
-							{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", text: "The tavern door swings open." },
-							{ id: "m2", position: 1, role: "user", authorName: "Sable", variantId: "m2-v1", text: "I step inside." },
+							{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", model: null, preset: null, text: "The tavern door swings open." },
+							{ id: "m2", position: 1, role: "user", authorName: "Sable", variantId: "m2-v1", model: null, preset: null, text: "I step inside." },
 						],
 					},
 				},
@@ -179,8 +181,8 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					payload: {
 						messageId: "m2",
 						position: 1,
-						previous: { variantId: "m2-v1", text: "I step inside." },
-						current: { variantId: "m2-v2", text: "I hesitate at the threshold." },
+						previous: { variantId: "m2-v1", text: "I step inside.", model: null, preset: null },
+						current: { variantId: "m2-v2", text: "I hesitate at the threshold.", model: null, preset: null },
 					},
 				},
 				{
@@ -189,8 +191,8 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					payload: {
 						position: 1,
 						variants: [
-							{ text: "I step inside.", selected: false },
-							{ text: "I hesitate at the threshold.", selected: true },
+							{ text: "I step inside.", selected: false, number: null, model: null, preset: null },
+							{ text: "I hesitate at the threshold.", selected: true, number: null, model: null, preset: null },
 						],
 					},
 				},
@@ -230,9 +232,9 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					payload: {
 						position: 4,
 						variants: [
-							{ text: "Alternative take.", selected: false },
-							{ text: "Another alternative.", selected: false },
-							{ text: "The chosen regeneration.", selected: true },
+							{ text: "Alternative take.", selected: false, number: null, model: null, preset: null },
+							{ text: "Another alternative.", selected: false, number: null, model: null, preset: null },
+							{ text: "The chosen regeneration.", selected: true, number: null, model: null, preset: null },
 						],
 					},
 				},
@@ -257,7 +259,7 @@ describe("sidechat XML renderers (SC-3a)", () => {
 						fromPosition: 2,
 						toPosition: 2,
 						messages: [
-							{ id: "m3", position: 2, role: "user", authorName: null, variantId: "m3-v1", text: "A turn with no author." },
+							{ id: "m3", position: 2, role: "user", authorName: null, variantId: "m3-v1", model: null, preset: null, text: "A turn with no author." },
 						],
 					},
 				},
@@ -287,7 +289,7 @@ describe("sidechat XML renderers (SC-3a)", () => {
 					fromPosition: 0,
 					toPosition: 0,
 					messages: [
-						{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", text: "The tavern door swings open." },
+						{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", model: null, preset: null, text: "The tavern door swings open." },
 					],
 				},
 			});
@@ -303,6 +305,88 @@ describe("sidechat XML renderers (SC-3a)", () => {
 		it("a message row is outside the timeline renderer's contract (SC-4d: OOC turns ride the message flow) — it throws, never renders a User: line", () => {
 			const bogus = { rowType: "message", role: "user", content: "an OOC turn" } as unknown as SidechatTimelineEvent;
 			expect(() => renderTimelineEvent(bogus)).toThrow(/unknown timeline event kind/);
+		});
+	});
+
+	describe("provenance attributes (SC-23a)", () => {
+		it("an rp_message with model/preset carries both attributes after author, values attribute-escaped", () => {
+			const rendered = renderTimelineEvent({
+				rowType: "event",
+				kind: "rp_sync",
+				payload: {
+					fromPosition: 0,
+					toPosition: 0,
+					messages: [
+						{
+							id: "m1",
+							position: 0,
+							role: "assistant",
+							authorName: "Theron",
+							variantId: "m1-v1",
+							model: `model-"x" & <flash>`,
+							preset: "Agentic Narrator",
+							text: "The tavern door swings open.",
+						},
+					],
+				},
+			});
+			expect(rendered).toBe(
+				[
+					'<rp_sync from="0" to="0">',
+					'<rp_message position="0" role="assistant" author="Theron" model="model-&quot;x&quot; &amp; &lt;flash&gt;" preset="Agentic Narrator">The tavern door swings open.</rp_message>',
+					"</rp_sync>",
+				].join("\n"),
+			);
+		});
+
+		it("a model without a preset renders model only; a user message (null model) renders neither attribute", () => {
+			const rendered = renderTimelineEvent({
+				rowType: "event",
+				kind: "rp_sync",
+					payload: {
+					fromPosition: 0,
+					toPosition: 1,
+					messages: [
+						{ id: "m1", position: 0, role: "assistant", authorName: "Theron", variantId: "m1-v1", model: "flash-latest", preset: null, text: "Model only." },
+						{ id: "m2", position: 1, role: "user", authorName: "Sable", variantId: "m2-v1", model: null, preset: null, text: "I step inside." },
+					],
+				},
+			});
+			expect(rendered).toBe(
+				[
+					'<rp_sync from="0" to="1">',
+					'<rp_message position="0" role="assistant" author="Theron" model="flash-latest">Model only.</rp_message>',
+					'<rp_message position="1" role="user" author="Sable">I step inside.</rp_message>',
+					"</rp_sync>",
+				].join("\n"),
+			);
+		});
+
+		it("a variant carries number (variantIndex + 1), model, preset after selected — each omitted when null", () => {
+			const rendered = renderTimelineEvent({
+				rowType: "event",
+				kind: "variants_attached",
+				payload: {
+					position: 3,
+					variants: [
+						// A pre-SC-23a row: nothing but the original two fields.
+						{ text: "The frozen first take.", selected: true, number: null, model: null, preset: null },
+						// Full provenance (number 2 = variantIndex 1 + 1).
+						{ text: "The second take.", selected: false, number: 2, model: "flash-latest", preset: "Agentic Narrator" },
+						// Number only — a variant row with neither model nor preset.
+						{ text: "The third take.", selected: false, number: 3, model: null, preset: null },
+					],
+				},
+			});
+			expect(rendered).toBe(
+				[
+					'<rp_variants position="3">',
+					'<variant selected="true">The frozen first take.</variant>',
+					'<variant selected="false" number="2" model="flash-latest" preset="Agentic Narrator">The second take.</variant>',
+					'<variant selected="false" number="3">The third take.</variant>',
+					"</rp_variants>",
+				].join("\n"),
+			);
 		});
 	});
 });
