@@ -1358,3 +1358,168 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     expect(captions[0]!.nextElementSibling!.textContent).toContain("Step one");
   });
 });
+
+// ─── AP-11: turn action rows (copy / regenerate / delete) ─────────────────
+// The list merges the pane-wired turn callbacks with its own boundaries
+// (last turn, digest cover, streaming) and hands each bubble its row via
+// `buildAgentTurnRow` — this pins the per-role matrix at the integration
+// seam. WAS (characterized pre-change): no turn rows existed — user bubbles
+// never carried actions, assistant bubbles only the host's row. NOW: turn
+// rows render per the matrix below (a planned behavior change).
+
+function turnRowCallbacks() {
+  return {
+    onCopy: mock((_text: string) => {}),
+    onRegenerate: mock(() => {}),
+    onRequestDelete: mock((_messageId: string, _includeUserMessage: boolean) => {}),
+  };
+}
+
+function twoTurnThread() {
+  return [
+    message({ id: "u1", role: "user", content: "first question" }),
+    message({ id: "a1", role: "assistant", content: "first answer" }),
+    message({ id: "u2", role: "user", content: "second question" }),
+    message({ id: "a2", role: "assistant", content: "second answer" }),
+  ];
+}
+
+describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
+  it("without turn callbacks the list renders no rows (exactly as before)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("last-turn assistant row: copy + regenerate + delete; delete takes the answer only", () => {
+    const turnRow = turnRowCallbacks();
+    const { getByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    // Regenerate exists exactly once — the last turn's assistant row.
+    expect(getByTestId("copilot-turn-regenerate")).toBeDefined();
+    expect(getAllByTestId("copilot-turn-copy")).toHaveLength(2);
+    // Document order: u1, a1, u2, a2 — the LAST delete is a2's.
+    const deletes = getAllByTestId("copilot-turn-delete");
+    expect(deletes).toHaveLength(4);
+    fireEvent.click(deletes[3]!);
+    expect(turnRow.onRequestDelete.mock.calls[0]).toEqual(["a2", false]);
+  });
+
+  it("earlier-turn assistant row: copy + delete, NO regenerate", () => {
+    const turnRow = turnRowCallbacks();
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    expect(getAllByTestId("copilot-turn-regenerate")).toHaveLength(1);
+    // a1's delete is the second in document order (u1, a1, u2, a2).
+    fireEvent.click(getAllByTestId("copilot-turn-delete")[1]!);
+    expect(turnRow.onRequestDelete.mock.calls[0]).toEqual(["a1", false]);
+  });
+
+  it("user rows request delete WITH the answer", () => {
+    const turnRow = turnRowCallbacks();
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    fireEvent.click(getAllByTestId("copilot-turn-delete")[0]!);
+    expect(turnRow.onRequestDelete.mock.calls[0]).toEqual(["u1", true]);
+    fireEvent.click(getAllByTestId("copilot-turn-delete")[2]!);
+    expect(turnRow.onRequestDelete.mock.calls[1]).toEqual(["u2", true]);
+  });
+
+  it("copy forwards the message text", () => {
+    const turnRow = turnRowCallbacks();
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    fireEvent.click(getAllByTestId("copilot-turn-copy")[1]!);
+    expect(turnRow.onCopy.mock.calls[0]).toEqual(["second answer"]);
+  });
+
+  it("streaming hides every row, either role", () => {
+    const turnRow = turnRowCallbacks();
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText="streaming…"
+        pendingReasoning=""
+        pendingUserContent=""
+        isSending
+        turnRow={turnRow}
+      />,
+    );
+
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("digest-covered rows: delete hidden, copy kept (the floor is server-side; the UI hides proactively)", () => {
+    const turnRow = turnRowCallbacks();
+    const { getAllByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+          message({ id: "u2", role: "user", content: "new question" }),
+          message({ id: "a2", role: "assistant", content: "new answer" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    // Deletes: u2 + a2 only (u1/a1 sit at/before the digest anchor).
+    const deletes = getAllByTestId("copilot-turn-delete");
+    expect(deletes).toHaveLength(2);
+    fireEvent.click(deletes[0]!);
+    expect(turnRow.onRequestDelete.mock.calls[0]).toEqual(["u2", true]);
+    // Copy survives on the covered assistant row.
+    expect(getAllByTestId("copilot-turn-copy")).toHaveLength(2);
+    expect(queryByTestId("copilot-turn-regenerate")).not.toBeNull();
+  });
+});

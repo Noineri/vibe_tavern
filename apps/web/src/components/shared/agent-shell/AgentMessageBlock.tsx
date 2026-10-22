@@ -38,6 +38,13 @@ export interface AgentMessageBlockProps {
    *  this only for persisted messages — pending/streaming messages render no
    *  row (the RP row hides its actions while generating). */
   messageActions?: AgentMessageAction[];
+  /** AP-11: the turn's actions (copy / regenerate / delete) — EITHER role.
+   *  On assistant bubbles they merge with the host actions in the SAME row
+   *  (host first); on user bubbles they render alone under the bubble. The
+   *  list derives them per message (last turn, digest cover, streaming) —
+   *  absent/empty = exactly as before (SC-16's assistant-only rule covered
+   *  HOST actions; turn actions are new). */
+  turnActions?: AgentMessageAction[];
 }
 
 export const AgentMessageBlock = memo(function AgentMessageBlock({
@@ -45,6 +52,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   messageMarkup,
   coveredCount = null,
   messageActions,
+  turnActions,
 }: AgentMessageBlockProps) {
   if (message.role === "digest") {
     return <DigestCard message={message} coveredCount={coveredCount} />;
@@ -57,8 +65,14 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // nothing here (a zero-height bubble would be visually orphaned).
   if (message.content.trim().length === 0) return null;
 
-  // SC-16: assistant messages only — user messages never carry actions.
-  const actions = !isUser && messageActions !== undefined && messageActions.length > 0 ? messageActions : undefined;
+  // SC-16: host actions stay assistant-only — user messages never carry them.
+  // AP-11: turn actions ride either role; on assistant bubbles they merge
+  // with the host actions in the SAME row (host first).
+  const hostRow = !isUser && messageActions !== undefined && messageActions.length > 0 ? messageActions : undefined;
+  const turnRow = turnActions !== undefined && turnActions.length > 0 ? turnActions : undefined;
+  const actions = hostRow !== undefined || turnRow !== undefined
+    ? [...(hostRow ?? []), ...(turnRow ?? [])]
+    : undefined;
 
   // AP-4: the shared message body — the inner text container keeps `min-w-0`,
   // the `overflow-wrap:anywhere` / `[&_.md-pre]:[overflow-wrap:normal]` pair,
@@ -77,8 +91,11 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   );
 
   // AP-4 (mockup §1): user messages keep the right-aligned `bg-user-bg`
-  // bubble, no avatar, `max-w-[85%]`.
-  if (isUser) {
+  // bubble, no avatar, `max-w-[85%]`. AP-11: with turn actions the row
+  // becomes a right-aligned column (bubble above, action row below — the
+  // parent's `items-end` is the alignment, mirroring mockup §1); without
+  // them the shape below is byte-identical to the bubble-only row.
+  if (isUser && turnRow === undefined) {
     return (
       <div className="flex flex-row-reverse" data-role={message.role}>
         <div
@@ -93,6 +110,22 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
         >
           {body}
         </div>
+      </div>
+    );
+  }
+
+  // AP-11: the user bubble WITH turn actions — the right-aligned column.
+  if (isUser) {
+    return (
+      <div className="flex min-w-0 flex-col items-end group" data-role={message.role}>
+        <div
+          className={cn(
+            "max-w-[85%] min-w-0 rounded-lg bg-user-bg px-3.5 py-2.5",
+          )}
+        >
+          {body}
+        </div>
+        <MessageActionRow actions={turnRow ?? []} text={message.content} />
       </div>
     );
   }
@@ -120,7 +153,8 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
 });
 
 /**
- * SC-16: the host's message-action row under one assistant bubble.
+ * SC-16: the message-action row under one bubble (AP-11: assistant bubbles
+ * merge host + turn actions, user bubbles carry turn actions alone).
  * Correspondence map against the RP row (`MessageShell.tsx`):
  * - desktop row: `DesktopMessageActions`' container
  *   (`relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity

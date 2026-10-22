@@ -278,6 +278,94 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
   });
 });
 
+// ─── AP-11: turn actions (copy / regenerate / delete) ─────────────────────
+// WAS (characterized pre-change, basis: SC-16 + the AP-11 contract): user
+// bubbles NEVER carried an action row (`messageActions` were assistant-only
+// and the user branch ignored them); the assistant row held host actions
+// only. NOW: a second, role-agnostic `turnActions` prop carries the turn
+// actions — user bubbles render them under the bubble (right-aligned),
+// assistant bubbles merge them with the host actions in the SAME row
+// (host first). Absent/empty = byte-identical to before.
+
+describe("ExperienceCopilotMessageBlock — turn actions (AP-11)", () => {
+  it("renders the turn row under a user bubble (right-aligned column, .group for hover reveal)", () => {
+    const { container, getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        turnActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(getByText("What should I say?")).toBeDefined();
+    const row = container.querySelector("[data-role='user']");
+    expect(row).not.toBeNull();
+    // WAS flex-row-reverse (bubble-only) → NOW the column stacks the bubble
+    // above the row; items-end keeps both right-aligned (mockup §1).
+    expect(row!.className).toContain("flex-col");
+    expect(row!.className).toContain("items-end");
+    expect(row!.className).toContain("group");
+    // The bubble stays the first child (bg-user-bg, max-w-[85%]).
+    expect(row!.firstElementChild!.className).toContain("bg-user-bg");
+    expect(getByTestId("copilot-message-actions")).toBeDefined();
+    expect(row!.contains(getByTestId("copilot-message-actions"))).toBe(true);
+  });
+
+  it("merges host and turn actions in ONE assistant row (host first)", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        messageActions={[fixtureAction(() => {})]}
+        turnActions={[{ ...fixtureAction(() => {}), testId: "turn-action" }]}
+      />,
+    );
+
+    const rows = container.querySelectorAll('[data-testid="copilot-message-actions"]');
+    expect(rows.length).toBe(1);
+    const rowHtml = rows[0]!.innerHTML;
+    expect(getByTestId("fixture-action")).toBeDefined();
+    expect(getByTestId("turn-action")).toBeDefined();
+    // Host actions (the sidechat copy-to-composer family) lead; turn actions follow.
+    expect(rowHtml.indexOf("fixture-action")).toBeLessThan(rowHtml.indexOf("turn-action"));
+  });
+
+  it("user bubbles ignore host actions but render turn actions", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+        turnActions={[{ ...fixtureAction(() => {}), testId: "turn-action" }]}
+      />,
+    );
+
+    expect(queryByTestId("fixture-action")).toBeNull();
+    expect(getByTestId("turn-action")).toBeDefined();
+  });
+
+  it("absent/empty turn actions render byte-identically (no row, old user shape)", () => {
+    const bare = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+      />,
+    );
+    const empty = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        turnActions={[]}
+      />,
+    );
+
+    expect(bare.queryByTestId("copilot-message-actions")).toBeNull();
+    expect(empty.container.innerHTML).toBe(bare.container.innerHTML);
+    // The bubble-only shape keeps the old row-reverse row (no column wrapper).
+    expect(bare.container.querySelector("[data-role='user']")!.className).toContain("flex-row-reverse");
+  });
+});
+
 // ─── AP-4: flat assistant feed ────────────────────────────────────────────
 // WAS (characterized pre-restyling, basis: mockup §1 + unit contract): a
 // two-column avatar+bubble row — avatar div (h-7 w-7 rounded-full bg-s3) +

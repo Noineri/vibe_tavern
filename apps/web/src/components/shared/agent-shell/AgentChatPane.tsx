@@ -1,6 +1,7 @@
-import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "sonner";
+import { copyText } from "../../../lib/clipboard.js";
 import type {
   AgentThreadEventWire,
   ExperienceCopilotMessageWire,
@@ -21,6 +22,8 @@ import { AgentContextMeter } from "./AgentContextMeter.js";
 import { AgentTodoSection } from "./AgentTodoSection.js";
 import { AgentPlanSection } from "./AgentPlanSection.js";
 import { AgentMessageList } from "./AgentMessageList.js";
+import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
+import type { AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { AgentInputArea } from "./AgentInputArea.js";
 import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -142,6 +145,26 @@ export function AgentChatPane({
     [threadId, kind, liveAskFeed, liveAskActivities, messages, ctrl.pendingAskAnswer, ctrl.isSending],
   );
 
+  // AP-11: the turn-row callbacks the list merges per bubble — copy through
+  // the shared clipboard helper (success toasts, the TrackerConfig icon-copy
+  // precedent), regenerate + the staged delete straight from the controller.
+  // The hook's action fns are stable across renders (useCallback), so the
+  // row object only rebuilds when the thread's controller state does.
+  const handleCopyTurn = useCallback((text: string): void => {
+    void copyText(text).then((result) => {
+      if (result.ok) toast.success(t("copied"));
+    });
+  }, [t]);
+  const turnRow: AgentTurnRowCallbacks = useMemo(() => ({
+    onCopy: handleCopyTurn,
+    onRegenerate: () => {
+      void ctrl.handleRegenerate();
+    },
+    onRequestDelete: (messageId: string, includeUserMessage: boolean) => {
+      ctrl.requestDeleteTurn(messageId, includeUserMessage);
+    },
+  }), [handleCopyTurn, ctrl.handleRegenerate, ctrl.requestDeleteTurn]);
+
   // AP-5: while the thread's live awaiting ask exists, a composer send
   // ANSWERS it (routes to `ctrl.handleAnswer` with the draft as the answer
   // text) instead of starting a new message. ONE routing derivation shared by
@@ -252,6 +275,7 @@ export function AgentChatPane({
             onAnswer={(askToolCallId, answer) => {
               sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
             }}
+            turnRow={turnRow}
           />
           {isMobile ? (
             <AgentMobileInputArea
@@ -284,6 +308,20 @@ export function AgentChatPane({
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
               topSlot={composerTopSlot}
+            />
+          )}
+          {/* AP-11: the staged turn delete confirms here (mockup §3) — the
+              hook owns WHICH delete awaits confirmation (`pendingDelete`);
+              this modal tree is the shell's (the AgentShell modals fragment
+              owns profile/settings; the pane owns the controller, so the
+              controller-driven confirm lives here, beside its list). */}
+          {ctrl.pendingDelete !== null && (
+            <DestructiveConfirmModal
+              title={t("copilot_turn_delete_title")}
+              body={t(ctrl.pendingDelete.includeUserMessage ? "copilot_turn_delete_body" : "copilot_turn_delete_assistant_body")}
+              confirmLabel={t("delete")}
+              onConfirm={() => void ctrl.confirmDeleteTurn()}
+              onCancel={ctrl.cancelDeleteTurn}
             />
           )}
         </>

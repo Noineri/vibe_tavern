@@ -13,6 +13,7 @@ import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
+import { buildAgentTurnRow, type AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
@@ -131,6 +132,12 @@ export interface AgentMessageListProps {
    *  no separators — hosts without `transport.listEvents` render exactly as
    *  today. */
   events?: AgentThreadEventWire[];
+  /** AP-11: the pane-wired turn callbacks (copy / regenerate / staged
+   *  delete). Absent = no turn rows (the block renders exactly as before —
+   *  the SC-16 host row is untouched). Present = each persisted bubble
+   *  derives its row from `buildAgentTurnRow` (role / last-turn /
+   *  streaming / digest-cover). */
+  turnRow?: AgentTurnRowCallbacks;
 }
 
 export function AgentMessageList({
@@ -144,6 +151,7 @@ export function AgentMessageList({
   onAnswer,
   pendingAskAnswer = null,
   pendingPermissionAnswer = null,
+  turnRow,
   emptyTitle,
   emptySub,
   events = EMPTY_EVENTS,
@@ -425,6 +433,20 @@ export function AgentMessageList({
   // of this flow ordering — they render inline via `anchorItems`/`trailingItems`
   // (TF-5).
   const visibleMessages = orderMessagesWithDigests(messages);
+  // AP-11: the visible-flow boundaries the turn rows derive from — the last
+  // user row's slot (regenerate = past it; -1 when the thread has no user
+  // row, i.e. the whole feed is one turn) and the last digest card's slot
+  // (delete hides at/before it; null = no digest). Indexes run over
+  // `visibleMessages` (digest-ordered), the same order the rows render in.
+  const { lastUserVisibleIndex, lastDigestVisibleIndex } = useMemo(() => {
+    let userIdx = -1;
+    let digestIdx: number | null = null;
+    visibleMessages.forEach((entry, index) => {
+      if (entry.message.role === "user") userIdx = index;
+      else if (entry.message.role === "digest") digestIdx = index;
+    });
+    return { lastUserVisibleIndex: userIdx, lastDigestVisibleIndex: digestIdx };
+  }, [visibleMessages]);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
 
@@ -540,30 +562,49 @@ export function AgentMessageList({
     <div data-testid="copilot-message-list" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="flex flex-col gap-3">
-          {visibleMessages.map((entry) => (
-            <Fragment key={entry.message.id}>
-              {renderEventSeparators(eventAnchors.get(entry.message.id))}
-              {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
-              {captionMessageIds.has(entry.message.id) && hostTitle !== null ? (
-                <div className="flex min-w-0 flex-col">
-                  <AgentHostCaption title={hostTitle} />
+          {visibleMessages.map((entry, visibleIndex) => {
+            // AP-11: one bubble's row — the turn callbacks merged with the
+            // list's own boundaries (last turn, digest cover, streaming).
+            // Without callbacks the block gets exactly what it got before
+            // (the SC-16 host row, byte-identical).
+            const row = turnRow !== undefined
+              ? buildAgentTurnRow({
+                message: entry.message,
+                visibleIndex,
+                lastUserVisibleIndex,
+                lastDigestVisibleIndex,
+                isSending,
+                hostActions: messageActions,
+                callbacks: turnRow,
+              })
+              : { hostActions: messageActions, turnActions: undefined };
+            return (
+              <Fragment key={entry.message.id}>
+                {renderEventSeparators(eventAnchors.get(entry.message.id))}
+                {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
+                {captionMessageIds.has(entry.message.id) && hostTitle !== null ? (
+                  <div className="flex min-w-0 flex-col">
+                    <AgentHostCaption title={hostTitle} />
+                    <AgentMessageBlock
+                      message={entry.message}
+                      messageMarkup={messageMarkup}
+                      coveredCount={entry.coveredCount}
+                      messageActions={row.hostActions}
+                      turnActions={row.turnActions}
+                    />
+                  </div>
+                ) : (
                   <AgentMessageBlock
                     message={entry.message}
                     messageMarkup={messageMarkup}
                     coveredCount={entry.coveredCount}
-                    messageActions={messageActions}
+                    messageActions={row.hostActions}
+                    turnActions={row.turnActions}
                   />
-                </div>
-              ) : (
-                <AgentMessageBlock
-                  message={entry.message}
-                  messageMarkup={messageMarkup}
-                  coveredCount={entry.coveredCount}
-                  messageActions={messageActions}
-                />
-              )}
-            </Fragment>
-          ))}
+                )}
+              </Fragment>
+            );
+          })}
 
           {renderAnchorItems(trailingItems)}
 

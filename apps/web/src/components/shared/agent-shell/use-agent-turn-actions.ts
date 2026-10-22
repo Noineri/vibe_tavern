@@ -1,9 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getT, type TFunc } from "../../../i18n/locale-helpers.js";
+import { Icons } from "../icons.js";
 import type {
   AgentHostTransport,
   AgentKind,
+  AgentMessageAction,
   AgentSendOptions,
   CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
@@ -134,6 +136,109 @@ export interface UseAgentTurnActionsArgs {
   turnState: AgentTurnStateControls;
 }
 
+/** AP-11: a turn delete staged for confirmation — set by the row's delete
+ *  action, cleared by confirm/cancel (or a thread switch). The pane renders
+ *  the `DestructiveConfirmModal` from this (the modal tree lives there); the
+ *  hook owns WHICH delete awaits confirmation. `includeUserMessage` picks
+ *  the modal body: the §3 user-turn text (message + answer go) vs the
+ *  assistant-turn text (the reply and its turn actions go). */
+export interface AgentPendingDelete {
+  messageId: string;
+  includeUserMessage: boolean;
+}
+
+/** AP-11: the pane-wired row callbacks — the list merges these with its own
+ *  boundaries (last turn, digest cover, streaming) per message. */
+export interface AgentTurnRowCallbacks {
+  onCopy: (text: string) => void;
+  onRegenerate: () => void;
+  onRequestDelete: (messageId: string, includeUserMessage: boolean) => void;
+}
+
+/** AP-11: the inputs `buildAgentTurnRow` derives one message's row from.
+ *  Indexes run over the list's VISIBLE (digest-ordered) flow: `visibleIndex`
+ *  is the message's own slot, `lastUserVisibleIndex` the last user row's
+ *  slot (-1 when the thread has no user row — the whole feed is one turn),
+ *  `lastDigestVisibleIndex` the last digest card's slot (null = no digest). */
+export interface AgentTurnRowInput {
+  message: ExperienceCopilotMessageWire;
+  visibleIndex: number;
+  lastUserVisibleIndex: number;
+  lastDigestVisibleIndex: number | null;
+  isSending: boolean;
+  hostActions?: AgentMessageAction[];
+  callbacks: AgentTurnRowCallbacks;
+}
+
+export interface AgentTurnRowResult {
+  hostActions?: AgentMessageAction[];
+  turnActions?: AgentMessageAction[];
+}
+
+/**
+ * AP-11: one message's action row — the eligibility matrix, pure (no React).
+ * Assistant rows: copy always; regenerate only when the row belongs to the
+ * LAST turn (past the last user row — the action addresses the thread's last
+ * row server-side, so earlier turns get no button); delete unless covered.
+ * User rows: delete WITH the answer (`includeUserMessage: true`) unless
+ * covered — user rows carry a row for the FIRST time here (SC-16's
+ * assistant-only rule covered HOST actions; turn actions are new).
+ * Digest-covered rows (at/before the digest anchor — the 409 floor is
+ * server-side, the UI hides proactively): delete hidden, copy kept. While
+ * streaming no rows render at all, either role (host rows ride the same
+ * gate — the RP row hides its actions while generating). Host actions pass
+ * through on assistant rows only (SC-16, unchanged); regenerate/delete need
+ * no text, so their `onSelect` adapts within the shape (the closure carries
+ * the ids — the text arg is ignored).
+ */
+export function buildAgentTurnRow(input: AgentTurnRowInput): AgentTurnRowResult {
+  const { message, visibleIndex, lastUserVisibleIndex, lastDigestVisibleIndex, isSending, hostActions, callbacks } = input;
+  if (isSending) return {};
+  const covered = lastDigestVisibleIndex !== null && visibleIndex <= lastDigestVisibleIndex;
+  if (message.role === "user") {
+    if (covered) return {};
+    return {
+      turnActions: [
+        {
+          labelKey: "delete",
+          icon: Icons.Del,
+          onSelect: () => callbacks.onRequestDelete(message.id, true),
+          testId: "copilot-turn-delete",
+        },
+      ],
+    };
+  }
+  if (message.role !== "assistant") return {};
+  const turnActions: AgentMessageAction[] = [
+    {
+      labelKey: "copy",
+      icon: Icons.Copy,
+      onSelect: (text) => callbacks.onCopy(text),
+      testId: "copilot-turn-copy",
+    },
+  ];
+  if (visibleIndex > lastUserVisibleIndex) {
+    turnActions.push({
+      labelKey: "regen",
+      icon: Icons.Regen,
+      onSelect: () => callbacks.onRegenerate(),
+      testId: "copilot-turn-regenerate",
+    });
+  }
+  if (!covered) {
+    turnActions.push({
+      labelKey: "delete",
+      icon: Icons.Del,
+      onSelect: () => callbacks.onRequestDelete(message.id, false),
+      testId: "copilot-turn-delete",
+    });
+  }
+  return {
+    ...(hostActions !== undefined && hostActions.length > 0 ? { hostActions } : {}),
+    turnActions,
+  };
+}
+
 /** The AP-10 turn actions — re-exposed on the controller's contract. */
 export interface AgentTurnActions {
   /** Rerun the last turn with NO new user row — streams with
@@ -152,6 +257,16 @@ export interface AgentTurnActions {
    *  fresh turn. A failed delete never sends. One settle for the whole
    *  edit: the delete phase does not settle, the send below refetches once. */
   handleEditLast: (content: string) => Promise<void>;
+  /** AP-11: the delete staged for confirmation (null = no modal). */
+  pendingDelete: AgentPendingDelete | null;
+  /** AP-11: stage a row's delete for confirmation (silent guard: no thread
+   *  or already sending — the row never renders then, so this is unreachable). */
+  requestDeleteTurn: (messageId: string, includeUserMessage: boolean) => void;
+  /** AP-11: run the staged delete through `handleDeleteTurn` (settle +
+   *  refetch) and clear the stage. A no-op without a staged delete. */
+  confirmDeleteTurn: () => Promise<void>;
+  /** AP-11: drop the staged delete without touching the API. */
+  cancelDeleteTurn: () => void;
 }
 
 export function useAgentTurnActions(
@@ -317,5 +432,38 @@ export function useAgentTurnActions(
     [threadId, threadMessages, deleteTurnRun, sendTurn, onTurnSettled, isSendingRef],
   );
 
-  return { handleRegenerate, handleDeleteTurn, handleEditLast };
+  // AP-11: the delete-confirm stage — the row's delete action only STAGES
+  // (the modal renders from the pane); confirm runs it through the shared
+  // delete core above (settle + refetch), cancel drops it untouched. A
+  // thread switch drops a staged delete (never confirm against the wrong
+  // thread — the controller resets its ask/permission overrides the same way).
+  const [pendingDelete, setPendingDelete] = useState<AgentPendingDelete | null>(null);
+
+  useEffect(() => {
+    setPendingDelete(null);
+  }, [threadId]);
+
+  const requestDeleteTurn = useCallback(
+    (messageId: string, includeUserMessage: boolean): void => {
+      if (!threadId || isSendingRef.current) return;
+      setPendingDelete({ messageId, includeUserMessage });
+    },
+    [threadId, isSendingRef],
+  );
+
+  const cancelDeleteTurn = useCallback((): void => {
+    setPendingDelete(null);
+  }, []);
+
+  const confirmDeleteTurn = useCallback(
+    async (): Promise<void> => {
+      if (pendingDelete === null) return;
+      const { messageId, includeUserMessage } = pendingDelete;
+      setPendingDelete(null);
+      await handleDeleteTurn(messageId, includeUserMessage);
+    },
+    [pendingDelete, handleDeleteTurn],
+  );
+
+  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn };
 }

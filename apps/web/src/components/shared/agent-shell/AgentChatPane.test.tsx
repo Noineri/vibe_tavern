@@ -109,6 +109,34 @@ mock.module("../DropdownSelect.js", () => ({
   DropdownSelect: FakeDropdownSelect,
 }));
 
+// AP-11: the real DestructiveConfirmModal mounts a Radix Modal (overlay +
+// portal + focus trap) that happy-dom cannot lay out — render its contract
+// (title / body / confirm / cancel) inline instead. The `...real` spread
+// keeps every other export intact; no existing test in this file opens the
+// modal, so the stub is inert for them (same trio pattern as above).
+const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
+mock.module("../destructive-confirm-modal.js", () => ({
+  ...realDestructiveConfirmModal,
+  DestructiveConfirmModal: ({ title, body, confirmLabel, onConfirm, onCancel }: {
+    title: ReactNode;
+    body: ReactNode;
+    confirmLabel?: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+  }) => (
+    <div data-testid="turn-delete-confirm">
+      <div data-testid="turn-delete-title">{title}</div>
+      <div data-testid="turn-delete-body">{body}</div>
+      <button type="button" data-testid="turn-delete-confirm-btn" onClick={onConfirm}>
+        {confirmLabel}
+      </button>
+      <button type="button" data-testid="turn-delete-cancel-btn" onClick={onCancel}>
+        cancel
+      </button>
+    </div>
+  ),
+}));
+
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let AgentChatPane: typeof import("./AgentChatPane.js").AgentChatPane;
@@ -159,6 +187,11 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     handleRegenerate: mock(),
     handleDeleteTurn: mock(),
     handleEditLast: mock(),
+    // AP-11: the delete-confirm state the pane's modal reads (same rule).
+    pendingDelete: null,
+    requestDeleteTurn: mock(),
+    confirmDeleteTurn: mock(),
+    cancelDeleteTurn: mock(),
     handleCancel: () => {},
     ...over,
   };
@@ -404,5 +437,49 @@ describe("AgentChatPane — answeringAsk visual state (AP-6)", () => {
     expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
     const card = (getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-xl");
     expect(card?.className).toContain("border-accent");
+  });
+});
+
+// ─── AP-11: the staged delete renders the confirm (mockup §3 texts) ───────
+// The hook owns WHICH delete awaits confirmation (`pendingDelete`); the
+// pane renders the modal from it. The isolated i18n echoes keys, so the
+// modal texts assert as keys (matching every other label query in this file).
+
+describe("AgentChatPane — turn delete confirm (AP-11)", () => {
+  it("no staged delete renders no confirm", () => {
+    const { queryByTestId } = renderPane();
+
+    expect(queryByTestId("turn-delete-confirm")).toBeNull();
+  });
+
+  it("user-row delete confirms with the §3 texts; confirm runs it", () => {
+    const ctrl = makeCtrl({ pendingDelete: { messageId: "u1", includeUserMessage: true } });
+    const { getByTestId } = renderPane({ ctrl });
+
+    expect(getByTestId("turn-delete-title").textContent).toBe("copilot_turn_delete_title");
+    expect(getByTestId("turn-delete-body").textContent).toBe("copilot_turn_delete_body");
+    expect(getByTestId("turn-delete-confirm-btn").textContent).toBe("delete");
+    fireEvent.click(getByTestId("turn-delete-confirm-btn"));
+    expect(ctrl.confirmDeleteTurn).toHaveBeenCalledTimes(1);
+    expect(ctrl.cancelDeleteTurn).not.toHaveBeenCalled();
+  });
+
+  it("assistant-row delete uses the assistant body; cancel aborts", () => {
+    const ctrl = makeCtrl({ pendingDelete: { messageId: "a2", includeUserMessage: false } });
+    const { getByTestId } = renderPane({ ctrl });
+
+    expect(getByTestId("turn-delete-title").textContent).toBe("copilot_turn_delete_title");
+    expect(getByTestId("turn-delete-body").textContent).toBe("copilot_turn_delete_assistant_body");
+    fireEvent.click(getByTestId("turn-delete-cancel-btn"));
+    expect(ctrl.cancelDeleteTurn).toHaveBeenCalledTimes(1);
+    expect(ctrl.confirmDeleteTurn).not.toHaveBeenCalled();
+  });
+
+  it("the confirm renders on mobile too (responsive dual-mode — never a desktop-only gate)", () => {
+    const ctrl = makeCtrl({ pendingDelete: { messageId: "u1", includeUserMessage: true } });
+    const { getByTestId } = renderPane({ ctrl, isMobile: true });
+
+    expect(getByTestId("turn-delete-confirm")).toBeDefined();
+    expect(getByTestId("turn-delete-title").textContent).toBe("copilot_turn_delete_title");
   });
 });
