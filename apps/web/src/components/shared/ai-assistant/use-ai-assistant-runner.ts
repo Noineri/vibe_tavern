@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
 import { streamAiAssistant } from "../../../api/ai-assistant-api.js";
-import { updateUiSettings } from "../../../api/settings-api.js";
+import { patchUiSettingsAction } from "../../../stores/api-actions/bootstrap-actions.js";
 import type { AiAssistantRequestBody } from "../../../api/types.js";
 
 /** SUM-5: the secondary-model contexts that own a ui_settings persistence
@@ -111,14 +111,16 @@ export function useAiAssistantRunner({
   const persistModelSelection = useCallback(
     (pId: string, mName: string | null) => {
       if (!persistSelection) return;
+      // patchUiSettingsAction also refreshes the bootstrap store, so the next
+      // open re-seeds from what was saved, not from the page-load snapshot.
       if (persistContext === "message-editor") {
-        void updateUiSettings({
+        void patchUiSettingsAction({
           messageEditorProviderId: pId || null,
           messageEditorModelName: mName,
         }).catch(() => {});
         return;
       }
-      void updateUiSettings({
+      void patchUiSettingsAction({
         aiAssistantProviderId: pId || null,
         aiAssistantModelName: mName,
       }).catch(() => {});
