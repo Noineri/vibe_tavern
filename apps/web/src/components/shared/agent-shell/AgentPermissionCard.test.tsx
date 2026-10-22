@@ -2,8 +2,12 @@
  * CopilotPermissionCard (SC-23f) — fork #1 of AgentAskCard: the permission
  * gate's states (awaiting/allowed/denied/expired), the send-once decision
  * buttons (Allow PRIMARY, Deny ghost), and the en+ru i18n parity.
+ * SC-23g — the meta line's token count is pluralised (the
+ * sidechat_event_rp_sync shape: base + suffixed forms, `count` at the call
+ * site), pinned byte-exact in both locales and rendered through the real
+ * i18next for the RU cardinal rules.
  */
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentPermissionState } from "../../../stores/agent-turn-store.js";
@@ -20,8 +24,22 @@ mock.module("../../../components/shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render, fireEvent, act } = await import("@testing-library/react");
 const { AgentPermissionCard } = await import("./AgentPermissionCard.js");
+const { LocaleProvider } = await import("../../../i18n/context.js");
+const { i18next, initI18n } = await import("../../../i18n/i18n.js");
+
+// SC-23g: the plural cases below render through the real i18next (the
+// identity-echo default `t` cannot observe plural selection). Booting here
+// makes the bundled resources synchronously available from the first render
+// (`initAsync` is false); the RU switch happens inside those tests only.
+initI18n("en");
+
+afterAll(async () => {
+  // R13: the plural tests drive the process-global i18next language; restore
+  // the default so no sibling file in the shared worker observes RU.
+  await i18next.changeLanguage("en");
+});
 
 function permission(over: Partial<AgentPermissionState>): AgentPermissionState {
   return {
@@ -133,10 +151,56 @@ describe("CopilotPermissionCard (SC-23f)", () => {
     expect(enMap["copilot_permission_variant"]).toContain("{variant}");
     expect(ruMap["copilot_permission_variant"]).toContain("{variant}");
     expect(ruMap["copilot_permission_variant"]).toContain("вариант");
-    expect(enMap["copilot_permission_tokens"]).toContain("{tokens}");
-    expect(ruMap["copilot_permission_tokens"]).toContain("{tokens}");
-    expect(ruMap["copilot_permission_tokens"]).toContain("токенов");
+    // SC-23g: the token count is pluralised — base + suffixed forms in both
+    // locales (the sidechat_event_rp_sync shape; the call site passes
+    // `count` alongside the `{tokens}` placeholder).
+    expect(enMap["copilot_permission_tokens"]).toBe("≈{tokens} tokens");
+    expect(enMap["copilot_permission_tokens_one"]).toBe("≈{tokens} token");
+    expect(enMap["copilot_permission_tokens_other"]).toBe("≈{tokens} tokens");
+    expect(ruMap["copilot_permission_tokens"]).toBe("≈{tokens} токенов");
+    expect(ruMap["copilot_permission_tokens_one"]).toBe("≈{tokens} токен");
+    expect(ruMap["copilot_permission_tokens_few"]).toBe("≈{tokens} токена");
+    expect(ruMap["copilot_permission_tokens_many"]).toBe("≈{tokens} токенов");
+    expect(ruMap["copilot_permission_tokens_other"]).toBe("≈{tokens} токенов");
     expect(typeof enMap["copilot_permission_expired"]).toBe("string");
     expect(typeof ruMap["copilot_permission_expired"]).toBe("string");
+  });
+});
+
+describe("CopilotPermissionCard — token count pluralisation (SC-23g)", () => {
+  it("RU: the meta line follows the RU cardinal rules (1/21 → токен, 3/1234 → токена, 5 → токенов)", async () => {
+    await act(async () => {
+      await i18next.changeLanguage("ru");
+    });
+    // The factory's variantNumber is 2, so the full meta line is the RU
+    // variant label · the pluralised token estimate.
+    const cases: [number, string][] = [
+      [1, "вариант 2 · ≈1 токен"],
+      [3, "вариант 2 · ≈3 токена"],
+      [5, "вариант 2 · ≈5 токенов"],
+      [21, "вариант 2 · ≈21 токен"],
+      [1234, "вариант 2 · ≈1234 токена"],
+    ];
+    for (const [promptTokens, expected] of cases) {
+      const { getByTestId, unmount } = render(
+        <LocaleProvider>
+          <AgentPermissionCard permission={permission({ promptTokens })} interactive onDecision={() => {}} />
+        </LocaleProvider>,
+      );
+      expect(getByTestId("copilot-permission-meta").textContent).toBe(expected);
+      unmount();
+    }
+  });
+
+  it("EN: count 1 renders the singular token form", async () => {
+    await act(async () => {
+      await i18next.changeLanguage("en");
+    });
+    const { getByTestId } = render(
+      <LocaleProvider>
+        <AgentPermissionCard permission={permission({ promptTokens: 1 })} interactive onDecision={() => {}} />
+      </LocaleProvider>,
+    );
+    expect(getByTestId("copilot-permission-meta").textContent).toBe("variant 2 · ≈1 token");
   });
 });

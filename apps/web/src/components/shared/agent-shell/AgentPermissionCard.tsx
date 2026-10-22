@@ -104,7 +104,7 @@ export function AgentPermissionCard({ permission, interactive, onDecision }: Age
             data-testid="copilot-permission-meta"
             className="font-ui text-[11px] text-t4"
           >
-            {t("copilot_permission_variant", { variant: permission.variantNumber })} · {t("copilot_permission_tokens", { tokens: permission.promptTokens })}
+            {t("copilot_permission_variant", { variant: permission.variantNumber })} · {t("copilot_permission_tokens", { tokens: permission.promptTokens, count: permission.promptTokens })}
           </div>
           <div className="flex items-center gap-1.5">
             <button

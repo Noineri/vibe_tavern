@@ -601,6 +601,8 @@ export default interface Resources {
     "copilot_permission_expired": "Left unanswered",
     "copilot_permission_title": "The assistant wants to read a reply's prompt",
     "copilot_permission_tokens": "≈{tokens} tokens",
+    "copilot_permission_tokens_one": "≈{tokens} token",
+    "copilot_permission_tokens_other": "≈{tokens} tokens",
     "copilot_permission_variant": "variant {variant}",
     "copilot_profile_active": "Active",
     "copilot_profile_active_here": "Active here",
