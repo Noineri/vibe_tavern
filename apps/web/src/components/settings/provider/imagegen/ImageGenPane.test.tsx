@@ -2467,11 +2467,11 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");
     expect(range.getAttribute("step")).toBe("1");
-    // CF13 canon (IMAGEGEN_ADETAILER_CELLS_REPORT): the cell is a NumberInput —
-    // the unset state shows the effective base (31) as the VALUE, not a
-    // placeholder; the testid sits on the wrapper div.
-    const stepsInput = view.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
-    expect(stepsInput.value).toBe("31");
+    // Seam change: was the permanent number box -> now field text; the effective base remains the value, not a placeholder.
+    expect(sliderValue(view, "image-gen-range-adetailer-steps")).toBe("31");
+    expect(sliderShell(view, "image-gen-range-adetailer-steps").querySelector("[data-slider-field-label]")?.textContent).toBe("image_gen_adetailer_steps_label");
+    expect(view.getAllByText("image_gen_adetailer_steps_label")).toHaveLength(1);
+    expect(view.queryByTestId("image-gen-adetailer-steps")).toBeNull();
     await act(async () => {
       fireEvent.change(range, { target: { value: "17" } });
     });
@@ -2487,7 +2487,7 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
         />
       </TooltipProvider>,
     );
-    const cell = view.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
+    const cell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     expect(cell.value).toBe("17");
     // NumberInput commits on blur: typing alone writes nothing.
     const writesBefore = setModelOverlay.mock.calls.length;
@@ -2514,18 +2514,42 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     // (clear-to-undefined died with the TextInput cell — the same CF13
     // ruling that killed it for the sampler cells).
     const writesAfter = setModelOverlay.mock.calls.length;
+    const emptyCell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
-      fireEvent.change(cell, { target: { value: "" } });
-      fireEvent.blur(cell);
+      fireEvent.change(emptyCell, { target: { value: "" } });
+    });
+    await act(async () => {
+      fireEvent.blur(emptyCell);
     });
     expect(setModelOverlay.mock.calls.length).toBe(writesAfter);
-    expect(cell.value).toBe("19");
-    // The parseSteps integer gate survives the cell swap: 17.5 commits nothing.
+    expect(sliderValue(view, "image-gen-range-adetailer-steps")).toBe("19");
+    // Behavior change: was 17.5 rejected by parseSteps -> now rounded to 18 before parsing; basis: SL-10 A3.
+    const fractionalCell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
-      fireEvent.change(cell, { target: { value: "17.5" } });
-      fireEvent.blur(cell);
+      fireEvent.change(fractionalCell, { target: { value: "17.5" } });
     });
-    expect(setModelOverlay.mock.calls.length).toBe(writesAfter);
+    await act(async () => {
+      fireEvent.blur(fractionalCell);
+    });
+    expect(setModelOverlay.mock.calls.length).toBe(writesAfter + 1);
+    expect(setModelOverlay.mock.calls.at(-1)?.[0]).toEqual({ adetailerSteps: 18 });
+  });
+
+  it("SL-10: Enter rounds typed ADetailer steps before parsing and writes the overlay once", async () => {
+    extensionsValue = ["adetailer"];
+    const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+      modelOverlay: { adetailer: true, steps: 31 },
+      setModelOverlay,
+    })} />);
+    await openAdvanced(view);
+    const editor = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
+    await act(async () => { fireEvent.change(editor, { target: { value: "19.6" } }); });
+    expect(setModelOverlay).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.keyDown(editor, { key: "Enter" }); });
+    expect(setModelOverlay).toHaveBeenCalledTimes(1);
+    expect(setModelOverlay.mock.calls[0]?.[0]).toEqual({ adetailerSteps: 20 });
   });
 
   it("hidden when the server lacks the extension (a1111, bound)", async () => {
@@ -2578,9 +2602,11 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
       />,
     );
     await openAdvanced(enabled);
-    const stepsInput = enabled.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
+    const stepsInput = await openCell(enabled, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
       fireEvent.change(stepsInput, { target: { value: "19" } });
+    });
+    await act(async () => {
       fireEvent.blur(stepsInput);
     });
     const base = setForm.mock.calls.at(-1)?.[0] as { defaultParams?: { adetailerSteps?: number } };

@@ -11,7 +11,6 @@ import { formatListingSnapshotTime } from "../../../../lib/imagegen/listing-snap
 import { buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
-import { Slider } from "../../../shared/slider.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Toggle } from "../../../shared/Toggle.js";
@@ -1775,38 +1774,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         triggerTestId="image-gen-adetailer-model"
                       />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <div className="flex items-center gap-2">
-                        <Slider
-                          value={params.adetailerSteps ?? adetailerBaseSteps}
-                          min={adetailerControl.stepsRange.min}
-                          max={adetailerControl.stepsRange.max}
-                          step={adetailerControl.stepsRange.step}
-                          onValueChange={(next) => {
-                            const patch = adetailerControl.parseSteps(String(next));
-                            if (patch !== null) setParam(patch);
-                          }}
-                          aria-label={t(adetailerControl.stepsLabelKey)}
-                          inputTestId="image-gen-range-adetailer-steps"
-                          className="min-w-0 flex-1"
-                        />
-                        <div className="w-[60px] shrink-0" data-testid="image-gen-adetailer-steps">
-                          <NumberInput
-                            className="h-[30px] w-[60px]"
-                            min={adetailerControl.stepsRange.min}
-                            max={adetailerControl.stepsRange.max}
-                            step={adetailerControl.stepsRange.step}
-                            value={params.adetailerSteps ?? adetailerBaseSteps}
-                            onChange={(n) => {
-                              const patch = adetailerControl.parseSteps(String(n));
-                              if (patch !== null) setParam(patch);
-                            }}
-                            hideControls
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <SliderField
+                      label={t(adetailerControl.stepsLabelKey)}
+                      value={params.adetailerSteps ?? adetailerBaseSteps}
+                      min={adetailerControl.stepsRange.min}
+                      max={adetailerControl.stepsRange.max}
+                      step={adetailerControl.stepsRange.step}
+                      onChange={(next) => {
+                        const patch = adetailerControl.parseSteps(String(Math.round(next)));
+                        if (patch !== null) setParam(patch);
+                      }}
+                      rangeTestId="image-gen-range-adetailer-steps"
+                      numberTestId="image-gen-adetailer-steps"
+                    />
                     </>
                   )}
                 </div>
