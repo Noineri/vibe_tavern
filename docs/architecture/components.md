@@ -421,9 +421,12 @@ JSON-array paste inserts every element at once in both modes.
 | `value` / `onChange` | `number` / `(val: number) => void` | Controlled value |
 | `min` / `max` / `step` | `number?` | Bounds and increment |
 | `hideControls` | `boolean?` | Hide the +/- stepper buttons (plain input) |
-| `onBlur` | `() => void?` | Blur handler |
+| `onBlur` | `((event: FocusEvent<HTMLInputElement>) => void)?` | Fires after the blur commit; the event's `relatedTarget` shows where focus is going |
+| `autoFocus` | `boolean?` | Focuses the input and selects its text on mount (inline editors) |
+| `onEscape` | `(() => void)?` | Fires on Escape; the caller decides what cancelling means |
+| `inputTestId` | `string?` | Test id on the real `<input>`, not on the wrapper |
 | `disabled` | `boolean?` | Disables editing |
-| `className` / `inputClassName` | `string?` | Classes on wrapper / input |
+| `className` / `inputClassName` | `string?` | Classes on wrapper / input (a conflicting base utility needs the `!` modifier) |
 
 Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 
@@ -456,7 +459,12 @@ Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 
 Built on Base UI Slider with its hidden native range input and keyboard semantics.
 Range thumbs use Base UI's non-crossing collision behavior.
-`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb. `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging. On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll. Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing. Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
+`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb.
+`appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging.
+On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll.
+The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once (clamped to the bounds and snapped to the step, then `onValueChange` + `onValueCommitted`), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
+Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing.
+Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
 
 **When to use:** Parameters use `Slider appearance="field"` (or `SliderField`); media timeline, volume, and zoom use `Slider appearance="rail"`.
 

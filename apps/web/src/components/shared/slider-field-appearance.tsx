@@ -1,10 +1,12 @@
 import { Slider as BaseSlider } from "@base-ui/react/slider";
-import { useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { cn } from "../../lib/cn.js";
 import { inputCls, lblCls } from "../../lib/field-tokens.js";
+import { SliderFieldEditor } from "./slider-field-editor.js";
+import { clamp, decimals, grabRange, snap, valueAt } from "./slider-field-math.js";
 import type { SliderProps, SliderValue } from "./slider.js";
 
-type GestureMode = "single" | "edge" | "window";
+type GestureMode = "single" | "window";
 type Gesture = {
 	pointerId: number;
 	startX: number;
@@ -21,27 +23,6 @@ type PointerUpdate = {
 	values: number[];
 	changed: boolean;
 };
-
-function decimals(step: number) {
-	const text = String(step);
-	return Number.isFinite(step) && step > 0 && text.includes(".") ? text.split(".")[1]!.length : 0;
-}
-
-function clamp(value: number, min: number, max: number) {
-	return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
-}
-
-function snap(value: number, min: number, max: number, step: number) {
-	const bounded = clamp(value, min, max);
-	return Number.isFinite(step) && step > 0
-		? clamp(Math.round((bounded - min) / step) * step + min, min, max)
-		: bounded;
-}
-
-function valueAt(clientX: number, rect: DOMRect, min: number, max: number, step: number, fallback: number) {
-	if (!Number.isFinite(clientX) || !Number.isFinite(rect.width) || rect.width <= 0 || max <= min) return fallback;
-	return snap(min + ((clientX - rect.left) / rect.width) * (max - min), min, max, step);
-}
 
 function toSliderValue(value: number | readonly number[]): SliderValue {
 	return typeof value === "number" ? value : [value[0]!, value[1]!];
@@ -64,8 +45,8 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 	const labelRef = useRef<HTMLSpanElement>(null);
 	const valueRef = useRef<HTMLSpanElement>(null);
 	const gesture = useRef<Gesture | null>(null);
+	const thumbInputs = useRef<(HTMLInputElement | null)[]>([]);
 	const [editing, setEditing] = useState(false);
-	const [draft, setDraft] = useState("");
 	const [labelAbove, setLabelAbove] = useState(false);
 	const range = Array.isArray(value);
 	const values = range ? value : [value];
@@ -93,6 +74,14 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 		return () => observer.disconnect();
 	}, [help, label, valueText, labelAbove]);
 
+	useEffect(() => {
+		if (disabled) setEditing(false);
+	}, [disabled]);
+
+	function focusThumb(index: number) {
+		thumbInputs.current[index]?.focus({ preventScroll: true });
+	}
+
 	function emit(next: number[]) {
 		onValueChange((range ? [next[0]!, next[1]!] : next[0]!) as Value);
 	}
@@ -115,8 +104,8 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 		if (mode === "window" && range) {
 			const width = last - first;
 			const start = clamp(point - offset, min, max - width);
-			next[0] = start;
-			next[1] = start + width;
+			next[0] = snap(start, min, max, step);
+			next[1] = snap(start + width, min, max, step);
 		} else if (range) {
 			next[index] = index === 0 ? Math.min(point, next[1]!) : Math.max(point, next[0]!);
 		} else {
@@ -146,10 +135,9 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 		let mode: GestureMode = "single";
 		let index = 0;
 		if (range) {
-			const firstDistance = Math.abs(point - first);
-			const lastDistance = Math.abs(point - last);
-			if (point > first && point < last && firstDistance > step && lastDistance > step) mode = "window";
-			else index = firstDistance <= lastDistance ? 0 : 1;
+			const grab = grabRange(point, first, last, step);
+			if (grab.window) mode = "window";
+			index = grab.index;
 		}
 		gesture.current = {
 			pointerId: event.pointerId,
@@ -198,24 +186,23 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 			current.changed ||= update.changed;
 		}
 		if (current.direction !== "scroll" && current.changed) commit(current.latest);
+		// A mouse or pen press leaves keyboard focus on the field, as a native slider does.
+		if (current.direction !== "scroll" && event.pointerType !== "touch") focusThumb(current.index);
 		clearGesture(event);
 	}
 
 	function openEditor() {
 		if (disabled || range) return;
-		setDraft(first.toFixed(decimals(step)));
 		setEditing(true);
 	}
 
-	function finishEditor(save: boolean) {
-		if (!editing) return;
+	function finishEditor(next: number | null, restoreFocus: boolean) {
 		setEditing(false);
-		const parsed = Number(draft);
-		if (save && Number.isFinite(parsed)) {
-			const next = snap(parsed, min, max, step);
+		if (next !== null && !disabled) {
 			onValueChange(next as Value);
 			onValueCommitted?.(next as Value);
 		}
+		if (restoreFocus) focusThumb(0);
 	}
 
 	return (
@@ -238,7 +225,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 					className={cn(
 						labelAbove
 							? lblCls
-							: "pointer-events-none absolute left-[13px] top-0 z-[1] h-11 sm:h-[38px]",
+							: "pointer-events-none absolute left-[13px] top-0 z-[1] flex h-11 items-center sm:h-[38px]",
 					)}
 				>
 					<span
@@ -284,6 +271,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 								aria-label={range ? undefined : ariaLabel}
 								getAriaLabel={range ? getAriaLabel : undefined}
 								inputRef={(input) => {
+									thumbInputs.current[index] = input;
 									if (input && testId) input.dataset.testid = testId;
 								}}
 								onKeyDown={(event) => {
@@ -327,22 +315,13 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 						/>
 					))}
 					{editing ? (
-						<input
-							autoFocus
-							data-testid={numberTestId}
-							type="number"
+						<SliderFieldEditor
+							initial={first}
 							min={min}
 							max={max}
 							step={step}
-							value={draft}
-							onChange={(event) => setDraft(event.target.value)}
-							onKeyDown={(event) => {
-								if (event.key === "Enter") finishEditor(true);
-								if (event.key === "Escape") finishEditor(false);
-								event.stopPropagation();
-							}}
-							onBlur={() => finishEditor(true)}
-							className="absolute right-1 top-1 bottom-1 w-[76px] rounded-[5px] border border-accent bg-s1 px-2 text-right font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
+							testId={numberTestId}
+							onFinish={finishEditor}
 						/>
 					) : (
 						<span

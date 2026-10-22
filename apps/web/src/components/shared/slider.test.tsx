@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useState } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { inputCls } from "../../lib/field-tokens.js";
 
 useDomEnv();
 
@@ -104,8 +105,16 @@ function ControlledField({
 	);
 }
 
-function ControlledRangeField({ onValueChange = () => {} }: { onValueChange?: (value: [number, number]) => void }) {
-	const [value, setValue] = useState<[number, number]>([2, 6]);
+function ControlledRangeField({
+	initial = [2, 6],
+	onValueChange = () => {},
+	onValueCommitted,
+}: {
+	initial?: [number, number];
+	onValueChange?: (value: [number, number]) => void;
+	onValueCommitted?: (value: [number, number]) => void;
+}) {
+	const [value, setValue] = useState<[number, number]>(initial);
 	return (
 		<Slider
 			appearance="field"
@@ -119,6 +128,7 @@ function ControlledRangeField({ onValueChange = () => {} }: { onValueChange?: (v
 				setValue(next);
 				onValueChange(next);
 			}}
+			onValueCommitted={onValueCommitted}
 		/>
 	);
 }
@@ -320,7 +330,10 @@ describe("Slider", () => {
 		if (!field) throw new Error("Missing field slider");
 		expect(field.classList.contains("peer-has-[input:focus-visible]:border-accent")).toBe(true);
 		fireEvent.doubleClick(field);
-		expect(input(container, "temperature-number").type).toBe("number");
+		// Seam change: the inline editor is the shared NumberInput (text field with a decimal keypad), never a raw type="number" input.
+		const editor = input(container, "temperature-number");
+		expect(editor.type).toBe("text");
+		expect(editor.getAttribute("inputmode")).toBe("decimal");
 	});
 
 	it("sets a field value from the pointer and supports exact ten-step fractional Shift keyboard steps", () => {
@@ -591,5 +604,478 @@ describe("Slider", () => {
 		expect(onDegenerateCommit).not.toHaveBeenCalled();
 		const tuple = render(<Slider appearance="field" value={[1, 10]} min={1} max={10} step={1} getAriaLabel={(index) => String(index)} formatValue={(value) => `${value[0]} – ${value[1]} · 10 messages`} onValueChange={() => {}} />);
 		expect(tuple.container.querySelector("[data-slider-field-value]")?.textContent).toBe("1 – 10 · 10 messages");
+	});
+});
+
+function fieldOf(container: HTMLElement): HTMLElement {
+	const field = container.querySelector<HTMLElement>("[data-slider-field]");
+	if (!field) throw new Error("Missing field slider");
+	return field;
+}
+
+function withWidth(field: HTMLElement, width = 100) {
+	Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width }) });
+}
+
+function thumbInput(container: HTMLElement, index = 0): HTMLInputElement {
+	const element = container.querySelectorAll<HTMLInputElement>('input[type="range"]')[index];
+	if (!element) throw new Error(`Missing thumb input ${index}`);
+	return element;
+}
+
+function openEditor(container: HTMLElement): HTMLInputElement {
+	fireEvent.doubleClick(fieldOf(container));
+	return input(container, "field-number");
+}
+
+describe("Slider field inline editor", () => {
+	it("commits Enter exactly once with the clamped and step-snapped value", () => {
+		const cases: [string, number][] = [["9", 10], ["99", 10], ["-5", 0], ["3", 4]];
+		for (const [typed, expected] of cases) {
+			const onValueChange = mock();
+			const onValueCommitted = mock();
+			const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+			const editor = openEditor(container);
+			fireEvent.change(editor, { target: { value: typed } });
+			fireEvent.keyDown(editor, { key: "Enter" });
+			expect(onValueChange).toHaveBeenCalledTimes(1);
+			expect(onValueChange).toHaveBeenLastCalledWith(expected);
+			expect(onValueCommitted).toHaveBeenCalledTimes(1);
+			expect(onValueCommitted).toHaveBeenLastCalledWith(expected);
+			expect(container.querySelector('[data-testid="field-number"]')).toBeNull();
+		}
+	});
+
+	it("emits no float noise when a typed value is snapped to a fractional step", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={0.2}
+				min={0}
+				max={1}
+				step={0.05}
+				aria-label="Fraction"
+				numberTestId="fraction-number"
+				onValueChange={onValueChange}
+				onValueCommitted={onValueCommitted}
+			/>,
+		);
+		fireEvent.doubleClick(fieldOf(container));
+		const editor = input(container, "fraction-number");
+		fireEvent.change(editor, { target: { value: "0.72" } });
+		fireEvent.keyDown(editor, { key: "Enter" });
+		expect(onValueChange).toHaveBeenCalledTimes(1);
+		expect(onValueChange).toHaveBeenLastCalledWith(0.7);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(0.7);
+	});
+
+	it("emits no change and no commit when Escape cancels, and discards the draft", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const editor = openEditor(container);
+		fireEvent.change(editor, { target: { value: "8" } });
+		fireEvent.keyDown(editor, { key: "Escape" });
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(onValueCommitted).not.toHaveBeenCalled();
+		expect(container.querySelector('[data-testid="field-number"]')).toBeNull();
+		expect(container.querySelector("[data-slider-field-value]")?.textContent).toBe("4");
+	});
+
+	it("commits a blur without Enter exactly once", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const editor = openEditor(container);
+		fireEvent.change(editor, { target: { value: "7" } });
+		fireEvent.blur(editor);
+		expect(onValueChange).toHaveBeenCalledTimes(1);
+		expect(onValueChange).toHaveBeenLastCalledWith(8);
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(8);
+	});
+
+	it("cannot commit twice when Enter and a stale blur land before React re-renders", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const editor = openEditor(container);
+		fireEvent.change(editor, { target: { value: "9" } });
+		act(() => {
+			fireEvent.keyDown(editor, { key: "Enter" });
+			fireEvent.blur(editor);
+			fireEvent.blur(editor);
+		});
+		expect(onValueChange).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+	});
+
+	it("cannot commit after Escape even if the unmounting input still blurs", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const editor = openEditor(container);
+		fireEvent.change(editor, { target: { value: "9" } });
+		act(() => {
+			fireEvent.keyDown(editor, { key: "Escape" });
+			fireEvent.blur(editor);
+		});
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(onValueCommitted).not.toHaveBeenCalled();
+	});
+
+	it("returns keyboard focus to the field's thumb input after Enter, Escape and a blur commit", () => {
+		const finishers: ((editor: HTMLInputElement) => void)[] = [
+			(editor) => { fireEvent.keyDown(editor, { key: "Enter" }); },
+			(editor) => { fireEvent.keyDown(editor, { key: "Escape" }); },
+			(editor) => { fireEvent.blur(editor); },
+		];
+		for (const finish of finishers) {
+			const { container } = render(<ControlledField />);
+			const editor = openEditor(container);
+			expect(document.activeElement).toBe(editor);
+			finish(editor);
+			expect(container.querySelector('[data-testid="field-number"]')).toBeNull();
+			expect(document.activeElement).toBe(thumbInput(container));
+		}
+	});
+
+	it("keeps arrow-key stepping alive on the thumb right after the editor closes", () => {
+		const onValueChange = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} />);
+		const editor = openEditor(container);
+		fireEvent.keyDown(editor, { key: "Escape" });
+		fireEvent.keyDown(document.activeElement ?? container, { key: "ArrowRight" });
+		expect(onValueChange).toHaveBeenLastCalledWith(6);
+	});
+
+	it("does not pull focus back when the blur is moving focus to another control", () => {
+		const onValueCommitted = mock();
+		const { container } = render(
+			<div>
+				<ControlledField onValueCommitted={onValueCommitted} />
+				<input data-testid="elsewhere" />
+			</div>,
+		);
+		openEditor(container);
+		const editor = input(container, "field-number");
+		const elsewhere = input(container, "elsewhere");
+		fireEvent.blur(editor, { relatedTarget: elsewhere });
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(document.activeElement).not.toBe(thumbInput(container));
+		act(() => elsewhere.focus());
+		expect(document.activeElement).toBe(elsewhere);
+	});
+
+	it("keeps the editor unopenable while disabled, and closes it if the field becomes disabled", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const props = {
+			appearance: "field" as const,
+			value: 4,
+			min: 0,
+			max: 10,
+			step: 2,
+			label: "Temperature",
+			"aria-label": "Temperature",
+			numberTestId: "field-number",
+			onValueChange,
+			onValueCommitted,
+		};
+		const disabledRender = render(<Slider {...props} disabled />);
+		fireEvent.doubleClick(fieldOf(disabledRender.container));
+		fireEvent.keyDown(thumbInput(disabledRender.container), { key: "Enter" });
+		expect(disabledRender.container.querySelector('[data-testid="field-number"]')).toBeNull();
+
+		const live = render(<Slider {...props} />);
+		const editor = openEditor(live.container);
+		fireEvent.change(editor, { target: { value: "8" } });
+		live.rerender(<Slider {...props} disabled />);
+		expect(live.container.querySelector('[data-testid="field-number"]')).toBeNull();
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(onValueCommitted).not.toHaveBeenCalled();
+	});
+});
+
+describe("Slider field contract", () => {
+	it("is the canon field box with the accent border on keyboard focus", () => {
+		const { container } = render(<ControlledField />);
+		const field = fieldOf(container);
+		for (const token of inputCls.split(" ")) expect(field.classList.contains(token)).toBe(true);
+		for (const token of ["h-11", "sm:h-[38px]", "bg-s2", "border-border", "rounded-[6px]"]) {
+			expect(field.classList.contains(token)).toBe(true);
+		}
+		expect(field.classList.contains("peer-has-[input:focus-visible]:border-accent")).toBe(true);
+		expect(field.classList.contains("cursor-ew-resize")).toBe(true);
+		const control = container.querySelector("[data-slider-field-input-control]");
+		expect(control?.classList.contains("peer")).toBe(true);
+		expect(control?.nextElementSibling).toBe(field);
+	});
+
+	it("fills up to the value with an accent edge, and drops the edge at the minimum", () => {
+		const mid = render(<ControlledField initialValue={4} />);
+		const fill = mid.container.querySelector<HTMLElement>("[data-slider-field-fill]");
+		if (!fill) throw new Error("Missing fill");
+		expect(fill.style.width).toBe("40%");
+		expect(fill.classList.contains("bg-accent-hover")).toBe(true);
+		expect(fill.classList.contains("border-r-2")).toBe(true);
+		expect(fill.classList.contains("border-accent")).toBe(true);
+		const full = render(<ControlledField initialValue={10} />);
+		expect(full.container.querySelector<HTMLElement>("[data-slider-field-fill]")?.style.width).toBe("100%");
+		const zero = render(<ControlledField initialValue={0} />);
+		const zeroFill = zero.container.querySelector<HTMLElement>("[data-slider-field-fill]");
+		expect(zeroFill?.style.width).toBe("0%");
+		expect(zeroFill?.classList.contains("border-r-2")).toBe(false);
+	});
+
+	it("shows the value on the right as formatValue text or with the step's decimals", () => {
+		const decimal = render(<Slider appearance="field" value={0.3} min={0} max={1} step={0.05} aria-label="Decimal" onValueChange={() => {}} />);
+		const valueNode = decimal.container.querySelector<HTMLElement>("[data-slider-field-value]");
+		expect(valueNode?.textContent).toBe("0.30");
+		expect(valueNode?.classList.contains("right-[13px]")).toBe(true);
+		expect(valueNode?.classList.contains("tabular-nums")).toBe(true);
+		const integer = render(<Slider appearance="field" value={7} min={0} max={10} step={1} aria-label="Integer" onValueChange={() => {}} />);
+		expect(integer.container.querySelector("[data-slider-field-value]")?.textContent).toBe("7");
+		const formatted = render(
+			<Slider appearance="field" value={30} min={0} max={100} step={1} aria-label="Formatted" formatValue={(value) => `${value} %`} onValueChange={() => {}} />,
+		);
+		expect(formatted.container.querySelector("[data-slider-field-value]")?.textContent).toBe("30 %");
+		const pair = render(<ControlledRangeField />);
+		expect(pair.container.querySelector("[data-slider-field-value]")?.textContent).toBe("2 – 6");
+	});
+
+	it("places an unclipped label on the left, vertically centered, and keeps its help beside it", () => {
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={1}
+				label="A deliberately long parameter label"
+				help={<button type="button">?</button>}
+				aria-label="Label"
+				onValueChange={() => {}}
+			/>,
+		);
+		const placement = container.querySelector<HTMLElement>("[data-slider-field-label]");
+		const content = container.querySelector<HTMLElement>("[data-slider-field-label-content]");
+		if (!placement || !content) throw new Error("Missing field label");
+		for (const token of ["absolute", "left-[13px]", "flex", "items-center", "h-11", "sm:h-[38px]", "pointer-events-none"]) {
+			expect(placement.classList.contains(token)).toBe(true);
+		}
+		for (const token of ["truncate", "overflow-hidden", "text-ellipsis", "whitespace-nowrap"]) {
+			expect(content.classList.contains(token) || placement.classList.contains(token)).toBe(false);
+		}
+		expect(content.classList.contains("w-max")).toBe(true);
+		expect(content.querySelector("[data-slider-field-help]")?.classList.contains("pointer-events-auto")).toBe(true);
+		expect(content.textContent).toBe("A deliberately long parameter label?");
+	});
+
+	it("drags a single value after the press, commits once on release, and leaves focus on the thumb", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const field = fieldOf(container);
+		withWidth(field);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 20, button: 0 });
+		expect(onValueChange).toHaveBeenLastCalledWith(2);
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 130 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 130 });
+		expect(onValueChange.mock.calls.map((call) => call[0])).toEqual([2, 6, 10]);
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+		expect(document.activeElement).toBe(thumbInput(container));
+	});
+
+	it("snaps a pointer value to the step grid without float noise", () => {
+		const onValueChange = mock();
+		const { container } = render(
+			<Slider appearance="field" value={0.2} min={0} max={1} step={0.05} aria-label="Fraction" onValueChange={onValueChange} />,
+		);
+		const field = fieldOf(container);
+		withWidth(field);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 70, button: 0 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 70 });
+		expect(onValueChange).toHaveBeenLastCalledWith(0.7);
+	});
+
+	it("steps with the arrows, Home and End on the thumb, and commits each key", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const thumb = thumbInput(container);
+		fireEvent.keyDown(thumb, { key: "ArrowRight" });
+		expect(onValueChange).toHaveBeenLastCalledWith(6);
+		fireEvent.keyDown(thumb, { key: "ArrowLeft" });
+		expect(onValueChange).toHaveBeenLastCalledWith(4);
+		fireEvent.keyDown(thumb, { key: "ArrowRight", shiftKey: true });
+		expect(onValueChange).toHaveBeenLastCalledWith(10);
+		fireEvent.keyDown(thumb, { key: "Home" });
+		expect(onValueChange).toHaveBeenLastCalledWith(0);
+		fireEvent.keyDown(thumb, { key: "End" });
+		expect(onValueChange).toHaveBeenLastCalledWith(10);
+		expect(onValueCommitted).toHaveBeenCalledTimes(5);
+	});
+
+	it("opens the editor on Enter from the thumb and on double-click, but not for two values", () => {
+		const first = render(<ControlledField />);
+		fireEvent.keyDown(thumbInput(first.container), { key: "Enter" });
+		expect(first.container.querySelector('[data-testid="field-number"]')).not.toBeNull();
+		const second = render(<ControlledField />);
+		fireEvent.doubleClick(fieldOf(second.container));
+		expect(second.container.querySelector('[data-testid="field-number"]')).not.toBeNull();
+		const pair = render(<ControlledRangeField />);
+		fireEvent.doubleClick(fieldOf(pair.container));
+		fireEvent.keyDown(thumbInput(pair.container), { key: "Enter" });
+		expect(pair.container.querySelectorAll('input[type="text"]')).toHaveLength(0);
+	});
+
+	it("never lets the dragged edge cross the other one and commits the pair once", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledRangeField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const field = fieldOf(container);
+		withWidth(field);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 30, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 90 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 90 });
+		expect(onValueChange).toHaveBeenLastCalledWith([6, 6]);
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenLastCalledWith([6, 6]);
+		for (const call of onValueChange.mock.calls) expect(call[0][0]).toBeLessThanOrEqual(call[0][1]);
+	});
+
+	it("lets a collapsed pair open to either side from the pointer side", () => {
+		const onValueChange = mock();
+		const right = render(<ControlledRangeField initial={[5, 5]} onValueChange={onValueChange} />);
+		const rightField = fieldOf(right.container);
+		withWidth(rightField);
+		fireEvent.pointerDown(rightField, { pointerId: 1, pointerType: "mouse", clientX: 80, button: 0 });
+		fireEvent.pointerUp(rightField, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		expect(onValueChange).toHaveBeenLastCalledWith([5, 8]);
+		const left = render(<ControlledRangeField initial={[5, 5]} onValueChange={onValueChange} />);
+		const leftField = fieldOf(left.container);
+		withWidth(leftField);
+		fireEvent.pointerDown(leftField, { pointerId: 2, pointerType: "mouse", clientX: 20, button: 0 });
+		fireEvent.pointerUp(leftField, { pointerId: 2, pointerType: "mouse", clientX: 20 });
+		expect(onValueChange).toHaveBeenLastCalledWith([2, 5]);
+	});
+
+	it("keeps the window width at both bounds and commits the moved window once", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledRangeField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const field = fieldOf(container);
+		withWidth(field);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 100 });
+		expect(onValueChange).toHaveBeenLastCalledWith([6, 10]);
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: -50 });
+		expect(onValueChange).toHaveBeenLastCalledWith([0, 4]);
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: -50 });
+		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		expect(onValueCommitted).toHaveBeenLastCalledWith([0, 4]);
+		for (const call of onValueChange.mock.calls) expect(call[0][1] - call[0][0]).toBe(4);
+	});
+
+	it("draws the two-value window between two 3 px edge handles and none for one value", () => {
+		const pair = render(<ControlledRangeField />);
+		const handles = pair.container.querySelectorAll<HTMLElement>("[data-slider-field-handle]");
+		expect(handles).toHaveLength(2);
+		for (const handle of handles) expect(handle.classList.contains("w-[3px]")).toBe(true);
+		expect([handles[0]!.style.left, handles[1]!.style.left]).toEqual(["20%", "60%"]);
+		const fill = pair.container.querySelector<HTMLElement>("[data-slider-field-fill]");
+		expect([fill?.style.left, fill?.style.width]).toEqual(["20%", "40%"]);
+		const single = render(<ControlledField />);
+		expect(single.container.querySelectorAll("[data-slider-field-handle]")).toHaveLength(0);
+	});
+
+	it("keeps a disabled field inert for the pointer, the keyboard and both editor entries", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={1}
+				aria-label="Disabled"
+				numberTestId="field-number"
+				disabled
+				onValueChange={onValueChange}
+				onValueCommitted={onValueCommitted}
+			/>,
+		);
+		const field = fieldOf(container);
+		withWidth(field);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "touch", clientX: 70, button: 0 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "touch", clientX: 70 });
+		fireEvent.keyDown(thumbInput(container), { key: "Home" });
+		fireEvent.doubleClick(field);
+		fireEvent.keyDown(thumbInput(container), { key: "Enter" });
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(onValueCommitted).not.toHaveBeenCalled();
+		expect(container.querySelector('[data-testid="field-number"]')).toBeNull();
+		expect(container.querySelector("[data-slider-field-shell]")?.classList.contains("opacity-40")).toBe(true);
+	});
+});
+
+describe("Slider rail contract", () => {
+	it("is the default appearance and keeps one orientation-specific gradient on the indicator", () => {
+		const { container } = render(
+			<div>
+				<Slider value={1} min={0} max={2} step={1} aria-label="Horizontal" onValueChange={() => {}} />
+				<Slider appearance="rail" value={1} min={0} max={2} step={1} aria-label="Explicit" onValueChange={() => {}} />
+				<Slider value={1} min={0} max={2} step={1} aria-label="Vertical" orientation="vertical" onValueChange={() => {}} />
+			</div>,
+		);
+		expect(container.querySelector("[data-slider-field]")).toBeNull();
+		const indicators = container.querySelectorAll<HTMLElement>("[data-slider-indicator]");
+		expect(indicators).toHaveLength(3);
+		const toRight = "bg-[linear-gradient(to_right,var(--accent-mid),var(--accent))]";
+		const toTop = "bg-[linear-gradient(to_top,var(--accent-mid),var(--accent))]";
+		for (const index of [0, 1]) {
+			expect(indicators[index]!.classList.contains(toRight)).toBe(true);
+			expect(indicators[index]!.classList.contains(toTop)).toBe(false);
+		}
+		expect(indicators[2]!.classList.contains(toTop)).toBe(true);
+		expect(indicators[2]!.classList.contains(toRight)).toBe(false);
+	});
+
+	it("sizes the knob ring per density and dims a disabled rail to 40 percent", () => {
+		const { container } = render(
+			<div>
+				<Slider value={1} min={0} max={2} step={1} aria-label="Medium" onValueChange={() => {}} />
+				<Slider value={1} min={0} max={2} step={1} aria-label="Small" size="sm" onValueChange={() => {}} />
+				<Slider value={1} min={0} max={2} step={1} aria-label="Extra small" size="xs" onValueChange={() => {}} />
+				<Slider value={1} min={0} max={2} step={1} aria-label="Off" disabled onValueChange={() => {}} />
+			</div>,
+		);
+		const thumbs = container.querySelectorAll<HTMLElement>("[data-slider-thumb]");
+		expect(thumbs[0]!.classList.contains("border-[3px]")).toBe(true);
+		expect(thumbs[1]!.classList.contains("border-2")).toBe(true);
+		expect(thumbs[2]!.classList.contains("border-2")).toBe(true);
+		const roots = container.querySelectorAll<HTMLElement>("[data-slider-root]");
+		const disabledRoot = roots[3]!;
+		expect(disabledRoot.hasAttribute("data-disabled")).toBe(true);
+		expect(disabledRoot.classList.contains("data-[disabled]:opacity-40")).toBe(true);
+		expect(disabledRoot.classList.contains("data-[disabled]:pointer-events-none")).toBe(true);
+	});
+
+	it("tints the knob near-white with an accent ring and scales it only while dragging", () => {
+		const { container } = render(<Slider value={1} min={0} max={2} step={1} aria-label="Knob" onValueChange={() => {}} />);
+		const thumb = container.querySelector<HTMLElement>("[data-slider-thumb]");
+		if (!thumb) throw new Error("Missing rail thumb");
+		expect(thumb.classList.contains("bg-[color-mix(in_oklch,white_88%,var(--accent))]")).toBe(true);
+		expect(thumb.classList.contains("border-accent")).toBe(true);
+		expect(thumb.classList.contains("hover:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)]")).toBe(true);
+		expect(thumb.classList.contains("data-[dragging]:scale-[1.1]")).toBe(true);
+		expect(thumb.classList.contains("hover:scale-[1.1]")).toBe(false);
 	});
 });

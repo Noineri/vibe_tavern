@@ -101,9 +101,13 @@ export function SliderRail<Value extends SliderValue>({
 					)}
 				>
 					<BaseSlider.Indicator
+						data-slider-indicator
 						className={cn(
-							"rounded-full bg-[linear-gradient(to_right,var(--accent-mid),var(--accent))]",
-							orientation === "vertical" && "bg-[linear-gradient(to_top,var(--accent-mid),var(--accent))]",
+							"rounded-full",
+							// One gradient class per orientation: two background-image utilities on one element would be resolved by stylesheet order.
+							orientation === "vertical"
+								? "bg-[linear-gradient(to_top,var(--accent-mid),var(--accent))]"
+								: "bg-[linear-gradient(to_right,var(--accent-mid),var(--accent))]",
 						)}
 					/>
 				</BaseSlider.Track>
@@ -120,7 +124,7 @@ export function SliderRail<Value extends SliderValue>({
 							}}
 							data-slider-thumb
 							className={cn(
-								"group/thumb rounded-full border-accent bg-[color-mix(in_oklch,white_88%,var(--accent))] transition-[transform,box-shadow] duration-100 hover:scale-[1.1] data-[dragging]:scale-[1.1] hover:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)] has-[input:focus-visible]:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)]",
+								"group/thumb rounded-full border-accent bg-[color-mix(in_oklch,white_88%,var(--accent))] transition-[transform,box-shadow] duration-100 data-[dragging]:scale-[1.1] hover:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)] has-[input:focus-visible]:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)]",
 								dimensions.thumb,
 							)}
 						>
