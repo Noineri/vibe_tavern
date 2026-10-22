@@ -3,6 +3,7 @@ import {
 	type ChatBranchId,
 	type ChatId,
 	type ExperienceCopilotThreadId,
+	type PromptPresetId,
 	isRecord,
 	normalizeSceneTrackerConfig,
 	SCENE_PROMPT_FORMAT,
@@ -12,8 +13,10 @@ import type {
 	CharacterStore,
 	ChatStore,
 	ChatSummaryStore,
+	CopilotContextLink,
 	ExperienceCopilotStore,
 	MessageStore,
+	PresetStore,
 	PromptTrace,
 	PromptTraceStore,
 } from "@vibe-tavern/db";
@@ -38,6 +41,11 @@ import {
 	type SelectionChangedPayload,
 } from "./rp-sync.js";
 import { coverRpSyncPayload, createRpSummaryCoverage } from "./rp-summary-coverage.js";
+import {
+	renderRpPromptView,
+	type RpPromptViewLayer,
+	type RpPromptViewMessage,
+} from "./rp-prompt-view.js";
 import {
 	renderCharacterSection,
 	renderCurrentSceneSection,
@@ -123,6 +131,18 @@ import {
  *   `rp_summary` event is ever written — so editing, disabling or deleting a
  *   summary in the RP chat changes what the sidechat sees on its next turn,
  *   in place.
+ * - Pinned prompt presets (SC-23c): while the thread carries a
+ *   `prompt_preset` context link, EVERY turn re-assembles the thread's chat +
+ *   branch DRY with that preset (`assembleForChat({ presetId, dryRun: true })`
+ *   — the per-request override, never the chat's own preset; dryRun advances
+ *   no lore timer and no script state) and renders the payload through the
+ *   shared RP prompt view (`rp-prompt-view.ts`) against the sidechat's held
+ *   set — the branch's active lore ids — into a trailing `<rp_prompt>` static
+ *   section. The discussion is «edit the block, ask again»: an edited preset
+ *   block shows on the NEXT turn because nothing is cached. A deleted preset
+ *   is a dangling link, skipped like every other dangling target — never a
+ *   400 on the turn. Without a pin NOTHING changes (owner decision 1 holds
+ *   by default; the pin is the whole point of the arm).
  *
  * Must stay true: NO store writes anywhere (the lore activation inside
  * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
@@ -147,6 +167,9 @@ export interface SidechatContextDeps {
 	chatSummaries: Pick<ChatSummaryStore, "listByChatBranch">;
 	/** The thread row + the merged frozen timeline. */
 	experienceCopilot: Pick<ExperienceCopilotStore, "getById" | "listTimeline">;
+	/** SC-23c: pinned-preset existence — a dangling id skips the pin, exactly
+	 *  like every other dangling context-link target. */
+	presets: Pick<PresetStore, "getById">;
 	/** The RP assembly service — supplies the send path's own inputs. */
 	assembly: PromptAssemblyService;
 }
@@ -283,15 +306,33 @@ export async function loadSidechatContext(
 			text: macroEngine.resolve(persona.description, baseVariableContext),
 		});
 
-	const loreSection = renderLoreSection(await loadLoreEntries(deps, chatId, branchId));
+	const loreRows = await loadLoreEntries(deps, chatId, branchId);
+	const loreSection = renderLoreSection(loreRows);
+	// SC-23c: the sidechat's held lore set — the ids its active_lore section
+	// shows. The RP prompt view collapses exactly these lore layers to
+	// placeholders; a lore entry OUTSIDE this set renders in full there (the
+	// difference is the point).
+	const heldLoreEntryIds = new Set(loreRows.map((row) => row.id));
 
 	const objectivesSection = renderObjectivesSection(loadObjectivesInput(chat));
 
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
-	// Static package (SC-4d): the five settled sections only — no timeline
-	// section exists anymore; the timeline walk below feeds the MESSAGE FLOW.
-	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection];
+	// SC-23c: the pinned-preset RP prompt views — one trailing section per
+	// pinned link, re-assembled dry on EVERY load (see the module doc).
+	const presetViews = await loadPinnedPresetViews(
+		deps,
+		thread.contextLinks,
+		chatId,
+		branchId,
+		branchMessages,
+		heldLoreEntryIds,
+	);
+
+	// Static package (SC-4d): the five settled sections (+ any pinned-preset
+	// RP prompt views, SC-23c) only — no timeline section exists anymore; the
+	// timeline walk below feeds the MESSAGE FLOW.
+	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection, ...presetViews];
 	const staticPackage = sections.filter((section): section is string => section !== null).join("\n\n");
 
 	// Timeline walk (SC-4d): consume listTimeline's merged order ONCE — the
@@ -347,13 +388,17 @@ export async function loadSidechatContext(
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
 
+/** One active lore row with its entry id (what the SC-23c held set and the
+ *  RP prompt view's lore check read) beside the renderer's title/text pair. */
+type ActiveLoreRow = LoreEntryInput & { readonly id: string };
+
 /** Map a trace onto the renderer's lore entries: `activatedLoreEntries` in
  *  activation order, text + title from the trace's own `lore_<id>` layers. */
 async function loadLoreEntries(
 	deps: SidechatContextDeps,
 	chatId: ChatId,
 	branchId: ChatBranchId,
-): Promise<LoreEntryInput[]> {
+): Promise<ActiveLoreRow[]> {
 	// getTracesByChat returns newest first (desc createdAt, desc id) — the
 	// first row IS the branch's latest trace. No trace yet → no section.
 	const traces = await deps.traces.getTracesByChat(chatId, branchId);
@@ -367,7 +412,7 @@ async function loadLoreEntries(
 		if (isRecord(layer) && typeof layer.id === "string") layersById.set(layer.id, layer);
 	}
 
-	const entries: LoreEntryInput[] = [];
+	const entries: ActiveLoreRow[] = [];
 	for (const entryId of trace.activatedLoreEntries) {
 		const layer = layersById.get(createLoreLayerId(entryId));
 		// An activated id with no layer was DROPPED at assembly (e.g. empty
@@ -381,9 +426,118 @@ async function loadLoreEntries(
 				`loadSidechatContext: trace ${trace.id} layer ${createLoreLayerId(entryId)} is not the frozen layer shape — refusing to render corrupted frozen context`,
 			);
 		}
-		entries.push({ title, text });
+		entries.push({ id: entryId, title, text });
 	}
 	return entries;
+}
+
+// ─── Pinned prompt presets (SC-23c — the RP prompt view arm) ────────────────
+
+/** The branch message row subset the preset arm reads (the whole-branch read
+ *  limit + the position map for the view's history placeholders). */
+type BranchMessageRow = { id: string; position: number };
+
+/** Render one `<rp_prompt>` view per pinned `prompt_preset` link, in link
+ *  order: a dangling preset id (deleted) skips the pin — never a 400 on the
+ *  turn, the same skip every other dangling context-link target gets. Each
+ *  view comes from a DRY whole-branch assembly with THAT preset — the
+ *  per-request override (never the chat's own preset, never a chat write),
+ *  re-run on every call so an edited block shows on the next turn. */
+async function loadPinnedPresetViews(
+	deps: SidechatContextDeps,
+	links: readonly CopilotContextLink[],
+	chatId: ChatId,
+	branchId: ChatBranchId,
+	branchMessages: readonly BranchMessageRow[],
+	heldLoreEntryIds: ReadonlySet<string>,
+): Promise<string[]> {
+	const presetLinks = links.filter((link) => link.targetType === "prompt_preset");
+	if (presetLinks.length === 0) return [];
+	const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
+	const views: string[] = [];
+	for (const link of presetLinks) {
+		const preset = await deps.presets.getById(link.targetId);
+		if (preset === null) continue;
+		const assembled = await deps.assembly.assembleForChat({
+			chatId,
+			branchId,
+			model: "",
+			dryRun: true,
+			// The SC-2a whole-branch window — the same limit the loader's own
+			// buildPipelineContext call passes, so the view's history
+			// placeholders carry the branch's real positions.
+			recentMessageLimit: branchMessages.length,
+			presetId: brandId<PromptPresetId>(link.targetId),
+		});
+		const view = renderRpPromptView({
+			presetName: preset.name,
+			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, link.targetId),
+			layers: assembled.prompt.layers,
+			heldLoreEntryIds,
+		});
+		if (view !== null) views.push(view);
+	}
+	return views;
+}
+
+/** Map the assembly's final payload (plain JSON in the response type) onto
+ *  the view's message input, enriching every history ref with its branch
+ *  position from the loader's own branch read. Structural checks throw the
+ *  corrupt refusal the module's other mappers use — this payload comes from
+ *  our own assembly in the same call, so a mismatch is a programming error,
+ *  never user data. */
+function mapFinalPayloadMessages(
+	payload: Record<string, unknown>,
+	positionByMessageId: ReadonlyMap<string, number>,
+	presetId: string,
+): RpPromptViewMessage[] {
+	const raw = payload.messages;
+	if (!Array.isArray(raw)) {
+		throw new Error(
+			`loadSidechatContext: preset ${presetId} assembly returned a final payload without a messages array — refusing to render a corrupted payload`,
+		);
+	}
+	const positionOf = (messageId: string): number | undefined => positionByMessageId.get(messageId);
+	return raw.map((entry): RpPromptViewMessage => {
+		if (!isRecord(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") {
+			throw new Error(
+				`loadSidechatContext: preset ${presetId} assembly returned a payload entry that is not { role, content } — refusing to render a corrupted payload`,
+			);
+		}
+		const role = entry.role;
+		if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
+			throw new Error(
+				`loadSidechatContext: preset ${presetId} assembly returned an unknown payload role "${role}" — refusing to render a corrupted payload`,
+			);
+		}
+		const messageId = typeof entry.messageId === "string" ? entry.messageId : undefined;
+		const layerId = typeof entry.layerId === "string" ? entry.layerId : undefined;
+		const position = messageId !== undefined ? positionOf(messageId) : undefined;
+		const mergedFrom = Array.isArray(entry.mergedFrom)
+			? entry.mergedFrom.map((ref: unknown) => {
+					if (!isRecord(ref)) {
+						throw new Error(
+							`loadSidechatContext: preset ${presetId} assembly returned a mergedFrom ref that is not a record — refusing to render a corrupted payload`,
+						);
+					}
+					const refMessageId = typeof ref.messageId === "string" ? ref.messageId : undefined;
+					const refPosition = refMessageId !== undefined ? positionOf(refMessageId) : undefined;
+					return {
+						...(refMessageId !== undefined ? { messageId: refMessageId } : {}),
+						...(typeof ref.layerId === "string" ? { layerId: ref.layerId } : {}),
+						...(refPosition !== undefined ? { position: refPosition } : {}),
+					};
+				})
+			: undefined;
+		return {
+			role,
+			content: entry.content,
+			...(messageId !== undefined ? { messageId } : {}),
+			...(layerId !== undefined ? { layerId } : {}),
+			...(position !== undefined ? { position } : {}),
+			...(mergedFrom !== undefined ? { mergedFrom } : {}),
+		};
+	});
 }
 
 // ─── Objectives (the chat row's state, via the RP path's own derivation) ─────

@@ -1303,7 +1303,7 @@ The stream route resolves the thread's kind BEFORE sending SSE headers, and the 
 | `GET /api/experience-copilot/:threadId/context` | Context-meter metrics + auto-compact flag |
 | `PATCH /api/experience-copilot/:threadId/context` | `{ autoCompact?: boolean }` |
 | `GET /api/experience-copilot/:threadId/context-links` | Pinned context entities |
-| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies |
+| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies. `prompt_preset` links (SC-23c, the sidechat's `<rp_prompt>` view) are chat-owned-thread-only: a script/draft thread gets the typed 400 `preset_link_not_chat_owned` |
 | `POST /api/experience-copilot/:threadId/compact` | Manual compaction; optional `{ providerProfileId?, model? }` (defaults to the thread's last pair) |
 
 ### Profiles

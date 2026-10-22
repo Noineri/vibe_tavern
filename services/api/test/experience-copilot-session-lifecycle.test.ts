@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer, type CopilotContextMetrics } from "@vibe-tavern/db";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
+import { PRESET_LINK_NOT_CHAT_OWNED_CODE } from "../src/domain/sidechat/preset-link-guard.js";
+import { isDomainError, type DomainError } from "../src/shared/errors.js";
 
 // ─── Real store + adapter wiring ─────────────────────────────────────────────
 //
@@ -258,5 +260,30 @@ describe("ExperienceCopilotAdapter context-links (CX-4)", () => {
     const { adapter } = await setup();
     await expect(adapter.experienceCopilotGetContextLinks("nope")).rejects.toThrow();
     await expect(adapter.experienceCopilotSetContextLinks("nope", [])).rejects.toThrow();
+  });
+
+  it("pinning a prompt preset on a script-owned thread is the typed 400 preset_link_not_chat_owned — nothing written (SC-23c)", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    let thrown: unknown;
+    try {
+      await adapter.experienceCopilotSetContextLinks(thread.id, [
+        { targetType: "character", targetId: "char_1" },
+        { targetType: "prompt_preset", targetId: "preset_1" },
+      ]);
+    } catch (err) {
+      thrown = err;
+    }
+
+    // The typed refusal — the same lowercase Validation family as
+    // attached_variant_not_in_branch.
+    expect(isDomainError(thrown)).toBe(true);
+    const error = thrown as DomainError;
+    expect(error.kind).toBe("Validation");
+    expect(error.details?.code).toBe(PRESET_LINK_NOT_CHAT_OWNED_CODE);
+    expect(error.details?.threadId).toBe(thread.id);
+    // All-or-nothing: the replace wrote NOTHING, valid character link included.
+    expect(await adapter.experienceCopilotGetContextLinks(thread.id)).toEqual([]);
   });
 });

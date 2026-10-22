@@ -100,6 +100,17 @@ describe("getCopilotContextItems (CX-2)", () => {
     expect(renderAttachedContext([])).toBe("");
   });
 
+  test("a prompt_preset link resolves to NO generic item — the sidechat context loader owns that arm (SC-23c)", async () => {
+    const deps = makeDeps();
+    const items = await getCopilotContextItems(
+      [link("prompt_preset", "preset_1"), link("character", "char_1")],
+      deps,
+    );
+    // The preset pin never becomes a read-only reference block; the other
+    // links resolve exactly as before.
+    expect(items).toEqual([{ type: "character", id: "char_1", title: "Alice", content: "alice profile" }]);
+  });
+
   test("character resolves its profile text with the character name as title", async () => {
     const deps = makeDeps();
     const items = await getCopilotContextItems([link("character", "char_1")], deps);

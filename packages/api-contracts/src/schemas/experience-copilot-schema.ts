@@ -242,13 +242,19 @@ export type ExperienceCopilotContextMetrics = z.infer<typeof experienceCopilotCo
 /** Pinned-context target types the copilot picker offers (CX-1). Mirrors the
  *  Co-Author CE-C1 set plus `skill` — skills are filesystem-scanned (id = the
  *  skill directory name), and pinning one eagerly injects its `SKILL.md` body
- *  (user decision 2026-08-18; `read_skill_file` stays for on-demand assets). */
+ *  (user decision 2026-08-18; `read_skill_file` stays for on-demand assets).
+ *  `prompt_preset` (SC-23c) is the sidechat's RP-prompt discussion pin: a
+ *  CHAT-OWNED-thread-only link (the set-links path rejects it on a script or
+ *  draft thread with the typed 400 `preset_link_not_chat_owned`) that never
+ *  resolves through the generic pinned-context loader — the sidechat context
+ *  loader renders it as the `<rp_prompt>` view (rp-prompt-view.ts) instead. */
 export const experienceCopilotContextTargetTypeSchema = z.enum([
   "character",
   "persona",
   "lorebook",
   "script",
   "skill",
+  "prompt_preset",
 ]);
 export type ExperienceCopilotContextTargetType = z.infer<typeof experienceCopilotContextTargetTypeSchema>;
 

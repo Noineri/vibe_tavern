@@ -21,7 +21,7 @@ export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
 export { buildAssemblyVariableContext } from "./assembly-variable-context.js";
 export { MacroVariableScope } from "./macro-variable-scope.js";
-export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, PROMPT_FORMAT, createLoreLayerId } from "./prompt-layer-constants.js";
+export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, PROMPT_LAYER_SOURCE_TYPE, PROMPT_FORMAT, createLoreLayerId } from "./prompt-layer-constants.js";
 export { formatSceneHistory, escapeXml, type SceneInjectionEntry, type SceneInjectionFormat } from "./scene-injection.js";
 export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens } from "./compaction.js";
 // ─── Experience model-effect prompt (IR-41, Wave 4) ───────────────────────────

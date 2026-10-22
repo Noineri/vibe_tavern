@@ -694,8 +694,8 @@ describe("copilotProfileSchema (CP-1)", () => {
 // ─── CX-1: pinned-context links ─────────────────────────────────────────────
 
 describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-1)", () => {
-  test("accepts all five target types including skill", () => {
-    for (const targetType of ["character", "persona", "lorebook", "script", "skill"] as const) {
+  test("accepts all six target types including skill and prompt_preset (SC-23c)", () => {
+    for (const targetType of ["character", "persona", "lorebook", "script", "skill", "prompt_preset"] as const) {
       expect(experienceCopilotContextLinkSchema.parse({ targetType, targetId: "id_1" })).toEqual({
         targetType,
         targetId: "id_1",

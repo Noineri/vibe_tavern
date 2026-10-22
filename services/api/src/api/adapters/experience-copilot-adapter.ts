@@ -35,6 +35,7 @@ import { ScriptAgentCompactionService } from "../../domain/agent/script-agent/sc
 import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-compaction.js";
 import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
 import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
+import { readContextLinks, replaceContextLinks } from "./experience-copilot-context-links.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -399,6 +400,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         traces: this.stores.traces,
         chatSummaries: this.stores.chatSummaries,
         experienceCopilot: this.stores.experienceCopilot,
+        // SC-23c: pinned-preset existence for the RP prompt view arm.
+        presets: this.stores.presets,
         assembly,
       },
       // SC-17: the variant-attach freeze — the same stores/assembly the sync
@@ -753,27 +756,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     };
   };
 
-  experienceCopilotGetContextLinks = async (threadId: string): Promise<ExperienceCopilotContextLink[]> => {
-    const thread = await this.stores.experienceCopilot.getById(threadId);
-    if (!thread) {
-      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
-    }
-    return thread.contextLinks;
-  };
+  experienceCopilotGetContextLinks = async (threadId: string): Promise<ExperienceCopilotContextLink[]> =>
+    readContextLinks(this.stores.experienceCopilot, threadId);
 
   experienceCopilotSetContextLinks = async (
     threadId: string,
     links: ExperienceCopilotContextLink[],
-  ): Promise<ExperienceCopilotContextLink[]> => {
-    const thread = await this.stores.experienceCopilot.getById(threadId);
-    if (!thread) {
-      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
-    }
-    await this.stores.experienceCopilot.setContextLinks(threadId, links);
-    // Re-read so the response reflects the persisted links (full-replace semantics).
-    const refreshed = await this.stores.experienceCopilot.getById(threadId);
-    return refreshed ? refreshed.contextLinks : links;
-  };
+  ): Promise<ExperienceCopilotContextLink[]> =>
+    replaceContextLinks(this.stores.experienceCopilot, threadId, links);
 
   experienceCopilotCompact = async (
     threadId: string,

@@ -394,6 +394,7 @@ describe("ExperienceCopilotStore — pinned-context links (CX-1)", () => {
       { targetType: "character", targetId: "char_1" },
       { targetType: "lorebook", targetId: "lore_2" },
       { targetType: "skill", targetId: "my-skill" },
+      { targetType: "prompt_preset", targetId: "preset_3" },
     ] as const;
     await store.setContextLinks(thread.id, [...links]);
 

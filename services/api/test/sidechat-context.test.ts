@@ -81,6 +81,7 @@ beforeAll(async () => {
 		traces: stores.traces,
 		chatSummaries: stores.chatSummaries,
 		experienceCopilot: stores.experienceCopilot,
+		presets: stores.presets,
 		assembly,
 	};
 	syncDeps = {
@@ -484,5 +485,234 @@ describe("loadSidechatContext (SC-3b)", () => {
 				"</rp_selection_changed>",
 			].join("\n"),
 		);
+	});
+});
+
+// ─── SC-23c: pinned prompt presets (the RP prompt view arm) ─────────────────
+
+describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
+	/** The unit's discussion preset — advanced mode with role-merging OFF so
+	 *  each layer keeps its own payload entry (the owner's own preset shape:
+	 *  custom injects mixed with character context, different roles), a macro
+	 *  in the main block, a post-history instruction, and ONE custom in-chat
+	 *  inject at depth 4. Built-in slots stay enabled (the canvas entry is
+	 *  absent → default-enabled, advanced-resolver contract). */
+	async function makeDiscussionPreset(): Promise<{ id: string; name: string }> {
+		return stores.presets.create({
+			name: "Agentic Narrator",
+			systemPrompt: "PRESET-MAIN You are {{user}}'s grim narrator.",
+			postHistoryInstructions: "PRESET-JAILBREAK Close the scene on a held breath.",
+			advancedMode: true,
+			mergeConsecutiveRoles: false,
+			customInjections: [
+				{ identifier: "mood", name: "Mood", content: "PRESET-INJECT Keep the mood gothic around {{char}}.", role: "user" },
+			],
+			promptOrder: [
+				{ identifier: "mood", enabled: true, kind: "custom", zone: "in_chat", depth: 4 },
+			],
+		});
+	}
+
+	it("a pinned preset renders blocks in payload order with roles and depths, known layers as placeholders, custom injects in full, macros resolved", async () => {
+		const preset = await makeDiscussionPreset();
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "We enter the tavern.",
+		});
+		await stores.experienceCopilot.setContextLinks(threadId, [
+			{ targetType: "prompt_preset", targetId: preset.id },
+		]);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		const view = pkg.staticPackage;
+
+		// The wrapper names the pinned preset.
+		expect(view).toContain('<rp_prompt preset="Agentic Narrator">');
+		// The preset's own blocks IN FULL, macros resolved by the assembly's own
+		// pass ({{user}} → the active persona Sable, {{char}} → Theron) — what
+		// the RP model would receive, never the raw stored text.
+		expect(view).toContain('<block id="prompt_preset_system" role="system">PRESET-MAIN You are Sable\'s grim narrator.</block>');
+		expect(view).toContain('<block id="preset_injection_mood" role="user" depth="4">PRESET-INJECT Keep the mood gothic around Theron.</block>');
+		expect(view).toContain("PRESET-JAILBREAK Close the scene on a held breath.");
+		// The card and the persona are HELD — self-closing placeholders keeping
+		// their role, in payload order around the preset's own blocks.
+		expect(view).toContain('<known layer="character" role="system"/>');
+		expect(view).toContain('<known layer="persona" role="system"/>');
+		// The branch's one message is ONE history placeholder carrying its position.
+		expect(view).toContain('<known layer="history" positions="0"/>');
+		// Payload order (the exact order the RP model received under this
+		// preset): main → persona → card → the depth-4 inject → history → the
+		// post-history instructions (the canvas's after_chat zone, depth 0).
+		const order = [
+			'<block id="prompt_preset_system"',
+			'<known layer="persona"',
+			'<known layer="character"',
+			'<block id="preset_injection_mood"',
+			'<known layer="history"',
+			'<block id="prompt_preset_jailbreak"',
+		].map((marker) => view.indexOf(marker));
+		expect(order.every((index) => index >= 0)).toBe(true);
+		expect([...order].sort((a, b) => a - b)).toEqual(order);
+	});
+
+	it("a lore entry the sidechat HOLDS collapses to a placeholder; one it does NOT hold shows in full", async () => {
+		const lorebook = await stores.lorebooks.createLorebook({ name: "SC-23c book", scopeType: "entity" });
+		await stores.lorebooks.addLink(lorebook.id, "character", characterId);
+		const held = await stores.lorebooks.createEntry(lorebook.id, {
+			title: "Silverpine",
+			content: "The held forest hides an elven ruin.",
+			constant: true,
+		});
+
+		const preset = await makeDiscussionPreset();
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		const message = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "We walk the woods.",
+		});
+		// The branch's latest trace froze with ONLY the held entry activated.
+		await saveBranchTrace(chatId, branchId, message.id);
+		// The second entry appears AFTER the trace — the sidechat's active lore
+		// (and held set) cannot know it, but the pinned dry assembly CAN.
+		const fresh = await stores.lorebooks.createEntry(lorebook.id, {
+			title: "Cellar",
+			content: "The unheld cellar hides a cult.",
+			constant: true,
+		});
+		await stores.experienceCopilot.setContextLinks(threadId, [
+			{ targetType: "prompt_preset", targetId: preset.id },
+		]);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		const view = pkg.staticPackage;
+		// The <rp_prompt> block only — the package's own <active_lore> section
+		// legitimately shows the held entry's text (SC-3b); the VIEW is what
+		// collapses it.
+		const viewBlock = view.slice(view.indexOf("<rp_prompt"), view.indexOf("</rp_prompt>"));
+
+		// Held lore: placeholder with the entry's title, keeping its role.
+		expect(viewBlock).toContain('<known layer="lore" entries="Silverpine" role="system"/>');
+		// Not held: the full layer text (the pipeline's own `Lore: <title>`
+		// header included — exactly what the RP model received) in its exact
+		// payload place — the difference is the point.
+		expect(viewBlock).toContain(`<block id="lore_${fresh.id}" role="system">Lore: Cellar\nThe unheld cellar hides a cult.</block>`);
+		expect(viewBlock).not.toContain("The held forest hides an elven ruin.");
+	});
+
+	it("an edited preset block shows on the NEXT turn — the loader re-assembles every turn", async () => {
+		const preset = await makeDiscussionPreset();
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "We enter the tavern.",
+		});
+		await stores.experienceCopilot.setContextLinks(threadId, [
+			{ targetType: "prompt_preset", targetId: preset.id },
+		]);
+
+		const first = await loadSidechatContext(contextDeps, threadId);
+		expect(first.staticPackage).toContain("PRESET-MAIN You are Sable's grim narrator.");
+
+		// The owner's loop: edit the block, ask again.
+		await stores.presets.update(preset.id, { systemPrompt: "PRESET-REVISED You are a laconic narrator." });
+		const second = await loadSidechatContext(contextDeps, threadId);
+		expect(second.staticPackage).toContain("PRESET-REVISED You are a laconic narrator.");
+		expect(second.staticPackage).not.toContain("PRESET-MAIN");
+	});
+
+	it("a deleted (dangling) preset is skipped — never a 400 on the turn", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "We enter the tavern.",
+		});
+		await stores.experienceCopilot.setContextLinks(threadId, [
+			{ targetType: "prompt_preset", targetId: "preset_never_existed" },
+		]);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.staticPackage).not.toContain("<rp_prompt");
+		// The rest of the package still renders.
+		expect(pkg.staticPackage).toContain('<character name="Theron">');
+	});
+
+	it("the chat's own preset never changes and the dry load advances no lore timed state", async () => {
+		const lorebook = await stores.lorebooks.createLorebook({ name: "SC-23c timers", scopeType: "entity" });
+		await stores.lorebooks.addLink(lorebook.id, "character", characterId);
+		// A KEYWORD entry with a cooldown window — the kind whose activation
+		// state a live (non-dry) resolve would rewrite every turn.
+		await stores.lorebooks.createEntry(lorebook.id, {
+			title: "Tavern",
+			content: "The tavern marks its regulars.",
+			keys: ["tavern"],
+			cooldownWindow: 5,
+		});
+
+		const preset = await makeDiscussionPreset();
+		const { threadId, chatId, branchId } = await makeSidechatFixture({ promptPresetId: null });
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "user",
+			authorType: "user",
+			content: "We enter the tavern.",
+		});
+		await stores.experienceCopilot.setContextLinks(threadId, [
+			{ targetType: "prompt_preset", targetId: preset.id },
+		]);
+
+		// A new turn AFTER the entry exists — a leaked (non-dry) resolve would
+		// rewrite the cooldown bookkeeping for this later turn; two loads prove
+		// the row stays frozen.
+		const before = (await stores.chats.getBranch(branchId))!.loreActivationState;
+		await loadSidechatContext(contextDeps, threadId);
+		await loadSidechatContext(contextDeps, threadId);
+		const after = (await stores.chats.getBranch(branchId))!.loreActivationState;
+		expect(after).toEqual(before);
+
+		// The chat's own preset is untouched by the pin (the override is
+		// per-request, never a chat write).
+		expect((await stores.chats.getById(chatId))!.promptPresetId).toBeNull();
+	});
+
+	it("without a preset pin nothing the sidechat sees changes — byte-identical static package", async () => {
+		const { chatId, branchId } = await makeSidechatFixture();
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The tavern door swings open.",
+		});
+		// Two threads on the SAME branch: one with NO links, one with a
+		// NON-preset link — the arm must add nothing in both shapes.
+		const bare = await stores.experienceCopilot.startNewChatSession(chatId, branchId, "sidechat-ooc");
+		const linked = await stores.experienceCopilot.startNewChatSession(chatId, branchId, "sidechat-ooc");
+		await stores.experienceCopilot.setContextLinks(linked.id, [
+			{ targetType: "character", targetId: characterId },
+		]);
+
+		const barePkg = await loadSidechatContext(contextDeps, bare.id);
+		const linkedPkg = await loadSidechatContext(contextDeps, linked.id);
+
+		expect(barePkg.staticPackage).not.toContain("<rp_prompt");
+		expect(linkedPkg.staticPackage).not.toContain("<rp_prompt");
+		expect(linkedPkg.staticPackage).toBe(barePkg.staticPackage);
+		for (const event of [...barePkg.eventMessages, ...linkedPkg.eventMessages]) {
+			expect(event.content).not.toContain("<rp_prompt");
+		}
 	});
 });

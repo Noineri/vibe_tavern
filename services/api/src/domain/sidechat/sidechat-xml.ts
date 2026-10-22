@@ -75,13 +75,16 @@ import type { RpSyncPayload, SelectionChangedPayload } from "./rp-sync.js";
 
 // ─── Escaping (pinned sets — see module doc) ────────────────────────────────
 
-/** Escape TEXT content: `& < >` (this unit's pinned set — nothing else). */
-function escapeXmlText(value: string): string {
+/** Escape TEXT content: `& < >` (this unit's pinned set — nothing else).
+ *  Exported since SC-23c: the RP prompt view (rp-prompt-view.ts) is this
+ *  family's second renderer and reads the same pinned sets — one home. */
+export function escapeXmlText(value: string): string {
 	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-/** Escape an ATTRIBUTE value: the text set plus `"`. */
-function escapeXmlAttribute(value: string): string {
+/** Escape an ATTRIBUTE value: the text set plus `"`. Exported with
+ *  {@link escapeXmlText} for the same family reason. */
+export function escapeXmlAttribute(value: string): string {
 	return escapeXmlText(value).replaceAll('"', "&quot;");
 }
 

@@ -157,6 +157,7 @@ beforeAll(async () => {
 			traces: stores.traces,
 			chatSummaries: stores.chatSummaries,
 			experienceCopilot: stores.experienceCopilot,
+			presets: stores.presets,
 			assembly,
 		},
 		// SC-17: the variant-attach freeze — the production wiring's same

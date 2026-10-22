@@ -48,9 +48,11 @@ export interface CopilotContextMetrics {
  *  the api-contracts `experienceCopilotContextLinkSchema` — the db package
  *  cannot import api-contracts (dependency direction), same as
  *  {@link CopilotContextMetrics} above. Links resolve by id at assembly time
- *  (never a content copy). */
+ *  (never a content copy). `prompt_preset` (SC-23c) is accepted on read like
+ *  every other type — it is chat-owned-thread-only at the SET boundary
+ *  (services/api), and the sidechat context loader owns its resolution. */
 export interface CopilotContextLink {
-  targetType: 'character' | 'persona' | 'lorebook' | 'script' | 'skill';
+  targetType: 'character' | 'persona' | 'lorebook' | 'script' | 'skill' | 'prompt_preset';
   targetId: string;
 }
 
@@ -156,7 +158,7 @@ function parseContextMetrics(text: string | null, threadId: string): CopilotCont
   return null;
 }
 
-const COPILOT_LINK_TARGET_TYPES = new Set(["character", "persona", "lorebook", "script", "skill"]);
+const COPILOT_LINK_TARGET_TYPES = new Set(["character", "persona", "lorebook", "script", "skill", "prompt_preset"]);
 
 const COPILOT_TODO_STATUSES = new Set(["pending", "active", "completed", "abandoned"]);
 

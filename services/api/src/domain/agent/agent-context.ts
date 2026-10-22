@@ -15,9 +15,12 @@ import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
  * the generic core cannot name the kind's wire contract (same pattern as the
  * db package's `CopilotContextLink`, which exists for the same dependency
  * reason): every wire link shape with these two fields satisfies this.
+ * `prompt_preset` (SC-23c) rides the union but resolves to NO generic item —
+ * the sidechat context loader owns that arm (the `<rp_prompt>` view), so
+ * {@link getCopilotContextItems} skips it.
  */
 export interface AgentContextLink {
-  readonly targetType: "character" | "persona" | "lorebook" | "script" | "skill";
+  readonly targetType: "character" | "persona" | "lorebook" | "script" | "skill" | "prompt_preset";
   readonly targetId: string;
 }
 
@@ -75,6 +78,9 @@ export async function getCopilotContextItems(
 ): Promise<CopilotContextItem[]> {
   const out: CopilotContextItem[] = [];
   for (const link of links) {
+    // SC-23c: a preset pin is the sidechat context loader's arm (rendered as
+    // the <rp_prompt> view there), never a generic reference item — skip it.
+    if (link.targetType === "prompt_preset") continue;
     if (link.targetType === "character") {
       const c = await deps.characters.getById(link.targetId);
       if (!c) continue;
