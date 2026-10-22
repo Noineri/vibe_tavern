@@ -212,6 +212,14 @@ describe("MobileInputArea model button", () => {
     expect(Number(arc?.getAttribute("stroke-dashoffset"))).toBeCloseTo(circumference * 0.5, 3);
   });
 
+  it("shows the FILLED star glyph (owner 2026-10-22: the outline star was reverted)", () => {
+    const view = mount(makeData());
+    const glyph = modelButton(view).querySelector("svg:not([data-token-state])")!;
+
+    expect(glyph.getAttribute("fill")).toBe("currentColor");
+    expect(glyph.getAttribute("stroke")).toBe("none");
+  });
+
   it("opens the model sheet", async () => {
     const view = mount(makeData());
 

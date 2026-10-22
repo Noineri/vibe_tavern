@@ -152,7 +152,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <ContextRing percent={contextPercent} size={36} radius={15.5} strokeWidth={2} trackClassName="stroke-accent/20" />
             </span>
-            <Icons.star />
+            <Icons.StarFilled />
             {showWarningDot && <span aria-hidden="true" className="absolute -right-[3px] -top-[3px] h-3.5 w-3.5 rounded-full border-2 border-s2 bg-danger" />}
           </button>
         </div>

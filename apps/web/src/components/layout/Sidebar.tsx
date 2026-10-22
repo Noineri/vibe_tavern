@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { initials } from "./app-shell-helpers.js";
+import { useActivePersonaDisplay } from "./hooks/use-active-persona-display.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
@@ -65,13 +65,7 @@ export function Sidebar() {
 
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
-  const bootstrapPersonas = useBootstrapStore((s) => s.personas);
-  const activePersona = bootstrapPersonas?.find((p) => p.defaultForNewChats) ?? bootstrapPersonas?.[0];
-  const personaName = snapshot?.persona?.name ?? activePersona?.name ?? t("no_persona");
-  const personaForAvatar = snapshot?.persona ?? activePersona ?? null;
-  const personaAvatarSrc = personaForAvatar
-    ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId, updatedAt: personaForAvatar.updatedAt })
-    : null;
+  const persona = useActivePersonaDisplay();
   const activeCharAvatarSrc = snapshot?.character
     ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })
     : null;
@@ -124,7 +118,7 @@ export function Sidebar() {
 
   const rpFooterItems: FooterLauncherItem[] = [
     { key: "prompt-manager", label: t("sidebar_prompt_manager"), onClick: () => useModalStore.getState().setIsPromptManagerOpen(true), icon: <Icons.Terminal /> },
-    { key: "persona", label: personaName, onClick: () => useModalStore.getState().setIsPersonaModalOpen(true), avatar: { src: personaAvatarSrc, fallback: initials(personaName) }, expandedSuffix: t("sidebar_your_persona") },
+    { key: "persona", label: persona.name, onClick: () => useModalStore.getState().setIsPersonaModalOpen(true), avatar: { src: persona.avatarSrc, fallback: persona.fallback }, expandedSuffix: t("sidebar_your_persona") },
   ];
 
   return (
