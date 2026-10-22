@@ -11,6 +11,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { EmptyState } from "../shared/empty-state.js";
 import { PlaylistVolumeRail } from "./playlist-volume-rail.js";
 import { Toggle } from "../shared/Toggle.js";
+import { Slider } from "../shared/slider.js";
 
 /** TPE-18a: the playlist body (DiceTray twin) — rows for everything
  *  narrated (or being narrated) in the current chat, plus the footer
@@ -192,21 +193,17 @@ function SeekBar(input: {
   const position = progress ? Math.min(progress.positionSec, rangeMax) : 0;
   return (
     <span className="mt-1 flex min-w-0 items-center gap-1.5">
-      <input
-        type="range"
+      <Slider
         min={0}
         max={rangeMax}
         step={0.1}
         value={position}
         disabled={!progress || rangeMax <= 0}
         aria-label={t("narration_playlist_seek")}
-        data-testid="playlist-seek"
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          if (!Number.isNaN(v)) input.onSeek(v);
-        }}
-        style={{ "--p": rangeMax > 0 ? `${((position / rangeMax) * 100).toFixed(1)}%` : "0%" } as React.CSSProperties}
-        className="playlist-slider playlist-slider--seek min-w-0 flex-1 border-0"
+        inputTestId="playlist-seek"
+        size="xs"
+        onValueChange={input.onSeek}
+        className="min-w-0 flex-1"
       />
       <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
         {progress

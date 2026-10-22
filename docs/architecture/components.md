@@ -24,6 +24,7 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
+| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider with single/range values, three densities, and horizontal/vertical rails |
 | `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
@@ -425,6 +426,36 @@ JSON-array paste inserts every element at once in both modes.
 | `className` / `inputClassName` | `string?` | Classes on wrapper / input |
 
 Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
+
+---
+
+## Slider
+
+**File:** `slider.tsx`
+**Replaces:** raw `<input type="range">` controls
+
+```tsx
+<Slider value={volume} min={0} max={100} step={1} aria-label="Volume" onValueChange={setVolume} />
+```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `value` / `onValueChange` | `number` or `[number, number]` / matching callback value | Controlled scalar or two-thumb range value |
+| `min` / `max` / `step` | `number` | Bounds and increment |
+| `onValueCommitted` | `((value: number \| [number, number]) => void)?` | Fires once when Base UI commits an interaction |
+| `size` | `"md" \| "sm" \| "xs"?` | Visual density; defaults to `md` |
+| `orientation` | `"horizontal" \| "vertical"?` | Rail direction; defaults to `horizontal` |
+| `aria-label` | `string?` | Accessible label for a scalar thumb |
+| `getAriaLabel` | `((index: number) => string)?` | Accessible label for each range thumb |
+| `inputTestId` | `string` or `[string, string]?` | Test id placed on Base UI's nested range input(s) |
+| `disabled` / `className` | `boolean?` / `string?` | Disables interaction / extends the primitive base |
+
+Built on Base UI Slider with its hidden native range input and keyboard semantics.
+Range thumbs use Base UI's non-crossing collision behavior.
+The visible rail uses accent fill, a surface-ringed thumb, focus ring, disabled opacity, and a 44 px coarse-pointer hit area without increasing the visible thumb.
+
+**When to use:** A number on a continuous scale, including a two-value range.
+Use `SliderField` when the slider needs a synced number box.
 
 ---
 

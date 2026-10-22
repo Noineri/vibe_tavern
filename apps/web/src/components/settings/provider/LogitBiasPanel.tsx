@@ -17,6 +17,7 @@ import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { apiFetch } from "../../../api/client.js";
+import { Slider } from "../../shared/slider.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -83,15 +84,15 @@ function BiasRow({
         >
           −
         </button>
-        <input
-          type="range"
+        <Slider
           min={-100}
           max={100}
           step={1}
           value={entry.bias}
           disabled={disabled || stale}
-          onChange={(e) => onUpdate({ ...entry, bias: parseInt(e.target.value, 10) })}
-          className="!h-[4px] flex-1 !rounded-full !border-0 accent-accent p-0 disabled:pointer-events-none"
+          onValueChange={(value) => onUpdate({ ...entry, bias: Math.round(value) })}
+          aria-label={`${t("logit_bias_label")} #${entry.tokenId}`}
+          className="flex-1"
         />
         <button
           type="button"

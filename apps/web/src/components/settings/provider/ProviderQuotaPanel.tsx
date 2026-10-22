@@ -10,6 +10,7 @@ import { cn } from "../../../lib/cn.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../shared/icons.js";
 import { NumberInput } from "../../shared/NumberInput.js";
+import { Slider } from "../../shared/slider.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { selectQuotaEntry, useQuotaStore } from "../../../stores/quota-store.js";
@@ -162,21 +163,15 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                   {t("quota_low_threshold")}
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="range"
+                  <Slider
                     min={1}
                     max={100}
                     step={1}
                     value={windowed.lowQuotaRemainingPercent}
                     disabled={!windowed.lowQuotaEnabled}
                     aria-label={t("quota_low_threshold")}
-                    onChange={(event) => {
-                      const value = parseInt(event.target.value, 10);
-                      if (!Number.isNaN(value)) {
-                        commit({ ...windowed, lowQuotaRemainingPercent: value }, true);
-                      }
-                    }}
-                    className="!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0"
+                    onValueChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: Math.round(value) }, true)}
+                    className="flex-1"
                   />
                   <NumberInput
                     className="h-[30px] w-[64px] shrink-0"

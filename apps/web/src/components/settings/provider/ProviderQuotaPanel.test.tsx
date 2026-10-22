@@ -169,13 +169,21 @@ describe("ProviderQuotaPanel", () => {
     expect(balance.queryByText("quota_poll_interval")).not.toBeNull();
   });
 
-  test("the low-quota toggle and its threshold write the same config", async () => {
+  test("the low-quota toggle and its nested slider threshold write the same config", async () => {
     const { findByText, getByLabelText } = setup(windowedCapability(), WINDOWED_CONFIG);
     fireEvent.click(await findByText("quota_section"));
+    const threshold = getByLabelText("quota_low_threshold") as HTMLInputElement;
+
+    expect(threshold.type).toBe("range");
+    expect(threshold.min).toBe("1");
+    expect(threshold.max).toBe("100");
+    expect(threshold.step).toBe("1");
+    expect(threshold.disabled).toBe(true);
 
     fireEvent.click(getByLabelText("quota_low_notify"));
     await waitFor(() => expect(updateCalls).toHaveLength(1));
     expect(updateCalls[0]).toMatchObject({ lowQuotaEnabled: true, lowQuotaRemainingPercent: 10 });
+    await waitFor(() => expect((getByLabelText("quota_low_threshold") as HTMLInputElement).disabled).toBe(false));
 
     fireEvent.change(getByLabelText("quota_low_threshold"), { target: { value: "25" } });
     await waitFor(() => expect(updateCalls).toHaveLength(2));

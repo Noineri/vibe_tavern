@@ -1772,7 +1772,10 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     // A1111 wires steps and CFG but deliberately has no clip-skip surface.
     expect(view.getByTestId("image-gen-range-cfg")).toBeTruthy();
     expect(view.queryByTestId("image-gen-range-clip-skip")).toBeNull();
-    const range = view.getByTestId("image-gen-range-steps");
+    const range = view.getByTestId("image-gen-range-steps") as HTMLInputElement;
+    expect(range.tagName).toBe("INPUT");
+    expect(range.type).toBe("range");
+    expect(view.getByRole("slider", { name: "image_gen_steps_label" })).toBe(range);
     expect(range.getAttribute("min")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
     expect(range.getAttribute("max")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.max));
     expect(range.getAttribute("step")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.step));
@@ -2368,6 +2371,9 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerModel: "face_yolov8s.pt" });
 
     const range = view.getByTestId("image-gen-range-adetailer-steps") as HTMLInputElement;
+    expect(range.tagName).toBe("INPUT");
+    expect(range.type).toBe("range");
+    expect(view.getByRole("slider", { name: "image_gen_adetailer_steps_label" })).toBe(range);
     expect(range.value).toBe("31");
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");

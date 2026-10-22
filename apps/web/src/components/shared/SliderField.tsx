@@ -1,6 +1,7 @@
-import { cn } from "../../lib/cn.js";
+import { useRef } from "react";
 import { NumberInput } from "./NumberInput.js";
 import { lblCls } from "../../lib/field-tokens.js";
+import { Slider } from "./slider.js";
 
 export interface SliderFieldProps {
   label: string;
@@ -37,29 +38,40 @@ export function SliderField({
   onCommit,
 }: SliderFieldProps) {
   const val = value ?? min;
+  const latestValue = useRef(val);
+  latestValue.current = val;
 
-  function handleRangeChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = parseFloat(e.target.value);
-    if (!Number.isNaN(v)) onChange(v);
+  function handleValueChange(nextValue: number) {
+    if (disabled) return;
+    latestValue.current = nextValue;
+    onChange(nextValue);
+  }
+
+  function handleNumberCommit() {
+    if (!disabled) onCommit?.(latestValue.current);
+  }
+
+  function handleValueCommitted(committedValue: number) {
+    if (disabled) return;
+    latestValue.current = committedValue;
+    onCommit?.(committedValue);
   }
 
   return (
     <div>
       <label className={lblCls}>{label}</label>
       <div className="mt-1 flex items-center gap-2">
-        <input
-          type="range"
+        <Slider
+          className="flex-1"
+          value={val}
           min={min}
           max={max}
           step={step}
-          value={val}
-          onChange={handleRangeChange}
-          onPointerUp={onCommit ? () => onCommit(val) : undefined}
-          onKeyUp={onCommit ? () => onCommit(val) : undefined}
           disabled={disabled}
           aria-label={ariaLabel ?? label}
-          data-testid={rangeTestId}
-          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0", disabled && "opacity-40")}
+          inputTestId={rangeTestId}
+          onValueChange={handleValueChange}
+          onValueCommitted={onCommit ? handleValueCommitted : undefined}
         />
         <div data-testid={numberTestId} className="contents">
           <NumberInput
@@ -68,8 +80,8 @@ export function SliderField({
             max={max}
             step={step}
             value={val}
-            onChange={onChange}
-            onBlur={onCommit ? () => onCommit(val) : undefined}
+            onChange={handleValueChange}
+            onBlur={onCommit ? handleNumberCommit : undefined}
             disabled={disabled}
             hideControls
           />

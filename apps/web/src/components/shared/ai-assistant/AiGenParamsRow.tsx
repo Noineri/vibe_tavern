@@ -1,6 +1,7 @@
 import { Icons } from "../icons.js";
 import { NumberInput } from "../NumberInput.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
+import { Slider } from "../slider.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
 import { lblCls } from "../../../lib/field-tokens.js";
@@ -76,14 +77,14 @@ export function AiGenParamsRow({
           <div>
             <label className={lblCls}>{t("ai_param_temperature")}</label>
             <div className="flex items-center gap-2">
-              <input
-                type="range"
+              <Slider
                 min={0}
                 max={2}
                 step={0.1}
                 value={temperature}
-                onChange={(e) => onTemperatureChange(Number(e.target.value))}
-                className="flex-1 accent-accent"
+                onValueChange={onTemperatureChange}
+                aria-label={t("ai_param_temperature")}
+                className="flex-1"
               />
               <NumberInput
                 min={0}

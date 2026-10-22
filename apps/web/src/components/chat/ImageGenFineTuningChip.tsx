@@ -51,16 +51,18 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { SliderField } from "../shared/SliderField.js";
+import { Slider } from "../shared/slider.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
 import { adetailerSummary, kreaSummary, samplersSummary } from "../../lib/imagegen/chip-section-summaries.js";
 import { useImageGenChipSectionsStore } from "../../stores/image-gen-chip-sections-store.js";
 import { ImageGenChipSection } from "./image-gen-chip-section.js";
 import { ImageGenChipBodyLayout } from "./image-gen-chip-body-layout.js";
+import { IMAGE_GEN_SLIDER_RANGE_TESTIDS } from "./image-gen-slider-test-ids.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -876,16 +878,6 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
 
 // ─── Per-model settings (IG-CF15 15d) ───────────────────────────────────
 
-// The settings block's pinned slider testids (kept VERBATIM from the pre-T4
-// inline rows — tests and muscle memory ride these; the descriptor's field
-// id and the testid stem are NOT the same string for cfg/clip-skip).
-const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
-  steps: "image-gen-range-overlay-steps",
-  cfgScale: "image-gen-range-overlay-cfg",
-  cfgRescale: "image-gen-range-overlay-cfg-rescale",
-  clipSkip: "image-gen-range-overlay-clip",
-};
-
 /** The loaded model's overlay editor — the chip's «quick pult» view of the
  *  same data the providers pane edits (one source of truth, two surfaces).
  *  Fields mirror the pane's advanced section contract: slider cells display
@@ -1209,19 +1201,19 @@ function ImageGenModelSettingsAccordion({
           <div className="flex flex-col gap-1.5">
             <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
             <div className="flex items-center gap-2">
-              <input
-                type="range"
-                data-testid="image-gen-ft-range-adetailer-steps"
+              <Slider
+                value={adetailerSteps ?? baseSteps}
                 min={adetailerControl.stepsRange.min}
                 max={adetailerControl.stepsRange.max}
                 step={adetailerControl.stepsRange.step}
-                value={adetailerSteps ?? baseSteps}
-                onChange={(e) => {
-                  const patch = adetailerControl.parseSteps(e.target.value);
+                onValueChange={(next) => {
+                  const patch = adetailerControl.parseSteps(String(next));
                   if (patch !== null) commit(patch);
                 }}
                 disabled={disabled}
-                className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+                aria-label={t(adetailerControl.stepsLabelKey)}
+                inputTestId="image-gen-ft-range-adetailer-steps"
+                className="min-w-0 flex-1"
               />
               <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
                 <NumberInput
@@ -1416,7 +1408,7 @@ function ImageGenModelSettingsAccordion({
               step={slider.range.step}
               onChange={(value) => commit(slider.commit(value))}
               disabled={disabled}
-              rangeTestId={SLIDER_RANGE_TESTIDS[slider.field]}
+              rangeTestId={IMAGE_GEN_SLIDER_RANGE_TESTIDS[slider.field]}
             />
           ))}
 

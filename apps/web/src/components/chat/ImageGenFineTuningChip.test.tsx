@@ -1570,6 +1570,9 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     expect(upsertCalls[1].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt" });
 
     const range = within(adBody as HTMLElement).getByTestId("image-gen-ft-range-adetailer-steps") as HTMLInputElement;
+    expect(range.tagName).toBe("INPUT");
+    expect(range.type).toBe("range");
+    expect(within(adBody as HTMLElement).getByRole("slider", { name: "image_gen_adetailer_steps_label" })).toBe(range);
     expect(range.value).toBe("31");
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");
@@ -1599,6 +1602,20 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
       fireEvent.blur(stepsInput);
     });
     expect(upsertCalls.length).toBe(writesAfter);
+
+    act(() => {
+      useImageGenChatStore.setState({
+        runningByChat: {
+          "chat-ms4": {
+            mode: "free",
+            anchorMessageId: "message-1",
+            profileId: "ig2",
+            liveProgress: false,
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(range.disabled).toBe(true));
   });
 
   it("ICR-5: the sections render in the approved order — LoRA → Hires → ADetailer → Samplers (comfy arm); Krea 2 sits before Samplers (krea arm)", async () => {
