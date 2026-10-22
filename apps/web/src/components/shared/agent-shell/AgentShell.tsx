@@ -11,7 +11,6 @@ import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
-import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
@@ -26,14 +25,8 @@ import { listCoauthorSkills } from "../../../api/skill-api.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
-import { AgentChatHeader } from "./AgentChatHeader.js";
-import { AgentContextMeter } from "./AgentContextMeter.js";
-import { AgentTodoSection } from "./AgentTodoSection.js";
-import { AgentPlanSection } from "./AgentPlanSection.js";
+import { AgentChatPane } from "./AgentChatPane.js";
 import { AgentProfileModal } from "./AgentProfileModal.js";
-import { AgentMessageList } from "./AgentMessageList.js";
-import { AgentInputArea } from "./AgentInputArea.js";
-import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -550,131 +543,41 @@ export function AgentShell({
   }, [editTabPulse]);
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
+  // AP-3b: the pane JSX lives in AgentChatPane.tsx (this shell sits at the
+  // arch-gate line cap); the element below is built ONCE here and rendered
+  // by every layout branch — mobile tabbed / mobile chat-only / desktop
+  // chat-only / desktop two-pane — exactly the pre-split `chatPane` shape.
   const chatPane = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
-      {sessionLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            icon={<Icons.Sparkles className="h-6 w-6 animate-pulse text-t3" />}
-            title={t(host.i18n.loading)}
-          />
-        </div>
-      ) : sessionError ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            icon={<Icons.Close className="h-6 w-6 text-danger-text" />}
-            title={t("agent_load_error")}
-            sub={sessionError}
-            cta={<span>{t("agent_retry")}</span>}
-            onCta={() => void loadSession()}
-          />
-        </div>
-      ) : threadId ? (
-        <>
-          <AgentChatHeader
-            leading={host.toolbarSlot?.(hostCtx)}
-            sessions={sessions}
-            activeThreadId={threadId}
-            disabled={ctrl.isSending}
-            onActivate={handleActivate}
-            onNew={handleNewSession}
-            onRename={handleRenameSession}
-            onOpenProfile={() => setProfileModalOpen(true)}
-          />
-          <AgentContextMeter
-            metrics={copilotContext.metrics}
-            segmentLabels={host.meterSegmentLabels}
-            autoCompact={copilotContext.autoCompact}
-            isCompacting={copilotContext.isCompacting}
-            isSending={ctrl.isSending}
-            onCompact={() =>
-              void copilotContext.compact().catch((err: unknown) => {
-                // Surface the server's reason (typed 400s carry a meaningful
-                // message, e.g. "Nothing to compact…") instead of a generic label.
-                const message = err instanceof Error && err.message ? err.message : "";
-                toast.error(message || t("copilot_context_compact_error"));
-              })
-            }
-            onToggleAutoCompact={(enabled) =>
-              void copilotContext.setAutoCompact(enabled).catch(() => {
-                toast.error(t("copilot_context_auto_toggle_error"));
-              })
-            }
-          />
-          {/* TAG-8 (restored PM-7): the pinned session-checklist section sits
-              DIRECTLY below the meter and DIRECTLY ABOVE the plan section
-              (never scrolls with the feed); hidden until the model's first
-              `todo` call; read-only — the model owns the checklist. */}
-          <AgentTodoSection kind={kind} threadId={threadId} />
-          {/* PM-6: the owner-scoped agent plan sits DIRECTLY below the todo
-              section; hidden while the plan is empty; its editor locks while a
-              turn streams. PM-7: todo (the thread's session) ABOVE plan (the
-              owner's durable document) — each hides itself when empty.
-              SC-0i: unmounted entirely when the host defines no plan owner. */}
-          {planOwner !== undefined && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
-          <AgentMessageList
-            kind={kind}
-            threadId={threadId}
-            messages={messages}
-            events={events}
-            pendingText={ctrl.pendingText}
-            pendingReasoning={ctrl.pendingReasoning}
-            pendingUserContent={ctrl.pendingUserContent}
-            isSending={ctrl.isSending}
-            pendingAskAnswer={ctrl.pendingAskAnswer}
-            pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
-            emptyTitle={t(host.i18n.emptyTitle)}
-            emptySub={host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
-            onAnswer={(askToolCallId, answer) => {
-              sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
-            }}
-          />
-          {isMobile ? (
-            <AgentMobileInputArea
-              isSending={ctrl.isSending}
-              prefill={inputPrefill ?? undefined}
-              onSend={(content) => {
-                sendWithOptions((options) => void ctrl.handleSend(content, options));
-              }}
-              onCancel={ctrl.handleCancel}
-              providerProfileId={providerProfileId}
-              model={model}
-              onProviderChange={handleProviderChange}
-              mentionCatalog={catalog}
-              pinnedContext={pinnedContext}
-              onPinContext={handlePinContext}
-              onUnpinContext={handleUnpinContext}
-              topSlot={composerTopSlot}
-            />
-          ) : (
-            <AgentInputArea
-              isSending={ctrl.isSending}
-              prefill={inputPrefill ?? undefined}
-              onSend={(content) => {
-                sendWithOptions((options) => void ctrl.handleSend(content, options));
-              }}
-              onCancel={ctrl.handleCancel}
-              providerProfileId={providerProfileId}
-              model={model}
-              onProviderChange={handleProviderChange}
-              mentionCatalog={catalog}
-              pinnedContext={pinnedContext}
-              onPinContext={handlePinContext}
-              onUnpinContext={handleUnpinContext}
-              topSlot={composerTopSlot}
-            />
-          )}
-        </>
-      ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-            title={t(host.i18n.title)}
-            sub={host.i18n.subtitle !== undefined ? t(host.i18n.subtitle) : undefined}
-          />
-        </div>
-      )}
-    </div>
+    <AgentChatPane
+      kind={kind}
+      isMobile={isMobile}
+      host={host}
+      hostCtx={hostCtx}
+      sessionLoading={sessionLoading}
+      sessionError={sessionError}
+      threadId={threadId}
+      loadSession={loadSession}
+      sessions={sessions}
+      messages={messages}
+      events={events}
+      handleActivate={handleActivate}
+      handleNewSession={handleNewSession}
+      handleRenameSession={handleRenameSession}
+      setProfileModalOpen={setProfileModalOpen}
+      copilotContext={copilotContext}
+      ctrl={ctrl}
+      sendWithOptions={sendWithOptions}
+      planOwner={planOwner}
+      inputPrefill={inputPrefill}
+      providerProfileId={providerProfileId}
+      model={model}
+      handleProviderChange={handleProviderChange}
+      catalog={catalog}
+      pinnedContext={pinnedContext}
+      handlePinContext={handlePinContext}
+      handleUnpinContext={handleUnpinContext}
+      composerTopSlot={composerTopSlot}
+    />
   );
 
   // The host's editor pane (absent descriptor = chat-only host: no pane, no
