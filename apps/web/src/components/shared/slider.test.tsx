@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useState } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -16,6 +16,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+	globalThis.ResizeObserver = originalResizeObserver;
+});
+
+beforeEach(() => {
 	globalThis.ResizeObserver = originalResizeObserver;
 });
 
@@ -81,12 +85,42 @@ function ControlledField({
 	onValueCommitted?: (value: number) => void;
 }) {
 	const [value, setValue] = useState(initialValue);
-	return <Slider appearance="field" value={value} min={0} max={10} step={2} label="Temperature" aria-label="Temperature" numberTestId="field-number" onValueChange={(next) => { setValue(next); onValueChange(next); }} onValueCommitted={onValueCommitted} />;
+	return (
+		<Slider
+			appearance="field"
+			value={value}
+			min={0}
+			max={10}
+			step={2}
+			label="Temperature"
+			aria-label="Temperature"
+			numberTestId="field-number"
+			onValueChange={(next) => {
+				setValue(next);
+				onValueChange(next);
+			}}
+			onValueCommitted={onValueCommitted}
+		/>
+	);
 }
 
 function ControlledRangeField({ onValueChange = () => {} }: { onValueChange?: (value: [number, number]) => void }) {
 	const [value, setValue] = useState<[number, number]>([2, 6]);
-	return <Slider appearance="field" value={value} min={0} max={10} step={1} label="Range" getAriaLabel={(index) => index === 0 ? "From" : "To"} onValueChange={(next) => { setValue(next); onValueChange(next); }} />;
+	return (
+		<Slider
+			appearance="field"
+			value={value}
+			min={0}
+			max={10}
+			step={1}
+			label="Range"
+			getAriaLabel={(index) => index === 0 ? "From" : "To"}
+			onValueChange={(next) => {
+				setValue(next);
+				onValueChange(next);
+			}}
+		/>
+	);
 }
 
 function input(container: HTMLElement, testId: string): HTMLInputElement {
@@ -282,9 +316,9 @@ describe("Slider", () => {
 		);
 
 		expect(container.querySelector("[data-slider-field]")).not.toBeNull();
-		expect(container.querySelector("[data-slider-field-label-above]")?.textContent).toBe("Temperature");
 		const field = container.querySelector<HTMLElement>("[data-slider-field]");
 		if (!field) throw new Error("Missing field slider");
+		expect(field.classList.contains("peer-has-[input:focus-visible]:border-accent")).toBe(true);
 		fireEvent.doubleClick(field);
 		expect(input(container, "temperature-number").type).toBe("number");
 	});
@@ -367,8 +401,11 @@ describe("Slider", () => {
 		const bubble = container.querySelector<HTMLOutputElement>("[data-slider-bubble]");
 		if (!bubble) throw new Error("Missing rail bubble");
 		expect(bubble.parentElement?.getAttribute("data-slider-thumb")).toBe("true");
-		expect(bubble.classList.contains("data-[dragging]:block")).toBe(true);
-		expect(bubble.classList.contains("has-[input:focus-visible]:block")).toBe(true);
+		expect(bubble.parentElement?.classList.contains("group/thumb")).toBe(true);
+		expect(bubble.classList.contains("group-data-[dragging]/thumb:block")).toBe(true);
+		expect(bubble.classList.contains("group-has-[input:focus-visible]/thumb:block")).toBe(true);
+		expect(bubble.classList.contains("data-[dragging]:block")).toBe(false);
+		expect(bubble.classList.contains("has-[input:focus-visible]:block")).toBe(false);
 		expect(bubble.textContent).toBe("at 4");
 		const withoutFormatter = render(<Slider value={4} min={0} max={10} step={1} aria-label="No bubble" onValueChange={() => {}} />);
 		expect(withoutFormatter.container.querySelector("[data-slider-bubble]")).toBeNull();
@@ -407,44 +444,109 @@ describe("Slider", () => {
 		expect(onValueCommitted).toHaveBeenCalledTimes(2);
 	});
 
-	it("moves labels above and back inside without losing help on observer-driven width changes", () => {
-		const callbacks: (() => void)[] = [];
+	it("moves labels above and back inside while measured help stays interactive and does not scrub", () => {
+		const resizeCallbacks: (() => void)[] = [];
 		class ResizeObserverMock implements ResizeObserver {
-			constructor(callback: ResizeObserverCallback) { callbacks.push(() => callback([], this)); }
+			constructor(callback: ResizeObserverCallback) {
+				resizeCallbacks.push(() => callback([], this));
+			}
 			observe() {}
 			unobserve() {}
 			disconnect() {}
 			takeRecords() { return []; }
 		}
 		globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
-		const { container } = render(<Slider appearance="field" value={4} min={0} max={10} step={1} label="Temperature" help={<button type="button">?</button>} aria-label="Temperature" onValueChange={() => {}} />);
+		const onHelp = mock();
+		const onValueChange = mock();
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={1}
+				label="Temperature"
+				help={<button type="button" onClick={onHelp}>?</button>}
+				aria-label="Temperature"
+				onValueChange={onValueChange}
+			/>,
+		);
 		const field = container.querySelector<HTMLElement>("[data-slider-field]");
 		if (!field) throw new Error("Missing field slider");
+		Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 300 }) });
 		let width = 300;
 		Object.defineProperty(field, "clientWidth", { configurable: true, get: () => width });
-		const label = container.querySelector<HTMLElement>("[data-slider-field-measure-label]");
-		const value = container.querySelector<HTMLElement>("[data-slider-field-measure-value]");
-		if (!label || !value) throw new Error("Missing field measurements");
-		Object.defineProperty(label, "scrollWidth", { configurable: true, value: 120 });
-		Object.defineProperty(value, "scrollWidth", { configurable: true, value: 30 });
-		act(() => callbacks.forEach((callback) => callback()));
+		function setMeasuredWidths() {
+			const label = container.querySelector<HTMLElement>("[data-slider-field-label-content]");
+			const value = container.querySelector<HTMLElement>("[data-slider-field-measure-value]");
+			if (!label || !value) throw new Error("Missing field measurements");
+			// This is the complete rendered label width, including the help trigger.
+			Object.defineProperty(label, "scrollWidth", { configurable: true, value: 150 });
+			Object.defineProperty(value, "scrollWidth", { configurable: true, value: 30 });
+		}
+		setMeasuredWidths();
+		act(() => resizeCallbacks.forEach((callback) => callback()));
 		expect(container.querySelector("[data-slider-field-label]")?.textContent).toBe("Temperature?");
+		const help = container.querySelector<HTMLElement>("[data-slider-field-help]");
+		if (!help) throw new Error("Missing field help");
+		expect(help.classList.contains("pointer-events-auto")).toBe(true);
+		fireEvent.pointerDown(help, { pointerId: 1, pointerType: "mouse", clientX: 250, button: 0 });
+		fireEvent.click(help.querySelector("button")!);
+		expect(onHelp).toHaveBeenCalledTimes(1);
+		expect(onValueChange).not.toHaveBeenCalled();
+		setMeasuredWidths();
 		width = 100;
-		act(() => callbacks.forEach((callback) => callback()));
+		expect(container.querySelector<HTMLElement>("[data-slider-field-label-content]")?.scrollWidth).toBe(150);
+		expect(container.querySelector<HTMLElement>("[data-slider-field-measure-value]")?.scrollWidth).toBe(30);
+		expect(field.clientWidth).toBe(100);
+		expect(resizeCallbacks.length).toBeGreaterThan(0);
+		act(() => resizeCallbacks.forEach((callback) => callback()));
 		expect(container.querySelector("[data-slider-field-label-above]")?.textContent).toBe("Temperature?");
+		setMeasuredWidths();
 		width = 300;
-		act(() => callbacks.forEach((callback) => callback()));
+		act(() => resizeCallbacks.forEach((callback) => callback()));
 		expect(container.querySelector("[data-slider-field-label]")?.textContent).toBe("Temperature?");
 	});
 
-	it("avoids NaN geometry and an accent edge at the scalar minimum, and formats tuples as a whole value", () => {
+	it("keeps degenerate tuple bounds exact and inert, avoids NaN geometry and formats tuples as a whole value", () => {
 		const { container } = render(<Slider appearance="field" value={0} min={0} max={10} step={1} aria-label="Minimum" onValueChange={() => {}} />);
 		const fill = container.querySelector<HTMLElement>("[data-slider-field-fill]");
 		if (!fill) throw new Error("Missing field fill");
 		expect(fill.style.width).toBe("0%");
 		expect(fill.classList.contains("border-r-2")).toBe(false);
-		const degenerate = render(<Slider appearance="field" value={[1, 1]} min={1} max={1} step={1} getAriaLabel={(index) => String(index)} onValueChange={() => {}} />);
-		expect(degenerate.container.innerHTML.includes("NaN%")).toBe(false);
+		const onDegenerateChange = mock();
+		const onDegenerateCommit = mock();
+		const degenerate = render(
+			<Slider
+				appearance="field"
+				value={[1, 1]}
+				min={1}
+				max={1}
+				step={1}
+				inputTestId={["degenerate-from", "degenerate-to"]}
+				getAriaLabel={(index) => String(index)}
+				onValueChange={onDegenerateChange}
+				onValueCommitted={onDegenerateCommit}
+			/>,
+		);
+		const visibleGeometry = degenerate.container.querySelectorAll<HTMLElement>(
+			"[data-slider-field-fill], [data-slider-field-handle]",
+		);
+		for (const element of visibleGeometry) {
+			expect(element.getAttribute("style")?.includes("NaN")).toBe(false);
+		}
+		const degenerateFrom = input(degenerate.container, "degenerate-from");
+		const degenerateTo = input(degenerate.container, "degenerate-to");
+		expect([degenerateFrom.min, degenerateFrom.max, degenerateFrom.value]).toEqual(["1", "1", "1"]);
+		expect([degenerateTo.min, degenerateTo.max, degenerateTo.value]).toEqual(["1", "1", "1"]);
+		fireEvent.keyDown(degenerateFrom, { key: "ArrowRight" });
+		const degenerateField = degenerate.container.querySelector<HTMLElement>("[data-slider-field]");
+		if (!degenerateField) throw new Error("Missing degenerate field");
+		Object.defineProperty(degenerateField, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 100 }) });
+		fireEvent.pointerDown(degenerateField, { pointerId: 9, pointerType: "mouse", clientX: 80, button: 0 });
+		fireEvent.pointerUp(degenerateField, { pointerId: 9, pointerType: "mouse", clientX: 80 });
+		expect(onDegenerateChange).not.toHaveBeenCalled();
+		expect(onDegenerateCommit).not.toHaveBeenCalled();
 		const tuple = render(<Slider appearance="field" value={[1, 10]} min={1} max={10} step={1} getAriaLabel={(index) => String(index)} formatValue={(value) => `${value[0]} – ${value[1]} · 10 messages`} onValueChange={() => {}} />);
 		expect(tuple.container.querySelector("[data-slider-field-value]")?.textContent).toBe("1 – 10 · 10 messages");
 	});
