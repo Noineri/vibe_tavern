@@ -5,6 +5,9 @@
  * "8 — yes, recommended" — option chips AND free text, one option flagged
  * recommended).
  *
+ * forks: 1 — AgentPermissionCard.tsx (SC-23f, the `read_message_prompt`
+ * permission gate; deviations D1–D6 named in the copy's header).
+ *
  * Submitting goes through the TAG-5 split-turn answer mode (style B): the
  * answer REPLACES the awaiting tool-result row server-side (no separate user
  * row) and the turn resumes as a continuation — this card never starts a new

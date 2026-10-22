@@ -6,16 +6,18 @@ import {
   useAgentTurnStore,
   type AgentAskState,
   type AgentFeedEntry,
+  type AgentPermissionState,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
-import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
-import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
+import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
+import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { AgentAskCard } from "./AgentAskCard.js";
+import { AgentPermissionCard } from "./AgentPermissionCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
 import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
@@ -41,6 +43,7 @@ const EMPTY_EVENTS: AgentThreadEventWire[] = [];
 type CopilotTurnAnchorItem =
   | { kind: "accordion"; activities: AgentToolActivity[] }
   | { kind: "ask"; activity: AgentToolActivity }
+  | { kind: "permission"; activity: AgentToolActivity }
   | { kind: "proposal"; activity: AgentToolActivity; proposal: RecordProposal };
 const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
 
@@ -88,11 +91,17 @@ export interface AgentMessageListProps {
   /** TAG-9: disables ask-card interactivity while a stream runs. */
   isSending?: boolean;
   /** TAG-9: answer handler for the live awaiting ask card — bound by the
-   *  shell with the current draft buffers (mirrors the input area's onSend). */
-  onAnswer?: (toolCallId: string, answer: CopilotAskAnswerInput) => void;
+   *  shell with the current draft buffers (mirrors the input area's onSend).
+   *  SC-23f: also carries the permission card's decision (just another
+   *  answer-union member on the same path). */
+  onAnswer?: (toolCallId: string, answer: CopilotAnswerInput) => void;
   /** TAG-9: the controller's optimistic resolution of the just-answered ask —
    *  flips the card immediately, before the settle+refetch round-trip. */
   pendingAskAnswer?: AgentPendingAskAnswer | null;
+  /** SC-23f: the controller's optimistic resolution of the just-decided
+   *  permission card — flips the card immediately, before the
+   *  settle+refetch round-trip. */
+  pendingPermissionAnswer?: AgentPendingPermissionAnswer | null;
   /** AS-8c3a: already-translated empty-state title override — the shell
    *  resolves the host's `emptyTitle` key through `useT` and passes the
    *  string down, so this list never imports the host registry itself. */
@@ -120,6 +129,7 @@ export function AgentMessageList({
   isSending = false,
   onAnswer,
   pendingAskAnswer = null,
+  pendingPermissionAnswer = null,
   emptyTitle,
   emptySub,
   events = EMPTY_EVENTS,
@@ -178,6 +188,13 @@ export function AgentMessageList({
           pending.push({ kind: "ask", activity });
           continue;
         }
+        // SC-23f: a permission request renders in place outside the
+        // accordion (the ask-card precedent) — it never joins the turn's
+        // tool group, so a settled turn cannot hide it behind a closed list.
+        if (activity.permission) {
+          pending.push({ kind: "permission", activity });
+          continue;
+        }
         // SC-13a: a record proposal renders in place outside the accordion
         // (the ask-card precedent) — it never joins the turn's tool group,
         // so a settled turn cannot hide it behind a closed list.
@@ -211,16 +228,17 @@ export function AgentMessageList({
     [activities],
   );
 
-  // TA-1: the live feed IS the current turn — every non-ask activity it
-  // references collapses into that turn's single accordion (rendered at the
-  // first tool activity's slot in the feed loop below).
+  // TA-1: the live feed IS the current turn — every non-ask non-permission
+  // activity it references collapses into that turn's single accordion
+  // (rendered at the first tool activity's slot in the feed loop below).
   const liveToolActivities = useMemo(() => {
     const out: AgentToolActivity[] = [];
     for (const entry of feed) {
       if (entry.kind !== "activity") continue;
       const activity = activityById.get(entry.id);
       // SC-13a: asks and record proposals render in place (never inside).
-      if (activity && !activity.ask && recordProposalOf(activity) === undefined) out.push(activity);
+      // SC-23f: permission cards render in place too (the ask precedent).
+      if (activity && !activity.ask && !activity.permission && recordProposalOf(activity) === undefined) out.push(activity);
     }
     return out;
   }, [feed, activityById]);
@@ -237,6 +255,36 @@ export function AgentMessageList({
     }
     return lastHistoryActivityId;
   }, [feed, lastHistoryActivityId]);
+
+  // SC-23f: `read_message_prompt` remains its own interactive card,
+  // rendered IN PLACE at its chronological slot — never inside a turn's
+  // tool accordion (the ask-card precedent: TA-1 collects only non-ask
+  // non-permission activities). The optimistic override resolves the card
+  // immediately; the RESOLVED states read the rewritten row (granted →
+  // allowed, denied → denied), never local state alone.
+  const renderPermissionActivity = (activity: AgentToolActivity) => {
+    const permission = activity.permission!;
+    const resolved: AgentPermissionState =
+      pendingPermissionAnswer && pendingPermissionAnswer.toolCallId === activity.toolCallId
+        ? {
+            ...permission,
+            status: pendingPermissionAnswer.decision === "allow" ? "granted" : "denied",
+          }
+        : permission;
+    return (
+      <AgentPermissionCard
+        key={activity.toolCallId}
+        permission={resolved}
+        interactive={
+          resolved.status === "awaiting_permission" &&
+          activity.toolCallId === lastActivityId &&
+          !isSending &&
+          onAnswer !== undefined
+        }
+        onDecision={onAnswer ? (decision) => onAnswer(activity.toolCallId, { decision }) : undefined}
+      />
+    );
+  };
 
   // TAG-9: `ask_user` remains its own interactive card, rendered IN PLACE at
   // its chronological slot — never inside a turn's tool accordion (TA-1
@@ -282,9 +330,9 @@ export function AgentMessageList({
   };
 
   // TA-1: history renders each turn as ONE accordion (at the first tool
-  // activity's slot) plus in-place ask and proposal cards, in the items'
-  // slot order. Only the live feed receives `isSending`: historical groups
-  // stay collapsed even while a newer turn is in flight.
+  // activity's slot) plus in-place ask, permission and proposal cards, in
+  // the items' slot order. Only the live feed receives `isSending`:
+  // historical groups stay collapsed even while a newer turn is in flight.
   const renderAnchorItems = (items: readonly CopilotTurnAnchorItem[]) =>
     items.map((item) =>
       item.kind === "accordion" ? (
@@ -296,6 +344,8 @@ export function AgentMessageList({
         />
       ) : item.kind === "ask" ? (
         renderAskActivity(item.activity)
+      ) : item.kind === "permission" ? (
+        renderPermissionActivity(item.activity)
       ) : (
         renderProposalActivity(item.activity, item.proposal)
       ),
@@ -452,6 +502,13 @@ export function AgentMessageList({
                   rendered.push(renderAskActivity(activity));
                   continue;
                 }
+                // SC-23f: a live permission request renders in place
+                // outside the turn's single accordion (the ask-card
+                // precedent).
+                if (activity.permission) {
+                  rendered.push(renderPermissionActivity(activity));
+                  continue;
+                }
                 // SC-13a: a live record proposal renders in place outside
                 // the turn's single accordion (the ask-card precedent).
                 const liveProposal = recordProposalOf(activity);
@@ -459,10 +516,10 @@ export function AgentMessageList({
                   rendered.push(renderProposalActivity(activity, liveProposal));
                   continue;
                 }
-                // TA-1: the turn's FIRST non-ask tool activity renders the
-                // turn's single accordion (ALL non-ask activities of the
-                // feed — one turn); interleaved text does not split it and
-                // later tool activities are already inside.
+                // TA-1: the turn's FIRST non-ask non-permission tool
+                // activity renders the turn's single accordion (ALL such
+                // activities of the feed — one turn); interleaved text does
+                // not split it and later tool activities are already inside.
                 if (!accordionPlaced) {
                   accordionPlaced = true;
                   rendered.push(

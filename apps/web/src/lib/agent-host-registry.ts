@@ -319,7 +319,7 @@ export interface AgentDefaultModelBinding {
  * experience client — the single spelling stays the client's (wire types are
  * untouched by AS-6c-ii; per-kind wire types arrive with a later unit).
  */
-export type { CopilotAskAnswerInput, CopilotStreamOpts } from "../api/experience-copilot-api.js";
+export type { CopilotAskAnswerInput, CopilotPermissionAnswerInput, CopilotAnswerInput, CopilotStreamOpts } from "../api/experience-copilot-api.js";
 
 /** A strict i18n key — the generated en-locale union (`i18n/resources`), so a
  *  typo'd key in a host descriptor is a compile error, same as a literal `t()`

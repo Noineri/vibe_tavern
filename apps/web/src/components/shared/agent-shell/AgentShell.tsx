@@ -622,6 +622,7 @@ export function AgentShell({
             pendingUserContent={ctrl.pendingUserContent}
             isSending={ctrl.isSending}
             pendingAskAnswer={ctrl.pendingAskAnswer}
+            pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
             emptyTitle={t(host.i18n.emptyTitle)}
             emptySub={host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
             onAnswer={(askToolCallId, answer) => {

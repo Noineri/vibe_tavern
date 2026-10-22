@@ -46,6 +46,24 @@ export const streamExperienceCopilot = (
  *  family; the permission sender is SC-23f's). */
 export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAskAnswer, "toolCallId">;
 
+/** SC-23f: the permission decision for a pending `read_message_prompt`
+ *  request (SC-23e split-turn), minus the `toolCallId` the caller supplies —
+ *  `decision: "allow"` lets the model read the reply's exact prompt,
+ *  `"deny"` continues the turn without it. The permission MEMBER of the
+ *  wire answer union (narrowed by shape — the contracts package exports the
+ *  union, not the member, so this derives it here and stays web-local). */
+export type CopilotPermissionAnswerInput = Omit<
+  Extract<ExperienceCopilotStreamAnswer, { decision: unknown }>,
+  "toolCallId"
+>;
+
+/** SC-23f: either split-turn answer family — the ask input or the permission
+ *  decision. The controller's answer path and the message list's `onAnswer`
+ *  take this union (one path, no transport fork — `answerCopilotAsk` already
+ *  carries the wire union); each card's submitter stays narrowed to its own
+ *  family. */
+export type CopilotAnswerInput = CopilotAskAnswerInput | CopilotPermissionAnswerInput;
+
 /** Answer a pending `ask_user` question (TAG-5 split-turn, style B): POSTs
  *  the SAME stream endpoint with the `answer` body instead of `content` —
  *  the answer replaces the awaiting tool-result row server-side (no new

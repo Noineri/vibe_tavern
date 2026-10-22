@@ -82,6 +82,28 @@ export interface AgentAskState {
   answer?: string;
 }
 
+/** One `read_message_prompt` call's lifecycle state (SC-23f), keyed by the
+ *  activity's `toolCallId`. `awaiting_permission` is the live/persisted
+ *  marker the permission card renders interactively (the card renders
+ *  ENTIRELY from it — the reply's first line, variant number and token
+ *  estimate, no second fetch); `granted`/`denied` are the REWRITTEN tool-row
+ *  payloads (the decision replaces the awaiting marker in place — allow
+ *  stores the real rendered prompt, deny `{ status: "denied" }` — and the
+ *  card's resolved states read the ROW, not local state alone). */
+export interface AgentPermissionState {
+  status: "awaiting_permission" | "granted" | "denied";
+  /** The reply's branch position (the tool input, echoed by the marker). */
+  position?: number;
+  /** The RP UI's variant number (`variantIndex + 1`). */
+  variantNumber?: number;
+  /** The reply's first line — how the user recognizes the swipe. */
+  replyFirstLine?: string;
+  /** The token estimate of the exact rendered prompt text. */
+  promptTokens?: number;
+  /** The preset name the trace froze (the reply's provenance). */
+  presetName?: string;
+}
+
 /**
  * One tool call's accumulated state. The `tool-result` event finalizes the
  * entry with the proposal fields (summary/proposed/target); earlier events
@@ -120,6 +142,11 @@ export interface AgentToolActivity {
    *  from both the live SSE path and the persisted extraction, so the two
    *  paths cannot drift. */
   ask?: AgentAskState;
+  /** Present iff this is a `read_message_prompt` activity (SC-23f): the
+   *  awaiting/granted/denied status the permission card renders. Produced
+   *  by ONE parser (`parseAgentPermissionState`) from both the live SSE
+   *  path and the persisted extraction, so the two paths cannot drift. */
+  permission?: AgentPermissionState;
 }
 
 /** TF-4: one ordered feed entry of the active turn — a closed-or-open TEXT
@@ -316,6 +343,22 @@ export function extractPersistedAgentActivities(
       });
       continue;
     }
+    // A read_message_prompt row is the awaiting marker or the post-decision
+    // rewrite (SC-23e): awaiting carries everything the card renders (first
+    // line, variant number, token estimate); granted carries the real
+    // rendered prompt; denied carries only the status. Anything else is a
+    // malformed row (error card with the raw content).
+    if (toolName === "read_message_prompt") {
+      const permission = parseAgentPermissionState(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName,
+        args: info?.args,
+        status: permission ? "done" : "error",
+        ...(permission ? { permission } : { summary: message.content }),
+      });
+      continue;
+    }
     // run_test / run_simulate / suggest_visual_binding — non-proposal results
     // (informational digests that never enter proposal aggregation). Render a
     // graceful done-with-raw-content card.
@@ -462,6 +505,61 @@ export function parseAgentAskState(args: unknown, output: unknown): AgentAskStat
       ...(options !== undefined ? { options } : {}),
       ...(recommended !== undefined ? { recommended } : {}),
       status: "skipped",
+    };
+  }
+  return null;
+}
+
+/** Structural read of a record field as a non-negative integer (undefined
+ *  when absent, non-integer, or negative) — the permission marker's numeric
+ *  fields (`position`, `variantNumber`, `promptTokens`). */
+function readNonNegativeInt(source: Record<string, unknown>, key: string): number | undefined {
+  const value = source[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
+  return value;
+}
+
+/** Parse a `read_message_prompt` tool-call's state (SC-23f) from the
+ *  tool-result output. The output carries the STATUS: the awaiting marker
+ *  (`{status:"awaiting_permission", position, variantNumber,
+ *  replyFirstLine, promptTokens, presetName?}` — everything the card
+ *  renders) or the post-decision rewrites (`{status:"granted", ...}` — the
+ *  real rendered prompt — / `{status:"denied"}` — status only). The
+ *  awaiting marker requires the card's rendered fields (first line, variant
+ *  number, token estimate); the rewrites need only their status (the card
+ *  shows the resolved label, never the prompt text). Anything else → null
+ *  (error card). BOTH extraction paths (live SSE + persisted rows) call
+ *  this one function, which is what makes their payloads field-for-field
+ *  identical. Pure. */
+export function parseAgentPermissionState(output: unknown): AgentPermissionState | null {
+  if (typeof output !== "object" || output === null) return null;
+  const out = output as Record<string, unknown>;
+  const position = readNonNegativeInt(out, "position");
+  const variantNumber = readNonNegativeInt(out, "variantNumber");
+  const replyFirstLine = readString(out, "replyFirstLine");
+  const promptTokens = readNonNegativeInt(out, "promptTokens");
+  const presetName = readString(out, "presetName");
+  if (out.status === "awaiting_permission") {
+    // The card names the reply by its first line and numbers it — a marker
+    // missing those (or the token estimate) cannot render, so it is malformed.
+    if (replyFirstLine === undefined || replyFirstLine === "" || variantNumber === undefined || promptTokens === undefined) return null;
+    return {
+      status: "awaiting_permission",
+      ...(position !== undefined ? { position } : {}),
+      variantNumber,
+      replyFirstLine,
+      promptTokens,
+      ...(presetName !== undefined ? { presetName } : {}),
+    };
+  }
+  if (out.status === "granted" || out.status === "denied") {
+    return {
+      status: out.status,
+      ...(position !== undefined ? { position } : {}),
+      ...(variantNumber !== undefined ? { variantNumber } : {}),
+      ...(replyFirstLine !== undefined ? { replyFirstLine } : {}),
+      ...(promptTokens !== undefined ? { promptTokens } : {}),
+      ...(presetName !== undefined ? { presetName } : {}),
     };
   }
   return null;

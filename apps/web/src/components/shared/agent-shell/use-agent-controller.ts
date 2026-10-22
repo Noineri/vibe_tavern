@@ -5,7 +5,7 @@ import type {
   AgentHostTransport,
   AgentKind,
   AgentSendOptions,
-  CopilotAskAnswerInput,
+  CopilotAnswerInput,
   CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
 import {
@@ -13,6 +13,7 @@ import {
   parseTodoToolResult,
   parseTodoToolArgs,
   parseAgentAskState,
+  parseAgentPermissionState,
 } from "../../../stores/agent-turn-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import {
@@ -110,9 +111,17 @@ export interface AgentController {
   pendingAskAnswer: AgentPendingAskAnswer | null;
   handleSend: (content: string, opts?: AgentSendOptions) => Promise<void>;
   /** TAG-9: answer a pending `ask_user` question (style B split-turn) —
-   *  streams the continuation with the `answer` body (no new user row). */
-  handleAnswer: (toolCallId: string, answer: CopilotAskAnswerInput, opts?: AgentSendOptions) => Promise<void>;
+   *  streams the continuation with the `answer` body (no new user row).
+   *  SC-23f: also carries the permission decision (`{ decision }` — just
+   *  another answer-union member on the SAME path, no transport fork); ask
+   *  bodies behave byte-identically to before. */
+  handleAnswer: (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions) => Promise<void>;
   handleCancel: () => void;
+  /** SC-23f: the optimistic resolution of the just-decided permission card
+   *  (mirrors `pendingAskAnswer` — flips the card immediately, rolls back
+   *  on a pre-stream failure, clears at the next turn start / thread
+   *  switch). */
+  pendingPermissionAnswer: AgentPendingPermissionAnswer | null;
 }
 
 /** TAG-9: the optimistic resolution recorded when an ask card is submitted. */
@@ -121,6 +130,13 @@ export interface AgentPendingAskAnswer {
   status: "answered" | "skipped";
   /** The answer text — present iff `status === "answered"`. */
   answer?: string;
+}
+
+/** SC-23f: the optimistic resolution recorded when a permission card is
+ *  decided (the user's decision, echoed so the card flips immediately). */
+export interface AgentPendingPermissionAnswer {
+  toolCallId: string;
+  decision: "allow" | "deny";
 }
 
 // Categories where the failure is likely transient (retry after a short wait) —
@@ -182,6 +198,9 @@ export function useAgentController(
   // TAG-9: the optimistic resolution of the just-answered ask card (see the
   // interface doc for the rollback/convergence contract).
   const [pendingAskAnswer, setPendingAskAnswer] = useState<AgentPendingAskAnswer | null>(null);
+  // SC-23f: the optimistic resolution of the just-decided permission card
+  // (the same contract — the ask override above is untouched).
+  const [pendingPermissionAnswer, setPendingPermissionAnswer] = useState<AgentPendingPermissionAnswer | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Synchronous re-entrancy guard: `isSending` state flips on the next render,
   // so a rapid double-send in the same tick would otherwise both pass the
@@ -203,9 +222,11 @@ export function useAgentController(
   }, [kind, threadId, threadTodo]);
 
   // TAG-9: drop a stale optimistic ask resolution on thread switch (the new
-  // thread's persisted rows are the truth for its own asks).
+  // thread's persisted rows are the truth for its own asks). SC-23f: the
+  // permission override drops with it (same truth — the new thread's rows).
   useEffect(() => {
     setPendingAskAnswer(null);
+    setPendingPermissionAnswer(null);
   }, [threadId]);
 
   // TAG-9: ONE builder for the SSE→store callbacks, shared by handleSend and
@@ -357,6 +378,20 @@ export function useAgentController(
         });
         return;
       }
+      // SC-23f: a permission result is the awaiting marker (the only
+      // permission output a live turn ever sees — granted/denied rewrites
+      // only exist in persisted rows). Parsed by the ONE parser the
+      // persisted extraction shares, so live === persisted field-for-field.
+      if (info.toolName === "read_message_prompt") {
+        const permission = parseAgentPermissionState(info.output);
+        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
+          toolCallId: info.toolCallId,
+          toolName: info.toolName,
+          status: info.isError || !permission ? "error" : "done",
+          ...(permission ? { permission } : { summary: summarizeToolOutput(info.output) }),
+        });
+        return;
+      }
       // run_test / run_simulate / suggest_visual_binding — non-proposal
       // informational digests (never parsed as a proposal). Always a
       // done card with a best-effort string summary.
@@ -384,9 +419,11 @@ export function useAgentController(
       // Start the turn fresh: drop the previous turn's tool activities (same
       // rationale as the RP controller's co-author clearTurn). Also drop any
       // stale optimistic ask resolution (TAG-9) — by now the persisted rows
-      // carry the true ask state.
+      // carry the true ask state. SC-23f: the permission override drops with
+      // it (same truth — the persisted rows).
       useAgentTurnStore.getState().clearTurn(kind, threadId);
       setPendingAskAnswer(null);
+      setPendingPermissionAnswer(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -462,15 +499,23 @@ export function useAgentController(
   );
 
   const handleAnswer = useCallback(
-    async (toolCallId: string, answer: CopilotAskAnswerInput, opts?: AgentSendOptions): Promise<void> => {
-      const text = answer.text?.trim();
-      const skipped = answer.skipped === true;
+    async (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions): Promise<void> => {
+      // SC-23f: the decision is just another answer-union member on this
+      // SAME path — `decision` present = the permission family, absent =
+      // the ask family. The wire union members are both `.strict()`, so a
+      // mixed body (decision + text/skipped) matches NEITHER and is refused
+      // here, before any stream call.
+      const decision = "decision" in answer ? answer.decision : undefined;
+      const text = "text" in answer ? answer.text?.trim() : undefined;
+      const skipped = "skipped" in answer && answer.skipped === true;
+      if (decision !== undefined && (text !== undefined || skipped)) return;
+      if (decision !== undefined && decision !== "allow" && decision !== "deny") return;
 
       // Silent guards: the wire schema's exactly-one-of (a chip click sends
       // `text`, the skip button sends `skipped`, free text sends `text` —
       // the card never produces both/neither; this pins it anyway), missing
       // target/thread, already sending.
-      if (!toolCallId || (!text && !skipped) || (text !== undefined && text.length > 0 && skipped)) return;
+      if (!toolCallId || (decision === undefined && ((!text && !skipped) || (text !== undefined && text.length > 0 && skipped)))) return;
       if (!threadId || isSendingRef.current) return;
       if (!providerProfileId) {
         toast.error(getT()("message_unavailable_no_provider"));
@@ -491,12 +536,21 @@ export function useAgentController(
       // NO pendingUserContent — the answer has no user row (it replaces the
       // awaiting tool-result row server-side).
       // Optimistic flip: the card shows the resolution immediately instead of
-      // waiting for the settle+refetch round-trip.
-      setPendingAskAnswer({
-        toolCallId,
-        status: skipped ? "skipped" : "answered",
-        ...(text ? { answer: text } : {}),
-      });
+      // waiting for the settle+refetch round-trip. The decision flips the
+      // permission card; the ask flip is untouched (one family per call —
+      // the guard above refused mixed bodies, so nulling the other family's
+      // override cannot drop a live value).
+      if (decision !== undefined) {
+        setPendingAskAnswer(null);
+        setPendingPermissionAnswer({ toolCallId, decision });
+      } else {
+        setPendingPermissionAnswer(null);
+        setPendingAskAnswer({
+          toolCallId,
+          status: skipped ? "skipped" : "answered",
+          ...(text ? { answer: text } : {}),
+        });
+      }
 
       const sawStreamEvent = { current: false };
       try {
@@ -507,6 +561,7 @@ export function useAgentController(
               toolCallId,
               ...(text ? { text } : {}),
               ...(skipped ? { skipped: true } : {}),
+              ...(decision !== undefined ? { decision } : {}),
             },
             providerProfileId,
             ...(model ? { model } : {}),
@@ -550,8 +605,12 @@ export function useAgentController(
         // the backend never rewrote the ask row — roll the optimistic flip
         // back so the card returns to interactive. A failure after the SSE
         // opened means the answer was already persisted; the override stays
-        // (it matches the row the settle refetch shows).
-        if (!sawStreamEvent.current) setPendingAskAnswer(null);
+        // (it matches the row the settle refetch shows). Both families roll
+        // back together (only one was set above — the other is already null).
+        if (!sawStreamEvent.current) {
+          setPendingAskAnswer(null);
+          setPendingPermissionAnswer(null);
+        }
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
@@ -574,5 +633,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, handleSend, handleAnswer, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, handleSend, handleAnswer, handleCancel };
 }
