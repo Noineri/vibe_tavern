@@ -197,8 +197,8 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("sampler_top_k?");
     expect(shell.querySelector("[data-slider-field-help]")?.textContent).toBe("?");
     expect(shell.querySelector("[data-slider-field-value]")?.textContent).toBe("0");
-    // Temperature sits outside the grid and keeps its value-suffixed accessible name.
-    const temperature = view.getByLabelText("sampler_temperature (0.7)") as HTMLInputElement;
+    // Temperature sits outside the grid. Behavior change: its label (and accessible name) lost the " (value)" suffix, the field shows the value once.
+    const temperature = view.getByLabelText("sampler_temperature") as HTMLInputElement;
     expect(temperature.type).toBe("range");
     expect(temperature.closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent).toBe("0.70");
     view.unmount();
@@ -227,9 +227,9 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     expect(onChange).toHaveBeenLastCalledWith("topP", 0.37);
     typeInto("sampler_top_k", "250");
     expect(onChange).toHaveBeenLastCalledWith("topK", 100);
-    // Behavior change: a typed value finer than the step is snapped to the step grid (temperature step 0.05).
-    typeInto("sampler_temperature (0.7)", "0.73");
-    expect(onChange).toHaveBeenLastCalledWith("temperature", 0.75);
+    // A typed value finer than the step is kept exactly (temperature step 0.05): typing enters an exact value, only stepping snaps.
+    typeInto("sampler_temperature", "0.73");
+    expect(onChange).toHaveBeenLastCalledWith("temperature", 0.73);
     view.unmount();
   });
 

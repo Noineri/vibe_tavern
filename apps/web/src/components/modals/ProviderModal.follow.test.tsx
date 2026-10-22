@@ -123,6 +123,11 @@ function makeProps(profile: ProviderProfileRecord, favorites: FavoriteProviderMo
   };
 }
 
+/** The temperature control's displayed value (its slider field renders the value once, on the right). */
+function temperatureFieldValue(view: ReturnType<typeof render>): string | null | undefined {
+  return view.getByLabelText("sampler_temperature").closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent;
+}
+
 describe("ProviderModal follow-the-active-model", () => {
   beforeEach(() => {
     overlayStore.clear();
@@ -147,9 +152,10 @@ describe("ProviderModal follow-the-active-model", () => {
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     await waitFor(() => expect(view.getByText("Follow Test Profile")).toBeTruthy());
     await waitFor(() => expect(overlayFetchLog).toContainEqual({ profileId: "prof1", modelId: "m-fav" }));
-    // The overlay's temperature reached the temperature control (the field
-    // label interpolates the live value).
-    await waitFor(() => expect(view.queryByText("sampler_temperature (0.123)")).not.toBeNull());
+    // The overlay's temperature reached the temperature control. Behavior change:
+    // the label no longer interpolates the live value, so the probe reads the
+    // field's own value text (a typed-precision value shows faithfully).
+    await waitFor(() => expect(temperatureFieldValue(view)).toBe("0.123"));
     // Honest badge: "Editing: <model>".
     expect(view.getByText(/editing_model_badge m-fav/)).toBeTruthy();
   });
@@ -163,7 +169,7 @@ describe("ProviderModal follow-the-active-model", () => {
     await waitFor(() => expect(view.getByText(/binding_base_badge/)).toBeTruthy());
     expect(overlayFetchLog.some((e) => e.modelId === "m-plain")).toBe(false);
     // Base temperature (0.7) shows — the form hydrates from the base profile.
-    await waitFor(() => expect(view.queryByText("sampler_temperature (0.7)")).not.toBeNull());
+    await waitFor(() => expect(temperatureFieldValue(view)).toBe("0.70"));
     // The manual binding dropdown is GONE (owner ruling): its label key renders nowhere.
     expect(view.queryByText(/binding_dropdown_label/)).toBeNull();
   });

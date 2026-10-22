@@ -669,13 +669,11 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     setForm.mockClear();
     openFieldEditor(range);
     const numberInput = view.getByTestId("tts-field-speed-number") as HTMLInputElement;
-    // Behavior change: the inline editor snaps a typed value to the step grid anchored at min (0.25 + n * 0.1),
-    // so the former off-grid 1.2 became 1.15; 1.35 is on that grid.
-    fireEvent.change(numberInput, { target: { value: "1.35" } });
+    fireEvent.change(numberInput, { target: { value: "1.2" } });
     fireEvent.blur(numberInput);
     expect(setForm).toHaveBeenCalled();
     patch = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as { config: Record<string, unknown> };
-    expect(patch.config.speed).toBe(1.35);
+    expect(patch.config.speed).toBe(1.2);
     cleanup();
   });
 

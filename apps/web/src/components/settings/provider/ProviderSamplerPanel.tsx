@@ -480,7 +480,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
         {/* Temperature */}
         {supports('temperature') && (
           <SamplerField
-            label={`${t("sampler_temperature")} (${values.temperature})`}
+            label={t("sampler_temperature")}
             tooltip={t("sampler_temperature_hint")}
             min={0}
             max={2}

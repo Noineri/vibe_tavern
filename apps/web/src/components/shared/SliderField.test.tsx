@@ -142,6 +142,19 @@ describe("SliderField", () => {
 		expect(valueText(view)).toBe("7");
 	});
 
+	it("keeps a typed value between steps exactly instead of snapping it to the step grid", () => {
+		const onChange = mock();
+		const onCommit = mock();
+		const view = render(<ControlledSliderField onChange={onChange} onCommit={onCommit} />);
+		const editor = openEditor(view);
+
+		fireEvent.change(editor, { target: { value: "7.5" } });
+		fireEvent.keyDown(editor, { key: "Enter" });
+		expect(onChange).toHaveBeenLastCalledWith(7.5);
+		expect(onCommit).toHaveBeenLastCalledWith(7.5);
+		expect(valueText(view)).toBe("7.5");
+	});
+
 	it("opens the inline editor from the keyboard", () => {
 		const view = render(<ControlledSliderField />);
 

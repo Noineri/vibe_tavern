@@ -25,7 +25,7 @@
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
 | `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider: `field` scrubber for parameters or glowing `rail` for media |
-| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
+| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting rendered as the `Slider appearance="field"` scrubber: label inside the field, value on the right, typing through the inline number editor (double-click / Enter); optional `help` node (the «?» tooltip) inside the field; optional `onCommit` = persist on release, keyboard commit and inline commit (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |
@@ -462,7 +462,7 @@ Range thumbs use Base UI's non-crossing collision behavior.
 `appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb.
 `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging.
 On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll.
-The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once (clamped to the bounds and snapped to the step, then `onValueChange` + `onValueCommitted`), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
+The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once (the typed number clamped to the bounds and kept exactly as typed, never snapped to the step grid; then `onValueChange` + `onValueCommitted`), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
 The field fill (single value or two-value window) is a theme-independent translucent accent, 16 % of `--accent`, never `--accent-hover`, which is opaque in some themes; label, help and value always paint above it.
 Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing.
 Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
