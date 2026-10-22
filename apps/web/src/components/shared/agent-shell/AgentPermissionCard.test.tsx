@@ -84,6 +84,10 @@ describe("CopilotPermissionCard (SC-23f)", () => {
     // ask-skip ghost (never the accent fill).
     expect(allow.className).toContain("bg-accent");
     expect(deny.className).not.toContain("bg-accent");
+    // AP-7 frame: the accent left rule while awaiting, phone-size targets.
+    expect(card.className).toContain("border-l-accent");
+    expect(allow.className).toContain("min-h-[44px]");
+    expect(deny.className).toContain("min-h-[44px]");
   });
 
   it("Allow sends its decision ONCE (the second click is a no-op)", () => {
@@ -105,18 +109,25 @@ describe("CopilotPermissionCard (SC-23f)", () => {
     expect(deny.disabled).toBe(true);
   });
 
-  it("granted renders the Allowed label read-only (the prompt text is never shown)", () => {
+  it("granted renders the muted arrow receipt read-only (the prompt text is never shown)", () => {
     const { getByTestId, queryByTestId } = renderCard(permission({ status: "granted" }));
-    expect(getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("allowed");
-    expect(getByTestId("copilot-permission-allowed").textContent).toBe("copilot_permission_allowed");
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("allowed");
+    // Was: the green "Allowed" label. Now (owner 2026-10-22 frame
+    // ruling): the ask's receipt style — muted, no green, arrow prefix.
+    expect(getByTestId("copilot-permission-allowed").textContent).toBe("→ copilot_permission_allowed");
+    expect(card.className).not.toContain("border-l-accent");
+    expect(card.className).not.toContain("success-text");
     expect(queryByTestId("copilot-permission-allow")).toBeNull();
     expect(queryByTestId("copilot-permission-deny")).toBeNull();
   });
 
-  it("denied renders the Denied label read-only (no form)", () => {
+  it("denied renders the muted arrow receipt read-only (no form)", () => {
     const { getByTestId, queryByTestId } = renderCard(permission({ status: "denied" }));
     expect(getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("denied");
-    expect(getByTestId("copilot-permission-denied").textContent).toBe("copilot_permission_denied");
+    // Was: the bare "Denied" label. Now (owner 2026-10-22 frame ruling):
+    // the ask's receipt style with the arrow prefix.
+    expect(getByTestId("copilot-permission-denied").textContent).toBe("→ copilot_permission_denied");
     expect(queryByTestId("copilot-permission-allow")).toBeNull();
     expect(queryByTestId("copilot-permission-deny")).toBeNull();
   });
@@ -125,6 +136,8 @@ describe("CopilotPermissionCard (SC-23f)", () => {
     const { getByTestId, queryByTestId } = renderCard(permission({}), { interactive: false });
     const card = getByTestId("copilot-permission-card");
     expect(card.getAttribute("data-state")).toBe("expired");
+    // Muted like the ask's expired state — no accent rule.
+    expect(card.className).not.toContain("border-l-accent");
     expect(getByTestId("copilot-permission-expired").textContent).toBe("copilot_permission_expired");
     expect(queryByTestId("copilot-permission-allow")).toBeNull();
     expect(queryByTestId("copilot-permission-deny")).toBeNull();

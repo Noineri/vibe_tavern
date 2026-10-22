@@ -655,7 +655,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
     );
 
     expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("answered");
-    expect(getByTestId("copilot-ask-answer").textContent).toBe("Rules");
+    expect(getByTestId("copilot-ask-answer").textContent).toBe("→ Rules");
     expect(queryByTestId("copilot-ask-input")).toBeNull();
   });
 
@@ -673,7 +673,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
     );
 
     expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("answered");
-    expect(getByTestId("copilot-ask-answer").textContent).toBe("Visual, actually");
+    expect(getByTestId("copilot-ask-answer").textContent).toBe("→ Visual, actually");
   });
 
   it("isSending blocks interactivity (no double-answer during the continuation stream)", () => {
