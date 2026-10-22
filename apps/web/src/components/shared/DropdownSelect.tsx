@@ -125,6 +125,12 @@ export function DropdownSelect({
     // than filtering them out of existence on every query.
     !searchable || (typeof o.label === "string" ? o.label.toLowerCase().includes(search.toLowerCase()) : true);
 
+  // The default row is first in the list and cmdk highlights the first item, so
+  // while a search is typed it must match like any other row — otherwise Enter
+  // after a search picks the (empty) default instead of the first match.
+  const showDefaultRow =
+    !searchable || !search || (defaultOption ?? "").toLowerCase().includes(search.toLowerCase());
+
   const filtered = options
     .filter((o) => o.id !== "") // empty-id options rendered as defaultOption below
     .filter(matches);
@@ -279,7 +285,7 @@ export function DropdownSelect({
                 "overflow-y-auto p-1",
               )}
             >
-              {defaultOption && (
+              {defaultOption && showDefaultRow && (
                 <Command.Item
                   value={EMPTY_VALUE}
                   onSelect={() => handleSelect("")}
