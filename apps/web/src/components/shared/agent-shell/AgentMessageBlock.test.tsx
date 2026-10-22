@@ -366,6 +366,174 @@ describe("ExperienceCopilotMessageBlock — turn actions (AP-11)", () => {
   });
 });
 
+// ─── AP-12: inline edit of the last own message ─────────────────────────
+// WAS (characterized at AP-11, basis: the turn-actions describe above):
+// user bubbles carried turn actions but no edit affordance — the row was
+// delete-only. NOW: with `canEditLast` (the builder's last-user-row signal)
+// plus an `onEditLast` submit path the block prepends an «Изменить» opener;
+// clicking it swaps the WHOLE user arm (bubble + row) for the inline editor
+// in place, Esc/cancel closes without submitting, submit forwards the draft
+// and closes. Absent either prop = exactly as before (no edit button).
+
+function userMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+  return assistantMsg({ id: "u1", role: "user", content: "What should I say?", ...over });
+}
+
+function deleteTurnAction(onSelect: (text: string) => void): AgentMessageAction {
+  return {
+    labelKey: "delete",
+    icon: () => (
+      <svg data-testid="turn-delete-icon" />
+    ),
+    onSelect,
+    testId: "copilot-turn-delete",
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — inline edit (AP-12)", () => {
+  it("renders the edit opener FIRST in the last user row (edit before delete)", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    const edit = getByTestId("copilot-turn-edit");
+    expect(edit.getAttribute("aria-label")).toBe("edit");
+    // The opener joins the row ahead of delete (mockup: «Изменить» first).
+    const rowHtml = container.querySelector('[data-testid="copilot-message-actions"]')!.innerHTML;
+    expect(rowHtml.indexOf("copilot-turn-edit")).toBeLessThan(rowHtml.indexOf("copilot-turn-delete"));
+  });
+
+  it("no edit affordance without canEditLast (earlier user rows)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        onEditLast={() => {}}
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit affordance without onEditLast (no submit path)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("clicking edit swaps the bubble for the editor in place (the row hides)", () => {
+    const { container, getByTestId, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    // The editor renders in the user row's slot (data-role=user stays —
+    // nothing else in the feed moves); the bubble AND the action row hide.
+    const row = container.querySelector("[data-role='user']");
+    expect(row).not.toBeNull();
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    expect(row!.contains(getByTestId("copilot-edit-message"))).toBe(true);
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+    // The user bubble chrome is gone (its text now lives in the editor's
+    // textarea — a text query would match there, so pin the bubble's absence
+    // by its bg-user-bg box).
+    expect(row!.querySelector(".bg-user-bg")).toBeNull();
+    expect((getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("What should I say?");
+  });
+
+  it("Escape closes the editor without submitting (the bubble returns)", () => {
+    const seen: string[] = [];
+    const { getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={(content) => seen.push(content)}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    const box = getByTestId("copilot-edit-message").querySelector("textarea")!;
+    fireEvent.change(box, { target: { value: "changed my mind" } });
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(seen).toEqual([]);
+    expect(getByText("What should I say?")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("submit forwards the edited draft and closes the editor", () => {
+    const seen: string[] = [];
+    const { getByTestId, getByText, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={(content) => seen.push(content)}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "revised question" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    expect(seen).toEqual(["revised question"]);
+    // Closed: the bubble and its row return, the editor is gone.
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+    expect(getByText("What should I say?")).toBeDefined();
+  });
+
+  it("a stream started elsewhere closes an open editor (no editing while streaming)", () => {
+    const { getByTestId, queryByTestId, getByText, rerender } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    rerender(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+        isBusy
+      />,
+    );
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+    expect(getByText("What should I say?")).toBeDefined();
+  });
+});
+
 // ─── AP-4: flat assistant feed ────────────────────────────────────────────
 // WAS (characterized pre-restyling, basis: mockup §1 + unit contract): a
 // two-column avatar+bubble row — avatar div (h-7 w-7 rounded-full bg-s3) +

@@ -447,6 +447,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     : null;
 
   // ── Message content rendering ──
+  // forks: 1 — the agent-shell edit (AgentEditMessage.tsx, AP-12)
   const messageContent = isEditing ? (
     <>
       <MobileExpandTextarea

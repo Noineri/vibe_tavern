@@ -244,6 +244,83 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
   });
 });
 
+// ─── AP-12: edit-last eligibility (`canEditLast`) ───────────────────────
+// WAS (characterized at AP-11, basis: the row builder above): user rows
+// carried delete only — no edit signal existed. NOW: the LAST user row
+// (uncovered, not streaming) additionally reports `canEditLast` — the block
+// renders its «Изменить» opener there. The delete row itself is unchanged.
+
+describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
+  it("last user row: delete + canEditLast", () => {
+    const { turnActions, canEditLast } = buildAgentTurnRow({
+      message: message({ id: "u2", role: "user", content: "plan it" }),
+      visibleIndex: 2,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(testIds(turnActions)).toEqual(["copilot-turn-delete"]);
+    expect(canEditLast).toBe(true);
+  });
+
+  it("earlier user row: delete, NO canEditLast", () => {
+    const { turnActions, canEditLast } = buildAgentTurnRow({
+      message: message({ id: "u1", role: "user", content: "old" }),
+      visibleIndex: 0,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(testIds(turnActions)).toEqual(["copilot-turn-delete"]);
+    expect(canEditLast).toBeUndefined();
+  });
+
+  it("covered last user row: no row, no canEditLast (digest floor)", () => {
+    const { turnActions, canEditLast } = buildAgentTurnRow({
+      message: message({ id: "u2", role: "user", content: "new" }),
+      visibleIndex: 2,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: 3,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(turnActions).toBeUndefined();
+    expect(canEditLast).toBeUndefined();
+  });
+
+  it("streaming last user row: no row, no canEditLast", () => {
+    const { turnActions, canEditLast } = buildAgentTurnRow({
+      message: message({ id: "u2", role: "user", content: "plan it" }),
+      visibleIndex: 2,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: true,
+      callbacks: callbacks(),
+    });
+
+    expect(turnActions).toBeUndefined();
+    expect(canEditLast).toBeUndefined();
+  });
+
+  it("assistant rows never report canEditLast (edit is a user-row affordance)", () => {
+    const { canEditLast } = buildAgentTurnRow({
+      message: message({ id: "a2", role: "assistant" }),
+      visibleIndex: 3,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(canEditLast).toBeUndefined();
+  });
+});
+
 // ─── Delete-confirm state machine (on the hook — the modal renders from the pane) ───
 
 const originalFetch = globalThis.fetch;

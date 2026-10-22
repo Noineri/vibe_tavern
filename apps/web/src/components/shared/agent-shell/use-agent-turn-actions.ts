@@ -173,6 +173,11 @@ export interface AgentTurnRowInput {
 export interface AgentTurnRowResult {
   hostActions?: AgentMessageAction[];
   turnActions?: AgentMessageAction[];
+  /** AP-12: the row belongs to the LAST user message (uncovered, not
+   *  streaming) — the block renders its own «Изменить» opener there (the
+   *  opener flips block-local editing state, so the action is constructed
+   *  at the renderer, not here; eligibility still lives in this builder). */
+  canEditLast?: boolean;
 }
 
 /**
@@ -183,6 +188,9 @@ export interface AgentTurnRowResult {
  * User rows: delete WITH the answer (`includeUserMessage: true`) unless
  * covered — user rows carry a row for the FIRST time here (SC-16's
  * assistant-only rule covered HOST actions; turn actions are new).
+ * AP-12: the LAST user row additionally reports `canEditLast` — the block
+ * renders its «Изменить» opener there (streaming and digest-cover both
+ * return early above, so eligibility is last user row + not streaming).
  * Digest-covered rows (at/before the digest anchor — the 409 floor is
  * server-side, the UI hides proactively): delete hidden, copy kept. While
  * streaming no rows render at all, either role (host rows ride the same
@@ -206,6 +214,9 @@ export function buildAgentTurnRow(input: AgentTurnRowInput): AgentTurnRowResult 
           testId: "copilot-turn-delete",
         },
       ],
+      // AP-12: the last user row is by definition post-digest (the digest
+      // folds older rows), so `!covered` above is the only cover gate.
+      ...(visibleIndex === lastUserVisibleIndex ? { canEditLast: true as const } : {}),
     };
   }
   if (message.role !== "assistant") return {};

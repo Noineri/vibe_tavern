@@ -276,6 +276,10 @@ export function AgentChatPane({
               sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
             }}
             turnRow={turnRow}
+            // AP-12: the inline-edit submit (delete the last exchange, then
+            // send) — straight from the controller (the same fire-and-forget
+            // shape as the onAnswer arm above).
+            onEditLast={(content) => { void ctrl.handleEditLast(content); }}
           />
           {isMobile ? (
             <AgentMobileInputArea

@@ -13,7 +13,7 @@ import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
-import { buildAgentTurnRow, type AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
+import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
@@ -138,6 +138,10 @@ export interface AgentMessageListProps {
    *  derives its row from `buildAgentTurnRow` (role / last-turn /
    *  streaming / digest-cover). */
   turnRow?: AgentTurnRowCallbacks;
+  /** AP-12: submit an inline edit (the controller's `handleEditLast`).
+   *  Threaded to every block; only the last user row renders the opener
+   *  (the row's `canEditLast` gate). Absent = no edit affordance anywhere. */
+  onEditLast?: (content: string) => void;
 }
 
 export function AgentMessageList({
@@ -152,6 +156,7 @@ export function AgentMessageList({
   pendingAskAnswer = null,
   pendingPermissionAnswer = null,
   turnRow,
+  onEditLast,
   emptyTitle,
   emptySub,
   events = EMPTY_EVENTS,
@@ -567,7 +572,7 @@ export function AgentMessageList({
             // list's own boundaries (last turn, digest cover, streaming).
             // Without callbacks the block gets exactly what it got before
             // (the SC-16 host row, byte-identical).
-            const row = turnRow !== undefined
+            const row: AgentTurnRowResult = turnRow !== undefined
               ? buildAgentTurnRow({
                 message: entry.message,
                 visibleIndex,
@@ -591,6 +596,9 @@ export function AgentMessageList({
                       coveredCount={entry.coveredCount}
                       messageActions={row.hostActions}
                       turnActions={row.turnActions}
+                      canEditLast={row.canEditLast === true}
+                      onEditLast={onEditLast}
+                      isBusy={isSending}
                     />
                   </div>
                 ) : (
@@ -600,6 +608,9 @@ export function AgentMessageList({
                     coveredCount={entry.coveredCount}
                     messageActions={row.hostActions}
                     turnActions={row.turnActions}
+                    canEditLast={row.canEditLast === true}
+                    onEditLast={onEditLast}
+                    isBusy={isSending}
                   />
                 )}
               </Fragment>

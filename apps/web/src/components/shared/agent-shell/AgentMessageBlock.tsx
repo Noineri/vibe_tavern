@@ -1,6 +1,7 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { cn } from "../../../lib/cn.js";
 import { Markdown } from "../../../lib/markdown.js";
+import { AgentEditMessage } from "./AgentEditMessage.js";
 import { Icons } from "../icons.js";
 import { CustomTooltip } from "../Tooltip.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -45,6 +46,19 @@ export interface AgentMessageBlockProps {
    *  absent/empty = exactly as before (SC-16's assistant-only rule covered
    *  HOST actions; turn actions are new). */
   turnActions?: AgentMessageAction[];
+  /** AP-12: the row belongs to the LAST user message (from
+   *  `buildAgentTurnRow`'s `canEditLast`) — the block prepends its own
+   *  «Изменить» opener to the user row. Gated with `onEditLast`: no submit
+   *  path, no edit button. */
+  canEditLast?: boolean;
+  /** AP-12: submit an inline edit (delete the last exchange, then send —
+   *  the controller's `handleEditLast`). The editor closes immediately on
+   *  submit; the normal pending-user flow runs after. */
+  onEditLast?: (content: string) => void;
+  /** AP-12: follows the controller's `isSending` — both editor buttons
+   *  disable, and a stream started from another row's action closes an
+   *  open editor (editing is impossible while streaming). */
+  isBusy?: boolean;
 }
 
 export const AgentMessageBlock = memo(function AgentMessageBlock({
@@ -53,7 +67,17 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   coveredCount = null,
   messageActions,
   turnActions,
+  canEditLast = false,
+  onEditLast,
+  isBusy = false,
 }: AgentMessageBlockProps) {
+  // AP-12: block-local editing state — the draft itself lives in
+  // `AgentEditMessage` (local useState; the agent shell has no chat store
+  // seam). Unconditional hooks: the digest/empty early returns below must
+  // stay AFTER them.
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (isBusy) setEditing(false); }, [isBusy]);
+
   if (message.role === "digest") {
     return <DigestCard message={message} coveredCount={coveredCount} />;
   }
@@ -114,7 +138,41 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
     );
   }
 
+  // AP-12: the «Изменить» opener — constructed HERE (not in the row
+  // builder): its `onSelect` flips the block-local editing state above,
+  // which only this renderer can do. Eligibility still comes from the
+  // builder (`canEditLast`); the reuses-the-existing-keys rule holds
+  // (`edit` label, `copilot-turn-edit` testid family).
+  const editAction: AgentMessageAction | undefined =
+    canEditLast && onEditLast !== undefined && turnRow !== undefined
+      ? {
+        labelKey: "edit",
+        icon: Icons.Edit,
+        onSelect: () => setEditing(true),
+        testId: "copilot-turn-edit",
+      }
+      : undefined;
+
+  // AP-12: while editing, the editor swaps the WHOLE user arm (bubble +
+  // row) in place — the action row hides, the save/cancel pair replaces
+  // it; nothing else in the feed moves.
+  if (isUser && editing && onEditLast !== undefined) {
+    return (
+      <div className="flex min-w-0 flex-col items-end group" data-role={message.role}>
+        <AgentEditMessage
+          initialText={message.content}
+          isBusy={isBusy}
+          onSubmit={(content) => { setEditing(false); onEditLast(content); }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    );
+  }
+
   // AP-11: the user bubble WITH turn actions — the right-aligned column.
+  // AP-12: the «Изменить» opener leads the row on the last user message.
+  const userRowActions: AgentMessageAction[] =
+    editAction !== undefined && turnRow !== undefined ? [editAction, ...turnRow] : (turnRow ?? []);
   if (isUser) {
     return (
       <div className="flex min-w-0 flex-col items-end group" data-role={message.role}>
@@ -125,7 +183,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
         >
           {body}
         </div>
-        <MessageActionRow actions={turnRow ?? []} text={message.content} />
+        <MessageActionRow actions={userRowActions} text={message.content} />
       </div>
     );
   }

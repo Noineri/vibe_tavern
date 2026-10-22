@@ -1523,3 +1523,91 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
     expect(queryByTestId("copilot-turn-regenerate")).not.toBeNull();
   });
 });
+
+// ─── AP-12: inline edit of the last own message ────────────────────────────
+// The list threads the pane's `onEditLast` submit path plus `isBusy` to every
+// block; the block renders the «Изменить» opener only where the row builder
+// reports `canEditLast` (the LAST user row). WAS (characterized at AP-11):
+// no edit affordance existed — user rows were delete-only. NOW: exactly one
+// edit opener (the last user row), opening the editor in place and threading
+// submit to `onEditLast`.
+describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
+  it("only the last user row carries the edit opener", () => {
+    const turnRow = turnRowCallbacks();
+    const onEditLast = mock((_content: string) => {});
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+        onEditLast={onEditLast}
+      />,
+    );
+
+    // u1's row stays delete-only; u2's row gains «Изменить» first.
+    expect(getAllByTestId("copilot-turn-edit")).toHaveLength(1);
+    expect(getAllByTestId("copilot-turn-delete")).toHaveLength(4);
+  });
+
+  it("opening the editor swaps only that bubble; submit threads to onEditLast", () => {
+    const turnRow = turnRowCallbacks();
+    const seen: string[] = [];
+    const { getByTestId, getAllByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+        onEditLast={(content) => seen.push(content)}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    // The editor holds u2's text; the other three rows keep theirs.
+    const box = getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement;
+    expect(box.value).toBe("second question");
+    expect(getAllByTestId("copilot-turn-regenerate")).toHaveLength(1);
+    fireEvent.change(box, { target: { value: "revised second question" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    expect(seen).toEqual(["revised second question"]);
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+  });
+
+  it("no edit opener without onEditLast (no submit path)", () => {
+    const { queryByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+    expect(getAllByTestId("copilot-turn-delete")).toHaveLength(4);
+  });
+
+  it("streaming: no edit opener on any row", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText="streaming…"
+        pendingReasoning=""
+        pendingUserContent=""
+        isSending
+        turnRow={turnRowCallbacks()}
+        onEditLast={mock((_content: string) => {})}
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+  });
+});
