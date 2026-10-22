@@ -1,12 +1,22 @@
-// Mobile chat input — a compact two-row surface (toolbar row with
-// persona / impersonate / attach / preset / starred-models pills, then the
-// textarea + send row). Extracted from InputArea.tsx so the viewport fork is
-// a presentational split: this file owns only mobile-specific UI state
-// (the three BottomSheet open-flags and the auto-grow textarea ref); all
-// shared data comes from useInputArea().
+// Mobile chat input — a compact two-row surface (toolbar row with persona /
+// impersonate / attach / dictation / preset / model, then the textarea + ONE
+// action slot). Extracted from InputArea.tsx so the viewport fork is a
+// presentational split: this file owns only mobile-specific UI state (the
+// three BottomSheet open-flags, the voice-busy flag and the auto-grow
+// textarea ref); all shared data comes from useInputArea().
 //
-// The three pickers (persona / starred-models / preset) are BottomSheets per
-// the project rule that every mobile popover surfaces as a bottom sheet.
+// The action slot (CM-2): cancel while sending; else send when the draft has
+// text or there are attachments; else the voice-message button (the
+// VoiceMessageButton itself stays mounted — it re-fetches its STT profile on
+// mount and must never unmount mid-recording — and is just hidden while the
+// slot shows send/cancel).
+//
+// The context ring is the OUTLINE of the model button (always accent); a red
+// dot on that button warns when the context or the provider quota is nearly
+// used up (model-button-warning.ts). The three pickers (persona / model /
+// preset) are BottomSheets per the project rule that every mobile popover
+// surfaces as a bottom sheet. Toolbar tints by group: persona + impersonate
+// info, preset + model accent, attach + dictation neutral.
 
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "../shared/icons.js";
@@ -14,12 +24,13 @@ import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
-import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
+import { ContextRing, getContextUsage } from "../shared/TokenCounterPopover.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileModelSheet } from "./mobile-model-sheet.js";
+import { useModelButtonWarning } from "./model-button-warning.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
 import { useInputArea, type InputAreaData } from "./use-input-area.js";
@@ -32,10 +43,10 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
     provider, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
-    buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
+    buckets, inputTokens, permanent, maxTokens, availableBudget, tokenState,
   } = data;
 
-  // The permanent-context rows are shared by the ring's sheet and the model sheet.
+  // The permanent-context rows shown in the model sheet's breakdown.
   const permanentItems = [
     { label: t("context_system"), value: buckets.system },
     { label: t("context_character"), value: buckets.character },
@@ -48,6 +59,20 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
   const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const [presetDropOpen, setPresetDropOpen] = useState(false);
+  // True while the voice button records/uploads: it then keeps the slot.
+  const [voiceBusy, setVoiceBusy] = useState(false);
+
+  const contextPercent = getContextUsage(permanent, buckets.history, inputTokens, availableBudget).percent;
+  const showWarningDot = useModelButtonWarning(tokenState, provider.activeProviderProfile?.id ?? null);
+  const hasContent = Boolean(draft.trim()) || draftAttachments.length > 0;
+  const slot: "cancel" | "voice" | "send" = isSending && !voiceBusy
+    ? "cancel"
+    : voiceBusy || (!hasContent && !isSending) ? "voice" : "send";
+  const sendButton = (
+    <button type="button" aria-label={t("send")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
+      <Icons.Caret direction="r" />
+    </button>
+  );
 
   // ── Auto-expand textarea ──
   const mobileTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -72,30 +97,36 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
           area; visibility gated on local-backend prefill capability. */}
       <PerSendPrefillStrip supported={data.perSendPrefillSupported} />
       <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
-        {/* Toolbar row: persona + starred models */}
+        {/* Toolbar row. The persona chip is the flexible element (min-w-0, the
+            name ellipsizes); every other control is shrink-0, so the row never
+            overflows however long the persona name is. */}
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setMobilePersonaOpen(true)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
+          <button type="button" onClick={() => setMobilePersonaOpen(true)} className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-info-dim px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-info-text active:bg-info/20">
             {activePersonaId ? (
               <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt }) : null; })()}  size={20} />
             ) : (
               <Icons.User />
             )}
             <span className="max-w-[120px] min-w-0 truncate">{activePersonaId ? (personas.find(p => p.id === activePersonaId)?.name ?? t("no_persona")) : t("no_persona")}</span>
-            <Icons.Caret direction="d" />
+            <span className="shrink-0"><Icons.Caret direction="d" /></span>
           </button>
           {activeChatId && (
-            <ChatImpersonateAiPill
-              activeChatId={activeChatId}
-              characterId={chatMeta?.character.id ?? null}
-              personaId={activePersonaId}
-              draft={draft}
-              setDraft={setDraft}
-              size="lg"
-            />
+            <div className="shrink-0">
+              <ChatImpersonateAiPill
+                activeChatId={activeChatId}
+                characterId={chatMeta?.character.id ?? null}
+                personaId={activePersonaId}
+                draft={draft}
+                setDraft={setDraft}
+                size="lg"
+                tone="info"
+              />
+            </div>
           )}
 
           <button
             type="button"
+            aria-label={t("attach_image")}
             className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-t3 transition-colors active:bg-s2 disabled:opacity-45"
             onClick={() => fileInputRef.current?.click()}
             disabled={draftAttachments.length >= 5}
@@ -108,16 +139,21 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             setDraft={setDraft}
             send={() => void chat.handleSend()}
             canSend={canSend}
+            size="lg"
           />
 
-          <VoiceMessageButton onRecorded={data.handleVoiceRecorded} />
-
-          <button type="button" onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-accent-t active:bg-s2 disabled:opacity-45" disabled={promptPresets.length === 0}>
+          <button type="button" aria-label={t("topbar_prompt_preset")} onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-dim text-accent-t active:bg-accent/20 disabled:opacity-45" disabled={promptPresets.length === 0}>
             <Icons.FileText />
           </button>
 
-          <button type="button" onClick={() => setModelDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
-            <Icons.StarFilled />
+          {/* The model button: the context ring is its outline (always accent —
+              the warning is the dot, not a color), the dot sits on its corner. */}
+          <button type="button" aria-label={t("model_label")} onClick={() => setModelDropOpen(true)} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-dim text-accent-t active:bg-accent/20">
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <ContextRing percent={contextPercent} size={36} radius={15.5} strokeWidth={2} trackClassName="stroke-accent/20" />
+            </span>
+            <Icons.star />
+            {showWarningDot && <span aria-hidden="true" className="absolute -right-[3px] -top-[3px] h-3.5 w-3.5 rounded-full border-2 border-s2 bg-danger" />}
           </button>
         </div>
         {draftAttachments.length > 0 && <AttachmentPreview />}
@@ -144,27 +180,23 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
                 <span>{t("generate_more_label")}</span>
               </button>
             )}
-            <TokenCounterPopover
-              mobile
-              triggerTestId="chat-context-ring"
-              permanent={permanent}
-              history={buckets.history}
-              inputTokens={inputTokens}
-              contextSize={contextSize}
-              maxTokens={maxTokens}
-              availableBudget={availableBudget}
-              tokenState={tokenState}
-              permanentItems={permanentItems}
-            />
-            {isSending ? (
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
+            {/* Always mounted (see the header): hidden while send/cancel own the
+                slot. Without a voice profile it renders the disabled send as
+                its fallback, so the slot is never an empty hole. */}
+            <div className={slot === "voice" ? "contents" : "hidden"}>
+              <VoiceMessageButton
+                variant="slot"
+                onRecorded={data.handleVoiceRecorded}
+                onBusyChange={setVoiceBusy}
+                fallback={slot === "voice" ? sendButton : null}
+              />
+            </div>
+            {slot === "cancel" && (
+              <button type="button" aria-label={t("cancel")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
                 <span className="text-[11px] font-bold">✕</span>
               </button>
-            ) : (
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
-                <Icons.Caret direction="r" />
-              </button>
             )}
+            {slot === "send" && sendButton}
           </div>
         </div>
       </div>
@@ -192,7 +224,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
       <MobileModelSheet
         open={modelDropOpen}
         onClose={() => setModelDropOpen(false)}
-        context={{ permanent, history: buckets.history, inputTokens, maxTokens, availableBudget, permanentItems }}
+        context={{ permanent, history: buckets.history, inputTokens, maxTokens, availableBudget, tokenState, permanentItems }}
         providerProfile={provider.activeProviderProfile ? { id: provider.activeProviderProfile.id, name: provider.activeProviderProfile.name } : null}
         favoriteModels={favoriteModels}
         activeModelId={activeModelId}

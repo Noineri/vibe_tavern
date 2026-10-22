@@ -21,6 +21,7 @@ export function ChatImpersonateAiPill({
   draft,
   setDraft,
   size,
+  tone,
 }: {
   activeChatId: string;
   characterId: string | null;
@@ -28,6 +29,7 @@ export function ChatImpersonateAiPill({
   draft: string;
   setDraft: (value: string) => void;
   size?: "sm" | "md" | "lg";
+  tone?: "neutral" | "info";
 }) {
   const { t } = useT();
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
@@ -117,6 +119,7 @@ export function ChatImpersonateAiPill({
       starTooltip={t("ai_pill_impersonate")}
       gearTooltip={t("ai_pill_impersonate_settings")}
       size={size}
+      tone={tone}
     />
   );
 }

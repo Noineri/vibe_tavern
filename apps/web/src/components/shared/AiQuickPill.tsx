@@ -42,6 +42,10 @@ export interface AiQuickPillProps {
   gearTooltip?: string;
   /** Size variant: "sm" matches persona pill (24px), "md" matches lorebook key input (38px), "lg" matches mobile toolbar (36px). */
   size?: "sm" | "md" | "lg";
+  /** Color group of the `lg` (mobile toolbar) pill: `neutral` = surface
+   *  fill + muted icons; `info` = the info tint (persona group). Ignored for
+   *  other sizes, which keep the accent look. */
+  tone?: "neutral" | "info";
 }
 
 export interface AiQuickSettings {
@@ -73,19 +77,21 @@ export function AiQuickPill({
   starTooltip,
   gearTooltip,
   size = "sm",
+  tone = "neutral",
 }: AiQuickPillProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // sm=24px (desktop chat), lg=36px (mobile toolbar h-9), md=38px (lorebook key input)
   const heightClass = size === "md" ? "h-[38px]" : size === "lg" ? "h-9" : "h-6";
   const pxClass = size === "md" ? "px-[10px]" : size === "lg" ? "px-[11px]" : "px-[7px]";
+  const info = size === "lg" && tone === "info";
 
   return (
     <>
       <div
         className={cn(
           "inline-flex items-center overflow-hidden",
-          size === "lg" ? "rounded-md bg-s3" : "rounded-full bg-accent-dim",
+          size === "lg" ? (info ? "rounded-md bg-info-dim" : "rounded-md bg-s3") : "rounded-full bg-accent-dim",
           heightClass,
           disabled && "opacity-40 pointer-events-none",
         )}
@@ -96,7 +102,7 @@ export function AiQuickPill({
             className={cn(
               "group/star flex h-full items-center justify-center transition-all",
               pxClass,
-              size === "lg" ? "text-t3 active:bg-s2" : "text-accent-t hover:bg-accent/20",
+              size === "lg" ? (info ? "text-info-text active:bg-info/20" : "text-t3 active:bg-s2") : "text-accent-t hover:bg-accent/20",
               loading && "hover:bg-danger/15 hover:text-danger-text",
             )}
             onClick={loading ? onCancel : onGenerate}
@@ -104,7 +110,7 @@ export function AiQuickPill({
           >
             {loading ? (
               <>
-                <span className={cn("block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent group-hover/star:hidden", size === "lg" ? "border-t3" : "border-accent-t")} />
+                <span className={cn("block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent group-hover/star:hidden", size === "lg" ? (info ? "border-info-text" : "border-t3") : "border-accent-t")} />
                 <span className={cn("hidden group-hover/star:block")}><Ic.close /></span>
               </>
             ) : (
@@ -112,14 +118,14 @@ export function AiQuickPill({
             )}
           </button>
         </CustomTooltip>
-        <div className={cn("w-px h-3", size === "lg" ? "bg-border" : "bg-accent/20")} />
+        <div className={cn("w-px h-3", size === "lg" ? (info ? "bg-info/25" : "bg-border") : "bg-accent/20")} />
         <CustomTooltip content={gearTooltip}>
           <button
             type="button"
             className={cn(
               "flex h-full items-center justify-center transition-all",
               pxClass,
-              size === "lg" ? "text-t3 active:bg-s2" : "text-accent-t/70 hover:bg-accent/20 hover:text-accent-t",
+              size === "lg" ? (info ? "text-info-text active:bg-info/20" : "text-t3 active:bg-s2") : "text-accent-t/70 hover:bg-accent/20 hover:text-accent-t",
             )}
             onClick={() => setSettingsOpen(true)}
             disabled={disabled}

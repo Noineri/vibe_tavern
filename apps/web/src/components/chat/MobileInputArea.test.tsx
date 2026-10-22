@@ -66,14 +66,17 @@ function makeData(overrides: Record<string, unknown> = {}) {
   } as unknown as InputAreaData;
 }
 
+// behavior change: was "the RP context ring renders immediately before the send
+// control" (standalone ring button in the input row) -> now the input row holds
+// no ring; the ring is the outline of the model button. Basis: CM-2 (the ring
+// leaves the input row). The new layout assertions live in
+// MobileInputArea.layout.test.tsx.
 describe("MobileInputArea context ring", () => {
-  it("renders the RP context ring immediately before the send control", () => {
-    const { getByRole, getByTestId } = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
-    const ring = getByRole("button", { name: "Context: 84%" });
-    const send = getByTestId("chat-context-ring").nextElementSibling;
+  it("has no standalone ring button in the input row", () => {
+    const { queryByTestId, queryByRole } = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
 
-    expect(ring).toBe(getByTestId("chat-context-ring"));
-    expect(send?.tagName).toBe("BUTTON");
+    expect(queryByTestId("chat-context-ring")).toBeNull();
+    expect(queryByRole("button", { name: "Context: 84%" })).toBeNull();
   });
 });
 
@@ -85,9 +88,7 @@ describe("MobileInputArea starred-models sheet", () => {
 
   function openStarSheet(data: InputAreaData) {
     const view = render(<TooltipProvider><MobileInputArea data={data} /></TooltipProvider>);
-    const star = view.container.querySelector<HTMLButtonElement>("button.text-warning-text");
-    if (!star) throw new Error("starred-models button not rendered");
-    fireEvent.click(star);
+    fireEvent.click(view.getByRole("button", { name: "model_label" }));
     return view;
   }
 
@@ -120,7 +121,11 @@ describe("MobileInputArea starred-models sheet", () => {
 // Number formatting follows the runtime locale; derive the expectation the same way.
 const fmt = (n: number): string => n.toLocaleString();
 
-describe("MobileInputArea context ring sheet", () => {
+// behavior change: was "tapping the ring opens the ring's own sheet with the
+// breakdown" -> now the breakdown is reached through the model sheet's context
+// card (tap to expand); the asserted rows are the same. Basis: CM-2, the
+// breakdown moves to the model sheet.
+describe("MobileInputArea context breakdown (via the model sheet)", () => {
   it("opens the full breakdown: every permanent row, history, input, response budget, total", async () => {
     const data = makeData({
       buckets: { system: 1100, character: 1450, persona: 210, lore: 640, memory: 380, tools: 180, history: 2000 },
@@ -128,7 +133,8 @@ describe("MobileInputArea context ring sheet", () => {
       inputTokens: 500,
     });
     const view = render(<TooltipProvider><MobileInputArea data={data} /></TooltipProvider>);
-    fireEvent.click(view.getByTestId("chat-context-ring"));
+    fireEvent.click(view.getByRole("button", { name: "model_label" }));
+    fireEvent.click(await waitFor(() => view.getByText("Context").closest("button")!));
 
     const body = await waitFor(() => view.getByText("context_permanent").parentElement as HTMLElement);
     const text = body.textContent ?? "";

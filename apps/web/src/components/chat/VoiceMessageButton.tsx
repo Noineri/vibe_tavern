@@ -12,9 +12,13 @@
  * send gate with the honest-but-late configuration error. Push-to-talk shape:
  * click starts, click stops and uploads, ESC cancels (discards the clip).
  * While recording the button pulses red and a live second counter runs.
+ *
+ * Two looks: `toolbar` (the ghost 26 px icon button of the desktop toolbar)
+ * and `slot` (the mobile composer's send-slot button — send-sized, accent
+ * fill at rest; the recording look with the timer may grow wider).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { listAllSttProfiles, type SttProfileRecord } from "../../api/stt-api.js";
 import { useT } from "../../i18n/context.js";
@@ -30,6 +34,14 @@ export interface VoiceMessageButtonProps {
   onRecorded(blob: Blob, durationMs: number): Promise<boolean>;
   /** Test seam — fake recorder factory (happy-dom has no WebAudio capture). */
   recorderFactory?: () => VoiceRecorder;
+  /** Visual shape; behavior is identical. Default `toolbar`. */
+  variant?: "toolbar" | "slot";
+  /** Rendered instead of nothing while no voice-message STT profile
+   *  resolves — the mobile slot shows its (disabled) send button there. */
+  fallback?: ReactNode;
+  /** Reports "recording or uploading" so a host that swaps this button for
+   *  another control (the mobile slot) can keep it mounted until done. */
+  onBusyChange?(busy: boolean): void;
 }
 
 function formatSeconds(ms: number): string {
@@ -88,7 +100,13 @@ export function VoiceMessageButton(props: VoiceMessageButtonProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [recording]);
 
-  if (!profileResolves) return null;
+  const busy = recording || uploading;
+  const { onBusyChange } = props;
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
+  if (!profileResolves) return props.fallback ?? null;
 
   const start = async (): Promise<void> => {
     const recorder = props.recorderFactory ? props.recorderFactory() : createVoiceRecorder();
@@ -123,6 +141,7 @@ export function VoiceMessageButton(props: VoiceMessageButtonProps) {
     }
   };
 
+  const slot = props.variant === "slot";
   const tooltip = recording
     ? t("voice_message_stop_tooltip")
     : uploading
@@ -137,8 +156,11 @@ export function VoiceMessageButton(props: VoiceMessageButtonProps) {
         data-status={recording ? "recording" : uploading ? "uploading" : "idle"}
         aria-label={tooltip}
         className={
-          "flex h-[26px] items-center justify-center gap-1 rounded-md px-1 transition-colors disabled:opacity-45 " +
-          (recording ? "bg-danger/15 text-danger" : "text-t3 hover:bg-s2 hover:text-t1")
+          (slot
+            ? "flex h-9 items-center justify-center gap-1 rounded-lg transition-colors disabled:opacity-45 " +
+              (recording ? "min-w-9 bg-danger/15 px-2 text-danger" : "w-9 bg-accent text-on-accent active:scale-95")
+            : "flex h-[26px] items-center justify-center gap-1 rounded-md px-1 transition-colors disabled:opacity-45 " +
+              (recording ? "bg-danger/15 text-danger" : "text-t3 hover:bg-s2 hover:text-t1"))
         }
         disabled={uploading}
         onClick={() => (recording ? void stop() : void start())}

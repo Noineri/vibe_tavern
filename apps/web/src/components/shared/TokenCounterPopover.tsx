@@ -141,16 +141,50 @@ export function TokenCounterPopover({
 	);
 }
 
-function ContextRing({ percent, tokenState }: Pick<ContextUsage, "percent"> & Pick<TokenCounterPopoverProps, "tokenState">) {
-	const radius = 11;
+/**
+ * The ONE state -> class mapping for the context fill. The ring takes
+ * `stroke`, the mobile model sheet's «N% · used / available» figure takes
+ * `text` — a state can never color the two differently.
+ */
+export const CONTEXT_STATE_CLASSES = {
+	ok: { stroke: "stroke-accent", text: "text-accent-t" },
+	mid: { stroke: "stroke-warning-text", text: "text-warning-text" },
+	warn: { stroke: "stroke-danger-text", text: "text-danger-text" },
+} as const satisfies Record<TokenCounterPopoverProps["tokenState"], { stroke: string; text: string }>;
+
+export interface ContextRingProps {
+	percent: number;
+	/** Colors the fill arc via {@link CONTEXT_STATE_CLASSES}; defaults to `ok` (accent). */
+	tokenState?: TokenCounterPopoverProps["tokenState"];
+	/** Side of the square drawing in px; the viewBox matches it. Default 28. */
+	size?: number;
+	/** Circle radius in viewBox units. Default 11. */
+	radius?: number;
+	strokeWidth?: number;
+	/** Track (unfilled ring) stroke class. Default `stroke-border`. */
+	trackClassName?: string;
+}
+
+/**
+ * The context-fill ring — one drawing for every host (the co-author mobile
+ * counter, the RP model button's outline). Crisp by construction: the -90°
+ * start rotation lives INSIDE the SVG (a CSS rotate class makes phones
+ * rasterize the whole element as its own layer — the jagged ring), anti-aliasing
+ * is requested explicitly, and an empty ring draws no arc at all (a round cap
+ * on a zero-length dash would leave a dot).
+ */
+export function ContextRing({ percent, tokenState = "ok", size = 28, radius = 11, strokeWidth = 3, trackClassName = "stroke-border" }: ContextRingProps) {
+	const center = size / 2;
 	const circumference = 2 * Math.PI * radius;
-	const fill = Math.min(100, percent) / 100;
-	const colorClass = tokenState === "warn" ? "stroke-danger-text" : tokenState === "mid" ? "stroke-warning-text" : "stroke-accent";
+	const fill = Math.min(100, Math.max(0, percent)) / 100;
+	const rotation = `rotate(-90 ${center} ${center})`;
 
 	return (
-		<svg aria-hidden="true" data-token-state={tokenState} className="h-7 w-7 -rotate-90" viewBox="0 0 28 28">
-			<circle className="stroke-border" cx="14" cy="14" fill="none" r={radius} strokeWidth="3" />
-			<circle className={colorClass} cx="14" cy="14" fill="none" r={radius} strokeDasharray={circumference} strokeDashoffset={circumference * (1 - fill)} strokeLinecap="round" strokeWidth="3" />
+		<svg aria-hidden="true" data-token-state={tokenState} width={size} height={size} viewBox={`0 0 ${size} ${size}`} shapeRendering="geometricPrecision">
+			<circle className={trackClassName} cx={center} cy={center} fill="none" r={radius} strokeWidth={strokeWidth} transform={rotation} />
+			{fill > 0 && (
+				<circle className={CONTEXT_STATE_CLASSES[tokenState].stroke} cx={center} cy={center} fill="none" r={radius} strokeDasharray={circumference} strokeDashoffset={circumference * (1 - fill)} strokeLinecap="round" strokeWidth={strokeWidth} transform={rotation} />
+			)}
 		</svg>
 	);
 }

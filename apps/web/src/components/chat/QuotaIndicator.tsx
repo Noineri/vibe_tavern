@@ -2,11 +2,11 @@ import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
-import { quotaTextClass, quotaUsageState } from "../../lib/quota-display.js";
+import { quotaTextClass } from "../../lib/quota-display.js";
 import { useProviderQuotaDisplay } from "../../hooks/use-provider-quota-display.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { QuotaSummaryRows, snapshotRows } from "../shared/QuotaSummaryRows.js";
+import { QuotaSummaryRows } from "../shared/QuotaSummaryRows.js";
 
 /**
  * Provider-quota flyout for the chat input toolbar — the visible half of the
@@ -33,20 +33,13 @@ export function QuotaIndicator({ providerProfileId }: QuotaIndicatorProps) {
   const [open, setOpen] = useState(false);
   // The show/hide gate and the capability/quota fetch are shared with the
   // mobile model sheet (hooks/use-provider-quota-display.ts).
-  const { entry, visible } = useProviderQuotaDisplay(providerProfileId);
+  const { entry, visible, worstState: triggerState } = useProviderQuotaDisplay(providerProfileId);
 
   // `now` is sampled when the flyout opens, so the countdowns are current
   // without a ticking interval running behind a closed popover.
   const [openedAt, setOpenedAt] = useState(() => Date.now());
 
   if (!visible) return null;
-
-  const snapshot = entry.snapshot;
-  const rows = snapshot ? snapshotRows(snapshot) : null;
-  const worstUsedPercent = rows && rows.windows.length > 0
-    ? Math.max(...rows.windows.map((window) => window.usedPercent))
-    : null;
-  const triggerState = worstUsedPercent === null ? null : quotaUsageState(worstUsedPercent);
 
   return (
     <Popover.Root

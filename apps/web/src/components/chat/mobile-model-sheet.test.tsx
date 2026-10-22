@@ -97,6 +97,7 @@ function props(overrides: Partial<SheetProps> = {}): SheetProps {
       inputTokens: 500,
       maxTokens: 1024,
       availableBudget: 7168,
+      tokenState: "ok",
       permanentItems: [
         { label: "row_system", value: 1000 },
         { label: "row_character", value: 2000 },
@@ -176,6 +177,24 @@ describe("MobileModelSheet context card", () => {
     expect(view.queryByText("context_response_budget")).toBeNull();
   });
 
+  // The figure shares the ring's state mapping (CONTEXT_STATE_CLASSES): ok accent,
+  // mid warning text, warn danger text.
+  for (const [state, expected, others] of [
+    ["ok", "text-accent-t", ["text-warning-text", "text-danger-text"]],
+    ["mid", "text-warning-text", ["text-accent-t", "text-danger-text"]],
+    ["warn", "text-danger-text", ["text-accent-t", "text-warning-text"]],
+  ] as const) {
+    test(`colors the context figure for tokenState "${state}"`, async () => {
+      const view = mountSheet(props({ context: { ...props().context, tokenState: state } }));
+      await waitFor(() => view.getByText("context_label"));
+      const figure = contextCard(view).querySelector<HTMLElement>("span.tabular-nums");
+
+      expect(figure?.textContent).toContain("%");
+      expect(figure?.classList.contains(expected)).toBe(true);
+      for (const other of others) expect(figure?.classList.contains(other)).toBe(false);
+    });
+  }
+
   test("tapping expands the full breakdown in place and tapping again collapses it", async () => {
     const view = mountSheet(props());
     await waitFor(() => view.getByText("context_label"));
@@ -217,7 +236,7 @@ describe("MobileModelSheet context card", () => {
 
   test("with no known budget shows the figures and rows only, no bar and no summary", async () => {
     const view = mountSheet(props({
-      context: { permanent: 3000, history: 2000, inputTokens: 500, maxTokens: 0, availableBudget: 0, permanentItems: [{ label: "row_system", value: 1000 }] },
+      context: { permanent: 3000, history: 2000, inputTokens: 500, maxTokens: 0, availableBudget: 0, tokenState: "ok", permanentItems: [{ label: "row_system", value: 1000 }] },
     }));
     await waitFor(() => view.getByText("context_label"));
     const card = contextCard(view);

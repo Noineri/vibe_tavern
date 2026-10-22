@@ -14,14 +14,17 @@ import { useState } from "react";
 import type { FavoriteProviderModelRecord } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { useProviderQuotaDisplay } from "../../hooks/use-provider-quota-display.js";
+import { cn } from "../../lib/cn.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { Icons } from "../shared/icons.js";
 import { QuotaSummaryRows } from "../shared/QuotaSummaryRows.js";
 import {
+  CONTEXT_STATE_CLASSES,
   ContextBreakdownRows,
   ContextUsageBar,
   getContextUsage,
   type TokenCounterItem,
+  type TokenCounterPopoverProps,
 } from "../shared/TokenCounterPopover.js";
 
 /** The context numbers `useInputArea()` already derives for the ring. */
@@ -31,6 +34,8 @@ export interface ModelSheetContext {
   inputTokens: number;
   maxTokens: number;
   availableBudget: number;
+  /** Colors the figure with the ring's mapping (CONTEXT_STATE_CLASSES). */
+  tokenState: TokenCounterPopoverProps["tokenState"];
   permanentItems: TokenCounterItem[];
 }
 
@@ -116,7 +121,7 @@ function MobileModelSheetBody({ onClose, context, providerProfile, favoriteModel
 function ContextCard({ context }: { context: ModelSheetContext }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
-  const { permanent, history, inputTokens, maxTokens, availableBudget, permanentItems } = context;
+  const { permanent, history, inputTokens, maxTokens, availableBudget, tokenState, permanentItems } = context;
   const usage = getContextUsage(permanent, history, inputTokens, availableBudget);
   const hasBudget = availableBudget > 0;
   const share = (tokens: number): number => Math.round(tokens / availableBudget * 100);
@@ -131,7 +136,7 @@ function ContextCard({ context }: { context: ModelSheetContext }) {
       >
         <div className="flex items-baseline justify-between gap-3 text-[calc(var(--ui-fs)-1px)]">
           <span className="shrink-0 text-t1">{t("context_label")}</span>
-          <span className="min-w-0 whitespace-nowrap tabular-nums text-accent-t">{usage.percent}% · {usage.used.toLocaleString()} / {availableBudget.toLocaleString()}</span>
+          <span className={cn("min-w-0 whitespace-nowrap tabular-nums", CONTEXT_STATE_CLASSES[tokenState].text)}>{usage.percent}% · {usage.used.toLocaleString()} / {availableBudget.toLocaleString()}</span>
         </div>
         {hasBudget && (
           <div className="my-2">

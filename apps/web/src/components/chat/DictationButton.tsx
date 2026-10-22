@@ -33,6 +33,9 @@ export interface DictationButtonProps {
   /** Test seams — forwarded to useDictation (fake transcriber / recorder). */
   transcriber?: DictationTranscriber;
   recorderFactory?: () => VoiceRecorder;
+  /** `lg` = the mobile toolbar's neutral 36 px square (same footprint as the
+   *  attach button next to it); default is the desktop 26 px ghost icon. */
+  size?: "default" | "lg";
 }
 
 export function DictationButton(props: DictationButtonProps) {
@@ -113,10 +116,14 @@ export function DictationButton(props: DictationButtonProps) {
         data-status={status}
         aria-label={tooltip}
         className={
-          "flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors disabled:opacity-45 " +
+          (props.size === "lg"
+            ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-45 "
+            : "flex h-[26px] w-[26px] items-center justify-center rounded-md transition-colors disabled:opacity-45 ") +
           (recording
             ? "bg-danger/15 text-danger animate-pulse"
-            : "text-t3 hover:bg-s2 hover:text-t1")
+            : props.size === "lg"
+              ? "bg-s3 text-t3 active:bg-s2"
+              : "text-t3 hover:bg-s2 hover:text-t1")
         }
         disabled={status === "transcribing"}
         onClick={() => (recording ? stop() : void start())}
