@@ -9,12 +9,9 @@ import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
-import type {
-  AgentHostContext,
-  AgentHostDescriptor,
-  AgentKind,
-  AgentSendOptions,
-} from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { AgentController } from "./use-agent-controller.js";
 import type { CopilotContextController } from "../../../hooks/use-copilot-context.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
@@ -112,6 +109,39 @@ export function AgentChatPane({
   composerTopSlot,
 }: AgentChatPaneProps) {
   const { t } = useT();
+
+  // AP-5: while the thread's live awaiting ask exists, a composer send
+  // ANSWERS it (routes to `ctrl.handleAnswer` with the draft as the answer
+  // text) instead of starting a new message. ONE routing derivation shared by
+  // BOTH composer arms below (responsive dual-mode — never one viewport). The
+  // turn store is read at EVENT TIME through `getState()`: its changes do not
+  // re-render this pane, so a render-time capture would go stale mid-stream;
+  // the ctrl fields are state-driven props, fresh by construction. The
+  // selector is the ONE derivation of "is there a live ask" — the ask card's
+  // interactive rule reads the same source, so the answerable card and the
+  // answering send can never disagree.
+  const handleComposerSend = (content: string) => {
+    const turnState = useAgentTurnStore.getState();
+    const key = threadId !== null ? agentThreadKey(kind, threadId) : null;
+    const liveAsk =
+      key !== null
+        ? selectAgentLiveAsk({
+            feed: turnState.feedByThread[key] ?? [],
+            activities: turnState.turnsByThread[key] ?? [],
+            messages,
+            pendingAskAnswer: ctrl.pendingAskAnswer,
+            isSending: ctrl.isSending,
+          })
+        : null;
+    sendWithOptions((options) => {
+      if (liveAsk !== null) {
+        void ctrl.handleAnswer(liveAsk.toolCallId, { text: content }, options);
+      } else {
+        void ctrl.handleSend(content, options);
+      }
+    });
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       {sessionLoading ? (
@@ -195,9 +225,7 @@ export function AgentChatPane({
             <AgentMobileInputArea
               isSending={ctrl.isSending}
               prefill={inputPrefill ?? undefined}
-              onSend={(content) => {
-                sendWithOptions((options) => void ctrl.handleSend(content, options));
-              }}
+              onSend={handleComposerSend}
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}
@@ -212,9 +240,7 @@ export function AgentChatPane({
             <AgentInputArea
               isSending={ctrl.isSending}
               prefill={inputPrefill ?? undefined}
-              onSend={(content) => {
-                sendWithOptions((options) => void ctrl.handleSend(content, options));
-              }}
+              onSend={handleComposerSend}
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}

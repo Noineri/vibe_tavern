@@ -9,6 +9,7 @@ import {
   type AgentPermissionState,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
+import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
@@ -256,11 +257,12 @@ export function AgentMessageList({
     return out;
   }, [feed, activityById]);
 
-  // TAG-9: the chronologically LAST activity of the thread (live feed first —
-  // it is the current turn; then the last history activity, tracked in the
-  // anchor pass above in raw `messages` order). Only an awaiting `ask_user`
-  // activity that IS this last one renders interactively; an awaiting ask
-  // with any later activity renders as expired (the user moved on).
+  // TAG-9 / SC-23f: the chronologically LAST activity of the thread (live
+  // feed first — it is the current turn; then the last history activity,
+  // tracked in the anchor pass above in raw `messages` order). AP-5: this
+  // feeds the PERMISSION card's own inline rule; the ask card's interactive
+  // rule reads the live-ask selector below (the ONE derivation of "is this
+  // ask answerable", which encodes the same last-activity order).
   const lastActivityId = useMemo(() => {
     for (let i = feed.length - 1; i >= 0; i--) {
       const entry = feed[i];
@@ -268,6 +270,17 @@ export function AgentMessageList({
     }
     return lastHistoryActivityId;
   }, [feed, lastHistoryActivityId]);
+
+  // AP-5: the thread's live awaiting ask — the ONE derivation in
+  // stores/agent-live-ask.ts (last activity + awaiting + no stream + after
+  // the optimistic override, ask_user family only). The ask card's
+  // interactive rule below and the chat pane's composer routing read this
+  // SAME selector, so the answerable card and the answering send can never
+  // disagree.
+  const liveAsk = useMemo(
+    () => selectAgentLiveAsk({ feed, activities, messages, pendingAskAnswer, isSending }),
+    [feed, activities, messages, pendingAskAnswer, isSending],
+  );
 
   // SC-23f: `read_message_prompt` remains its own interactive card,
   // rendered IN PLACE at its chronological slot — never inside a turn's
@@ -301,7 +314,9 @@ export function AgentMessageList({
 
   // TAG-9: `ask_user` remains its own interactive card, rendered IN PLACE at
   // its chronological slot — never inside a turn's tool accordion (TA-1
-  // collects only non-ask activities).
+  // collects only non-ask activities). AP-5: the interactive rule reads the
+  // live-ask selector — awaiting + THE live ask + answerable (the selector
+  // folds the old `lastActivityId` + `!isSending` conjuncts).
   const renderAskActivity = (activity: AgentToolActivity) => {
     const ask = activity.ask!;
     const resolved: AgentAskState =
@@ -318,8 +333,8 @@ export function AgentMessageList({
         ask={resolved}
         interactive={
           resolved.status === "awaiting_answer" &&
-          activity.toolCallId === lastActivityId &&
-          !isSending &&
+          liveAsk !== null &&
+          liveAsk.toolCallId === activity.toolCallId &&
           onAnswer !== undefined
         }
         onSubmit={onAnswer ? (a) => onAnswer(activity.toolCallId, a) : undefined}
