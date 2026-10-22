@@ -358,8 +358,9 @@ describe("Slider", () => {
 		const editor = input(container, "field-number");
 		fireEvent.change(editor, { target: { value: "9" } });
 		fireEvent.keyDown(editor, { key: "Enter" });
-		expect(onValueChange).toHaveBeenLastCalledWith(10);
-		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+		// Behavior change: a typed value is kept exactly (step 2 here); only stepping snaps.
+		expect(onValueChange).toHaveBeenLastCalledWith(9);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(9);
 	});
 
 	it("cancels a field inline edit without changing the controlled value", () => {
@@ -377,7 +378,7 @@ describe("Slider", () => {
 		expect(container.querySelector("[data-slider-field-value]")?.textContent).toBe("4");
 	});
 
-	it("snaps an inline draft and commits exactly once on blur", () => {
+	it("keeps an inline draft exactly and commits exactly once on blur", () => {
 		const onValueChange = mock();
 		const onValueCommitted = mock();
 		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
@@ -387,8 +388,9 @@ describe("Slider", () => {
 		const editor = input(container, "field-number");
 		fireEvent.change(editor, { target: { value: "9" } });
 		fireEvent.blur(editor);
-		expect(onValueChange).toHaveBeenLastCalledWith(10);
-		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+		// Behavior change: was snapped to the step grid (10), now the typed 9 is kept.
+		expect(onValueChange).toHaveBeenLastCalledWith(9);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(9);
 		expect(onValueCommitted).toHaveBeenCalledTimes(1);
 	});
 
@@ -629,8 +631,9 @@ function openEditor(container: HTMLElement): HTMLInputElement {
 }
 
 describe("Slider field inline editor", () => {
-	it("commits Enter exactly once with the clamped and step-snapped value", () => {
-		const cases: [string, number][] = [["9", 10], ["99", 10], ["-5", 0], ["3", 4]];
+	it("commits Enter exactly once with the typed value clamped to the bounds and never snapped to the step", () => {
+		// Behavior change: "9" was 10 and "3" was 4 (snapped to step 2); typed values are now kept as typed.
+		const cases: [string, number][] = [["9", 9], ["99", 10], ["-5", 0], ["3", 3]];
 		for (const [typed, expected] of cases) {
 			const onValueChange = mock();
 			const onValueCommitted = mock();
@@ -646,29 +649,40 @@ describe("Slider field inline editor", () => {
 		}
 	});
 
-	it("emits no float noise when a typed value is snapped to a fractional step", () => {
-		const onValueChange = mock();
-		const onValueCommitted = mock();
-		const { container } = render(
-			<Slider
-				appearance="field"
-				value={0.2}
-				min={0}
-				max={1}
-				step={0.05}
-				aria-label="Fraction"
-				numberTestId="fraction-number"
-				onValueChange={onValueChange}
-				onValueCommitted={onValueCommitted}
-			/>,
-		);
-		fireEvent.doubleClick(fieldOf(container));
-		const editor = input(container, "fraction-number");
-		fireEvent.change(editor, { target: { value: "0.72" } });
-		fireEvent.keyDown(editor, { key: "Enter" });
-		expect(onValueChange).toHaveBeenCalledTimes(1);
-		expect(onValueChange).toHaveBeenLastCalledWith(0.7);
-		expect(onValueCommitted).toHaveBeenLastCalledWith(0.7);
+	it("keeps a typed fractional value exactly, with no float noise and no grid snapping", () => {
+		// Behavior change: 0.72 at step 0.05 was snapped to 0.7; typed values are now clamped only.
+		// The second case has its grid anchored off zero (0.25 + n * 0.1), where snapping used to turn 1 into 1.05 and 1.2 into 1.15.
+		const cases: { min: number; max: number; step: number; typed: string; expected: number }[] = [
+			{ min: 0, max: 1, step: 0.05, typed: "0.72", expected: 0.72 },
+			{ min: 0.25, max: 4, step: 0.1, typed: "1", expected: 1 },
+			{ min: 0.25, max: 4, step: 0.1, typed: "1.2", expected: 1.2 },
+			{ min: 0.25, max: 4, step: 0.1, typed: "9", expected: 4 },
+			{ min: 0.25, max: 4, step: 0.1, typed: "0.1", expected: 0.25 },
+		];
+		for (const { min, max, step, typed, expected } of cases) {
+			const onValueChange = mock();
+			const onValueCommitted = mock();
+			const { container } = render(
+				<Slider
+					appearance="field"
+					value={max / 2}
+					min={min}
+					max={max}
+					step={step}
+					aria-label="Fraction"
+					numberTestId="fraction-number"
+					onValueChange={onValueChange}
+					onValueCommitted={onValueCommitted}
+				/>,
+			);
+			fireEvent.doubleClick(fieldOf(container));
+			const editor = input(container, "fraction-number");
+			fireEvent.change(editor, { target: { value: typed } });
+			fireEvent.keyDown(editor, { key: "Enter" });
+			expect(onValueChange).toHaveBeenCalledTimes(1);
+			expect(onValueChange).toHaveBeenLastCalledWith(expected);
+			expect(onValueCommitted).toHaveBeenLastCalledWith(expected);
+		}
 	});
 
 	it("emits no change and no commit when Escape cancels, and discards the draft", () => {
@@ -691,10 +705,11 @@ describe("Slider field inline editor", () => {
 		const editor = openEditor(container);
 		fireEvent.change(editor, { target: { value: "7" } });
 		fireEvent.blur(editor);
+		// Behavior change: was snapped to the step grid (8), now the typed 7 is kept.
 		expect(onValueChange).toHaveBeenCalledTimes(1);
-		expect(onValueChange).toHaveBeenLastCalledWith(8);
+		expect(onValueChange).toHaveBeenLastCalledWith(7);
 		expect(onValueCommitted).toHaveBeenCalledTimes(1);
-		expect(onValueCommitted).toHaveBeenLastCalledWith(8);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(7);
 	});
 
 	it("cannot commit twice when Enter and a stale blur land before React re-renders", () => {
@@ -710,7 +725,8 @@ describe("Slider field inline editor", () => {
 		});
 		expect(onValueChange).toHaveBeenCalledTimes(1);
 		expect(onValueCommitted).toHaveBeenCalledTimes(1);
-		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+		// Behavior change: was snapped to the step grid (10), now the typed 9 is kept.
+		expect(onValueCommitted).toHaveBeenLastCalledWith(9);
 	});
 
 	it("cannot commit after Escape even if the unmounting input still blurs", () => {
@@ -876,6 +892,25 @@ describe("Slider field contract", () => {
 		expect(formatted.container.querySelector("[data-slider-field-value]")?.textContent).toBe("30 %");
 		const pair = render(<ControlledRangeField />);
 		expect(pair.container.querySelector("[data-slider-field-value]")?.textContent).toBe("2 – 6");
+	});
+
+	it("shows a typed value faithfully: the step's decimals or the value's own, capped at 4, without float noise", () => {
+		const cases: { value: number; step: number; expected: string }[] = [
+			{ value: 1.23, step: 0.1, expected: "1.23" },
+			{ value: 0.7, step: 0.05, expected: "0.70" },
+			{ value: 0.7000000000000001, step: 0.05, expected: "0.70" },
+			{ value: 1.23456, step: 0.1, expected: "1.2346" },
+			{ value: 1.5, step: 1, expected: "1.5" },
+			{ value: 7, step: 1, expected: "7" },
+			{ value: 0.3, step: 0.001, expected: "0.300" },
+		];
+		for (const { value, step, expected } of cases) {
+			const view = render(<Slider appearance="field" value={value} min={0} max={10} step={step} aria-label="Faithful" onValueChange={() => {}} />);
+			expect(view.container.querySelector("[data-slider-field-value]")?.textContent).toBe(expected);
+			view.unmount();
+		}
+		const pair = render(<Slider appearance="field" value={[1.25, 6]} min={0} max={10} step={0.5} getAriaLabel={() => "Edge"} onValueChange={() => {}} />);
+		expect(pair.container.querySelector("[data-slider-field-value]")?.textContent).toBe("1.25 – 6.0");
 	});
 
 	it("places an unclipped label on the left, vertically centered, and keeps its help beside it", () => {

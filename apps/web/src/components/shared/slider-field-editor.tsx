@@ -1,6 +1,6 @@
 import { useRef, useState, type FocusEvent } from "react";
 import { NumberInput } from "./NumberInput.js";
-import { snap } from "./slider-field-math.js";
+import { clamp } from "./slider-field-math.js";
 
 export interface SliderFieldEditorProps {
 	initial: number;
@@ -10,7 +10,7 @@ export interface SliderFieldEditorProps {
 	testId?: string;
 	/**
 	 * Called exactly once per editor lifetime.
-	 * `value` is the clamped and step-snapped result, or `null` when the edit was cancelled.
+	 * `value` is the typed number clamped to [min, max] (never snapped to the step grid), or `null` when the edit was cancelled.
 	 * `restoreFocus` is false when focus is already moving to another control (blur by click or Tab).
 	 */
 	onFinish: (value: number | null, restoreFocus: boolean) => void;
@@ -18,7 +18,8 @@ export interface SliderFieldEditorProps {
 
 /**
  * Inline number editor of the slider field, rendered at the value's place.
- * Enter or blur commits, Escape cancels; text entry, clamping to the bounds and the stepper keys come from `NumberInput`.
+ * Enter or blur commits, Escape cancels; text entry and the stepper keys come from `NumberInput`.
+ * A typed number is an exact value: it is clamped to the bounds and never snapped to the step grid (stepping by pointer or keyboard snaps; typing does not).
  * A ref guard (not state) makes a second finish impossible: Enter blurs the input, and unmounting can blur it again.
  */
 export function SliderFieldEditor({ initial, min, max, step, testId, onFinish }: SliderFieldEditorProps) {
@@ -29,7 +30,7 @@ export function SliderFieldEditor({ initial, min, max, step, testId, onFinish }:
 	function finish(save: boolean, restoreFocus: boolean) {
 		if (finished.current) return;
 		finished.current = true;
-		onFinish(save ? snap(draftRef.current, min, max, step) : null, restoreFocus);
+		onFinish(save ? clamp(draftRef.current, min, max) : null, restoreFocus);
 	}
 
 	return (

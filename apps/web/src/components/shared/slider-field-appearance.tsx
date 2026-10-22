@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 
 import { cn } from "../../lib/cn.js";
 import { inputCls, lblCls } from "../../lib/field-tokens.js";
 import { SliderFieldEditor } from "./slider-field-editor.js";
-import { clamp, decimals, grabRange, snap, valueAt } from "./slider-field-math.js";
+import { clamp, formatFieldNumber, grabRange, snap, valueAt } from "./slider-field-math.js";
 import type { SliderProps, SliderValue } from "./slider.js";
 
 type GestureMode = "single" | "window";
@@ -55,8 +55,8 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 	const first = values[0]!;
 	const last = values[values.length - 1]!;
 	const valueText = formatValue ? formatValue(value) : range
-		? `${first.toFixed(decimals(step))} – ${last.toFixed(decimals(step))}`
-		: first.toFixed(decimals(step));
+		? `${formatFieldNumber(first, step)} – ${formatFieldNumber(last, step)}`
+		: formatFieldNumber(first, step);
 
 	useLayoutEffect(() => {
 		if (!label) return;

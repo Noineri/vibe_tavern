@@ -7,6 +7,19 @@ export function decimals(value: number) {
 	return Math.min(20, Math.max(0, fraction + shift));
 }
 
+const MAX_VALUE_DECIMALS = 4;
+
+/**
+ * Text of a field value: at least the step's decimals ("0.70" at step 0.05), more when the value itself carries them
+ * (a typed 1.23 at step 0.1 reads "1.23"), the value's own decimals capped at 4.
+ * Float noise is rounded away before counting, so 0.7000000000000001 still reads "0.70".
+ */
+export function formatFieldNumber(value: number, step: number) {
+	if (!Number.isFinite(value)) return String(value);
+	const own = Math.min(MAX_VALUE_DECIMALS, decimals(Number(value.toFixed(MAX_VALUE_DECIMALS))));
+	return value.toFixed(Math.max(decimals(step), own));
+}
+
 export function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
