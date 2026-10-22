@@ -9,6 +9,10 @@
  *     becomes `<span class="system-banner">`.
  *   - `variant="plain"` (release notes, docs) must emit neither, while keeping
  *     ordinary GFM — bold, italics, inline code, lists, tables — intact.
+ *   - `variant="agent-rp"` (AP-1) keeps the chat feature set minus banners:
+ *     quoted-text wrapping ON, bracket system-banners OFF, scene-meta OFF.
+ *   - `variant="agent-plain"` (AP-1) is the plain feature set with explicit
+ *     plain em/strong styling: no quoted-text, no banners, no scene-meta.
  *   - Empty text renders nothing at all, not an empty wrapper.
  *
  * These assertions are written against the pre-memoization component and must
@@ -85,6 +89,122 @@ describe("Markdown — plain variant omits chat-only transforms", () => {
     expect(container.querySelector(".md-code-inline")).not.toBeNull();
     expect(container.querySelectorAll(".md-list-item")).toHaveLength(2);
     expect(container.querySelector("table")).not.toBeNull();
+  });
+});
+
+describe("Markdown — chat/plain host contract (byte-identity guards)", () => {
+  it("routes a lone bracket run through the banner, not scene-meta, in chat", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" />);
+    expect(container.querySelector(".system-banner")).not.toBeNull();
+    expect(container.querySelector(".scene-meta")).toBeNull();
+  });
+
+  it("still renders .scene-meta in chat when a code barrier blocks the banner", () => {
+    const { container } = render(<Markdown text="[Alice: `hi`]" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.querySelector(".scene-meta")).not.toBeNull();
+  });
+
+  it("chat root carries exactly the default wrapper class", () => {
+    const { container } = render(<Markdown text="hi" />);
+    expect(container.firstElementChild!.className).toBe("md-content");
+  });
+
+  it("plain root carries exactly the default wrapper class", () => {
+    const { container } = render(<Markdown text="hi" variant="plain" />);
+    expect(container.firstElementChild!.className).toBe("md-content");
+  });
+});
+
+describe("Markdown — agent-rp variant (AP-1)", () => {
+  it("keeps quoted-text wrapping", () => {
+    const { container } = render(<Markdown text={QUOTE_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector(".quoted-text")).not.toBeNull();
+  });
+
+  it("emits no system-banner", () => {
+    const { container } = render(<Markdown text={BANNER_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.textContent).toContain("[Combat begins]");
+  });
+
+  it("does not render scene-meta blocks", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" variant="agent-rp" />);
+    expect(container.querySelector(".scene-meta")).toBeNull();
+    expect(container.textContent).toContain("[Alice: hello]");
+  });
+
+  it("roots in md-content plus the md-agent scope", () => {
+    const { container } = render(<Markdown text="hi" variant="agent-rp" />);
+    const root = container.firstElementChild!;
+    expect(root.className.split(/\s+/).sort()).toEqual(["md-agent", "md-content"]);
+  });
+
+  it("keeps the chat remark pipeline (underscore custom tags unwrap)", () => {
+    const source = "<internal_states><details><summary>State</summary>Visible content</details></internal_states>";
+    const { container } = render(<Markdown text={source} variant="agent-rp" />);
+    expect(container.querySelector("details")).not.toBeNull();
+    expect(container.textContent).not.toContain("<internal_states>");
+  });
+
+  it("still renders standard GFM", () => {
+    const { container } = render(<Markdown text={GFM_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector("strong")).not.toBeNull();
+    expect(container.querySelector("em")).not.toBeNull();
+    expect(container.querySelector(".md-code-inline")).not.toBeNull();
+  });
+
+  it("keeps code blocks with the copy button", () => {
+    const source = ["```python", "print('hi')", "```"].join("\n");
+    const { container } = render(<Markdown text={source} variant="agent-rp" />);
+    expect(container.querySelector("pre")).not.toBeNull();
+    expect(container.querySelector(".md-copy-btn")).not.toBeNull();
+  });
+});
+
+describe("Markdown — agent-plain variant (AP-1)", () => {
+  it("leaves quoted speech untouched", () => {
+    const { container } = render(<Markdown text={QUOTE_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector(".quoted-text")).toBeNull();
+    expect(container.textContent).toContain("Your shorts,");
+  });
+
+  it("leaves a bracketed run untouched", () => {
+    const { container } = render(<Markdown text={BANNER_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.textContent).toContain("[Combat begins]");
+  });
+
+  it("does not render scene-meta blocks", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" variant="agent-plain" />);
+    expect(container.querySelector(".scene-meta")).toBeNull();
+    expect(container.textContent).toContain("[Alice: hello]");
+  });
+
+  it("roots in md-content plus the md-agent-plain scope", () => {
+    const { container } = render(<Markdown text="hi" variant="agent-plain" />);
+    const root = container.firstElementChild!;
+    expect(root.className.split(/\s+/).sort()).toEqual(["md-agent-plain", "md-content"]);
+  });
+
+  it("keeps the plain remark pipeline (underscore custom tags stay literal)", () => {
+    const source = "<internal_states><details><summary>State</summary>Visible content</details></internal_states>";
+    const { container } = render(<Markdown text={source} variant="agent-plain" />);
+    expect(container.textContent).toContain("<internal_states>");
+  });
+
+  it("still renders standard GFM", () => {
+    const { container } = render(<Markdown text={GFM_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector("strong")).not.toBeNull();
+    expect(container.querySelector("em")).not.toBeNull();
+    expect(container.querySelector(".md-code-inline")).not.toBeNull();
+  });
+
+  it("keeps code blocks with the copy button", () => {
+    const source = ["```python", "print('hi')", "```"].join("\n");
+    const { container } = render(<Markdown text={source} variant="agent-plain" />);
+    expect(container.querySelector("pre")).not.toBeNull();
+    expect(container.querySelector(".md-copy-btn")).not.toBeNull();
   });
 });
 

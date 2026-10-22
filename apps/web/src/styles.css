@@ -189,6 +189,17 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-content em{color:var(--md-italic);font-size:var(--md-fs-italic)}
 .md-content strong{color:var(--md-bold)}
 .md-content strong em,.md-content em strong{color:var(--md-bold-italic);font-size:var(--md-fs-bold-italic)}
+/* ── Agent markdown variants (AP-1) ──
+   agent-rp keeps the RP palette (italic/bold/bold-italic/quote colors) but
+   neutralizes every RP font-size override, so copilot emphasis renders at the
+   surrounding size. Doubled scope (.md-content.md-agent) outranks the base
+   rules regardless of source order. agent-plain drops the RP colors too:
+   emphasis is plain italic/bold in the surrounding color and size. */
+.md-content.md-agent em{font-size:inherit}
+.md-content.md-agent strong em,.md-content.md-agent em strong{font-size:inherit}
+.md-content.md-agent-plain em{color:inherit;font-size:inherit;font-style:italic}
+.md-content.md-agent-plain strong{color:inherit;font-weight:bold}
+.md-content.md-agent-plain strong em,.md-content.md-agent-plain em strong{color:inherit;font-size:inherit;font-style:italic}
 .scene-meta{font-size:.85em;color:var(--t3);font-family:var(--font-ui);margin-top:.4em;white-space:pre-line}
 .system-banner{display:inline-block;padding:2px 8px;margin:2px 0;border-radius:6px;background:var(--accent-dim);border:1px solid color-mix(in srgb, var(--accent) 35%, transparent);color:var(--t1);font-family:var(--font-ui);font-size:.85em;line-height:1.4}
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}

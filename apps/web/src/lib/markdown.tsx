@@ -25,8 +25,13 @@ interface MarkdownProps {
    * wrapping, bracket system-banner detection) — appropriate for message
    * bodies. `"plain"` skips them so generic Markdown (release notes, docs)
    * renders without chat-specific transforms.
+   * `"agent-rp"` keeps the chat feature set minus banners (quoted-text ON,
+   * bracket system-banners OFF, scene-meta OFF) with the RP palette but
+   * neutralized RP font sizes — see the md-agent rules in styles.css.
+   * `"agent-plain"` is the plain feature set with explicit plain em/strong
+   * styling (surrounding color and size, no quote coloring).
    */
-  variant?: "chat" | "plain";
+  variant?: "chat" | "plain" | "agent-rp" | "agent-plain";
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
@@ -444,6 +449,13 @@ function MarkdownParagraph({ children, ...props }: MarkdownComponentProps) {
   return <p {...props}>{children}</p>;
 }
 
+// Agent variants (AP-1) never render scene-meta: the copilot feed and the
+// editors have no scene concept, so a `[Name: text]` line stays literal text
+// inside an ordinary paragraph.
+function AgentParagraph({ children, ...props }: MarkdownComponentProps) {
+  return <p {...props}>{children}</p>;
+}
+
 const components: Record<string, React.ComponentType<MarkdownComponentProps>> = {
   p: MarkdownParagraph,
 
@@ -600,27 +612,51 @@ const BASE_REHYPE_PLUGINS: PluggableList = [
   [rehypeSanitize, sanitizeSchema],
 ];
 
-const CHAT_REHYPE_PLUGINS: PluggableList = [
+// agent-rp runs the chat pipeline minus the banner: quoted speech still
+// highlights, bracket runs stay literal for the copilot feed.
+const AGENT_RP_REHYPE_PLUGINS: PluggableList = [
   ...BASE_REHYPE_PLUGINS,
   rehypeRestoreEscapedUnderscoreTags,
   rehypeQuotedText,
+];
+
+const CHAT_REHYPE_PLUGINS: PluggableList = [
+  ...AGENT_RP_REHYPE_PLUGINS,
   rehypeSystemBanner,
 ];
+
+const AGENT_COMPONENTS: Record<string, React.ComponentType<MarkdownComponentProps>> = {
+  ...components,
+  p: AgentParagraph,
+};
+
+const VARIANT_DEFAULT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
+  chat: "md-content",
+  plain: "md-content",
+  "agent-rp": "md-content md-agent",
+  "agent-plain": "md-content md-agent-plain",
+};
 
 export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
-  const isPlain = variant === "plain";
-  const remarkPlugins = isPlain ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
-  const rehypePlugins = isPlain ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS;
-  const markdownText = isPlain ? text : preserveEscapedUnderscoreTags(text);
+  const isAgentRp = variant === "agent-rp";
+  const isAgent = isAgentRp || variant === "agent-plain";
+  const isPlainPipeline = variant === "plain" || variant === "agent-plain";
+  const remarkPlugins = isPlainPipeline ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
+  const rehypePlugins = isPlainPipeline
+    ? BASE_REHYPE_PLUGINS
+    : isAgentRp
+      ? AGENT_RP_REHYPE_PLUGINS
+      : CHAT_REHYPE_PLUGINS;
+  const markdownText = isPlainPipeline ? text : preserveEscapedUnderscoreTags(text);
 
   return (
-    <div className={className || "md-content"}>
+    <div className={className || VARIANT_DEFAULT_CLASS[variant]}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
-        components={components}
+        components={isAgent ? AGENT_COMPONENTS : components}
       >
         {markdownText}
       </ReactMarkdown>
