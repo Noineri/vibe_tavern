@@ -1287,6 +1287,13 @@ export const promptTraces = sqliteTable('prompt_traces', {
   latencyMs: integer('latency_ms').notNull(),
   sentConfigJson: text('sent_config_json'),
   providerResponseJson: text('provider_response_json'),
+  /** SC-23b (SIDECHAT_PLAN Wave 5b): the swipe (message_variants row) this
+   *  trace's prompt produced. Null = the producing swipe is unknown: greeting
+   *  traces (no model wrote them), legacy traces the boot back-fill could not
+   *  resolve structurally (see trace-variant-backfill.ts), and traces whose
+   *  variant was later deleted (FK SET NULL — the trace itself survives).
+   *  Read by the trace viewer to show the exact prompt of a chosen swipe. */
+  variantId: text('variant_id').references(() => messageVariants.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   chatBranchIdx: index('idx_prompt_traces_chat_branch').on(table.chatId, table.branchId, table.createdAt),

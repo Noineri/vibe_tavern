@@ -285,10 +285,15 @@ export class ChatRuntime {
     }
 
     if (pending) {
+      // SC-23b: link the trace to the swipe it produced — the reply's selected
+      // variant (addMessage creates exactly one selected variant for the
+      // appended reply; a defensive miss leaves the link null).
+      const selectedVariant = await messages.getSelectedVariant(assistantMessage.id);
       await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId: assistantMessage.id,
+        variantId: selectedVariant?.id ?? null,
         model: pending.draft.model,
         presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
@@ -355,7 +360,7 @@ export class ChatRuntime {
     const chat = (await chats.getById(chatId))!;
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    await messages.addVariant(
+    const newVariant = await messages.addVariant(
       messageId,
       trimmed,
       input.finishReason ?? undefined,
@@ -374,10 +379,13 @@ export class ChatRuntime {
     );
 
     if (pending) {
+      // SC-23b: link the trace to the swipe it just produced — the newly
+      // added variant (selected by addVariant).
       await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId,
+        variantId: newVariant.id,
         model: pending.draft.model,
         presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,

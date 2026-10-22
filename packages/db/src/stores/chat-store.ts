@@ -1,8 +1,9 @@
-import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
-import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
+import { eq, and, desc, asc, lte, count } from 'drizzle-orm';
+import { chats, chatBranches, characters, messages, messageVariants } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { createChatInsertValues, type CreateChatInput } from './chat-create-values.js';
+import { copyForkPromptTraces } from './chat-store-fork-trace-copy.js';
 import { replaceChatTrackerSetup, updateChatInsightsConfig, updateChatObjectiveState } from './chat-tracker-setup.js';
 import {
   normalizeSceneTrackerConfig,
@@ -476,6 +477,10 @@ export class ChatStore {
       // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below
       // and to clone bound Dice rolls onto the new message ids (DICE-B12).
       const msgIdMap = new Map<string, string>();
+      // oldVariantId → newVariantId map (SC-23b): remaps prompt_traces.variant_id
+      // onto the copied variants, so a forked trace points at the fork's own
+      // swipe — never the parent branch's variant row.
+      const variantIdMap = new Map<string, string>();
 
       for (const msg of msgsToCopy) {
         const newMsgId = this.idGen.next('msg');
@@ -495,6 +500,7 @@ export class ChatStore {
           // still matches and the record stays valid. A null/unparseable
           // record yields null (see rekeySceneRecordJson).
           const newVariantId = this.idGen.next('mvar');
+          variantIdMap.set(v.id, newVariantId);
           newVariants.push({
             id: newVariantId, messageId: newMsgId, variantIndex: v.variantIndex,
             content: v.content, isSelected: v.isSelected, finishReason: v.finishReason,
@@ -518,56 +524,19 @@ export class ChatStore {
         tx.insert(messageVariants).values(newVariants).run();
       }
 
-      // Copy prompt_traces for the forked message range into the new branch.
-      // Only traces whose messageId was just copied (position <= fork point)
-      // are duplicated; traces for messages after the fork stay in the source
-      // branch. messageId is remapped via msgIdMap; every other column (JSON
-      // blobs, scalars, createdAt) is copied verbatim so the fork's trace
-      // history matches the parent up to the cut. New ids + the new branchId
-      // are assigned to keep rows independent. Fixes the defect where a forked
-      // branch started with zero trace history.
+      // Copy prompt_traces for the forked message range into the new branch
+      // (extracted — see chat-store-fork-trace-copy.ts). Runs inside this
+      // transaction so a failure rolls back with the whole fork.
+      copyForkPromptTraces(tx, {
+        idGen: this.idGen,
+        chatId,
+        newBranchId: branchId,
+        sourceBranchId: sourceMsg.branchId,
+        msgIdMap,
+        variantIdMap,
+      });
+
       if (msgIdMap.size > 0) {
-        const tracesToCopy = tx.select().from(promptTraces)
-          .where(and(
-            eq(promptTraces.branchId, sourceMsg.branchId),
-            inArray(promptTraces.messageId, [...msgIdMap.keys()]),
-          ))
-          .all();
-
-        if (tracesToCopy.length > 0) {
-          const newTraces: typeof promptTraces.$inferInsert[] = [];
-          for (const t of tracesToCopy) {
-            const newMessageId = msgIdMap.get(t.messageId);
-            // Defensive: the WHERE clause (messageId IN msgIdMap.keys())
-            // guarantees membership, but guard anyway rather than assert.
-            if (!newMessageId) continue;
-            newTraces.push({
-              id: this.idGen.next('trace'),
-              chatId,
-              branchId,
-              messageId: newMessageId,
-              model: t.model,
-              presetName: t.presetName,
-              assembledLayersJson: t.assembledLayersJson,
-              tokenAccountingJson: t.tokenAccountingJson,
-              finalPayloadJson: t.finalPayloadJson,
-              activatedLoreEntriesJson: t.activatedLoreEntriesJson,
-              activatedLoreDetailJson: t.activatedLoreDetailJson,
-              retrievedMemoriesJson: t.retrievedMemoriesJson,
-              scriptInjectionsJson: t.scriptInjectionsJson,
-              prefill: t.prefill,
-              compactionSummary: t.compactionSummary,
-              latencyMs: t.latencyMs,
-              sentConfigJson: t.sentConfigJson,
-              providerResponseJson: t.providerResponseJson,
-              createdAt: t.createdAt,
-            });
-          }
-          if (newTraces.length > 0) {
-            tx.insert(promptTraces).values(newTraces).run();
-          }
-        }
-
         // DICE-B12: clone bound Dice rolls onto the corresponding new message
         // ids, inside this same synchronous transaction so a failure rolls the
         // dice copy back too. Only bound rolls (user messages) are copied;

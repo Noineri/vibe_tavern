@@ -727,7 +727,7 @@ describe("LiveChatOrchestrator — continue fallback behind a local gateway rela
 describe("ChatRuntime — setPendingTrace (CPF-2b fallback trace attribution)", () => {
   function makeRealRuntime() {
     const addVariantCalls: Array<{ messageId: string; content: string; modelId: string | null; presetName: string | null }> = [];
-    const savedTraces: Array<{ model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown> }> = [];
+    const savedTraces: Array<{ model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown>; variantId?: string | null }> = [];
     const finalPayload = { messages: [{ role: "user", content: "Tell me a story." }, { role: "assistant", content: ORIGINAL }] };
     // One whole-deps cast: ChatRuntimeDeps members are nominal store/app
     // classes (ChatStore, MessageStore, …) that stub literals cannot satisfy
@@ -735,13 +735,16 @@ describe("ChatRuntime — setPendingTrace (CPF-2b fallback trace attribution)", 
     const runtime = new ChatRuntime({
       chats: { getById: async () => ({ activeBranchId: brandId<ChatBranchId>("branch_1") }) },
       messages: {
+        // Real MessageStore.addVariant returns the newly added variant — the
+        // writer consumes it to link the trace to the swipe it produced (SC-23b).
         addVariant: async (messageId: string, content: string, _finishReason: undefined, _reasoning: undefined, _duration: undefined, modelId: string | null, presetName: string | null) => {
           addVariantCalls.push({ messageId, content, modelId, presetName });
+          return { id: `mvar_fallback_${addVariantCalls.length}`, messageId, variantIndex: addVariantCalls.length, content, isSelected: 1, modelId, presetName, createdAt: "2026-10-21T00:00:00.000Z" };
         },
       },
       traces: {
-        saveTrace: async (data: { model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown> }) => {
-          savedTraces.push({ model: data.model, presetName: data.presetName, prefill: data.prefill, finalPayload: data.finalPayload });
+        saveTrace: async (data: { model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown>; variantId?: string | null }) => {
+          savedTraces.push({ model: data.model, presetName: data.presetName, prefill: data.prefill, finalPayload: data.finalPayload, variantId: data.variantId });
         },
       },
       chatApp: null,
@@ -792,9 +795,11 @@ describe("ChatRuntime — setPendingTrace (CPF-2b fallback trace attribution)", 
     expect(addVariantCalls).toHaveLength(1);
     expect(addVariantCalls[0]!.modelId).toBe("model-1");
     expect(addVariantCalls[0]!.presetName).toBe("Fallback Preset");
-    // And the saved trace describes the fallback request's payload.
+    // And the saved trace describes the fallback request's payload, linked to
+    // the swipe that produced it (SC-23b).
     expect(savedTraces).toHaveLength(1);
     expect(savedTraces[0]!.model).toBe("model-1");
+    expect(savedTraces[0]!.variantId).toBe("mvar_fallback_1");
   });
 
   it("without setPendingTrace a no-exclude assembly stays untraced (unchanged preview behavior)", async () => {

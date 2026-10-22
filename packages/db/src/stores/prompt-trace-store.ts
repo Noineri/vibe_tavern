@@ -16,6 +16,10 @@ export interface PromptTrace {
   chatId: string;
   branchId: string;
   messageId: string;
+  /** SC-23b: the swipe (message_variants row) this trace produced. Null =
+   *  unknown producer (greeting traces, unresolved legacy traces, deleted
+   *  variant — see the schema column comment). */
+  variantId: string | null;
   model: string;
   presetName: string;
   assembledLayers: unknown[];
@@ -50,6 +54,10 @@ export interface SaveTraceData {
   chatId: string;
   branchId: string;
   messageId: string;
+  /** SC-23b: the swipe this trace produced — the selected variant of the
+   *  appended reply, or the newly added swipe variant. Null/undefined = the
+   *  producing swipe is unknown (greeting traces). */
+  variantId?: string | null;
   model: string;
   presetName: string;
   assembledLayers: unknown[];
@@ -137,6 +145,7 @@ export class PromptTraceStore {
           chatId: data.chatId,
           branchId: data.branchId,
           messageId: data.messageId,
+          variantId: data.variantId ?? null,
           model: data.model,
           presetName: data.presetName,
           assembledLayersJson: JSON.stringify(layers.skeleton),
@@ -261,6 +270,7 @@ export class PromptTraceStore {
       chatId: row.chatId,
       branchId: row.branchId,
       messageId: row.messageId,
+      variantId: row.variantId ?? null,
       model: row.model,
       presetName: row.presetName,
       assembledLayers: inflateTraceValue(JSON.parse(row.assembledLayersJson), lookup),

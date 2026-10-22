@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_traces` ADD `variant_id` text REFERENCES `message_variants`(`id`) ON DELETE set null;
