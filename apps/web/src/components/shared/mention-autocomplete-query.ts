@@ -19,7 +19,8 @@
 /** One pickable row in the mention popover. */
 export interface MentionAutocompleteItem {
   /** Target kind — a copilot/co-author context target type
-   *  ("character" | "persona" | "lorebook" | "script" | "skill"). Rendered as
+   *  ("character" | "persona" | "lorebook" | "script" | "skill" |
+   *  "prompt_preset" — the last offered in the sidechat only). Rendered as
    *  the type chip; kept a plain string so non-copilot surfaces can reuse the
    *  primitive with their own kinds. */
   targetType: string;

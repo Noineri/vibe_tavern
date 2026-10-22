@@ -23,7 +23,9 @@
  *   - search/read captions live (args + output summary) and reloaded (the
  *     persisted {toolName, output} wrapper); unparseable → undefined;
  *   - the default model is the active profile's pair; a saved binding wins;
- *   - a chat-only AgentShell render shows the empty hint with no editor pane.
+ *   - a chat-only AgentShell render shows the empty hint with no editor pane;
+ *   - prompt presets pin in the sidechat (group lists presets by name, pin /
+ *     unpin round-trip the link) and stay out of the other assistants.
  *
  * Runner: bun:test with scoped happy-dom.
  */
@@ -31,9 +33,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock 
 import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
-import { CHAT_MODE, type AgentThreadOwner } from "@vibe-tavern/domain";
+import { CHAT_MODE, type AgentThreadOwner, type PromptPresetDto } from "@vibe-tavern/domain";
 import type {
   AgentKindSettingsWire,
+  ExperienceCopilotContextLink,
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
@@ -41,13 +44,14 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
-import { getAgentHost } from "../../../lib/agent-host-registry.js";
+import { getAgentHost, registerAgentHost, type AgentHostTransport } from "../../../lib/agent-host-registry.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
 import { Icons } from "../../shared/icons.js";
 import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
@@ -69,6 +73,8 @@ interface RouterState {
   messages: ExperienceCopilotMessageWire[];
   sessions: ExperienceCopilotThreadWire[];
   newSession: ExperienceCopilotThreadWire;
+  /** SC-23d: the pinned-context links served by GET/PATCH …/context-links. */
+  contextLinks: ExperienceCopilotContextLink[];
 }
 let router: RouterState;
 
@@ -96,7 +102,12 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse({ metrics: null, autoCompact: true });
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
+    return jsonResponse(router.contextLinks);
+  }
+  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+    router.contextLinks = body.links ?? [];
+    return jsonResponse(router.contextLinks);
   }
   // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
   // falls back to `String(null)` in build-config) — route on path SUFFIXES,
@@ -146,13 +157,14 @@ let render: typeof import("@testing-library/react").render;
 let act: typeof import("@testing-library/react").act;
 let renderHook: typeof import("@testing-library/react").renderHook;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
 let AgentShell: typeof import("../../shared/agent-shell/AgentShell.js").AgentShell;
 let useAgentModelBinding: typeof import("../../shared/agent-shell/use-agent-model-binding.js").useAgentModelBinding;
 
 const realFetch = globalThis.fetch;
 
 beforeAll(async () => {
-  ({ render, act, renderHook, waitFor } = await import("@testing-library/react"));
+  ({ render, act, renderHook, waitFor, fireEvent } = await import("@testing-library/react"));
   ({ AgentShell } = await import("../../shared/agent-shell/AgentShell.js"));
   ({ useAgentModelBinding } = await import("../../shared/agent-shell/use-agent-model-binding.js"));
   // The sidechat host self-registers (registerAgentHost("sidechat-ooc")) as a
@@ -213,14 +225,14 @@ function kindEntry(kind: string, providerProfileId: string | null, modelName: st
   };
 }
 
-function seedStores(map: Record<string, AgentKindSettingsWire>): void {
+function seedStores(map: Record<string, AgentKindSettingsWire>, presets: PromptPresetDto[] = []): void {
   useBootstrapStore.setState({
     data: {
       initialChatId: null,
       snapshot: null,
       isFirstRun: false,
       allCharacters: [],
-      promptPresets: [],
+      promptPresets: presets,
       uiSettings: wireUiSettings(),
       agentKindSettings: map,
       isArmServer: false,
@@ -236,6 +248,7 @@ beforeEach(() => {
   globalThis.fetch = fetchRouter as unknown as typeof fetch;
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  useSnapshotStore.setState({ allCharacters: [] });
   localStorage.clear();
   seedStores({});
   router = {
@@ -243,6 +256,7 @@ beforeEach(() => {
     messages: [],
     sessions: [],
     newSession: chatThread("sidechat-thread-new", "chat-1", "branch-1"),
+    contextLinks: [],
   };
   fetchRouter.mockClear();
 });
@@ -558,5 +572,203 @@ describe("sidechat-host — chat-only shell render (SC-13b)", () => {
     expect(queryByTestId("copilot-review-bar")).toBeNull();
     // The branch plan loads through the descriptor's chatBranch owner.
     expect(apiCalls("GET", /\/api\/agent\/chats\/chat-1\/branches\/branch-1\/plan$/).length).toBe(1);
+  });
+});
+
+// ── Prompt preset pins (SC-23d) ────────────────────────────────────────────
+
+/** A full preset DTO — the shell reads only id+name, the store type wants
+ *  the whole row. */
+function presetFixture(id: string, name: string): PromptPresetDto {
+  return {
+    id,
+    name,
+    system: "",
+    jailbreak: "",
+    prefill: "",
+    authorsNote: "",
+    authorsNoteDepth: 0,
+    authorsNotePosition: "in_prompt",
+    authorsNoteRole: "system",
+    summary: "",
+    tools: "",
+    nsfw: "",
+    enhanceDefinitions: "",
+    customInjections: [],
+    promptOrder: [],
+    advancedMode: false,
+    mergeConsecutiveRoles: false,
+    perSendPrefillEnabled: false,
+    scriptAiSystemPrompt: "",
+    aiAssistantPrompts: "",
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+/** Router PATCH calls matching a path pattern, with parsed JSON bodies. */
+function patchBodies(pattern: RegExp): unknown[] {
+  return fetchRouter.mock.calls
+    .map(([input, init]) => {
+      const raw = new URL(String(input), "http://gateway.test").pathname;
+      const path = raw.replace(/^\/null/, "");
+      return {
+        method: (init?.method ?? "GET").toUpperCase(),
+        path,
+        body: init?.body !== undefined ? (JSON.parse(String(init.body)) as unknown) : null,
+      };
+    })
+    .filter((call) => call.method === "PATCH" && pattern.test(call.path))
+    .map((call) => call.body);
+}
+
+/** The @-mention popover's rows (i18n is isolated-empty here, so the
+ *  listbox's aria-label is the raw key — the ONLY listbox with that label;
+ *  cmdk (the model DropdownSelect) renders its own rows elsewhere). */
+function mentionOptions(): HTMLElement[] {
+  const listbox = document.body.querySelector('[role="listbox"][aria-label="copilot_mention_picker_label"]');
+  return Array.from(listbox?.querySelectorAll('[role="option"]') ?? []);
+}
+
+// SC-23d: a minimal non-sidechat assistant proving the preset group is
+// offered per host. A stub transport (no fetch — canned session data), so
+// the only catalog rows come from the shell's own sources.
+const OTHER_KIND = "sc23d-other-assistant";
+
+function otherTransport(): AgentHostTransport {
+  const thread = chatThread("other-thread-1", "chat-1", "branch-1");
+  return {
+    sendStream: async () => ({ finishReason: "stop", metrics: null }),
+    answerAsk: async () => ({ finishReason: "stop", metrics: null }),
+    getActiveThread: async () => thread,
+    listMessages: async () => [],
+    startSession: async () => thread,
+    listSessions: async () => [],
+    activateSession: async () => thread,
+    renameSession: async () => thread,
+    setContextLinks: async (_threadId: string, links: ExperienceCopilotContextLink[]) => links,
+  };
+}
+
+describe("sidechat-host — prompt preset pins (SC-23d)", () => {
+  function renderSidechat() {
+    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+    return render(
+      withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
+    );
+  }
+
+  function openMention(getByTestId: (id: string) => HTMLElement, value: string): HTMLTextAreaElement {
+    const ta = getByTestId("copilot-chat-input") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value } });
+    ta.setSelectionRange(value.length, value.length);
+    fireEvent.select(ta);
+    return ta;
+  }
+
+  it("lists prompt presets by name in the sidechat @ picker", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    const { getByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    openMention(getByTestId, "@Deep");
+
+    await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+    const row = mentionOptions()[0];
+    expect(row?.textContent).toContain("Deep RP");
+    // i18n is isolated-empty, so the chip renders the raw key.
+    expect(row?.textContent).toContain("copilot_mention_type_prompt_preset");
+  });
+
+  it("does not list prompt presets in other assistants", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    // A character proves the OTHER assistant's picker itself works — only
+    // the preset group stays out.
+    useSnapshotStore.setState({
+      allCharacters: [
+        {
+          id: "ch1",
+          name: "Alice",
+          subtitle: "wanderer",
+          tags: [],
+          avatarAssetId: null,
+          avatarFullAssetId: null,
+          avatarCropJson: null,
+          avatarExt: null,
+          avatarFullExt: null,
+          updatedAt: "",
+        },
+      ],
+    });
+    const unregister = registerAgentHost({
+      kind: OTHER_KIND,
+      i18n: {
+        title: "agent_title",
+        placeholder: "agent_input_placeholder",
+        loading: "agent_loading",
+        emptyTitle: "agent_title",
+      },
+      toolKeys: [],
+      profileAssignment: { target: "chat" },
+      bufferSpecs: [],
+      transport: otherTransport(),
+      buildSendOptions: () => ({}),
+      recordProposalRenderers: {},
+    });
+    try {
+      const otherOwner: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId: "branch-1", agentKind: OTHER_KIND };
+      const { getByTestId } = render(
+        withIsolatedI18n(<AgentShell kind={OTHER_KIND} owner={otherOwner} isMobile={false} />),
+      );
+      await flushSessionLoad();
+
+      openMention(getByTestId, "@");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      expect(mentionOptions()[0]?.textContent).toContain("Alice");
+      expect(document.body.textContent).not.toContain("Deep RP");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("pinning a preset PATCHes the appended link and shows its chip", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    const { getByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    const ta = openMention(getByTestId, "@Deep");
+    await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+    fireEvent.keyDown(ta, { key: "Enter" });
+
+    const pattern = /\/api\/experience-copilot\/[^/]+\/context-links$/;
+    await waitFor(() => expect(patchBodies(pattern)).toHaveLength(1));
+    expect(patchBodies(pattern)[0]).toEqual({
+      links: [{ targetType: "prompt_preset", targetId: "pp1" }],
+    });
+    await waitFor(() =>
+      expect(getByTestId("copilot-context-pill-prompt_preset-pp1").textContent).toContain("Deep RP"),
+    );
+  });
+
+  it("unpinning a preset PATCHes the filtered set and removes its chip", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    router.activeThread = {
+      ...chatThread("sidechat-thread-1", "chat-1", "branch-1"),
+      contextLinks: [{ targetType: "prompt_preset", targetId: "pp1" }],
+    };
+    const { getByTestId, queryByTestId } = render(
+      withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
+    );
+    await flushSessionLoad();
+
+    await waitFor(() =>
+      expect(getByTestId("copilot-context-pill-prompt_preset-pp1").textContent).toContain("Deep RP"),
+    );
+    fireEvent.click(getByTestId("copilot-context-pill-remove-prompt_preset-pp1"));
+
+    const pattern = /\/api\/experience-copilot\/[^/]+\/context-links$/;
+    await waitFor(() => expect(patchBodies(pattern)).toHaveLength(1));
+    expect(patchBodies(pattern)[0]).toEqual({ links: [] });
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
   });
 });

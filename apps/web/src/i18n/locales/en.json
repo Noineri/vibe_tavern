@@ -2701,6 +2701,7 @@
 	"copilot_mention_type_lorebook": "Lorebook",
 	"copilot_mention_type_script": "Script",
 	"copilot_mention_type_skill": "Skill",
+	"copilot_mention_type_prompt_preset": "Prompt presets",
 	"copilot_context_auto": "Auto",
 	"copilot_context_auto_aria": "Compact automatically at 80% of budget",
 	"copilot_context_auto_toggle_error": "Couldn't update the auto-compact setting.",

@@ -22,6 +22,7 @@ mock.module("react-i18next", () => ({
       if (key === "copilot_mention_type_lorebook") return "Lorebook";
       if (key === "copilot_mention_type_script") return "Script";
       if (key === "copilot_mention_type_skill") return "Skill";
+      if (key === "copilot_mention_type_prompt_preset") return "Prompt presets";
       return key;
     },
   }),
@@ -71,6 +72,19 @@ describe("MentionAutocomplete (CX-5)", () => {
     expect(opts[1].textContent).toContain("Skill");
     // Unknown target kind falls back to the raw string instead of an i18n key.
     expect(opts[2].textContent).toContain("unknown-kind");
+  });
+
+  it("renders the prompt-preset row with its localized type chip (SC-23d)", () => {
+    // Presets carry no description — the row is label-only (same shape, no
+    // hint), with the preset-group chip.
+    renderPicker({
+      items: [{ targetType: "prompt_preset", id: "pp1", label: "Deep RP" }],
+      activeIndex: 0,
+    });
+    const opts = options();
+    expect(opts).toHaveLength(1);
+    expect(opts[0].textContent).toContain("Deep RP");
+    expect(opts[0].textContent).toContain("Prompt presets");
   });
 
   it("marks the active row and only it (aria + data-active)", () => {

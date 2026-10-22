@@ -17,6 +17,7 @@ import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentH
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
+import { useAgentPresetCatalog } from "./use-agent-preset-catalog.js";
 import { useCopilotContext } from "../../../hooks/use-copilot-context.js";
 import { listPersonas } from "../../../api/persona-api.js";
 import { listAllLorebooks } from "../../../api/lorebook-api.js";
@@ -178,6 +179,9 @@ export function AgentShell({
   // transient failure simply leaves that type out of the picker, mirroring the
   // fetchSessions swallow-with-comment style).
   const allCharacters = useSnapshotStore((s) => s.allCharacters);
+  // SC-23d: the sidechat's prompt-preset arm lives in the sibling hook (the
+  // file-size ratchet keeps this shell at its budget — no catalog arms inline).
+  const presetCatalog = useAgentPresetCatalog(kind);
   useEffect(() => {
     let cancelled = false;
     void Promise.allSettled([listPersonas(), listAllLorebooks(), listAllScripts(), listCoauthorSkills()]).then(
@@ -212,7 +216,8 @@ export function AgentShell({
 
   // The live character list is folded in reactively (it changes as the user
   // edits/creates characters elsewhere). Fixed order: characters, personas,
-  // lorebooks, scripts, skills.
+  // lorebooks, scripts, skills — prompt presets append last (sidechat only,
+  // from the sibling hook).
   const catalog = useMemo<MentionAutocompleteItem[]>(() => {
     const characters: MentionAutocompleteItem[] = allCharacters.map((c) => ({
       targetType: "character",
@@ -220,8 +225,8 @@ export function AgentShell({
       label: c.name,
       hint: c.subtitle || undefined,
     }));
-    return [...characters, ...mentionCatalog];
-  }, [allCharacters, mentionCatalog]);
+    return [...characters, ...mentionCatalog, ...presetCatalog];
+  }, [allCharacters, mentionCatalog, presetCatalog]);
 
   // Pills: resolve each link's display label from the catalog; a dangling
   // target (deleted entity) falls back to the raw id.
@@ -255,9 +260,10 @@ export function AgentShell({
     (item: MentionAutocompleteItem) => {
       if (contextLinks.length >= 64) return; // schema max — the PATCH would 400
       if (contextLinks.some((l) => l.targetType === item.targetType && l.targetId === item.id)) return; // already pinned
-      // Narrow cast: the catalog is built in this shell from the five fixed
-      // target types only (see the catalog effect), so the generic
-      // MentionAutocompleteItem.targetType is always a valid link type here.
+      // Narrow cast: the catalog is built in this shell from the six fixed
+      // target types only (see the catalog effect and the sidechat-gated
+      // preset fold), so the generic MentionAutocompleteItem.targetType is
+      // always a valid link type here.
       handleSetContextLinks([
         ...contextLinks,
         { targetType: item.targetType as ExperienceCopilotContextTargetType, targetId: item.id },

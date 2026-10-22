@@ -20,6 +20,7 @@ import { readMacroQuery } from "../macro-autocomplete-store.js";
  * mention pick STRIPS the `@query` gesture and pins the target as a
  * per-thread link (PATCH full-replace of contextLinks — the pin persists
  * across turns and renders as a removable pill above the input). The
+ * catalog also carries prompt presets in the sidechat only (SC-23d). The
  * popover is the shared presentational `MentionAutocomplete`; the owner
  * (this hook's caller) keeps DOM focus and drives arrows/Enter/Escape.
  *
@@ -40,7 +41,7 @@ export interface UseAgentMentionConfig {
    *  caller's state always syncs. */
   setDraft: (value: string) => void;
   /** The merged mention catalog (characters/personas/lorebooks/scripts/
-   *  skills) provided by the shell. */
+   *  skills, plus prompt presets in the sidechat only) provided by the shell. */
   catalog: readonly MentionAutocompleteItem[];
   /** Fired when an item is picked. The `@query` is ALREADY stripped from
    *  the draft by the time this fires; the caller pins the target. */

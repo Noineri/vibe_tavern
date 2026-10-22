@@ -586,6 +586,7 @@ export default interface Resources {
     "copilot_mention_type_character": "Character",
     "copilot_mention_type_lorebook": "Lorebook",
     "copilot_mention_type_persona": "Persona",
+    "copilot_mention_type_prompt_preset": "Prompt presets",
     "copilot_mention_type_script": "Script",
     "copilot_mention_type_skill": "Skill",
     "copilot_model_all_section": "All models",

@@ -41,11 +41,12 @@ const TYPE_LABEL_KEYS = {
   lorebook: "copilot_mention_type_lorebook",
   script: "copilot_mention_type_script",
   skill: "copilot_mention_type_skill",
+  prompt_preset: "copilot_mention_type_prompt_preset",
 } as const;
 
 type KnownTargetType = keyof typeof TYPE_LABEL_KEYS;
 
-/** Chip label for a target type: localized for the five copilot kinds, raw
+/** Chip label for a target type: localized for the six copilot kinds, raw
  *  string otherwise. `t` is passed in (not imported) so this stays trivially
  *  testable through the component. */
 function typeLabel(t: ReturnType<typeof useTranslation>["t"], targetType: string): string {
