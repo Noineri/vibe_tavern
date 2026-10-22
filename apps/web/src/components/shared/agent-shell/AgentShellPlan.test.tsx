@@ -144,6 +144,8 @@ function chatDescriptor(kind: string): AgentHostDescriptor {
 		},
 		toolKeys: [],
 		profileAssignment: { target: "chat" },
+		// AP-2: required on every descriptor (a missing markup is a compile break).
+		messageMarkup: "plain",
 		bufferSpecs: [],
 		transport: stubTransport(),
 		buildSendOptions: () => ({}),
@@ -163,6 +165,8 @@ function descriptor(kind: string, withPlan: boolean): AgentHostDescriptor {
 		},
 		toolKeys: [],
 		profileAssignment: { target: "script" },
+		// AP-2: required on every descriptor (a missing markup is a compile break).
+		messageMarkup: "plain",
 		bufferSpecs: [],
 		transport: stubTransport(),
 		buildSendOptions: () => ({}),

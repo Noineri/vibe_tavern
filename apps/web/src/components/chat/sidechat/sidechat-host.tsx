@@ -246,6 +246,8 @@ registerAgentHost({
   // SC-13c: the objective proposal card renders `recordType: "objective"`
   // in place; every other recordType still falls back to the AS-5 card.
   recordProposalRenderers: { objective: ObjectiveProposalCard },
+  // AP-2: RP colors without RP sizes for the sidechat's bubbles.
+  messageMarkup: "rp-colors",
   // SC-16: «В поле ввода РП» under each assistant reply — the RP row's copy
   // icon (`Icons.Copy`, the action-row language) with the composer handler.
   messageActions: [

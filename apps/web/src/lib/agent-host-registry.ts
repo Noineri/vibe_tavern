@@ -327,6 +327,15 @@ export type { CopilotAskAnswerInput, CopilotPermissionAnswerInput, CopilotAnswer
 export type AgentI18nKey = keyof Resources["en"];
 
 /**
+ * AP-2: per-host message markup — which Markdown variant the shell renders
+ *  for this kind's bubbles (`rp-colors` → `agent-rp`: RP colors without RP
+ *  sizes, the sidechat; `plain` → `agent-plain`: plain typography, the two
+ *  buffer hosts). Required on every descriptor, so a host that forgets it
+ *  is a compile break, not a silent default.
+ */
+export type AgentMessageMarkup = "rp-colors" | "plain";
+
+/**
  * SC-16: one per-message action rendered under ASSISTANT bubbles only (user
  *  bubbles never carry actions). The label key resolves through `useT` (the
  *  tooltip + aria-label), the icon is an `Icons.*` entry, and the handler
@@ -434,6 +443,9 @@ export interface AgentHostDescriptor {
    *  unit (the first consumer is the sidechat kind, Wave 1 — SC-6); absent =
    *  the meter renders its fixed system/digest/history segments as today. */
   meterSegmentLabels?: Record<string, AgentI18nKey>;
+  /** AP-2: this kind's message markup — the list resolves it and the block
+   *  renders the matching Markdown variant from it. */
+  messageMarkup: AgentMessageMarkup;
   /** SC-16: optional message actions under assistant bubbles (absent = no
    *  row — both built-in hosts omit it, so their surfaces stay
    *  byte-identical). */

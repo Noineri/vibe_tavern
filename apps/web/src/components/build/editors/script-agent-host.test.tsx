@@ -374,6 +374,13 @@ function hasHiddenClass(el: HTMLElement): boolean {
   return el.className.split(/\s+/).includes("hidden");
 }
 
+describe("script-agent-host — registration (AP-2)", () => {
+  it("declares plain message markup", async () => {
+    const { getAgentHost } = await import("../../../lib/agent-host-registry.js");
+    expect(getAgentHost("script").messageMarkup).toBe("plain");
+  });
+});
+
 describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
   it("a write_buffer proposal for `code` shows hunk review and Apply writes the draft", async () => {
     const onUpdateDraft = mock();

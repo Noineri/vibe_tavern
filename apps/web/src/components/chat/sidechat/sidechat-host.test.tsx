@@ -315,6 +315,8 @@ describe("sidechat-host — registration (SC-13b)", () => {
       ["propose_objective", "read_context_item", "read_message_prompt", "read_plan", "search_context", "todo"].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
+    // AP-2: the sidechat renders RP colors without RP sizes.
+    expect(host.messageMarkup).toBe("rp-colors");
     // SC-13c: the objective card renders `recordType: "objective"` in place.
     expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective"]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
@@ -710,6 +712,8 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
       },
       toolKeys: [],
       profileAssignment: { target: "chat" },
+      // AP-2: required on every descriptor (a missing markup is a compile break).
+      messageMarkup: "plain",
       bufferSpecs: [],
       transport: otherTransport(),
       buildSendOptions: () => ({}),

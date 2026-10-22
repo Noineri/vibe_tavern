@@ -138,6 +138,8 @@ beforeAll(async () => {
 		// SC-0g: both script-owned hosts are `script`-assigned (the field is
 		// required on every descriptor).
 		profileAssignment: { target: "script" },
+		// AP-2: required on every descriptor (a missing markup is a compile break).
+		messageMarkup: "plain",
 		bufferSpecs: [],
 		transport: experienceTransport,
 		buildSendOptions: () => ({}),
@@ -156,6 +158,8 @@ beforeAll(async () => {
 		// SC-0g: both script-owned hosts are `script`-assigned (the field is
 		// required on every descriptor).
 		profileAssignment: { target: "script" },
+		// AP-2: required on every descriptor (a missing markup is a compile break).
+		messageMarkup: "plain",
 		bufferSpecs: [],
 		transport: experienceTransport,
 		buildSendOptions: () => ({}),

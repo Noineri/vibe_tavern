@@ -12,7 +12,7 @@ import {
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
-import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
@@ -364,6 +364,18 @@ export function AgentMessageList({
     }
   }, [kind]);
 
+  // AP-2: the host's message markup for every bubble the list renders —
+  // resolved once per kind, like the actions above (unknown kind = neutral
+  // plain, never a throw — the block prop is required, so unlike actions
+  // there is no undefined arm).
+  const messageMarkup = useMemo<AgentMessageMarkup>(() => {
+    try {
+      return getAgentHost(kind).messageMarkup;
+    } catch {
+      return "plain";
+    }
+  }, [kind]);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -456,6 +468,7 @@ export function AgentMessageList({
               {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
               <AgentMessageBlock
                 message={entry.message}
+                messageMarkup={messageMarkup}
                 coveredCount={entry.coveredCount}
                 messageActions={messageActions}
               />
@@ -468,6 +481,7 @@ export function AgentMessageList({
 
           {hasPendingUserContent && (
             <AgentMessageBlock
+              messageMarkup={messageMarkup}
               message={{
                 id: "__pending-user",
                 threadId,
@@ -539,6 +553,7 @@ export function AgentMessageList({
               rendered.push(
                 <AgentMessageBlock
                   key={entry.id}
+                  messageMarkup={messageMarkup}
                   message={{
                     id: entry.id,
                     threadId,
@@ -556,6 +571,7 @@ export function AgentMessageList({
 
           {hasPendingText && feed.length === 0 && (
             <AgentMessageBlock
+              messageMarkup={messageMarkup}
               message={{
                 id: "__pending-assistant",
                 threadId,

@@ -7,7 +7,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
-import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
+import type { AgentMessageAction, AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
 
 /**
  * One experience-copilot message bubble (ER-11c). Props-driven presentation:
@@ -23,6 +23,11 @@ import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
  */
 export interface AgentMessageBlockProps {
   message: ExperienceCopilotMessageWire;
+  /** AP-2: the host's message markup — `rp-colors` renders the `agent-rp`
+   *  Markdown variant (RP colors, no RP sizes), `plain` the `agent-plain`
+   *  variant (plain typography). Resolved by the list from the host
+   *  descriptor; required, so a caller that forgets it is a compile break. */
+  messageMarkup: AgentMessageMarkup;
   /** For digest messages: the number of flow messages the digest covers (derived
    *  by the list via `orderMessagesWithDigests`). Null for non-digest messages
    *  and for a digest with no attributable count. */
@@ -37,6 +42,7 @@ export interface AgentMessageBlockProps {
 
 export const AgentMessageBlock = memo(function AgentMessageBlock({
   message,
+  messageMarkup,
   coveredCount = null,
   messageActions,
 }: AgentMessageBlockProps) {
@@ -75,12 +81,14 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           isUser ? "bg-user-bg" : "bg-s2",
         )}
       >
-        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal] [&_em]:italic [&_em]:text-msg-t2">
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
           {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
            * code, paths, ids) wrap instead of spilling past the bubble edge.
            * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
-           * internal scroll with preserved indentation (lib/markdown contract). */}
-          <Markdown text={message.content} />
+           * internal scroll with preserved indentation (lib/markdown contract).
+           * AP-2: no em override here — the agent-rp / agent-plain Markdown
+           * variants own `em` (RP colors vs plain typography). */}
+          <Markdown text={message.content} variant={messageMarkup === "rp-colors" ? "agent-rp" : "agent-plain"} />
         </div>
       </div>
     </div>

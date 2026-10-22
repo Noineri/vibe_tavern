@@ -42,6 +42,10 @@ function descriptor(kind: string): AgentHostDescriptor {
     // required on every descriptor; the chat target is pinned by the modal's
     // own fixture in AgentProfileModal.test.tsx).
     profileAssignment: { target: "script" },
+    // AP-2: required on every descriptor (a missing markup is a compile
+    // break); the per-host VALUES are pinned by the host tests + the
+    // list's pass-through test.
+    messageMarkup: "plain",
     bufferSpecs: [],
     // AS-6c-i: the transport seam — fixture data mirrors the experience
     // host's delegation to the real client fns (registry-mechanics tests never

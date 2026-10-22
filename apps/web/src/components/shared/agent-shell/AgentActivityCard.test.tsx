@@ -38,6 +38,8 @@ beforeAll(async () => {
     },
     toolKeys: [],
     profileAssignment: { target: "chat" },
+    // AP-2: required on every descriptor (a missing markup is a compile break).
+    messageMarkup: "plain",
     bufferSpecs: [],
     transport: getAgentHost("experience").transport,
     buildSendOptions: () => ({}),

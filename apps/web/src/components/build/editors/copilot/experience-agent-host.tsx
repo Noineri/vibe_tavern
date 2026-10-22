@@ -472,6 +472,8 @@ registerAgentHost({
   // section renders exactly as before this seam existed).
   planOwner: (ctx) => ({ kind: "script", scriptId: scriptOwnerId(ctx.owner) }),
   toolCaption: (activity) => experienceTestCaption(activity),
+  // AP-2: plain typography for the mini-app assistant's bubbles.
+  messageMarkup: "plain",
   // No record-proposal renderers yet — the AS-5 fallback card covers every
   // recordType until a host registers one.
   recordProposalRenderers: {},

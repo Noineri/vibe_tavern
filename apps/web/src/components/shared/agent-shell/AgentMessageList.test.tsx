@@ -38,10 +38,32 @@ beforeAll(async () => {
     },
     toolKeys: [],
     profileAssignment: { target: "chat" },
+    // AP-2: required on every descriptor (a missing markup is a compile break).
+    messageMarkup: "plain",
     bufferSpecs: [],
     transport: getAgentHost("experience").transport,
     buildSendOptions: () => ({}),
     recordProposalRenderers: { "test-widget": TestWidgetCard },
+  });
+  // AP-2: the rp-colors pass-through fixture — the only host under test
+  // with the sidechat's markup (the real sidechat host is pinned by its
+  // own registration test; importing it here would drag the chat stores
+  // into this file's module graph).
+  registerAgentHost({
+    kind: "ap2-rp-host",
+    i18n: {
+      title: "agent_title",
+      placeholder: "agent_input_placeholder",
+      loading: "agent_loading",
+      emptyTitle: "agent_title",
+    },
+    toolKeys: [],
+    profileAssignment: { target: "chat" },
+    messageMarkup: "rp-colors",
+    bufferSpecs: [],
+    transport: getAgentHost("experience").transport,
+    buildSendOptions: () => ({}),
+    recordProposalRenderers: {},
   });
   ({ AgentMessageList } = await import("./AgentMessageList.js"));
 });
@@ -1126,5 +1148,49 @@ describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
       "proposal",
       "assistant",
     ]);
+  });
+});
+
+// ─── AP-2: per-host message markup pass-through ─────────────────────────────
+// The list resolves the host's `messageMarkup` and the block renders the
+// matching REAL Markdown variant (`md-agent-plain` vs `md-agent`) — this
+// file uses no Markdown mock, so the variant class pins the whole chain
+// (descriptor → list → block → Markdown). The experience host's `plain`
+// value is pinned here end-to-end; the sidechat/script values by their own
+// registration tests.
+
+describe("ExperienceCopilotMessageList — message markup (AP-2)", () => {
+  it("renders the experience host's bubbles with the agent-plain variant", () => {
+    const { container } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "Make it scarier" }),
+          message({ id: "a1", role: "assistant", content: "Here are the rules" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(container.querySelector(".md-agent-plain")).not.toBeNull();
+    expect(container.querySelector(".md-agent")).toBeNull();
+  });
+
+  it("passes an rp-colors host's markup through to the agent-rp variant", () => {
+    const { container } = render(
+      <AgentMessageList
+        kind="ap2-rp-host" threadId="thread-1"
+        messages={[
+          message({ id: "a1", role: "assistant", content: "A shiver runs down her spine" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(container.querySelector(".md-agent")).not.toBeNull();
   });
 });

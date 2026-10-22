@@ -14,11 +14,14 @@ useDomEnv();
 
 // Markdown is heavy and pinned elsewhere; the digest card renders the raw
 // summary text (not through Markdown), but the block still imports it — stub it
-// so the digest path has a deterministic DOM.
+// so the digest path has a deterministic DOM. The stub surfaces the variant
+// prop as `data-variant` so the AP-2 markup tests pin the block→variant map.
 const realMarkdown = await import("../../../lib/markdown.js");
 mock.module("../../../lib/markdown.js", () => ({
   ...realMarkdown,
-  Markdown: ({ text }: { text: string }) => <div>{text}</div>,
+  Markdown: ({ text, variant }: { text: string; variant?: string }) => (
+    <div data-variant={variant}>{text}</div>
+  ),
 }));
 
 // Mutable viewport override (the SC-16 row branches on it) — same pattern as
@@ -70,7 +73,7 @@ function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): Experience
 describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
   it("renders a collapsed digest card by default (summary hidden)", () => {
     const { getByTestId, queryByTestId, getByText } = render(
-      <AgentMessageBlock message={digestMsg()} coveredCount={3} />,
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
 
     expect(getByTestId("copilot-digest-card")).toBeDefined();
@@ -81,7 +84,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("expands on click to reveal the summary text and collapses again", () => {
     const { getByTestId, queryByTestId } = render(
-      <AgentMessageBlock message={digestMsg()} coveredCount={3} />,
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
 
     fireEvent.click(getByTestId("copilot-digest-card-toggle"));
@@ -94,7 +97,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("carries the covered count on the card for the caption", () => {
     const { getByTestId } = render(
-      <AgentMessageBlock message={digestMsg()} coveredCount={12} />,
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={12} />,
     );
 
     expect(getByTestId("copilot-digest-card-toggle").getAttribute("data-covered-count")).toBe("12");
@@ -103,6 +106,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
   it("renders an assistant bubble for a normal assistant message (no digest chrome)", () => {
     const { queryByTestId, getByText } = render(
       <AgentMessageBlock
+        messageMarkup="plain"
         message={{ ...digestMsg(), id: "a1", role: "assistant", toolCallId: null }}
       />,
     );
@@ -114,6 +118,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
   it("returns nothing for an empty assistant tool-call carrier turn", () => {
     const { container } = render(
       <AgentMessageBlock
+        messageMarkup="plain"
         message={{ ...digestMsg(), id: "a2", role: "assistant", content: "" }}
       />,
     );
@@ -155,7 +160,7 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
   it("renders the action row under an assistant bubble (desktop hover/focus reveal chrome)", () => {
     const seen: string[] = [];
     const { getByTestId } = render(
-      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
     );
 
     const row = getByTestId("copilot-message-actions");
@@ -177,7 +182,7 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
   it("clicking the action forwards the message text", () => {
     const seen: string[] = [];
     const { getByTestId } = render(
-      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
     );
 
     fireEvent.click(getByTestId("fixture-action"));
@@ -187,6 +192,7 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
   it("renders no row for a user message even when actions are declared", () => {
     const { queryByTestId, getByText } = render(
       <AgentMessageBlock
+        messageMarkup="plain"
         message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
         messageActions={[fixtureAction(() => {})]}
       />,
@@ -197,12 +203,13 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
   });
 
   it("renders no row (byte-identical) when actions are absent or empty", () => {
-    const bare = render(<AgentMessageBlock message={assistantMsg()} />);
+    const bare = render(<AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />);
     const empty = render(
-      <AgentMessageBlock message={assistantMsg()} messageActions={[]} />,
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[]} />,
     );
     const userShaped = render(
       <AgentMessageBlock
+        messageMarkup="plain"
         message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
         messageActions={[fixtureAction(() => {})]}
       />,
@@ -217,7 +224,7 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
     mobileOverride = true;
     const seen: string[] = [];
     const { getByTestId } = render(
-      <AgentMessageBlock message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
     );
 
     const row = getByTestId("copilot-message-actions");
@@ -245,12 +252,48 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
     useChatStore.setState({ draft: "Already typed" });
     useSidechatMobileStore.setState({ tab: "sidechat" });
     const { getByTestId } = render(
-      <AgentMessageBlock message={assistantMsg()} messageActions={host.messageActions} />,
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={host.messageActions} />,
     );
     fireEvent.click(getByTestId("sidechat-copy-to-composer"));
     expect(useChatStore.getState().draft).toBe("Already typed\nConsider asking about her brother");
     expect(useSidechatMobileStore.getState().tab).toBe("chat");
     useChatStore.setState({ draft: "" });
     useSidechatMobileStore.setState({ tab: "chat" });
+  });
+});
+
+// ─── AP-2: per-host message markup ──────────────────────────────────────────
+// Each assistant host declares its markup; the block renders the matching
+// Markdown variant (`rp-colors` → `agent-rp`, `plain` → `agent-plain`). The
+// block's own `em` override is gone — the variants own `em` now — while the
+// bubble's overflow-wrap rules stay.
+
+describe("ExperienceCopilotMessageBlock — message markup (AP-2)", () => {
+  it("renders the agent-rp variant for rp-colors markup", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="rp-colors" message={assistantMsg()} />,
+    );
+
+    expect(container.querySelector("[data-variant]")?.getAttribute("data-variant")).toBe("agent-rp");
+  });
+
+  it("renders the agent-plain variant for plain markup", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />,
+    );
+
+    expect(container.querySelector("[data-variant]")?.getAttribute("data-variant")).toBe("agent-plain");
+  });
+
+  it("owns no em override on the bubble text (the variants own em) but keeps the overflow-wrap rules", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="rp-colors" message={assistantMsg()} />,
+    );
+
+    const bubble = container.querySelector("div[class*=\"[overflow-wrap\"]");
+    expect(bubble).not.toBeNull();
+    expect(bubble!.className).toContain("[overflow-wrap:anywhere]");
+    expect(bubble!.className).toContain("[&_.md-pre]:[overflow-wrap:normal]");
+    expect(bubble!.className).not.toContain("[&_em]");
   });
 });
