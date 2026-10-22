@@ -908,7 +908,6 @@ export function useSummaryTab({
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
       {isMobile && (
         <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
-          <div className={lblCls}>{t("summary_messages_in_prompt")}</div>
           {historyLimitControl}
         </section>
       )}
@@ -928,7 +927,6 @@ export function useSummaryTab({
       {/* Row 2: messages-in-prompt slider (desktop only) */}
       {!isMobile && (
         <div className="flex items-center gap-3">
-          <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
           {historyLimitControl}
         </div>
       )}
