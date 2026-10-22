@@ -114,11 +114,15 @@ export function AiAssistantModal({
   const [aiTemperature, setAiTemperature] = useState<number | null>(null);
 
   // --- Initialization ---
-  const seedProviderId = mode === "quickpill" && settings
-    ? (settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "")
+  // The quickpill's own settings are the source once they hold a provider; the
+  // persisted pair seeds only a pill that has none yet, and then as a whole —
+  // never one field from each (a model belongs to the provider it was saved with).
+  const quickpillOwnPair = mode === "quickpill" && settings?.providerId ? settings : null;
+  const seedProviderId = quickpillOwnPair
+    ? quickpillOwnPair.providerId
     : (bootstrapUiSettings?.aiAssistantProviderId || "");
-  const seedModelName = mode === "quickpill" && settings
-    ? (settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "")
+  const seedModelName = quickpillOwnPair
+    ? quickpillOwnPair.modelName
     : (bootstrapUiSettings?.aiAssistantModelName || "");
 
   const {

@@ -9,9 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { useT } from "../../i18n/context.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { patchUiSettingsAction, useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { streamAiAssistant } from "../../api/ai-assistant-api.js";
-import { updateUiSettings } from "../../api/settings-api.js";
 import type { AiAssistantRequestBody } from "../../api/types.js";
 
 export function ChatImpersonateAiPill({
@@ -41,6 +40,9 @@ export function ChatImpersonateAiPill({
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  // The persisted pair seeds the pill ONCE, whole (provider + model together).
+  // After that the pill's own settings are the only source — an empty model
+  // means "this provider's default", never a model borrowed from the snapshot.
   useEffect(() => {
     if (settings.providerId || !bootstrapUiSettings) return;
     setSettings((s) => ({
@@ -52,8 +54,7 @@ export function ChatImpersonateAiPill({
   }, [settings.providerId, bootstrapUiSettings]);
 
   const handleGenerate = async () => {
-    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
-    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
+    const { providerId, modelName } = settings;
     if (!activeChatId) return;
     if (!providerId) {
       toast.error(t("select_provider_first"));
@@ -99,7 +100,9 @@ export function ChatImpersonateAiPill({
 
   const handleSettingsChange = (s: AiQuickSettings) => {
     setSettings(s);
-    void updateUiSettings({
+    // patchUiSettingsAction also refreshes the bootstrap store, so a remounted
+    // pill seeds from what was saved, not from the page-load snapshot.
+    void patchUiSettingsAction({
       aiAssistantProviderId: s.providerId || null,
       aiAssistantModelName: s.modelName || null,
       chatImpersonateEnhanceDraft: s.enhanceDraft ?? false,
