@@ -124,14 +124,14 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							<span className="font-body text-[16px] font-bold">A</span>
 						</div>
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
-						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.fontSize}px</span>
 					</div>
 					<Slider
+						appearance="field"
 						min={14} max={22} step={1}
 						value={settings.fontSize}
+						formatValue={(value) => `${value} px`}
 						onValueChange={(value) => setSetting("fontSize", Math.round(value))}
 						aria-label={t("tweaks_font_size")}
-						className="w-full"
 					/>
 				</div>
 
@@ -142,14 +142,14 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							<Icons.Sliders />
 						</div>
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_ui_font_size")}</span>
-						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.uiFontSize}px</span>
 					</div>
 					<Slider
+						appearance="field"
 						min={14} max={20} step={1}
 						value={settings.uiFontSize}
+						formatValue={(value) => `${value} px`}
 						onValueChange={(value) => setSetting("uiFontSize", Math.round(value))}
 						aria-label={t("tweaks_ui_font_size")}
-						className="w-full"
 					/>
 				</div>
 

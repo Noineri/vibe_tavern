@@ -56,6 +56,33 @@ function range(view: ReturnType<typeof render>, name: string): HTMLInputElement 
   return input;
 }
 
+function fieldShell(view: ReturnType<typeof render>, name: string): HTMLElement {
+  const shell = range(view, name).closest<HTMLElement>("[data-slider-field-shell]");
+  if (!shell) throw new Error(`Expected ${name} to live inside a slider field`);
+  return shell;
+}
+
+/** The field's value text; absent while the inline editor replaces it. */
+function fieldValue(view: ReturnType<typeof render>, name: string) {
+  return fieldShell(view, name).querySelector("[data-slider-field-value]")?.textContent;
+}
+
+/** Seam: the number box beside the slider is now the field's inline editor, opened by double-click. */
+function openEditor(view: ReturnType<typeof render>, name: string): HTMLInputElement {
+  const shell = fieldShell(view, name);
+  const field = shell.querySelector<HTMLElement>("[data-slider-field]");
+  if (!field) throw new Error(`Missing field box for ${name}`);
+  fireEvent.doubleClick(field);
+  const editor = shell.querySelector<HTMLInputElement>("[data-slider-field-editor] input");
+  if (!editor) throw new Error(`Inline editor did not open for ${name}`);
+  return editor;
+}
+
+function typeInto(editor: HTMLInputElement, text: string) {
+  fireEvent.change(editor, { target: { value: text } });
+  fireEvent.keyDown(editor, { key: "Enter" });
+}
+
 function ControlledAiGenParamsRow({ onTemperatureChange }: { onTemperatureChange: (value: number) => void }) {
   const [temperature, setTemperature] = useState(0.7);
   return (
@@ -95,7 +122,7 @@ describe("SL-3 settings slider sites", () => {
     expect(range(view, "logit_bias_label #42").disabled).toBe(true);
   });
 
-  it("updates both mobile font settings immediately with their bounds and readouts", () => {
+  it("updates both mobile font settings immediately with their bounds and value-only field readouts", () => {
     const setSetting = mock();
     const view = render(
       <MobileSettings
@@ -115,34 +142,83 @@ describe("SL-3 settings slider sites", () => {
     expect(uiFont.min).toBe("14");
     expect(uiFont.max).toBe("20");
     expect(uiFont.step).toBe("1");
-    expect(view.getByText("17px")).toBeTruthy();
-    expect(view.getByText("16px")).toBeTruthy();
+    // Behavior change: was a separate "17px" header readout beside the slider -> now the field's own value text "17 px" (the header readout is gone); basis: SL-9 contract.
+    expect(view.queryByText("17px")).toBeNull();
+    expect(view.queryByText("16px")).toBeNull();
+    expect(fieldValue(view, "tweaks_font_size")).toBe("17 px");
+    expect(fieldValue(view, "tweaks_ui_font_size")).toBe("16 px");
+    // The header row already carries icon + label, so the fields hold no label of their own.
+    expect(fieldShell(view, "tweaks_font_size").querySelector("[data-slider-field-label]")).toBeNull();
+    expect(fieldShell(view, "tweaks_ui_font_size").querySelector("[data-slider-field-label]")).toBeNull();
     fireEvent.change(chatFont, { target: { value: "19" } });
     fireEvent.change(uiFont, { target: { value: "18" } });
     expect(setSetting).toHaveBeenNthCalledWith(1, "fontSize", 19);
     expect(setSetting).toHaveBeenNthCalledWith(2, "uiFontSize", 18);
   });
 
-  it("synchronizes the kept-mounted AI temperature slider and number input", () => {
+  it("types a mobile font size through the inline editor, rounded to whole pixels and clamped to the bounds", () => {
+    const setSetting = mock();
+    const view = render(
+      <MobileSettings
+        open
+        onClose={() => {}}
+        settings={{ theme: "coffee", fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: true }}
+        setSetting={setSetting}
+        onOpenMobileAccess={() => {}}
+      />,
+    );
+
+    typeInto(openEditor(view, "tweaks_font_size"), "20.4");
+    expect(setSetting).toHaveBeenLastCalledWith("fontSize", 20);
+    typeInto(openEditor(view, "tweaks_ui_font_size"), "30");
+    expect(setSetting).toHaveBeenLastCalledWith("uiFontSize", 20);
+    typeInto(openEditor(view, "tweaks_font_size"), "3");
+    expect(setSetting).toHaveBeenLastCalledWith("fontSize", 14);
+    expect(setSetting).toHaveBeenCalledTimes(3);
+  });
+
+  it("renders the kept-mounted AI temperature as one field with its label inside and no separate number box", () => {
     const onTemperatureChange = mock();
     const view = render(<ControlledAiGenParamsRow onTemperatureChange={onTemperatureChange} />);
     fireEvent.click(view.getByText("ai_advanced_settings"));
     const slider = range(view, "ai_param_temperature");
-    const number = view.container.querySelector<HTMLInputElement>('input[type="text"]');
-    if (!number) throw new Error("Missing temperature number input");
+    const shell = fieldShell(view, "ai_param_temperature");
 
     expect(slider.min).toBe("0");
     expect(slider.max).toBe("2");
     expect(slider.step).toBe("0.1");
+    expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("ai_param_temperature");
+    // Behavior change: was a number box at the slider's right -> now only the max-tokens box remains; the temperature is typed through the field.
+    expect(view.container.querySelectorAll('input[type="text"]')).toHaveLength(1);
+    expect(fieldValue(view, "ai_param_temperature")).toBe("0.7");
+
     fireEvent.change(slider, { target: { value: "1.2" } });
     expect(onTemperatureChange).toHaveBeenLastCalledWith(1.2);
-    expect(number.value).toBe("1.2");
-    fireEvent.change(number, { target: { value: "0.8" } });
-    fireEvent.blur(number);
+    expect(fieldValue(view, "ai_param_temperature")).toBe("1.2");
+    typeInto(openEditor(view, "ai_param_temperature"), "0.8");
     expect(onTemperatureChange).toHaveBeenLastCalledWith(0.8);
+    expect(onTemperatureChange).toHaveBeenCalledTimes(2);
     expect(slider.value).toBe("0.8");
+    expect(fieldValue(view, "ai_param_temperature")).toBe("0.8");
 
     fireEvent.click(view.getByText("ai_advanced_settings"));
     expect(range(view, "ai_param_temperature").value).toBe("0.8");
+    expect(fieldValue(view, "ai_param_temperature")).toBe("0.8");
+  });
+
+  it("keeps a typed temperature exactly between steps and clamps it to the 0 to 2 bounds", () => {
+    const onTemperatureChange = mock();
+    const view = render(<ControlledAiGenParamsRow onTemperatureChange={onTemperatureChange} />);
+    fireEvent.click(view.getByText("ai_advanced_settings"));
+
+    typeInto(openEditor(view, "ai_param_temperature"), "0.85");
+    expect(onTemperatureChange).toHaveBeenLastCalledWith(0.85);
+    expect(fieldValue(view, "ai_param_temperature")).toBe("0.85");
+    typeInto(openEditor(view, "ai_param_temperature"), "5");
+    expect(onTemperatureChange).toHaveBeenLastCalledWith(2);
+    expect(fieldValue(view, "ai_param_temperature")).toBe("2.0");
+    typeInto(openEditor(view, "ai_param_temperature"), "-1");
+    expect(onTemperatureChange).toHaveBeenLastCalledWith(0);
+    expect(fieldValue(view, "ai_param_temperature")).toBe("0.0");
   });
 });

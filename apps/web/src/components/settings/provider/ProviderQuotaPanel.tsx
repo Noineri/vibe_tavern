@@ -9,9 +9,8 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../shared/icons.js";
-import { NumberInput } from "../../shared/NumberInput.js";
-import { Slider } from "../../shared/slider.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { SliderField } from "../../shared/SliderField.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { selectQuotaEntry, useQuotaStore } from "../../../stores/quota-store.js";
 import { QuotaSummaryRows } from "../../shared/QuotaSummaryRows.js";
@@ -158,32 +157,17 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                 </div>
               </div>
 
-              <div className={cn("mt-3", !windowed.lowQuotaEnabled && "pointer-events-none opacity-40")}>
-                <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-                  {t("quota_low_threshold")}
-                </label>
-                <div className="flex items-center gap-2">
-                  <Slider
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={windowed.lowQuotaRemainingPercent}
-                    disabled={!windowed.lowQuotaEnabled}
-                    aria-label={t("quota_low_threshold")}
-                    onValueChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: Math.round(value) }, true)}
-                    className="flex-1"
-                  />
-                  <NumberInput
-                    className="h-[30px] w-[64px] shrink-0"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={windowed.lowQuotaRemainingPercent}
-                    disabled={!windowed.lowQuotaEnabled}
-                    onChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: value }, true)}
-                    hideControls
-                  />
-                </div>
+              {/* The field dims itself (one 40 % dim, label included) when the notification is off, so the wrapper must not dim again. */}
+              <div className="mt-3">
+                <SliderField
+                  label={t("quota_low_threshold")}
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={windowed.lowQuotaRemainingPercent}
+                  disabled={!windowed.lowQuotaEnabled}
+                  onChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: Math.round(value) }, true)}
+                />
               </div>
             </div>
 
