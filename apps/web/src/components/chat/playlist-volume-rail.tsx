@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useT } from "../../i18n/context.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { Slider } from "../shared/slider.js";
 
 /** RD-4: vertical volume rail — the owner's paint-concept right edge.
  *  Replaces the FS-5 horizontal footer block (label + range + percent
@@ -70,22 +71,16 @@ export function PlaylistVolumeRail(input: {
       >
         {interacting ? `${percent}%` : ""}
       </span>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.05}
-        value={value}
-        onChange={(e) => {
-          const next = parseFloat(e.target.value);
-          if (!Number.isNaN(next)) onChange(next);
-        }}
-        onKeyDown={(e) => {
+      <div
+        className="min-h-0 w-7 flex-1"
+        onKeyDownCapture={(e) => {
           if (e.key === "ArrowUp" || e.key === "ArrowRight") {
             e.preventDefault();
+            e.stopPropagation();
             stepVolume(0.05);
           } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
             e.preventDefault();
+            e.stopPropagation();
             stepVolume(-0.05);
           }
         }}
@@ -96,12 +91,20 @@ export function PlaylistVolumeRail(input: {
         onMouseUp={() => setInteracting(false)}
         onFocus={() => setInteracting(true)}
         onBlur={() => setInteracting(false)}
-        disabled={disabled}
-        aria-label={t("narration_playlist_volume")}
-        data-testid={rangeTestId}
-        style={{ writingMode: "vertical-lr", direction: "rtl", "--p": `${percent}%` } as CSSProperties}
-        className="playlist-slider playlist-slider--vertical min-h-0 w-7 flex-1 border-0 p-0"
-      />
+      >
+        <Slider
+          min={0}
+          max={1}
+          step={0.05}
+          value={value}
+          onValueChange={onChange}
+          disabled={disabled}
+          aria-label={t("narration_playlist_volume")}
+          inputTestId={rangeTestId}
+          size="sm"
+          orientation="vertical"
+        />
+      </div>
       <CustomTooltip content={muted ? t("narration_playlist_unmute") : t("narration_playlist_mute")}>
         <button
           type="button"

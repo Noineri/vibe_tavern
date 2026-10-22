@@ -16,6 +16,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DualRangeSlider } from "./DualRangeSlider.js";
+import { SummaryHistoryLimitControl } from "./SummaryHistoryLimitControl.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -897,32 +898,7 @@ export function useSummaryTab({
       {isMobile && (
         <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
           <div className={lblCls}>{t("summary_messages_in_prompt")}</div>
-          <div className="flex items-center gap-3">
-            <input
-              className="accent-accent flex-1"
-              type="range" min={1} max={Math.max(1, messageCount)}
-              value={displayLimit}
-              onChange={(e) => setLimitOverride(Number(e.target.value))}
-              onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-              onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-            />
-            <NumberInput
-              className="w-[80px] shrink-0"
-              inputClassName="text-center"
-              hideControls
-              min={1}
-              max={Math.max(1, messageCount)}
-              value={displayLimit}
-              onChange={(v) => {
-                setLimitOverride(v);
-                void commitMemorySettings({ historyLimit: v });
-              }}
-            />
-            <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
-              <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
-              <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
-            </div>
-          </div>
+          <SummaryHistoryLimitControl label={t("summary_messages_in_prompt")} autoLabel={t("summary_history_auto")} autoHint={t("summary_history_auto_hint")} messageCount={messageCount} value={displayLimit} latched={latched} onValueChange={setLimitOverride} onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })} onAutoChange={toggleHistoryLatch} />
         </section>
       )}
     </>
@@ -942,30 +918,7 @@ export function useSummaryTab({
       {!isMobile && (
         <div className="flex items-center gap-3">
           <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
-          <input
-            className="accent-accent flex-1"
-            type="range" min={1} max={Math.max(1, messageCount)}
-            value={displayLimit}
-            onChange={(e) => setLimitOverride(Number(e.target.value))}
-            onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-            onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-          />
-          <NumberInput
-            className="w-[80px] shrink-0"
-            inputClassName="text-center"
-            hideControls
-            min={1}
-            max={Math.max(1, messageCount)}
-            value={displayLimit}
-            onChange={(v) => {
-              setLimitOverride(v);
-              void commitMemorySettings({ historyLimit: v });
-            }}
-          />
-          <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
-            <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
-            <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
-          </div>
+          <SummaryHistoryLimitControl label={t("summary_messages_in_prompt")} autoLabel={t("summary_history_auto")} autoHint={t("summary_history_auto_hint")} messageCount={messageCount} value={displayLimit} latched={latched} onValueChange={setLimitOverride} onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })} onAutoChange={toggleHistoryLatch} />
         </div>
       )}
     </div>
