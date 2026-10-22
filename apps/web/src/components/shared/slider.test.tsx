@@ -65,6 +65,24 @@ function ControlledRange({
 	);
 }
 
+function ControlledField({
+	initialValue = 4,
+	onValueChange = () => {},
+	onValueCommitted = () => {},
+}: {
+	initialValue?: number;
+	onValueChange?: (value: number) => void;
+	onValueCommitted?: (value: number) => void;
+}) {
+	const [value, setValue] = useState(initialValue);
+	return <Slider appearance="field" value={value} min={0} max={10} step={2} label="Temperature" aria-label="Temperature" numberTestId="field-number" onValueChange={(next) => { setValue(next); onValueChange(next); }} onValueCommitted={onValueCommitted} />;
+}
+
+function ControlledRangeField({ onValueChange = () => {} }: { onValueChange?: (value: [number, number]) => void }) {
+	const [value, setValue] = useState<[number, number]>([2, 6]);
+	return <Slider appearance="field" value={value} min={0} max={10} step={1} label="Range" getAriaLabel={(index) => index === 0 ? "From" : "To"} onValueChange={(next) => { setValue(next); onValueChange(next); }} />;
+}
+
 function input(container: HTMLElement, testId: string): HTMLInputElement {
 	const element = container.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`);
 	if (!element) throw new Error(`Missing slider input ${testId}`);
@@ -204,11 +222,11 @@ describe("Slider", () => {
 		expect(tracks).toHaveLength(6);
 		expect(thumbs).toHaveLength(6);
 
-		const horizontalRootClasses = ["h-[14px]", "h-3", "h-2.5"];
-		const verticalRootClasses = ["w-[14px]", "w-3", "w-2.5"];
-		const thumbClasses = ["h-[14px]", "h-3", "h-2.5"];
-		const horizontalTrackClasses = ["h-1", "h-1", "h-[3px]"];
-		const verticalTrackClasses = ["w-1", "w-1", "w-[3px]"];
+		const horizontalRootClasses = ["h-[18px]", "h-[14px]", "h-3"];
+		const verticalRootClasses = ["w-[18px]", "w-[14px]", "w-3"];
+		const thumbClasses = ["h-[18px]", "h-[14px]", "h-3"];
+		const horizontalTrackClasses = ["h-[6px]", "h-1", "h-[3px]"];
+		const verticalTrackClasses = ["w-[6px]", "w-1", "w-[3px]"];
 
 		for (let index = 0; index < 3; index += 1) {
 			expect(roots[index]!.classList.contains(horizontalRootClasses[index]!)).toBe(true);
@@ -229,7 +247,7 @@ describe("Slider", () => {
 		}
 	});
 
-	it("puts the 3 px accent halo on the thumb only when its nested input is focus-visible", () => {
+	it("uses the approved soft accent halo on the focused rail thumb", () => {
 		const { container } = render(
 			<Slider value={1} min={0} max={2} step={1} aria-label="Focus" onValueChange={() => {}} />,
 		);
@@ -237,9 +255,93 @@ describe("Slider", () => {
 
 		if (!thumb) throw new Error("Missing slider thumb");
 		expect(thumb.querySelector('input[type="range"]')).not.toBeNull();
-		expect(thumb.classList.contains("has-[input:focus-visible]:ring-[3px]")).toBe(true);
-		expect(thumb.classList.contains("has-[input:focus-visible]:ring-accent/35")).toBe(true);
+		expect(thumb.classList.contains("has-[input:focus-visible]:shadow-[0_0_0_6px_var(--accent-hover)]")).toBe(true);
+		expect(thumb.classList.contains("border-[3px]")).toBe(true);
 		expect(thumb.className.includes("ring-4")).toBe(false);
-		expect(thumb.className.includes("group-data-[focused]:ring")).toBe(false);
+	});
+
+	it("renders the requested field appearance contract", () => {
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={2}
+				label="Temperature"
+				aria-label="Temperature"
+				numberTestId="temperature-number"
+				onValueChange={() => {}}
+			/>,
+		);
+
+		expect(container.querySelector("[data-slider-field]")).not.toBeNull();
+		expect(container.querySelector("[data-slider-field-label-above]")?.textContent).toBe("Temperature");
+		const field = container.querySelector<HTMLElement>("[data-slider-field]");
+		if (!field) throw new Error("Missing field slider");
+		fireEvent.doubleClick(field);
+		expect(input(container, "temperature-number").type).toBe("number");
+	});
+
+	it("sets a field value from the pointer and supports the approved keyboard and inline edit commits", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+		const field = container.querySelector<HTMLElement>("[data-slider-field]");
+		if (!field) throw new Error("Missing field slider");
+		Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 100 }) });
+
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 80, button: 0 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		expect(onValueChange).toHaveBeenLastCalledWith(8);
+		const rangeInput = container.querySelector<HTMLInputElement>('input[type="range"]');
+		if (!rangeInput) throw new Error("Missing field range input");
+		fireEvent.keyDown(rangeInput, { key: "ArrowRight", shiftKey: true });
+		expect(onValueChange).toHaveBeenLastCalledWith(10);
+		fireEvent.keyDown(rangeInput, { key: "Enter" });
+		const editor = input(container, "field-number");
+		fireEvent.change(editor, { target: { value: "9" } });
+		fireEvent.keyDown(editor, { key: "Enter" });
+		expect(onValueChange).toHaveBeenLastCalledWith(10);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(10);
+	});
+
+	it("cancels a field inline edit without changing the controlled value", () => {
+		const onValueChange = mock();
+		const { container } = render(<ControlledField onValueChange={onValueChange} />);
+		const field = container.querySelector<HTMLElement>("[data-slider-field]");
+		if (!field) throw new Error("Missing field slider");
+		fireEvent.doubleClick(field);
+		const editor = input(container, "field-number");
+		fireEvent.change(editor, { target: { value: "10" } });
+		fireEvent.keyDown(editor, { key: "Escape" });
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(container.querySelector("[data-slider-field-value]")?.textContent).toBe("4");
+	});
+
+	it("chooses the nearest range edge and drags the selected window without changing its width", () => {
+		const onValueChange = mock();
+		const { container } = render(<ControlledRangeField onValueChange={onValueChange} />);
+		const field = container.querySelector<HTMLElement>("[data-slider-field]");
+		if (!field) throw new Error("Missing field range");
+		Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 100 }) });
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 90, button: 0 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 90 });
+		expect(onValueChange).toHaveBeenLastCalledWith([2, 9]);
+		fireEvent.pointerDown(field, { pointerId: 2, pointerType: "mouse", clientX: 50, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 2, pointerType: "mouse", clientX: 70 });
+		fireEvent.pointerUp(field, { pointerId: 2, pointerType: "mouse", clientX: 70 });
+		expect(onValueChange).toHaveBeenLastCalledWith([3, 10]);
+	});
+
+	it("shows a rail value bubble only while a formatted thumb is focused", () => {
+		const { container } = render(<Slider value={4} min={0} max={10} step={1} aria-label="Seek" formatValue={(value) => `at ${value}`} onValueChange={() => {}} />);
+		const rangeInput = container.querySelector<HTMLInputElement>('input[type="range"]');
+		if (!rangeInput) throw new Error("Missing rail input");
+		expect(container.querySelector("[data-slider-bubble]")).toBeNull();
+		fireEvent.focus(rangeInput);
+		expect(container.querySelector("[data-slider-bubble]")?.textContent).toBe("at 4");
+		fireEvent.blur(rangeInput);
+		expect(container.querySelector("[data-slider-bubble]")).toBeNull();
 	});
 });

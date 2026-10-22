@@ -24,7 +24,7 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
-| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider with single/range values, three densities, and horizontal/vertical rails |
+| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider: `field` scrubber for parameters or glowing `rail` for media |
 | `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
@@ -445,17 +445,20 @@ Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 | `onValueCommitted` | `((value: number \| [number, number]) => void)?` | Fires once when Base UI commits an interaction |
 | `size` | `"md" \| "sm" \| "xs"?` | Visual density; defaults to `md` |
 | `orientation` | `"horizontal" \| "vertical"?` | Rail direction; defaults to `horizontal` |
+| `appearance` | `"rail" \| "field"?` | Visual interaction mode; defaults to `rail` so existing callers retain media-rail behavior |
+| `formatValue` | `((value: number) => string)?` | Formatted rail bubble while active; field value text when supplied |
+| `label` / `help` | `ReactNode?` | Field-only left-side label and caller-owned help node; long labels move above rather than truncate |
 | `aria-label` | `string?` | Accessible label for a scalar thumb |
 | `getAriaLabel` | `((index: number) => string)?` | Accessible label for each range thumb |
 | `inputTestId` | `string` or `[string, string]?` | Test id placed on Base UI's nested range input(s) |
+| `numberTestId` | `string?` | Field-only inline number editor test id |
 | `disabled` / `className` | `boolean?` / `string?` | Disables interaction / extends the primitive base |
 
 Built on Base UI Slider with its hidden native range input and keyboard semantics.
 Range thumbs use Base UI's non-crossing collision behavior.
-The visible rail uses accent fill, a surface-ringed thumb, focus ring, disabled opacity, and a 44 px coarse-pointer hit area without increasing the visible thumb.
+`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble. `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, Shift+arrow large steps, inline number editing, and two-value window dragging. Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing. Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
 
-**When to use:** A number on a continuous scale, including a two-value range.
-Use `SliderField` when the slider needs a synced number box.
+**When to use:** Parameters use `Slider appearance="field"` (or `SliderField`); media timeline, volume, and zoom use `Slider appearance="rail"`.
 
 ---
 
