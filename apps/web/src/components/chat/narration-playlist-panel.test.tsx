@@ -778,7 +778,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect((volume as HTMLInputElement).type).toBe("range");
     const volumeRoot = volume.closest("[data-slider-root]");
     expect(volumeRoot?.getAttribute("data-orientation")).toBe("vertical");
-    expect(volumeRoot?.classList.contains("w-3")).toBe(true);
+    expect(volumeRoot?.classList.contains("w-[14px]")).toBe(true);
     const volumeSlot = volumeRoot?.parentElement;
     expect(volumeSlot?.classList.contains("flex")).toBe(true);
     expect(volumeSlot?.classList.contains("justify-center")).toBe(true);
@@ -787,7 +787,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect((seek as HTMLInputElement).type).toBe("range");
     const seekRoot = seek.closest("[data-slider-root]");
     expect(seekRoot?.getAttribute("data-orientation")).toBe("horizontal");
-    expect(seekRoot?.classList.contains("h-2.5")).toBe(true);
+    expect(seekRoot?.classList.contains("h-3")).toBe(true);
   });
 
   it("RD-4e: disabled rail renders inert", () => {

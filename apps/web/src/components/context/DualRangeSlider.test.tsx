@@ -41,7 +41,7 @@ describe("DualRangeSlider — shared range invariants", () => {
 		const thumbs = container.querySelectorAll<HTMLElement>("[data-slider-thumb]");
 
 		expect(roots).toHaveLength(1);
-		expect(roots[0]!.classList.contains("h-[14px]")).toBe(true);
+		expect(roots[0]!.classList.contains("h-[18px]")).toBe(true);
 		expect(thumbs).toHaveLength(2);
 		expect(start.type).toBe("range");
 		expect(end.type).toBe("range");
