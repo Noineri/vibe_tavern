@@ -219,7 +219,10 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 	}
 
 	return (
-		<div className={cn("relative min-w-0", className)}>
+		<div
+			data-slider-field-shell
+			className={cn("relative min-w-0", disabled && "pointer-events-none opacity-40", className)}
+		>
 			<span
 				aria-hidden
 				ref={valueRef}
@@ -230,19 +233,22 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 			</span>
 			{label && (
 				<span
-					ref={labelRef}
-					data-slider-field-label-content
 					data-slider-field-label={labelAbove ? undefined : ""}
 					data-slider-field-label-above={labelAbove ? "" : undefined}
 					className={cn(
-						"inline-flex w-max items-center gap-1",
 						labelAbove
 							? lblCls
-							: "pointer-events-none absolute left-[13px] top-0 z-[1] h-11 items-center sm:h-[38px] font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3",
+							: "pointer-events-none absolute left-[13px] top-0 z-[1] h-11 sm:h-[38px]",
 					)}
 				>
-					<span>{label}</span>
-					{help && <span data-slider-field-help className="pointer-events-auto inline-flex">{help}</span>}
+					<span
+						ref={labelRef}
+						data-slider-field-label-content
+						className="inline-flex w-max items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3"
+					>
+						<span>{label}</span>
+						{help && <span data-slider-field-help className="pointer-events-auto inline-flex">{help}</span>}
+					</span>
 				</span>
 			)}
 			<BaseSlider.Root
@@ -299,7 +305,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 					onPointerCancel={clearGesture}
 					onLostPointerCapture={clearGesture}
 					onDoubleClick={openEditor}
-					className={cn(inputCls, "relative block cursor-ew-resize select-none overflow-hidden p-0 touch-pan-y peer-has-[input:focus-visible]:border-accent", editing && "cursor-text", disabled && "pointer-events-none opacity-40")}
+					className={cn(inputCls, "relative block cursor-ew-resize select-none overflow-hidden p-0 touch-pan-y peer-has-[input:focus-visible]:border-accent", editing && "cursor-text")}
 				>
 					<span
 						data-slider-field-fill

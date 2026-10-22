@@ -502,10 +502,52 @@ describe("Slider", () => {
 		expect(resizeCallbacks.length).toBeGreaterThan(0);
 		act(() => resizeCallbacks.forEach((callback) => callback()));
 		expect(container.querySelector("[data-slider-field-label-above]")?.textContent).toBe("Temperature?");
+		const abovePlacement = container.querySelector<HTMLElement>("[data-slider-field-label-above]");
+		if (!abovePlacement) throw new Error("Missing above field label placement");
+		expect(abovePlacement.classList.contains("block")).toBe(true);
+		expect(abovePlacement.classList.contains("mb-1.5")).toBe(true);
+		expect(abovePlacement.classList.contains("inline-flex")).toBe(false);
+		expect(abovePlacement.querySelector("[data-slider-field-label-content]")?.classList.contains("inline-flex")).toBe(true);
 		setMeasuredWidths();
 		width = 300;
 		act(() => resizeCallbacks.forEach((callback) => callback()));
 		expect(container.querySelector("[data-slider-field-label]")?.textContent).toBe("Temperature?");
+	});
+
+	it("makes the complete disabled field shell inert and uniformly dim", () => {
+		const onValueChange = mock();
+		const onValueCommitted = mock();
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={1}
+				label="Temperature"
+				help={<button type="button">?</button>}
+				aria-label="Temperature"
+				disabled
+				onValueChange={onValueChange}
+				onValueCommitted={onValueCommitted}
+			/>,
+		);
+		const shell = container.querySelector<HTMLElement>("[data-slider-field-shell]");
+		const field = container.querySelector<HTMLElement>("[data-slider-field]");
+		const rangeInput = container.querySelector<HTMLInputElement>('input[type="range"]');
+		if (!shell || !field || !rangeInput) throw new Error("Missing disabled field parts");
+		expect(shell.classList.contains("opacity-40")).toBe(true);
+		expect(shell.classList.contains("pointer-events-none")).toBe(true);
+		expect(field.classList.contains("opacity-40")).toBe(false);
+		expect(field.classList.contains("pointer-events-none")).toBe(false);
+		expect(shell.querySelector("[data-slider-field-label]")).not.toBeNull();
+		expect(shell.querySelector("[data-slider-field-help]")).not.toBeNull();
+		expect(rangeInput.disabled).toBe(true);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 80, button: 0 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		fireEvent.keyDown(rangeInput, { key: "ArrowRight" });
+		expect(onValueChange).not.toHaveBeenCalled();
+		expect(onValueCommitted).not.toHaveBeenCalled();
 	});
 
 	it("keeps degenerate tuple bounds exact and inert, avoids NaN geometry and formats tuples as a whole value", () => {
