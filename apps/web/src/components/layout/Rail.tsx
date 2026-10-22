@@ -13,6 +13,7 @@ import { getApplicationModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { useRowActions } from "./hooks/use-row-actions.js";
+import { useActivePersonaDisplay } from "./hooks/use-active-persona-display.js";
 import { CharacterImportMobile, type CharacterImportMobileHandle } from "../modals/import/CharacterImportMobile.js";
 import { ChatImportMobile, type ChatImportMobileHandle } from "../modals/import/ChatImportMobile.js";
 
@@ -70,6 +71,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // The drawer opens on this character's chats (null without an active chat).
   const activeChatCharacterId = activeChatId ? chatMeta?.activeChat.characterId ?? null : null;
   const buildPanels = useBuildPanels();
+  // The bottom panel's persona launcher — the same derivation as the desktop footer.
+  const persona = useActivePersonaDisplay();
 
   const character = useCharacterController();
   const chat = useChatController();
@@ -265,6 +268,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
+              <NavRow avatar={{ src: persona.avatarSrc, fallback: persona.fallback }} label={persona.name} onClick={() => { useModalStore.getState().setIsPersonaModalOpen(true); close(); }} />
               <NavRow icon={<Ic.terminal />} label={t("prompt_manager")} onClick={() => { useModalStore.getState().setIsPromptManagerOpen(true); close(); }} />
               <NavRow icon={<Ic.stack />} label={t("scenario_memory")} onClick={() => { useModalStore.getState().setContextMemoryOpen(true); close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />

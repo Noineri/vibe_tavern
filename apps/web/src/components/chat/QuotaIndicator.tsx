@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { PROVIDER_QUOTA_KIND } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
-import { quotaTextClass, quotaUsageState } from "../../lib/quota-display.js";
-import { selectQuotaEntry, useQuotaStore } from "../../stores/quota-store.js";
+import { quotaTextClass } from "../../lib/quota-display.js";
+import { useProviderQuotaDisplay } from "../../hooks/use-provider-quota-display.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { QuotaSummaryRows, snapshotRows } from "../shared/QuotaSummaryRows.js";
+import { QuotaSummaryRows } from "../shared/QuotaSummaryRows.js";
 
 /**
  * Provider-quota flyout for the chat input toolbar — the visible half of the
@@ -32,29 +31,15 @@ export interface QuotaIndicatorProps {
 export function QuotaIndicator({ providerProfileId }: QuotaIndicatorProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-  const entry = useQuotaStore(selectQuotaEntry(providerProfileId ?? ""));
-
-  useEffect(() => {
-    if (!providerProfileId) return;
-    const { fetchCapability, fetchQuota } = useQuotaStore.getState();
-    void fetchCapability(providerProfileId);
-    void fetchQuota(providerProfileId);
-  }, [providerProfileId]);
+  // The show/hide gate and the capability/quota fetch are shared with the
+  // mobile model sheet (hooks/use-provider-quota-display.ts).
+  const { entry, visible, worstState: triggerState } = useProviderQuotaDisplay(providerProfileId);
 
   // `now` is sampled when the flyout opens, so the countdowns are current
   // without a ticking interval running behind a closed popover.
   const [openedAt, setOpenedAt] = useState(() => Date.now());
 
-  if (!providerProfileId) return null;
-  const config = entry.config;
-  if (!config || config.kind === PROVIDER_QUOTA_KIND.none || !config.displayEnabled) return null;
-
-  const snapshot = entry.snapshot;
-  const rows = snapshot ? snapshotRows(snapshot) : null;
-  const worstUsedPercent = rows && rows.windows.length > 0
-    ? Math.max(...rows.windows.map((window) => window.usedPercent))
-    : null;
-  const triggerState = worstUsedPercent === null ? null : quotaUsageState(worstUsedPercent);
+  if (!visible) return null;
 
   return (
     <Popover.Root

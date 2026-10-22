@@ -469,6 +469,7 @@
 	"context_tools": "Инструменты",
 	"context_history": "История",
 	"context_current_input": "Текущий ввод",
+	"context_summary": "Постоянное {permanent}% · История {history}% · Ввод {input}%",
 	"context_response_budget": "Бюджет ответа",
 	"context_total_available": "Всего доступно",
 	"starred_models": "Избранные модели",
