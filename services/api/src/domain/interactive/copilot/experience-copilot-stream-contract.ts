@@ -7,10 +7,10 @@ import type {
 /** Answer to a pending `ask_user` question (TAG-5 split-turn, style B). The
  *  continuation turn runs with NO new user row — this answer is persisted as
  *  the answered ask tool-result instead, and the model resumes the logical
- *  turn from there. Wire twin of the api-contracts
+ *  turn from there. Wire twin of the ask member of the api-contracts
  *  `experienceCopilotStreamAnswerSchema` (kept structural for direct domain
  *  callers as well as the validated route). */
-export interface ExperienceCopilotStreamAnswer {
+export interface ExperienceCopilotAskTurnAnswer {
   /** The awaiting `ask_user` tool-result row being answered (in this thread). */
   toolCallId: string;
   /** The user's answer text (a tapped chip's label or free text). Mutually
@@ -20,15 +20,35 @@ export interface ExperienceCopilotStreamAnswer {
   skipped?: boolean;
 }
 
+/** Permission decision for a pending wait-tool marker (SC-23e split-turn):
+ *  `allow` re-runs the tool's granted execution and stores its real result in
+ *  the awaiting row; `deny` stores the denied marker — either way the turn
+ *  resumes with NO new user row. Wire twin of the permission member of the
+ *  api-contracts `experienceCopilotStreamAnswerSchema`. */
+export interface ExperienceCopilotPermissionTurnAnswer {
+  /** The awaiting permission tool-result row being decided (in this thread). */
+  toolCallId: string;
+  /** The user's decision: allow reads the material, deny continues without
+   *  it. Mutually exclusive with the ask family's fields (wire-enforced). */
+  decision: "allow" | "deny";
+}
+
+/** Answer to a pending wait-tool request — the ask family (TAG-5) or the
+ *  permission decision family (SC-23e), discriminated by shape. */
+export type ExperienceCopilotStreamAnswer =
+  | ExperienceCopilotAskTurnAnswer
+  | ExperienceCopilotPermissionTurnAnswer;
+
 export interface ExperienceCopilotStreamRequest {
   /** The copilot thread id (path param on the route). */
   threadId: string;
   /** User's message text for this turn. Exactly-one-of with `answer` (the
    *  wire schema enforces it; the stream also guards direct domain callers). */
   content?: string;
-  /** Answer to a pending `ask_user` question (TAG-5 split-turn): when set, NO
-   *  user row is appended — the referenced awaiting tool-result row is
-   *  rewritten with the answer and the turn continues the question turn. */
+  /** Answer to a pending wait-tool request (TAG-5 ask_user; the SC-23e
+   *  permission decision family): when set, NO user row is appended — the
+   *  referenced awaiting tool-result row is rewritten with the answer and the
+   *  turn continues the stopped turn. */
   answer?: ExperienceCopilotStreamAnswer;
   /** Provider profile ID to use. */
   providerProfileId: string;

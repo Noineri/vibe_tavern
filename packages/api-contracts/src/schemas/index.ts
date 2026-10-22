@@ -313,6 +313,8 @@ export {
   experienceCopilotLaunchContextSchema,
   experienceCopilotStreamRequestSchema,
   experienceCopilotStreamAnswerSchema,
+  type ExperienceCopilotStreamAskAnswer,
+  experienceCopilotStreamPermissionAnswerSchema,
   experienceCopilotThreadSchema,
   experienceCopilotMessageSchema,
   experienceCopilotBoundVisualSchema,

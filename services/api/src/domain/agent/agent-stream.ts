@@ -1,8 +1,9 @@
 /**
  * Generic agent turn stream (AGENT_SHELL_PLAN, Wave 1 / AS-2c) — the
  * kind-AGNOSTIC streaming loop carved out of `experience-copilot-stream.ts`
- * (ER-6): thread load, turn-input persistence (content mode + the TAG-5
- * `ask_user` answer-mode marker rewrite), digest-boundary pre-split, provider
+ * (ER-6): thread load, turn-input persistence (content mode + the wait-tool
+ * answer-mode marker rewrite — the split-turn mechanism itself lives in the
+ * sibling `agent-split-turn.ts` since SC-23e), digest-boundary pre-split, provider
  * stream consumption via `streamText`, the SSE event relay (`text-delta`,
  * `reasoning-delta`, `tool-call`, `tool-result`, `finish`, `error`, `abort`),
  * TF-3 ordered turn persistence, CM-4 context metrics, and the CM-6
@@ -17,8 +18,8 @@
  * knowledge — no kind imports, no buffer names in code.
  */
 
-import { streamText, isStepCount, hasToolCall } from "ai";
-import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
+import { streamText, isStepCount } from "ai";
+import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart, StopCondition } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, CopilotContextMetrics } from "@vibe-tavern/db";
 import { buildContextMetrics, type AgentTokenAccounting } from "./agent-context-metrics.js";
@@ -32,28 +33,15 @@ import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-er
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { resolveDigestBoundary, type AgentHistoryMessage } from "./agent-prompt.js";
-
-// ─── Persisted tool payload shapes (store round-trip) ────────────────────────
-
-/** Persisted tool-call row, serialized into `tool_calls_json` on an assistant
- *  message. `providerOptions` carries the provider's replay metadata (Gemini 3
- *  `thoughtSignature`, aggregator per-call metadata) that a resumed turn must
- *  send back with the call — absent when the provider sent none. */
-export interface AgentPersistedToolCall {
-  type: "tool-call";
-  toolCallId: string;
-  toolName: string;
-  input: unknown;
-  providerOptions?: ToolCallPart["providerOptions"];
-}
-
-/** Persisted tool-result payload, serialized into the `content` of a tool
- *  message row. Carries `toolName` so the round-trip back to a
- *  `ToolResultPart` (which the SDK requires) does not need a side lookup. */
-export interface AgentPersistedToolResult {
-  toolName: string;
-  output: unknown;
-}
+import {
+  applyAgentTurnAnswer,
+  DEFAULT_WAIT_STOP_CONDITIONS,
+  renderWaitToolOutputWireText,
+  stringifyObjectWireText,
+  type AgentPersistedToolCall,
+  type AgentPersistedToolResult,
+  type AgentTurnAnswer,
+} from "./agent-split-turn.js";
 
 // ─── Store / thread / request shapes (structural subsets) ────────────────────
 
@@ -107,14 +95,9 @@ export interface AgentStreamStore<THREAD extends AgentStreamThread = AgentStream
   ): Promise<unknown>;
 }
 
-/** Answer to a pending `ask_user` question (TAG-5 split-turn, style B). The
- *  continuation turn runs with NO new user row — this answer is persisted as
- *  the answered ask tool-result instead. */
-export interface AgentTurnAnswer {
-  readonly toolCallId: string;
-  readonly text?: string;
-  readonly skipped?: boolean;
-}
+/** Answer to a pending wait-tool request (TAG-5 ask_user; the SC-23e
+ *  permission decision family) — {@link AgentTurnAnswer} in the split-turn
+ *  module, where the mechanism lives. */
 
 /** The turn request fields the generic loop reads itself; the kind's own
  *  request interface EXTENDS this (extra fields ride along opaquely into the
@@ -245,61 +228,30 @@ export interface AgentStreamSeams<
   readonly buildTools: (
     input: AgentBuildToolsSeamInput<REQ, THREAD, CTX, PROFILE, ASM>,
   ) => ToolSet;
+  /** SC-23e: the kind's wait-tool stop conditions — the stopWhen entries
+   *  beside the tool-loop ceiling. Absent → the mechanism default
+   *  (`hasToolCall("ask_user")` alone), so the pre-SC-23e kinds keep their
+   *  exact legacy stop behavior. A kind with a permission tool composes its
+   *  own entries from the mechanism's condition helpers (the marker-aware
+   *  `hasAwaitingPermissionMarker` — the turn stops on the AWAITING MARKER,
+   *  never on a call that answers unknown). */
+  readonly waitStopConditions?: readonly StopCondition<ToolSet>[];
+  /** SC-23e: the kind's granted-execution seam — re-run one wait tool's REAL
+   *  execution when the user allows its permission request, returning the
+   *  result the awaiting row stores. Called with the loop's loaded THREAD row
+   * (chat-owned ids come from the row, never the request) plus the tool's
+   * name, its ORIGINAL recorded input, and the toolCallId. Absent → the kind
+   * serves no permission tools; an allow answer is refused by the split-turn
+   * module, never silently skipped. */
+  readonly runWaitTool?: (
+    thread: THREAD,
+    toolName: string,
+    toolInput: unknown,
+    toolCallId: string,
+  ) => Promise<unknown>;
 }
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
-
-/** Is this parsed tool-result output an awaiting `ask_user` marker? (TAG-5) */
-function isAwaitingAskOutput(output: unknown): boolean {
-  return (
-    output !== null &&
-    typeof output === "object" &&
-    (output as { status?: unknown }).status === "awaiting_answer"
-  );
-}
-
-/** Wire stringify GUARANTEEING the result parses to a non-null JSON object:
- *  objects pass through verbatim; any other value (a tool that persisted a
- *  primitive, a malformed ask payload) wraps under a `result` key. Translation
- *  proxies (agi → Google) build google.protobuf.Struct function responses from
- *  these strings — a bare string is a 400, an object passes. */
-function stringifyObjectWireText(output: unknown): string {
-  if (output !== null && typeof output === "object") return JSON.stringify(output);
-  return JSON.stringify({ result: output });
-}
-
-/** The model-visible wire JSON for an `ask_user` tool-result output (TAG-5
- *  split-turn). The stored payload is STRUCTURED state for the UI; the model
- *  reads the same facts through self-describing keys instead of marker JSON:
- *  an answer → `{ answer }` (the user's text verbatim); a skip →
- *  `{ skipped: true }`; a still-awaiting marker (the user moved on) →
- *  `{ unanswered: true, note }`, so the model never sees a dangling promise.
- *  Prompt-side only: the stored row is never mutated by this rendering. */
-function renderAskOutputWireText(output: unknown): string {
-  if (output !== null && typeof output === "object" && "status" in output) {
-    const status = (output as { status: unknown }).status;
-    if (status === "awaiting_answer") {
-      return JSON.stringify({ unanswered: true, note: "the user did not answer this question; they moved on" });
-    }
-    if (status === "skipped") return JSON.stringify({ skipped: true });
-    if (status === "answered") {
-      const answer = (output as { answer?: unknown }).answer;
-      if (typeof answer === "string" && answer.length > 0) return JSON.stringify({ answer });
-    }
-  }
-  return stringifyObjectWireText(output);
-}
-
-/** Is this stored message row an awaiting `ask_user` tool-result? (TAG-5 —
- *  the answer-mode precondition; parsed defensively, never throws.) */
-function isAwaitingAskRow(m: AgentStreamStoredMessage): boolean {
-  try {
-    const parsed = JSON.parse(m.content) as AgentPersistedToolResult;
-    return parsed.toolName === "ask_user" && isAwaitingAskOutput(parsed.output);
-  } catch {
-    return false;
-  }
-}
 
 /** Convert stored agent messages into the history shape the assembly expects.
  *  Round-trips the {@link toModelMessages} serialization: assistant rows carry
@@ -327,11 +279,13 @@ export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
         const parsed = JSON.parse(m.content) as AgentPersistedToolResult;
         toolName = parsed.toolName ?? "";
         outputText = stringifyObjectWireText(parsed.output);
-        // TAG-5: an ask_user result carries the CONVERSATION, not telemetry —
-        // the model reads the answer / skip / never-answered note through
+        // TAG-5 + SC-23e: a WAIT tool's result carries the CONVERSATION or
+        // the user's permission decision, not telemetry — the model reads
+        // the answer / skip / never-answered note / prompt / denial through
         // self-describing keys, never the marker JSON (the whole wire string
         // parses to a JSON object — Struct contract for translation proxies).
-        if (toolName === "ask_user") outputText = renderAskOutputWireText(parsed.output);
+        const waitWireText = renderWaitToolOutputWireText(toolName, parsed.output);
+        if (waitWireText !== undefined) outputText = waitWireText;
       } catch {
         // Invalid JSON — use the raw content as the output text.
       }
@@ -531,31 +485,31 @@ export async function* streamAgentTurn<
 
   // ── 4. Persist this turn's input ──
   // Content mode: append the user's message row NOW so it survives a crash.
-  // Answer mode (TAG-5 split-turn, style B): NO user row — the answer replaces
-  // the awaiting marker of the referenced ask_user tool-result row, and the
-  // turn resumes as a continuation of the question turn. The rewrite is
-  // validated first (the row must be an awaiting ask in THIS thread) so a
-  // stale or foreign toolCallId can never overwrite another tool's result.
+  // Answer mode (TAG-5 split-turn, style B; the permission family since
+  // SC-23e): NO user row — the answer replaces the awaiting marker of the
+  // referenced wait-tool result row, and the turn resumes as a continuation
+  // of the stopped turn. The application (validation against THIS thread's
+  // rows, the row rewrite, and the permission allow's executor re-run) lives
+  // in the split-turn module; the rewrite is validated first (the row must
+  // still be awaiting in THIS thread) so a stale or foreign toolCallId can
+  // never overwrite another tool's result.
   if (request.answer) {
-    const answer = request.answer;
-    const target = priorMessages.find(
-      (m) => m.role === "tool" && m.toolCallId === answer.toolCallId,
-    );
-    if (!target || !isAwaitingAskRow(target)) {
-      throw validation(
-        "The question being answered was not found (or is no longer awaiting) in this thread.",
-      );
-    }
-    const answerPayload: AgentPersistedToolResult = {
-      toolName: "ask_user",
-      output: answer.skipped
-        ? { status: "skipped" }
-        : { status: "answered", answer: answer.text ?? "" },
-    };
-    await deps.store.setToolResultOutput(request.threadId, answer.toolCallId, answerPayload);
-    // Rewrite the in-memory copy so THIS turn's assembly sees the answered
-    // state without a re-fetch (the store row is the durable copy).
-    target.content = JSON.stringify(answerPayload);
+    await applyAgentTurnAnswer({
+      threadId: request.threadId,
+      answer: request.answer,
+      priorMessages,
+      store: deps.store,
+      // SC-23e: the permission allow re-runs the tool's granted execution
+      // through the KIND's executor seam (absent → the kind serves no
+      // permission tools and an allow is refused there, never silently
+      // skipped).
+      ...(seams.runWaitTool !== undefined
+        ? {
+            runWaitTool: (toolName: string, toolInput: unknown, toolCallId: string) =>
+              seams.runWaitTool!(thread, toolName, toolInput, toolCallId),
+          }
+        : {}),
+    });
   } else if (request.content) {
     await deps.store.appendMessage(request.threadId, {
       role: "user",
@@ -633,14 +587,21 @@ export async function* streamAgentTurn<
       allowSystemInMessages: true,
       abortSignal: signal,
       tools,
-      // TAG-5 split-turn (style B): a question turn ENDS on the ask_user call.
-      // The SDK ships the exact primitive — `hasToolCall(name)` stops the loop
-      // when the latest step contains that tool call. The tool still EXECUTES —
-      // its awaiting marker streams to the client and persists via persistTurn
-      // — then the loop halts and the turn finishes normally (a finish event,
-      // never an error). The user's answer arrives later as a NEW stream
+      // TAG-5 split-turn (style B), generalized by SC-23e: a turn ENDS on a
+      // "waits for the user" tool — the kind's stop conditions (absent →
+      // the mechanism default, `ask_user` alone, so the pre-SC-23e kinds keep
+      // their byte-identical legacy stop). The SDK ships the exact
+      // primitives — `hasToolCall(name)` for the ask family, the marker-aware
+      // condition for the permission family (stops on the AWAITING marker,
+      // never on a call that answers unknown). The tool still EXECUTES — its
+      // awaiting marker streams to the client and persists via persistTurn —
+      // then the loop halts and the turn finishes normally (a finish event,
+      // never an error). The user's decision arrives later as a NEW stream
       // request in `answer` mode, which rewrites the marker row (step 4).
-      stopWhen: [isStepCount(seams.limits.toolLoopCeiling), hasToolCall("ask_user")],
+      stopWhen: [
+        isStepCount(seams.limits.toolLoopCeiling),
+        ...(seams.waitStopConditions ?? DEFAULT_WAIT_STOP_CONDITIONS),
+      ],
     });
   } catch (err) {
     // Setup error (streamText() failed before iteration began).

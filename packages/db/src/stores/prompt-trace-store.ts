@@ -204,6 +204,28 @@ export class PromptTraceStore {
     return rows.map((row) => this.mapRowTrace(row, chunkMap));
   }
 
+  /** SC-23e: the trace that PRODUCED one swipe — the newest row whose
+   *  `variantId` link matches in this chat + branch (rows that predate
+   *  SC-23b carry NULL and never match). Newest-first with the same id
+   *  tie-break as `getTracesByChat`, so a re-swiped variant resolves to the
+   *  most recent send that produced it. */
+  async getTraceByVariant(chatId: string, branchId: string, variantId: string): Promise<PromptTrace | null> {
+    const row = await this.db
+      .select()
+      .from(promptTraces)
+      .where(
+        and(
+          eq(promptTraces.chatId, chatId),
+          eq(promptTraces.branchId, branchId),
+          eq(promptTraces.variantId, variantId),
+        ),
+      )
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
+      .get();
+    if (!row) return null;
+    return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
+  }
+
   // ─── Chunk maintenance ────────────────────────────────────────────────
 
   /**

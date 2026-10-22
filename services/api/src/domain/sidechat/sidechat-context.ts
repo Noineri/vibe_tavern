@@ -159,10 +159,12 @@ export interface SidechatContextDeps {
 	/** The canonical character card (profile.md text, raw macros). */
 	characters: Pick<CharacterStore, "getProfileMdText">;
 	/** Branch length (the SC-2a whole-branch read limit) + the thread branch's
-	 *  scene target. */
-	messages: Pick<MessageStore, "getMessages" | "getCurrentSceneTarget">;
-	/** The branch's prompt traces (latest first). */
-	traces: Pick<PromptTraceStore, "getTracesByChat">;
+	 *  scene target; `getVariantsByBranch` also feeds the SC-23e reply-prompt
+	 *  read tool's variant resolution (the same store seam, one wiring). */
+	messages: Pick<MessageStore, "getMessages" | "getCurrentSceneTarget" | "getVariantsByBranch">;
+	/** The branch's prompt traces (latest first); `getTraceByVariant` resolves
+	 *  the trace SC-23b linked to one swipe (the reply-prompt read, SC-23e). */
+	traces: Pick<PromptTraceStore, "getTracesByChat" | "getTraceByVariant">;
 	/** The branch's RP summaries — read LIVE every turn (SC-6). */
 	chatSummaries: Pick<ChatSummaryStore, "listByChatBranch">;
 	/** The thread row + the merged frozen timeline. */
@@ -241,6 +243,13 @@ export interface SidechatContextPackage {
 	 *  guard against a history that no longer matches the timeline (e.g. a
 	 *  compaction digest split, which Wave 2 does not wire here yet). */
 	readonly messageCount: number;
+	/** SC-23e: the sidechat's held lore entry ids — the ids its `active_lore`
+	 *  section shows (the one derivation, from the same rows the section
+	 *  rendered). The RP prompt view collapses exactly these lore layers to
+	 *  placeholders; the reply-prompt read tool renders its trace view against
+	 *  THIS set, so the marker and the granted prompt agree with what the
+	 *  sidechat already holds this turn. */
+	readonly heldLoreEntryIds: ReadonlySet<string>;
 }
 
 /**
@@ -383,7 +392,7 @@ export async function loadSidechatContext(
 		});
 	}
 
-	return { staticPackage, eventMessages, messageCount };
+	return { staticPackage, eventMessages, messageCount, heldLoreEntryIds };
 }
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
@@ -471,7 +480,7 @@ async function loadPinnedPresetViews(
 		});
 		const view = renderRpPromptView({
 			presetName: preset.name,
-			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, link.targetId),
+			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${link.targetId} assembly`),
 			layers: assembled.prompt.layers,
 			heldLoreEntryIds,
 		});
@@ -480,34 +489,38 @@ async function loadPinnedPresetViews(
 	return views;
 }
 
-/** Map the assembly's final payload (plain JSON in the response type) onto
- *  the view's message input, enriching every history ref with its branch
- *  position from the loader's own branch read. Structural checks throw the
- *  corrupt refusal the module's other mappers use — this payload comes from
- *  our own assembly in the same call, so a mismatch is a programming error,
- *  never user data. */
-function mapFinalPayloadMessages(
+/** Map a frozen final payload (plain JSON — a dry assembly's response or a
+ *  stored trace's `finalPayload`, the same shape both freeze) onto the view's
+ *  message input, enriching every history ref with its branch position from
+ *  the caller's own branch read. Exported since SC-23e: the reply-prompt read
+ *  tool maps a STORED TRACE's payload through this same mapper — one mapping,
+ *  both arms of the RP prompt view. `origin` names the source in every
+ *  refusal message ("preset <id> assembly" / "trace <id>"). Structural checks
+ *  throw the corrupt refusal the module's other mappers use — the payload
+ *  comes from our own assembly or our own trace store, so a mismatch is a
+ *  programming error, never user data. */
+export function mapFinalPayloadMessages(
 	payload: Record<string, unknown>,
 	positionByMessageId: ReadonlyMap<string, number>,
-	presetId: string,
+	origin: string,
 ): RpPromptViewMessage[] {
 	const raw = payload.messages;
 	if (!Array.isArray(raw)) {
 		throw new Error(
-			`loadSidechatContext: preset ${presetId} assembly returned a final payload without a messages array — refusing to render a corrupted payload`,
+			`loadSidechatContext: ${origin} returned a final payload without a messages array — refusing to render a corrupted payload`,
 		);
 	}
 	const positionOf = (messageId: string): number | undefined => positionByMessageId.get(messageId);
 	return raw.map((entry): RpPromptViewMessage => {
 		if (!isRecord(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") {
 			throw new Error(
-				`loadSidechatContext: preset ${presetId} assembly returned a payload entry that is not { role, content } — refusing to render a corrupted payload`,
+				`loadSidechatContext: ${origin} returned a payload entry that is not { role, content } — refusing to render a corrupted payload`,
 			);
 		}
 		const role = entry.role;
 		if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
 			throw new Error(
-				`loadSidechatContext: preset ${presetId} assembly returned an unknown payload role "${role}" — refusing to render a corrupted payload`,
+				`loadSidechatContext: ${origin} returned an unknown payload role "${role}" — refusing to render a corrupted payload`,
 			);
 		}
 		const messageId = typeof entry.messageId === "string" ? entry.messageId : undefined;
@@ -517,7 +530,7 @@ function mapFinalPayloadMessages(
 			? entry.mergedFrom.map((ref: unknown) => {
 					if (!isRecord(ref)) {
 						throw new Error(
-							`loadSidechatContext: preset ${presetId} assembly returned a mergedFrom ref that is not a record — refusing to render a corrupted payload`,
+							`loadSidechatContext: ${origin} returned a mergedFrom ref that is not a record — refusing to render a corrupted payload`,
 						);
 					}
 					const refMessageId = typeof ref.messageId === "string" ? ref.messageId : undefined;

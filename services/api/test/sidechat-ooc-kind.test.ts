@@ -122,7 +122,7 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
-  test("the five Wave-3 toggles are known keys; all five landed tools are on", () => {
+  test("the six toggles are known keys; all six landed tools are on", () => {
     const kind = getAgentKind("sidechat-ooc");
     // The toggle names are the plan's settled contract, carried by the wire
     // schema (the single source of truth, re-exported for consumers).
@@ -132,9 +132,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
       "propose_objective",
       "todo",
       "read_plan",
+      "read_message_prompt",
     ]);
-    // The schema accepts each of the five (either boolean) and the all-off
-    // `{}` — tool sets store only enabled keys, so `{}` IS “all five
+    // The schema accepts each of the six (either boolean) and the all-off
+    // `{}` — tool sets store only enabled keys, so `{}` IS “all six
     // disabled”, what a user profile can still choose.
     expect(kind.toolSetSchema.parse({ search_context: true })).toEqual({ search_context: true });
     expect(kind.toolSetSchema.parse({ read_plan: false })).toEqual({ read_plan: false });
@@ -144,15 +145,17 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     // toggle a tool this species does not serve.
     expect(kind.toolSetSchema.safeParse({ write_buffer: true }).success).toBe(false);
     expect(kind.toolSetSchema.safeParse({ run_script_test: true }).success).toBe(false);
-    // SC-10 flipped the search pair, SC-11 `propose_objective`, and SC-12
-    // `todo` + `read_plan` (each Wave-3 unit flips its own keys) — all five
-    // tools have landed and the default set carries them all.
+    // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12
+    // `todo` + `read_plan`, SC-23e `read_message_prompt` (each unit flips
+    // its own keys) — all six tools have landed and the default set
+    // carries them all.
     expect(kind.defaultToolSet).toEqual({
       search_context: true,
       read_context_item: true,
       propose_objective: true,
       todo: true,
       read_plan: true,
+      read_message_prompt: true,
     });
   });
 });
@@ -160,7 +163,7 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
 // ─── The builtin profile seed ────────────────────────────────────────────────
 
 describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", () => {
-  test("carries the asset text byte-identical with all five Wave-3 tools enabled, and passes the wire profile schema", async () => {
+  test("carries the asset text byte-identical with all six tools enabled, and passes the wire profile schema", async () => {
     const seed = await resolveBuiltinCopilotProfile("sidechat-ooc");
     expect(seed.id).toBe("builtin");
     expect(seed.isBuiltIn).toBe(true);
@@ -171,13 +174,15 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     const assetText = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
     expect(seed.basePrompt).toBe(assetText);
     // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12 `todo`
-    // + `read_plan` — the seed carries every landed tool.
+    // + `read_plan`, SC-23e `read_message_prompt` — the seed carries every
+    // landed tool.
     expect(seed.toolSet).toEqual({
       search_context: true,
       read_context_item: true,
       propose_objective: true,
       todo: true,
       read_plan: true,
+      read_message_prompt: true,
     });
 
     // The unit's why: the seed passes the wire schema the generic kind seed

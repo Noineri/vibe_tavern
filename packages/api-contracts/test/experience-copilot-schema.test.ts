@@ -274,6 +274,41 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
       experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
     ).toThrow();
   });
+
+  // ── SC-23e: the permission decision family joins the answer union ──
+
+  test("a permission decision answer is accepted (allow and deny)", () => {
+    const allow = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_perm_1", decision: "allow" },
+    });
+    expect(allow.answer).toEqual({ toolCallId: "tc_perm_1", decision: "allow" });
+    const deny = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_perm_1", decision: "deny" },
+    });
+    expect(deny.answer).toEqual({ toolCallId: "tc_perm_1", decision: "deny" });
+  });
+
+  test("a permission decision rejects the ask family's fields and unknown decisions (strict)", () => {
+    // `text`/`skipped` belong to the ask member — a permission body is
+    // strict and carries neither.
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "allow", text: "why not" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "maybe" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { decision: "allow" } }),
+    ).toThrow();
+  });
 });
 
 // ─── ER-7: new thread / message / bound-visual schemas ─────────────────────────
@@ -559,13 +594,14 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
     expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
   });
 
-  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 5 toggles in definition order", () => {
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 6 toggles in definition order", () => {
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
       "propose_objective",
       "todo",
       "read_plan",
+      "read_message_prompt",
     ]);
   });
 

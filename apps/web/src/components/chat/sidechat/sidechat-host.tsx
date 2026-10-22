@@ -10,7 +10,8 @@
  * (the experience client's thread-keyed members — the server dispatches the
  * thread routes by the thread's kind — composed with the SC-0c chat client's
  * owner-keyed members), the branch plan owner, the chat profile assignment,
- * the kind's five tool toggles, the RP-model default binding, the five meter
+ * the kind's tool toggles (six since SC-23e), the RP-model default binding,
+ * the five meter
  * segment labels, and the search/read tool captions.
  *
  * Chat-only host: no `renderEditorPane` (the shell renders the mini-app
@@ -163,8 +164,8 @@ registerAgentHost({
     emptySub: "sidechat_empty_hint",
   },
   // The toggleable tool keys of the sidechat profiles — the wire contract's
-  // five keys (the single source for toggleable-tool names), so the shared
-  // profile modal never branches on the kind.
+  // six keys since SC-23e (the single source for toggleable-tool names), so
+  // the shared profile modal never branches on the kind.
   toolKeys: SIDECHAT_OOC_TOOL_KEYS,
   // SC-0g: the sidechat's profile choice is chat-owned (the modal's "use
   // here" writes the (chat, kind) row, "use by default" the kind default).

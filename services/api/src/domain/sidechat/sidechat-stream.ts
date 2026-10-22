@@ -45,7 +45,12 @@
  * thread store's `updateTodo`) and `read_plan` (the shared agent-plan tools
  * in read-only mode — the plan owner is the thread row's chat + branch, and
  * NO plan-write tool exists in the set), both from
- * `kinds/sidechat/sidechat-checklist-tools.ts`. Since SC-6 the
+ * `kinds/sidechat/sidechat-checklist-tools.ts`. Since SC-23e the kind also
+ * serves its PERMISSION tool `read_message_prompt` (the reply-prompt read
+ * with the user's ask-first gate — `kinds/sidechat/sidechat-prompt-read-
+ * tools.ts`): the turn stops on its awaiting marker and resumes on the
+ * user's allow/deny answer, the first consumer of the generalized
+ * split-turn mechanism (`agent-split-turn.ts`). Since SC-6 the
  * assembly runs the SHELL's existing budget trim (planHistoryCompaction)
  * over the merged flow: over the shared budget the OLDEST flow entries drop
  * first, RP and discussion alike, in time order. Since SC-8c the flow
@@ -74,10 +79,12 @@ import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderProfile, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
 import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { CopilotProfile, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { validation } from "../../shared/errors.js";
 import {
   streamAgentTurn,
   type AgentAssembledPrompt,
@@ -101,6 +108,13 @@ import {
 import { buildSidechatSearchTools } from "../agent/kinds/sidechat/sidechat-search-tools.js";
 import { buildSidechatObjectiveTools } from "../agent/kinds/sidechat/sidechat-objective-tools.js";
 import { buildSidechatChecklistTools } from "../agent/kinds/sidechat/sidechat-checklist-tools.js";
+import {
+  buildSidechatPromptReadTools,
+  runGrantedPromptRead,
+  SIDECHAT_PROMPT_READ_TOOL_NAME,
+  type SidechatPromptReadTurnState,
+} from "../agent/kinds/sidechat/sidechat-prompt-read-tools.js";
+import { hasAwaitingPermissionMarker } from "../agent/agent-split-turn.js";
 import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
@@ -571,7 +585,11 @@ export async function* streamSidechatTurn(
   // SC-10: this turn's branch view — written by the loadContext seam (the
   // sync's SC-2a view), read by the buildTools seam's search session. Per-turn
   // state of THIS generator call only, exactly like the pressure above.
+  // SC-23e: the turn's held lore set — same capture pattern, read by the
+  // reply-prompt read tool's state (the marker's and the granted re-run's
+  // held set are the CURRENT turn's, so lore edits show on the next ask).
   let turnBranchView: RpBranchView | null = null;
+  let turnHeldLoreEntryIds: ReadonlySet<string> = new Set();
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -593,6 +611,7 @@ export async function* streamSidechatTurn(
     loadContext: async (thread) => {
       const loaded = await loadSidechatTurnContext(deps, thread.id, request.attachedVariants);
       turnBranchView = loaded.branchView;
+      turnHeldLoreEntryIds = loaded.heldLoreEntryIds;
       return loaded;
     },
 
@@ -640,7 +659,7 @@ export async function* streamSidechatTurn(
       return assembled;
     },
 
-    // ── SC-10 + SC-11 + SC-12: the kind's tools. The search pair
+    // ── SC-10 + SC-11 + SC-12 + SC-23e: the kind's tools. The search pair
     //  (kinds/sidechat/sidechat-search-tools.ts) over a per-turn session:
     //  the ONE extracted store-reads mapping (NO Co-Author skill catalog —
     //  the sidechat's skills come through `@` pins, SC-5), the chat's active
@@ -648,21 +667,31 @@ export async function* streamSidechatTurn(
     //  branch read or dry RP assembly). SC-11 adds `propose_objective`
     //  (kinds/sidechat/sidechat-objective-tools.ts), which needs no
     //  per-turn state and therefore rides the same profile gating even
-    //  when the search mapping is absent. SC-12 closes the set: `todo`
+    //  when the search mapping is absent. SC-12 closes that set: `todo`
     //  (the shared session-checklist factory, persisted through the
     //  thread store's `updateTodo` — kinds/sidechat/sidechat-checklist-
     //  tools.ts) and `read_plan` (the shared plan tools READ-ONLY over the
     //  thread row's own chat + branch — no plan-write tool is ever built).
-    //  Served only when the RESOLVED profile's tool set enables them (a tool
-    //  landed with its toggle off is not landed); the ownership narrowing
-    //  is the same corruption guard resolveProfile uses. ──
-    buildTools: ({ thread, agentProfile }) => {
+    //  SC-23e adds the kind's PERMISSION tool `read_message_prompt`
+    //  (kinds/sidechat/sidechat-prompt-read-tools.ts): the reply-prompt read
+    //  over the thread row's own branch, rendered against THIS turn's held
+    //  set (the context loader's), asking the user on every call. Served
+    //  only when the RESOLVED profile's tool set enables them (a tool
+    //  landed with its toggle off is not landed; for the permission tool
+    //  the toggle gates availability, never the permission); the ownership
+    //  narrowing is the same corruption guard resolveProfile uses. ──
+    buildTools: ({ thread, agentProfile, kindContext }) => {
       if (!isChatOwnedAgentThread(thread)) return {};
       // A null branchId on a chat-owned row is corruption — loadContext's
       // sync (SC-2c) already refused it before this seam, so this throw is
       // unreachable in practice; it narrows the type for the plan owner
       // below (never read through, same guard as the context loader).
       if (thread.branchId === null) throw new RpSyncThreadNotChatOwnedError(thread.id);
+      const promptReadState: SidechatPromptReadTurnState = {
+        chatId: brandId<ChatId>(thread.chatId),
+        branchId: brandId<ChatBranchId>(thread.branchId),
+        heldLoreEntryIds: kindContext.heldLoreEntryIds,
+      };
       const search =
         deps.searchStoreReads !== undefined
           ? buildSidechatSearchTools({
@@ -691,11 +720,48 @@ export async function* streamSidechatTurn(
         saveTodo: (items) => deps.store.updateTodo(thread.id, items),
         agentPlans: deps.agentPlans,
       });
+      const promptRead = buildSidechatPromptReadTools({
+        toolSet: agentProfile.toolSet,
+        deps: { messages: deps.context.messages, traces: deps.context.traces },
+        state: promptReadState,
+      });
       return {
         ...search,
         ...buildSidechatObjectiveTools({ toolSet: agentProfile.toolSet }),
         ...checklist,
+        ...promptRead,
       };
+    },
+
+    // ── SC-23e: the kind's wait-tool stop condition. The sidechat serves
+    //  exactly one wait tool — `read_message_prompt`, the permission tool
+    //  (it serves no `ask_user`, so the mechanism's default stop list is
+    //  fully replaced) — and the turn stops on its AWAITING MARKER, never on
+    //  the call: a call that answers unknown_prompt / unresolved does not
+    //  stop the turn (the model relays that answer in the same turn). ──
+    waitStopConditions: [hasAwaitingPermissionMarker(SIDECHAT_PROMPT_READ_TOOL_NAME)],
+
+    // ── SC-23e: the granted re-run for an allowed permission request — the
+    //  same resolution the marker came from, against the ANSWER turn's fresh
+    //  held set (loadContext has already run by the time the split-turn
+    //  applies the answer). The chat/branch pair comes from the loop's
+    //  THREAD row — the same row every other seam reads, never the request. ──
+    runWaitTool: (thread, toolName, toolInput) => {
+      if (toolName !== SIDECHAT_PROMPT_READ_TOOL_NAME) {
+        throw validation(`The sidechat serves no permission tool '${toolName}'.`);
+      }
+      if (!isChatOwnedAgentThread(thread) || thread.branchId === null) {
+        throw new RpSyncThreadNotChatOwnedError(thread.id);
+      }
+      return runGrantedPromptRead(
+        { messages: deps.context.messages, traces: deps.context.traces },
+        {
+          chatId: brandId<ChatId>(thread.chatId),
+          branchId: brandId<ChatBranchId>(thread.branchId),
+          heldLoreEntryIds: turnHeldLoreEntryIds,
+        },
+        toolInput,
+      );
     },
   };
 

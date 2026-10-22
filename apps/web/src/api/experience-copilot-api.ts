@@ -19,6 +19,7 @@ import { unwrapRpc } from "./unwrap.js";
 import type {
   ExperienceCopilotStreamRequest,
   ExperienceCopilotStreamAnswer,
+  ExperienceCopilotStreamAskAnswer,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
   ExperienceCopilotContextMetrics,
@@ -39,8 +40,11 @@ export const streamExperienceCopilot = (
 
 /** TAG-9: the answer payload for a pending `ask_user` question (TAG-5
  *  split-turn), minus the `toolCallId` the caller supplies — either `text`
- *  (a tapped chip's label or free text) or `skipped: true`, never both. */
-export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAnswer, "toolCallId">;
+ *  (a tapped chip's label or free text) or `skipped: true`, never both.
+ *  Pinned to the ask MEMBER since SC-23e (the wire answer type became a
+ *  union with the permission decision — this card's input stays the ask
+ *  family; the permission sender is SC-23f's). */
+export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAskAnswer, "toolCallId">;
 
 /** Answer a pending `ask_user` question (TAG-5 split-turn, style B): POSTs
  *  the SAME stream endpoint with the `answer` body instead of `content` —

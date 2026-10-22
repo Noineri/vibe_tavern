@@ -71,7 +71,7 @@ export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
  * tool-result row that is still awaiting an answer in THIS thread; that is
  * thread state, so it is enforced by the stream (domain), not by the schema.
  */
-export const experienceCopilotStreamAnswerSchema = z
+const experienceCopilotAskAnswerSchema = z
   .object({
     toolCallId: z.string().min(1),
     text: z.string().min(1).max(50_000).optional(),
@@ -93,6 +93,43 @@ export const experienceCopilotStreamAnswerSchema = z
       });
     }
   });
+export type ExperienceCopilotStreamAskAnswer = z.infer<typeof experienceCopilotAskAnswerSchema>;
+
+/**
+ * Permission decision for a pending wait-tool request (SC-23e split-turn):
+ * `decision: "allow"` = the user lets the model read the material the tool
+ * asked about (the kind re-runs the tool's granted execution and stores its
+ * real result); `decision: "deny"` = the user refuses (the row stores the
+ * denied marker and the turn continues without the material). Carries
+ * NEITHER `text` NOR `skipped` — those belong to the ask family, and the
+ * `.strict()` member rejects them here. The `toolCallId` must point at a
+ * still-awaiting permission marker row in THIS thread (thread state —
+ * enforced by the stream, not the schema).
+ */
+export const experienceCopilotStreamPermissionAnswerSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    decision: z.enum(["allow", "deny"]),
+  })
+  .strict();
+export type ExperienceCopilotStreamPermissionAnswer = z.infer<
+  typeof experienceCopilotStreamPermissionAnswerSchema
+>;
+
+/**
+ * Answer to a pending wait-tool request — a DISCRIMINATED-BY-SHAPE union of
+ * the two split-turn families: the `ask_user` answer (TAG-5, `text`/
+ * `skipped`) and the permission decision (SC-23e, `decision`). The
+ * permission member is tried FIRST: an ask body has no `decision` field and
+ * falls through to the ask member unchanged, while a permission body's
+ * `decision` key would be rejected by the ask member's `.strict()` anyway —
+ * so every valid body of either family parses to exactly one member and the
+ * ask family's validation is byte-identical for its own bodies.
+ */
+export const experienceCopilotStreamAnswerSchema = z.union([
+  experienceCopilotStreamPermissionAnswerSchema,
+  experienceCopilotAskAnswerSchema,
+]);
 export type ExperienceCopilotStreamAnswer = z.infer<typeof experienceCopilotStreamAnswerSchema>;
 
 /** The Try sandbox context copied into copilot test and validation tools. The
@@ -122,9 +159,10 @@ export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLau
  * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
  *
  * TAG-5 split-turn (style B): `content` and `answer` are exactly-one-of. A
- * normal turn sends `content`; answering a pending `ask_user` question sends
+ * normal turn sends `content`; answering a pending wait-tool request sends
  * `answer` instead (no new user row — the answer replaces the awaiting marker
- * of the referenced tool-result and the turn resumes as a continuation).
+ * of the referenced tool-result and the turn resumes as a continuation:
+ * an `ask_user` answer since TAG-5, a permission decision since SC-23e).
  */
 export const experienceCopilotStreamRequestSchema = z
   .object({
@@ -466,15 +504,16 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
- * Wave 1 / SC-5). A PARTIAL record over exactly the 5 toggleable sidechat
+ * Wave 1 / SC-5). A PARTIAL record over exactly the 6 toggleable sidechat
  * tools (search_context, read_context_item, propose_objective, todo,
- * read_plan) — the same convention as {@link copilotToolSetSchema} and
+ * read_plan, read_message_prompt) — the same convention as
+ * {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
- * tool that is not yet served is simply absent from every set. The five
- * keys exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
+ * tool that is not yet served is simply absent from every set. The keys
+ * exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
  * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
- * ahead of their implementations) because the tools arrive in Wave 3 and
- * flip on one by one — until then a stored `true` is inert (the stream
+ * ahead of their implementations) because the tools arrive in later waves
+ * and flip on one by one — until then a stored `true` is inert (the stream
  * serves no tools, `buildTools` returns the empty set). `.strict()` rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
@@ -488,6 +527,7 @@ export const sidechatOocToolSetSchema = z
     propose_objective: z.boolean().optional(),
     todo: z.boolean().optional(),
     read_plan: z.boolean().optional(),
+    read_message_prompt: z.boolean().optional(),
   })
   .strict();
 

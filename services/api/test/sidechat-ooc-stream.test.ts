@@ -85,6 +85,12 @@ let capturedMessages: CapturedMessage[] = [];
  *  toolCallId from it) typed minimally as what the tests pass. */
 let capturedTools: Record<string, { execute: (args: unknown, options?: { toolCallId: string }) => Promise<unknown> }> = {};
 let fakeReply = REPLY_TEXT;
+/** SC-23e: scripted stream parts for split-turn turns (tool-call +
+ *  tool-result chunks); null → the default single text-delta fake reply. */
+let fakeParts: unknown[] | null = null;
+/** SC-23e: the stopWhen list the loop handed the SDK (the wait-tool stop
+ *  conditions' wiring is asserted through it). */
+let capturedStopWhen: unknown[] = [];
 
 function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
 	async function* gen(): AsyncGenerator<unknown, void, unknown> {
@@ -192,10 +198,11 @@ beforeAll(async () => {
 		// Type-erased seam: the fake returns the partial FullStream shape the
 		// loop reads (`.stream`, `finishReason`, `usage`), not the SDK's full
 		// result.
-		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }> }) => {
+		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }>; stopWhen?: unknown[] }) => {
 			capturedMessages = opts.messages;
 			capturedTools = opts.tools ?? {};
-			return makeFakeStreamTextResult([{ type: "text-delta", text: fakeReply }]);
+			capturedStopWhen = opts.stopWhen ?? [];
+			return makeFakeStreamTextResult(fakeParts ?? [{ type: "text-delta", text: fakeReply }]);
 		}) as unknown as SidechatStreamDeps["streamText"],
 		// SC-10: the ONE extracted store-reads mapping over the real stores, no
 		// Co-Author skill catalog — the sidechat's production wiring.
@@ -210,6 +217,8 @@ beforeEach(() => {
 	capturedMessages = [];
 	capturedTools = {};
 	fakeReply = REPLY_TEXT;
+	fakeParts = null;
+	capturedStopWhen = [];
 });
 
 /** A chat + its active branch + a chat-owned sidechat thread on it, optionally
@@ -826,11 +835,13 @@ describe("streamSidechatTurn search tools (SC-10)", () => {
 		const events = (await drainTurn(threadId, "Find that lantern scene")).map((c) => c.event);
 		expect(events).toContain("finish");
 		// SC-10's toggles are ON in the kind's default set and the builtin seed,
-		// SC-11 flipped propose_objective, and SC-12 flipped todo + read_plan —
-		// all five Wave-3 tools are served, nothing else.
+		// SC-11 flipped propose_objective, SC-12 flipped todo + read_plan, and
+		// SC-23e flipped read_message_prompt — all six tools are served,
+		// nothing else.
 		expect(Object.keys(capturedTools).sort()).toEqual([
 			"propose_objective",
 			"read_context_item",
+			"read_message_prompt",
 			"read_plan",
 			"search_context",
 			"todo",
@@ -1298,5 +1309,254 @@ describe("streamSidechatTurn attached variants (SC-17)", () => {
 			'<variant selected="true" number="1" model="flash-latest" preset="Agentic Narrator">The chosen regeneration.</variant>',
 		);
 		expect(prompt).toContain('<variant selected="false" number="2">The discarded take.</variant>');
+	});
+});
+
+// ─── SC-23e: the reply-prompt read's permission split-turn ──────────────────
+
+/** The SC-23e fixtures' shared helper: a sidechat thread whose RP branch has
+ *  a linked trace on the assistant reply's selected variant (the real
+ *  send-path draft through the same assembly seam the RP uses), so the tool's
+ *  resolution finds the exact prompt. */
+async function makePromptReadThread(replyText: string): Promise<{
+	threadId: ExperienceCopilotThreadId;
+	chatId: ChatId;
+	branchId: ChatBranchId;
+	replyId: string;
+}> {
+	const resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
+	const assembly = new PromptAssemblyService(stores, resolver, stores.content.fileStore);
+	const chat = await stores.chats.createChat({ characterId, title: "SC-23e stream fixture" });
+	const branchId = chat.activeBranchId;
+	await stores.messages.addMessage({
+		chatId: brandId<ChatId>(chat.id),
+		branchId: brandId<ChatBranchId>(branchId),
+		role: "user",
+		authorType: "user",
+		content: "We enter the tavern.",
+	});
+	const reply = await stores.messages.addMessage({
+		chatId: brandId<ChatId>(chat.id),
+		branchId: brandId<ChatBranchId>(branchId),
+		role: "assistant",
+		authorType: "assistant",
+		content: replyText,
+	});
+	const variants = await stores.messages.getVariants(reply.id);
+	const selected = variants.find((variant) => variant.isSelected)!;
+	const assembled = await assembly.assembleForChat({
+		chatId: brandId<ChatId>(chat.id),
+		branchId: brandId<ChatBranchId>(branchId),
+		model: "sc23e-model",
+	});
+	await stores.traces.saveTrace({
+		...assembled.promptTraceDraft,
+		presetName: assembled.promptTraceDraft.presetName ?? "(none)",
+		messageId: reply.id,
+		variantId: selected.id,
+	});
+	const thread = await stores.experienceCopilot.startNewChatSession(chat.id, branchId, "sidechat-ooc");
+	return {
+		threadId: thread.id,
+		chatId: brandId<ChatId>(chat.id),
+		branchId: brandId<ChatBranchId>(branchId),
+		replyId: reply.id,
+	};
+}
+
+/** Drain an ANSWER-mode turn (the split-turn resume: no content, the answer
+ *  body instead — the same shape the route relays). */
+async function drainAnswerTurn(
+	threadId: string,
+	answer: { toolCallId: string; decision: "allow" | "deny" },
+): Promise<Array<{ event: string; data: string }>> {
+	const chunks: Array<{ event: string; data: string }> = [];
+	for await (const chunk of streamSidechatTurn(
+		{ threadId, answer, providerProfileId: "prov_1" },
+		deps,
+	)) {
+		chunks.push(chunk);
+	}
+	return chunks;
+}
+
+/** The stored tool-result row for a toolCallId, parsed. */
+async function storedToolRow(threadId: string, toolCallId: string): Promise<{ toolName: string; output: Record<string, unknown> } | null> {
+	const rows = await stores.experienceCopilot.listMessages(threadId);
+	const row = rows.find((m) => m.role === "tool" && m.toolCallId === toolCallId);
+	if (!row) return null;
+	return JSON.parse(row.content) as { toolName: string; output: Record<string, unknown> };
+}
+
+/** The model-visible wire object of the LAST tool-role message (the same
+ *  read the ask-answer suites use — the wire contract parses to an object). */
+function lastToolWireObject(): Record<string, unknown> {
+	const toolMsg = [...capturedMessages].reverse().find((m) => m.role === "tool");
+	const part = (toolMsg!.content as Array<{ type: string; output?: { value?: string } }>)[0]!;
+	return JSON.parse(part.output!.value!) as Record<string, unknown>;
+}
+
+describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)", () => {
+	beforeAll(() => {
+		// Deterministic counts for the marker/granted estimate assertions;
+		// restored (process-global state, the shared services/api worker).
+		setTokenCountFn((text) => text.length);
+	});
+	afterAll(() => {
+		setTokenCountFn(() => 0);
+	});
+
+	it("stopWhen = the ceiling + the MARKER-AWARE condition (a call answering unknown does not stop)", async () => {
+		const { threadId } = await makePromptReadThread("The studied reply.");
+		await drainTurn(threadId, "By which prompt was that written?");
+
+		// Two entries: the tool-loop ceiling, then the sidechat's single
+		// wait-tool condition — the SDK's isStepCount plus the marker-aware
+		// helper, NOT the name-based hasToolCall (unknown answers relay
+		// in-turn).
+		expect(capturedStopWhen).toHaveLength(2);
+		const markerCondition = capturedStopWhen[1] as (o: {
+			steps: Array<{ toolResults?: Array<{ toolName?: string; output?: unknown }> }>;
+		}) => boolean;
+		expect(
+			markerCondition({
+				steps: [{ toolResults: [{ toolName: "read_message_prompt", output: { status: "awaiting_permission" } }] }],
+			}),
+		).toBe(true);
+		expect(
+			markerCondition({
+				steps: [{ toolResults: [{ toolName: "read_message_prompt", output: { status: "unknown_prompt" } }] }],
+			}),
+		).toBe(false);
+	});
+
+	it("the marker turn stops WITH the estimate: the marker row persists, the SSE carries it, the turn finishes", async () => {
+		const { threadId } = await makePromptReadThread("Theron pours two cups.\nAnd smiles.");
+		// Capture the tool set first (a plain turn), then run the REAL
+		// execute to produce the marker the scripted turn will persist.
+		await drainTurn(threadId, "By which prompt was that written?");
+		const marker = (await capturedTools.read_message_prompt!.execute(
+			{ position: 1 },
+			{ toolCallId: "tc_pr_1" },
+		)) as Record<string, unknown>;
+		expect(marker.status).toBe("awaiting_permission");
+		expect(marker.replyFirstLine).toBe("Theron pours two cups.");
+		expect(marker.variantNumber).toBe(1);
+		expect(marker.promptTokens).toBeGreaterThan(0);
+
+		fakeParts = [
+			{ type: "tool-call", toolCallId: "tc_pr_1", toolName: "read_message_prompt", input: { position: 1 } },
+			{ type: "tool-result", toolCallId: "tc_pr_1", toolName: "read_message_prompt", output: marker },
+		];
+		const chunks = await drainTurn(threadId, "That one, please.");
+		// The SSE relays the call and the marker verbatim; the turn FINISHES
+		// (the stop is a normal end, never an error).
+		expect(chunks.map((c) => c.event)).toContain("tool-call");
+		const toolResultEvt = chunks.find((c) => c.event === "tool-result")!;
+		expect((JSON.parse(toolResultEvt.data) as { output: { status: string } }).output.status).toBe("awaiting_permission");
+		expect(chunks.map((c) => c.event)).toContain("finish");
+		expect(chunks.map((c) => c.event)).not.toContain("error");
+		// The marker row persisted with the card's data intact.
+		expect(await storedToolRow(threadId, "tc_pr_1")).toEqual({
+			toolName: "read_message_prompt",
+			output: marker,
+		});
+	});
+
+	it("ALLOW: no user row; the row is rewritten with the REAL rendered prompt; the model reads it through the wire", async () => {
+		const { threadId } = await makePromptReadThread("The allowed reply.");
+		await drainTurn(threadId, "By which prompt?");
+		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_2" });
+		fakeParts = [
+			{ type: "tool-call", toolCallId: "tc_pr_2", toolName: "read_message_prompt", input: { position: 1 } },
+			{ type: "tool-result", toolCallId: "tc_pr_2", toolName: "read_message_prompt", output: marker },
+		];
+		await drainTurn(threadId, "This one.");
+
+		const rowsBefore = await stores.experienceCopilot.listMessages(threadId);
+		const userRowsBefore = rowsBefore.filter((m) => m.role === "user").length;
+
+		const chunks = await drainAnswerTurn(threadId, { toolCallId: "tc_pr_2", decision: "allow" });
+		expect(chunks.map((c) => c.event)).toContain("finish");
+
+		// No user row for an answer turn — the decision IS the tool-result.
+		const rowsAfter = await stores.experienceCopilot.listMessages(threadId);
+		expect(rowsAfter.filter((m) => m.role === "user")).toHaveLength(userRowsBefore);
+
+		// The row was rewritten to the granted payload: the full view text
+		// and the token estimate, no marker left.
+		const row = await storedToolRow(threadId, "tc_pr_2");
+		expect(row!.toolName).toBe("read_message_prompt");
+		expect(row!.output.status).toBe("granted");
+		expect(String(row!.output.prompt)).toContain("<rp_prompt");
+		expect(String(row!.output.prompt)).toContain("</rp_prompt>");
+		expect(row!.output.promptTokens).toBeGreaterThan(0);
+
+		// The resumed model reads the prompt through the self-describing wire
+		// object — never the stored status enum.
+		const wire = lastToolWireObject();
+		expect(wire).toEqual({ prompt: row!.output.prompt, promptTokens: row!.output.promptTokens });
+	});
+
+	it("DENY: the row stores the denied marker; the model reads { denied: true }", async () => {
+		const { threadId } = await makePromptReadThread("The denied reply.");
+		await drainTurn(threadId, "By which prompt?");
+		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_3" });
+		fakeParts = [
+			{ type: "tool-call", toolCallId: "tc_pr_3", toolName: "read_message_prompt", input: { position: 1 } },
+			{ type: "tool-result", toolCallId: "tc_pr_3", toolName: "read_message_prompt", output: marker },
+		];
+		await drainTurn(threadId, "That one.");
+		const chunks = await drainAnswerTurn(threadId, { toolCallId: "tc_pr_3", decision: "deny" });
+		expect(chunks.map((c) => c.event)).toContain("finish");
+		expect(await storedToolRow(threadId, "tc_pr_3")).toEqual({
+			toolName: "read_message_prompt",
+			output: { status: "denied" },
+		});
+		expect(lastToolWireObject()).toEqual({ denied: true });
+	});
+
+	it("the resume REPLAYS the call with its provider metadata (the replay fix's providerOptions)", async () => {
+		const { threadId } = await makePromptReadThread("The signed reply.");
+		await drainTurn(threadId, "By which prompt?");
+		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_4" });
+		// The provider's replay metadata rides the tool-call chunk (what
+		// createMappedStream renames to providerOptions) — Gemini 3's
+		// thoughtSignature must survive the round-trip into the resumed turn.
+		fakeParts = [
+			{
+				type: "tool-call",
+				toolCallId: "tc_pr_4",
+				toolName: "read_message_prompt",
+				input: { position: 1 },
+				providerMetadata: { google: { thoughtSignature: "sig_tc_pr_4" } },
+			},
+			{ type: "tool-result", toolCallId: "tc_pr_4", toolName: "read_message_prompt", output: marker },
+		];
+		await drainTurn(threadId, "This one.");
+		await drainAnswerTurn(threadId, { toolCallId: "tc_pr_4", decision: "allow" });
+
+		const callParts = capturedMessages
+			.flatMap((m) =>
+				m.role === "assistant" && Array.isArray(m.content) ? (m.content as Array<Record<string, unknown>>) : [])
+			.filter((p) => p.type === "tool-call") as Array<Record<string, unknown>>;
+		expect(callParts).toHaveLength(1);
+		expect(callParts[0]!.toolName).toBe("read_message_prompt");
+		expect(callParts[0]!.providerOptions).toEqual({ google: { thoughtSignature: "sig_tc_pr_4" } });
+	});
+
+	it("a decision for a row that is not an awaiting permission marker is refused", async () => {
+		const { threadId } = await makePromptReadThread("Any reply.");
+		await drainTurn(threadId, "Hello.");
+		let threw: unknown = null;
+		try {
+			await drainAnswerTurn(threadId, { toolCallId: "tc_never_existed", decision: "allow" });
+		} catch (err) {
+			threw = err;
+		}
+		expect(threw).toBeTruthy();
+		expect(String((threw as { message?: string }).message)).toContain(
+			"permission request being answered was not found",
+		);
 	});
 });

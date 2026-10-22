@@ -11,7 +11,7 @@
  *
  * Pins:
  *   - module-load registration: the chat-only host (no editor pane), the
- *     kind's five tool toggles, the chat profile assignment, the branch plan
+ *     kind's six tool toggles, the chat profile assignment, the branch plan
  *     owner, the five meter labels, the sidechat i18n keys;
  *   - selectSidechatOwner from the active chat + active branch (null while
  *     either is missing; mode-agnostic — gating is the served-modes
@@ -306,13 +306,13 @@ async function flushSessionLoad() {
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's five toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's six toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
     expect(host.renderEditorPane).toBeUndefined();
     expect([...host.toolKeys].sort()).toEqual(
-      ["propose_objective", "read_context_item", "read_plan", "search_context", "todo"].sort(),
+      ["propose_objective", "read_context_item", "read_message_prompt", "read_plan", "search_context", "todo"].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
     // SC-13c: the objective card renders `recordType: "objective"` in place.
