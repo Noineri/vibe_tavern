@@ -58,6 +58,7 @@ const stubTransport = {
   activateSession: neverCalled,
   renameSession: neverCalled,
   setContextLinks: neverCalled,
+  deleteTurn: neverCalled,
 } as unknown as AgentHostTransport;
 
 beforeEach(() => {

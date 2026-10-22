@@ -37,6 +37,7 @@ import type { ProviderProfileRecord } from "../api/types.js";
 import type {
   activateExperienceCopilotSession,
   answerCopilotAsk,
+  deleteCopilotTurn,
   listExperienceCopilotMessages,
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
@@ -253,6 +254,14 @@ export interface AgentHostTransport {
   /** Answer a pending `ask_user` question — the split-turn continuation
    *  (no new user row; the answer replaces the awaiting tool-result row). */
   answerAsk: typeof answerCopilotAsk;
+  /** AP-10: delete the turn resolved around a message id (`POST
+   *  .../turns/delete`) — the turn-action row's delete. REQUIRED (not
+   *  optional like `listEvents`): a host that forgets it is a compile break,
+   *  not a silent no-op. Hosts pass their thread-scoped client fn (the
+   *  script host its own twin — structurally identical, so it stays
+   *  assignable to this `typeof`). The fetch itself stays in the API
+   *  client; the controller refetches on settle through `onTurnSettled`. */
+  deleteTurn: typeof deleteCopilotTurn;
   /** The single active thread for an owner, or null when none exists.
    *  SC-0c: takes the typed owner (chat owners route to the SC-0b client,
    *  script owners map back to the script id in one line). */

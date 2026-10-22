@@ -649,6 +649,7 @@ function otherTransport(): AgentHostTransport {
     activateSession: async () => thread,
     renameSession: async () => thread,
     setContextLinks: async (_threadId: string, links: ExperienceCopilotContextLink[]) => links,
+    deleteTurn: async () => ({ deletedMessageIds: [], deletedUserMessageId: null }),
   };
 }
 

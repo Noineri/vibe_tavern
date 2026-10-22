@@ -14,6 +14,7 @@ import {
 import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
+  deleteCopilotTurn,
   getExperienceCopilotActive,
   listExperienceCopilotMessages,
   listExperienceCopilotSessions,
@@ -54,6 +55,9 @@ function descriptor(kind: string): AgentHostDescriptor {
     transport: {
       sendStream: streamExperienceCopilot,
       answerAsk: answerCopilotAsk,
+      // AP-10: required on every transport (a missing deleteTurn is a
+      // compile break).
+      deleteTurn: deleteCopilotTurn,
       // SC-0c repair (assertions unchanged): the seam takes the typed
       // owner now — the fixture maps it back exactly as the hosts do.
       getActiveThread: (owner) => getExperienceCopilotActive(scriptOwnerId(owner)),

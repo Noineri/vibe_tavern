@@ -31,6 +31,7 @@ import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
+  deleteCopilotTurn,
   listExperienceCopilotMessages,
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
@@ -180,6 +181,10 @@ registerAgentHost({
   transport: {
     sendStream: streamExperienceCopilot,
     answerAsk: answerCopilotAsk,
+    // AP-10: the turn-delete REST call — the experience client's
+    // thread-keyed member (the server dispatches the thread routes by the
+    // thread's kind, like every other thread-keyed member above).
+    deleteTurn: deleteCopilotTurn,
     getActiveThread: (owner) => {
       const triple = chatOwnerTriple(owner);
       return getAgentChatActive(triple.chatId, triple.branchId, triple.agentKind);

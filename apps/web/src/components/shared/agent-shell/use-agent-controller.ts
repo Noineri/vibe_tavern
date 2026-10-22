@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { getT, type TFunc } from "../../../i18n/locale-helpers.js";
+import { getT } from "../../../i18n/locale-helpers.js";
+import { showProviderErrorToast, useAgentTurnActions, type AgentPendingAskAnswer, type AgentPendingPermissionAnswer, type AgentTurnActions } from "./use-agent-turn-actions.js";
 import type {
   AgentHostTransport,
   AgentKind,
@@ -22,8 +23,9 @@ import {
   experienceCopilotContextMetricsSchema,
   type ExperienceCopilotContextMetrics,
   type CopilotTodoItem,
+  type ExperienceCopilotMessageWire,
 } from "@vibe-tavern/api-contracts";
-import { ProviderStreamError } from "../../../api/provider-stream-error.js";
+
 
 /**
  * Experience-Copilot send/stream controller (EXPERIENCE_EDITOR_REFACTOR_PLAN,
@@ -79,6 +81,12 @@ export interface UseAgentControllerArgs {
  *  tool events upsert on top between refetches. Omitted (undefined) leaves
    *  the store untouched — the shell wires this to `thread.todo`. */
   threadTodo?: readonly CopilotTodoItem[];
+  /** AP-10: the shell's CURRENT persisted messages for the thread (the
+   *  message list, fresh every render). `handleEditLast` resolves the last
+   *  user row's id from THIS list — controller state (the `threadTodo`
+   *  pattern above), never a fetch. Omitted (undefined) leaves edit-last
+   *  without a resolvable target — the shell wires this to `messages`. */
+  threadMessages?: ExperienceCopilotMessageWire[];
 }
 
 /** AS-6c-ii: re-exported from the host registry (which owns the type —
@@ -86,7 +94,11 @@ export interface UseAgentControllerArgs {
  *  importers (`AgentShell`, the experience host) keep compiling. */
 export type { AgentSendOptions } from "../../../lib/agent-host-registry.js";
 
-export interface AgentController {
+/** Re-exported from the turn-actions module (which owns the types) so
+ex *  existing importers (`AgentMessageList`) keep resolving them here. */
+export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer };
+
+export interface AgentController extends AgentTurnActions {
   isSending: boolean;
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
@@ -116,58 +128,14 @@ export interface AgentController {
    *  another answer-union member on the SAME path, no transport fork); ask
    *  bodies behave byte-identically to before. */
   handleAnswer: (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions) => Promise<void>;
+  // AP-10 turn actions (handleRegenerate / handleDeleteTurn / handleEditLast)
+  // arrive through `AgentTurnActions` above — owned by `use-agent-turn-actions.ts`.
   handleCancel: () => void;
   /** SC-23f: the optimistic resolution of the just-decided permission card
    *  (mirrors `pendingAskAnswer` — flips the card immediately, rolls back
    *  on a pre-stream failure, clears at the next turn start / thread
    *  switch). */
   pendingPermissionAnswer: AgentPendingPermissionAnswer | null;
-}
-
-/** TAG-9: the optimistic resolution recorded when an ask card is submitted. */
-export interface AgentPendingAskAnswer {
-  toolCallId: string;
-  status: "answered" | "skipped";
-  /** The answer text — present iff `status === "answered"`. */
-  answer?: string;
-}
-
-/** SC-23f: the optimistic resolution recorded when a permission card is
- *  decided (the user's decision, echoed so the card flips immediately). */
-export interface AgentPendingPermissionAnswer {
-  toolCallId: string;
-  decision: "allow" | "deny";
-}
-
-// Categories where the failure is likely transient (retry after a short wait) —
-// the message alone is enough; we just add a "try again" hint. Mirrors the RP
-// controller's `TRANSIENT_PROVIDER_CATEGORIES` set (see lib/provider-error-toast.ts).
-const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
-
-/**
- * Category-aware provider-error toast. `showProviderErrorToast` in
- * lib/provider-error-toast.ts carries the RP modal action, so this is its minimal replica
- * (same category → description mapping), minus the `open_provider_settings`
- * modal action (which is tied to the RP `useModalStore`; the copilot shell owns
- * its own provider selection).
- */
-function showProviderErrorToast(error: unknown, t: TFunc): void {
-  const message = error instanceof Error && error.message ? error.message : t("message_send_failed");
-  const category = error instanceof ProviderStreamError ? error.category : "unknown";
-
-  if (category === "authentication") {
-    toast.error(message, { description: t("provider_error_auth_desc") });
-    return;
-  }
-  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
-    toast.error(message, { description: t("provider_error_transient_desc") });
-    return;
-  }
-  if (category === "empty_response" || category === "parse_error") {
-    toast.error(message, { description: t("provider_error_empty_desc") });
-    return;
-  }
-  toast.error(message);
 }
 
 /**
@@ -185,7 +153,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -628,10 +596,36 @@ export function useAgentController(
     [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
   );
 
+  // AP-10: the turn actions live in their own module (the file-size
+  // ratchet) — fed with the controller's send, callback builder, and turn
+  // state, re-exposed on the controller's contract below.
+  const turnActions = useAgentTurnActions({
+    kind,
+    transport,
+    threadId,
+    providerProfileId,
+    model,
+    onTurnSettled,
+    onMetrics,
+    applyPlanToolResult,
+    threadMessages,
+    sendTurn: handleSend,
+    buildStreamCallbacks,
+    turnState: {
+      isSendingRef,
+      abortRef,
+      setIsSending,
+      setPendingText,
+      setPendingReasoning,
+      setPendingAskAnswer,
+      setPendingPermissionAnswer,
+    },
+  });
+
   const handleCancel = useCallback((): void => {
     abortRef.current?.abort();
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, handleSend, handleAnswer, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, handleCancel };
 }

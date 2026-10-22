@@ -245,6 +245,7 @@ beforeAll(async () => {
 		activateSession: experienceApi.activateExperienceCopilotSession,
 		renameSession: experienceApi.renameExperienceCopilotSession,
 		setContextLinks: experienceApi.setExperienceCopilotContextLinks,
+		deleteTurn: experienceApi.deleteCopilotTurn,
 	});
 	unsubs = [
 		registerAgentHost(descriptor("sc0i-plan-host", true)),

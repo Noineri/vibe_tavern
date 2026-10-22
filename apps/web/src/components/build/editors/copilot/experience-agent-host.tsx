@@ -17,6 +17,7 @@ import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
+  deleteCopilotTurn,
   getExperienceCopilotActive,
   listExperienceCopilotMessages,
   listExperienceCopilotSessions,
@@ -447,6 +448,9 @@ registerAgentHost({
   transport: {
     sendStream: streamExperienceCopilot,
     answerAsk: answerCopilotAsk,
+    // AP-10: the turn-delete REST call (required member — forgetting it is
+    // a compile break). The thread route dispatches by thread, never kind.
+    deleteTurn: deleteCopilotTurn,
     // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
     // back to the script id in one line — the thread-scoped members stay
     // owner-agnostic (the same per-thread routes serve both owners).

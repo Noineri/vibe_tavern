@@ -26,6 +26,7 @@ import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import {
   activateScriptAgentSession,
   answerScriptAgentAsk,
+  deleteScriptAgentTurn,
   getScriptAgentActive,
   listScriptAgentMessages,
   listScriptAgentSessions,
@@ -621,6 +622,9 @@ registerAgentHost({
   transport: {
     sendStream: streamScriptAgent,
     answerAsk: answerScriptAgentAsk,
+    // AP-10: the turn-delete REST call (required member — the script twin,
+    // structurally identical to the experience `typeof` the registry pins).
+    deleteTurn: deleteScriptAgentTurn,
     // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
     // back to the script id in one line — the thread-scoped members stay
     // owner-agnostic (the same per-thread routes serve both owners).

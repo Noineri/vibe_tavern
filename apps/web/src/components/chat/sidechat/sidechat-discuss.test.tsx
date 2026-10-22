@@ -158,6 +158,7 @@ describe("controller attachedVariants body (SC-18)", () => {
       activateSession: async () => null,
       renameSession: async () => null,
       setContextLinks: async (_threadId: string, links: ExperienceCopilotContextLink[]) => links,
+      deleteTurn: async () => ({ deletedMessageIds: [], deletedUserMessageId: null }),
     };
   }
 

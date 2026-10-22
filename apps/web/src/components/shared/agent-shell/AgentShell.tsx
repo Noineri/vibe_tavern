@@ -416,6 +416,7 @@ export function AgentShell({
     onMetrics: copilotContext.applyMetrics,
     applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
     threadTodo, // TAG-7 (restored PM-7): seeds the session-scoped todo panel state (mount/switch)
+    threadMessages: messages, // AP-10: the edit-last delete target resolves from the live list
   });
 
   // ── AS-6b2: the dispatch seam (host's dangling-review capture + options) ─

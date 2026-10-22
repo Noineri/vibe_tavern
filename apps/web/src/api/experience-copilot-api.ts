@@ -230,3 +230,33 @@ export async function compactExperienceCopilot(
   });
   return unwrapRpc(response);
 }
+
+// ─── Turn delete (AP-10) ────────────────────────────────────────────────────
+
+/** POST `/turns/delete` response (AP-8): every deleted row id in timeline
+ *  order (the user row included when it was deleted), plus which of them was
+ *  the user row. Mirrors the backend's `ExperienceCopilotTurnDeleteResult`
+ *  (services/api contract — the backend-local twin, not an api-contracts
+ *  wire type, so it is spelled here like `ExperienceCopilotCompactResult`). */
+export interface ExperienceCopilotTurnDeleteResult {
+  deletedMessageIds: string[];
+  deletedUserMessageId: string | null;
+}
+
+/** Delete the turn resolved around `messageId` (AP-8 route, AP-10 client).
+ *  The server resolves the ENCLOSING turn; `messageId` may point at any row
+ *  of that turn, or at the user row itself (then only with
+ *  `includeUserMessage: true`). The caller refetches messages on settle —
+ *  there is no optimistic removal (the server owns the turn resolution).
+ *  Rejects with a 400 on user-row semantics, 404 on an unknown thread or
+ *  message, 409 at/below the digest floor. */
+export async function deleteCopilotTurn(
+  threadId: string,
+  body: { messageId: string; includeUserMessage: boolean },
+): Promise<ExperienceCopilotTurnDeleteResult> {
+  const response = await client.api["experience-copilot"][":threadId"].turns.delete.$post({
+    param: { threadId },
+    json: body,
+  });
+  return unwrapRpc(response);
+}

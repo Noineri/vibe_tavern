@@ -154,6 +154,11 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     pendingPermissionAnswer: null,
     handleSend: mock(),
     handleAnswer: mock(),
+    // AP-10: the turn actions are required on the controller (a stub that
+    // forgets them is a compile break); the pane tests never invoke them.
+    handleRegenerate: mock(),
+    handleDeleteTurn: mock(),
+    handleEditLast: mock(),
     handleCancel: () => {},
     ...over,
   };

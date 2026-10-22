@@ -11,6 +11,7 @@
 import { afterAll, beforeEach, describe, test, expect, mock, spyOn } from "bun:test";
 
 import type { CopilotStreamOpts } from "../../../api/experience-copilot-api.js";
+import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -48,6 +49,13 @@ const sseResponse = (events: readonly string[]) =>
 const originalFetch = globalThis.fetch;
 let fetchBeforeController: typeof globalThis.fetch | null = null;
 let requestCount = 0;
+// AP-10: every `POST .../turns/delete` the router answers, in order (the
+// controller's delete path is observed at the HTTP boundary like the stream).
+let deleteCalls: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+// AP-10: holding the delete response open keeps the delete in-flight so the
+// mid-run flags are observable, not raced (the stream side's holdStreamOpen).
+let holdDeleteOpen = false;
+let releaseDelete: (() => void) | null = null;
 let holdStreamOpen = false;
 let releaseStream: (() => void) | null = null;
 let nextHttpError: { message: string; category?: string } | null = null;
@@ -58,6 +66,36 @@ function sseEvent(event: string, data: unknown): string {
 
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = new URL(String(input), "http://gateway.test");
+  // AP-10: the turn-delete REST call — captured like the stream, answered
+  // with the AP-8 wire result (the deleted user row echoes when included).
+  const deleteMatch = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/turns\/delete$/);
+  if ((init?.method ?? "GET").toUpperCase() === "POST" && deleteMatch) {
+    requestCount++;
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    deleteCalls.push({ threadId: deleteMatch[1] ?? "", body });
+    if (nextHttpError) {
+      const error = nextHttpError;
+      nextHttpError = null;
+      return new Response(JSON.stringify({ error: { message: error.message, details: { category: error.category ?? "unknown" } } }), { status: 400 });
+    }
+    if (holdDeleteOpen) {
+      return new Promise<Response>((resolve) => {
+        releaseDelete = () => {
+          releaseDelete = null;
+          const messageId = String(body.messageId ?? "");
+          resolve(new Response(JSON.stringify({
+            deletedMessageIds: [messageId],
+            deletedUserMessageId: body.includeUserMessage === true ? messageId : null,
+          }), { status: 200 }));
+        };
+      });
+    }
+    const messageId = String(body.messageId ?? "");
+    return new Response(JSON.stringify({
+      deletedMessageIds: [messageId],
+      deletedUserMessageId: body.includeUserMessage === true ? messageId : null,
+    }), { status: 200 });
+  }
   if ((init?.method ?? "GET").toUpperCase() !== "POST" || !/\/api\/experience-copilot\/[^/]+\/stream$/.test(url.pathname)) {
     return new Response(JSON.stringify({ error: { message: `Unhandled fetch: ${url.pathname}` } }), { status: 404 });
   }
@@ -129,6 +167,9 @@ const { scriptOwnerId } = await import("../../../lib/agent-host-registry.js");
 const testTransport = {
   sendStream: experienceCopilotApi.streamExperienceCopilot,
   answerAsk: experienceCopilotApi.answerCopilotAsk,
+  // AP-10: the turn-delete REST call — the real client fn, so the delete
+  // path stays observed at the HTTP boundary (the fetch router above).
+  deleteTurn: experienceCopilotApi.deleteCopilotTurn,
   // SC-0c repair (assertions unchanged): the seam takes the typed owner
   // now — mapped back exactly as the experience host does.
   getActiveThread: (owner: Parameters<typeof scriptOwnerId>[0]) => experienceCopilotApi.getExperienceCopilotActive(scriptOwnerId(owner)),
@@ -165,6 +206,9 @@ beforeEach(() => {
   if (fetchBeforeController === null) fetchBeforeController = globalThis.fetch;
   globalThis.fetch = routerFetch;
   requestCount = 0;
+  deleteCalls = [];
+  holdDeleteOpen = false;
+  releaseDelete = null;
   holdStreamOpen = false;
   releaseStream = null;
   nextHttpError = null;
@@ -1141,6 +1185,306 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       await result.current.handleSend("next message");
     });
     expect(result.current.pendingAskAnswer).toBeNull();
+  });
+});
+
+describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
+  test("sends { regenerate: true } with NO content, no user bubble, settles once", async () => {
+    const onTurnSettled = mock();
+    // Deferred (the send test's pattern): the held stream keeps the turn
+    // in-flight so the mid-run flags are observable, not raced.
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleRegenerate();
+      await Promise.resolve();
+    });
+
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    expect(streamExperienceCopilot.mock.calls[0][0]).toBe(THREAD);
+    // The regenerate mode rides the stream body with NO content row.
+    expect(streamExperienceCopilot.mock.calls[0][1]).toEqual({ regenerate: true, providerProfileId: PROVIDER });
+    expect(result.current.isSending).toBe(true);
+    expect(result.current.pendingUserContent).toBe("");
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    expect(result.current.isSending).toBe(false);
+    expect(result.current.pendingText).toBe("");
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(true);
+  });
+
+  test("passes model and send options through, still with no content", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, model: "m1" }),
+    );
+
+    await act(async () => {
+      await result.current.handleRegenerate({ rules: "live-rules" });
+    });
+
+    expect(streamExperienceCopilot.mock.calls[0][1]).toEqual({
+      regenerate: true,
+      providerProfileId: PROVIDER,
+      model: "m1",
+      rules: "live-rules",
+    });
+  });
+
+  test("handleSend and handleAnswer never set the regenerate flag", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect("regenerate" in (streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-1", { text: "yes" });
+    });
+    expect("regenerate" in (answerCopilotAsk.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
+  });
+
+  test("a pre-stream failure toasts, clears the flags, settles false", async () => {
+    const onTurnSettled = mock();
+    nextHttpError = { message: "nothing to regenerate" };
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+
+    expect(result.current.isSending).toBe(false);
+    expect(result.current.pendingUserContent).toBe("");
+    expect(toastError).toHaveBeenCalled();
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(false);
+  });
+
+  test("silent guards: missing thread or provider make no stream call", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result: noThread } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: null, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+    await act(async () => {
+      await noThread.current.handleRegenerate();
+    });
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(onTurnSettled).not.toHaveBeenCalled();
+
+    const { result: noProvider } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: null, onTurnSettled }),
+    );
+    await act(async () => {
+      await noProvider.current.handleRegenerate();
+    });
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith("message_unavailable_no_provider");
+  });
+});
+
+describe("useExperienceCopilotController — handleDeleteTurn (AP-10)", () => {
+  test("deletes via the transport, settles true, leaves the live store alone", async () => {
+    const onTurnSettled = mock();
+    // Hold the delete response open (the stream suite's holdStreamOpen
+    // pattern): the mid-run flags are observable, not raced.
+    holdDeleteOpen = true;
+    // Seed a live activity: the delete must NOT optimistically remove it.
+    useAgentTurnStore.getState().upsertActivity("experience", THREAD, {
+      toolCallId: "live",
+      toolName: "run_test",
+      status: "done",
+      summary: "keep",
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleDeleteTurn("msg-7", true);
+      await Promise.resolve();
+    });
+
+    expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "msg-7", includeUserMessage: true } }]);
+    expect(result.current.isSending).toBe(true);
+    // No optimistic user bubble and no pending text on a delete.
+    expect(result.current.pendingUserContent).toBe("");
+
+    await act(async () => {
+      releaseDelete?.();
+      await pending;
+    });
+
+    expect(result.current.isSending).toBe(false);
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(true);
+    // NO optimistic removal — the server owns the turn resolution, so the
+    // live store is byte-identical (the settle refetch replaces the feed).
+    expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([
+      { toolCallId: "live", toolName: "run_test", status: "done", summary: "keep" },
+    ]);
+  });
+
+  test("a failed delete toasts, settles false, leaves the feed untouched", async () => {
+    const onTurnSettled = mock();
+    nextHttpError = { message: "digest floor" };
+    useAgentTurnStore.getState().upsertActivity("experience", THREAD, {
+      toolCallId: "live",
+      toolName: "run_test",
+      status: "done",
+      summary: "keep",
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    await act(async () => {
+      await result.current.handleDeleteTurn("msg-7", false);
+    });
+
+    expect(deleteCalls).toHaveLength(1);
+    expect(result.current.isSending).toBe(false);
+    expect(toastError).toHaveBeenCalled();
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(false);
+    expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([
+      { toolCallId: "live", toolName: "run_test", status: "done", summary: "keep" },
+    ]);
+  });
+
+  test("silent guards: missing thread and an in-flight turn make no call", async () => {
+    const onTurnSettled = mock();
+    const { result: noThread } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: null, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+    await act(async () => {
+      await noThread.current.handleDeleteTurn("msg-7", true);
+    });
+    expect(deleteCalls).toHaveLength(0);
+    expect(onTurnSettled).not.toHaveBeenCalled();
+
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.handleDeleteTurn("msg-1", true);
+      // The first delete holds the in-flight flag — the second is a no-op.
+      await result.current.handleDeleteTurn("msg-2", true);
+      await first;
+    });
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0]).toEqual({ threadId: THREAD, body: { messageId: "msg-1", includeUserMessage: true } });
+  });
+});
+
+describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
+  const msg = (id: string, role: string): ExperienceCopilotMessageWire => ({
+    id,
+    threadId: THREAD,
+    role,
+    content: `${role} ${id}`,
+    toolCallsJson: null,
+    toolCallId: null,
+    createdAt: "2026-10-22T00:00:00.000Z",
+  });
+
+  test("deletes the LAST user exchange, then sends the new content", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const threadMessages = [msg("u1", "user"), msg("a1", "assistant"), msg("u2", "user"), msg("a2", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("  revised question  ");
+    });
+
+    // Edit-last resolves the last USER row (u2 — not the trailing assistant
+    // row) and deletes it WITH its user row.
+    expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "u2", includeUserMessage: true } }]);
+    // ...then sends the trimmed content as a fresh turn.
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    expect(streamExperienceCopilot.mock.calls[0][1]).toEqual({ content: "revised question", providerProfileId: PROVIDER });
+    // One settle for the whole edit (the send's) — no intermediate delete
+    // settle, so the shell refetches once.
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(true);
+  });
+
+  test("a failed delete never sends: the error surfaces, the feed is untouched", async () => {
+    const onTurnSettled = mock();
+    nextHttpError = { message: "digest floor" };
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const threadMessages = [msg("u1", "user"), msg("a1", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("revised");
+    });
+
+    expect(deleteCalls).toHaveLength(1);
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalled();
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(false);
+  });
+
+  test("no user row: surfaces the error without deleting or sending", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const threadMessages = [msg("a1", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("revised");
+    });
+
+    expect(deleteCalls).toHaveLength(0);
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalled();
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(false);
+  });
+
+  test("empty content is a silent guard (no delete, no send, no settle)", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const threadMessages = [msg("u1", "user"), msg("a1", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("   ");
+    });
+
+    expect(deleteCalls).toHaveLength(0);
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(onTurnSettled).not.toHaveBeenCalled();
   });
 });
 });

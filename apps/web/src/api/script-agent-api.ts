@@ -137,3 +137,36 @@ export async function setScriptAgentContextLinks(
   });
   return unwrapRpc(response);
 }
+
+// ─── Turn delete (AP-10) ────────────────────────────────────────────────────
+//
+// The twin of the experience client's `deleteCopilotTurn` — the SAME shared
+// thread-store route (threads live in one store regardless of kind, so the
+// delete dispatches by thread, never kind-checks). The script host wires
+// THIS fn (never the experience client) — the twin-module rule from the
+// header above.
+
+/** POST `/turns/delete` response (AP-8): every deleted row id in timeline
+ *  order (the user row included when it was deleted), plus which of them was
+ *  the user row. The twin of the experience client's
+ *  `ExperienceCopilotTurnDeleteResult` (structurally identical — the
+ *  registry's `deleteTurn` member stays one spelling through the
+ *  experience client's `typeof`). */
+export interface ScriptAgentTurnDeleteResult {
+  deletedMessageIds: string[];
+  deletedUserMessageId: string | null;
+}
+
+/** Delete the turn resolved around `messageId` (AP-8 route, AP-10 client).
+ *  Same contract as the experience twin: the caller refetches on settle,
+ *  no optimistic removal. */
+export async function deleteScriptAgentTurn(
+  threadId: string,
+  body: { messageId: string; includeUserMessage: boolean },
+): Promise<ScriptAgentTurnDeleteResult> {
+  const response = await client.api["experience-copilot"][":threadId"].turns.delete.$post({
+    param: { threadId },
+    json: body,
+  });
+  return unwrapRpc(response);
+}
