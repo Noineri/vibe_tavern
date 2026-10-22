@@ -11,6 +11,7 @@ import { formatListingSnapshotTime } from "../../../../lib/imagegen/listing-snap
 import { buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
+import { Slider } from "../../../shared/slider.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Toggle } from "../../../shared/Toggle.js";
@@ -141,18 +142,15 @@ function SamplerSliderField({
     <div className="min-w-0">
       <label className={lblCls}>{label}</label>
       <div className="flex items-center gap-2">
-        <input
-          type="range"
-          data-testid={rangeTestId}
+        <Slider
+          value={val}
           min={range.min}
           max={range.max}
           step={range.step}
-          value={val}
-          onChange={(e) => {
-            const parsed = Number(e.target.value);
-            if (Number.isFinite(parsed)) onChange(parsed);
-          }}
-          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+          onValueChange={onChange}
+          aria-label={label}
+          inputTestId={rangeTestId}
+          className="min-w-0 flex-1"
         />
         <div className="w-[60px] shrink-0" data-testid={cellTestId}>
           <NumberInput
@@ -1804,18 +1802,18 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     <div className="flex flex-col gap-1.5">
                       <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
                       <div className="flex items-center gap-2">
-                        <input
-                          type="range"
-                          data-testid="image-gen-range-adetailer-steps"
+                        <Slider
+                          value={params.adetailerSteps ?? adetailerBaseSteps}
                           min={adetailerControl.stepsRange.min}
                           max={adetailerControl.stepsRange.max}
                           step={adetailerControl.stepsRange.step}
-                          value={params.adetailerSteps ?? adetailerBaseSteps}
-                          onChange={(e) => {
-                            const patch = adetailerControl.parseSteps(e.target.value);
+                          onValueChange={(next) => {
+                            const patch = adetailerControl.parseSteps(String(next));
                             if (patch !== null) setParam(patch);
                           }}
-                          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+                          aria-label={t(adetailerControl.stepsLabelKey)}
+                          inputTestId="image-gen-range-adetailer-steps"
+                          className="min-w-0 flex-1"
                         />
                         <div className="w-[60px] shrink-0" data-testid="image-gen-adetailer-steps">
                           <NumberInput
