@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { PROVIDER_TYPE, type ModelSettingsOverlay, type SamplerCapabilityFlags, type SamplerFieldId } from '@vibe-tavern/domain';
 import { useT } from '../../../i18n/context.js';
@@ -10,6 +10,7 @@ import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { NumberInput } from '../../shared/NumberInput.js';
+import { Slider } from '../../shared/slider.js';
 import { InlineNumField } from './ProviderSamplerNumberField.js';
 import { TextInput } from '../../shared/text-input.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
@@ -53,12 +54,6 @@ function SamplerField({
 }: SamplerFieldProps) {
   const val = value ?? min;
 
-  // Range always commits immediately (no typing involved)
-  const handleRangeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = isInteger ? parseInt(e.target.value, 10) : parseFloat(e.target.value);
-    if (!isNaN(v)) onChange(v);
-  };
-
   return (
     <div className="mb-0 flex flex-col justify-end">
       <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
@@ -70,18 +65,15 @@ function SamplerField({
         )}
       </label>
       <div className="flex items-center gap-2">
-        <input
-          type="range"
+        <Slider
           min={min}
           max={max}
           step={step}
           value={val}
-          onChange={handleRangeChange}
+          onValueChange={(nextValue) => onChange(isInteger ? Math.round(nextValue) : nextValue)}
           disabled={disabled}
-          className={cn(
-            "!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0",
-            disabled && "opacity-40"
-          )}
+          aria-label={label}
+          className="flex-1"
         />
         <NumberInput
           className="h-[30px] w-[60px] shrink-0"

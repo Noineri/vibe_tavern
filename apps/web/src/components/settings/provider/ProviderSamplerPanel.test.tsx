@@ -164,6 +164,27 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     expect(queryByText("token_padding")).toBeNull();
   });
 
+  it("updates sampler values through the nested slider input and keeps custom-sampler controls disabled", () => {
+    const onChange = mock();
+    const enabled = render(<ProviderSamplerPanel values={form()} onChange={onChange} />);
+    fireEvent.click(enabled.getByText("samplers_advanced"));
+    const topK = enabled.getByLabelText("sampler_top_k") as HTMLInputElement;
+
+    expect(topK.type).toBe("range");
+    expect(topK.min).toBe("0");
+    expect(topK.max).toBe("100");
+    expect(topK.step).toBe("1");
+    fireEvent.change(topK, { target: { value: "41" } });
+    expect(onChange).toHaveBeenLastCalledWith("topK", 41);
+    enabled.unmount();
+
+    const disabled = render(
+      <ProviderSamplerPanel values={setForm({ customSamplers: false })} onChange={mock()} />,
+    );
+    fireEvent.click(disabled.getByText("samplers_advanced"));
+    expect((disabled.getByLabelText("sampler_top_k") as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("shows adaptive-p fields only for providers whose sampler set includes them (llamacpp_native / koboldcpp_native)", async () => {
     const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
     const llamaCaps = resolveSamplerCapabilities(null, "llamacpp");

@@ -3,6 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { LOCALES } from "../../../i18n/registry.js";
 import { Icons } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { Slider } from "../../shared/slider.js";
 import { THEMES, type ThemeMode } from "../../../themes/registry.js";
 import { useScriptWarningsToggle } from "../../../hooks/use-script-warnings-toggle.js";
 
@@ -125,11 +126,12 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
 						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.fontSize}px</span>
 					</div>
-					<input
-						type="range" min={14} max={22} step={1}
-						className="w-full accent-accent h-2"
+					<Slider
+						min={14} max={22} step={1}
 						value={settings.fontSize}
-						onChange={(e) => setSetting("fontSize", parseInt(e.target.value))}
+						onValueChange={(value) => setSetting("fontSize", Math.round(value))}
+						aria-label={t("tweaks_font_size")}
+						className="w-full"
 					/>
 				</div>
 
@@ -142,11 +144,12 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_ui_font_size")}</span>
 						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.uiFontSize}px</span>
 					</div>
-					<input
-						type="range" min={14} max={20} step={1}
-						className="w-full accent-accent h-2"
+					<Slider
+						min={14} max={20} step={1}
 						value={settings.uiFontSize}
-						onChange={(e) => setSetting("uiFontSize", parseInt(e.target.value))}
+						onValueChange={(value) => setSetting("uiFontSize", Math.round(value))}
+						aria-label={t("tweaks_ui_font_size")}
+						className="w-full"
 					/>
 				</div>
 
