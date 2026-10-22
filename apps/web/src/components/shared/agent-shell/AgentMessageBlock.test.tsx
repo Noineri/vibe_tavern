@@ -179,6 +179,22 @@ describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
     expect(getByTestId("fixture-action-icon")).toBeDefined();
   });
 
+  it("action row sits INSIDE the .group message row so desktop group-hover fires", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+
+    const row = container.querySelector("[data-role='assistant']");
+    expect(row).not.toBeNull();
+    // The row carries .group exactly when actions exist.
+    expect(row!.className).toContain("group");
+    // The action row is a DESCENDANT of the .group row (group-hover matches
+    // descendants only — as a sibling the desktop reveal never fired).
+    const actionsEl = getByTestId("copilot-message-actions");
+    expect(row!.contains(actionsEl)).toBe(true);
+    expect(actionsEl.firstElementChild!.className).toContain("group-hover:opacity-100");
+  });
+
   it("clicking the action forwards the message text", () => {
     const seen: string[] = [];
     const { getByTestId } = render(

@@ -102,7 +102,6 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // turn's first visible text is the list's concern (it owns the turn
   // boundaries); this block stays caption-agnostic.
   return (
-    <>
     <div
       className={cn(
         // min-w-0: the row is a flex item of the feed column — without it a
@@ -115,9 +114,8 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
       data-role={message.role}
     >
       {body}
+      {actions !== undefined && <MessageActionRow actions={actions} text={message.content} />}
     </div>
-    {actions !== undefined && <MessageActionRow actions={actions} text={message.content} />}
-    </>
   );
 });
 
@@ -139,7 +137,9 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
  * Alignment: none (AP-4) — the feed is flat, with no avatar column to align
  * to, so the row sits at the text edge with no left offset (the `pl-[38px]`
  * avatar-column offset is gone: w-7 = 28px + gap-2.5 = 10px no longer exists
- * in the block above).
+ * in the block above). The row renders INSIDE the `.group` message row
+ * (after the body) so the desktop `group-hover:opacity-100` fires — as a
+ * sibling of the row it never did (group-hover matches descendants only).
  */
 function MessageActionRow({ actions, text }: { actions: AgentMessageAction[]; text: string }) {
   const { t } = useT();
