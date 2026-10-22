@@ -164,11 +164,38 @@ describe("SL-3 settings slider sites", () => {
 
     for (const [bias, text, color] of cases) {
       view.rerender(<LogitBiasPanel entries={[{ ...entry, bias }]} onChange={onChange} supported model="model-a" />);
-      const value = biasRow(view).querySelector("span.w-10");
+      // Seam change: was the separate w-10 span -> now the field's value span; sign and color stay unchanged.
+      const value = fieldShell(view, "logit_bias_label #42").querySelector("[data-slider-field-value]");
       expect(value?.textContent).toBe(text);
       expect(value?.classList.contains(color)).toBe(true);
     }
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("renders logit bias as a value-only field in the old flex slider slot", () => {
+    const view = render(<LogitBiasPanel entries={[{ tokenId: 42, bias: 10, model: "model-a" }]} onChange={() => {}} supported model="model-a" />);
+    const shell = fieldShell(view, "logit_bias_label #42");
+
+    expect(shell.classList.contains("flex-1")).toBe(true);
+    expect(shell.classList.contains("min-w-0")).toBe(true);
+    expect(shell.querySelector("[data-slider-field]")).not.toBeNull();
+    expect(shell.querySelector("[data-slider-field-label], [data-slider-field-label-above]")).toBeNull();
+    expect(shell.querySelector("[data-slider-field-help]")).toBeNull();
+    expect(biasRow(view).querySelector("span.w-10")).toBeNull();
+    expect(biasRow(view).querySelectorAll("[data-slider-field-value]")).toHaveLength(1);
+  });
+
+  it("rounds typed logit bias to integers and clamps both editor bounds", () => {
+    const onChange = mock();
+    const entry = { tokenId: 42, bias: 10, model: "model-a" };
+    const view = render(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-a" />);
+
+    for (const [typed, expected] of [["12.6", 13], ["250", 100], ["-250", -100]] as const) {
+      typeInto(openEditor(view, "logit_bias_label #42"), typed);
+      expect(onChange).toHaveBeenLastCalledWith([{ ...entry, bias: expected }]);
+    }
+    expect(onChange).toHaveBeenCalledTimes(3);
+    for (const [entries] of onChange.mock.calls) expect(Number.isInteger(entries[0].bias)).toBe(true);
   });
 
   it("updates a logit bias entry immediately and suppresses stale and disabled rows", () => {
@@ -188,10 +215,15 @@ describe("SL-3 settings slider sites", () => {
     view.rerender(<LogitBiasPanel entries={[entry]} onChange={onChange} supported model="model-b" />);
     expect(range(view, "logit_bias_label #42").disabled).toBe(true);
     fireEvent.change(range(view, "logit_bias_label #42"), { target: { value: "30" } });
+    fireEvent.doubleClick(fieldShell(view, "logit_bias_label #42").querySelector("[data-slider-field]")!);
+    expect(fieldShell(view, "logit_bias_label #42").querySelector("[data-slider-field-editor]")).toBeNull();
     expect(onChange).toHaveBeenCalledTimes(1);
 
     view.rerender(<LogitBiasPanel entries={[entry]} onChange={onChange} supported disabled model="model-a" />);
     expect(range(view, "logit_bias_label #42").disabled).toBe(true);
+    fireEvent.doubleClick(fieldShell(view, "logit_bias_label #42").querySelector("[data-slider-field]")!);
+    expect(fieldShell(view, "logit_bias_label #42").querySelector("[data-slider-field-editor]")).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("updates both mobile font settings immediately with their bounds and value-only field readouts", () => {

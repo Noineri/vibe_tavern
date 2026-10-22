@@ -85,10 +85,13 @@ function BiasRow({
           −
         </button>
         <Slider
+          appearance="field"
           min={-100}
           max={100}
           step={1}
           value={entry.bias}
+          formatValue={(value) => `${value > 0 ? "+" : ""}${value}`}
+          valueClassName={biasColor}
           disabled={disabled || stale}
           onValueChange={(value) => onUpdate({ ...entry, bias: Math.round(value) })}
           aria-label={`${t("logit_bias_label")} #${entry.tokenId}`}
@@ -103,11 +106,6 @@ function BiasRow({
           +
         </button>
       </div>
-
-      {/* Bias value */}
-      <span className={cn("w-10 shrink-0 text-right font-mono text-[11px] font-medium", biasColor)}>
-        {entry.bias > 0 ? "+" : ""}{entry.bias}
-      </span>
 
       {/* Quick ban button */}
       {entry.bias !== -100 && (
