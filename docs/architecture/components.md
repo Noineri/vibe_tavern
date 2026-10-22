@@ -463,6 +463,7 @@ Range thumbs use Base UI's non-crossing collision behavior.
 `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging.
 On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll.
 The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once (clamped to the bounds and snapped to the step, then `onValueChange` + `onValueCommitted`), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
+The field fill (single value or two-value window) is a theme-independent translucent accent, 16 % of `--accent`, never `--accent-hover`, which is opaque in some themes; label, help and value always paint above it.
 Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing.
 Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
 

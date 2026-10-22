@@ -293,12 +293,13 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 					onPointerCancel={clearGesture}
 					onLostPointerCapture={clearGesture}
 					onDoubleClick={openEditor}
-					className={cn(inputCls, "relative block cursor-ew-resize select-none overflow-hidden p-0 touch-pan-y peer-has-[input:focus-visible]:border-accent", editing && "cursor-text")}
+					className={cn(inputCls, "relative isolate block cursor-ew-resize select-none overflow-hidden p-0 touch-pan-y peer-has-[input:focus-visible]:border-accent", editing && "cursor-text")}
 				>
 					<span
 						data-slider-field-fill
 						className={cn(
-							"pointer-events-none absolute inset-y-0 left-0 bg-accent-hover",
+							// Translucent whatever the theme: several themes define --accent-hover as an opaque color, which would bury the text.
+							"pointer-events-none absolute inset-y-0 left-0 z-0 bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]",
 							percent(first) > 0 && !range && "border-r-2 border-accent",
 						)}
 						style={{
@@ -326,7 +327,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 					) : (
 						<span
 							data-slider-field-value
-							className="pointer-events-none absolute right-[13px] top-0 flex h-full items-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1"
+							className="pointer-events-none absolute right-[13px] top-0 z-[1] flex h-full items-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1"
 						>
 							{valueText}
 						</span>

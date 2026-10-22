@@ -35,7 +35,7 @@ export function SliderFieldEditor({ initial, min, max, step, testId, onFinish }:
 	return (
 		<div
 			data-slider-field-editor
-			className="absolute inset-y-1 right-1 w-[76px]"
+			className="absolute inset-y-1 right-1 z-[1] w-[76px]"
 			onKeyDown={(event) => event.stopPropagation()}
 		>
 			<NumberInput

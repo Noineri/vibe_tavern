@@ -820,7 +820,10 @@ describe("Slider field contract", () => {
 		const fill = mid.container.querySelector<HTMLElement>("[data-slider-field-fill]");
 		if (!fill) throw new Error("Missing fill");
 		expect(fill.style.width).toBe("40%");
-		expect(fill.classList.contains("bg-accent-hover")).toBe(true);
+		// Translucent in every theme: --accent-hover is opaque in some themes and would bury the label and value.
+		expect(fill.classList.contains("bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]")).toBe(true);
+		expect(fill.classList.contains("bg-accent-hover")).toBe(false);
+		expect(fill.classList.contains("z-0")).toBe(true);
 		expect(fill.classList.contains("border-r-2")).toBe(true);
 		expect(fill.classList.contains("border-accent")).toBe(true);
 		const full = render(<ControlledField initialValue={10} />);
@@ -829,6 +832,34 @@ describe("Slider field contract", () => {
 		const zeroFill = zero.container.querySelector<HTMLElement>("[data-slider-field-fill]");
 		expect(zeroFill?.style.width).toBe("0%");
 		expect(zeroFill?.classList.contains("border-r-2")).toBe(false);
+	});
+
+	it("paints the label, help and value above the translucent fill and fills the two-value window with the same color", () => {
+		const { container } = render(
+			<Slider
+				appearance="field"
+				value={4}
+				min={0}
+				max={10}
+				step={1}
+				label="Temperature"
+				help={<button type="button">?</button>}
+				aria-label="Temperature"
+				onValueChange={() => {}}
+			/>,
+		);
+		// The field is its own stacking context; the label sits in the shell above it, the value above the fill inside it.
+		expect(fieldOf(container).classList.contains("isolate")).toBe(true);
+		expect(container.querySelector("[data-slider-field-label]")?.classList.contains("z-[1]")).toBe(true);
+		expect(container.querySelector("[data-slider-field-value]")?.classList.contains("z-[1]")).toBe(true);
+		expect(container.querySelector("[data-slider-field-fill]")?.classList.contains("z-0")).toBe(true);
+		const pair = render(<ControlledRangeField />);
+		const windowFill = pair.container.querySelector<HTMLElement>("[data-slider-field-fill]");
+		expect(windowFill?.classList.contains("bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]")).toBe(true);
+		expect(windowFill?.classList.contains("bg-accent-hover")).toBe(false);
+		for (const handle of pair.container.querySelectorAll("[data-slider-field-handle]")) {
+			expect(handle.classList.contains("z-[1]")).toBe(true);
+		}
 	});
 
 	it("shows the value on the right as formatValue text or with the step's decimals", () => {
