@@ -16,7 +16,8 @@ export interface SliderProps<Value extends SliderValue = SliderValue> {
 	size?: SliderSize;
 	orientation?: SliderOrientation;
 	appearance?: "rail" | "field";
-	formatValue?: (value: number) => string;
+	/** Formats the complete controlled value, including a two-thumb tuple. */
+	formatValue?: (value: Value) => string;
 	label?: React.ReactNode;
 	help?: React.ReactNode;
 	/** Test id(s) assigned to Base UI's nested range input(s), never the visual wrapper. */

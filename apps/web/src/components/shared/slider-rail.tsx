@@ -1,5 +1,4 @@
 import { Slider as BaseSlider } from "@base-ui/react/slider";
-import { useState } from "react";
 import { cn } from "../../lib/cn.js";
 import type { SliderOrientation, SliderProps, SliderSize, SliderValue } from "./slider.js";
 
@@ -21,11 +20,8 @@ export function SliderRail<Value extends SliderValue>({
 	value, min, max, step, onValueChange, onValueCommitted, disabled = false, size = "md", orientation = "horizontal",
 	formatValue, "aria-label": ariaLabel, getAriaLabel, inputTestId, className,
 }: SliderProps<Value>) {
-	const [activeThumb, setActiveThumb] = useState<number | null>(null);
 	const range = Array.isArray(value);
 	const dimensions = sizeClasses[size];
-	const showBubble = formatValue && activeThumb !== null;
-	const activeValue = range ? (value as [number, number])[activeThumb ?? 0]! : value as number;
 
 	return (
 		<BaseSlider.Root
@@ -41,9 +37,33 @@ export function SliderRail<Value extends SliderValue>({
 				</BaseSlider.Track>
 				{[0, ...(range ? [1] : [])].map((index) => {
 					const testId = inputTestIdAt(inputTestId, index);
-					return <BaseSlider.Thumb key={index} index={range ? index : undefined} aria-label={range ? undefined : ariaLabel} getAriaLabel={range ? getAriaLabel : undefined} inputRef={(input) => { if (input && testId) input.dataset.testid = testId; }} data-slider-thumb onFocus={() => setActiveThumb(index)} onBlur={() => setActiveThumb(null)} className={cn("group/thumb rounded-full border-accent bg-[color-mix(in_oklch,white_88%,var(--accent))] transition-[transform,box-shadow] duration-100 hover:scale-[1.1] data-[dragging]:scale-[1.1] hover:shadow-[0_0_0_6px_var(--accent-hover)] has-[input:focus-visible]:shadow-[0_0_0_6px_var(--accent-hover)]", dimensions.thumb)} />;
+					return (
+						<BaseSlider.Thumb
+							key={index}
+							index={range ? index : undefined}
+							aria-label={range ? undefined : ariaLabel}
+							getAriaLabel={range ? getAriaLabel : undefined}
+							inputRef={(input) => { if (input && testId) input.dataset.testid = testId; }}
+							data-slider-thumb
+							className={cn(
+								"group/thumb rounded-full border-accent bg-[color-mix(in_oklch,white_88%,var(--accent))] transition-[transform,box-shadow] duration-100 hover:scale-[1.1] data-[dragging]:scale-[1.1] hover:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)] has-[input:focus-visible]:shadow-[0_0_0_6px_color-mix(in_oklch,var(--accent)_18%,transparent)]",
+								dimensions.thumb,
+							)}
+						>
+							{formatValue && (
+								<output
+									data-slider-bubble
+									className={cn(
+										"pointer-events-none absolute z-10 hidden whitespace-nowrap rounded-[5px] bg-accent px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent tabular-nums data-[dragging]:block has-[input:focus-visible]:block",
+										orientation === "horizontal" ? "bottom-[calc(100%+4px)] left-1/2 -translate-x-1/2" : "left-[calc(100%+8px)] top-1/2 -translate-y-1/2",
+									)}
+								>
+									{formatValue(value)}
+								</output>
+							)}
+						</BaseSlider.Thumb>
+					);
 				})}
-				{showBubble && <output data-slider-bubble className={cn("pointer-events-none absolute z-10 -translate-x-1/2 rounded-[5px] bg-accent px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent tabular-nums", orientation === "horizontal" ? "bottom-[calc(100%+4px)]" : "left-[calc(100%+8px)] bottom-auto")}>{formatValue(activeValue)}</output>}
 			</BaseSlider.Control>
 		</BaseSlider.Root>
 	);

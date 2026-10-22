@@ -446,7 +446,7 @@ Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 | `size` | `"md" \| "sm" \| "xs"?` | Visual density; defaults to `md` |
 | `orientation` | `"horizontal" \| "vertical"?` | Rail direction; defaults to `horizontal` |
 | `appearance` | `"rail" \| "field"?` | Visual interaction mode; defaults to `rail` so existing callers retain media-rail behavior |
-| `formatValue` | `((value: number) => string)?` | Formatted rail bubble while active; field value text when supplied |
+| `formatValue` | `((value: Value) => string)?` | Formats the complete scalar or tuple value for a rail bubble or field value text |
 | `label` / `help` | `ReactNode?` | Field-only left-side label and caller-owned help node; long labels move above rather than truncate |
 | `aria-label` | `string?` | Accessible label for a scalar thumb |
 | `getAriaLabel` | `((index: number) => string)?` | Accessible label for each range thumb |
@@ -456,7 +456,7 @@ Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 
 Built on Base UI Slider with its hidden native range input and keyboard semantics.
 Range thumbs use Base UI's non-crossing collision behavior.
-`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble. `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, Shift+arrow large steps, inline number editing, and two-value window dragging. Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing. Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
+`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb. `appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging. On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll. Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing. Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
 
 **When to use:** Parameters use `Slider appearance="field"` (or `SliderField`); media timeline, volume, and zoom use `Slider appearance="rail"`.
 
