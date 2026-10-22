@@ -543,6 +543,7 @@ export default interface Resources {
     "context_pin_locked": "Context size is pinned — won't change when switching models",
     "context_pin_unlocked": "Pin context size",
     "context_response_budget": "Response Budget",
+    "context_summary": "Permanent {permanent}% · History {history}% · Input {input}%",
     "context_system": "System",
     "context_temporary": "Temporary",
     "context_tools": "Tools",

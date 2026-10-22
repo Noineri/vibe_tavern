@@ -461,6 +461,7 @@
 	"context_tools": "Tools",
 	"context_history": "History",
 	"context_current_input": "Current Input",
+	"context_summary": "Permanent {permanent}% · History {history}% · Input {input}%",
 	"context_response_budget": "Response Budget",
 	"context_total_available": "Total Available",
 	"starred_models": "Favorite Models",

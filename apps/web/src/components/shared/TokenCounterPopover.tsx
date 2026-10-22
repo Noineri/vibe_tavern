@@ -65,12 +65,12 @@ export interface TokenCounterPopoverProps {
 	triggerTestId?: string;
 }
 
-interface ContextUsage {
+export interface ContextUsage {
 	used: number;
 	percent: number;
 }
 
-function getContextUsage(permanent: number, history: number, inputTokens: number, availableBudget: number): ContextUsage {
+export function getContextUsage(permanent: number, history: number, inputTokens: number, availableBudget: number): ContextUsage {
 	const used = permanent + history + inputTokens;
 	return { used, percent: availableBudget > 0 ? Math.round(used / availableBudget * 100) : 0 };
 }
@@ -93,7 +93,7 @@ export function TokenCounterPopover({
 	const usage = getContextUsage(permanent, history, inputTokens, availableBudget);
 
 	const triggerText = <>{permanent.toLocaleString()}<span className="text-t4">+</span>{(history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}</>;
-	const content = <TokenCounterContent permanent={permanent} history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} mobile={mobile} usage={usage} />;
+	const content = <TokenCounterContent permanent={permanent} history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} mobile={mobile} />;
 	if (mobile) {
 		return <>
 			<button
@@ -163,13 +163,33 @@ function TokenCounterContent({
 	availableBudget,
 	permanentItems,
 	mobile,
-	usage,
-}: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems" | "mobile"> & { usage: ContextUsage }) {
+}: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems" | "mobile">) {
 	const { t } = useT();
 	const usageBar = availableBudget > 0 && <ContextUsageBar permanent={permanent} history={history} inputTokens={inputTokens} availableBudget={availableBudget} mobile={mobile} />;
 
 	return <div className={mobile ? "px-4 py-3" : undefined}>
 		{mobile ? <div className="mb-3">{usageBar}</div> : <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>}
+		<ContextBreakdownRows history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} />
+		{!mobile && usageBar}
+	</div>;
+}
+
+/**
+ * The breakdown body — permanent rows, temporary rows, response budget, total
+ * available. The ONE rendering of these rows: the desktop popover, the ring's
+ * mobile sheet (TokenCounterContent) and the mobile model sheet all mount it,
+ * so a row added here shows up on every surface.
+ */
+export function ContextBreakdownRows({
+	history,
+	inputTokens,
+	maxTokens,
+	availableBudget,
+	permanentItems,
+}: Pick<TokenCounterPopoverProps, "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems">) {
+	const { t } = useT();
+
+	return <>
 		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
 		{permanentItems.map((item, i) => <div key={i} className={cn("mb-1 flex justify-between text-xs text-t2", i === permanentItems.length - 1 && "mb-1.5")}><span>{item.label}</span><span className="tabular-nums text-t1">{item.value.toLocaleString()}</span></div>)}
 		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
@@ -177,11 +197,10 @@ function TokenCounterContent({
 		<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
 		<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
 		<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
-		{!mobile && usageBar}
-	</div>;
+	</>;
 }
 
-function ContextUsageBar({ permanent, history, inputTokens, availableBudget, mobile }: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "availableBudget" | "mobile">) {
+export function ContextUsageBar({ permanent, history, inputTokens, availableBudget, mobile }: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "availableBudget" | "mobile">) {
 	const { t } = useT();
 	return <div className={mobile ? "h-1.5 w-full overflow-hidden rounded-full bg-s3" : "mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3"}><div className="flex h-full"><CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}><div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_history")}: ${history.toLocaleString()}`}><div className="bg-t3" style={{ width: `${Math.min(100, history / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}><div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} /></CustomTooltip></div></div>;
 }

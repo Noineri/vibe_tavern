@@ -18,14 +18,16 @@ mock.module("../../i18n/context.js", () => ({
 }));
 
 let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let MobileInputArea: typeof import("./MobileInputArea.js").MobileInputArea;
 
 beforeAll(async () => {
-  ({ render } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ MobileInputArea } = await import("./MobileInputArea.js"));
 });
 
-function makeData() {
+function makeData(overrides: Record<string, unknown> = {}) {
   return {
     t: (key: string) => key,
     chat: { handleSend: mock(), handleCancelGeneration: mock() },
@@ -59,6 +61,8 @@ function makeData() {
     tokenState: "mid",
     perSendPrefillSupported: false,
     handleVoiceRecorded: mock(),
+    provider: { activeProviderProfile: null },
+    ...overrides,
   } as unknown as InputAreaData;
 }
 
@@ -70,5 +74,71 @@ describe("MobileInputArea context ring", () => {
 
     expect(ring).toBe(getByTestId("chat-context-ring"));
     expect(send?.tagName).toBe("BUTTON");
+  });
+});
+
+describe("MobileInputArea starred-models sheet", () => {
+  const FAVORITES = [
+    { modelId: "model-a", label: "Alpha" },
+    { modelId: "model-b", label: "" },
+  ];
+
+  function openStarSheet(data: InputAreaData) {
+    const view = render(<TooltipProvider><MobileInputArea data={data} /></TooltipProvider>);
+    const star = view.container.querySelector<HTMLButtonElement>("button.text-warning-text");
+    if (!star) throw new Error("starred-models button not rendered");
+    fireEvent.click(star);
+    return view;
+  }
+
+  it("lists the favorites (label, falling back to the model id) and marks the active one", async () => {
+    const view = openStarSheet(makeData({ favoriteModels: FAVORITES, activeModelId: "model-a" }));
+    const alpha = await waitFor(() => view.getByText("Alpha").closest("button"));
+    const fallback = view.getByText("model-b").closest("button");
+
+    expect(alpha?.querySelector("svg")).not.toBeNull();
+    expect(fallback?.querySelector("svg")).toBeNull();
+  });
+
+  it("picking a favorite calls handleSelectFavoriteModel with its id and closes the sheet", async () => {
+    const handleSelectFavoriteModel = mock();
+    const view = openStarSheet(makeData({ favoriteModels: FAVORITES, handleSelectFavoriteModel }));
+
+    fireEvent.click(await waitFor(() => view.getByText("model-b")));
+
+    expect(handleSelectFavoriteModel).toHaveBeenCalledTimes(1);
+    expect(handleSelectFavoriteModel.mock.calls[0]?.[0]).toBe("model-b");
+    await waitFor(() => expect(view.queryByText("Alpha")).toBeNull());
+  });
+
+  it("shows the empty state when nothing is starred", async () => {
+    const view = openStarSheet(makeData({ favoriteModels: [] }));
+    await waitFor(() => expect(view.getByText("no_starred_models")).toBeTruthy());
+  });
+});
+
+// Number formatting follows the runtime locale; derive the expectation the same way.
+const fmt = (n: number): string => n.toLocaleString();
+
+describe("MobileInputArea context ring sheet", () => {
+  it("opens the full breakdown: every permanent row, history, input, response budget, total", async () => {
+    const data = makeData({
+      buckets: { system: 1100, character: 1450, persona: 210, lore: 640, memory: 380, tools: 180, history: 2000 },
+      permanent: 3960,
+      inputTokens: 500,
+    });
+    const view = render(<TooltipProvider><MobileInputArea data={data} /></TooltipProvider>);
+    fireEvent.click(view.getByTestId("chat-context-ring"));
+
+    const body = await waitFor(() => view.getByText("context_permanent").parentElement as HTMLElement);
+    const text = body.textContent ?? "";
+    for (const [label, value] of [
+      ["context_system", fmt(1100)], ["context_character", fmt(1450)], ["context_persona", "210"],
+      ["context_lore", "640"], ["context_memory", "380"], ["context_tools", "180"],
+      ["context_history", fmt(2000)], ["context_current_input", "500"],
+      ["context_response_budget", `-${fmt(1024)}`], ["context_total_available", fmt(7168)],
+    ] as const) {
+      expect(text).toContain(`${label}${value}`);
+    }
   });
 });

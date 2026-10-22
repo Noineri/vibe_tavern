@@ -19,6 +19,7 @@ import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
+import { MobileModelSheet } from "./mobile-model-sheet.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
 import { useInputArea, type InputAreaData } from "./use-input-area.js";
@@ -28,11 +29,21 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
     t, chat, character, preset,
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId, promptPresets, activePromptPresetId,
-    favoriteModels, activeModelId, handleSelectFavoriteModel,
+    provider, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
     buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
   } = data;
+
+  // The permanent-context rows are shared by the ring's sheet and the model sheet.
+  const permanentItems = [
+    { label: t("context_system"), value: buckets.system },
+    { label: t("context_character"), value: buckets.character },
+    { label: t("context_persona"), value: buckets.persona },
+    { label: t("context_lore"), value: buckets.lore },
+    { label: t("context_memory"), value: buckets.memory },
+    { label: t("context_tools"), value: buckets.tools },
+  ];
 
   const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
@@ -143,14 +154,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
               maxTokens={maxTokens}
               availableBudget={availableBudget}
               tokenState={tokenState}
-              permanentItems={[
-                { label: t("context_system"), value: buckets.system },
-                { label: t("context_character"), value: buckets.character },
-                { label: t("context_persona"), value: buckets.persona },
-                { label: t("context_lore"), value: buckets.lore },
-                { label: t("context_memory"), value: buckets.memory },
-                { label: t("context_tools"), value: buckets.tools },
-              ]}
+              permanentItems={permanentItems}
             />
             {isSending ? (
               <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
@@ -185,24 +189,15 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
           {t("cancel")}
         </button>
       </BottomSheet>
-      <BottomSheet open={modelDropOpen} onClose={() => setModelDropOpen(false)} title={t("starred_models")}>
-        {favoriteModels.length > 0 ? (
-          <div className="max-h-[50vh] overflow-y-auto">
-            {favoriteModels.map(model => (
-              <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { handleSelectFavoriteModel(model.modelId); setModelDropOpen(false); }}>
-                <div className="w-5 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
-                <div className="min-w-0 truncate">{model.label || model.modelId}</div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="px-5 py-4 text-[calc(var(--ui-fs)-1px)] text-t3">{t("no_starred_models")}</div>
-        )}
-        <div className="mx-4 mt-2 h-px bg-border" />
-        <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setModelDropOpen(false)}>
-          {t("cancel")}
-        </button>
-      </BottomSheet>
+      <MobileModelSheet
+        open={modelDropOpen}
+        onClose={() => setModelDropOpen(false)}
+        context={{ permanent, history: buckets.history, inputTokens, maxTokens, availableBudget, permanentItems }}
+        providerProfile={provider.activeProviderProfile ? { id: provider.activeProviderProfile.id, name: provider.activeProviderProfile.name } : null}
+        favoriteModels={favoriteModels}
+        activeModelId={activeModelId}
+        onSelectModel={handleSelectFavoriteModel}
+      />
       <BottomSheet open={presetDropOpen} onClose={() => setPresetDropOpen(false)} title={t("topbar_prompt_preset")}>
         <div className="max-h-[50vh] overflow-y-auto">
           {promptPresets.map(p => (
