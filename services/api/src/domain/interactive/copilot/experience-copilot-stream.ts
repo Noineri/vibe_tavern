@@ -39,6 +39,7 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../../agent/agent-stream.js";
+import type { AgentTurnDeleteTurn } from "../../agent/agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
 import {
   assembleExperienceCopilotPrompt,
@@ -131,6 +132,10 @@ export interface ExperienceCopilotStreamDeps {
    *  compaction runs under its own per-thread background lock and must never
    *  block or fail the stream. Absent → no auto-compaction (tests, legacy). */
   readonly autoCompact?: (threadId: string) => Promise<void>;
+  /** AP-9: the thread's row-deletion seam for regenerate mode (the AP-8 store
+   *  sibling over the real db — the adapter supplies it). Absent (tests,
+   *  legacy harnesses) → regenerate turns are refused, never trimmed. */
+  readonly deleteTurn?: AgentTurnDeleteTurn;
 }
 
 // The tool-loop bound was REMOVED (TAG-4): the profile's `maxSteps` no longer
@@ -337,6 +342,7 @@ export async function* streamExperienceCopilot(
     resolveModel: deps.resolveModel,
     ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
     ...(deps.autoCompact !== undefined ? { autoCompact: deps.autoCompact } : {}),
+    ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
   };
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);

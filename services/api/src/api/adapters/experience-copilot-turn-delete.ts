@@ -12,6 +12,7 @@
 
 import { deleteCopilotTurn, type AppDb } from "@vibe-tavern/db";
 import { notFound, validation, conflict } from "../../shared/errors.js";
+import type { AgentTurnDeleteTurn } from "../../domain/agent/agent-regenerate.js";
 import type {
   ExperienceCopilotTurnDeleteRequest,
   ExperienceCopilotTurnDeleteResult,
@@ -49,4 +50,15 @@ export async function deleteCopilotTurnWire(
         `Copilot message '${body.messageId}' was not found in thread '${threadId}'.`,
       );
   }
+}
+
+/** AP-9: the regenerate row-deletion seam the adapter wires into every kind's
+ *  stream deps — the SAME store sibling over the SAME db the delete endpoint
+ *  reads (the ONE row-deletion path; the stream's regenerate mode resolves the
+ *  last turn through it and maps the refusals itself, in the domain sibling
+ *  `agent-regenerate.ts`). Built here so the adapter's three kind wirings
+ *  share one derivation instead of three closures. */
+export function makeRegenerateDeleteTurn(db: AppDb): AgentTurnDeleteTurn {
+  return (threadId, messageId, includeUserMessage) =>
+    deleteCopilotTurn({ db }, threadId, messageId, includeUserMessage);
 }

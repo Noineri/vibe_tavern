@@ -6,6 +6,7 @@ import type { LanguageModel } from "ai";
 import type { RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import {
 	createStoreContainer,
+	deleteCopilotTurn,
 	type ProviderProfile,
 	type StoreContainer,
 } from "@vibe-tavern/db";
@@ -210,6 +211,11 @@ beforeAll(async () => {
 		// SC-12: the shared plan store's READ seam — read_plan over the thread
 		// row's own branch plan (the production wiring, real store).
 		agentPlans: stores.agentPlans,
+		// AP-9: the regenerate row-deletion seam — the adapter's production
+		// wiring verbatim (the AP-8 store sibling over the real db, the ONE
+		// deletion path).
+		deleteTurn: (threadId, messageId, includeUserMessage) =>
+			deleteCopilotTurn({ db: stores.db }, threadId, messageId, includeUserMessage),
 	};
 });
 
@@ -1558,5 +1564,93 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		expect(String((threw as { message?: string }).message)).toContain(
 			"permission request being answered was not found",
 		);
+	});
+});
+
+// ─── AP-9: regenerate mode in a sidechat thread ─────────────────────────
+
+/** Drain a REGENERATE-mode turn (no content, no answer — the loop trims the
+ * replaced turn's rows and reruns against the thread state as-is; the same
+ * shape the route relays). */
+async function drainRegenerateTurn(
+	threadId: string,
+): Promise<Array<{ event: string; data: string }>> {
+	const chunks: Array<{ event: string; data: string }> = [];
+	for await (const chunk of streamSidechatTurn(
+		{ threadId, regenerate: true, providerProfileId: "prov_1" },
+		deps,
+	)) {
+		chunks.push(chunk);
+	}
+	return chunks;
+}
+
+describe("streamSidechatTurn regenerate (AP-9)", () => {
+	it("keeps the turn's events, replaces the last turn's rows without a new user row, and records a fresh rp_sync after the user row when the RP moved", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED the door opens.");
+		await drainTurn(threadId, "OOC question one");
+		// The turn-1 sync froze the RP seed — capture its seq to prove the
+		// frozen event SURVIVES the regenerate deletion (events are never
+		// deleted with a turn).
+		const timelineBefore = await stores.experienceCopilot.listTimeline(threadId);
+		const seedSyncBefore = timelineBefore.find(
+			(entry) => entry.rowType === "event" && entry.kind === "rp_sync",
+		)!;
+		if (seedSyncBefore.rowType !== "event") throw new Error("fixture: expected the seed rp_sync event");
+		// The RP advances past the answer being replaced.
+		await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+				authorType: "assistant",
+			content: "RP-ADVANCE the bard plays.",
+		});
+		fakeReply = "REGENERATED-REPLY-MARKER";
+
+		const chunks = await drainRegenerateTurn(threadId);
+		expect(chunks.map((c) => c.event)).toContain("finish");
+		expect(chunks.map((c) => c.event)).not.toContain("error");
+
+		// The replaced turn's MESSAGE rows are gone; the user row stays; the
+		// replacement reply persisted after it; NO new user row was appended.
+		const messages = await stores.experienceCopilot.listMessages(threadId);
+		expect(messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+			"user:OOC question one",
+			"assistant:REGENERATED-REPLY-MARKER",
+		]);
+
+		// Events survive deletion: the seed rp_sync keeps its row and seq, and
+		// the regenerate turn's own sync recorded a FRESH rp_sync carrying
+		// exactly the RP delta written since the replaced answer.
+		const timeline = await stores.experienceCopilot.listTimeline(threadId);
+		const syncEvents = timeline.filter(
+			(entry) => entry.rowType === "event" && entry.kind === "rp_sync",
+		);
+		expect(syncEvents).toHaveLength(2);
+		if (syncEvents[0]!.rowType !== "event") throw new Error("fixture: expected the seed event row");
+		expect(syncEvents[0]!.seq).toBe(seedSyncBefore.seq);
+		if (syncEvents[1]!.rowType !== "event") throw new Error("fixture: expected the fresh event row");
+		const freshPayload = syncEvents[1]!.payload as { messages: Array<{ text: string }> };
+		expect(freshPayload.messages.map((m) => m.text)).toEqual(["RP-ADVANCE the bard plays."]);
+		// The fresh rp_sync lands AFTER the last user row on the merged
+		// timeline — the new answer sees the CURRENT story, not the story the
+		// replaced answer saw.
+		const userRow = timeline.find((entry) => entry.rowType === "message" && entry.role === "user")!;
+		if (userRow.rowType !== "message") throw new Error("fixture: expected the user message row");
+		expect(syncEvents[1]!.seq!).toBeGreaterThan(userRow.seq!);
+
+		// The model window: the replaced answer is gone; the fresh RP delta
+		// rides as its own user message AFTER the surviving user row — the
+		// content-mode guard treats regenerate like answer mode (no user push,
+		// so the turn's own message never rides last).
+		const prompt = promptText();
+		expect(prompt).toContain("RP-ADVANCE the bard plays.");
+		expect(prompt).not.toContain(REPLY_TEXT);
+		const questionIdx = messageIndexContaining("OOC question one");
+		const advanceIdx = messageIndexContaining("RP-ADVANCE the bard plays.");
+		expect(advanceIdx).toBeGreaterThan(questionIdx);
+		expect(capturedMessages[advanceIdx]!.role).toBe("user");
+		const lastMessage = capturedMessages[capturedMessages.length - 1]!;
+		expect(String(lastMessage.content)).not.toBe("OOC question one");
 	});
 });

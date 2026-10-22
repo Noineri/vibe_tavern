@@ -26,6 +26,7 @@ import {
   streamSidechatTurn,
   type SidechatStreamDeps,
 } from "../../domain/sidechat/sidechat-stream.js";
+import type { AgentTurnDeleteTurn } from "../../domain/agent/agent-regenerate.js";
 import { buildContextSearchStoreReads } from "../../domain/context/context-search-store-reads.js";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
@@ -36,11 +37,11 @@ import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-com
 import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
 import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
 import { readContextLinks, replaceContextLinks } from "./experience-copilot-context-links.js";
-import { deleteCopilotTurnWire } from "./experience-copilot-turn-delete.js";
+import { deleteCopilotTurnWire, makeRegenerateDeleteTurn } from "./experience-copilot-turn-delete.js";
+import { resolveScriptAgentContextCards } from "./experience-copilot-script-cards.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
-import type { ScriptAgentContextCard } from "../../domain/agent/kinds/script-kind.js";
 import type { ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream-contract.js";
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
 import {
@@ -90,6 +91,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   /** Per-kind manual-compaction services (only kinds that compact; empty
    *  when the adapter has no provider profile service). */
   private readonly compactionKinds: ReadonlyMap<AgentKindId, AgentCompactionService<ExperienceCopilotMessage>>;
+  /** AP-9: the ONE regenerate row-deletion seam — the AP-8 store sibling over
+   *  the same db the delete endpoint reads (there is no second deletion
+   *  path); shared verbatim by every kind's stream deps. Assigned in the
+   *  constructor body (it reads `this.stores`, which parameter properties
+   * only make available there). */
+  private readonly deleteTurnForRegenerate: AgentTurnDeleteTurn;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -116,6 +123,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     private readonly sidechatSkillService?: SkillLibraryService,
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
+    this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
       ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
       : null;
@@ -191,64 +199,6 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.getKindStream(await this.resolveThreadKind(threadId));
   };
 
-  /** Resolve a script's linked owners (names) PLUS the request's build-panel
-   *  character/persona into full cards (AS-8e1 — the card text is the same
-   *  source the @-pin loader uses: a character's full profile markdown,
-   *  a persona's description). The script kind's context package lists the
-   *  names so the model knows whom the script binds to, then renders every
-   *  card in full — the assistant sees what a human author would need, not
-   *  just a name. Deduped by type+id (a request id that is also a linked
-   *  owner renders once); dangling targets and missing rows are skipped,
-   *  never fatal. `scriptId === null` (a draft thread) still resolves the
-   *  request ids. */
-  private async getScriptContextCards(input: {
-    scriptId: string | null;
-    contextCharacterId?: string;
-    contextPersonaId?: string;
-  }): Promise<{ ownerNames: string[]; cards: ScriptAgentContextCard[] }> {
-    const names: string[] = [];
-    const cards: ScriptAgentContextCard[] = [];
-    const seen = new Set<string>();
-    const pushCharacter = async (id: string): Promise<void> => {
-      const key = `character:${id}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      const character = await this.stores.characters.getById(id);
-      if (!character) return;
-      names.push(character.name);
-      cards.push({
-        type: "character",
-        id: character.id,
-        name: character.name,
-        content: await this.stores.characters.getProfileMdText(id),
-      });
-    };
-    const pushPersona = async (id: string, countAsOwner: boolean): Promise<void> => {
-      const key = `persona:${id}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      const persona = await this.stores.personas.getById(id);
-      if (!persona) return;
-      if (countAsOwner) names.push(persona.name);
-      cards.push({ type: "persona", id: persona.id, name: persona.name, content: persona.description });
-    };
-    if (input.scriptId !== null) {
-      const links = await this.stores.scripts.getLinks(input.scriptId);
-      for (const link of links) {
-        if (link.targetType === "character") {
-          await pushCharacter(link.targetId);
-        } else {
-          await pushPersona(link.targetId, true);
-        }
-      }
-    }
-    // The request's build-panel ids are context, not ownership: their cards
-    // render, but their names never join the «Linked owners» line.
-    if (input.contextCharacterId !== undefined) await pushCharacter(input.contextCharacterId);
-    if (input.contextPersonaId !== undefined) await pushPersona(input.contextPersonaId, false);
-    return { ownerNames: names, cards };
-  }
-
   /** The kind-agnostic pinned-context loader (CX-3) over the REAL stores +
    *  the GIVEN skill library, shared by every kind's stream deps (each kind
    *  passes its OWN library — the script kind reads the script library, the
@@ -306,7 +256,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         scriptId: string | null;
         contextCharacterId?: string;
         contextPersonaId?: string;
-      }) => this.getScriptContextCards(input),
+      }) => resolveScriptAgentContextCards(this.stores, input),
       getProviderProfile: (id: string) => this.stores.providers.getById(id),
       getEffectiveProviderProfile: async (id: string, model: string) => {
         const profile = await this.stores.providers.getById(id);
@@ -345,6 +295,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ...(this.scriptCompaction !== null
         ? { autoCompact: (threadId: string) => this.scriptCompaction!.autoCompactAfterTurn(threadId) }
         : {}),
+      // AP-9 regenerate row-deletion seam (the shared AP-8 store sibling).
+      deleteTurn: this.deleteTurnForRegenerate,
       stores: this.stores,
     };
   }
@@ -442,6 +394,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // SC-8c: the sidechat's own compaction service — the stream wires the
       //  auto hook to its discussion-against-room rule.
       ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),
+      // AP-9 regenerate row-deletion seam (the shared AP-8 store sibling).
+      deleteTurn: this.deleteTurnForRegenerate,
     };
   }
 
@@ -510,6 +464,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ...(this.compaction !== null
         ? { autoCompact: (threadId: string) => this.compaction!.autoCompactAfterTurn(threadId) }
         : {}),
+      // AP-9 regenerate row-deletion seam (the shared AP-8 store sibling).
+      deleteTurn: this.deleteTurnForRegenerate,
       // Skill roots are derived in the prompt assembler from the resolved skill
       // catalog (ER-16) and flow to the tool builder via `assembled.skillRoots`,
       // so no skill-root wiring is needed here.

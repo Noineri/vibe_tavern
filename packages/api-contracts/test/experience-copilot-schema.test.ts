@@ -234,14 +234,17 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(parsed.answer).toEqual({ toolCallId: "tc_1", skipped: true });
   });
 
-  test("content + answer together are rejected (exactly-one-of)", () => {
+  test("content + answer together are rejected (exactly-one mode)", () => {
+    // AP-9 re-capture (was: /not both/) — the mode vocabulary grew to three
+    // (content / answer / regenerate), so the multiple-modes refusal names
+    // all three and says "only one".
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({
         ...base,
         content: "hi",
         answer: { toolCallId: "tc_1", text: "blue" },
       }),
-    ).toThrow(/not both/);
+    ).toThrow(/only one/);
   });
 
   test("neither content nor answer is rejected (exactly-one-of)", () => {
@@ -308,6 +311,79 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({ ...base, answer: { decision: "allow" } }),
     ).toThrow();
+  });
+});
+
+// ─── AP-9: regenerate mode joins the exclusive mode set ───────────────────────
+
+describe("experienceCopilotStreamRequestSchema — regenerate mode (AP-9)", () => {
+  const base = { providerProfileId: "p1" };
+
+  test("regenerate-only is accepted", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: true,
+    });
+    expect(parsed.regenerate).toBe(true);
+  });
+
+  test("regenerate rides along the other request fields like any mode", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: true,
+      rulesSaved: false,
+      visualSaved: true,
+    });
+    expect(parsed.regenerate).toBe(true);
+    expect(parsed.rulesSaved).toBe(false);
+    expect(parsed.visualSaved).toBe(true);
+  });
+
+  test("an explicit regenerate:false is the absent mode — a content turn carrying it stays a content turn", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: false,
+      content: "hi",
+    });
+    expect(parsed.content).toBe("hi");
+    expect(parsed.regenerate).toBe(false);
+  });
+
+  test("regenerate:false alone is rejected (no mode present)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, regenerate: false }),
+    ).toThrow(/either/);
+  });
+
+  test("content + regenerate is rejected (exactly-one mode)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        content: "hi",
+      }),
+    ).toThrow(/only one/);
+  });
+
+  test("answer + regenerate is rejected (exactly-one mode)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        answer: { toolCallId: "tc_1", text: "blue" },
+      }),
+    ).toThrow(/only one/);
+  });
+
+  test("all three modes together are rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        content: "hi",
+        answer: { toolCallId: "tc_1", skipped: true },
+      }),
+    ).toThrow(/only one/);
   });
 });
 

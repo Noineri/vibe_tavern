@@ -42,6 +42,7 @@ import {
   type AgentPersistedToolResult,
   type AgentTurnAnswer,
 } from "./agent-split-turn.js";
+import { applyAgentTurnRegenerate, type AgentTurnDeleteTurn } from "./agent-regenerate.js";
 
 // ─── Store / thread / request shapes (structural subsets) ────────────────────
 
@@ -106,6 +107,12 @@ export interface AgentTurnRequest {
   readonly threadId: string;
   readonly content?: string;
   readonly answer?: AgentTurnAnswer;
+  /** AP-9 regenerate mode: rerun the last turn with NO new user row — the
+   *  loop trims the replaced turn's rows (through the deletion seam below)
+   *  before the history/context load and appends no input row. Exactly one
+   *  of `content` / `answer` / `regenerate` is present (wire-enforced; the
+   *  input branch also guards direct domain callers). */
+  readonly regenerate?: boolean;
   readonly providerProfileId: string;
   readonly model?: string;
 }
@@ -134,6 +141,12 @@ export interface AgentStreamDeps<THREAD extends AgentStreamThread = AgentStreamT
   /** CM-6 fire-and-forget auto-compaction trigger, called AFTER the turn's
    *  metrics are persisted. Never awaited; absent → no auto-compaction. */
   readonly autoCompact?: (threadId: string) => Promise<void>;
+  /** AP-9: the thread's row-deletion seam — the AP-8 store sibling
+   *  (`deleteCopilotTurn`) over the real db, supplied by each kind's wiring
+   *  (the ONE row-deletion path; the regenerate mechanism never deletes rows
+   *  on its own). Absent (tests, legacy harnesses) → regenerate mode is
+   *  refused by the sibling, never silently trimmed. */
+  readonly deleteTurn?: AgentTurnDeleteTurn;
 }
 
 // ─── Assembled-prompt shape (seam result) ────────────────────────────────────
@@ -469,13 +482,12 @@ export async function* streamAgentTurn<
     throw notFound(seams.threadLabel, `Copilot thread '${request.threadId}' was not found.`);
   }
 
-  // ── 2. Load history (prior turns) + the kind context ──
-  const [priorMessages, context] = await Promise.all([
-    deps.store.listMessages(request.threadId),
-    seams.loadContext(thread),
-  ]);
-
-  // ── 3. Resolve provider + model ──
+  // ── 2. Resolve provider + model ──
+  // (Runs BEFORE the history/context load since AP-9: the regenerate trim
+  // below is a destructive write and, exactly like content mode's input
+  // persistence, must never happen for a request whose provider inputs do
+  // not resolve. The two loads are independent — swapping them is
+  // behavior-neutral for the other modes' success paths.)
   const profile = await deps.getProviderProfile(request.providerProfileId);
   if (!profile) {
     throw notFound("ProviderProfile", `Provider profile '${request.providerProfileId}' was not found.`);
@@ -483,7 +495,30 @@ export async function* streamAgentTurn<
   const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
   const effectiveProfile = await deps.getEffectiveProviderProfile(request.providerProfileId, modelName);
 
-  // ── 4. Persist this turn's input ──
+  // ── 3. AP-9 regenerate: trim the replaced turn BEFORE the loads ──
+  // The regenerated turn's input is the thread state as-is: the rows after
+  // the thread's last user row (the replaced turn's own rows) are deleted
+  // through the AP-8 store sibling, the user row stays (it is the input the
+  // rerun runs against). The trim must precede the load below — this turn's
+  // history, the sidechat's merged-timeline counts, and its per-turn RP sync
+  // (a fresh rp_sync for RP written since the replaced answer) must all see
+  // the trimmed rows. Resolution and every refusal (the digest floor, the
+  // failed-turn shape, an empty thread) live in the sibling module.
+  if (request.regenerate === true) {
+    await applyAgentTurnRegenerate({
+      threadId: request.threadId,
+      listMessages: () => deps.store.listMessages(request.threadId),
+      ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
+    });
+  }
+
+  // ── 4. Load history (prior turns) + the kind context ──
+  const [priorMessages, context] = await Promise.all([
+    deps.store.listMessages(request.threadId),
+    seams.loadContext(thread),
+  ]);
+
+  // ── 5. Persist this turn's input ──
   // Content mode: append the user's message row NOW so it survives a crash.
   // Answer mode (TAG-5 split-turn, style B; the permission family since
   // SC-23e): NO user row — the answer replaces the awaiting marker of the
@@ -515,10 +550,14 @@ export async function* streamAgentTurn<
       role: "user",
       content: request.content,
     });
+  } else if (request.regenerate === true) {
+    // AP-9 regenerate mode: NO input row — the trimmed thread state (the
+    // last user row + the surviving context) IS the turn's input, exactly
+    // like answer mode pushes nothing. The trim already ran in step 3.
   } else {
-    // The wire schema enforces exactly-one-of content/answer; this guards
-    // direct domain callers (tests, future internal callers).
-    throw validation("A copilot turn requires either `content` or `answer`.");
+    // The wire schema enforces exactly-one-of content/answer/regenerate;
+    // this guards direct domain callers (tests, future internal callers).
+    throw validation("A copilot turn requires either `content`, `answer`, or `regenerate`.");
   }
 
   // ── Pre-split at the digest boundary (CM-5) ──────────────────────────────
@@ -535,14 +574,15 @@ export async function* streamAgentTurn<
     ...storeMessagesToHistory(boundary.kept),
   ];
 
-  // ── 5. Resolve the kind's agent profile (base prompt + tools + budget) ──
+  // ── 6. Resolve the kind's agent profile (base prompt + tools + budget) ──
   const agentProfile = await seams.resolveProfile(thread);
 
-  // ── 6. Assemble the prompt (kind-owned) ──
+  // ── 7. Assemble the prompt (kind-owned) ──
   // Content mode: the new user message is appended to the prior history for
   // assembly; it was NOT in priorHistory (which is the pre-turn stored set).
-  // Answer mode (TAG-5): NO user message is pushed — the history already ends
-  // with the answered ask tool-result, which IS the turn's input.
+  // Answer mode (TAG-5) and regenerate mode (AP-9): NO user message is pushed
+  // — answer mode's history already ends with the answered tool-result (the
+  // turn's input), regenerate's ends with the surviving user row.
   const history: AgentHistoryMessage[] = request.content
     ? [...priorHistory, { role: "user", content: request.content }]
     : priorHistory;
@@ -563,7 +603,7 @@ export async function* streamAgentTurn<
     ...(assembled.compactionSummary ? { compaction: assembled.compactionSummary } : {}),
   });
 
-  // ── 7. Build the tool set (kind-owned) ──
+  // ── 8. Build the tool set (kind-owned) ──
   const tools: ToolSet = seams.buildTools({
     thread,
     request,
@@ -572,7 +612,7 @@ export async function* streamAgentTurn<
     assembled,
   });
 
-  // ── 8. Resolve the model + start streaming ──
+  // ── 9. Resolve the model + start streaming ──
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
 
@@ -612,7 +652,7 @@ export async function* streamAgentTurn<
     return;
   }
 
-  // ── 9. Normalize + drain the stream, emitting SSE events ──
+  // ── 10. Normalize + drain the stream, emitting SSE events ──
   // `state.providerResponse.steps` collects PER-STEP usage from finish-step
   // parts — the metrics path reads the LAST step's input (see CM-4 block below).
   const { stream: mapped, state: mappedState } = createMappedStream(result.stream);
@@ -702,7 +742,7 @@ export async function* streamAgentTurn<
     return;
   }
 
-  // ── 10. Finalize: resolve finish metadata + persist the turn ──
+  // ── 11. Finalize: resolve finish metadata + persist the turn ──
   let finishReason = "stop";
   let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
   try {

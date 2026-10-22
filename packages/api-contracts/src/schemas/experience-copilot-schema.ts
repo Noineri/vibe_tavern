@@ -163,6 +163,13 @@ export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLau
  * `answer` instead (no new user row — the answer replaces the awaiting marker
  * of the referenced tool-result and the turn resumes as a continuation:
  * an `ask_user` answer since TAG-5, a permission decision since SC-23e).
+ * AP-9 (AGENT_SHELL_POLISH Wave 3) adds `regenerate` as the THIRD exclusive
+ * mode: rerun the last turn without a new user row — the server deletes the
+ * rows after the thread's last user row (the replaced turn's own rows,
+ * through the AP-8 turn-delete store) and runs the turn against the surviving
+ * thread state. Exactly one of the three modes must be present; an explicit
+ * `regenerate: false` counts as the absent mode (a client sending the flag
+ * alongside `content` stays a content turn).
  */
 export const experienceCopilotStreamRequestSchema = z
   .object({
@@ -191,6 +198,11 @@ export const experienceCopilotStreamRequestSchema = z
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),
+    // AP-9 — regenerate mode: rerun the last turn with NO new user row (the
+    // server deletes the replaced turn's rows through the AP-8 store sibling
+    // and streams the replacement). Exactly-one-of with `content`/`answer`
+    // (the refine below); an explicit `false` is the absent mode.
+    regenerate: z.boolean().optional(),
     // SC-17 — the "discuss in the sidechat" server side: RP variants attached to
     // this sidechat turn, as plain (messageId, variantId) pairs — nothing
     // else. The pair schema is `.strict()` on purpose: the request NEVER
@@ -209,18 +221,28 @@ export const experienceCopilotStreamRequestSchema = z
     visualSaved: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
-    const hasContent = val.content !== undefined;
-    const hasAnswer = val.answer !== undefined;
-    if (hasContent && hasAnswer) {
+    // AP-9: THREE exclusive modes — content (a new message), answer
+    // (answering the pending question), regenerate (rerunning the last
+    // turn). Exactly one must be present; `regenerate: false` counts as
+    // absent (an explicit false never turns a content turn into a pair).
+    const present: string[] = [];
+    if (val.content !== undefined) present.push("`content`");
+    if (val.answer !== undefined) present.push("`answer`");
+    if (val.regenerate === true) present.push("`regenerate`");
+    if (present.length > 1) {
       ctx.addIssue({
         code: "custom",
-        message: "Provide either `content` (a new message) or `answer` (answering the pending question), not both.",
+        message:
+          `Provide only one turn mode — got ${present.join(" + ")}; \`content\` (a new message), ` +
+          "`answer` (answering the pending question), and `regenerate` (rerunning the last turn) " +
+          "are mutually exclusive.",
       });
     }
-    if (!hasContent && !hasAnswer) {
+    if (present.length === 0) {
       ctx.addIssue({
         code: "custom",
-        message: "Provide either `content` (a new message) or `answer` (answering the pending question).",
+        message:
+          "Provide either `content` (a new message), `answer` (answering the pending question), or `regenerate` (rerunning the last turn).",
       });
     }
   });

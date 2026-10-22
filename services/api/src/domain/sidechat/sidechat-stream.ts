@@ -92,6 +92,7 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../agent/agent-stream.js";
+import type { AgentTurnDeleteTurn } from "../agent/agent-regenerate.js";
 import {
   estimateHistoryTokens,
   renderDigestSection,
@@ -209,6 +210,11 @@ export interface SidechatStreamDeps {
   readonly compaction?: SidechatOocCompactionService;
   /** Injectable streamText (tests substitute a fake without `mock.module("ai")`). */
   readonly streamText?: typeof streamText;
+  /** AP-9: the thread's row-deletion seam for regenerate mode (the AP-8 store
+   *  sibling over the real db — the adapter supplies it; the sidechat's
+   *  event-preservation rule is the store sibling's own). Absent (tests,
+   *  legacy harnesses) → regenerate turns are refused, never trimmed. */
+  readonly deleteTurn?: AgentTurnDeleteTurn;
 }
 
 // ─── Kind context ────────────────────────────────────────────────────────────
@@ -786,6 +792,7 @@ export async function* streamSidechatTurn(
         }
       : {}),
     ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
+    ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
   };
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);

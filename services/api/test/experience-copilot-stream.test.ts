@@ -4,11 +4,13 @@ import type {
   CopilotProfile,
   ExperienceCopilotLaunchContext,
 } from "@vibe-tavern/api-contracts";
+import { brandId, resolveDigestBoundary, type ExperienceCopilotMessageId } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   AppendMessageInput,
+  CopilotTurnDeleteResult,
 } from "@vibe-tavern/db";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
 
@@ -1325,7 +1327,281 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toContain("either `content` or `answer`");
+    // AP-9 re-capture (was: "either `content` or `answer`") — the guard's
+    // mode vocabulary grew to three with regenerate.
+    expect((caught as Error).message).toContain("either `content`, `answer`, or `regenerate`");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AP-9 — regenerate mode: rerun the last turn with NO new user row. The
+// loop trims the replaced turn (rows after the thread's last user row)
+// BEFORE the history/context load, through the AP-8 store sibling exposed as
+// the deps' `deleteTurn` seam. The fake seam below mirrors the store's span
+// resolution + digest floor over the fake store's rows (the SAME domain
+// derivation the store reads); real-db span coverage lives in the store
+// suite (experience-copilot-turn-delete.test.ts). These cases pin the
+// LOOP's dispatch: trim-then-load, no new input row, the refusal mappings.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — regenerate mode (AP-9)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  /** Seed rows in timeline order (fixed ids so the deletion-address
+   *  assertions can name them). */
+  function seedRows(
+    store: ReturnType<typeof createFakeStore>,
+    rows: Array<{ id: string; role: string; content: string; toolCallId?: string | null }>,
+  ) {
+    let tick = 0;
+    for (const row of rows) {
+      store.messages.push({
+        id: row.id,
+        threadId: "thread_1",
+        role: row.role,
+        content: row.content,
+        toolCallsJson: null,
+        toolCallId: row.toolCallId ?? null,
+        createdAt: new Date(Date.parse("2025-01-01T00:00:00.000Z") + tick++ * 1000).toISOString(),
+      });
+    }
+  }
+
+  /** The fake deletion seam: mirrors deleteCopilotTurn's span resolution
+   *  (the enclosing turn around `messageId`) and digest floor over the fake
+   *  store's rows, and records every call so the tests can pin the address
+   *  the regenerate resolution chose. */
+  function makeFakeDeleteTurn(store: ReturnType<typeof createFakeStore>): {
+    deleteTurn: NonNullable<ExperienceCopilotStreamDeps["deleteTurn"]>;
+    calls: Array<{ threadId: string; messageId: string; includeUserMessage: boolean }>;
+  } {
+    const calls: Array<{ threadId: string; messageId: string; includeUserMessage: boolean }> = [];
+    const deleteTurn = async (
+      threadId: string,
+      messageId: string,
+      includeUserMessage: boolean,
+    ): Promise<CopilotTurnDeleteResult> => {
+      calls.push({ threadId, messageId, includeUserMessage });
+      const idx = store.messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return { status: "missing-message" };
+      let start: number;
+      if (store.messages[idx]!.role === "user") {
+        if (!includeUserMessage) return { status: "refused-user-row" };
+        start = idx;
+      } else {
+        start = idx;
+        while (start > 0 && store.messages[start - 1]!.role !== "user") start -= 1;
+      }
+      let end = store.messages.length;
+      for (let i = idx + 1; i < store.messages.length; i++) {
+        if (store.messages[i]!.role === "user") {
+          end = i;
+          break;
+        }
+      }
+      const span = store.messages.slice(start, end);
+      const spanIds = new Set(span.map((m) => m.id));
+      const boundary = resolveDigestBoundary(store.messages);
+      if (boundary.lastDigest !== null) {
+        const anchorId = boundary.lastDigest.toolCallId;
+        const hitsFloor =
+          spanIds.has(boundary.lastDigest.id) ||
+          (anchorId !== null && spanIds.has(anchorId)) ||
+          boundary.covered.some((m) => spanIds.has(m.id));
+        if (hitsFloor) return { status: "refused-digest" };
+      }
+      store.messages.splice(start, end - start);
+      return {
+        status: "deleted",
+        deletedMessageIds: span.map((m) => brandId<ExperienceCopilotMessageId>(m.id)),
+        deletedUserMessageId: null,
+      };
+    };
+    return { deleteTurn, calls };
+  }
+
+  it("regenerate after a full turn: the replaced answer's rows go, the user row stays, NO new user row, and the model window ends on the user row", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "seed question" },
+      { id: "msg_a1", role: "assistant", content: "OLD ANSWER MARKER" },
+    ]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("NEW ANSWER MARKER")] });
+    };
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    // The deletion addressed the thread's LAST row with includeUserMessage
+    // false — the store resolves the enclosing turn (the rows after the last
+    // user row); the user row itself is the rerun's input and stays.
+    expect(calls).toEqual([
+      { threadId: "thread_1", messageId: "msg_a1", includeUserMessage: false },
+    ]);
+    // Stored rows: user row stayed, old answer gone, the replacement reply
+    // persisted after it — and NO new user row was appended.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:seed question",
+      "assistant:NEW ANSWER MARKER",
+    ]);
+    // The model window: the replaced answer is gone; the history (after the
+    // system message) ends on the user row — the thread state as-is IS the
+    // turn's input.
+    const blob = JSON.stringify(captured!.messages);
+    expect(blob).toContain("seed question");
+    expect(blob).not.toContain("OLD ANSWER MARKER");
+    const lastNonSystem = [...captured!.messages!].reverse().find((m) => m.role !== "system")!;
+    expect(lastNonSystem.role).toBe("user");
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+    expect(events.find((e) => e.event === "error")).toBeUndefined();
+  });
+
+  it("regenerate after a failed turn (the last row IS a user row): nothing is deleted, the run simply re-executes against it", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [{ id: "msg_u1", role: "user", content: "failed turn question" }]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("RECOVERED ANSWER")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    // No deletion call at all: a failed turn has no rows after its user row.
+    expect(calls).toEqual([]);
+    // Still exactly ONE user row — the rerun appends no input row — and the
+    // recovered answer persisted after it.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:failed turn question",
+      "assistant:RECOVERED ANSWER",
+    ]);
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+  });
+
+  it("a digest-covered last turn is refused (the digest is a floor for regenerate's implicit deletion); nothing is written", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+      // The digest row: its toolCallId is the FIRST KEPT message id (the
+      // anchor overload) — anchored at u1 it covers nothing before it.
+      { id: "msg_d1", role: "digest", content: "{\"digest\":\"earlier\"}", toolCallId: "msg_u1" },
+    ]);
+    const { deleteTurn } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("never streams")] });
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store, { deleteTurn }),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("digest");
+    // Nothing was written: every row survives, no reply row appeared.
+    expect(store.messages).toHaveLength(3);
+  });
+
+  it("a post-digest last turn regenerates freely (the floor covers only the digest and everything before it)", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+      { id: "msg_d1", role: "digest", content: "{\"digest\":\"earlier\"}", toolCallId: "msg_u1" },
+      { id: "msg_u2", role: "user", content: "two" },
+      { id: "msg_a2", role: "assistant", content: "answer two" },
+    ]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("answer two prime")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    expect(calls).toEqual([
+      { threadId: "thread_1", messageId: "msg_a2", includeUserMessage: false },
+    ]);
+    // The digest row and everything before it survive; only the post-digest
+    // turn's answer was replaced.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:one",
+      "assistant:answer one",
+      "digest:{\"digest\":\"earlier\"}",
+      "user:two",
+      "assistant:answer two prime",
+    ]);
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+  });
+
+  it("an empty thread has nothing to regenerate — validation refusal before any provider call", async () => {
+    const store = createFakeStore(makeThread());
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    let providerCalled = false;
+    streamTextImpl = () => {
+      providerCalled = true;
+      return makeFakeStreamTextResult({ parts: [textDelta("never")] });
+    };
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store, { deleteTurn }),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("no turn to regenerate");
+    expect(calls).toEqual([]);
+    expect(providerCalled).toBe(false);
+  });
+
+  it("regenerate without the deletion seam wired is refused (legacy harnesses never trim)", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+    ]);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("never")] });
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("regenerate");
+    // Nothing was written and nothing was deleted.
+    expect(store.messages).toHaveLength(2);
   });
 });
 

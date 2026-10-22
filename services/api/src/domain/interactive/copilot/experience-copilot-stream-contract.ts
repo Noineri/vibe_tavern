@@ -50,6 +50,15 @@ export interface ExperienceCopilotStreamRequest {
    *  referenced awaiting tool-result row is rewritten with the answer and the
    *  turn continues the stopped turn. */
   answer?: ExperienceCopilotStreamAnswer;
+  /** AP-9 regenerate mode: rerun the last turn with NO new user row. The
+   *  server deletes the replaced turn's rows (every row after the thread's
+   *  last user row, through the AP-8 turn-delete store — context events
+   *  stay) and streams the replacement against the surviving thread state.
+   *  A thread whose last row IS a user row (a failed turn) regenerates the
+   *  same way — nothing to delete, the run re-executes against that row.
+   *  Exactly-one-of with `content`/`answer` (wire-enforced; an explicit
+   *  `false` counts as absent). */
+  regenerate?: boolean;
   /** Provider profile ID to use. */
   providerProfileId: string;
   /** Model name override (optional, uses profile default). */

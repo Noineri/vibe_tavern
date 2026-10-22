@@ -30,6 +30,7 @@ import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type { ProviderFetch } from "../../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../../shared/send-debug-log.js";
 import { streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams } from "../agent-stream.js";
+import type { AgentTurnDeleteTurn } from "../agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../agent-thread-owner.js";
 import { renderAttachedContext, type CopilotContextItem } from "../agent-context.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../../interactive/copilot/copilot-limits.js";
@@ -110,6 +111,10 @@ export interface ScriptAgentStreamDeps {
   readonly autoCompact?: (threadId: string) => Promise<void>;
   /** Injectable streamText (tests substitute a fake without `mock.module("ai")`). */
   readonly streamText?: typeof streamText;
+  /** AP-9: the thread's row-deletion seam for regenerate mode (the AP-8 store
+   *  sibling over the real db — the adapter supplies it). Absent (tests,
+   *  legacy harnesses) → regenerate turns are refused, never trimmed. */
+  readonly deleteTurn?: AgentTurnDeleteTurn;
 }
 
 // ─── Kind context ────────────────────────────────────────────────────────────
@@ -302,6 +307,7 @@ export async function* streamScriptAgentTurn(
     // SCRIPT kind's compaction service (script-authoring summarizer prompt).
     // Absent when the adapter has no provider profile service.
     ...(deps.autoCompact !== undefined ? { autoCompact: deps.autoCompact } : {}),
+    ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
   };
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);
