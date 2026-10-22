@@ -130,7 +130,7 @@ export async function patchAgentKindSettingsAction(
 }
 
 export async function patchUiSettingsAction(
-  patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorLoreProviderId" | "coauthorLoreModelName" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>,
+  patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorLoreProviderId" | "coauthorLoreModelName" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId" | "chatImpersonateEnhanceDraft" | "messageEditorProviderId" | "messageEditorModelName">>,
   updateFn: (input: typeof patch) => Promise<UiSettingsRecord> = updateUiSettings,
 ): Promise<UiSettingsRecord> {
   const updated = await updateFn(patch);

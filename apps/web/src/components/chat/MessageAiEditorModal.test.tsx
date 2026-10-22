@@ -44,7 +44,8 @@ async function* streamAiAssistant(body: AiAssistantRequestBody): AsyncGenerator<
 }
 
 const updateUiSettings = async (input: Record<string, unknown>) => ({
-  ...baseSettings(),
+  // The server answers with the full record: the patch lands on the live settings.
+  ...(useBootstrapStore.getState().data?.uiSettings ?? baseSettings()),
   ...(input as Partial<UiSettingsRecord>),
 }) as UiSettingsRecord;
 const countAiAssistantTokens = async () => ({ tokens: 42, model: "model-a", layerCount: 3, messageCount: 4, activatedLoreCount: 2 });
@@ -1258,5 +1259,95 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     await generateAnnotate();
 
     await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
+  });
+});
+
+describe("MessageAiEditorModal — editor pair seeding and persistence (SUM-5 split)", () => {
+  function seedPairs(editor: [string | null, string | null], legacy: [string | null, string | null]) {
+    useBootstrapStore.setState({
+      data: {
+        initialChatId: null,
+        snapshot: null,
+        isFirstRun: false,
+        allCharacters: [],
+        promptPresets: [],
+        uiSettings: baseSettings({
+          messageEditorProviderId: editor[0],
+          messageEditorModelName: editor[1],
+          aiAssistantProviderId: legacy[0],
+          aiAssistantModelName: legacy[1],
+        }),
+        agentKindSettings: {},
+        isArmServer: false,
+      },
+    });
+  }
+
+  function triggerTexts(): string[] {
+    return Array.from(document.body.querySelectorAll("button")).map((b) => b.textContent?.trim() ?? "");
+  }
+
+  beforeEach(() => {
+    useProviderDataStore.setState({
+      profiles: [
+        makeProfile("prov-1", "Provider One"),
+        makeProfile("prov-2", "Provider Two", { defaultModel: "two-default" }),
+      ],
+      favoritesByProfile: {},
+    });
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: "first", isSelected: true, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+  });
+
+  it("an editor provider with no editor model seeds that provider with its default, not the legacy model", async () => {
+    seedPairs(["prov-2", null], ["prov-1", "model-a"]);
+    openEditorForEdit(VA);
+    renderModal();
+    await generateWithPrompt("tighten it");
+
+    await waitFor(() => expect(mockState.requests).toHaveLength(1));
+    expect(mockState.requests[0].providerProfileId).toBe("prov-2");
+    expect(mockState.requests[0].model).toBeUndefined();
+  });
+
+  it("with no editor pair the legacy pair seeds whole (upgrade fallback)", async () => {
+    seedPairs([null, null], ["prov-1", "model-a"]);
+    openEditorForEdit(VA);
+    renderModal();
+    await generateWithPrompt("tighten it");
+
+    await waitFor(() => expect(mockState.requests).toHaveLength(1));
+    expect(mockState.requests[0].providerProfileId).toBe("prov-1");
+    expect(mockState.requests[0].model).toBe("model-a");
+  });
+
+  it("a provider picked in the editor is what the next open shows, and the legacy pair stays untouched", async () => {
+    seedPairs([null, null], ["prov-1", "model-a"]);
+    openEditorForEdit(VA);
+    renderModal();
+    await waitFor(() => expect(triggerTexts()).toContain("Provider One"));
+
+    const trigger = Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Provider One");
+    if (!trigger) throw new Error("no provider trigger");
+    await act(async () => { fireEvent.click(trigger); });
+    const item = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((i) => i.getAttribute("data-value") === "prov-2");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => { fireEvent.click(item); });
+
+    await waitFor(() => expect(useBootstrapStore.getState().data?.uiSettings.messageEditorProviderId).toBe("prov-2"));
+    const saved = useBootstrapStore.getState().data?.uiSettings;
+    expect(saved?.messageEditorModelName).toBeNull();
+    expect(saved?.aiAssistantProviderId).toBe("prov-1");
+    expect(saved?.aiAssistantModelName).toBe("model-a");
+
+    act(() => { useMessageAiEditorStore.getState().closeEditor(); });
+    act(() => { openEditorForEdit(VA); });
+    await waitFor(() => expect(triggerTexts()).toContain("Provider Two"));
+    expect(triggerTexts()).toContain("two-default");
+    expect(triggerTexts()).not.toContain("Model A");
   });
 });

@@ -589,6 +589,57 @@ describe("AiAssistantModal — quickpill settings sync", () => {
   });
 });
 
+describe("AiAssistantModal — quickpill seed pairs provider with its own model", () => {
+  beforeEach(() => {
+    mockState.requests = [];
+    mockState.chunks = [];
+    mockState.shouldThrow = false;
+    useProviderDataStore.setState({
+      profiles: [
+        makeProfile("prov-1", "Provider One"),
+        makeProfile("prov-2", "Provider Two", { defaultModel: "two-default" }),
+      ],
+      favoritesByProfile: {},
+    });
+    // The page-load snapshot still holds provider one + its model.
+    seedBootstrap("prov-1", "model-a");
+  });
+
+  function triggerTexts(): string[] {
+    return Array.from(document.body.querySelectorAll("button")).map((b) => b.textContent?.trim() ?? "");
+  }
+
+  it("pill settings with a provider and an empty model seed that provider with its default, never the snapshot model", async () => {
+    renderModal(
+      <AiAssistantModal
+        mode="quickpill"
+        isOpen={true}
+        onClose={() => {}}
+        settings={{ providerId: "prov-2", modelName: "" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(triggerTexts()).toContain("Provider Two"));
+    expect(triggerTexts()).toContain("two-default");
+    expect(triggerTexts()).not.toContain("model-a");
+    expect(triggerTexts()).not.toContain("Model A");
+  });
+
+  it("pill settings with nothing seed the persisted pair whole (fresh install)", async () => {
+    renderModal(
+      <AiAssistantModal
+        mode="quickpill"
+        isOpen={true}
+        onClose={() => {}}
+        settings={{ providerId: "", modelName: "" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(triggerTexts()).toContain("Provider One"));
+    await waitFor(() => expect(triggerTexts()).toContain("Model A"));
+  });
+});
+
 // ── D1: mobile quickpill sheet must not render a duplicate header ──────────
 
 describe("AiAssistantModal — D1 mobile sheet header", () => {

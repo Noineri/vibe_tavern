@@ -14,11 +14,10 @@ import { useFormContext } from "react-hook-form";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { toast } from "sonner";
 
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { patchUiSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import { useT } from "../../../i18n/context.js";
 import { streamAiAssistant } from "../../../api/ai-assistant-api.js";
-import { updateUiSettings } from "../../../api/settings-api.js";
 import type { AiAssistantRequestBody } from "../../../api/types.js";
 
 export interface GeneratedLoreKeys {
@@ -53,7 +52,9 @@ export function LoreKeysAiPill() {
   const abortRef = useRef<AbortController | null>(null);
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
 
-  // Bootstrap persisted provider/model
+  // Bootstrap persisted provider/model: seeds the pill ONCE, as a whole pair.
+  // After that the pill's own settings are the only source — an empty model
+  // means "this provider's default", never a model borrowed from the snapshot.
   useEffect(() => {
     if (settings.providerId || !bootstrapUiSettings) return;
     setSettings((s) => ({
@@ -64,8 +65,7 @@ export function LoreKeysAiPill() {
   }, [settings.providerId, bootstrapUiSettings]);
 
   const handleGenerate = async () => {
-    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
-    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
+    const { providerId, modelName } = settings;
     // One-shot read of the current entry values at click time (fresher than a
     // prop snapshot would be — getValues reads the live form state).
     const v = form.getValues();
@@ -123,7 +123,9 @@ export function LoreKeysAiPill() {
 
   const handleSettingsChange = (s: AiQuickSettings) => {
     setSettings(s);
-    void updateUiSettings({
+    // patchUiSettingsAction also refreshes the bootstrap store, so a remounted
+    // pill seeds from what was saved, not from the page-load snapshot.
+    void patchUiSettingsAction({
       aiAssistantProviderId: s.providerId || null,
       aiAssistantModelName: s.modelName || null,
     }).catch(() => {});

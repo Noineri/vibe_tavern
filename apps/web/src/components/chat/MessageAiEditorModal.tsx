@@ -51,6 +51,7 @@ import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import type { AiAssistantRequestBody } from "../../api/types.js";
 import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-runner.js";
+import { resolveMessageEditorSeed } from "./message-ai-editor-seed.js";
 import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
@@ -163,12 +164,8 @@ export function MessageAiEditorModal() {
     }
   }, [target?.targetChatId, target?.targetMessageId, target?.requestedMode]);
 
-  // SUM-5: the editor owns its context slot. Seed order: the editor's own
-  // persisted pair, then the legacy ai-assistant pair (upgrade fallback — a
-  // selection made before the split keeps working and STOPS writing there),
-  // then empty (active-profile default resolves downstream).
-  const seedProviderId = bootstrapUiSettings?.messageEditorProviderId ?? bootstrapUiSettings?.aiAssistantProviderId ?? "";
-  const seedModelName = bootstrapUiSettings?.messageEditorModelName ?? bootstrapUiSettings?.aiAssistantModelName ?? "";
+  // SUM-5 seed order (editor pair, else legacy pair, taken whole) lives in the helper.
+  const { providerId: seedProviderId, modelName: seedModelName } = resolveMessageEditorSeed(bootstrapUiSettings);
 
   const runner = useAiAssistantRunner({
     isOpen,

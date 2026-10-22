@@ -19,7 +19,7 @@
  * row, input keeps focus in searchable mode). To exercise them against a real
  * DOM, run the file under a jsdom/playwright runner with non-zero layout.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { DropdownSelect } from "./DropdownSelect.js";
@@ -152,5 +152,65 @@ describe("DropdownSelect trigger label", () => {
 		listed.unmount();
 		const unlisted = render(<DropdownSelect value="zzz" defaultOption="Auto" options={threeOptions} onChange={() => {}} />);
 		expect(unlisted.container.querySelector("button")!.textContent).toBe("zzz");
+	});
+});
+
+// Search + Enter with a `defaultOption` (AI_PILL_MODEL_CROSS_PROVIDER_REPORT
+// step 3): the default row sits first and cmdk highlights the first item, so it
+// used to stay on top of every search and swallow Enter — a model search + Enter
+// picked the provider default (empty value) instead of the match. These tests
+// open the real cmdk list (items are portaled into the document body).
+describe("DropdownSelect defaultOption vs search", () => {
+	const fruit = [
+		{ id: "a", label: "Apple" },
+		{ id: "b", label: "Banana" },
+		{ id: "c", label: "Cherry" },
+	];
+
+	async function openList(onChange: (value: string) => void) {
+		const view = render(
+			<DropdownSelect value="" defaultOption="Auto" options={fruit} onChange={onChange} />,
+		);
+		fireEvent.click(view.container.querySelector("button")!);
+		await waitFor(() => expect(document.body.querySelector("[cmdk-list]")).toBeTruthy());
+		return document.body.querySelector("[cmdk-input]") as HTMLInputElement;
+	}
+
+	function itemValues(): Array<string | null> {
+		return Array.from(document.body.querySelectorAll("[cmdk-item]")).map((el) => el.getAttribute("data-value"));
+	}
+
+	it("a search matching one option + Enter selects that option, not the default row", async () => {
+		const onChange = mock((_value: string) => {});
+		const input = await openList(onChange);
+
+		fireEvent.change(input, { target: { value: "ban" } });
+		await waitFor(() => expect(itemValues()).toEqual(["b"]));
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith("b");
+	});
+
+	it("a search matching the default label still offers the default row", async () => {
+		const onChange = mock((_value: string) => {});
+		const input = await openList(onChange);
+
+		fireEvent.change(input, { target: { value: "aut" } });
+		await waitFor(() => expect(itemValues()).toEqual(["__dropdown_select_empty__"]));
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		expect(onChange).toHaveBeenCalledWith("");
+	});
+
+	it("an empty search keeps the default row first, and clearing a search brings it back", async () => {
+		const onChange = mock((_value: string) => {});
+		const input = await openList(onChange);
+		expect(itemValues()).toEqual(["__dropdown_select_empty__", "a", "b", "c"]);
+
+		fireEvent.change(input, { target: { value: "ban" } });
+		await waitFor(() => expect(itemValues()).toEqual(["b"]));
+		fireEvent.change(input, { target: { value: "" } });
+		await waitFor(() => expect(itemValues()).toEqual(["__dropdown_select_empty__", "a", "b", "c"]));
 	});
 });

@@ -4,7 +4,7 @@
  * breaks this file once instead of every fixture. Spread a factory first, then
  * override only what the test pins.
  */
-import type { AppCharacter, LoreEntryRecord, LorebookRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
+import type { AppCharacter, LoreEntryRecord, LorebookRecord, ProviderProfileRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
 
@@ -78,6 +78,75 @@ export function wireUiSettings(): UiSettingsRecord {
 		activeDictationProfileId: null,
 		activeVoiceMessageProfileId: null,
 		updatedAt: EPOCH,
+	};
+}
+
+export function wireProviderProfile(): ProviderProfileRecord {
+	return {
+		id: "profile-1",
+		name: "Provider",
+		providerPreset: "openaiCompat",
+		coauthorTransport: "chat_completions",
+		generationMode: "chat",
+		endpoint: "https://api.test/v1",
+		defaultModel: null,
+		visionModel: null,
+		contextBudget: null,
+		pinContextBudget: false,
+		tokenPadding: 0,
+		bindPerModel: false,
+		modelFreeOnly: false,
+		modelGroupByOwner: false,
+		maxTokens: 4096,
+		temperature: 0.7,
+		topP: 1,
+		topK: 0,
+		minP: 0,
+		topA: 0,
+		typicalP: 1,
+		tfsZ: 1,
+		adaptiveTarget: -1,
+		adaptiveDecay: 0.9,
+		dynatempRange: 0,
+		dynatempExponent: 1,
+		topNSigma: 0,
+		smoothingFactor: 0,
+		repeatLastN: -1,
+		mirostat: 0,
+		mirostatTau: 5,
+		mirostatEta: 0.1,
+		dryMultiplier: 0,
+		dryBase: 1.75,
+		dryAllowedLength: 2,
+		drySequenceBreakers: [],
+		bannedStrings: [],
+		dryPenaltyLastN: -1,
+		xtcThreshold: 0.1,
+		xtcProbability: 0,
+		frequencyPenalty: 0,
+		presencePenalty: 0,
+		repetitionPenalty: 1,
+		unifiedLinear: 1,
+		unifiedQuad: 0,
+		unifiedConf: 0,
+		repetitionPenaltySlope: 0,
+		phraseRepPen: "off",
+		thinkingMode: "auto",
+		stopSequences: [],
+		logitBias: [],
+		seed: null,
+		reasoningEffort: "default",
+		showReasoning: true,
+		streamResponse: true,
+		customSamplers: false,
+		isActive: false,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		proxyMode: "inherit",
+		proxyId: null,
+		samplerSetId: null,
+		generationFormat: null,
+		hasStoredApiKey: true,
 	};
 }
 
