@@ -272,6 +272,33 @@ describe("ExperienceCopilotInputArea", () => {
     expect(getByTestId("dropdown-group-copilot-model-all").getAttribute("data-content-width")).toBe("320");
   });
 
+  it("answeringAsk switches the placeholder to the answering key (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText } = renderInput({ answeringAsk: true });
+
+    expect(getByPlaceholderText("agent_input_answering_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
+  });
+
+  it("without answeringAsk the ordinary placeholder stays (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText } = renderInput({ answeringAsk: false });
+
+    expect(getByPlaceholderText("agent_input_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+  });
+
+  it("answeringAsk paints the card accent border, rest keeps border-border (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText, rerender, props } = renderInput({ answeringAsk: true });
+
+    const card = (getByPlaceholderText("agent_input_answering_placeholder") as HTMLTextAreaElement).closest("div.rounded-lg");
+    expect(card?.className).toContain("border-accent");
+
+    rerender(withIsolatedI18n(<AgentInputArea {...props} answeringAsk={false} />));
+    const idleCard = (getByPlaceholderText("agent_input_placeholder") as HTMLTextAreaElement).closest("div.rounded-lg");
+    expect(idleCard?.className).toContain("border-border");
+    expect(idleCard?.className).not.toContain("border-accent");
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+  });
+
   it("prefill replaces the current draft (UX 2026-08-16 remark 6)", () => {
     const { getByPlaceholderText, props, rerender } = renderInput();
     const textarea = getByPlaceholderText("agent_input_placeholder") as HTMLTextAreaElement;

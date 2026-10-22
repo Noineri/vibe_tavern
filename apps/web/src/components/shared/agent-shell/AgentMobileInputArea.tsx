@@ -36,6 +36,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
     onPinContext,
     onUnpinContext,
     topSlot,
+    answeringAsk = false,
   } = props;
 
   const [draft, setDraft] = useState("");
@@ -99,7 +100,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
-      <div ref={cardRef} className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
+      <div ref={cardRef} className={cn("flex flex-col gap-1.5 rounded-xl border bg-s2 p-1.5 transition-colors duration-150", answeringAsk ? "border-accent" : "border-transparent")}>
         {/* Toolbar row: provider + model pills (mobile → BottomSheet via ToolbarSelect). */}
         <div className="flex flex-wrap items-center gap-2">
           <ToolbarSelect
@@ -175,7 +176,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             minRows={1}
             maxRows={6}
             data-testid="copilot-chat-input"
-            placeholder={t("agent_input_placeholder")}
+            placeholder={t(answeringAsk ? "agent_input_answering_placeholder" : "agent_input_placeholder")}
             value={draft}
             onChange={mention.handleChange}
             onSelect={mention.handleSelect}

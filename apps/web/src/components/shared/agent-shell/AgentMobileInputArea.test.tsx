@@ -159,6 +159,35 @@ describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
     fireEvent.select(ta);
   };
 
+  it("answeringAsk switches the placeholder to the answering key (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText } = renderMobileInput({ answeringAsk: true });
+
+    expect(getByPlaceholderText("agent_input_answering_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
+  });
+
+  it("without answeringAsk the ordinary placeholder stays (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText } = renderMobileInput({ answeringAsk: false });
+
+    expect(getByPlaceholderText("agent_input_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+  });
+
+  it("answeringAsk paints the card accent border, rest keeps the transparent border (AP-6)", () => {
+    const { getByPlaceholderText, queryByPlaceholderText, rerender, props } = renderMobileInput({ answeringAsk: true });
+
+    // The mobile card carries no border at rest — `border-transparent` holds
+    // the footprint so the accent border toggles without a layout shift.
+    const card = (getByPlaceholderText("agent_input_answering_placeholder") as HTMLTextAreaElement).closest("div.rounded-xl");
+    expect(card?.className).toContain("border-accent");
+
+    rerender(withIsolatedI18n(<AgentMobileInputArea {...props} answeringAsk={false} />));
+    const idleCard = (getByPlaceholderText("agent_input_placeholder") as HTMLTextAreaElement).closest("div.rounded-xl");
+    expect(idleCard?.className).toContain("border-transparent");
+    expect(idleCard?.className).not.toContain("border-accent");
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+  });
+
   it("renders pinned pills and the × fires onUnpinContext", () => {
     const onUnpinContext = mock();
     const { getByTestId } = renderMobileInput({

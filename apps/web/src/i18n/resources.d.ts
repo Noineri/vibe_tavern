@@ -29,6 +29,7 @@ export default interface Resources {
     "agent_cancel": "Cancel",
     "agent_code": "Code",
     "agent_editor_aria": "AI assistant editor",
+    "agent_input_answering_placeholder": "Answer the question or type your own…",
     "agent_input_placeholder": "Ask the AI assistant…",
     "agent_load_error": "Couldn't load the AI assistant",
     "agent_load_session_error": "Failed to load AI assistant session",

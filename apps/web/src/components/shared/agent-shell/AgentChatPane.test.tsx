@@ -358,3 +358,46 @@ describe("AgentChatPane — the composer answers the live ask (AP-5)", () => {
     expect(ctrl.handleSend).not.toHaveBeenCalled();
   });
 });
+
+describe("AgentChatPane — answeringAsk visual state (AP-6)", () => {
+  it("a live awaiting ask flags the desktop composer answering (accent card + answering placeholder)", () => {
+    seedLiveAsk();
+    const { getByTestId, getByPlaceholderText, queryByPlaceholderText } = renderPane();
+
+    // The SAME selector that routes the send (AP-5) drives the visual flag —
+    // no hand-rolled rule in the pane.
+    expect(getByPlaceholderText("agent_input_answering_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
+    const card = (getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-lg");
+    expect(card?.className).toContain("border-accent");
+  });
+
+  it("no live ask leaves the desktop composer ordinary", () => {
+    const { getByTestId, getByPlaceholderText, queryByPlaceholderText } = renderPane();
+
+    expect(getByPlaceholderText("agent_input_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+    const card = (getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-lg");
+    expect(card?.className).toContain("border-border");
+    expect(card?.className).not.toContain("border-accent");
+  });
+
+  it("the optimistic override clears the answering state (the send is ordinary again)", () => {
+    seedLiveAsk();
+    const ctrl = makeCtrl({ pendingAskAnswer: { toolCallId: "tc-live", status: "answered", answer: "Rules" } });
+    const { getByPlaceholderText, queryByPlaceholderText } = renderPane({ ctrl });
+
+    expect(getByPlaceholderText("agent_input_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_answering_placeholder")).toBeNull();
+  });
+
+  it("the mobile composer answers the same way (responsive dual-mode)", () => {
+    seedLiveAsk();
+    const { getByTestId, getByPlaceholderText, queryByPlaceholderText } = renderPane({ isMobile: true });
+
+    expect(getByPlaceholderText("agent_input_answering_placeholder")).toBeDefined();
+    expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
+    const card = (getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-xl");
+    expect(card?.className).toContain("border-accent");
+  });
+});

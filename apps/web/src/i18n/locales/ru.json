@@ -2698,6 +2698,7 @@
 	"agent_tab_edit": "Правка",
 	"agent_assistant_toggle_label": "Помощник",
 	"agent_input_placeholder": "Спросите ИИ-помощника…",
+	"agent_input_answering_placeholder": "Ответьте на вопрос или впишите свой вариант…",
 	"agent_provider": "Провайдер",
 	"agent_provider_select": "Выбрать провайдера",
 	"agent_model": "Модель",

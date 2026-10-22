@@ -52,6 +52,11 @@ export interface AgentInputAreaProps {
   /** SC-18: an optional host row inside the input card above the textarea
    *  (the sidechat's attached-variant chips). Default absent — no row. */
   topSlot?: ReactNode;
+  /** AP-6: true while the thread's live awaiting ask exists (computed by the
+   *  pane via `selectAgentLiveAsk`) — the next send ANSWERS the ask, so the
+   *  card carries the accent border and the answering placeholder. The
+   *  composer stays dumb: no store reads, just the prop. */
+  answeringAsk?: boolean;
 }
 
 export function AgentInputArea(props: AgentInputAreaProps) {
@@ -68,6 +73,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     onPinContext,
     onUnpinContext,
     topSlot,
+    answeringAsk = false,
   } = props;
 
   const [draft, setDraft] = useState("");
@@ -135,7 +141,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5">
-      <div ref={cardRef} className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+      <div ref={cardRef} className={cn("relative rounded-lg border bg-input-bg transition-colors duration-150", answeringAsk ? "border-accent focus-within:border-accent" : "border-border focus-within:border-border2")}>
         <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
         {topSlot}
         <AutoTextarea
@@ -144,7 +150,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
           maxRows={12}
           minRows={3}
           data-testid="copilot-chat-input"
-          placeholder={t("agent_input_placeholder")}
+          placeholder={t(answeringAsk ? "agent_input_answering_placeholder" : "agent_input_placeholder")}
           value={draft}
           onChange={mention.handleChange}
           onSelect={mention.handleSelect}
