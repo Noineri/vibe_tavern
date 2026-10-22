@@ -14,6 +14,7 @@ export * from "./chat-notification.js";
 export * from "./coauthor-generation-settings.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";
+export * from "./digest-boundary.js";
 export * from "./entities.js";
 export * from "./imagegen-capabilities.js";
 export * from "./imagegen-sizes.js";

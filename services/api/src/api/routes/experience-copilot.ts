@@ -245,5 +245,17 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
           throw err;
         }
       },
+    )
+    .post(
+      "/api/experience-copilot/:threadId/turns/delete",
+      zValidator("json", z.object({ messageId: z.string(), includeUserMessage: z.boolean() })),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const body = c.req.valid("json");
+        // AP-8: the adapter maps the store's refusal families onto the shared
+        // DomainError vocabulary — they propagate to the global handler (the
+        // compact endpoint's error family), so no local catch here.
+        return c.json(await runtime.experienceCopilotDeleteTurn(threadId, body));
+      },
     );
 }

@@ -1,4 +1,4 @@
-import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
+import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult, ExperienceCopilotTurnDeleteRequest, ExperienceCopilotTurnDeleteResult } from "../contract/experience-copilot-contracts.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
 import {
@@ -36,6 +36,7 @@ import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-com
 import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
 import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
 import { readContextLinks, replaceContextLinks } from "./experience-copilot-context-links.js";
+import { deleteCopilotTurnWire } from "./experience-copilot-turn-delete.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -786,5 +787,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     });
     return { digest: toMessageWire(digest), metrics: toMetricsWire(metrics) };
   };
+
+  /** AP-8: delete one turn — thin wiring over adapters/experience-copilot-
+   *  turn-delete.ts (the store sibling call + the error mapping live there;
+   *  this file sits at its size cap). */
+  experienceCopilotDeleteTurn = (
+    threadId: string,
+    body: ExperienceCopilotTurnDeleteRequest,
+  ): Promise<ExperienceCopilotTurnDeleteResult> =>
+    deleteCopilotTurnWire(this.stores.db, threadId, body);
 
 }

@@ -23,6 +23,26 @@ export interface ExperienceCopilotCompactResult {
   metrics: ExperienceCopilotContextMetrics;
 }
 
+/** POST `/turns/delete` request (AP-8): delete the turn resolved around
+ *  `messageId`. The server resolves the ENCLOSING turn (the rows after a user
+ *  row up to the next user row — continuation rows after an ask/permission
+ *  answer included); `messageId` may point at ANY row of that turn, or at the
+ *  user row itself (then only with `includeUserMessage: true`). */
+export interface ExperienceCopilotTurnDeleteRequest {
+  messageId: string;
+  /** Also delete the turn's user row — the user's own delete on their
+   *  message. Required `true` when `messageId` addresses a user row. */
+  includeUserMessage: boolean;
+}
+
+/** POST `/turns/delete` response (AP-8): every deleted row id in timeline
+ *  order (the user row included when it was deleted), plus which of them was
+ *  the user row. The client removes exactly these ids from its local list. */
+export interface ExperienceCopilotTurnDeleteResult {
+  deletedMessageIds: string[];
+  deletedUserMessageId: string | null;
+}
+
 /** The experience-copilot streaming subsystem — a standalone, editor-embedded
  *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
  *  edits via tools (ER-4) and streams one turn at a time. NOT a chat-mode and
@@ -104,6 +124,21 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  pair. Rejects 400 when there is nothing to compact; 409 when a compaction
 	 *  is already in-flight; provider errors surface as 502 via the global handler. */
 	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
+
+	/** Delete one turn of a thread (AP-8): resolve the turn enclosing the
+	 *  request's `messageId` (user-row boundaries — continuation rows after an
+	 *  ask/permission answer belong to the same turn) and delete its message
+	 *  rows, together with the turn's user row when `includeUserMessage` is
+	 *  set. Rows a context digest already folded are refused — the digest is a
+	 *  floor, the user deletes from the newest turn backward (409, the compact
+	 *  conflict family). A `messageId` on a user row without the flag is a 400;
+	 *  a missing thread/message is a 404. Chat-owned threads delete message
+	 *  rows only: frozen context events and the frontier are never touched
+	 *  (an event left between turns keeps its seq on the merged timeline). */
+	experienceCopilotDeleteTurn: (
+		threadId: string,
+		body: ExperienceCopilotTurnDeleteRequest,
+	) => Promise<ExperienceCopilotTurnDeleteResult>;
 
 	// ─── Chat-owner lifecycle (SIDECHAT_PLAN SC-0b) ─────────────────────────────
 	//

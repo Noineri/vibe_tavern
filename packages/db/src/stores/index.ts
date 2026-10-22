@@ -195,6 +195,11 @@ export type {
   ForkThreadCopyDeps,
   ForkThreadRemap,
 } from './experience-copilot-fork-copy.js';
+export { deleteCopilotTurn } from './experience-copilot-turn-delete.js';
+export type {
+  CopilotTurnDeleteResult,
+  TurnDeleteDeps,
+} from './experience-copilot-turn-delete.js';
 export type {
   CopilotContextMetrics,
   CopilotContextLink,
