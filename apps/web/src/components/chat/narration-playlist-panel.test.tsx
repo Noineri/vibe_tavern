@@ -779,6 +779,10 @@ describe("narration playlist player controls (TPE-18b)", () => {
     const volumeRoot = volume.closest("[data-slider-root]");
     expect(volumeRoot?.getAttribute("data-orientation")).toBe("vertical");
     expect(volumeRoot?.classList.contains("w-3")).toBe(true);
+    const volumeSlot = volumeRoot?.parentElement;
+    expect(volumeSlot?.classList.contains("flex")).toBe(true);
+    expect(volumeSlot?.classList.contains("justify-center")).toBe(true);
+    expect(volumeSlot?.classList.contains("w-7")).toBe(true);
     const seek = await waitFor(() => getByTestId("playlist-seek"));
     expect((seek as HTMLInputElement).type).toBe("range");
     const seekRoot = seek.closest("[data-slider-root]");

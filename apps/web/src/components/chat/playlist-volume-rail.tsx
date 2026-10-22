@@ -72,7 +72,7 @@ export function PlaylistVolumeRail(input: {
         {interacting ? `${percent}%` : ""}
       </span>
       <div
-        className="min-h-0 w-7 flex-1"
+        className="flex min-h-0 w-7 flex-1 justify-center"
         onKeyDownCapture={(e) => {
           if (e.key === "ArrowUp" || e.key === "ArrowRight") {
             e.preventDefault();

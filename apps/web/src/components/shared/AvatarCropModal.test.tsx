@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 
 describe("AvatarCropModal zoom", () => {
-	it("updates the crop preview immediately from the native zoom range", () => {
+	it("updates the crop preview immediately from the shared zoom slider", () => {
 		const { getByRole, getByTestId } = render(
 			<AvatarCropModal imageUrl="blob:avatar" onConfirm={() => {}} onCancel={() => {}} />,
 		);

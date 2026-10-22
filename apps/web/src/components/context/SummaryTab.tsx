@@ -16,7 +16,8 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DualRangeSlider } from "./DualRangeSlider.js";
-import { SummaryHistoryLimitControl } from "./SummaryHistoryLimitControl.js";
+import { SummaryHistoryLimitControl } from "./summary-history-limit-control.js";
+import { resolveHistoryLimitState, upsertSummary } from "./summary-tab-helpers.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -589,6 +590,20 @@ export function useSummaryTab({
     }
   }
 
+  const historyLimitControl = (
+    <SummaryHistoryLimitControl
+      label={t("summary_messages_in_prompt")}
+      autoLabel={t("summary_history_auto")}
+      autoHint={t("summary_history_auto_hint")}
+      messageCount={messageCount}
+      value={displayLimit}
+      latched={latched}
+      onValueChange={setLimitOverride}
+      onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })}
+      onAutoChange={toggleHistoryLatch}
+    />
+  );
+
   /* ─── archive sidebar / list ─── */
   const archiveList = (
     <DndContext
@@ -898,7 +913,7 @@ export function useSummaryTab({
       {isMobile && (
         <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
           <div className={lblCls}>{t("summary_messages_in_prompt")}</div>
-          <SummaryHistoryLimitControl label={t("summary_messages_in_prompt")} autoLabel={t("summary_history_auto")} autoHint={t("summary_history_auto_hint")} messageCount={messageCount} value={displayLimit} latched={latched} onValueChange={setLimitOverride} onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })} onAutoChange={toggleHistoryLatch} />
+          {historyLimitControl}
         </section>
       )}
     </>
@@ -918,7 +933,7 @@ export function useSummaryTab({
       {!isMobile && (
         <div className="flex items-center gap-3">
           <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
-          <SummaryHistoryLimitControl label={t("summary_messages_in_prompt")} autoLabel={t("summary_history_auto")} autoHint={t("summary_history_auto_hint")} messageCount={messageCount} value={displayLimit} latched={latched} onValueChange={setLimitOverride} onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })} onAutoChange={toggleHistoryLatch} />
+          {historyLimitControl}
         </div>
       )}
     </div>
@@ -972,27 +987,4 @@ export function computeRangeAfterChange(
   };
 }
 
-/** Maps the editor's history-limit state to display state. `null` (or a
- *  non-positive persisted value — the DB stores 0 = unlimited, consumed
- *  server-side as `limit || Infinity`) is the LATCHED/auto state: every
- *  message goes in and the slider thumb rides the branch's full length. A
- *  positive number is a manual cap, displayed clamped to the branch's real
- *  message count (a fork can shrink the branch below the persisted cap).
- *  count<=0 (the switchChat clearMessages dip) floors to 1 so the slider
- *  never renders a value below its own min. */
-export function resolveHistoryLimitState(
-  limit: number | null,
-  messageCount: number,
-): { latched: boolean; displayLimit: number } {
-  const max = Math.max(1, messageCount);
-  if (limit === null || limit <= 0) return { latched: true, displayLimit: max };
-  return { latched: false, displayLimit: Math.min(limit, max) };
-}
-
-export function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
-  const idx = list.findIndex((item) => item.id === summary.id);
-  if (idx < 0) return [...list, summary].sort((a, b) => a.summarizedFrom - b.summarizedFrom || a.createdAt.localeCompare(b.createdAt));
-  const next = [...list];
-  next[idx] = summary;
-  return next;
-}
+export { resolveHistoryLimitState, upsertSummary } from "./summary-tab-helpers.js";

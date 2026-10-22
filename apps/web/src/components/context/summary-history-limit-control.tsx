@@ -16,9 +16,9 @@ export function SummaryHistoryLimitControl(input: {
 }): ReactNode {
 	const max = Math.max(1, input.messageCount);
 	return (
-		<div className="flex items-center gap-3">
+		<div className="flex min-w-0 flex-1 items-center gap-3">
 			<Slider
-				className="flex-1"
+				className="min-w-0 flex-1"
 				min={1}
 				max={max}
 				step={1}
