@@ -102,6 +102,16 @@ Folder-snapshot branching for a character (VTF Phase 3). Each version is a snaps
 | `PATCH /api/characters/:characterId/versions/:versionId` | `{ title: string }` (`renameVersionSchema`) | `CharacterVersion`. `404` if not found |
 | `DELETE /api/characters/:characterId/versions/:versionId` | — | `204`. `409` if deleting the active version, `400` otherwise |
 
+### Character tracker template
+
+The portable tracker setup a character carries (per version, in `extensions.vibe_tavern.tracker_template`; see [scene-tracker.md](scene-tracker.md#character-tracker-template)). Creating an RP chat seeds its trackers from the active version's template in the creating transaction.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/characters/:characterId/tracker-template` | — | `{ template: TrackerTemplate \| null }` |
+| `PUT /api/characters/:characterId/tracker-template` | `{ template: TrackerTemplate }` (`updateTrackerTemplateSchema`) | `{ template: TrackerTemplate }` |
+| `DELETE /api/characters/:characterId/tracker-template` | — | `204` |
+
 ### Character avatar
 
 | Endpoint | Body | Response |
@@ -505,6 +515,14 @@ Request cancellation of a run (`cancelRequested`); the active item is not force-
 ### `POST /api/chats/:chatId/insights/scene/backfill/:runId/retry`
 
 Retry a run, reprocessing **only** failed + unprocessed items (succeeded items are never regenerated). Returns the updated (running) status.
+
+### `POST /api/chats/:chatId/insights/apply-character-template`
+
+«Взять из персонажа» — replace this chat's Scene-tracker config and Objective state with the active character version's template, in one transaction (the config and Objective state can never land out of sync; dice and mini-apps are untouched). RP chats only — other modes get a typed `422` `not_an_rp_chat`. Returns the config-patch snapshot.
+
+### `POST /api/chats/:chatId/insights/save-as-character-template`
+
+«Сохранить как заготовку персонажа» — capture this chat's current tracker setup as its character's template (overwriting an existing one); the chat itself is not modified. A chat with no tracker setup gets a typed `422` `empty_tracker_setup`. Returns `{ template: TrackerTemplate }`.
 
 ### `POST /api/chats/:chatId/summary`
 
