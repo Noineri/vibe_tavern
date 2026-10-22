@@ -18,6 +18,8 @@ export interface SliderProps<Value extends SliderValue = SliderValue> {
 	appearance?: "rail" | "field";
 	/** Formats the complete controlled value, including a two-thumb tuple. */
 	formatValue?: (value: Value) => string;
+	/** Field-only value classes; replaces the default text-t1 color. */
+	valueClassName?: string;
 	label?: React.ReactNode;
 	help?: React.ReactNode;
 	/** Test id(s) assigned to Base UI's nested range input(s), never the visual wrapper. */

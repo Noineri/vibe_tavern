@@ -38,7 +38,7 @@ function valuesEqual(left: number[], right: number[]) {
 
 export function SliderFieldAppearance<Value extends SliderValue>(props: SliderProps<Value>) {
 	const {
-		value, min, max, step, onValueChange, onValueCommitted, disabled = false, formatValue, label, help,
+		value, min, max, step, onValueChange, onValueCommitted, disabled = false, formatValue, valueClassName, label, help,
 		inputTestId, numberTestId, "aria-label": ariaLabel, getAriaLabel, className,
 	} = props;
 	const fieldRef = useRef<HTMLDivElement>(null);
@@ -53,6 +53,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 	const safeSpan = max > min ? max - min : 0;
 	const percent = (item: number) => safeSpan === 0 ? 0 : clamp(((item - min) / safeSpan) * 100, 0, 100);
 	const first = values[0]!;
+	const editorInitialValue = useRef(first);
 	const last = values[values.length - 1]!;
 	const valueText = formatValue ? formatValue(value) : range
 		? `${formatFieldNumber(first, step)} – ${formatFieldNumber(last, step)}`
@@ -192,13 +193,14 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 	}
 
 	function openEditor() {
-		if (disabled || range) return;
+		if (disabled || range || editing) return;
+		editorInitialValue.current = first;
 		setEditing(true);
 	}
 
 	function finishEditor(next: number | null, restoreFocus: boolean) {
 		setEditing(false);
-		if (next !== null && !disabled) {
+		if (next !== null && next !== editorInitialValue.current && !disabled) {
 			onValueChange(next as Value);
 			onValueCommitted?.(next as Value);
 		}
@@ -327,7 +329,7 @@ export function SliderFieldAppearance<Value extends SliderValue>(props: SliderPr
 					) : (
 						<span
 							data-slider-field-value
-							className="pointer-events-none absolute right-[13px] top-0 z-[1] flex h-full items-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1"
+							className={cn("pointer-events-none absolute right-[13px] top-0 z-[1] flex h-full items-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums", valueClassName ?? "text-t1")}
 						>
 							{valueText}
 						</span>

@@ -631,6 +631,43 @@ function openEditor(container: HTMLElement): HTMLInputElement {
 }
 
 describe("Slider field inline editor", () => {
+  it("emits no change or commit when an untouched editor blurs", () => {
+    const onValueChange = mock();
+    const onValueCommitted = mock();
+    const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+    fireEvent.blur(openEditor(container));
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(onValueCommitted).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-slider-field-editor]")).toBeNull();
+    expect(container.querySelector("[data-slider-field-value]")?.textContent).toBe("4");
+  });
+
+  it("emits no change or commit when an empty editor reverts on blur", () => {
+    const onValueChange = mock();
+    const onValueCommitted = mock();
+    const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+    const editor = openEditor(container);
+    fireEvent.change(editor, { target: { value: "" } });
+    fireEvent.blur(editor);
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(onValueCommitted).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-slider-field-editor]")).toBeNull();
+    expect(container.querySelector("[data-slider-field-value]")?.textContent).toBe("4");
+  });
+
+  it("emits no change or commit when Enter submits the value the editor opened with", () => {
+    const onValueChange = mock();
+    const onValueCommitted = mock();
+    const { container } = render(<ControlledField onValueChange={onValueChange} onValueCommitted={onValueCommitted} />);
+    const editor = openEditor(container);
+    fireEvent.change(editor, { target: { value: "4.0" } });
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(onValueCommitted).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-slider-field-editor]")).toBeNull();
+    expect(document.activeElement).toBe(thumbInput(container));
+  });
+
 	it("commits Enter exactly once with the typed value clamped to the bounds and never snapped to the step", () => {
 		// Behavior change: "9" was 10 and "3" was 4 (snapped to step 2); typed values are now kept as typed.
 		const cases: [string, number][] = [["9", 9], ["99", 10], ["-5", 0], ["3", 3]];
@@ -780,7 +817,8 @@ describe("Slider field inline editor", () => {
 		const editor = input(container, "field-number");
 		const elsewhere = input(container, "elsewhere");
 		fireEvent.blur(editor, { relatedTarget: elsewhere });
-		expect(onValueCommitted).toHaveBeenCalledTimes(1);
+		// Behavior change: was one untouched commit -> now none; basis: P4, parity with NumberInput's unchanged-value guard.
+		expect(onValueCommitted).not.toHaveBeenCalled();
 		expect(document.activeElement).not.toBe(thumbInput(container));
 		act(() => elsewhere.focus());
 		expect(document.activeElement).toBe(elsewhere);
@@ -817,6 +855,23 @@ describe("Slider field inline editor", () => {
 });
 
 describe("Slider field contract", () => {
+  it("replaces the field value color without applying valueClassName to any other element", () => {
+    const { container } = render(
+      <Slider appearance="field" value={4} min={0} max={10} step={1} label="Bias" aria-label="Bias" valueClassName="text-danger" onValueChange={() => {}} />,
+    );
+    const value = container.querySelector<HTMLElement>("[data-slider-field-value]");
+    expect(value?.classList.contains("text-danger")).toBe(true);
+    expect(value?.classList.contains("text-t1")).toBe(false);
+    expect(Array.from(container.querySelectorAll(".text-danger"))).toEqual([value!]);
+  });
+
+  it("keeps the exact default field value class string without valueClassName", () => {
+    const { container } = render(<ControlledField />);
+    expect(container.querySelector("[data-slider-field-value]")?.className).toBe(
+      "pointer-events-none absolute right-[13px] top-0 z-[1] flex h-full items-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1",
+    );
+  });
+
 	it("is the canon field box with the accent border on keyboard focus", () => {
 		const { container } = render(<ControlledField />);
 		const field = fieldOf(container);
@@ -1093,6 +1148,15 @@ describe("Slider field contract", () => {
 });
 
 describe("Slider rail contract", () => {
+  it("ignores valueClassName entirely for the rail appearance", () => {
+    const props = { value: 4, min: 0, max: 10, step: 1, "aria-label": "Bias", formatValue: (value: number) => String(value), onValueChange: () => {} };
+    const view = render(<Slider {...props} />);
+    const before = view.container.innerHTML;
+    view.rerender(<Slider {...props} valueClassName="text-danger" />);
+    expect(view.container.innerHTML).toBe(before);
+    expect(view.container.querySelector(".text-danger")).toBeNull();
+  });
+
 	it("is the default appearance and keeps one orientation-specific gradient on the indicator", () => {
 		const { container } = render(
 			<div>
