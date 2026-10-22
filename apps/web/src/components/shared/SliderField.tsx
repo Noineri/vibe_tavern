@@ -1,6 +1,4 @@
-import { useRef } from "react";
-import { NumberInput } from "./NumberInput.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import type { ReactNode } from "react";
 import { Slider } from "./slider.js";
 
 export interface SliderFieldProps {
@@ -12,18 +10,27 @@ export interface SliderFieldProps {
   onChange: (value: number) => void;
   disabled?: boolean;
   ariaLabel?: string;
+  /** Test id of the real Base UI range input (the keyboard / `change` seam). */
   rangeTestId?: string;
+  /** Test id of the inline number editor's real `<input>`; the editor only
+   *  exists while the field is being typed into (double-click or Enter). */
   numberTestId?: string;
-  /** Commit-on-release for persist-per-call surfaces: the range fires
+  /** Clickable help node (the «?» tooltip) rendered inside the field next to
+   *  the label; pressing it never scrubs the value. */
+  help?: ReactNode;
+  /** Commit-on-release for persist-per-call surfaces: the field fires
    *  onChange per drag tick (fast visual state), then onCommit ONCE when the
-   *  drag/keypress ends — persist here, not in onChange. The NumberInput half
-   * is already commit-shaped (it commits on blur); its blur fires onCommit
-   * too. Mirrors NumberInput's commit-on-blur boundary (exemplars:
+   *  drag/keypress ends, and once more when the inline number editor commits
+   *  (Enter or blur; Escape commits nothing) — persist here, not in onChange.
+   *  Mirrors NumberInput's commit-on-blur boundary (exemplars:
    *  ImageGenPane/TtsProfileEditor write fast state and persist at a coarse
    *  boundary). */
   onCommit?: (value: number) => void;
 }
 
+/** A parameter on a continuous scale: the `field` appearance of the shared
+ *  Slider — label and value live INSIDE the scrubber, typing a number goes
+ *  through its inline editor. */
 export function SliderField({
   label,
   value,
@@ -35,58 +42,24 @@ export function SliderField({
   ariaLabel,
   rangeTestId,
   numberTestId,
+  help,
   onCommit,
 }: SliderFieldProps) {
-  const val = value ?? min;
-  const latestValue = useRef(val);
-  latestValue.current = val;
-
-  function handleValueChange(nextValue: number) {
-    if (disabled) return;
-    latestValue.current = nextValue;
-    onChange(nextValue);
-  }
-
-  function handleNumberCommit() {
-    if (!disabled) onCommit?.(latestValue.current);
-  }
-
-  function handleValueCommitted(committedValue: number) {
-    if (disabled) return;
-    latestValue.current = committedValue;
-    onCommit?.(committedValue);
-  }
-
   return (
-    <div>
-      <label className={lblCls}>{label}</label>
-      <div className="mt-1 flex items-center gap-2">
-        <Slider
-          className="flex-1"
-          value={val}
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-          aria-label={ariaLabel ?? label}
-          inputTestId={rangeTestId}
-          onValueChange={handleValueChange}
-          onValueCommitted={onCommit ? handleValueCommitted : undefined}
-        />
-        <div data-testid={numberTestId} className="contents">
-          <NumberInput
-            className="h-[30px] w-[60px] shrink-0"
-            min={min}
-            max={max}
-            step={step}
-            value={val}
-            onChange={handleValueChange}
-            onBlur={onCommit ? handleNumberCommit : undefined}
-            disabled={disabled}
-            hideControls
-          />
-        </div>
-      </div>
-    </div>
+    <Slider
+      appearance="field"
+      label={label}
+      help={help}
+      value={value ?? min}
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      aria-label={ariaLabel ?? label}
+      inputTestId={rangeTestId}
+      numberTestId={numberTestId}
+      onValueChange={onChange}
+      onValueCommitted={onCommit}
+    />
   );
 }
