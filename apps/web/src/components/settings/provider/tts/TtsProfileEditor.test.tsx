@@ -607,6 +607,13 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 });
 
 describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
+  /** Seam: the number box beside the slider is now the slider field's inline editor, opened by double-click. */
+  function openFieldEditor(range: HTMLInputElement) {
+    const box = range.closest("[data-slider-field-shell]")?.querySelector("[data-slider-field]");
+    if (!box) throw new Error("Tuning range is not a slider field");
+    fireEvent.doubleClick(box);
+  }
+
   it("tuning number field renders slider + compact number (elevenlabs stability)", async () => {
     const setForm = mock(() => {});
     const tts = viewTts({
@@ -626,10 +633,10 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     expect(range.type).toBe("range");
     expect(range.min).toBe("0");
     expect(range.max).toBe("1");
-    const numberWrapper = view.getByTestId("tts-field-stability-number");
-    expect(numberWrapper).toBeTruthy();
-    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
-    expect(numberInput).toBeTruthy();
+    expect(view.queryByTestId("tts-field-stability-number")).toBeNull();
+    openFieldEditor(range);
+    const numberInput = view.getByTestId("tts-field-stability-number") as HTMLInputElement;
+    expect(numberInput.tagName).toBe("INPUT");
     // Range commits immediately
     fireEvent.change(range, { target: { value: "0.8" } });
     expect(setForm).toHaveBeenCalled();
@@ -660,8 +667,8 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     let patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
     expect(patch.config.speed).toBe(1.5);
     setForm.mockClear();
-    const numberWrapper = view.getByTestId("tts-field-speed-number");
-    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
+    openFieldEditor(range);
+    const numberInput = view.getByTestId("tts-field-speed-number") as HTMLInputElement;
     fireEvent.change(numberInput, { target: { value: "1.2" } });
     fireEvent.blur(numberInput);
     expect(setForm).toHaveBeenCalled();

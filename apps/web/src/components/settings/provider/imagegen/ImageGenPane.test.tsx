@@ -422,10 +422,8 @@ afterEach(async () => {
   pendingDetect = null;
 });
 
-// IG-CF13: the slider cell is NumberInput inside a testid wrapper. Typing
-// commits on blur (NumberInput's commit contract — steppers commit on
-// click, typed text on blur-with-change).
-async function typeCell(view: { getByTestId: (id: string) => HTMLElement }, cellId: string, value: string) {
+// Size fields retain their NumberInput wrapper seam; they are not sliders.
+async function typeSizeCell(view: { getByTestId: (id: string) => HTMLElement }, cellId: string, value: string) {
   const input = view.getByTestId(cellId).querySelector("input");
   if (!input) throw new Error(`no <input> inside ${cellId}`);
   await act(async () => {
@@ -434,6 +432,39 @@ async function typeCell(view: { getByTestId: (id: string) => HTMLElement }, cell
   await act(async () => {
     fireEvent.blur(input);
   });
+}
+
+function sliderShell(view: { getByTestId: (id: string) => HTMLElement }, rangeId: string): HTMLElement {
+  const range = view.getByTestId(rangeId);
+  expect(range.tagName).toBe("INPUT");
+  expect((range as HTMLInputElement).type).toBe("range");
+  const shell = range.closest<HTMLElement>("[data-slider-field-shell]");
+  if (!shell) throw new Error(`no slider field shell for ${rangeId}`);
+  return shell;
+}
+
+function sliderValue(view: { getByTestId: (id: string) => HTMLElement }, rangeId: string): string {
+  const value = sliderShell(view, rangeId).querySelector("[data-slider-field-value]");
+  if (!value) throw new Error(`no displayed value for ${rangeId}`);
+  return value.textContent ?? "";
+}
+
+// Seam change: was a NumberInput wrapper -> now the real inline editor input,
+// opened from the range's shell; never accidentally type into the hidden range.
+async function openCell(view: { getByTestId: (id: string) => HTMLElement }, rangeId: string, cellId: string): Promise<HTMLInputElement> {
+  const field = sliderShell(view, rangeId).querySelector("[data-slider-field]");
+  if (!field) throw new Error(`no field box for ${rangeId}`);
+  await act(async () => { fireEvent.doubleClick(field); });
+  const editor = view.getByTestId(cellId);
+  expect(editor.tagName).toBe("INPUT");
+  expect((editor as HTMLInputElement).type).toBe("text");
+  return editor as HTMLInputElement;
+}
+
+async function typeCell(view: { getByTestId: (id: string) => HTMLElement }, cellId: string, value: string) {
+  const editor = await openCell(view, cellId.replace("image-gen-field-", "image-gen-range-"), cellId);
+  await act(async () => { fireEvent.change(editor, { target: { value } }); });
+  await act(async () => { fireEvent.blur(editor); });
 }
 
 describe("ImageGenPane — second level rendering", () => {
@@ -869,8 +900,8 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     expect(view.getByTestId("image-gen-user-size-ratio")).toBeTruthy();
     // Default draft 1024×1024 duplicates the vendor table → Add disabled.
     expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(true);
-    await typeCell(view, "image-gen-user-size-width", "1152");
-    await typeCell(view, "image-gen-user-size-height", "896");
+    await typeSizeCell(view, "image-gen-user-size-width", "1152");
+    await typeSizeCell(view, "image-gen-user-size-height", "896");
     // Off-table pair but ratio still empty → still disabled.
     expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(true);
     const ratioInput = view.getByTestId("image-gen-user-size-ratio").querySelector("input") as HTMLInputElement;
@@ -902,8 +933,8 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     });
     await waitFor(() => expect(view.getByTestId("image-gen-user-sizes")).toBeTruthy());
     expect(view.queryByTestId("image-gen-user-size-ratio")).toBeNull();
-    await typeCell(view, "image-gen-user-size-width", "1216");
-    await typeCell(view, "image-gen-user-size-height", "896");
+    await typeSizeCell(view, "image-gen-user-size-width", "1216");
+    await typeSizeCell(view, "image-gen-user-size-height", "896");
     await waitFor(() =>
       expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(false),
     );
@@ -1412,7 +1443,8 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
       />,
     );
     await openAdvanced(view);
-    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
+    // Seam change: absent controls are queried by their always-mounted range, not the transient editor.
+    for (const id of ["image-gen-range-steps", "image-gen-range-cfg", "image-gen-range-clip-skip"]) {
       expect(view.queryByTestId(id)).toBeNull();
     }
     expect(view.getByTestId("image-gen-field-seed")).toBeTruthy();
@@ -1424,7 +1456,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
       />,
     );
     await openAdvanced(view);
-    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip", "image-gen-field-seed"]) {
+    for (const id of ["image-gen-range-steps", "image-gen-range-cfg", "image-gen-range-clip-skip", "image-gen-field-seed"]) {
       expect(view.queryByTestId(id)).toBeNull();
     }
     cleanup();
@@ -1439,9 +1471,13 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     await openAdvanced(view);
     expect((view.getByTestId("image-gen-field-seed") as HTMLInputElement).value).toBe("");
     for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-cfg-rescale", "image-gen-field-clip-skip"]) {
-      expect(view.getByTestId(id).querySelector("input")).toBeTruthy();
+      const shell = sliderShell(view, id.replace("image-gen-field-", "image-gen-range-"));
+      expect(shell.querySelector("[data-slider-field-label]")).not.toBeNull();
+      expect(shell.querySelector("[data-slider-field-value]")).not.toBeNull();
+      expect(view.queryByTestId(id)).toBeNull();
     }
-    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(9);
+    // Seam change: was 9 = 4 ranges + 4 number boxes + seed -> now 5 = 4 ranges + seed (editors mount only while editing).
+    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(5);
   });
 
   it("bind OFF: numeric edits route to the PROFILE BASE (setForm defaultParams), overlay untouched", async () => {
@@ -1459,7 +1495,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     await act(async () => {
       fireEvent.click(view.getByText("image_gen_advanced"));
     });
-    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId("image-gen-range-steps")).toBeTruthy());
     await typeCell(view, "image-gen-field-steps", "30");
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
@@ -1504,7 +1540,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     await act(async () => {
       fireEvent.click(view.getByText("image_gen_advanced"));
     });
-    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId("image-gen-range-steps")).toBeTruthy());
     await typeCell(view, "image-gen-field-steps", "30");
     await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
     expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ steps: 30 });
@@ -1671,6 +1707,58 @@ async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; ge
 }
 
 describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
+  it("SL-10: rounds typed integer sampler params and keeps fractional-step values exact", async () => {
+    const setForm = mock((_patch: Partial<NonNullable<ImageGenHook["form"]>>) => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, capabilities: scalarCaps({ supportsClipSkip: true }) }),
+      setForm,
+    })} />);
+    await openAdvanced(view);
+
+    const cases = [
+      ["steps", "30.6", { steps: 31 }],
+      ["clip-skip", "3.6", { clipSkip: 4 }],
+      ["cfg", "7.25", { cfgScale: 7.25 }],
+      ["cfg-rescale", "0.123", { cfgRescale: 0.123 }],
+    ] as const;
+    for (const [field, typed, expected] of cases) {
+      await typeCell(view, `image-gen-field-${field}`, typed);
+      expect(setForm.mock.calls.at(-1)?.[0]).toEqual({ defaultParams: expected });
+    }
+    expect(setForm).toHaveBeenCalledTimes(4);
+  });
+
+  it("SL-10: rounds every typed Krea slider before routing to the profile base", async () => {
+    const setForm = mock((_patch: Partial<NonNullable<ImageGenHook["form"]>>) => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }),
+      setForm,
+    })} />);
+    await openAdvanced(view);
+
+    for (const field of ["intensity", "complexity", "movement"] as const) {
+      await typeCell(view, `image-gen-field-krea-${field}`, "12.6");
+      expect(setForm.mock.calls.at(-1)?.[0]).toEqual({ defaultParams: { krea: { [field]: 13 } } });
+    }
+    expect(setForm).toHaveBeenCalledTimes(3);
+  });
+
+  it("SL-10: opening and blurring unset unbound steps keeps the displayed fallback unsent", async () => {
+    const setForm = mock(() => {});
+    const setModelOverlay = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }),
+      setForm,
+      setModelOverlay,
+    })} />);
+    await openAdvanced(view);
+    const editor = await openCell(view, "image-gen-range-steps", "image-gen-field-steps");
+    await act(async () => { fireEvent.blur(editor); });
+    expect(setForm).not.toHaveBeenCalled();
+    expect(setModelOverlay).not.toHaveBeenCalled();
+    expect(sliderValue(view, "image-gen-range-steps")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
+  });
+
   it("a range move commits the value to the profile base (bind off)", async () => {
     const setForm = mock(() => {});
     const view = render(
@@ -1717,9 +1805,8 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     });
     const view = render(<ImageGenPane imageGen={imageGen} />);
     await openAdvanced(view);
-    const input = view.getByTestId("image-gen-field-steps").querySelector("input");
-    if (!input) throw new Error("no steps input");
-    expect((input as HTMLInputElement).value).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
+    // Seam change: the range-min anchor is now read from field text, not a permanent number box.
+    expect(sliderValue(view, "image-gen-range-steps")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
     // The anchor display alone commits NOTHING (untouched params don't send).
     expect((imageGen.setForm as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
@@ -1798,8 +1885,10 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     for (const [fieldId, rangeId, key] of pairs) {
       // The cell displays the min as the editing ANCHOR (the LLM SamplerField
       // display) — the anchor alone commits nothing (param not sent).
-      const input = view.getByTestId(fieldId).querySelector("input") as HTMLInputElement;
-      expect(input.value).toBe(String(IMAGE_GEN_PARAM_RANGES[key].min));
+      // Seam change: field text replaces the number box; fractional-step display includes the step's decimal precision.
+      const precision = String(IMAGE_GEN_PARAM_RANGES[key].step).split(".")[1]?.length ?? 0;
+      expect(sliderValue(view, rangeId)).toBe(IMAGE_GEN_PARAM_RANGES[key].min.toFixed(precision));
+      expect(view.queryByTestId(fieldId)).toBeNull();
       expect((view.getByTestId(rangeId) as HTMLInputElement).value).toBe(String(IMAGE_GEN_PARAM_RANGES[key].min));
     }
     expect(setForm).not.toHaveBeenCalled();
@@ -2378,11 +2467,11 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");
     expect(range.getAttribute("step")).toBe("1");
-    // CF13 canon (IMAGEGEN_ADETAILER_CELLS_REPORT): the cell is a NumberInput —
-    // the unset state shows the effective base (31) as the VALUE, not a
-    // placeholder; the testid sits on the wrapper div.
-    const stepsInput = view.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
-    expect(stepsInput.value).toBe("31");
+    // Seam change: was the permanent number box -> now field text; the effective base remains the value, not a placeholder.
+    expect(sliderValue(view, "image-gen-range-adetailer-steps")).toBe("31");
+    expect(sliderShell(view, "image-gen-range-adetailer-steps").querySelector("[data-slider-field-label]")?.textContent).toBe("image_gen_adetailer_steps_label");
+    expect(view.getAllByText("image_gen_adetailer_steps_label")).toHaveLength(1);
+    expect(view.queryByTestId("image-gen-adetailer-steps")).toBeNull();
     await act(async () => {
       fireEvent.change(range, { target: { value: "17" } });
     });
@@ -2398,7 +2487,7 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
         />
       </TooltipProvider>,
     );
-    const cell = view.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
+    const cell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     expect(cell.value).toBe("17");
     // NumberInput commits on blur: typing alone writes nothing.
     const writesBefore = setModelOverlay.mock.calls.length;
@@ -2425,18 +2514,42 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     // (clear-to-undefined died with the TextInput cell — the same CF13
     // ruling that killed it for the sampler cells).
     const writesAfter = setModelOverlay.mock.calls.length;
+    const emptyCell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
-      fireEvent.change(cell, { target: { value: "" } });
-      fireEvent.blur(cell);
+      fireEvent.change(emptyCell, { target: { value: "" } });
+    });
+    await act(async () => {
+      fireEvent.blur(emptyCell);
     });
     expect(setModelOverlay.mock.calls.length).toBe(writesAfter);
-    expect(cell.value).toBe("19");
-    // The parseSteps integer gate survives the cell swap: 17.5 commits nothing.
+    expect(sliderValue(view, "image-gen-range-adetailer-steps")).toBe("19");
+    // Behavior change: was 17.5 rejected by parseSteps -> now rounded to 18 before parsing; basis: SL-10 A3.
+    const fractionalCell = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
-      fireEvent.change(cell, { target: { value: "17.5" } });
-      fireEvent.blur(cell);
+      fireEvent.change(fractionalCell, { target: { value: "17.5" } });
     });
-    expect(setModelOverlay.mock.calls.length).toBe(writesAfter);
+    await act(async () => {
+      fireEvent.blur(fractionalCell);
+    });
+    expect(setModelOverlay.mock.calls.length).toBe(writesAfter + 1);
+    expect(setModelOverlay.mock.calls.at(-1)?.[0]).toEqual({ adetailerSteps: 18 });
+  });
+
+  it("SL-10: Enter rounds typed ADetailer steps before parsing and writes the overlay once", async () => {
+    extensionsValue = ["adetailer"];
+    const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+      modelOverlay: { adetailer: true, steps: 31 },
+      setModelOverlay,
+    })} />);
+    await openAdvanced(view);
+    const editor = await openCell(view, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
+    await act(async () => { fireEvent.change(editor, { target: { value: "19.6" } }); });
+    expect(setModelOverlay).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.keyDown(editor, { key: "Enter" }); });
+    expect(setModelOverlay).toHaveBeenCalledTimes(1);
+    expect(setModelOverlay.mock.calls[0]?.[0]).toEqual({ adetailerSteps: 20 });
   });
 
   it("hidden when the server lacks the extension (a1111, bound)", async () => {
@@ -2489,9 +2602,11 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
       />,
     );
     await openAdvanced(enabled);
-    const stepsInput = enabled.getByTestId("image-gen-adetailer-steps").querySelector("input") as HTMLInputElement;
+    const stepsInput = await openCell(enabled, "image-gen-range-adetailer-steps", "image-gen-adetailer-steps");
     await act(async () => {
       fireEvent.change(stepsInput, { target: { value: "19" } });
+    });
+    await act(async () => {
       fireEvent.blur(stepsInput);
     });
     const base = setForm.mock.calls.at(-1)?.[0] as { defaultParams?: { adetailerSteps?: number } };
@@ -2711,14 +2826,8 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     await act(async () => {
       fireEvent.click(view.getByText("image_gen_advanced"));
     });
-    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
-    const cellInput = view.getByTestId("image-gen-field-steps").querySelector("input")!;
-    await act(async () => {
-      fireEvent.change(cellInput, { target: { value: "30" } });
-    });
-    await act(async () => {
-      fireEvent.blur(cellInput);
-    });
+    await waitFor(() => expect(view.getByTestId("image-gen-range-steps")).toBeTruthy());
+    await typeCell(view, "image-gen-field-steps", "30");
     await waitFor(() => expect(hookRef.current!.overlayDirty).toBe(true));
 
     // 3 — save: the profile PATCH goes first, then the overlay PUT with the
@@ -2746,7 +2855,8 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
       fireEvent.click(view2.getByText("image_gen_advanced"));
     });
     await waitFor(() =>
-      expect((view2.getByTestId("image-gen-field-steps").querySelector("input") as HTMLInputElement).value).toBe("30"),
+      // Seam change: persisted value was read from the number box -> now from the field text.
+      expect(sliderValue(view2, "image-gen-range-steps")).toBe("30"),
     );
   });
 

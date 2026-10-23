@@ -11,7 +11,6 @@ import { formatListingSnapshotTime } from "../../../../lib/imagegen/listing-snap
 import { buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
-import { Slider } from "../../../shared/slider.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Toggle } from "../../../shared/Toggle.js";
@@ -110,16 +109,9 @@ const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
 // ─── Optional numeric field (TextInput inputMode=numeric — the empty-able
 //     numeric; no NumberInput because it requires a concrete number) ────────
 
-// ─── Slider+number field (IG-CF13: the ProviderSamplerPanel SamplerField
-//     taken VERBATIM per the owner's 2026-09-16 ruling — take the existing
-//     LLM implementation, don't reshape it). The CF5 "empty box /
-//     clear-to-undefined" optionality was supervisor spec invention, not an
-//     owner requirement — killed. The cell is NumberInput (h-[30px] w-[60px]
-//     hideControls — its own self-clamping), the label is the uppercase micro
-//     canon, and the display value is `value ?? min` exactly like the LLM
-//     panel. Untouched params still don't send until edited. Seed keeps the
-//     plain OptionalNumberField above (a full seed-range slider is meaningless —
-//     owner-approved).
+// Shared parameter field adapter (SL-10). The layer's own value falls back
+// to the range minimum for display only; untouched params remain unsent.
+// Integer-step controls round typed fractions; fractional controls stay exact.
 
 function SamplerSliderField({
   label,
@@ -137,34 +129,17 @@ function SamplerSliderField({
   rangeTestId: string;
   cellTestId: string;
 }) {
-  const val = value ?? range.min;
   return (
-    <div className="min-w-0">
-      <label className={lblCls}>{label}</label>
-      <div className="flex items-center gap-2">
-        <Slider
-          value={val}
-          min={range.min}
-          max={range.max}
-          step={range.step}
-          onValueChange={onChange}
-          aria-label={label}
-          inputTestId={rangeTestId}
-          className="min-w-0 flex-1"
-        />
-        <div className="w-[60px] shrink-0" data-testid={cellTestId}>
-          <NumberInput
-            className="h-[30px] w-[60px]"
-            min={range.min}
-            max={range.max}
-            step={range.step}
-            value={val}
-            onChange={onChange}
-            hideControls
-          />
-        </div>
-      </div>
-    </div>
+    <SliderField
+      label={label}
+      value={value ?? range.min}
+      min={range.min}
+      max={range.max}
+      step={range.step}
+      onChange={(next) => onChange(Number.isInteger(range.step) ? Math.round(next) : next)}
+      rangeTestId={rangeTestId}
+      numberTestId={cellTestId}
+    />
   );
 }
 
@@ -1799,38 +1774,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         triggerTestId="image-gen-adetailer-model"
                       />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <div className="flex items-center gap-2">
-                        <Slider
-                          value={params.adetailerSteps ?? adetailerBaseSteps}
-                          min={adetailerControl.stepsRange.min}
-                          max={adetailerControl.stepsRange.max}
-                          step={adetailerControl.stepsRange.step}
-                          onValueChange={(next) => {
-                            const patch = adetailerControl.parseSteps(String(next));
-                            if (patch !== null) setParam(patch);
-                          }}
-                          aria-label={t(adetailerControl.stepsLabelKey)}
-                          inputTestId="image-gen-range-adetailer-steps"
-                          className="min-w-0 flex-1"
-                        />
-                        <div className="w-[60px] shrink-0" data-testid="image-gen-adetailer-steps">
-                          <NumberInput
-                            className="h-[30px] w-[60px]"
-                            min={adetailerControl.stepsRange.min}
-                            max={adetailerControl.stepsRange.max}
-                            step={adetailerControl.stepsRange.step}
-                            value={params.adetailerSteps ?? adetailerBaseSteps}
-                            onChange={(n) => {
-                              const patch = adetailerControl.parseSteps(String(n));
-                              if (patch !== null) setParam(patch);
-                            }}
-                            hideControls
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <SliderField
+                      label={t(adetailerControl.stepsLabelKey)}
+                      value={params.adetailerSteps ?? adetailerBaseSteps}
+                      min={adetailerControl.stepsRange.min}
+                      max={adetailerControl.stepsRange.max}
+                      step={adetailerControl.stepsRange.step}
+                      onChange={(next) => {
+                        const patch = adetailerControl.parseSteps(String(Math.round(next)));
+                        if (patch !== null) setParam(patch);
+                      }}
+                      rangeTestId="image-gen-range-adetailer-steps"
+                      numberTestId="image-gen-adetailer-steps"
+                    />
                     </>
                   )}
                 </div>

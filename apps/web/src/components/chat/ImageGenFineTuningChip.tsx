@@ -51,7 +51,6 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { SliderField } from "../shared/SliderField.js";
-import { Slider } from "../shared/slider.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
@@ -1198,40 +1197,20 @@ function ImageGenModelSettingsAccordion({
               triggerTestId="image-gen-ft-adetailer-model"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
-            <div className="flex items-center gap-2">
-              <Slider
-                value={adetailerSteps ?? baseSteps}
-                min={adetailerControl.stepsRange.min}
-                max={adetailerControl.stepsRange.max}
-                step={adetailerControl.stepsRange.step}
-                onValueChange={(next) => {
-                  const patch = adetailerControl.parseSteps(String(next));
-                  if (patch !== null) commit(patch);
-                }}
-                disabled={disabled}
-                aria-label={t(adetailerControl.stepsLabelKey)}
-                inputTestId="image-gen-ft-range-adetailer-steps"
-                className="min-w-0 flex-1"
-              />
-              <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
-                <NumberInput
-                  className="h-[30px] w-[60px]"
-                  min={adetailerControl.stepsRange.min}
-                  max={adetailerControl.stepsRange.max}
-                  step={adetailerControl.stepsRange.step}
-                  value={adetailerSteps ?? baseSteps}
-                  onChange={(n) => {
-                    const patch = adetailerControl.parseSteps(String(n));
-                    if (patch !== null) commit(patch);
-                  }}
-                  disabled={disabled}
-                  hideControls
-                />
-              </div>
-            </div>
-          </div>
+          <SliderField
+            label={t(adetailerControl.stepsLabelKey)}
+            value={adetailerSteps ?? baseSteps}
+            min={adetailerControl.stepsRange.min}
+            max={adetailerControl.stepsRange.max}
+            step={adetailerControl.stepsRange.step}
+            onChange={(next) => {
+              const patch = adetailerControl.parseSteps(String(Math.round(next)));
+              if (patch !== null) commit(patch);
+            }}
+            disabled={disabled}
+            rangeTestId="image-gen-ft-range-adetailer-steps"
+            numberTestId="image-gen-ft-adetailer-steps"
+          />
         </ImageGenChipSection>
       ) : null}
 

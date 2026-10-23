@@ -1,9 +1,9 @@
-import { Slider as BaseSlider } from "@base-ui/react/slider";
-import { cn } from "../../lib/cn.js";
+import { SliderFieldAppearance } from "./slider-field-appearance.js";
+import { SliderRail } from "./slider-rail.js";
 
-type SliderValue = number | [number, number];
-type SliderSize = "md" | "sm" | "xs";
-type SliderOrientation = "horizontal" | "vertical";
+export type SliderValue = number | [number, number];
+export type SliderSize = "md" | "sm" | "xs";
+export type SliderOrientation = "horizontal" | "vertical";
 
 export interface SliderProps<Value extends SliderValue = SliderValue> {
 	value: Value;
@@ -15,137 +15,23 @@ export interface SliderProps<Value extends SliderValue = SliderValue> {
 	disabled?: boolean;
 	size?: SliderSize;
 	orientation?: SliderOrientation;
-	"aria-label"?: string;
-	getAriaLabel?: (index: number) => string;
+	appearance?: "rail" | "field";
+	/** Formats the complete controlled value, including a two-thumb tuple. */
+	formatValue?: (value: Value) => string;
+	/** Field-only value classes; replaces the default text-t1 color. */
+	valueClassName?: string;
+	label?: React.ReactNode;
+	help?: React.ReactNode;
 	/** Test id(s) assigned to Base UI's nested range input(s), never the visual wrapper. */
 	inputTestId?: string | [string, string];
+	/** Test id assigned to the field appearance's inline number editor. */
+	numberTestId?: string;
+	"aria-label"?: string;
+	getAriaLabel?: (index: number) => string;
 	className?: string;
 }
 
-const sizeClasses: Record<SliderSize, {
-	horizontalTrack: string;
-	verticalTrack: string;
-	thumb: string;
-	horizontalRoot: string;
-	verticalRoot: string;
-}> = {
-	md: {
-		horizontalTrack: "h-1",
-		verticalTrack: "w-1",
-		thumb: "h-[14px] w-[14px]",
-		horizontalRoot: "h-[14px]",
-		verticalRoot: "w-[14px]",
-	},
-	sm: {
-		horizontalTrack: "h-1",
-		verticalTrack: "w-1",
-		thumb: "h-3 w-3",
-		horizontalRoot: "h-3",
-		verticalRoot: "w-3",
-	},
-	xs: {
-		horizontalTrack: "h-[3px]",
-		verticalTrack: "w-[3px]",
-		thumb: "h-2.5 w-2.5",
-		horizontalRoot: "h-2.5",
-		verticalRoot: "w-2.5",
-	},
-};
-
-function toSliderValue(value: number | readonly number[]): SliderValue {
-	if (typeof value === "number") return value;
-	return [value[0]!, value[1]!];
-}
-
-function inputTestIdAt(inputTestId: SliderProps["inputTestId"], index: number): string | undefined {
-	return typeof inputTestId === "string" ? inputTestId : inputTestId?.[index];
-}
-
-export function Slider<Value extends SliderValue>({
-	value,
-	min,
-	max,
-	step,
-	onValueChange,
-	onValueCommitted,
-	disabled = false,
-	size = "md",
-	orientation = "horizontal",
-	"aria-label": ariaLabel,
-	getAriaLabel,
-	inputTestId,
-	className,
-}: SliderProps<Value>) {
-	const range = Array.isArray(value);
-	const dimensions = sizeClasses[size];
-
-	function renderThumb(index: number) {
-		const testId = inputTestIdAt(inputTestId, index);
-		return (
-			<BaseSlider.Thumb
-				key={index}
-				index={range ? index : undefined}
-				aria-label={range ? undefined : ariaLabel}
-				getAriaLabel={range ? getAriaLabel : undefined}
-				inputRef={(input) => {
-					if (input && testId) input.dataset.testid = testId;
-				}}
-				data-slider-thumb
-				className={cn(
-					"group/thumb rounded-full border-2 border-surface bg-accent transition-transform duration-100",
-					"hover:scale-[1.15] data-[dragging]:scale-[1.15] has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-accent/35",
-					dimensions.thumb,
-				)}
-			/>
-		);
-	}
-
-	return (
-		<BaseSlider.Root
-			data-slider-root
-			value={value}
-			min={min}
-			max={max}
-			step={step}
-			disabled={disabled}
-			orientation={orientation}
-			thumbCollisionBehavior={range ? "none" : undefined}
-			onValueChange={(nextValue) => {
-				if (!disabled) onValueChange(toSliderValue(nextValue) as Value);
-			}}
-			onValueCommitted={onValueCommitted ? (nextValue) => {
-				if (!disabled) onValueCommitted(toSliderValue(nextValue) as Value);
-			} : undefined}
-			className={cn(
-				"group relative touch-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
-				orientation === "horizontal"
-					? "w-full [@media(pointer:coarse)]:h-11"
-					: "h-full min-h-11 [@media(pointer:coarse)]:w-11",
-				orientation === "horizontal" ? dimensions.horizontalRoot : dimensions.verticalRoot,
-				className,
-			)}
-		>
-			<BaseSlider.Control
-				className={cn(
-					"relative flex h-full w-full touch-none select-none",
-					orientation === "horizontal" ? "items-center" : "justify-center",
-				)}
-			>
-				<BaseSlider.Track
-					data-slider-track
-					className={cn(
-						"relative overflow-hidden rounded-full bg-s3",
-						orientation === "horizontal"
-							? "w-full"
-							: "h-full",
-						orientation === "horizontal" ? dimensions.horizontalTrack : dimensions.verticalTrack,
-					)}
-				>
-					<BaseSlider.Indicator className="rounded-full bg-accent" />
-				</BaseSlider.Track>
-				{renderThumb(0)}
-				{range && renderThumb(1)}
-			</BaseSlider.Control>
-		</BaseSlider.Root>
-	);
+export function Slider<Value extends SliderValue>(props: SliderProps<Value>) {
+	if (props.appearance === "field") return <SliderFieldAppearance {...props} />;
+	return <SliderRail {...props} />;
 }

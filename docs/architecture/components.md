@@ -24,8 +24,8 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
-| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider with single/range values, three densities, and horizontal/vertical rails |
-| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
+| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider: `field` scrubber for parameters or glowing `rail` for media |
+| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting rendered as the `Slider appearance="field"` scrubber: label inside the field, value on the right, typing through the inline number editor (double-click / Enter); optional `help` node (the «?» tooltip) inside the field; optional `onCommit` = persist on release, keyboard commit and inline commit (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |
@@ -421,9 +421,12 @@ JSON-array paste inserts every element at once in both modes.
 | `value` / `onChange` | `number` / `(val: number) => void` | Controlled value |
 | `min` / `max` / `step` | `number?` | Bounds and increment |
 | `hideControls` | `boolean?` | Hide the +/- stepper buttons (plain input) |
-| `onBlur` | `() => void?` | Blur handler |
+| `onBlur` | `((event: FocusEvent<HTMLInputElement>) => void)?` | Fires after the blur commit; the event's `relatedTarget` shows where focus is going |
+| `autoFocus` | `boolean?` | Focuses the input and selects its text on mount (inline editors) |
+| `onEscape` | `(() => void)?` | Fires on Escape; the caller decides what cancelling means |
+| `inputTestId` | `string?` | Test id on the real `<input>`, not on the wrapper |
 | `disabled` | `boolean?` | Disables editing |
-| `className` / `inputClassName` | `string?` | Classes on wrapper / input |
+| `className` / `inputClassName` | `string?` | Classes on wrapper / input (a conflicting base utility needs the `!` modifier) |
 
 Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 
@@ -445,17 +448,27 @@ Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
 | `onValueCommitted` | `((value: number \| [number, number]) => void)?` | Fires once when Base UI commits an interaction |
 | `size` | `"md" \| "sm" \| "xs"?` | Visual density; defaults to `md` |
 | `orientation` | `"horizontal" \| "vertical"?` | Rail direction; defaults to `horizontal` |
+| `appearance` | `"rail" \| "field"?` | Visual interaction mode; defaults to `rail` so existing callers retain media-rail behavior |
+| `formatValue` | `((value: Value) => string)?` | Formats the complete scalar or tuple value for a rail bubble or field value text |
+| `valueClassName` | `string?` | Field-only value-span classes replacing the default `text-t1` color; ignored by the rail |
+| `label` / `help` | `ReactNode?` | Field-only left-side label and caller-owned help node; long labels move above rather than truncate |
 | `aria-label` | `string?` | Accessible label for a scalar thumb |
 | `getAriaLabel` | `((index: number) => string)?` | Accessible label for each range thumb |
 | `inputTestId` | `string` or `[string, string]?` | Test id placed on Base UI's nested range input(s) |
+| `numberTestId` | `string?` | Field-only inline number editor test id |
 | `disabled` / `className` | `boolean?` / `string?` | Disables interaction / extends the primitive base |
 
 Built on Base UI Slider with its hidden native range input and keyboard semantics.
 Range thumbs use Base UI's non-crossing collision behavior.
-The visible rail uses accent fill, a surface-ringed thumb, focus ring, disabled opacity, and a 44 px coarse-pointer hit area without increasing the visible thumb.
+`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb.
+`appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging.
+On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll.
+The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once only if the clamped number differs from the value the editor opened with (untouched, empty/reverted or same-value edits emit neither `onValueChange` nor `onValueCommitted`; changed numbers stay exact, never snapped to the step grid), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
+The field fill (single value or two-value window) is a theme-independent translucent accent, 16 % of `--accent`, never `--accent-hover`, which is opaque in some themes; label, help and value always paint above it.
+Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing.
+Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
 
-**When to use:** A number on a continuous scale, including a two-value range.
-Use `SliderField` when the slider needs a synced number box.
+**When to use:** Parameters use `Slider appearance="field"` (or `SliderField`); media timeline, volume, and zoom use `Slider appearance="rail"`.
 
 ---
 

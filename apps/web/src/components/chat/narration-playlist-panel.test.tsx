@@ -647,6 +647,41 @@ describe("narration playlist player controls (TPE-18b)", () => {
     });
   });
 
+  it("SL-12: only seek has a clock bubble and its position / total readout stays live", async () => {
+    const lane = installDeferredLane({ "audio:Para one.": 120 });
+    const view = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => view.getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().progress["m1"]?.durations).toEqual([120]);
+    });
+    const seek = view.getByTestId("playlist-seek");
+    const thumb = seek.closest("[data-slider-thumb]");
+    expect(thumb?.querySelectorAll("[data-slider-bubble]")).toHaveLength(1);
+    expect(thumb?.querySelector("[data-slider-bubble]")?.textContent).toBe("0:00");
+    expect(view.getAllByText("0:00 / 2:00")).toHaveLength(1);
+    const volume = view.getByTestId("playlist-volume").closest("[data-slider-root]");
+    expect(volume?.querySelector("[data-slider-bubble]")).toBeNull();
+    expect(view.baseElement.querySelectorAll("[data-slider-bubble]")).toHaveLength(1);
+
+    await act(async () => { fireEvent.change(seek, { target: { value: "84" } }); });
+    await waitFor(() => { expect(lane.plays).toHaveLength(2); });
+    expect(view.getByTestId("playlist-seek").closest("[data-slider-thumb]")?.querySelector("[data-slider-bubble]")?.textContent).toBe("1:24");
+    expect(view.getAllByText("1:24 / 2:00")).toHaveLength(1);
+    expect(lane.plays[1]).toEqual({ text: "audio:Para one.", startAt: 84 });
+
+    await act(async () => { lane.resolveCurrent("ended"); });
+    await started;
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+  });
+
   it("seek bar jumps the live lane to the dragged position (cache hit, offset kept)", async () => {
     const lane = installDeferredLane({ "audio:Para one.": 10 });
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
@@ -778,7 +813,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect((volume as HTMLInputElement).type).toBe("range");
     const volumeRoot = volume.closest("[data-slider-root]");
     expect(volumeRoot?.getAttribute("data-orientation")).toBe("vertical");
-    expect(volumeRoot?.classList.contains("w-3")).toBe(true);
+    expect(volumeRoot?.classList.contains("w-[14px]")).toBe(true);
     const volumeSlot = volumeRoot?.parentElement;
     expect(volumeSlot?.classList.contains("flex")).toBe(true);
     expect(volumeSlot?.classList.contains("justify-center")).toBe(true);
@@ -787,7 +822,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect((seek as HTMLInputElement).type).toBe("range");
     const seekRoot = seek.closest("[data-slider-root]");
     expect(seekRoot?.getAttribute("data-orientation")).toBe("horizontal");
-    expect(seekRoot?.classList.contains("h-2.5")).toBe(true);
+    expect(seekRoot?.classList.contains("h-3")).toBe(true);
   });
 
   it("RD-4e: disabled rail renders inert", () => {
@@ -799,7 +834,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
   });
 
   it("formats the seek clock as m:ss", async () => {
-    const { formatPlaybackTime } = await import("./NarrationPlaylist.js");
+    const { formatPlaybackTime } = await import("./playlist-seek-bar.js");
     expect(formatPlaybackTime(0)).toBe("0:00");
     expect(formatPlaybackTime(5)).toBe("0:05");
     expect(formatPlaybackTime(65)).toBe("1:05");

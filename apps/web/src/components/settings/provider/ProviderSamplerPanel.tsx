@@ -9,8 +9,7 @@ import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
-import { NumberInput } from '../../shared/NumberInput.js';
-import { Slider } from '../../shared/slider.js';
+import { SliderField } from '../../shared/SliderField.js';
 import { InlineNumField } from './ProviderSamplerNumberField.js';
 import { TextInput } from '../../shared/text-input.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
@@ -52,40 +51,22 @@ function SamplerField({
   isInteger = false,
   disabled = false,
 }: SamplerFieldProps) {
-  const val = value ?? min;
-
   return (
-    <div className="mb-0 flex flex-col justify-end">
-      <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-        <span>{label}</span>
-        {tooltip && (
+    <div className="flex flex-col justify-end">
+      <SliderField
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(nextValue) => onChange(isInteger ? Math.round(nextValue) : nextValue)}
+        disabled={disabled}
+        help={tooltip ? (
           <CustomTooltip content={tooltip} side="top" align="start">
             <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
           </CustomTooltip>
-        )}
-      </label>
-      <div className="flex items-center gap-2">
-        <Slider
-          min={min}
-          max={max}
-          step={step}
-          value={val}
-          onValueChange={(nextValue) => onChange(isInteger ? Math.round(nextValue) : nextValue)}
-          disabled={disabled}
-          aria-label={label}
-          className="flex-1"
-        />
-        <NumberInput
-          className="h-[30px] w-[60px] shrink-0"
-          min={min}
-          max={max}
-          step={step}
-          value={val}
-          onChange={onChange}
-          disabled={disabled}
-          hideControls
-        />
-      </div>
+        ) : undefined}
+      />
     </div>
   );
 }
@@ -499,7 +480,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
         {/* Temperature */}
         {supports('temperature') && (
           <SamplerField
-            label={`${t("sampler_temperature")} (${values.temperature})`}
+            label={t("sampler_temperature")}
             tooltip={t("sampler_temperature_hint")}
             min={0}
             max={2}
@@ -760,8 +741,10 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
         </div>
 
         <AnimatedDisclosure open={advOpen} className="border-t border-border2 bg-surface p-4">
-            {/* Two-column sampler grid */}
-            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4", disabled && "opacity-40 pointer-events-none")}>
+            {/* Two-column sampler grid. Every cell is a SliderField that dims and
+                blocks itself when `disabled`; dimming the grid as well would
+                compound to 16% opacity (the field alone is the 40% of the mockup). */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
               {supports('topP') && (
                 <SamplerField
                   label={t("sampler_top_p")}

@@ -1,8 +1,8 @@
 /**
  * DualRangeSlider — controlled from/to invariants at the shared Slider seam.
  *
- * Base UI owns geometric pointer routing; happy-dom drives the real nested
- * range inputs instead. The public callback continues to expose two arguments.
+ * Nested range inputs pin endpoint invariants; field pointer events pin window
+ * routing. The public callback continues to expose two arguments.
  */
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -16,7 +16,7 @@ beforeAll(async () => {
 	({ DualRangeSlider } = await import("./DualRangeSlider.js"));
 });
 
-function setup(props: { from: number; to: number; min?: number; max?: number; disabled?: boolean }) {
+function setup(props: { from: number; to: number; min?: number; max?: number; disabled?: boolean; label?: string; formatValue?: (from: number, to: number) => string }) {
 	const onChange = mock();
 	const { container } = render(
 		<DualRangeSlider
@@ -25,6 +25,8 @@ function setup(props: { from: number; to: number; min?: number; max?: number; di
 			from={props.from}
 			to={props.to}
 			disabled={props.disabled}
+			label={props.label}
+			formatValue={props.formatValue}
 			onChange={onChange}
 		/>,
 	);
@@ -34,18 +36,63 @@ function setup(props: { from: number; to: number; min?: number; max?: number; di
 	return { container, onChange, start, end };
 }
 
+function fieldWithRect(container: HTMLElement): HTMLElement {
+	const field = container.querySelector<HTMLElement>("[data-slider-field]");
+	if (!field) throw new Error("Missing range field");
+	Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 90 }) });
+	return field;
+}
+
 describe("DualRangeSlider — shared range invariants", () => {
-	it("renders one default-md shared root with two real nested range inputs", () => {
-		const { container, start, end } = setup({ from: 3, to: 7 });
+	it("renders one field shell with two real nested range inputs, edge handles and an inside label", () => {
+		const { container, start, end } = setup({ from: 3, to: 7, label: "Messages" });
 		const roots = container.querySelectorAll<HTMLElement>("[data-slider-root]");
-		const thumbs = container.querySelectorAll<HTMLElement>("[data-slider-thumb]");
+		const shells = container.querySelectorAll<HTMLElement>("[data-slider-field-shell]");
 
 		expect(roots).toHaveLength(1);
-		expect(roots[0]!.classList.contains("h-[14px]")).toBe(true);
-		expect(thumbs).toHaveLength(2);
+		// Seam change: rail footprint/thumbs -> a field shell and two 3 px edge handles (SL-11 D1).
+		expect(shells).toHaveLength(1);
+		expect(shells[0]!.querySelectorAll("[data-slider-field-handle]")).toHaveLength(2);
+		expect(shells[0]!.querySelector("[data-slider-field-label]")?.textContent).toBe("Messages");
+		expect(container.querySelector("[data-slider-track], [data-slider-thumb]")).toBeNull();
 		expect(start.type).toBe("range");
 		expect(end.type).toBe("range");
 		expect(roots[0]!.querySelectorAll('input[type="range"]')).toHaveLength(2);
+		expect(shells[0]!.contains(start) && shells[0]!.contains(end)).toBe(true);
+	});
+
+	it("shows the two-argument formatter result or the default endpoint text", () => {
+		const formatValue = mock((from: number, to: number) => `${from} through ${to}`);
+		const formatted = setup({ from: 3, to: 7, formatValue });
+		expect(formatValue).toHaveBeenCalledWith(3, 7);
+		expect(formatted.container.querySelector("[data-slider-field-value]")?.textContent).toBe("3 through 7");
+		const plain = setup({ from: 3, to: 7 });
+		expect(plain.container.querySelector("[data-slider-field-value]")?.textContent).toBe("3 – 7");
+	});
+
+	it("drags the whole window two steps and clamps at max without changing its width", () => {
+		const { container, onChange } = setup({ from: 3, to: 7 });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		expect(onChange).toHaveBeenLastCalledWith(5, 9);
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 200 });
+		expect(onChange).toHaveBeenLastCalledWith(6, 10);
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 200 });
+		for (const [from, to] of onChange.mock.calls) {
+			expect(to - from).toBe(4);
+			expect(to).toBeLessThanOrEqual(10);
+		}
+	});
+
+	it("ignores a pointer press and drag while disabled for generation", () => {
+		const { container, onChange } = setup({ from: 3, to: 7, disabled: true });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		expect(onChange).not.toHaveBeenCalled();
 	});
 
 	it("dragging `from` above `to` clamps to `to` (from never exceeds to)", () => {
@@ -93,9 +140,15 @@ describe("DualRangeSlider — shared range invariants", () => {
 	});
 
 	it("min === max renders two thumbs at the sole legal value", () => {
-		const { start, end } = setup({ from: 1, to: 1, min: 1, max: 1 });
+		const { container, onChange, start, end } = setup({ from: 1, to: 1, min: 1, max: 1 });
 		expect(start.value).toBe("1");
 		expect(end.value).toBe("1");
+		fireEvent.keyDown(start, { key: "ArrowRight" });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		expect(onChange).not.toHaveBeenCalled();
 	});
 
 	it("keeps disabled nested inputs inert", () => {

@@ -180,6 +180,7 @@ export function AvatarCropModal({
                 max={3}
                 step={0.01}
                 value={zoom}
+                formatValue={(value) => `×${value.toFixed(1)}`}
                 onValueChange={setZoom}
                 aria-label={t("crop_avatar_title")}
                 className="flex-1"

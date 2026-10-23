@@ -1,7 +1,7 @@
 import { Icons } from "../icons.js";
 import { NumberInput } from "../NumberInput.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
-import { Slider } from "../slider.js";
+import { SliderField } from "../SliderField.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
 import { lblCls } from "../../../lib/field-tokens.js";
@@ -36,8 +36,9 @@ export interface AiGenParamsRowProps {
 /**
  * Shared generation-params area for the AI-assistant modals: a persisted,
  * default-collapsed "Advanced settings" accordion holding temperature
- * (hybrid slider + typable field, two-way synced) and max-tokens, plus an
- * optional recent-messages field.
+ * (a `SliderField` scrubber: label and value inside, exact values typed
+ * through its inline editor) and max-tokens, plus an optional
+ * recent-messages field.
  *
  * Chrome follows the VibeMdView Accordion pattern: bordered container,
  * full-width trigger row with `aria-expanded`, `Icons.Caret` flip, content
@@ -73,30 +74,15 @@ export function AiGenParamsRow({
       </button>
       <AnimatedDisclosure open={isOpen} keepMounted className="px-4">
         <div className="space-y-3 py-4">
-          {/* Temperature — hybrid: slider for nudging + typable field for exact values */}
-          <div>
-            <label className={lblCls}>{t("ai_param_temperature")}</label>
-            <div className="flex items-center gap-2">
-              <Slider
-                min={0}
-                max={2}
-                step={0.1}
-                value={temperature}
-                onValueChange={onTemperatureChange}
-                aria-label={t("ai_param_temperature")}
-                className="flex-1"
-              />
-              <NumberInput
-                min={0}
-                max={2}
-                step={0.1}
-                hideControls
-                value={temperature}
-                onChange={onTemperatureChange}
-                className="w-16 shrink-0"
-              />
-            </div>
-          </div>
+          {/* Temperature: one scrubber field. Drag or arrows to nudge, double-click / Enter to type an exact value. */}
+          <SliderField
+            label={t("ai_param_temperature")}
+            min={0}
+            max={2}
+            step={0.1}
+            value={temperature}
+            onChange={onTemperatureChange}
+          />
           {/* Max tokens (+ optional recent messages) — no steppers on max-tokens */}
           <div className="grid grid-cols-2 gap-3">
             <div>
