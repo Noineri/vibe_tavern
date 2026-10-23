@@ -62,7 +62,7 @@ export function ActivationTestPanel({
         />
         <button type="button"
           className={cn(
-            "h-8 cursor-pointer rounded-md bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90",
+            "h-8 cursor-pointer rounded-md bg-accent px-4 text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:opacity-90",
             isMobile && "min-h-[44px]"
           )}
           onClick={runTest}
@@ -74,7 +74,7 @@ export function ActivationTestPanel({
       {testResult && (
         <div
           className={cn(
-            "flex items-center gap-2 rounded-md text-[12px] font-medium px-3 py-2",
+            "flex items-center gap-2 rounded-md text-[calc(var(--ui-fs)-2px)] font-medium px-3 py-2",
             testResult.ok
               ? "border border-success bg-success-dim text-success-text"
               : "border border-danger bg-danger-dim text-danger-text"
@@ -84,7 +84,7 @@ export function ActivationTestPanel({
         </div>
       )}
       {testMutData && (
-        <div className="flex items-center gap-2 rounded-md border border-success bg-success-dim px-3 py-2 text-[12px] font-medium text-success-text">
+        <div className="flex items-center gap-2 rounded-md border border-success bg-success-dim px-3 py-2 text-[calc(var(--ui-fs)-2px)] font-medium text-success-text">
           <Ic.check /> {t("activated_label")} {testMutData.activatedIds.length} /{" "}
           {testMutData.totalEntries} {t("entries_label")}
         </div>

@@ -356,19 +356,19 @@ function ExperienceEditorPane({
           {codeBuffer === "visual" && (
             <div data-testid="copilot-visual-validator" className="px-3 pb-1.5 pt-2">
               {visualValidation.ok ? (
-                <div className="flex items-center gap-1.5 font-ui text-[11px] text-success-text">
+                <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-success-text">
                   <Icons.Check className="h-3 w-3 shrink-0" />
                   <span>{t("agent_visual_valid")}</span>
                 </div>
               ) : (
                 <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-1.5">
-                  <div className="flex items-center gap-1.5 font-ui text-[11px] font-medium text-danger-text">
+                  <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-danger-text">
                     <Icons.Alert className="h-3.5 w-3.5 shrink-0" />
                     <span>{t("agent_visual_problems")}</span>
                   </div>
                   <ul className="mt-1 space-y-0.5">
                     {visualValidation.problems.map((p, i) => (
-                      <li key={i} className="font-mono text-[11px] leading-[1.5] text-danger-text">
+                      <li key={i} className="font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-danger-text">
                         {p.line !== null ? `L${p.line}: ` : ""}{p.message}
                       </li>
                     ))}

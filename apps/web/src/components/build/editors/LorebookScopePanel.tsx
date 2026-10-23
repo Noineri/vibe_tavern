@@ -78,7 +78,7 @@ export function LorebookScopePanel({
         <div
           key={s.id}
           className={cn(
-            "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[11px] font-medium transition-all select-none",
+            "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium transition-all select-none",
             scope === s.id
               ? "bg-accent text-on-accent"
               : "text-t3 bg-transparent hover:bg-s2 active:bg-s3"
@@ -108,7 +108,7 @@ export function LorebookScopeBreadcrumb({
   return (
     <>
       <span className="text-t4">/</span>
-      <span className="flex min-w-0 items-center gap-1 font-ui text-[13px] font-medium text-t3">
+      <span className="flex min-w-0 items-center gap-1 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t3">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{activeScope.icon}</span>
         <span className="truncate">{activeScope.label}</span>
       </span>

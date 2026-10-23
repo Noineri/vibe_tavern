@@ -129,7 +129,7 @@ export function PlaygroundDiagnostics({
                   <span className="inline-block text-t3 transition-transform" style={{ transform: diagnosticsOpen ? "rotate(90deg)" : "none" }}>▶</span>
                   <span className={blockLabelCls}>{t("experience_playground_diagnostics")}</span>
                   <CustomTooltip content={t("experience_playground_diagnostics_hint")}>
-                    <span className="cursor-help text-[11px] text-t4">ⓘ</span>
+                    <span className="cursor-help text-[calc(var(--ui-fs)-3px)] text-t4">ⓘ</span>
                   </CustomTooltip>
                 </button>
                 {diagnosticsOpen && (
@@ -142,7 +142,7 @@ export function PlaygroundDiagnostics({
                       <button
                         type="button"
                         data-testid="playground-discover"
-                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
                         onClick={() => runExplicitAction(() => { void handleDiscover(); })}
                       >
@@ -151,13 +151,13 @@ export function PlaygroundDiagnostics({
                       <button
                         type="button"
                         data-testid="playground-simulate"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
                         onClick={() => runExplicitAction(() => { void handleSimulate(); })}
                       >
                         {t("experience_tester_simulate")}
                       </button>
-                      {testerBusy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
+                      {testerBusy !== null && <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("script_running")}</span>}
                     </div>
 
                     {/* Grounding step 7: the seed this result RAN with
@@ -166,7 +166,7 @@ export function PlaygroundDiagnostics({
                         treatment, top of the result block. */}
                     {testerResult !== null && (
                       <>
-                        <p className="text-[12px] text-t3" data-testid="playground-discover-seed">
+                        <p className="text-[calc(var(--ui-fs)-2px)] text-t3" data-testid="playground-discover-seed">
                           {`${t("experience_playground_diagnostics_seed")}: ${testerResultSeed === "" ? "—" : testerResultSeed}`}
                         </p>
                         <TestRunResultBlock result={testerResult} />
@@ -174,7 +174,7 @@ export function PlaygroundDiagnostics({
                     )}
                     {simResult !== null && (
                       <>
-                        <p className="text-[12px] text-t3" data-testid="playground-simulate-seed">
+                        <p className="text-[calc(var(--ui-fs)-2px)] text-t3" data-testid="playground-simulate-seed">
                           {`${t("experience_playground_diagnostics_seed")}: ${simResultSeed === "" ? "—" : simResultSeed}`}
                         </p>
                         <TestSimulateResultBlock result={simResult} />
@@ -187,7 +187,7 @@ export function PlaygroundDiagnostics({
                       <button
                         type="button"
                         data-testid="playground-tester-send-to-copilot"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null}
                         onClick={handleSendTesterToCopilot}
                       >
@@ -209,7 +209,7 @@ export function PlaygroundDiagnostics({
                       <button
                         type="button"
                         data-testid="playground-send-to-copilot"
-                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={busy !== null}
                         onClick={() =>
                           onSendToCopilot(
@@ -232,14 +232,14 @@ export function PlaygroundDiagnostics({
                     {definition !== null && (
                       <div>
                         <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
                           <span className="font-semibold">{definition.manifest.name}</span>
-                          <span className="font-mono text-[11px] text-t3">({definition.manifest.id})</span>
-                          <span className="text-[11px] text-t3">· apiVersion {definition.apiVersion}</span>
-                          {definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
-                          {definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
+                          <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">({definition.manifest.id})</span>
+                          <span className="text-[calc(var(--ui-fs)-3px)] text-t3">· apiVersion {definition.apiVersion}</span>
+                          {definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">choose ✓</span>}
+                          {definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">flavor ✓</span>}
                         </div>
-                        <div className="mt-1 font-ui text-[11px] text-t3">
+                        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                           {definition.declaredCapabilities.length > 0
                             ? definition.declaredCapabilities.map((c) => c.capability).join(", ")
                             : t("experience_assign_no_capabilities")}
@@ -262,7 +262,7 @@ export function PlaygroundDiagnostics({
 
                     {realtimeRound === null && (
                     <>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                       <span>{t("experience_playground_session_label")}: <span className="font-mono text-t2">{session.playgroundSessionId.slice(0, 8)}</span></span>
                       <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{session.revision}</span></span>
                       <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{session.status}</span></span>
@@ -303,7 +303,7 @@ export function PlaygroundDiagnostics({
                       />
                       <button
                         type="button"
-                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                         disabled={busy !== null || actionType.trim() === ""}
                         onClick={() => void handleApplyAction()}
                       >
@@ -340,9 +340,9 @@ export function PlaygroundDiagnostics({
                         <div className="mt-1 space-y-1">
                           {session.events.map((event, i) => (
                             <div key={i} className="flex items-start gap-2">
-                              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                              <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                              {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+                              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                              <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{event.type}</span>
+                              {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(event.detail)}</pre>}
                             </div>
                           ))}
                         </div>
@@ -355,8 +355,8 @@ export function PlaygroundDiagnostics({
                         <div className="mt-1 space-y-1">
                           {session.effects.map((effect, i) => (
                             <div key={i} className="flex items-start gap-2">
-                              <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                              <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+                              <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase text-warning-text">{effect.kind}</span>
+                              <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(effect.request)}</pre>
                             </div>
                           ))}
                         </div>

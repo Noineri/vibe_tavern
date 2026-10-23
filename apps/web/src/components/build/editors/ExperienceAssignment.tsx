@@ -397,7 +397,7 @@ export function ExperienceAssignment({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-s2 p-4" data-chat-id={chatId}>
       {scriptsLoad.status === "error" && (
-        <p className="font-ui text-[12px] leading-relaxed text-danger-text">
+        <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-danger-text">
           {t("experience_assign_scripts_load_error")}
         </p>
       )}
@@ -434,25 +434,25 @@ export function ExperienceAssignment({
             {t(SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY)}
           </p>
         ) : activeDiscovery.status === "loading" ? (
-          <p className="font-ui text-[12px] text-t4">{t("experience_assign_discovering")}</p>
+          <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("experience_assign_discovering")}</p>
         ) : activeDiscovery.status === "error" ? (
           <DiscoveryError title={t(activeDiscovery.titleKey)} detail={activeDiscovery.detail} />
         ) : activeDiscovery.status === "ok" ? (
           <div className="flex flex-col gap-2">
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="min-w-0 truncate font-ui text-[12px] font-medium text-t2">
+              <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                 {activeDiscovery.definition.manifest.name}
               </span>
-              <span className="min-w-0 truncate font-mono text-[10px] text-t4">
+              <span className="min-w-0 truncate font-mono text-[calc(var(--ui-fs)-4px)] text-t4">
                 {activeDiscovery.definition.manifest.id}
               </span>
             </div>
 
-            <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">
               {t("experience_assign_capabilities_label")}
             </span>
             {declaredCapabilities.length === 0 ? (
-              <p className="font-ui text-[12px] leading-relaxed text-t4">
+              <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4">
                 {t("experience_assign_no_capabilities")}
               </p>
             ) : (
@@ -463,11 +463,11 @@ export function ExperienceAssignment({
                     className="flex items-center gap-2 rounded-md bg-s2 px-2.5 py-1.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-ui text-[12px] font-medium text-t2">
+                      <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                         {t(CAPABILITY_LABEL_KEYS[decl.capability])}
                       </div>
                       {decl.reason && (
-                        <div className="mt-0.5 font-ui text-[11px] leading-relaxed text-t4">
+                        <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t4">
                           {decl.reason}
                         </div>
                       )}
@@ -485,7 +485,7 @@ export function ExperienceAssignment({
             {/* RP-context mode — only once rp_context is declared AND granted. */}
             {rpContextActive && (
               <div className="flex flex-col gap-1.5">
-                <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">
+                <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">
                   {t("experience_assign_context_label")}
                 </span>
                 <SegmentedControl
@@ -501,7 +501,7 @@ export function ExperienceAssignment({
                   disabled={pending}
                 />
                 {(sourcePreviewText !== null || sourcePersonaPreviewText !== null) && (
-                  <p className="font-ui text-[11px] leading-relaxed text-t3" data-testid="experience-assign-source">
+                  <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3" data-testid="experience-assign-source">
                     {sourcePreviewText}
                     {sourcePersonaPreviewText !== null && (
                       <>
@@ -519,7 +519,7 @@ export function ExperienceAssignment({
             {modelActive && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-s2 px-2.5 py-2">
                 <span className="mt-0.5 shrink-0 text-t3"><Ic.brain /></span>
-                <p className="font-ui text-[12px] leading-relaxed text-t3">
+                <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
                   {t("experience_assign_model_note")}
                 </p>
               </div>
@@ -540,7 +540,7 @@ export function ExperienceAssignment({
           disabled={pending || visualsLoad.status === "loading"}
         />
         {visualsLoad.status === "error" && (
-          <p className="font-ui text-[11px] leading-relaxed text-danger-text">
+          <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text">
             {t("experience_assign_visuals_load_error")}
           </p>
         )}
@@ -548,7 +548,7 @@ export function ExperienceAssignment({
 
       {/* Launcher visibility — ordinary config, independent of the package. */}
       <div className="flex items-center justify-between gap-2">
-        <span className="font-ui text-[12px] text-t2">{t("experience_assign_launcher_label")}</span>
+        <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("experience_assign_launcher_label")}</span>
         <Toggle
           checked={launcherVisible}
           onChange={(v) => onPatch({ launcherVisible: v })}
@@ -563,7 +563,7 @@ export function ExperienceAssignment({
 function FieldBlock({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{label}</span>
+      <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">{label}</span>
       {children}
     </div>
   );
@@ -575,9 +575,9 @@ function FieldBlock({ label, children }: { label: string; children: ReactNode })
 function DiscoveryError({ title, detail }: { title: string; detail?: string | null }) {
   return (
     <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-2">
-      <div className="font-ui text-[11px] font-semibold uppercase text-danger-text">{title}</div>
+      <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-danger-text">{title}</div>
       {detail && (
-        <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{detail}</pre>
+        <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{detail}</pre>
       )}
     </div>
   );

@@ -741,19 +741,19 @@ export function ExperienceEditor() {
       <>
       <div data-testid="experience-picker-scroll" className="mx-auto max-w-[860px] px-6 py-5 max-md:h-full max-md:overflow-y-auto">
         {listsFailed && (
-          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
             {t("experience_editor_load_error")}
           </div>
         )}
         {createError && (
-          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
             {t("experience_editor_create_error")}: {createError}
           </div>
         )}
         {importError && (
           <div
             data-testid="experience_import_error"
-            className="mb-3 flex items-start justify-between gap-2 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text"
+            className="mb-3 flex items-start justify-between gap-2 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text"
           >
             <span>{t("experience_editor_import_error")}: {importError}</span>
             <button type="button" aria-label={t("close")} className="shrink-0 cursor-pointer text-t3 hover:text-t1" onClick={() => setImportError(null)}>
@@ -767,7 +767,7 @@ export function ExperienceEditor() {
           onClick={() => void handleCreateExperience()}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent"><Ic.plus /></div>
-          <span className="flex-1 text-[14px] font-semibold text-t1">{t("experience_editor_create_new")}</span>
+          <span className="flex-1 text-[var(--ui-fs)] font-semibold text-t1">{t("experience_editor_create_new")}</span>
         </button>
         {/* Mini-app import (.vtapp.json): hidden file input + slim ghost
             button under the prominent create. The bundle format is validated
@@ -791,12 +791,12 @@ export function ExperienceEditor() {
           onClick={() => importFileRef.current?.click()}
         >
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-s2 text-t2"><Ic.import /></div>
-          <span className="flex-1 text-[13px] font-medium text-t2">
+          <span className="flex-1 text-[calc(var(--ui-fs)-1px)] font-medium text-t2">
             {importing ? t("experience_editor_importing") : t("experience_editor_import")}
           </span>
         </button>
 
-        <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
+        <div className="mb-2 text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.06em] text-accent-t">
           {t("experience_editor_existing_label")}
         </div>
         {allScripts.length === 0 ? (
@@ -867,7 +867,7 @@ export function ExperienceEditor() {
   // E6: the trust-blocked hint renders below the bar on desktop and inside
   // the mobile Edit-tab header — one definition, two placements.
   const trustBlockedHint = enableLocked && (
-    <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
+    <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[calc(var(--ui-fs)-3px)] leading-[1.4] text-t3">
       {t("experience_editor_trust_blocked_hint")}
     </div>
   );
@@ -903,7 +903,7 @@ export function ExperienceEditor() {
           <button
             type="button"
             aria-label={t("experience_editor_back")}
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s2 hover:text-t1"
             onClick={handleBackFromEditor}
           >
             {Ic.caret("l")} {t("experience_editor_back")}
@@ -960,7 +960,7 @@ export function ExperienceEditor() {
                           type="button"
                           key={starter.id}
                           className={cn(
-                            "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                            "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                             active
                               ? "border-accent bg-accent/10 text-accent-t"
                               : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -983,14 +983,14 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
                   onClick={() => runExplicitScriptAction("test", (warningAcknowledged) => { void handleValidateRules(warningAcknowledged); })}
                 >
@@ -998,10 +998,10 @@ export function ExperienceEditor() {
                   {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
                 </button>
                 {rulesValid === true && (
-                  <span className="font-ui text-[11px] text-success">{t("experience_wizard_rules_valid")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-success">{t("experience_wizard_rules_valid")}</span>
                 )}
                 {rulesValid === false && (
-                  <span className="font-ui text-[11px] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
                 )}
               </div>
               {apiRefOpen && <InteractiveApiReference />}
@@ -1010,7 +1010,7 @@ export function ExperienceEditor() {
           visualToolbar={
             <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
               {visualDeleteError && (
-                <div className="rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+                <div className="rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
                   {t("experience_editor_visual_delete_error")}: {visualDeleteError}
                 </div>
               )}
@@ -1056,7 +1056,7 @@ export function ExperienceEditor() {
                           data-testid="experience_bind_visual_button"
                           aria-label={boundNow ? t("experience_editor_unbind_visual") : t("experience_editor_bind_visual")}
                           className={cn(
-                            "flex h-9 max-md:min-h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-3 font-ui text-[11px] transition-all",
+                            "flex h-9 max-md:min-h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-3 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                             boundNow
                               ? "border-accent bg-accent-dim text-accent-t hover:bg-accent/20"
                               : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1070,7 +1070,7 @@ export function ExperienceEditor() {
                   })()
                 ) : activeVisual ? (
                   <CustomTooltip content={t("experience_editor_bind_disabled_hint")}>
-                    <span className="flex h-9 max-md:min-h-[44px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[11px] text-t4">
+                    <span className="flex h-9 max-md:min-h-[44px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                       <Ic.plug /> {t("experience_editor_bind_visual_short")}
                     </span>
                   </CustomTooltip>
@@ -1109,7 +1109,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
                   onClick={handleNewBlankVisual}
                 >
                   <Ic.plus /> {t("experience_editor_visual_blank")}
@@ -1124,7 +1124,7 @@ export function ExperienceEditor() {
                       key={starter.id}
                       aria-label={isPaired ? t("experience_editor_visual_paired") : undefined}
                       className={cn(
-                        "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                        "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                         isPaired
                           ? "border-accent bg-accent/10 text-accent-t ring-2 ring-accent/40"
                           : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1133,7 +1133,7 @@ export function ExperienceEditor() {
                     >
                       {starter.label}
                       {isPaired && (
-                        <span className="rounded bg-accent-dim px-1 py-0.5 font-ui text-[9px] font-semibold uppercase tracking-wide text-accent-t">
+                        <span className="rounded bg-accent-dim px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-5px)] font-semibold uppercase tracking-wide text-accent-t">
                           {t("experience_editor_visual_paired")}
                         </span>
                       )}
@@ -1154,7 +1154,7 @@ export function ExperienceEditor() {
                       title={activeVisualDraft?.error ?? undefined}
                     />
                     {visualDirty && (
-                      <span className="shrink-0 max-md:hidden whitespace-nowrap font-ui text-[12px] text-t3">{t("unsaved_changes")}</span>
+                      <span className="shrink-0 max-md:hidden whitespace-nowrap font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("unsaved_changes")}</span>
                     )}
                     <SaveButton
                       className="shrink-0 max-md:min-h-[44px] max-md:w-full"
@@ -1178,12 +1178,12 @@ export function ExperienceEditor() {
                       >
                         {Ic.caret("r")}
                       </span>
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                      <span className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                         {t("experience_editor_visual_technical_details")}
                       </span>
                     </button>
                     <AnimatedDisclosure open={visualTechOpen} className="px-2.5 pb-2">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                         <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
                         <span>
                           {t("experience_editor_visual_hash")}:{" "}
@@ -1200,7 +1200,7 @@ export function ExperienceEditor() {
                   </div>
                 </>
               ) : (
-                <div className="py-2 text-center font-ui text-[12px] italic text-t3">
+                <div className="py-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] italic text-t3">
                   {t("experience_editor_visual_none")}
                 </div>
               )}
@@ -1208,7 +1208,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setVisualApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}

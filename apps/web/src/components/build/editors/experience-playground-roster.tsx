@@ -77,7 +77,7 @@ export function PlaygroundRoster({
                 <div className="flex flex-wrap items-center gap-2">
                   <div
                     aria-hidden
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-dim font-ui text-sm font-semibold text-accent-t"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-dim font-ui text-[var(--ui-fs)] leading-5 font-semibold text-accent-t"
                   >
                     {seatInitial(seat)}
                   </div>
@@ -127,7 +127,7 @@ export function PlaygroundRoster({
                       onKeyDown={(e) => { if (e.key === "Enter") setEditingIdIndex(null); }}
                     />
                   ) : (
-                    <span className="font-mono text-[11px] text-t3">
+                    <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">
                       {t("experience_playground_participant_id")}: <span className="text-t2" data-testid="playground-seat-id">{seat.id === "" ? "—" : seat.id}</span>
                     </span>
                   )}
@@ -168,7 +168,7 @@ export function PlaygroundRoster({
             ))}
             <button
               type="button"
-              className="mt-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+              className="mt-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
               onClick={() => {
                 setSeatsTouched(true);
                 setSeats((prev) => {

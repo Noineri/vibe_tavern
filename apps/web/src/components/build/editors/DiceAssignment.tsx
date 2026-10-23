@@ -195,7 +195,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-s2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-ui text-[13px] text-t3">
+        <span className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
           {definitions == null ? "…" : t("insights_dice_active", { count: effective.length })}
         </span>
         <SegmentedControl
@@ -223,7 +223,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
 
       {/* Unified rule list — same in inherit and local mode. */}
       {!noScriptsExist && effective.length === 0 && definitions != null && (
-        <p className="font-ui text-[12px] leading-relaxed text-t4">
+        <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4">
           {t("insights_dice_none_effective")}
         </p>
       )}
@@ -240,10 +240,10 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
                 key={def.scriptId}
                 className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md bg-s2 px-2.5 py-1.5"
               >
-                <span className="min-w-0 truncate font-ui text-[12px] font-medium text-t2">
+                <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                   {def.scriptLabel}
                 </span>
-                <span className="min-w-0 truncate font-ui text-[10px] text-t4">
+                <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
                   · {prov}
                 </span>
                 <ToggleChips
@@ -299,7 +299,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
           type="button"
           onClick={() => openDiceCreate()}
           disabled={pending}
-          className="flex items-center gap-1.5 rounded-md border border-dashed border-border2 px-2.5 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-accent-t disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-md border border-dashed border-border2 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:border-accent hover:text-accent-t disabled:opacity-40"
         >
           <Ic.plus />
           {t("insights_dice_create_new")}
@@ -309,7 +309,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
             type="button"
             onClick={() => onPatch({ diceScriptIds: null })}
             disabled={pending}
-            className="ml-auto rounded-md px-2 py-1 font-ui text-[11px] text-t4 transition-colors hover:text-accent-t disabled:opacity-40"
+            className="ml-auto rounded-md px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4 transition-colors hover:text-accent-t disabled:opacity-40"
           >
             {t("insights_dice_reset_auto")}
           </button>

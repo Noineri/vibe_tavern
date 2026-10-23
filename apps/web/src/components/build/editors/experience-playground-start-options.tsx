@@ -77,7 +77,7 @@ export function PlaygroundStartOptions({
             onChange={onRandomStartChange}
             aria-label={t("experience_playground_random_start")}
           />
-          <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("experience_playground_random_start")}</span>
         </span>
       </div>
       <div>

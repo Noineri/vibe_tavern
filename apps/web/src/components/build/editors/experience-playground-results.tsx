@@ -12,11 +12,11 @@ import { useT } from "../../../i18n/context.js";
 // ─── Small render helpers ────────────────────────────────────────────────────
 
 export const blockCls = "rounded-md border border-border bg-bg";
-export const blockLabelCls = "text-[11px] font-semibold uppercase tracking-[0.06em] text-t3";
+export const blockLabelCls = "text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3";
 
 export function JsonBlock({ value }: { value: unknown }) {
   return (
-    <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-[1.5] text-t2">
+    <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t2">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -30,8 +30,8 @@ export function ConsoleBlock({ entries, label }: { entries: readonly ExperienceT
       <div className="mt-1 space-y-0.5">
         {entries.map((entry, i) => (
           <div key={i} className="flex items-start gap-2">
-            <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
-            <pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{entry.args.join(" ")}</pre>
+            <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
+            <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] text-t2">{entry.args.join(" ")}</pre>
           </div>
         ))}
       </div>
@@ -63,10 +63,10 @@ export function RealtimeLoopDiagSection(props: {
     <div className={blockCls} style={{ padding: 10 }} data-testid="playground-realtime-diag">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className={blockLabelCls}>{t("experience_playground_rt_diag_title")}</span>
-        <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">realtime · tick {tickMs}ms · seed {seed}</span>
+        <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-accent-t">realtime · tick {tickMs}ms · seed {seed}</span>
         <span
           className={cn(
-            "rounded px-1.5 py-0.5 font-ui text-[10px]",
+            "rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)]",
             !booted ? "bg-danger-dim text-danger-text" : finished || diag.final ? "bg-s3 text-t3" : "bg-success-dim text-success-text",
           )}
           data-testid="playground-realtime-diag-status"
@@ -75,7 +75,7 @@ export function RealtimeLoopDiagSection(props: {
         </span>
       </div>
       {!booted ? (
-        <p className="mt-1.5 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_not_booted_hint")}</p>
+        <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_playground_rt_not_booted_hint")}</p>
       ) : (
         <div className="mt-2 space-y-2">
           <div>
@@ -83,21 +83,21 @@ export function RealtimeLoopDiagSection(props: {
             {diag.view !== undefined ? (
               <JsonBlock value={diag.view} />
             ) : (
-              <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_no_view")}</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_playground_rt_no_view")}</p>
             )}
           </div>
           <div>
             <div className={blockLabelCls}>{t("experience_playground_rt_events")}</div>
             {diag.events.length === 0 ? (
-              <p className="mt-1 font-ui text-[11px] italic text-t3">—</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">—</p>
             ) : (
               <div className="mt-1 space-y-0.5">
                 {diag.events.map((event, i) => (
                   <div key={i} className="flex items-start gap-2">
-                    <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">
+                    <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">
                       {typeof event === "object" && event !== null && "kind" in event ? String((event as { kind: unknown }).kind) : "event"}
                     </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event)}</pre>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(event)}</pre>
                   </div>
                 ))}
               </div>
@@ -109,10 +109,10 @@ export function RealtimeLoopDiagSection(props: {
               <div className="mt-1 space-y-0.5">
                 {diag.errors.map((err, i) => (
                   <div key={i} className="flex items-start gap-2">
-                    <span className="shrink-0 rounded bg-danger-dim px-1.5 py-0.5 font-mono text-[10px] text-danger-text">
+                    <span className="shrink-0 rounded bg-danger-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-danger-text">
                       {typeof err === "object" && err !== null && "kind" in err ? String((err as { kind: unknown }).kind) : "error"}
                     </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-danger-text">{JSON.stringify(err)}</pre>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-danger-text">{JSON.stringify(err)}</pre>
                   </div>
                 ))}
               </div>
@@ -126,13 +126,13 @@ export function RealtimeLoopDiagSection(props: {
                   <div key={i} className="flex items-start gap-2">
                     <span
                       className={cn(
-                        "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase",
+                        "shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase",
                         entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3",
                       )}
                     >
                       {entry.level}
                     </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{entry.text}</pre>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{entry.text}</pre>
                   </div>
                 ))}
               </div>
@@ -160,17 +160,17 @@ function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegali
           const owner = matrix.turnOwners.includes(seat.participantId);
           return (
             <div key={seat.participantId} className="flex flex-wrap items-center gap-2">
-              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]", owner ? "bg-accent-dim text-accent-t" : "bg-s3 text-t3")}>
+              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)]", owner ? "bg-accent-dim text-accent-t" : "bg-s3 text-t3")}>
                 {seat.label} · {seat.controller}
               </span>
               {seat.error !== undefined ? (
-                <span className="font-mono text-[10px] text-danger-text">actions() error: {seat.error}</span>
+                <span className="font-mono text-[calc(var(--ui-fs)-4px)] text-danger-text">actions() error: {seat.error}</span>
               ) : seat.actionTypes.length === 0 ? (
-                <span className="font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</span>
+                <span className="font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_tester_no_actions")}</span>
               ) : (
                 <span className="flex flex-wrap gap-1">
                   {seat.actionTypes.map((type) => (
-                    <span key={type} className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">{type}</span>
+                    <span key={type} className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">{type}</span>
                   ))}
                 </span>
               )}
@@ -178,7 +178,7 @@ function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegali
           );
         })}
       </div>
-      <div className="mt-1.5 font-ui text-[11px] text-t3">
+      <div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
         {t("experience_tester_turn")}:{" "}
         <span className="font-mono text-t2">
           {matrix.turnOwners.length > 0 ? matrix.turnOwners.join(", ") : completed ? "— (completed)" : "—"}
@@ -198,26 +198,26 @@ export function TestRunResultBlock({ result }: { result: ExperienceTestRunData }
     <div className="mt-2 space-y-2">
       <div className={blockCls} style={{ padding: 10 }}>
         <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
           <span className="font-semibold">{result.definition.manifest.name}</span>
-          <span className="font-mono text-[11px] text-t3">({result.definition.manifest.id})</span>
-          <span className="text-[11px] text-t3">· apiVersion {result.definition.apiVersion}</span>
-          {result.definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
-          {result.definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
+          <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">({result.definition.manifest.id})</span>
+          <span className="text-[calc(var(--ui-fs)-3px)] text-t3">· apiVersion {result.definition.apiVersion}</span>
+          {result.definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">choose ✓</span>}
+          {result.definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2">flavor ✓</span>}
           {result.definition.setup !== undefined && (
-            <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t2">
+            <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t2">
               {t("experience_tester_setup_fields")}: {result.definition.setup.fields.length}
             </span>
           )}
         </div>
-        <div className="mt-1 font-ui text-[11px] text-t3">
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
           {result.definition.declaredCapabilities.length > 0
             ? result.definition.declaredCapabilities.map((c) => c.capability).join(", ")
             : t("experience_assign_no_capabilities")}
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
         <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
         <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{result.status}</span></span>
       </div>
@@ -235,15 +235,15 @@ export function TestRunResultBlock({ result }: { result: ExperienceTestRunData }
       <div className={blockCls} style={{ padding: 10 }}>
         <div className={blockLabelCls}>{t("experience_tester_legal_actions")}</div>
         {result.projection.actions.length === 0 ? (
-          <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</p>
+          <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_tester_no_actions")}</p>
         ) : (
           <div className="mt-1 space-y-1">
             {result.projection.actions.map((action, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">{action.type}</span>
-                {action.label !== undefined && <span className="font-ui text-[11px] text-t2">{action.label}</span>}
-                {action.participantId !== undefined && <span className="font-mono text-[10px] text-t3">@{action.participantId}</span>}
-                {action.allowsText === true && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t3">text</span>}
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-accent-t">{action.type}</span>
+                {action.label !== undefined && <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{action.label}</span>}
+                {action.participantId !== undefined && <span className="font-mono text-[calc(var(--ui-fs)-4px)] text-t3">@{action.participantId}</span>}
+                {action.allowsText === true && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t3">text</span>}
               </div>
             ))}
           </div>
@@ -258,9 +258,9 @@ export function TestRunResultBlock({ result }: { result: ExperienceTestRunData }
           <div className="mt-1 space-y-1">
             {result.events.map((event, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{event.type}</span>
+                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(event.detail)}</pre>}
               </div>
             ))}
           </div>
@@ -273,8 +273,8 @@ export function TestRunResultBlock({ result }: { result: ExperienceTestRunData }
           <div className="mt-1 space-y-1">
             {result.effects.map((effect, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase text-warning-text">{effect.kind}</span>
+                <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(effect.request)}</pre>
               </div>
             ))}
           </div>
@@ -286,11 +286,11 @@ export function TestRunResultBlock({ result }: { result: ExperienceTestRunData }
           <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
           <div className="mt-1 space-y-1">
             {result.steps.map((step, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
+              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">
                 <span className="text-t3">{step.requestId}</span>
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-accent-t">{step.actionType}</span>
                 <span>→ rev {step.revision} · {step.status}</span>
-                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
+                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
               </div>
             ))}
           </div>
@@ -311,7 +311,7 @@ export function TestSimulateResultBlock({ result }: { result: ExperienceTestSimu
     <div className="mt-2 space-y-2">
       <div className={blockCls} style={{ padding: 10 }}>
         <div className={blockLabelCls}>{t("experience_tester_simulate")}</div>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
           <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{result.stopReason}</span></span>
           <span>{t("experience_tester_sim_iterations")}: <span className="font-mono text-t2">{result.iterations}</span></span>
           <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
@@ -325,9 +325,9 @@ export function TestSimulateResultBlock({ result }: { result: ExperienceTestSimu
           <div className="mt-1 space-y-1">
             {result.events.map((event, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{event.type}</span>
+                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(event.detail)}</pre>}
               </div>
             ))}
           </div>
@@ -340,8 +340,8 @@ export function TestSimulateResultBlock({ result }: { result: ExperienceTestSimu
           <div className="mt-1 space-y-1">
             {result.effects.map((effect, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase text-warning-text">{effect.kind}</span>
+                <pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{JSON.stringify(effect.request)}</pre>
               </div>
             ))}
           </div>
@@ -353,11 +353,11 @@ export function TestSimulateResultBlock({ result }: { result: ExperienceTestSimu
           <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
           <div className="mt-1 space-y-1">
             {result.steps.map((step, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
+              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">
                 <span className="text-t3">{step.requestId}</span>
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-accent-t">{step.actionType}</span>
                 <span>→ rev {step.revision} · {step.status}</span>
-                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
+                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
               </div>
             ))}
           </div>

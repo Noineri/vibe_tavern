@@ -1243,7 +1243,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               </span>
               <span className={cn(blockLabelCls, "shrink-0")}>{t("experience_playground_setup_title")}</span>
               {!setupOpen && (
-                <span className="min-w-0 truncate font-ui text-[11px] text-t3" data-testid="playground-setup-summary">
+                <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3" data-testid="playground-setup-summary">
                   {setupSummary}
                 </span>
               )}
@@ -1282,13 +1282,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   onChange={(checked) => toggleGrant(capability, checked)}
                   label={
                     <span className="flex items-center gap-1">
-                      <span className="text-[13px]">{t(CAPABILITY_LABEL_KEY[capability])}</span>
+                      <span className="text-[calc(var(--ui-fs)-1px)]">{t(CAPABILITY_LABEL_KEY[capability])}</span>
                       <CustomTooltip content={capability}>
-                        <span className="cursor-help text-[12px] text-t4">ⓘ</span>
+                        <span className="cursor-help text-[calc(var(--ui-fs)-2px)] text-t4">ⓘ</span>
                       </CustomTooltip>
                     </span>
                   }
-                  className="font-ui text-[12px]"
+                  className="font-ui text-[calc(var(--ui-fs)-2px)]"
                 />
               ))}
             </div>
@@ -1311,7 +1311,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                 the discovery-driven form / no-fields UI (the advanced JSON
                 disclosure below stays reachable for technical users). */}
             {autoDiscoverySkipped && (
-              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-auto-skip">
+              <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3" data-testid="playground-auto-skip">
                 {t(SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY)}
               </p>
             )}
@@ -1338,12 +1338,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               </div>
             )}
             {!autoDiscoverySkipped && setupFields.length === 0 && (
-              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-no-fields">
+              <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3" data-testid="playground-no-fields">
                 {t("experience_playground_no_fields")}
               </p>
             )}
             {setupFields.length > 0 && settingsObject === null && (
-              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+              <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text" role="alert">
                 {t("experience_playground_settings_json_invalid")}
               </p>
             )}
@@ -1354,7 +1354,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
             <div className="mt-1.5">
               <button
                 type="button"
-                className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
+                className="flex cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:text-t1"
                 onClick={() => setSettingsJsonOpen((v) => !v)}
                 aria-expanded={settingsJsonOpen}
                 data-testid="playground-settings-advanced-toggle"
@@ -1377,14 +1377,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
               disabled={busy !== null || code.trim() === ""}
               onClick={() => runExplicitAction(() => { void handleStart(); })}
             >
               {Ic.caret("r")}
               {t("experience_playground_start")}
             </button>
-            {busy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
+            {busy !== null && <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("script_running")}</span>}
           </div>
 
           {/* Typed error panel — see experience-playground-error.tsx. */}
@@ -1404,11 +1404,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               {/* Ordinary-language status + session controls (XU-3): restart/
                   reset live next to the active-session status strip. */}
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-s3" style={{ padding: 8 }}>
-                <span className="font-ui text-[12px] text-t2">{statusText}</span>
+                <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{statusText}</span>
                 {realtimeRound !== null && (
                   <span
                     data-testid="playground-realtime-badge"
-                    className="rounded bg-accent-dim px-1.5 py-0.5 font-ui text-[10px] text-accent-t"
+                    className="rounded bg-accent-dim px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent-t"
                   >
                     {t("experience_playground_realtime_badge")}
                   </span>
@@ -1419,7 +1419,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                     <button
                       type="button"
                       data-testid="playground-send-log"
-                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                       disabled={busy !== null}
                       onClick={handleSendLogToCopilot}
                     >
@@ -1429,7 +1429,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   <button
                     type="button"
                     data-testid="playground-copy-log"
-                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                     disabled={busy !== null}
                     onClick={() => { void handleCopyLog(); }}
                   >
@@ -1437,7 +1437,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   </button>
                   <button
                     type="button"
-                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                     disabled={busy !== null}
                     onClick={() => runExplicitAction(handleRestart)}
                   >
@@ -1445,7 +1445,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   </button>
                   <button
                     type="button"
-                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                     disabled={busy !== null}
                     onClick={handleReset}
                   >
@@ -1474,7 +1474,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   <div className="ml-auto flex items-center gap-2">
                     <button
                       type="button"
-                      className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                      className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                       disabled={busy !== null}
                       onClick={() => runExplicitAction(handleRestart)}
                     >
@@ -1482,7 +1482,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                     </button>
                     <button
                       type="button"
-                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                       disabled={busy !== null}
                       onClick={handleReset}
                     >
@@ -1535,9 +1535,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   </div>
                 ) : (
                   <>
-                    <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_no_visual")}</p>
+                    <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_playground_no_visual")}</p>
                     {realtimeRound !== null && (
-                      <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_realtime_no_visual")}</p>
+                      <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_playground_realtime_no_visual")}</p>
                     )}
                   </>
                 )}
@@ -1550,22 +1550,22 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               <div className={blockCls} style={{ padding: 10 }}>
                 <div className={blockLabelCls}>{t("experience_playground_turn_title")}</div>
                 {session.projection.actions.length === 0 ? (
-                  <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</p>
+                  <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">{t("experience_tester_no_actions")}</p>
                 ) : (
                   <>
-                    <p className="mt-1 font-ui text-[11px] text-t3">{t("experience_playground_legal_hint")}</p>
+                    <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("experience_playground_legal_hint")}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {session.projection.actions.map((action, i) => (
                         <button
                           key={i}
                           type="button"
-                          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                           disabled={busy !== null}
                           onClick={() => void submitAction(action.type, action.participantId)}
                         >
-                          <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">{action.type}</span>
+                          <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-accent-t">{action.type}</span>
                           {action.label !== undefined && <span>{action.label}</span>}
-                          {action.participantId !== undefined && <span className="font-mono text-[10px] text-t3">@{action.participantId}</span>}
+                          {action.participantId !== undefined && <span className="font-mono text-[calc(var(--ui-fs)-4px)] text-t3">@{action.participantId}</span>}
                         </button>
                       ))}
                     </div>

@@ -33,13 +33,13 @@ export function ExperienceCreationStepper({
             {index > 0 && <span className="text-t4">{Ic.caret("r")}</span>}
             <span
               className={cn(
-                "flex items-center gap-1.5 font-ui text-[11px] font-medium",
+                "flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium",
                 isActive ? "text-accent-t" : isDone ? "text-t2" : "text-t3",
               )}
             >
               <span
                 className={cn(
-                  "flex h-4 w-4 items-center justify-center rounded-full text-[9px]",
+                  "flex h-4 w-4 items-center justify-center rounded-full text-[calc(var(--ui-fs)-5px)] leading-none",
                   isDone ? "bg-accent text-on-accent" : "bg-s3 text-t3",
                 )}
               >
