@@ -551,6 +551,25 @@ export const skillContentSchema = z.object({
 export type SkillContentDto = z.infer<typeof skillContentSchema>;
 
 /**
+ * Request body of the skill save operation (AGENT_SHELL_POLISH, AP-23a) — the
+ * payload of `POST .../skills` (create) and `PUT .../skills/:id` (update) on
+ * BOTH the copilot (per kind) and Co-Author skill routes. `name` and
+ * `description` become the manifest frontmatter (a create starts from that
+ * minimal manifest; an update rebuilds the EXISTING frontmatter with these two
+ * keys replaced, every other key kept); `body` is the skill text below the
+ * frontmatter fence. The response is the fresh `SkillCatalogEntryDto`.
+ */
+export const skillSaveSchema = z.object({
+  /** Skill display name — the manifest `name`; on create also the source of the generated folder id. */
+  name: z.string().min(1),
+  /** One-line description — the manifest `description`. */
+  description: z.string(),
+  /** The skill text below the frontmatter fence (the editor's document). */
+  body: z.string(),
+});
+export type SkillSaveDto = z.infer<typeof skillSaveSchema>;
+
+/**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
  * the per-section `edit_*` tools (edit_personality / edit_scenario /
  * edit_examples) and by the frontend operation-card renderer (Wave 6), so the

@@ -1,11 +1,18 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { createCoauthorSkillRoutes } from "../src/api/routes/coauthor-skill.js";
 import { CoauthorSkillAdapter } from "../src/api/adapters/coauthor-skill-adapter.js";
 import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 import { listTopLevelDirs } from "../src/domain/coauthor/skills/skill-library.js";
+import {
+  isDomainError,
+  httpStatusForDomainError,
+  domainErrorToJson,
+} from "../src/shared/errors.js";
 
 /**
  * CTX-S2 — Co-Author skill library HTTP routes. Verifies the multipart import
@@ -30,7 +37,22 @@ afterEach(async () => {
 
 function makeApp() {
   const service = new SkillLibraryService(userRoot, builtinRoot);
-  return createCoauthorSkillRoutes(new CoauthorSkillAdapter(service));
+  const app = createCoauthorSkillRoutes(new CoauthorSkillAdapter(service));
+  // Mount the production DomainError → status mapping (shared helpers, not
+  // duplicated logic) so the save-path statuses (409 conflict / 404 notFound /
+  // 400 validation) are observable — the same pattern as copilot-skill-routes.
+  // HTTPException carries its own status (the json validator's malformed-JSON
+  // 400), the same branch app-factory's onError has.
+  app.onError((err, c) => {
+    if (isDomainError(err)) {
+      return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 404 | 409 | 422 | 500);
+    }
+    if (err instanceof HTTPException) {
+      return err.getResponse();
+    }
+    return c.json({ error: { kind: "Internal", message: err instanceof Error ? err.message : "error" } }, 500);
+  });
+  return app;
 }
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -176,6 +198,127 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
     const res = await app.request("/api/coauthor/skills/no-such-skill/content");
     expect(res.status).toBe(404);
     expect((await res.json()).error).toMatch(/does not exist/);
+  });
+});
+
+describe("POST /api/coauthor/skills — save (create, AP-23a)", () => {
+  test("create → 201 with the fresh entry DTO; <id>/SKILL.md written under the user root", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Plot Talk", description: "Talk plots.", body: "# Body\n" }),
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({
+      id: "plot-talk",
+      source: "user",
+      name: "Plot Talk",
+      description: "Talk plots.",
+      manifestPath: "plot-talk/SKILL.md",
+      shadowsBuiltin: false,
+    });
+    expect(await Bun.file(join(userRoot, "plot-talk", "SKILL.md")).text()).toContain("Talk plots.");
+  });
+
+  test("create from a Russian name → transliterated id over HTTP", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Психолог Речей", description: "d", body: "b" }),
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).id).toBe("psikholog-rechey");
+    expect(await listTopLevelDirs(userRoot)).toEqual(["psikholog-rechey"]);
+  });
+
+  test("missing name → zod 400; malformed JSON → 400; nothing written", async () => {
+    const app = makeApp();
+    const bad = await app.request("/api/coauthor/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description: "d", body: "b" }),
+    });
+    expect(bad.status).toBe(400);
+
+    const malformed = await app.request("/api/coauthor/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+});
+
+describe("PUT /api/coauthor/skills/:id — save (update, AP-23a)", () => {
+  test("update → 200 with the fresh DTO; references/ kept, frontmatter rebuilt with extra keys kept", async () => {
+    await mkdir(join(userRoot, "my-skill", "references"), { recursive: true });
+    await Bun.write(
+      join(userRoot, "my-skill", "SKILL.md"),
+      "---\nname: my-skill\ndescription: old\nlicense: MIT\n---\n\n# old\n",
+    );
+    await Bun.write(join(userRoot, "my-skill", "references", "rules.md"), "# Rules\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/my-skill", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Renamed", description: "new", body: "# New\n" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      id: "my-skill",
+      source: "user",
+      name: "Renamed",
+      description: "new",
+      manifestPath: "my-skill/SKILL.md",
+      shadowsBuiltin: false,
+    });
+
+    const onDisk = await Bun.file(join(userRoot, "my-skill", "SKILL.md")).text();
+    expect(onDisk).toContain("description: new");
+    // The extra frontmatter key survives the rebuild.
+    expect(onDisk).toContain("license: MIT");
+    expect(await Bun.file(join(userRoot, "my-skill", "references", "rules.md")).text()).toBe("# Rules\n");
+  });
+
+  test("built-in id → 409 Conflict (built-ins are read-only); the builtin file is untouched", async () => {
+    await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/profile-overview", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "X", description: "d", body: "b" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.kind).toBe("Conflict");
+    expect(body.error.message).toMatch(/built-in skills are read-only/);
+    expect(await Bun.file(join(builtinRoot, "profile-overview", "SKILL.md")).text()).toContain("built-in");
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("missing id → 404; invalid body → zod 400", async () => {
+    const app = makeApp();
+    const missing = await app.request("/api/coauthor/skills/nope", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "X", description: "d", body: "b" }),
+    });
+    expect(missing.status).toBe(404);
+
+    const invalid = await app.request("/api/coauthor/skills/nope", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description: "d", body: "b" }),
+    });
+    expect(invalid.status).toBe(400);
   });
 });
 

@@ -81,9 +81,12 @@ const BUILTIN_LOCATOR_MANIFEST = `${SKILLS_ASSET_DIR}/character-workshop/${MANIF
  * Split a manifest into its YAML frontmatter block and the BODY after the
  * closing fence, using the ONE fence convention this module owns (see
  * {@link extractFrontmatter}). Returns `null` when the document does not start
- * with a frontmatter fence or the closing fence is missing.
+ * with a frontmatter fence or the closing fence is missing. Exported for the
+ * skill-library's save operation (AP-23a), which rebuilds an existing
+ * frontmatter block — one fence convention, no second parser (still no write
+ * from THIS module: discovery stays read-only).
  */
-function locateFrontmatter(text: string): { frontmatter: string; body: string } | null {
+export function locateFrontmatter(text: string): { frontmatter: string; body: string } | null {
   // The opening fence must be the very first line (no leading blank/byte-order mark).
   const opening = text.match(/^---\r?\n/);
   if (!opening) return null;

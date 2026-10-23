@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import * as schemas from "@vibe-tavern/api-contracts";
 import type { CopilotSkillsByKindRuntimeApi } from "../contract/runtime-api.js";
 import type { SkillImportFile } from "../../domain/coauthor/skills/skill-library.js";
 import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js";
@@ -19,6 +21,14 @@ import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js"
  *    frontmatter-stripped `body`, and the folder's relative file `files`
  *    (manifest excluded). Same shape on the Co-Author skill routes — the ONE
  *    domain derivation (`SkillLibraryService.readSkillContent`) serves both.
+ *  - `POST   /api/copilot/skills` — save a NEW user skill (AP-23a): body
+ *    `{ name, description, body }`; the folder id is derived from the name
+ *    (transliterated, lowercased, hyphenated, de-duplicated). 201 + the fresh
+ *    catalog entry DTO. Mirrors the Co-Author route against the kind's roots.
+ *  - `PUT    /api/copilot/skills/:id` — save an EXISTING user skill (AP-23a):
+ *    same body; rewrites only that skill's SKILL.md (frontmatter rebuilt,
+ *    every key kept). A built-in id is a 409 (built-ins are read-only); a
+ *    missing id is a 404; an invalid manifest is a 400 that writes nothing.
  *  - `POST   /api/copilot/skills/import` — multipart upload where each file
  *    part's FIELD NAME is its relative path (e.g. `my-skill/SKILL.md`).
  *  - `DELETE /api/copilot/skills/:id`   — remove one user skill directory. A
@@ -47,6 +57,29 @@ export function createCopilotSkillRoutes(runtime: CopilotSkillsByKindRuntimeApi)
       const content = await skills.readSkillContent(id);
       if (!content) return c.json({ error: `skill '${id}' does not exist` }, 404);
       return c.json(content);
+    })
+    .post("/api/copilot/skills", zValidator("json", schemas.skillSaveSchema), async (c) => {
+      const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");
+      // Save (create): the id derivation, minimal manifest, parse-before-write,
+      // and atomic write all live in the ONE domain operation. A DomainError
+      // (invalid manifest → 400) propagates to the app error handler.
+      const saved = await skills.saveSkill(c.req.valid("json"));
+      return c.json(saved, 201);
+    })
+    .put("/api/copilot/skills/:id", zValidator("json", schemas.skillSaveSchema), async (c) => {
+      const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");
+      // Save (update): built-in id → DomainError conflict (409), missing id →
+      // notFound (404), both mapped by the app error handler. An unsafe id
+      // throws the same SkillImportError delete uses (client error → 400).
+      try {
+        const saved = await skills.saveSkill({ id: c.req.param("id"), ...c.req.valid("json") });
+        return c.json(saved);
+      } catch (err) {
+        if (err instanceof SkillImportError) {
+          return c.json({ error: err.message }, 400);
+        }
+        throw err;
+      }
     })
     .post("/api/copilot/skills/import", async (c) => {
       const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");
