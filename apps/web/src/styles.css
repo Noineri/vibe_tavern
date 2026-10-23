@@ -125,6 +125,7 @@
 
 @layer base {
   html, body { font-family: var(--font-ui); }
+  body { font-size: var(--ui-fs); }
   /* Font smoothing — crisper/thinner text rendering (macOS only; other platforms ignore it). */
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
