@@ -1290,8 +1290,12 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     expect(captions[1]!.nextElementSibling!.textContent).toContain("third reply");
   });
 
-  it("a turn starting with hidden tool calls shows the caption above its first rendered text", () => {
-    const { getAllByTestId } = render(
+  it("a tool-first turn shows the caption above its tool accordion, not between accordion and text", () => {
+    // WAS (AP-4): the caption sat above the turn's first visible text, i.e.
+    // BELOW the turn's tool accordion — it jumped at settle (the live
+    // caption streams above the accordion). NOW (AP-29 follow-up): one
+    // caption at the top of the turn, the same place live and persisted.
+    const { getByTestId, getByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[
@@ -1306,9 +1310,30 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
       />,
     );
 
-    const captions = getAllByTestId("copilot-host-caption");
-    expect(captions).toHaveLength(1);
-    expect(captions[0]!.nextElementSibling!.textContent).toContain("visible reply");
+    const caption = getByTestId("copilot-host-caption");
+    const accordion = getByTestId("copilot-tool-accordion");
+    expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(accordion.compareDocumentPosition(getByText("visible reply")) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+  });
+
+  it("a turn with neither text nor reasoning shows no caption", () => {
+    // The empty carrier renders nothing and earns nothing — the rule for
+    // tool-only turns without reasoning, extended to a bare carrier.
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "c1", role: "assistant", content: "" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryByTestId("copilot-host-caption")).toBeNull();
   });
 
   it("an assistant turn with no visible text shows no caption", () => {
@@ -1540,11 +1565,14 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
     expect(queryByText("kept thought")).toBeNull();
   });
 
-  it("a continuation streaming after persisted text keeps the live toggle in the fallback row", () => {
-    // The answer-continuation path (no optimistic user row) streams while
-    // the turn already shows persisted text — no second caption; the live
-    // toggle keeps its own row until the settle+refetch handover.
-    const { getByTestId, queryAllByText } = render(
+  it("a live continuation joins the turn's caption block — no second caption, no pending row", () => {
+    // WAS: the answer-continuation path (no optimistic user row) kept the
+    // live toggle in its own `copilot-pending-reasoning-row` until the
+    // settle+refetch handover (two toggles mid-turn). NOW (AP-29
+    // follow-up): the live reasoning joins the caption block it streams
+    // into (the same blank-line join) — one toggle, and the block holds
+    // the same text when the turn lands.
+    const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[
@@ -1557,9 +1585,154 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
       />,
     );
 
-    expect(queryAllByText("reasoning")).toHaveLength(2);
-    expect(getByTestId("copilot-host-caption").textContent).toContain("(4.2s)");
-    expect(getByTestId("copilot-pending-reasoning-row").textContent).toContain("reasoning");
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(4.2s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(caption.querySelector("pre")!.textContent).toBe("kept thought\n\ncontinuation thought");
+  });
+
+  it("live reasoning joins a bare caption — the toggle appears on the turn it continues", () => {
+    // The turn shows persisted text but carries no kept reasoning yet (bare
+    // title); the streaming delta still joins that caption's block instead
+    // of opening its own row.
+    const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "earlier reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning="live thought"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    fireEvent.click(getByText("reasoning"));
+    expect(getByTestId("copilot-host-caption").querySelector("pre")!.textContent).toBe("live thought");
+  });
+
+  it("a turn with two reasoning-carrying rows shows ONE toggle with both texts joined and durations summed", () => {
+    // An ask answer starts a new request WITHOUT a user row, so one visible
+    // turn holds two reasoning-carrying rows — the caption carries ALL of
+    // the turn's reasoning in order, not just the first row's.
+    const { getByTestId, getByText, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "first reply", reasoning: "first thought", reasoningDurationMs: 3000 }),
+          askCarrier("ac1"),
+          askToolRow({ status: "answered", answer: "Rules" }),
+          message({ id: "a2", role: "assistant", content: "second reply", reasoning: "second thought", reasoningDurationMs: 4000 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(7.0s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(caption.querySelector("pre")!.textContent).toBe("first thought\n\nsecond thought");
+  });
+
+  it("a tools-only turn with reasoning keeps its caption and toggle above its tool accordion", () => {
+    // WAS: a turn with reasoning but no text showed its reasoning only
+    // while streaming (the hoisted live caption) and lost it once the turn
+    // landed. NOW: the turn earns the caption through its kept reasoning,
+    // so the toggle survives the landing, above the turn's tools.
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "",
+            reasoning: "carrier thought", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          captionToolRow("t1", "c1"),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    const accordion = getByTestId("copilot-tool-accordion");
+    expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+    fireEvent.click(getByText("reasoning"));
+    expect(getByText("carrier thought")).toBeDefined();
+  });
+
+  it("a live tool-first turn shows the caption in the same position as after it lands", () => {
+    // The live caption sits above the live tool accordion; once the turn
+    // lands, the persisted caption sits above the same accordion — nothing
+    // moves at settle.
+    useAgentTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [{ toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" }],
+      },
+      feedByThread: {
+        "thread-1": [{ kind: "activity", id: "t1" }],
+      },
+    });
+    const { getByTestId, rerender } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText=""
+        pendingReasoning="thinking"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+      "copilot-tool-accordion",
+    );
+    // Land the turn: the persisted caption takes the same site.
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    rerender(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "",
+            reasoning: "thinking", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "t1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          message({
+            id: "t1row", role: "tool", toolCallId: "t1",
+            content: JSON.stringify({
+              toolName: "write_buffer",
+              output: { target: "rules", proposed: "# R1", summary: "wrote" },
+            }),
+          }),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+      "copilot-tool-accordion",
+    );
   });
 });
 
