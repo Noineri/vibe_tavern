@@ -29,6 +29,8 @@ import {
 	type SceneInjectionFormat,
 } from "@vibe-tavern/prompt-pipeline";
 import { isChatOwnedAgentThread } from "../agent/agent-thread-owner.js";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
+import { buildRpAttachmentBlocks } from "./sidechat-rp-attachments.js";
 import {
 	resolveObjectiveLongTermContext,
 	resolveObjectiveTaskContext,
@@ -174,6 +176,8 @@ export interface SidechatContextDeps {
 	presets: Pick<PresetStore, "getById">;
 	/** The RP assembly service — supplies the send path's own inputs. */
 	assembly: PromptAssemblyService;
+	/** Text-only RP attachments; optional for attachment-free harnesses. */
+	assetLoader?: AttachmentAssetLoader;
 }
 
 // ─── The loaded package (SC-3b static sections + SC-4d flow-placed events) ───
@@ -293,6 +297,7 @@ export async function loadSidechatContext(
 		dryRun: true,
 		recentMessageLimit: branchMessages.length,
 	});
+	const rpAttachmentBlocks = await buildRpAttachmentBlocks(built.context.chat.recentMessages, deps.assetLoader);
 
 	// The RP send's own macro seam: the full engine over the assembly-scoped
 	// variable scope, resolving against the base (raw-field) context — the
@@ -369,7 +374,7 @@ export async function loadSidechatContext(
 			for (const row of coverRpSyncPayload(mapped.payload, coverage)) {
 				eventMessages.push({
 					precedingMessages: messageCount,
-					content: renderTimelineEvent(row),
+					content: renderTimelineEvent(row, rpAttachmentBlocks),
 					meterSegment: meterSegmentOfEvent(row.kind),
 				});
 			}

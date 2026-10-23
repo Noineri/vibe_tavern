@@ -337,6 +337,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		copilotSkillService,
 		scriptSkillService,
 		sidechatSkillService,
+		summaryAssetLoader,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

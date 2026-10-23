@@ -6,6 +6,7 @@ import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestra
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { PromptPresetService } from "../../domain/prompt/prompt-preset-service.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import type { MobileAccessService } from "../../domain/mobile-access/mobile-access-service.js";
 import { BootstrapAdapter } from "./bootstrap-adapter.js";
 import { ChatAdapter } from "./chat-adapter.js";
@@ -128,6 +129,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		 * `?kind=sidechat-ooc` request then answers the unknown-kind-shaped
 		 * 400). */
 		sidechatSkillService?: SkillLibraryService,
+		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -199,6 +201,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			copilotSkillService,
 			scriptSkillService,
 			sidechatSkillService,
+			attachmentAssetLoader,
 		);
 		// SC-11: the thread-proposal apply/reject slice, wired with the REUSED
 		// insights seams — the insights runtime's add-task member (route mode;

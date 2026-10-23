@@ -54,6 +54,7 @@ import {
 } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
@@ -121,6 +122,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
      * (then the sidechat stream attaches no context, the same contract the
      * script kind has without ITS library). */
     private readonly sidechatSkillService?: SkillLibraryService,
+    /** Shared text-asset read for RP attachment rendering (CA-1f). */
+    private readonly attachmentAssetLoader?: AttachmentAssetLoader,
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
@@ -356,6 +359,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         // SC-23c: pinned-preset existence for the RP prompt view arm.
         presets: this.stores.presets,
         assembly,
+        assetLoader: this.attachmentAssetLoader,
       },
       // SC-17: the variant-attach freeze — the same stores/assembly the sync
       // and context seams read, plus the store's frozen-event append.

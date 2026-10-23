@@ -152,6 +152,25 @@ async function saveBranchTrace(chatId: ChatId, branchId: ChatBranchId, messageId
 }
 
 describe("loadSidechatContext (SC-3b)", () => {
+	it("CA-1f characterization: a no-attachment sync keeps its frozen text and exact event body", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		const message = await stores.messages.addMessage({
+			chatId, branchId, role: "user", authorType: "user", content: "Frozen <turn> & trail.",
+		});
+		await syncBeforeUserMessage(syncDeps, threadId);
+		await stores.messages.editMessage(message.id, "Live edit must not replace frozen text.");
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.eventMessages).toEqual([{
+			precedingMessages: 0,
+			meterSegment: "rp_messages",
+			content: [
+				'<rp_sync from="0" to="0">',
+				'<rp_message position="0" role="user" author="Sable">Frozen &lt;turn&gt; &amp; trail.</rp_message>',
+				"</rp_sync>",
+			].join("\n"),
+		}]);
+	});
+
 	it("resolves the card's and persona's raw macros — the RP send's own variable context", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatFixture();
 		await stores.messages.addMessage({
