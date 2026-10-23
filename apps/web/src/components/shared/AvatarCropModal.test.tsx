@@ -19,6 +19,21 @@ beforeAll(async () => {
 });
 
 describe("AvatarCropModal zoom", () => {
+	it("formats the zoom bubble to one decimal without rounding the live preview value", () => {
+		const view = render(
+			<AvatarCropModal imageUrl="blob:avatar" onConfirm={() => {}} onCancel={() => {}} />,
+		);
+		const zoom = view.getByRole("slider") as HTMLInputElement;
+		const thumb = zoom.closest("[data-slider-thumb]");
+		expect(thumb?.querySelectorAll("[data-slider-bubble]")).toHaveLength(1);
+		expect(thumb?.querySelector("[data-slider-bubble]")?.textContent).toBe("×1.0");
+		expect(view.getByTestId("crop-preview").getAttribute("data-zoom")).toBe("1");
+		fireEvent.change(zoom, { target: { value: "1.63" } });
+		expect(thumb?.querySelector("[data-slider-bubble]")?.textContent).toBe("×1.6");
+		expect(zoom.value).toBe("1.63");
+		expect(view.getByTestId("crop-preview").getAttribute("data-zoom")).toBe("1.63");
+	});
+
 	it("updates the crop preview immediately from the shared zoom slider", () => {
 		const { getByRole, getByTestId } = render(
 			<AvatarCropModal imageUrl="blob:avatar" onConfirm={() => {}} onCancel={() => {}} />,
