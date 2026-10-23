@@ -4,6 +4,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import type { EventBus } from "@vibe-tavern/domain";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // ChatSummary Feature — wraps ChatSummaryService as a FeatureModule
@@ -18,8 +19,9 @@ export function createChatSummaryFeature(deps: {
   providerProfileService: ProviderProfileService;
   /** Typed bus the service emits background notifications onto (W7). */
   events: EventBus;
+  assetLoader: AttachmentAssetLoader;
 }): FeatureModule {
-  const service = new ChatSummaryService(deps.stores, deps.sessionRuntime, deps.providerProfileService, deps.events);
+  const service = new ChatSummaryService(deps.stores, deps.sessionRuntime, deps.providerProfileService, deps.events, undefined, deps.assetLoader);
   let unsubscribe: (() => void) | null = null;
 
   return {

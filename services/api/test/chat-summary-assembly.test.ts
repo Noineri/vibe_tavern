@@ -6,8 +6,14 @@ import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domai
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
-import { ChatSummaryService, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+import { ChatSummaryService, withSummaryAttachmentsAsText, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
 import { resolveSummaryPrompt } from "../src/domain/prompt/summary-prompt.js";
+import { createStoreContainer } from "@vibe-tavern/db";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import type { Attachment } from "@vibe-tavern/domain";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 
 let capturedPrompt: AssemblePromptResponse | null = null;
 // SUM-2: capture execute sampler overrides + ranged-assemble contextBudget
@@ -599,5 +605,146 @@ describe("ChatSummaryService sampler override threading (SUM-2)", () => {
     });
 
     expect(capturedExecuteArgs).toEqual({ overrideMaxTokens: undefined, overrideTemperature: undefined });
+  });
+});
+
+describe("ChatSummaryService attachment-free prompt characterization (CA-1c2)", () => {
+  for (const path of ["full", "ranged"] as const) {
+    it(`pins the whole prompt handed to execute for ${path} summaries`, async () => {
+      capturedPrompt = null;
+      const service = makeSummaryService();
+      if (path === "full") {
+        await service.summarizeChat({ chatId: "chat_1", providerProfileId: "profile_1", maxMessages: 20 });
+      } else {
+        await service.generateChatSummary({ chatId: "chat_1", providerProfileId: "profile_1", summarizedFrom: 1, summarizedTo: 2 });
+      }
+      expect(JSON.stringify(capturedPrompt)).toBe(JSON.stringify({
+        layers: [
+          { id: "character_base", text: "Character context" },
+          { id: "prompt_preset_summary", text: "Summarize the case." },
+        ],
+        finalPayload: { messages: [
+          { role: "system", content: "Character context", layerId: "character_base" },
+          { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },
+        ] },
+      }));
+    });
+  }
+});
+
+describe("ChatSummaryService attachment text at the executor boundary (CA-1c2)", () => {
+  for (const path of ["full", "ranged", "auto", "without-loader"] as const) {
+    it(`${path}: real stored history reaches execute as text only, with exclusions honored`, async () => {
+      const dir = await mkdtemp(join(tmpdir(), "vt-summary-attachments-"));
+      try {
+        const stores = await createStoreContainer(":memory:", dir);
+        await Promise.all([stores.personas.ensureDefault(), stores.presets.ensureDefault(), stores.uiSettings.ensureDefaults()]);
+        const runtime = new SessionRuntime(stores, { getActiveProviderProfile: async () => null });
+        const created = await runtime.character.createFromScratch({ name: "SummaryProbe", description: "A probe", firstMessage: "Hello" });
+        const activeChat = await stores.chats.getById(created.activeChatId);
+        if (!activeChat) throw new Error("Missing seed chat");
+        const file: Attachment = {
+          id: "file_1", assetId: "text_asset", type: "file", name: "notes.md", mimeType: "text/markdown", sizeBytes: 10,
+        };
+        const attachments: Attachment[] = [
+          file,
+          { ...file, id: "image_1", assetId: "image_asset", type: "image", name: "scene.png", mimeType: "image/png", description: "A red tower" },
+          { ...file, id: "excluded", assetId: "excluded_asset", name: "secret.md", includeInPrompt: false, description: "EXCLUDED CONTENT" },
+          { ...file, id: "voice_1", type: "audio", name: "note.webm", mimeType: "audio/webm", description: "Spoken words" },
+          { ...file, id: "old_voice", type: "audio", name: "old.webm", mimeType: "audio/webm" },
+        ];
+        const user = await stores.messages.addMessage({
+          chatId: activeChat.id, branchId: activeChat.activeBranchId, role: "user", authorType: "user",
+          content: "Read these", attachmentsJson: JSON.stringify(attachments),
+        });
+        await stores.messages.addMessage({
+          chatId: activeChat.id, branchId: activeChat.activeBranchId, role: "assistant", authorType: "character", content: "Understood",
+        });
+        const profiles = {
+          getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false }),
+          getProviderModelSettings: async () => null,
+        } as unknown as ProviderProfileService;
+        const calls: Array<Parameters<typeof nonstreamingProviderExecute>[0]> = [];
+        const execute: typeof nonstreamingProviderExecute = async (input) => {
+          calls.push(input);
+          return { text: "A summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
+        };
+        const loaded: string[] = [];
+        const load = async (id: string) => {
+          loaded.push(id);
+          if (id !== file.assetId) throw new Error("Only visible text files may load bytes");
+          return Buffer.from("Full stored text\n");
+        };
+        const service = new ChatSummaryService(stores, runtime, profiles, null, execute, path === "without-loader" ? undefined : load);
+        const input = { chatId: activeChat.id, providerProfileId: "profile_1" };
+        if (path === "full" || path === "without-loader") {
+          await service.summarizeChat({ ...input, maxMessages: 20 });
+        } else if (path === "ranged") {
+          await service.generateChatSummary({ ...input, summarizedFrom: 1, summarizedTo: 3 });
+        } else {
+          await stores.chats.updateMemorySettings(activeChat.id, {
+            autoSummaryConfig: { ...activeChat.autoSummaryConfig, enabled: true, everyN: 1, useChatModel: false, providerProfileId: "profile_1" },
+          });
+          await service.triggerAutoSummary(activeChat.id);
+        }
+        expect(calls).toHaveLength(1);
+        const call = calls[0]!;
+        const messages = call.prompt.finalPayload?.messages as Array<{ role: string; messageId?: string; content: string; attachments?: Attachment[] }>;
+        const fileBlock = path === "without-loader"
+          ? "[Attached file: notes.md — file is no longer available]"
+          : "[Attached file: notes.md]\nFull stored text\n";
+        expect(messages.find((message) => message.messageId === user.id)?.content).toBe(
+          `Read these\n\n${fileBlock}\n\n[Attached image: scene.png]\nA red tower\n\n[Voice message: note.webm]\nTranscript: Spoken words`,
+        );
+        expect(messages.every((message) => !("attachments" in message))).toBe(true);
+        expect(JSON.stringify(call.prompt)).not.toContain("secret.md");
+        expect(JSON.stringify(call.prompt)).not.toContain("EXCLUDED CONTENT");
+        expect(JSON.stringify(call.prompt)).not.toContain("old.webm");
+        expect(call.assetLoader).toBeUndefined();
+        expect(call.visionModel).toBeUndefined();
+        expect(call.voiceTranscriber).toBeUndefined();
+        expect(loaded).toEqual(path === "without-loader" ? [] : [file.assetId]);
+        expect((await stores.messages.getMessageById(user.id))?.attachmentsJson).toBe(JSON.stringify(attachments));
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe("summary attachment rewrite preservation (CA-1c2)", () => {
+  it("keeps attachment-free history, tool calls, metadata and trace byte-identical", async () => {
+    const prompt: AssemblePromptResponse = {
+      ...summaryPrompt,
+      finalPayload: { messages: [
+        { role: "user", content: "  Original\n", messageId: "user_1" },
+        { role: "assistant", content: "", toolCalls: [{ type: "tool-call", toolCallId: "call_1", toolName: "lookup", input: {} }] },
+        { role: "tool", content: [{ type: "tool-result", toolCallId: "call_1", toolName: "lookup", output: "result" }] },
+      ], metadata: { keep: true } },
+    };
+    const before = JSON.stringify(prompt);
+    const result = await withSummaryAttachmentsAsText(prompt);
+    expect(result).toBe(prompt);
+    expect(JSON.stringify(result)).toBe(before);
+  });
+
+  it("removes empty and playback-only attachment fields without adding blank text or mutating history", async () => {
+    const prompt: AssemblePromptResponse = {
+      ...summaryPrompt,
+      finalPayload: { messages: [
+        { role: "user", messageId: "empty", content: "  Original\n", attachments: [] },
+        { role: "user", messageId: "music", content: "", attachments: [
+          { id: "music", assetId: "music_asset", type: "audio", name: "music.mp3", mimeType: "audio/mp3", sizeBytes: 1, purpose: "music", description: "Ignore" },
+        ] },
+      ], metadata: { keep: true } },
+    };
+    const before = JSON.stringify(prompt);
+    const result = await withSummaryAttachmentsAsText(prompt);
+    expect(result.finalPayload).toEqual({ messages: [
+      { role: "user", messageId: "empty", content: "  Original\n" },
+      { role: "user", messageId: "music", content: "" },
+    ], metadata: { keep: true } });
+    expect(result.layers).toBe(prompt.layers);
+    expect(JSON.stringify(prompt)).toBe(before);
   });
 });

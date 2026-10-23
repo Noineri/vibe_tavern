@@ -109,6 +109,43 @@ export class VisionNotSupportedError extends Error {
 // resolveMultimodalContent
 // ---------------------------------------------------------------------------
 
+export type AttachmentAssetLoader = (assetId: string) => Promise<Buffer | null>;
+
+/** Render already-visible attachments for a text-only consumer such as summary
+ *  memory. Never describes images or transcribes audio; old untranscribed voice
+ *  notes are omitted rather than failing the summary. Only text files load bytes.
+ *  Visibility belongs to filterPromptVisibleAttachments upstream. */
+export async function renderAttachmentsAsText(
+  attachments: ReadonlyArray<Attachment>,
+  assetLoader: AttachmentAssetLoader = async () => null,
+): Promise<string[]> {
+  const blocks: string[] = [];
+  for (const att of attachments) {
+    if (att.type === "audio") {
+      if ((att.purpose ?? "voice") === "voice" && att.description?.trim()) {
+        blocks.push(`[Voice message: ${att.name}]\nTranscript: ${att.description}`);
+      }
+    } else if (att.type === "image" || att.type === "video") {
+      blocks.push(`[Attached ${att.type}: ${att.name}]${att.description?.trim() ? `\n${att.description}` : ""}`);
+    } else if (isTextMime(att.mimeType)) {
+      if (att.description?.trim()) {
+        blocks.push(`[Attached file: ${att.name}]\n${att.description}`);
+      } else {
+        const buffer = await assetLoader(att.assetId);
+        if (buffer === null) {
+          log.tag("attachments").warn("Text attachment asset missing: assetId=%s name=%s", att.assetId, att.name);
+          blocks.push(`[Attached file: ${att.name} — file is no longer available]`);
+        } else {
+          blocks.push(`[Attached file: ${att.name}]\n${new TextDecoder().decode(buffer)}`);
+        }
+      }
+    } else if (att.description?.trim()) {
+      blocks.push(`[Attached ${att.type}: ${att.name}]\n${att.description}`);
+    }
+  }
+  return blocks;
+}
+
 /**
  * Convert a message + its attachments into AI SDK ContentPart[].
  *
@@ -148,17 +185,15 @@ export async function resolveMultimodalContent(
 
   for (const att of audioAttachments) {
     if ((att.purpose ?? "voice") !== "voice") continue; // playback-only
-    if (att.description?.trim()) {
-      parts.push({
-        type: "text",
-        text: `[Voice message: ${att.name}]\nTranscript: ${att.description}`,
-      });
-    } else {
+    if (!att.description?.trim()) {
       // The executor should have transcribed this (STT profile configured).
       // Reaching here means no profile was set OR transcription failed —
       // the honest configuration error, the VisionNotSupportedError mirror.
       throw new VoiceTranscribeUnavailableError([att.name]);
     }
+  }
+  for (const text of await renderAttachmentsAsText(audioAttachments, assetLoader)) {
+    parts.push({ type: "text", text });
   }
 
   // ── Vision routing (ASYMMETRIC by design) ───────────────────────────────
@@ -194,25 +229,8 @@ export async function resolveMultimodalContent(
   // Same on both paths — these never need vision. Audio is EXCLUDED: it is fully
   // handled by the audio branch above (double-emitting a described voice
   // note here would duplicate the transcript in the prompt).
-  for (const att of otherAttachments) {
-    if (isTextMime(att.mimeType)) {
-      if (att.description?.trim()) {
-        parts.push({ type: "text", text: `[Attached file: ${att.name}]\n${att.description}` });
-      } else {
-        const buffer = await assetLoader(att.assetId);
-        if (buffer === null) {
-          log.tag("attachments").warn("Text attachment asset missing: assetId=%s name=%s", att.assetId, att.name);
-          parts.push({ type: "text", text: `[Attached file: ${att.name} — file is no longer available]` });
-        } else {
-          parts.push({ type: "text", text: `[Attached file: ${att.name}]\n${new TextDecoder().decode(buffer)}` });
-        }
-      }
-    } else if (att.description?.trim()) {
-      parts.push({
-        type: "text",
-        text: `[Attached ${att.type}: ${att.name}]\n${att.description}`,
-      });
-    }
+  for (const text of await renderAttachmentsAsText(otherAttachments, assetLoader)) {
+    parts.push({ type: "text", text });
   }
 
   if (imageVideoAttachments.length === 0) return parts;

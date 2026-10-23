@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
+  renderAttachmentsAsText,
   resolveMultimodalContent,
   VisionNotSupportedError,
   type VisionGateConfig,
@@ -344,5 +345,95 @@ describe("vision-gate: resolveMultimodalContent routing", () => {
     );
     expect(parts).toHaveLength(1);
     expect(parts[0]).toMatchObject({ type: "text", text: "earlier turn" });
+  });
+});
+
+describe("vision-gate: text-only attachment rendering (CA-1c2)", () => {
+  const file: Attachment = {
+    id: "file_1", assetId: "asset_file_1", type: "file", name: "notes.md",
+    mimeType: "text/markdown", sizeBytes: 10,
+  };
+  const voice: Attachment = { ...file, type: "audio", name: "note.webm", mimeType: "audio/webm" };
+
+  test("all accepted text MIMEs render full UTF-8 text, strip BOM and retain whitespace", async () => {
+    const text = "  Full text\nUnicode: \u00e9 \u65e5\n  ";
+    for (const mimeType of Object.keys(TEXT_MIME_TO_EXT)) {
+      const load = mock(async (_id: string) => Buffer.from(`\uFEFF${text}`));
+      expect(await renderAttachmentsAsText([{ ...file, mimeType }], load)).toEqual([`[Attached file: notes.md]\n${text}`]);
+      expect(load.mock.calls).toEqual([[file.assetId]]);
+    }
+  });
+
+  test("a 5 MiB file renders whole without truncation", async () => {
+    const text = "x".repeat(5 * 1024 * 1024);
+    expect(await renderAttachmentsAsText([file], async () => Buffer.from(text))).toEqual([`[Attached file: notes.md]\n${text}`]);
+  });
+
+  test("a summary is verbatim and never loads the asset", async () => {
+    const load = mock(async () => { throw new Error("Summaries must not load bytes"); });
+    expect(await renderAttachmentsAsText([{ ...file, description: "  Summary\n" }], load)).toEqual(["[Attached file: notes.md]\n  Summary\n"]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("missing assets and an omitted loader render the CA-1b placeholder", async () => {
+    const expected = ["[Attached file: notes.md — file is no longer available]"];
+    expect(await renderAttachmentsAsText([file], async () => null)).toEqual(expected);
+    expect(await renderAttachmentsAsText([file])).toEqual(expected);
+  });
+
+  test("absent, null and blank summaries load full text; an empty file retains its header", async () => {
+    for (const description of [undefined, null, " \t\n"]) {
+      expect(await renderAttachmentsAsText([{ ...file, description }], async () => Buffer.alloc(0))).toEqual(["[Attached file: notes.md]\n"]);
+    }
+  });
+
+  test("images and videos render names plus existing descriptions without loading bytes", async () => {
+    const load = mock(async () => { throw new Error("Summary media must never load bytes"); });
+    expect(await renderAttachmentsAsText([
+      describedImage(), rawImage("raw"), { ...rawImage("blank"), description: " \t\n" },
+      { ...rawImage(), type: "video", name: "clip.mp4", mimeType: "video/mp4", description: "  A clip\n" },
+      { ...rawImage(), type: "video", name: "raw.mp4", mimeType: "video/mp4" },
+    ], load)).toEqual([
+      "[Attached image: img_1.png]\na red square", "[Attached image: raw.png]", "[Attached image: blank.png]",
+      "[Attached video: clip.mp4]\n  A clip\n", "[Attached video: raw.mp4]",
+    ]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("voice notes with explicit or legacy purpose render their transcript verbatim", async () => {
+    for (const purpose of [undefined, "voice"] as const) {
+      expect(await renderAttachmentsAsText([{ ...voice, purpose, description: "  Spoken words\n" }])).toEqual(["[Voice message: note.webm]\nTranscript:   Spoken words\n"]);
+    }
+  });
+
+  test("old untranscribed voice notes emit nothing and never throw or load bytes", async () => {
+    const load = mock(async () => { throw new Error("Summaries must not transcribe"); });
+    for (const description of [undefined, null, "", " \t\n"]) {
+      expect(await renderAttachmentsAsText([{ ...voice, description }], load)).toEqual([]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("music and ambient audio remain playback-only even when described", async () => {
+    const load = mock(async () => { throw new Error("Playback-only media must not load"); });
+    for (const purpose of ["music", "ambient"] as const) {
+      expect(await renderAttachmentsAsText([{ ...voice, purpose, description: "Do not send" }], load)).toEqual([]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("non-text files remain described-only, in attachment order", async () => {
+    const binary = { ...file, mimeType: "application/pdf", name: "document.pdf" };
+    const load = mock(async () => { throw new Error("Non-text files must not load"); });
+    expect(await renderAttachmentsAsText([binary, { ...binary, description: "A document" }, describedImage()], load)).toEqual([
+      "[Attached file: document.pdf]\nA document", "[Attached image: img_1.png]\na red square",
+    ]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("visibility stays in the existing upstream filter", async () => {
+    const load = mock(async () => { throw new Error("Excluded files must not load"); });
+    expect(await renderAttachmentsAsText(filterPromptVisibleAttachments([{ ...file, includeInPrompt: false }]), load)).toEqual([]);
+    expect(load).not.toHaveBeenCalled();
   });
 });
