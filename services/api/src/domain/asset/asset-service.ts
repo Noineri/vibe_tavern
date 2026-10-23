@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { ContentStore, StorageFolder } from "@vibe-tavern/db";
 import { IMAGE_EXTENSIONS, STORAGE_FOLDERS } from "@vibe-tavern/db";
-import { TEXT_MIME_TO_EXT, isTextMime, textMimeForExtension, textMimeForFileName } from "@vibe-tavern/domain";
+import { TEXT_MIME_TO_EXT, isTextMime, textMimeForExtension, resolveAttachmentUploadMime } from "@vibe-tavern/domain";
 
 import { countTokensDefault } from "../../infrastructure/ai/tokenizer-service.js";
 import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
@@ -61,30 +61,12 @@ const ALLOWED_MIMES = new Set([
  *  images at this; a dictation-length voice clip is far below it). */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
-/** Image, audio or video MIME: a reported type that must never be overridden
- *  by the file name's extension (the lookup tables, or a media top-level type). */
-function isMediaMime(mime: string): boolean {
-  return (
-    mime in MIME_TO_EXT ||
-    mime in AUDIO_MIME_TO_EXT ||
-    mime.startsWith("image/") ||
-    mime.startsWith("audio/") ||
-    mime.startsWith("video/")
-  );
-}
-
 /** Result of {@link AssetService.upload}. `tokenCount` is present for text
  *  files only; image and audio results carry no such key. */
 export interface AssetUploadResult {
   assetId: string;
   url: string;
   tokenCount?: number;
-}
-
-/** Strip MediaRecorder codec parameters (`audio/webm;codecs=opus` →
- *  `audio/webm`) so the lookup tables only carry base types. */
-function normalizeMime(mime: string): string {
-  return mime.split(";", 1)[0].trim().toLowerCase();
 }
 
 /** Resolve a stored image extension to its MIME type. Used when re-importing an
@@ -137,16 +119,7 @@ export class AssetService {
    * counting at this one place covers every caller of upload().
    */
   async upload(file: File): Promise<AssetUploadResult> {
-    let mime = normalizeMime(file.type);
-    // The reported type of a text file is unreliable: browsers send an empty or
-    // generic type for .md / .jsonl / .csv, and the OS registry supplies its own
-    // (Excel makes it application/vnd.ms-excel for .csv, editors use
-    // text/x-markdown, ...). So a known text extension decides the type
-    // whatever non-media MIME was reported. An image, audio or video MIME keeps
-    // its meaning whatever the name says.
-    if (!isMediaMime(mime)) {
-      mime = textMimeForFileName(file.name) ?? mime;
-    }
+    const mime = resolveAttachmentUploadMime(file.type, file.name);
     if (!ALLOWED_MIMES.has(mime)) {
       throw new Error(`Unsupported attachment type: ${file.type}. Allowed: jpeg, png, gif, webp, webm, ogg, m4a, mp3, wav, flac audio; txt, md, json, jsonl, csv text.`);
     }

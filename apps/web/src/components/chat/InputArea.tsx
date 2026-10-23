@@ -32,11 +32,11 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
-    fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
+    fileInputRef, accept, draftAttachments, onFileInputChange, handlePaste, canSend,
+    isDragOver, handleDragOver, handleDragLeave, handleDrop,
     buckets, inputTokens, permanent, availableBudget, tokenState, showGenerateMore, handleGenerateMore,
   } = data;
 
-  const [isDragOver, setIsDragOver] = useState(false);
   // ── Per-send prefill (LS-8, owner design): a labeled chip (human icon +
   // "prefill") in the chip row opens the one-shot prefill input as a BUBBLE
   // inside the input frame, DIRECTLY ABOVE the chip row (owner correction
@@ -51,26 +51,6 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     if (prefillOpen && prefillArmed === false && prefillWasArmedRef.current) setPrefillOpen(false);
     prefillWasArmedRef.current = prefillArmed;
   }, [prefillArmed, prefillOpen]);
-  // --- Drag-and-drop image attach (desktop only) ---
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDragOver(true);
-    }
-  };
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && (file.type.startsWith("image/") || file.type.startsWith("audio/"))) {
-      void data.handleFileSelected(file);
-    }
-  };
-
   // Render helpers
   function renderSendLabel(): string {
     if (isSending) return t("sending");
@@ -112,7 +92,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               </span>
             </div>
           )}
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
+          <input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
 
           {/* LS-8: the one-shot prefill bubble lives below (directly above the
               chip row — owner design 2026-09-09). */}

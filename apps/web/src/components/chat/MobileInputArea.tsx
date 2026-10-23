@@ -41,7 +41,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId, promptPresets, activePromptPresetId,
     provider, favoriteModels, activeModelId, handleSelectFavoriteModel,
-    fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
+    fileInputRef, accept, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
     buckets, inputTokens, permanent, maxTokens, availableBudget, tokenState,
   } = data;
@@ -159,7 +159,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
         {draftAttachments.length > 0 && <AttachmentPreview />}
         {/* Input row */}
         <div className="flex items-end gap-2">
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
+          <input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
           <textarea
             ref={mobileTextareaRef}
             className={composerCls}

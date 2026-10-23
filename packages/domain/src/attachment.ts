@@ -191,6 +191,10 @@ const AUDIO_MIMES = new Set([
   "audio/ogg",
   "audio/x-m4a",
   "audio/m4a",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/x-wav",
+  "audio/flac",
 ]);
 
 /**
@@ -266,6 +270,15 @@ export function textMimeForExtension(extension: string): string | null {
 export function textMimeForFileName(fileName: string): string | null {
   const dot = fileName.lastIndexOf(".");
   return dot < 0 ? null : textMimeForExtension(fileName.slice(dot + 1));
+}
+
+/** Shared browser/server upload rule: OS text MIME guesses yield to a known
+ *  text extension, but a reported media type always keeps its meaning. */
+export function resolveAttachmentUploadMime(reportedMime: string, fileName: string): string {
+  const mime = reportedMime.split(";", 1)[0].trim().toLowerCase();
+  const media = IMAGE_MIMES.has(mime) || AUDIO_MIMES.has(mime)
+    || mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/");
+  return media ? mime : (textMimeForFileName(fileName) ?? mime);
 }
 
 // ─── Stored attachment parsing ──────────────────────────────────────────────

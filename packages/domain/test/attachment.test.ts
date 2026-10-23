@@ -8,6 +8,7 @@ import {
   TEXT_MIME_TO_EXT,
   textMimeForExtension,
   textMimeForFileName,
+  resolveAttachmentUploadMime,
   composeVoiceTranscript,
   parseStoredAttachments,
   splitVoiceTranscript,
@@ -240,6 +241,30 @@ describe('text attachment types (CA-1a)', () => {
     const att: Attachment | undefined = parsed?.[0];
     expect(att?.tokenCount).toBe(1200);
     expect(att?.summaryTokenCount).toBe(90);
+  });
+});
+
+describe('shared attachment upload MIME resolution (CA-1d)', () => {
+  for (const [reported, name, expected] of [
+    ['', 'notes.md', 'text/markdown'],
+    ['application/octet-stream', 'events.JSONL', 'application/x-ndjson'],
+    ['application/vnd.ms-excel', 'a.csv', 'text/csv'],
+    ['audio/webm;codecs=opus', 'note.webm', 'audio/webm'],
+    [' IMAGE/PNG ; charset=binary', 'x.txt', 'image/png'],
+    ['audio/mpeg', 'x.md', 'audio/mpeg'],
+    ['video/mp4', 'x.json', 'video/mp4'],
+    ['application/x-msdownload', 'a.exe', 'application/x-msdownload'],
+    ['TEXT/PLAIN; charset=utf-8', 'README', 'text/plain'],
+  ]) {
+    test(`${reported || 'empty MIME'} + ${name} -> ${expected}`, () => {
+      expect(resolveAttachmentUploadMime(reported!, name!)).toBe(expected);
+    });
+  }
+
+  test('all audio types accepted by the existing RP picker classify as audio', () => {
+    for (const mime of ['audio/mp4', 'audio/mpeg', 'audio/x-wav', 'audio/flac']) {
+      expect(classifyAttachment(mime)).toBe('audio');
+    }
   });
 });
 

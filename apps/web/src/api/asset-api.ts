@@ -1,6 +1,6 @@
 import { apiFetch, getGatewayBaseUrl, getMobileToken } from "./client.js";
 
-export async function uploadAsset(file: File): Promise<{ assetId: string; url: string }> {
+export async function uploadAsset(file: File): Promise<{ assetId: string; url: string; tokenCount?: number }> {
   const formData = new FormData();
   formData.append("file", file);
   const baseUrl = getGatewayBaseUrl();
