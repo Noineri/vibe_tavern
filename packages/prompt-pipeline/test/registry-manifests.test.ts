@@ -17,6 +17,7 @@ describe("prompt assembly registries", () => {
       "regex",
       "scene_rules",
       "scene_schema",
+      "skill",
       "vision_describe",
     ]);
     expect(Object.values(AI_ASSISTANT_ASSEMBLERS).every((assembler) => typeof assembler.assemble === "function")).toBeTrue();

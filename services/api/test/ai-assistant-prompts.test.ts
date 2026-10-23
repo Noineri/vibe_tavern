@@ -141,6 +141,43 @@ describe("message editor prompt modes", () => {
   }
 });
 
+describe("skill drafting prompt mode (AP-23c)", () => {
+  it("uses an independent text-mode configuration mirroring lore_entry", () => {
+    const config = getModeConfig("skill");
+    expect(config.mode).toBe("skill");
+    expect(config.presetKey).toBe("skill");
+    expect(config.defaultPromptFile).toBe("skill-ai-prompt.md");
+    expect(config.outputFormat).toBe("text");
+    expect(config.stripReasoning).toBe(false);
+    expect(config.jsonSchemaHint).toBeNull();
+    expect(getDefaultPromptFile("skill")).toBe("skill-ai-prompt.md");
+  });
+
+  it("resolves its default asset and only its own profile override when mode is skill", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const defaultResult = await resolveSystemPrompt(db, "skill");
+    expect(defaultResult.source).toBe("default");
+    const assetPath = await resolvePromptAssetPath("skill-ai-prompt.md");
+    expect(await Bun.file(assetPath).exists()).toBe(true);
+    expect((await getDefaultPromptForMode("skill")).length).toBeGreaterThan(0);
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Skill Override",
+      overrides: { skill: "OVERRIDE_TOKEN" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    const overrideResult = await resolveSystemPrompt(db, "skill");
+    expect(overrideResult).toEqual({ prompt: "OVERRIDE_TOKEN", source: "override" });
+  });
+
+  it("the default asset drafts the skill body as markdown, not the first-cut JSON draft", async () => {
+    const prompt = await getDefaultPromptForMode("skill");
+    expect(prompt).toContain("skill body");
+    expect(prompt).toContain("# Title");
+    expect(prompt).not.toContain('{"name"');
+  });
+});
+
 describe("chat impersonation enhancement prompt", () => {
   it("resolves its independent editable service-prompt field", async () => {
     const { db, profileStore, uiSettings } = await setupDb();

@@ -13,6 +13,7 @@ export const aiAssistantModeSchema = z.enum([
   "message_merge",
   "message_tts_annotate",
   "regex",
+  "skill",
 ]);
 
 /** Body of POST /api/ai-assistant and POST /api/ai-assistant/tokens. */
