@@ -227,6 +227,7 @@ function renderPane(over: {
   ctrl?: AgentController;
   messages?: ExperienceCopilotMessageWire[];
   isMobile?: boolean;
+  copilotContext?: CopilotContextController;
 } = {}) {
   const ctrl = over.ctrl ?? makeCtrl();
   const utils = render(
@@ -252,7 +253,7 @@ function renderPane(over: {
         handleNewSession={async () => {}}
         handleRenameSession={async () => {}}
         setProfileModalOpen={() => {}}
-        copilotContext={COPILOT_CONTEXT}
+        copilotContext={over.copilotContext ?? COPILOT_CONTEXT}
         ctrl={over.ctrl ?? ctrl}
         sendWithOptions={(dispatch) => dispatch(EMPTY_OPTIONS)}
         planOwner={undefined}
@@ -483,6 +484,67 @@ describe("AgentChatPane — turn delete confirm (AP-11)", () => {
 
     expect(getByTestId("turn-delete-confirm")).toBeDefined();
     expect(getByTestId("turn-delete-title").textContent).toBe("copilot_turn_delete_title");
+  });
+});
+
+describe("AgentChatPane — meter row moved into the header ring (AP-14)", () => {
+  function meteredContext() {
+    return {
+      ...COPILOT_CONTEXT,
+      metrics: {
+        systemTokens: 2500,
+        digestTokens: 1000,
+        historyTokens: 500,
+        attachedTokens: 0,
+        totalTokens: 4000,
+        budgetTokens: 10000,
+        reserveTokens: 1000,
+        source: "estimate" as const,
+        measuredAt: "2026-08-15T00:00:00.000Z",
+      },
+    };
+  }
+
+  it("WAS: the meter lived as a permanent row below the header. NOW: the row is gone; the header holds the idle slot", () => {
+    // Default COPILOT_CONTEXT carries metrics: null (before the first answer).
+    const { queryByTestId, getByTestId } = renderPane();
+
+    expect(queryByTestId("copilot-context-meter")).toBeNull();
+    expect(getByTestId("copilot-context-ring-idle").textContent).toBe("copilot_context_no_metrics");
+    expect(queryByTestId("copilot-context-ring")).toBeNull();
+  });
+
+  it("metered metrics render the ring between the switcher and the gear; the body mounts only on open", () => {
+    const { getByTestId, queryByTestId } = renderPane({ copilotContext: meteredContext() });
+
+    const ring = getByTestId("copilot-context-ring");
+    expect(ring.textContent).toContain("40%");
+    // The popover is closed — the meter body is NOT in the DOM (no permanent row).
+    expect(queryByTestId("copilot-context-meter")).toBeNull();
+
+    // Header slot order: switcher trigger < ring < gear.
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.contains(getByTestId("copilot-session-switcher-trigger"))).toBe(true);
+    expect(header.contains(ring)).toBe(true);
+    // Radix Root/Trigger render asChild (no wrapper DOM), so the switcher
+    // trigger, the ring trigger, and the gear are DIRECT header children.
+    const order = Array.from(header.children);
+    expect(order.indexOf(getByTestId("copilot-session-switcher-trigger"))).toBeLessThan(
+      order.indexOf(ring),
+    );
+    expect(order.indexOf(ring)).toBeLessThan(
+      order.indexOf(getByTestId("copilot-profile-gear-btn")),
+    );
+  });
+
+  it("the ring renders on mobile too (responsive dual-mode — never a desktop-only gate)", () => {
+    const { getByTestId, queryByTestId } = renderPane({
+      isMobile: true,
+      copilotContext: meteredContext(),
+    });
+
+    expect(getByTestId("copilot-context-ring").textContent).toContain("40%");
+    expect(queryByTestId("copilot-context-meter")).toBeNull();
   });
 });
 

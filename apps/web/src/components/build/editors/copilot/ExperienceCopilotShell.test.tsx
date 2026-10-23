@@ -6,7 +6,7 @@ import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
-import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotContextMetrics, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
@@ -51,11 +51,29 @@ interface RouterState {
    *  Default empty — the AgentPlanPanel stays hidden for every test that does
    *  not set it (mirrors the hidden-until-first-plan contract). */
   agentPlan: AgentPlan;
+  /** AP-14: the context metrics served by GET …/context. Default null (no
+   *  usage data yet — the ring renders its idle slot and the meter body is
+   *  unmounted). Tests that drive the meter body set a metered fixture. */
+  contextMetrics: ExperienceCopilotContextMetrics | null;
 }
 let router: RouterState;
 
 /** PM-6: the empty plan — hidden panel. */
 const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
+
+/** AP-14: metered context metrics — the ring renders ring + % and the meter
+ *  body mounts inside its popover (inline here via this file's popover mock). */
+const CONTEXT_METRICS: ExperienceCopilotContextMetrics = {
+  systemTokens: 2500,
+  digestTokens: 1000,
+  historyTokens: 500,
+  attachedTokens: 0,
+  totalTokens: 4000,
+  budgetTokens: 10000,
+  reserveTokens: 1000,
+  source: "estimate",
+  measuredAt: "2026-08-15T00:00:00.000Z",
+};
 
 const jsonResponse = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -106,11 +124,11 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse(router.activateReturns);
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
+    return jsonResponse({ metrics: router.contextMetrics, autoCompact: true });
   }
   if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
     const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
-    return jsonResponse({ metrics: null, autoCompact: body.autoCompact ?? true });
+    return jsonResponse({ metrics: router.contextMetrics, autoCompact: body.autoCompact ?? true });
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
     return jsonResponse(router.contextLinks);
@@ -448,6 +466,7 @@ beforeEach(() => {
     contextLinks: [],
     contextLinksFail: false,
     agentPlan: EMPTY_PLAN,
+    contextMetrics: null,
   };
   fetchRouter.mockClear();
 });
@@ -543,15 +562,21 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
 });
 
 describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", () => {
-  it("mounts the meter once a thread is loaded and compacts on click (POST → refetch)", async () => {
+  it("mounts the ring once a thread is loaded and compacts on click (POST → refetch)", async () => {
     router.activeThread = thread("thread-1");
     router.messages = [
       msg({ id: "u1", role: "user", content: "Make it scarier" }),
     ];
+    // AP-14 plan row — the meter row leaves the chat pane: the ring (with
+    // the meter body inside its popover — inline here via this file's
+    // popover mock) is what mounts once a thread is loaded, and the compact
+    // flow goes through it.
+    router.contextMetrics = CONTEXT_METRICS;
 
     const { getByTestId } = renderShell();
     await flushSessionLoad();
 
+    expect(getByTestId("copilot-context-ring")).toBeDefined();
     expect(getByTestId("copilot-context-meter")).toBeDefined();
     const callsBefore = apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length;
 
@@ -582,7 +607,7 @@ describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
     ],
   };
 
-  it("mounts the AgentPlanPanel DIRECTLY below the meter, fed by useAgentPlan's GET", async () => {
+  it("mounts the AgentPlanPanel DIRECTLY below the header, fed by useAgentPlan's GET", async () => {
     router.activeThread = thread("thread-1");
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
     router.agentPlan = PLAN;
@@ -590,12 +615,15 @@ describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
     const { getByTestId } = renderShell({ scriptId: "script-plan-mount" });
     await flushSessionLoad();
 
-    const meter = getByTestId("copilot-context-meter");
-    // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
-    // stack stays header → meter → panel → feed — unchanged from the todo era).
+    // AP-14 plan row — the meter row leaves the chat pane, so the
+    // mount-order anchor moves from the meter to the header: the panel is
+    // the header's IMMEDIATE next sibling (the pinned stack is now
+    // header → panel → feed). The gear is a direct header child, so its
+    // parent IS the header row — mock-agnostic (portal or inline alike).
     await waitFor(() => {
       const panel = getByTestId("agent-plan-panel");
-      expect(meter.nextElementSibling).toBe(panel);
+      const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+      expect(header.nextElementSibling).toBe(panel);
     });
     // Fed by the hook: collapsed summary shows the active task + remaining.
     const panel = getByTestId("agent-plan-panel");
@@ -614,7 +642,9 @@ describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
     const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-plan-empty" });
     await flushSessionLoad();
 
-    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    // AP-14: the meter row is gone — the header holds the ring's idle slot
+    // (no usage data yet) while the empty plan stays hidden.
+    expect(getByTestId("copilot-context-ring-idle")).toBeDefined();
     expect(queryByTestId("agent-plan-panel")).toBeNull();
   });
 
@@ -647,19 +677,20 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     { status: "pending", title: "Bind the visual" },
   ] as const;
 
-  it("mounts the panel DIRECTLY below the meter, seeded from the thread wire todo", async () => {
+  it("mounts the panel DIRECTLY below the header, seeded from the thread wire todo", async () => {
     router.activeThread = { ...thread("thread-1"), todo: [...PLAN] };
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
 
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    const meter = getByTestId("copilot-context-meter");
     const panel = getByTestId("copilot-todo-panel");
-    // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
-    // stack is header → meter → todo → plan → feed; the plan panel is hidden
+    // AP-14 plan row — the meter row leaves the chat pane, so the
+    // mount-order anchor moves from the meter to the header (the pinned
+    // stack is now header → todo → plan → feed; the plan panel is hidden
     // here because the stored plan is empty — the independent-hiding contract).
-    expect(meter.nextElementSibling).toBe(panel);
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(panel);
     expect(queryByTestId("agent-plan-panel")).toBeNull();
     // Seeded from the wire: collapsed summary shows the active goal + remaining.
     expect(panel.getAttribute("data-state")).toBe("collapsed");
@@ -676,7 +707,9 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    // AP-14: the meter row is gone — the header holds the ring's idle slot
+    // (no usage data yet) while the empty todo stays hidden.
+    expect(getByTestId("copilot-context-ring-idle")).toBeDefined();
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
   });
 
@@ -721,12 +754,13 @@ describe("ExperienceCopilotShell — todo + plan coexistence (PM-7)", () => {
     const { getByTestId } = renderShell({ scriptId: "script-coexist-both" });
     await flushSessionLoad();
 
-    const meter = getByTestId("copilot-context-meter");
     await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
     const todoPanel = getByTestId("copilot-todo-panel");
     const planPanel = getByTestId("agent-plan-panel");
-    // Pinned stack: header → meter → TODO → PLAN → feed — todo above plan.
-    expect(meter.nextElementSibling).toBe(todoPanel);
+    // AP-14: the meter row is gone — pinned stack header → TODO → PLAN →
+    // feed, todo above plan; the todo↔plan adjacency pin is unchanged.
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(todoPanel);
     expect(todoPanel.nextElementSibling).toBe(planPanel);
     // Both render their own data (todo's current step; plan's active task).
     expect(todoPanel.textContent).toContain("Tweak the copy");
@@ -743,8 +777,10 @@ describe("ExperienceCopilotShell — todo + plan coexistence (PM-7)", () => {
 
     await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
-    // The plan panel is the meter's immediate sibling again (todo rendered nothing).
-    expect(getByTestId("copilot-context-meter").nextElementSibling).toBe(getByTestId("agent-plan-panel"));
+    // AP-14: the meter row is gone — the plan panel is the header's
+    // immediate sibling again (todo rendered nothing).
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(getByTestId("agent-plan-panel"));
   });
 
   it("each panel hides independently: todo shown while the plan is empty", async () => {

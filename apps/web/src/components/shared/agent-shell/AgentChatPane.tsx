@@ -18,7 +18,7 @@ import type { AgentController } from "./use-agent-controller.js";
 import type { CopilotContextController } from "../../../hooks/use-copilot-context.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatHeader } from "./AgentChatHeader.js";
-import { AgentContextMeter } from "./AgentContextMeter.js";
+import { AgentContextRing } from "./AgentContextRing.js";
 import { AgentTodoSection } from "./AgentTodoSection.js";
 import { AgentPlanSection } from "./AgentPlanSection.js";
 import { AgentMessageList } from "./AgentMessageList.js";
@@ -226,6 +226,29 @@ export function AgentChatPane({
         <>
           <AgentChatHeader
             leading={host.toolbarSlot?.(hostCtx)}
+            contextRing={
+              <AgentContextRing
+                metrics={copilotContext.metrics}
+                segmentLabels={host.meterSegmentLabels}
+                autoCompact={copilotContext.autoCompact}
+                isCompacting={copilotContext.isCompacting}
+                isSending={ctrl.isSending}
+                mobile={isMobile}
+                onCompact={() =>
+                  void copilotContext.compact().catch((err: unknown) => {
+                    // Surface the server's reason (typed 400s carry a meaningful
+                    // message, e.g. "Nothing to compact…") instead of a generic label.
+                    const message = err instanceof Error && err.message ? err.message : "";
+                    toast.error(message || t("copilot_context_compact_error"));
+                  })
+                }
+                onToggleAutoCompact={(enabled) =>
+                  void copilotContext.setAutoCompact(enabled).catch(() => {
+                    toast.error(t("copilot_context_auto_toggle_error"));
+                  })
+                }
+              />
+            }
             sessions={sessions}
             activeThreadId={threadId}
             disabled={ctrl.isSending}
@@ -233,26 +256,6 @@ export function AgentChatPane({
             onNew={handleNewSession}
             onRename={handleRenameSession}
             onOpenProfile={() => setProfileModalOpen(true)}
-          />
-          <AgentContextMeter
-            metrics={copilotContext.metrics}
-            segmentLabels={host.meterSegmentLabels}
-            autoCompact={copilotContext.autoCompact}
-            isCompacting={copilotContext.isCompacting}
-            isSending={ctrl.isSending}
-            onCompact={() =>
-              void copilotContext.compact().catch((err: unknown) => {
-                // Surface the server's reason (typed 400s carry a meaningful
-                // message, e.g. "Nothing to compact…") instead of a generic label.
-                const message = err instanceof Error && err.message ? err.message : "";
-                toast.error(message || t("copilot_context_compact_error"));
-              })
-            }
-            onToggleAutoCompact={(enabled) =>
-              void copilotContext.setAutoCompact(enabled).catch(() => {
-                toast.error(t("copilot_context_auto_toggle_error"));
-              })
-            }
           />
           {/* TAG-8 (restored PM-7): the pinned session-checklist section sits
               DIRECTLY below the meter and DIRECTLY ABOVE the plan section

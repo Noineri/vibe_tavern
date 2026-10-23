@@ -16,9 +16,15 @@ import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
  * descriptor's `toolbarSlot(ctx)`. The experience host passes none
  * (byte-identical row); the script host renders its back-to-editor control
  * here.
+ *
+ * AP-14: the optional `contextRing` slot renders the `AgentContextRing`
+ * (ring with the used %, opening the meter body) between the session
+ * switcher and the gear (mockup §1). The pane builds it from the copilot
+ * context controller; the header only positions it.
  */
 export function AgentChatHeader({
   leading,
+  contextRing,
   sessions,
   activeThreadId,
   disabled,
@@ -28,6 +34,7 @@ export function AgentChatHeader({
   onOpenProfile,
 }: {
   leading?: ReactNode;
+  contextRing?: ReactNode;
   sessions: ExperienceCopilotThreadWire[];
   activeThreadId: string;
   disabled: boolean;
@@ -48,6 +55,7 @@ export function AgentChatHeader({
         onNew={onNew}
         onRename={onRename}
       />
+      {contextRing}
       <button
         type="button"
         data-testid="copilot-profile-gear-btn"
