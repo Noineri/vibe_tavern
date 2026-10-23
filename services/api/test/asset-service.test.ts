@@ -322,10 +322,36 @@ describe("AssetService.upload - text attachments (CA-1a)", () => {
 		}
 	});
 
-	test("an unknown text MIME is refused even when the extension is a known one", async () => {
+	test("a known text extension wins over any non-media reported MIME (OS-registry types)", async () => {
+		const { assetsDir, service } = await setup();
+		const cases = [
+			{ name: "data.csv", type: "application/vnd.ms-excel", ext: "csv", servedMime: "text/csv" },
+			{ name: "notes.md", type: "text/x-markdown", ext: "md", servedMime: "text/markdown" },
+			// behavior change: was refused -> now accepted, basis: OS-reported MIMEs for text extensions vary (owner works on Windows)
+			{ name: "notes.md", type: "application/yaml", ext: "md", servedMime: "text/markdown" },
+		] as const;
+		for (const { name, type, ext, servedMime } of cases) {
+			const result = await service.upload(new File([textBytes(TEXT)], name, { type }));
+			expect(result.tokenCount).toBe(countTokensDefault(TEXT));
+			expect(await Bun.file(join(assetsDir, `${result.assetId}.${ext}`)).exists()).toBe(true);
+			expect((await service.serve(result.assetId))?.headers.get("Content-Type")).toBe(servedMime);
+		}
+	});
+
+	test("an image or audio MIME keeps its meaning whatever the file name says", async () => {
+		const { assetsDir, service } = await setup();
+		const image = await service.upload(new File([PNG_BYTES], "x.txt", { type: "image/png" }));
+		expect(Object.keys(image).sort()).toEqual(["assetId", "url"]);
+		expect(await Bun.file(join(assetsDir, `${image.assetId}.png`)).exists()).toBe(true);
+		expect((await service.serve(image.assetId))?.headers.get("Content-Type")).toBe("image/png");
+		// An unlisted media type is not rescued by a text extension either.
+		await expect(service.upload(new File([PNG_BYTES], "x.md", { type: "video/mp4" }))).rejects.toThrow(/Unsupported attachment type/);
+	});
+
+	test("a non-text extension with a non-allowed MIME is still refused", async () => {
 		const { service } = await setup();
 		await expect(
-			service.upload(new File([textBytes(TEXT)], "a.md", { type: "application/yaml" })),
+			service.upload(new File([new Uint8Array(4)], "setup.exe", { type: "application/x-msdownload" })),
 		).rejects.toThrow(/Unsupported attachment type/);
 	});
 

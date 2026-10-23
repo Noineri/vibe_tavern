@@ -61,8 +61,17 @@ const ALLOWED_MIMES = new Set([
  *  images at this; a dictation-length voice clip is far below it). */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
-/** MIME that browsers send when they do not know a file's type. */
-const GENERIC_MIME = "application/octet-stream";
+/** Image, audio or video MIME: a reported type that must never be overridden
+ *  by the file name's extension (the lookup tables, or a media top-level type). */
+function isMediaMime(mime: string): boolean {
+  return (
+    mime in MIME_TO_EXT ||
+    mime in AUDIO_MIME_TO_EXT ||
+    mime.startsWith("image/") ||
+    mime.startsWith("audio/") ||
+    mime.startsWith("video/")
+  );
+}
 
 /** Result of {@link AssetService.upload}. `tokenCount` is present for text
  *  files only; image and audio results carry no such key. */
@@ -129,10 +138,13 @@ export class AssetService {
    */
   async upload(file: File): Promise<AssetUploadResult> {
     let mime = normalizeMime(file.type);
-    // Browsers often send an empty or generic type for .md / .jsonl / .csv:
-    // a known text extension then decides the type. Images and audio never
-    // take this path (an empty type on them stays refused).
-    if (mime === "" || mime === GENERIC_MIME) {
+    // The reported type of a text file is unreliable: browsers send an empty or
+    // generic type for .md / .jsonl / .csv, and the OS registry supplies its own
+    // (Excel makes it application/vnd.ms-excel for .csv, editors use
+    // text/x-markdown, ...). So a known text extension decides the type
+    // whatever non-media MIME was reported. An image, audio or video MIME keeps
+    // its meaning whatever the name says.
+    if (!isMediaMime(mime)) {
       mime = textMimeForFileName(file.name) ?? mime;
     }
     if (!ALLOWED_MIMES.has(mime)) {
