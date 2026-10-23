@@ -2,14 +2,26 @@
  * Architecture ratchet gate.
  *
  * This freezes existing architecture debt at its current level: domain code may
- * not acquire new dependencies on the API/runtime layers, and oversized source
- * files may not grow. Baselines only shrink through --update-baseline.
+ * not acquire new dependencies on the API/runtime layers, oversized source
+ * files may not grow, and `apps/web/src` may not gain fixed font sizes (pixel
+ * classes, Tailwind size classes, inline `fontSize`, `styles.css` px rules).
+ * Baselines only shrink through --update-baseline.
  */
 import { API } from "typescript/unstable/async";
 import { isExportDeclaration, isImportDeclaration, isStringLiteral } from "typescript/unstable/ast";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
+import {
+	collectFontSizeTargetFiles,
+	collectFixedFontSizeMatches,
+	cssFontSizeFor,
+	FONT_SIZE_ROOT,
+	inlineFontSizeFor,
+	pixelClassFor,
+	tailwindClassFor,
+	type FontSizeKind,
+} from "./font-size-codemod.js";
 
 export const ARCH_GATE_MAX_LINES = 800;
 
@@ -20,6 +32,13 @@ const DOMAIN_ROOT = `${API_SOURCE_ROOT}/domain`;
 const SIZE_ROOTS = new Set(["apps", "services", "packages", "scripts"]);
 const LAYER_IMPORT_HINT = "domain/ must not depend on api/ or runtime/; move the needed code down into domain/ (or packages/*), or take a narrow interface instead of the SessionRuntime coordinator.";
 const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending. Deleting or compressing existing lines (code, comments, or whitespace) is NOT a remedy: this ratchet exists so budgets shrink by moving code out, never by trimming — if no cohesive part can be extracted, stop and escalate instead.";
+const FIXED_FONT_SIZE_LOCATE_HINT = "locate the new occurrence(s): bun scripts/font-size-codemod.ts --dry-run apps/web/src";
+const FIXED_FONT_SIZE_HINTS: Record<keyof FixedFontSizeCounts, string> = {
+	pixelClasses: `size chrome text from the --ui-fs ladder instead: text-[11px] → ${pixelClassFor(11)} (text-[Npx] → text-[calc(var(--ui-fs)-Kpx)], K = 14 - N; N = 14 → text-[var(--ui-fs)])`,
+	tailwindSizeClasses: `map the class by its px at the 16px root and keep its line height: text-xs → ${tailwindClassFor("xs")}, text-sm → ${tailwindClassFor("sm")}, text-lg → ${tailwindClassFor("lg")}`,
+	inlineFontSizes: `use the ladder value string instead: fontSize: 18 → ${inlineFontSizeFor(18)}`,
+	cssFontSizes: `use the ladder value instead: font-size: 12px → ${cssFontSizeFor(12)} (styles.css only; message rules follow --mfs per FIXED_FONT_SIZE_AUDIT_REPORT)`,
+};
 
 // These are flat catalogs by design: every schema/type addition belongs in the
 // one exhaustive source of truth, so splitting them would make navigation worse.
@@ -38,6 +57,21 @@ export interface LayerImport {
 export interface ArchGateBaseline {
 	layerImports: string[];
 	oversizedFiles: Record<string, number>;
+	fixedFontSizes?: FixedFontSizeCounts;
+}
+
+/** Fixed font sizes per pattern kind — the counters the baseline freezes. */
+export interface FixedFontSizeCounts {
+	pixelClasses: number;
+	tailwindSizeClasses: number;
+	inlineFontSizes: number;
+	cssFontSizes: number;
+}
+
+export interface FixedFontSizeGrowth {
+	pattern: keyof FixedFontSizeCounts;
+	baseline: number;
+	current: number;
 }
 
 export interface OversizedFileChange {
@@ -60,13 +94,25 @@ export interface ArchGateReport {
 	baseline: ArchGateBaseline;
 	layerImports: LayerImport[];
 	oversizedFiles: Record<string, number>;
+	fixedFontSizes: FixedFontSizeCounts;
 	newLayerImports: LayerImport[];
 	removedLayerImportKeys: string[];
 	growingOversizedFiles: OversizedFileChange[];
 	newOversizedFiles: NewOversizedFile[];
 	shrunkOversizedFiles: OversizedFileChange[];
 	removedOversizedFiles: RemovedOversizedFile[];
+	growingFixedFontSizes: FixedFontSizeGrowth[];
+	shrunkFixedFontSizes: FixedFontSizeGrowth[];
 }
+
+const FIXED_FONT_SIZE_KIND_KEYS = {
+	"pixel-class": "pixelClasses",
+	"tailwind-size-class": "tailwindSizeClasses",
+	"inline-font-size": "inlineFontSizes",
+	"css-font-size": "cssFontSizes",
+} as const satisfies Record<FontSizeKind, keyof FixedFontSizeCounts>;
+
+const FIXED_FONT_SIZE_PATTERNS = ["pixelClasses", "tailwindSizeClasses", "inlineFontSizes", "cssFontSizes"] as const;
 
 function normalizePath(file: string): string {
 	return file.split(path.sep).join("/");
@@ -187,20 +233,45 @@ export function collectOversizedFiles(root: string = ROOT, trackedFiles: readonl
 	return Object.fromEntries(Object.entries(oversized).sort(([left], [right]) => left.localeCompare(right)));
 }
 
+export function emptyFixedFontSizeCounts(): FixedFontSizeCounts {
+	return { pixelClasses: 0, tailwindSizeClasses: 0, inlineFontSizes: 0, cssFontSizes: 0 };
+}
+
+export function totalFixedFontSizes(counts: Readonly<FixedFontSizeCounts>): number {
+	return counts.pixelClasses + counts.tailwindSizeClasses + counts.inlineFontSizes + counts.cssFontSizes;
+}
+
+/** Current fixed font sizes under `apps/web/src` (walked on disk, so a new
+ *  component fails the gate before it is ever staged; tests, components/dev/
+ *  and the known false positives excluded — see fontSizeScopeRejection). */
+export function collectFixedFontSizes(root: string = ROOT): FixedFontSizeCounts {
+	const counts = emptyFixedFontSizeCounts();
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		const matches = collectFixedFontSizeMatches(file, readFileSync(path.resolve(root, file), "utf8"));
+		for (const match of matches) {
+			counts[FIXED_FONT_SIZE_KIND_KEYS[match.kind]] += 1;
+		}
+	}
+	return counts;
+}
+
 export function evaluateArchGate(
 	baseline: ArchGateBaseline,
 	layerImports: readonly LayerImport[],
 	oversizedFiles: Readonly<Record<string, number>>,
+	fixedFontSizes: Readonly<FixedFontSizeCounts> = emptyFixedFontSizeCounts(),
 ): ArchGateReport {
 	const baselineLayerImports = new Set(baseline.layerImports);
 	const currentLayerImports = new Set(layerImports.map(toLayerKey));
 	const currentOversizedFiles = Object.entries(oversizedFiles).sort(([left], [right]) => left.localeCompare(right));
 	const baselineOversizedFiles = Object.entries(baseline.oversizedFiles).sort(([left], [right]) => left.localeCompare(right));
+	const baselineFixedFontSizes = baseline.fixedFontSizes ?? emptyFixedFontSizeCounts();
 
 	return {
 		baseline,
 		layerImports: [...layerImports],
 		oversizedFiles: { ...oversizedFiles },
+		fixedFontSizes: { ...fixedFontSizes },
 		newLayerImports: layerImports.filter((entry) => !baselineLayerImports.has(toLayerKey(entry))),
 		removedLayerImportKeys: baseline.layerImports.filter((key) => !currentLayerImports.has(key)).sort(),
 		growingOversizedFiles: currentOversizedFiles.flatMap(([file, current]) => {
@@ -217,21 +288,45 @@ export function evaluateArchGate(
 		removedOversizedFiles: baselineOversizedFiles.flatMap(([file, baseline]) => {
 			return oversizedFiles[file] === undefined ? [{ file, baseline }] : [];
 		}),
+		growingFixedFontSizes: FIXED_FONT_SIZE_PATTERNS.flatMap((pattern) => {
+			const recorded = baselineFixedFontSizes[pattern];
+			const current = fixedFontSizes[pattern];
+			return current > recorded ? [{ pattern, baseline: recorded, current }] : [];
+		}),
+		shrunkFixedFontSizes: FIXED_FONT_SIZE_PATTERNS.flatMap((pattern) => {
+			const recorded = baselineFixedFontSizes[pattern];
+			const current = fixedFontSizes[pattern];
+			return recorded > current ? [{ pattern, baseline: recorded, current }] : [];
+		}),
 	};
 }
 
 function hasFailures(report: ArchGateReport): boolean {
-	return report.newLayerImports.length > 0 || report.growingOversizedFiles.length > 0 || report.newOversizedFiles.length > 0;
+	return (
+		report.newLayerImports.length > 0 ||
+		report.growingOversizedFiles.length > 0 ||
+		report.newOversizedFiles.length > 0 ||
+		report.growingFixedFontSizes.length > 0
+	);
 }
 
 function hasReductions(report: ArchGateReport): boolean {
-	return report.removedLayerImportKeys.length > 0 || report.shrunkOversizedFiles.length > 0 || report.removedOversizedFiles.length > 0;
+	return (
+		report.removedLayerImportKeys.length > 0 ||
+		report.shrunkOversizedFiles.length > 0 ||
+		report.removedOversizedFiles.length > 0 ||
+		report.shrunkFixedFontSizes.length > 0
+	);
 }
 
 export function formatArchGateReport(report: ArchGateReport): string {
 	const lines: string[] = [];
 	if (hasFailures(report)) {
-		const failureCount = report.newLayerImports.length + report.growingOversizedFiles.length + report.newOversizedFiles.length;
+		const failureCount =
+			report.newLayerImports.length +
+			report.growingOversizedFiles.length +
+			report.newOversizedFiles.length +
+			report.growingFixedFontSizes.length;
 		lines.push(`Architecture gate: FAIL — ${failureCount} new architecture violation(s) detected.`);
 		for (const entry of report.newLayerImports) {
 			lines.push(`  [domain-layer-import] services/api/src/${entry.file}:${entry.line}`);
@@ -248,6 +343,13 @@ export function formatArchGateReport(report: ArchGateReport): string {
 			lines.push(`    ${entry.current} lines > ${ARCH_GATE_MAX_LINES}-line cap; this file is not in the baseline`);
 			lines.push(`    → ${FILE_SIZE_HINT}`);
 		}
+		for (const entry of report.growingFixedFontSizes) {
+			lines.push(`  [fixed-font-size] ${entry.pattern}: ${entry.current} > baseline ${entry.baseline}`);
+			lines.push(`    → ${FIXED_FONT_SIZE_HINTS[entry.pattern]}`);
+		}
+		if (report.growingFixedFontSizes.length > 0) {
+			lines.push(`    → ${FIXED_FONT_SIZE_LOCATE_HINT}`);
+		}
 	} else {
 		lines.push("Architecture gate: OK — all current violations are within baseline.");
 	}
@@ -261,11 +363,14 @@ export function formatArchGateReport(report: ArchGateReport): string {
 		for (const entry of report.removedOversizedFiles) {
 			lines.push(`    [file-size-ratchet] ${entry.file}: no longer above ${ARCH_GATE_MAX_LINES} lines (was ${entry.baseline})`);
 		}
+		for (const entry of report.shrunkFixedFontSizes) {
+			lines.push(`    [fixed-font-size] ${entry.pattern}: ${entry.current} (was ${entry.baseline})`);
+		}
 		lines.push("  Lower the baseline with: bun scripts/arch-gate.ts --update-baseline");
 	}
 
 	lines.push(
-		`  budgets: layer imports ${report.layerImports.length}/${report.baseline.layerImports.length}, oversized files ${Object.keys(report.oversizedFiles).length}/${Object.keys(report.baseline.oversizedFiles).length}, new-file cap ${ARCH_GATE_MAX_LINES} lines`,
+		`  budgets: layer imports ${report.layerImports.length}/${report.baseline.layerImports.length}, oversized files ${Object.keys(report.oversizedFiles).length}/${Object.keys(report.baseline.oversizedFiles).length}, new-file cap ${ARCH_GATE_MAX_LINES} lines, fixed font sizes ${totalFixedFontSizes(report.fixedFontSizes)}/${totalFixedFontSizes(report.baseline.fixedFontSizes ?? emptyFixedFontSizeCounts())}`,
 	);
 	return lines.join("\n");
 }
@@ -288,7 +393,18 @@ function parseBaseline(value: unknown): ArchGateBaseline {
 		}
 		oversizedFiles[file] = lines;
 	}
-	return { layerImports: [...new Set(value.layerImports)].sort(), oversizedFiles };
+	if (!isRecord(value.fixedFontSizes)) {
+		throw new Error("baseline must contain fixedFontSizes{} (pixelClasses, tailwindSizeClasses, inlineFontSizes, cssFontSizes)");
+	}
+	const fixedFontSizes = emptyFixedFontSizeCounts();
+	for (const pattern of FIXED_FONT_SIZE_PATTERNS) {
+		const count = value.fixedFontSizes[pattern];
+		if (typeof count !== "number" || !Number.isInteger(count) || count < 0) {
+			throw new Error(`baseline fixedFontSizes.${pattern} must be a non-negative integer`);
+		}
+		fixedFontSizes[pattern] = count;
+	}
+	return { layerImports: [...new Set(value.layerImports)].sort(), oversizedFiles, fixedFontSizes };
 }
 
 async function loadBaseline(): Promise<ArchGateBaseline> {
@@ -300,10 +416,15 @@ async function loadBaseline(): Promise<ArchGateBaseline> {
 	}
 }
 
-function baselineFromCurrent(layerImports: readonly LayerImport[], oversizedFiles: Readonly<Record<string, number>>): ArchGateBaseline {
+function baselineFromCurrent(
+	layerImports: readonly LayerImport[],
+	oversizedFiles: Readonly<Record<string, number>>,
+	fixedFontSizes: Readonly<FixedFontSizeCounts>,
+): ArchGateBaseline {
 	return {
 		layerImports: [...new Set(layerImports.map(toLayerKey))].sort(),
 		oversizedFiles: Object.fromEntries(Object.entries(oversizedFiles).sort(([left], [right]) => left.localeCompare(right))),
+		fixedFontSizes: { ...fixedFontSizes },
 	};
 }
 
@@ -330,16 +451,23 @@ async function main(): Promise<number> {
 
 	const layerImports = await collectLayerImports();
 	const oversizedFiles = collectOversizedFiles();
+	const fixedFontSizes = collectFixedFontSizes();
 	if (!existsSync(BASELINE_PATH)) {
 		if (!updateBaseline) {
 			console.error(`arch-gate: no baseline found at ${path.relative(ROOT, BASELINE_PATH)}.`);
-			console.error(`  Found ${layerImports.length} domain layer pair(s) and ${Object.keys(oversizedFiles).length} oversized file(s).`);
+			console.error(
+				`  Found ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s) and ${totalFixedFontSizes(fixedFontSizes)} fixed font size(s).`,
+			);
 			console.error("  Verify these counts, then generate the initial baseline with:");
 			console.error("    bun scripts/arch-gate.ts --update-baseline");
 			return 1;
 		}
-		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles));
-		console.log(`arch-gate: baseline initialized → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s).`);
+		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles, fixedFontSizes));
+		console.log(
+			`arch-gate: baseline initialized → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s), ${totalFixedFontSizes(
+				fixedFontSizes,
+			)} fixed font size(s).`,
+		);
 		return 0;
 	}
 
@@ -350,7 +478,7 @@ async function main(): Promise<number> {
 		console.error(`arch-gate: ${error instanceof Error ? error.message : String(error)}`);
 		return 1;
 	}
-	const report = evaluateArchGate(baseline, layerImports, oversizedFiles);
+	const report = evaluateArchGate(baseline, layerImports, oversizedFiles, fixedFontSizes);
 
 	if (updateBaseline) {
 		if (hasFailures(report)) {
@@ -358,8 +486,12 @@ async function main(): Promise<number> {
 			console.error("arch-gate: --update-baseline only lowers existing debt; it never adds a new violation or raises a file limit.");
 			return 1;
 		}
-		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles));
-		console.log(`arch-gate: baseline lowered → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s).`);
+		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles, fixedFontSizes));
+		console.log(
+			`arch-gate: baseline lowered → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s), ${totalFixedFontSizes(
+				fixedFontSizes,
+			)} fixed font size(s).`,
+		);
 		return 0;
 	}
 

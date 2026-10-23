@@ -4,6 +4,8 @@
 >
 > Field shapes come from the **field canon** (`lib/field-tokens.ts` — bases + modifiers, one home for the whole app), enforced by the field primitives below. The decision table for "which primitive do I need" lives in the `vibe-tavern-frontend` skill (`.agents/skills/vibe-tavern-frontend/SKILL.md`); this file is the full per-component reference.
 >
+> Text sizing follows the **UI font ladder**: size text only through `calc(var(--ui-fs)±Kpx)` (or `var(--ui-fs)` itself) — never fixed pixel classes (`text-[11px]`), Tailwind size classes (`text-xs` … `text-2xl`), or inline `fontSize` values; those ignore the Tweaks «UI font size» setting and render ~3px smaller than ladder-sized neighbours at the default 17px. `scripts/arch-gate.ts` counts every fixed size under `apps/web/src` against the shrinking baseline in `scripts/arch-gate-baseline.json` — growth fails the gate, the baseline only goes down (`--update-baseline` after a cleanup) — and `scripts/font-size-codemod.ts` converts fixed sizes onto the ladder mechanically (`--dry-run` lists per-area counts and the flagged places). The one exception is roleplay message content, which follows the chat font size `--mfs` instead (FIXED_FONT_SIZE_AUDIT_REPORT).
+>
 > Verified against live code 2026-09-11 (full rewrite; field canon = FIELD_SYSTEM_UNIFICATION_REPORT FS-2..FS-10).
 
 ---

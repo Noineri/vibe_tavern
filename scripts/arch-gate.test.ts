@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	ARCH_GATE_MAX_LINES,
+	collectFixedFontSizes,
 	collectLayerImports,
 	collectOversizedFiles,
+	emptyFixedFontSizeCounts,
 	evaluateArchGate,
 	formatArchGateReport,
 	toLayerKey,
+	type FixedFontSizeCounts,
 } from "./arch-gate.js";
 
 function writeFixture(root: string, relativePath: string, content: string): void {
@@ -128,5 +131,62 @@ describe("architecture ratchet gate", () => {
 			{ file: "services/deleted.ts", baseline: ARCH_GATE_MAX_LINES + 1 },
 		]);
 		expect(formatArchGateReport(report)).toContain("bun scripts/arch-gate.ts --update-baseline");
+	});
+});
+
+describe("fixed font-size ratchet", () => {
+	function baseline(overrides: Partial<FixedFontSizeCounts> = {}): FixedFontSizeCounts {
+		return { ...emptyFixedFontSizeCounts(), ...overrides };
+	}
+
+	test("counts each fixed-size pattern and excludes tests, dev and the tweaks default", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(root, "apps/web/src/components/shared/A.tsx", '<a className="text-[11px]">1</a>\n<a className="text-[12px]">2</a>\n');
+			writeFixture(root, "apps/web/src/components/shared/B.tsx", '<b className="text-xs sm:text-sm text-red-500">x</b>\n');
+			writeFixture(root, "apps/web/src/components/build/C.tsx", '<c style={{ fontSize: 18 }}>y</c>\n<c style={{ fontSize: "12px" }}>z</c>\n');
+			writeFixture(root, "apps/web/src/styles.css", ".tag{font-size:11px}\n.note{font-size: 12.5px}\n");
+			writeFixture(root, "apps/web/src/lib/local-storage.ts", "export const DEFAULT_TWEAKS = { fontSize: 17, uiFontSize: 17 };\n");
+			writeFixture(root, "apps/web/src/components/shared/D.test.tsx", '<d className="text-[10px]">t</d>\n');
+			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<e className="text-[9px]">dev</e>\n');
+			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size:12px}\n");
+
+			expect(collectFixedFontSizes(root)).toEqual(baseline({ pixelClasses: 2, tailwindSizeClasses: 2, inlineFontSizes: 2, cssFontSizes: 2 }));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("fails on growth with a message naming the ladder replacement", () => {
+		const current = baseline({ pixelClasses: 2, tailwindSizeClasses: 1, inlineFontSizes: 1 });
+		const report = evaluateArchGate({ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 1 }) }, [], {}, current);
+		expect(report.growingFixedFontSizes).toEqual([
+			{ pattern: "pixelClasses", baseline: 1, current: 2 },
+			{ pattern: "tailwindSizeClasses", baseline: 0, current: 1 },
+			{ pattern: "inlineFontSizes", baseline: 0, current: 1 },
+		]);
+		const output = formatArchGateReport(report);
+		expect(output).toContain("Architecture gate: FAIL — 3 new architecture violation(s) detected.");
+		expect(output).toContain("[fixed-font-size] pixelClasses: 2 > baseline 1");
+		expect(output).toContain("text-[11px] → text-[calc(var(--ui-fs)-3px)]");
+		expect(output).toContain("text-xs → text-[calc(var(--ui-fs)-2px)] leading-4");
+		expect(output).toContain('fontSize: 18 → fontSize: "calc(var(--ui-fs)+4px)"');
+		expect(output).toContain("bun scripts/font-size-codemod.ts --dry-run apps/web/src");
+		expect(output).toContain("fixed font sizes 4/1");
+	});
+
+	test("reports shrunk font-size debt so --update-baseline can lower it", () => {
+		const report = evaluateArchGate(
+			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 5, cssFontSizes: 3 }) },
+			[],
+			{},
+			baseline({ pixelClasses: 4, cssFontSizes: 3 }),
+		);
+		expect(report.shrunkFixedFontSizes).toEqual([{ pattern: "pixelClasses", baseline: 5, current: 4 }]);
+		expect(report.growingFixedFontSizes).toEqual([]);
+		const output = formatArchGateReport(report);
+		expect(output).toContain("Architecture gate: OK — all current violations are within baseline.");
+		expect(output).toContain("[fixed-font-size] pixelClasses: 4 (was 5)");
+		expect(output).toContain("bun scripts/arch-gate.ts --update-baseline");
 	});
 });
