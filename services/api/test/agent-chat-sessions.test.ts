@@ -312,6 +312,29 @@ describe("the unchanged per-thread routes serve a chat-owned thread (SC-0b)", ()
   });
 });
 
+describe("per-kind auto-compact default at session creation (AP-20)", () => {
+  test("default absent → born ON; kind default OFF → next session born OFF; flipping the default later never rewrites existing threads", async () => {
+    const chat = await newChat("AP-20 default");
+
+    // 1. No kind-settings row: the created session carries the column
+    //    default (ON) — the pre-AP-20 effective behavior.
+    const onThread = (await (await postSession(chat, FAKE_CHAT_KIND_ID)).json()) as WireThread;
+    expect(await stores.experienceCopilot.getAutoCompact(onThread.id)).toBe(true);
+
+    // 2. The kind's default turned OFF: the NEXT session of the same triple
+    //    is born OFF (the archive of `onThread` touches archived_at only).
+    await stores.agentKindSettings.patch(FAKE_CHAT_KIND_ID, { autoCompactDefault: false });
+    const offThread = (await (await postSession(chat, FAKE_CHAT_KIND_ID, { title: "Born off" })).json()) as WireThread;
+    expect(await stores.experienceCopilot.getAutoCompact(offThread.id)).toBe(false);
+
+    // 3. Flipping the kind default back ON never rewrites existing threads —
+    //    the per-thread value written at creation stays authoritative.
+    await stores.agentKindSettings.patch(FAKE_CHAT_KIND_ID, { autoCompactDefault: true });
+    expect(await stores.experienceCopilot.getAutoCompact(offThread.id)).toBe(false);
+    expect(await stores.experienceCopilot.getAutoCompact(onThread.id)).toBe(true);
+  });
+});
+
 describe("a chat thread's stream dispatches to its agent_kind (SC-0b)", () => {
   test("the assert step resolves the STORED kind through the registry — an unwired chat kind throws in ITS table entry", async () => {
     const chat = await newChat("Dispatch pin");

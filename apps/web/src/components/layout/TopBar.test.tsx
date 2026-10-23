@@ -109,6 +109,7 @@ function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWi
     defaultProfileId: null,
     updatedAt: "",
     servesChatModes: servesChatModes as AgentKindSettingsWire["servesChatModes"],
+    autoCompactDefault: true,
   };
 }
 

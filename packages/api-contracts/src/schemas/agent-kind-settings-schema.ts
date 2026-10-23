@@ -35,6 +35,11 @@ export const agentKindSettingsSchema = z
     // check). Values are `CHAT_MODE`'s (the chat row's own vocabulary — the
     // same derivation the domain type uses, no second hand-typed list).
     servesChatModes: z.array(z.enum(Object.values(CHAT_MODE))),
+    // AP-20: the kind's default for the auto-compact toggle on NEW sessions.
+    // Non-nullable on the wire — the store resolves the stored NULL (= on,
+    // the pre-AP-20 effective behavior) to `true` at read; consumed by the
+    // two new-session paths when they write the thread's auto_compact.
+    autoCompactDefault: z.boolean(),
   })
   .strict();
 export type AgentKindSettingsWire = z.infer<typeof agentKindSettingsSchema>;
@@ -47,6 +52,9 @@ export const agentKindSettingsPatchSchema = z
     providerProfileId: z.string().nullable().optional(),
     modelName: z.string().nullable().optional(),
     defaultProfileId: z.string().nullable().optional(),
+    // AP-20: boolean only — `null` (unset) is indistinguishable from on, so
+    // there is no clear form; absent keeps the stored value.
+    autoCompactDefault: z.boolean().optional(),
   })
   .strict();
 export type AgentKindSettingsPatchRequest = z.infer<typeof agentKindSettingsPatchSchema>;

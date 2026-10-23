@@ -321,6 +321,25 @@ describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
     expect((await store.getById(thread.id))?.autoCompact).toBe(false);
   });
 
+  test("startNewSession seeds autoCompact from the kind default param (AP-20): absent keeps the column default (on), false is honored, and the value is frozen at creation", async () => {
+    const { store } = await setup();
+    // Absent param — the pre-AP-20 call shape: the column default (on).
+    const defaulted = await store.startNewSession("script_ap20_default", "T");
+    expect(defaulted.autoCompact).toBe(true);
+    // Explicit on is byte-identical to the default.
+    const explicitOn = await store.startNewSession("script_ap20_on", "T", true);
+    expect(explicitOn.autoCompact).toBe(true);
+    // The kind's default off seeds the new row's toggle off.
+    const off = await store.startNewSession("script_ap20_off", "T", false);
+    expect(off.autoCompact).toBe(false);
+    expect(await store.getAutoCompact(off.id)).toBe(false);
+    // The value is read at CREATION only — a later default change is the
+    // adapter's concern; the store never rewrites an existing row on its own.
+    const offReloaded = await store.startNewSession("script_ap20_off", "T2", true);
+    expect(offReloaded.autoCompact).toBe(true);
+    expect((await store.getById(off.id))?.autoCompact).toBe(false);
+  });
+
   test("legacy metrics JSON without attachedTokens parses with attachedTokens 0 (CX-1)", async () => {
     const { db, store } = await setup();
     const thread = await store.startNewSession("script_legacy_metrics", "T");

@@ -168,9 +168,30 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     }
     if (thread.agentKind !== null) return getAgentKind(thread.agentKind).id;
     if (thread.scriptId === null) return DRAFT_THREAD_KIND;
-    const script = await this.stores.scripts.getById(thread.scriptId);
+    return this.resolveScriptThreadKind(thread.scriptId);
+  }
+
+  /** The script arm of kind resolution, shared by the thread path above and
+   *  the NEW-session path (AP-20): script row →
+   *  `resolveKindForScript(script.scriptKind)`. A missing script row resolves
+   *  to the draft kind — the same dangling-script semantics as
+   *  {@link resolveThreadKind} (a copilot thread may predate its script row —
+   *  the soft-link convention), so a creation for a not-yet-saved script
+   *  reads the draft kind's default instead of throwing. */
+  private async resolveScriptThreadKind(scriptId: string): Promise<AgentKindId> {
+    const script = await this.stores.scripts.getById(scriptId);
     if (script === null) return DRAFT_THREAD_KIND;
     return resolveKindForScript(script.scriptKind).id;
+  }
+
+  /** AP-20: the kind's auto-compact default for a NEW session's thread row —
+   *  one read through the kind-settings store, which resolves a NULL column
+   *  (default absent) to ON. No `inheritLegacyPair` option: auto-compact
+   *  never lived in the legacy ui_settings pair, so every no-row kind reads
+   *  ON alike. */
+  private async kindAutoCompactDefault(kindId: AgentKindId): Promise<boolean> {
+    const settings = await this.stores.agentKindSettings.get(kindId);
+    return settings.autoCompactDefault;
   }
 
   /** The stream wiring a resolved kind runs through. A kind the registry
@@ -487,7 +508,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     scriptId: string,
     title?: string,
   ): Promise<ExperienceCopilotThreadWire> => {
-    const thread = await this.stores.experienceCopilot.startNewSession(scriptId, title);
+    // AP-20: the new thread's auto_compact seeds from the script's agent-kind
+    // default (script row → registry kind → kind-settings row) — the per-thread
+    // toggle is authoritative from here on (later kind-default changes never
+    // rewrite this thread).
+    const autoCompact = await this.kindAutoCompactDefault(await this.resolveScriptThreadKind(scriptId));
+    const thread = await this.stores.experienceCopilot.startNewSession(scriptId, title, autoCompact);
     return toThreadWire(thread);
   };
 
@@ -573,7 +599,10 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     // `{ error, code }` shape naming the kind and the mode. Runs before the
     // store write, so a refused create leaves no row behind.
     requireKindServesChatMode(agentKind, chat.mode);
-    const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title);
+    // AP-20: the new thread's auto_compact seeds from this kind's default —
+    // the per-thread toggle is authoritative from here on.
+    const autoCompact = await this.kindAutoCompactDefault(agentKind.id);
+    const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title, autoCompact);
     return toThreadWire(thread);
   };
 

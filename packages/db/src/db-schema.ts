@@ -2060,6 +2060,17 @@ export const agentKindSettings = sqliteTable('agent_kind_settings', {
   providerProfileId: text('provider_profile_id'),
   modelName: text('model_name'),
   defaultProfileId: text('default_profile_id'),
+  // AP-20: the kind's default for the NEW-session auto-compact toggle —
+  // NULL = on (auto-compact was the pre-AP-20 effective behavior, so an
+  // absent setting must not change it). Read at creation time by the two
+  // new-session paths (adapter resolves the kind, reads this default, and
+  // writes it onto the thread's auto_compact); the per-thread toggle is
+  // authoritative afterwards — changing this column later never rewrites
+  // existing threads. Stored 0/1 like threads.auto_compact; the store
+  // resolves NULL → on at read (the legacy ui_settings pair fallback is
+  // provider/model only — auto-compact never lived there, so every no-row
+  // read is on alike).
+  autoCompactDefault: integer('auto_compact_default'),
   updatedAt: text('updated_at').notNull(),
 });
 

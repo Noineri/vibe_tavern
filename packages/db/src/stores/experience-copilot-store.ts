@@ -8,6 +8,7 @@ import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mapper
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
+import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -221,101 +222,33 @@ export class ExperienceCopilotStore {
 
   /**
    * "New session": archive the current active thread for this script (if any)
-   * and create+return a fresh active one. The archive-then-insert runs inside a
-   * single synchronous transaction so two actives can never coexist (the app-
-   * level half of the at-most-one-active invariant; the partial unique index is
-   * the DB half).
+   * and create+return a fresh active one — thin seam over
+   * `experience-copilot-session-start.ts` (extracted at the arch-gate size
+   * cap); the creation contract is documented there. AP-20: `autoCompact`
+   * seeds the new row's toggle from the script's agent-kind default (the
+   * adapter resolves the kind and reads it); undefined keeps the column
+   * default (on).
    */
-  async startNewSession(scriptId: string, title?: string): Promise<ExperienceCopilotThread> {
-    const now = this.clock.now();
-    const id = this.idGen.next('expcop_thread');
-    this.db.transaction((tx) => {
-      tx
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: now, updatedAt: now })
-        .where(and(eq(experienceCopilotThreads.scriptId, scriptId), isNull(experienceCopilotThreads.archivedAt)))
-        .run();
-      tx
-        .insert(experienceCopilotThreads)
-        .values({
-          id,
-          scriptId,
-          draftSessionId: null,
-          title: title ?? '',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-    });
-    const row = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(eq(experienceCopilotThreads.id, id))
-      .get();
-    return mapThread(row!);
+  async startNewSession(scriptId: string, title?: string, autoCompact?: boolean): Promise<ExperienceCopilotThread> {
+    return startNewSession({ db: this.db, clock: this.clock, idGen: this.idGen }, scriptId, title, autoCompact);
   }
 
   /**
    * "New session" for a chat owner (SC-0a): archive the current active sibling
-   * thread of the SAME (chat, branch, kind) triple (if any) and create+return a
-   * fresh active one — the chat-owner twin of {@link startNewSession}. The kind
-   * is required here (store-level enforcement of "agent_kind required when
-   * chat_id is set": chat rows are only ever born through this method). Sibling
-   * archiving is scoped to the exact triple — other kinds on the same branch,
-   * other branches, and script-owned threads are never touched. The
-   * archive-then-insert runs inside a single synchronous transaction so two
-   * actives can never coexist (the app-level half of the at-most-one-active
-   * invariant; the partial unique index on the triple is the DB half).
+   * thread of the SAME (chat, branch, kind) triple (if any) and create+return
+   * a fresh active one — the chat-owner twin of {@link startNewSession};
+   * thin seam over `experience-copilot-session-start.ts`, where the creation
+   * contract is documented. AP-20: `autoCompact` seeds the new row's toggle
+   * from this kind's default (the adapter reads it before calling).
    */
   async startNewChatSession(
     chatId: string,
     branchId: string,
     kind: string,
     title?: string,
+    autoCompact?: boolean,
   ): Promise<ExperienceCopilotThread> {
-    if (!kind) {
-      // Store-level guard: chat-owned rows must never exist with a NULL
-      // agent_kind (the partial unique index has no NULL hole to fill).
-      throw new Error(`[experience-copilot-store] startNewChatSession requires a non-empty agent kind (chat '${chatId}')`);
-    }
-    const now = this.clock.now();
-    const id = this.idGen.next('expcop_thread');
-    this.db.transaction((tx) => {
-      tx
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(experienceCopilotThreads.chatId, chatId),
-            eq(experienceCopilotThreads.branchId, branchId),
-            eq(experienceCopilotThreads.agentKind, kind),
-            isNull(experienceCopilotThreads.archivedAt),
-          ),
-        )
-        .run();
-      tx
-        .insert(experienceCopilotThreads)
-        .values({
-          id,
-          scriptId: null,
-          draftSessionId: null,
-          chatId,
-          branchId,
-          agentKind: kind,
-          title: title ?? '',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-    });
-    const row = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(eq(experienceCopilotThreads.id, id))
-      .get();
-    return mapThread(row!);
+    return startNewChatSession({ db: this.db, clock: this.clock, idGen: this.idGen }, chatId, branchId, kind, title, autoCompact);
   }
 
   /**

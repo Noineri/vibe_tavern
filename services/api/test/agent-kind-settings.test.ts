@@ -45,6 +45,12 @@ import "../src/domain/agent/kinds/sidechat-ooc-kind.js";
 
 const FAKE_KIND_ID = "aks-fake-kind";
 const FAKE_LEGACY_KIND_ID = "aks-fake-legacy-kind";
+// AP-20's own isolation kind: the file shares ONE store container, and the
+// partial-patch sequences below pin FAKE_KIND_ID's fields step by step — the
+// auto-compact-default patch tests must not disturb that sequence, so they
+// get a kind of their own (same post-split semantics; the default's
+// read/patch semantics are inheritance-independent).
+const FAKE_AP20_KIND_ID = "aks-ap20-kind";
 const LEGACY_PROVIDER_ID = "prov_legacy";
 const LEGACY_MODEL_NAME = "model_legacy";
 
@@ -75,6 +81,7 @@ interface KindSettingsWire {
   providerProfileId: string | null;
   modelName: string | null;
   defaultProfileId: string | null;
+  autoCompactDefault: boolean;
   updatedAt: string | null;
 }
 
@@ -82,6 +89,7 @@ let stores: StoreContainer;
 let routes: Hono;
 let unregisterFakeKind: () => void;
 let unregisterFakeLegacyKind: () => void;
+let unregisterFakeAp20Kind: () => void;
 
 function settingsUrl(kind: string): string {
   return `/api/agent/kinds/${kind}/settings`;
@@ -102,6 +110,7 @@ async function patchSettings(kind: string, body: Record<string, unknown>): Promi
 beforeAll(async () => {
   unregisterFakeKind = registerAgentKind(makeFakeKind(FAKE_KIND_ID, false));
   unregisterFakeLegacyKind = registerAgentKind(makeFakeKind(FAKE_LEGACY_KIND_ID, true));
+  unregisterFakeAp20Kind = registerAgentKind(makeFakeKind(FAKE_AP20_KIND_ID, false));
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-agent-kind-settings-"));
   stores = await createStoreContainer(join(dataRoot, "agent-kind-settings.db"), dataRoot);
   // The defaults the character-create path of the bootstrap harness needs
@@ -125,6 +134,7 @@ afterAll(() => {
   // route suites over createStoreContainer do the same).
   unregisterFakeKind();
   unregisterFakeLegacyKind();
+  unregisterFakeAp20Kind();
 });
 
 describe("per-kind settings routes (SC-0d)", () => {
@@ -137,6 +147,37 @@ describe("per-kind settings routes (SC-0d)", () => {
     expect(body.modelName).toBe(LEGACY_MODEL_NAME);
     // The legacy pair never carried a profile default.
     expect(body.defaultProfileId).toBeNull();
+  });
+
+  test("autoCompactDefault reads ON everywhere a row or fallback has none (AP-20)", async () => {
+    // A pre-split kind without a row: the legacy fallback supplies the pair,
+    // but auto-compact never lived in ui_settings — the default is ON.
+    const legacy = (await (await getSettings("experience")).json()) as KindSettingsWire;
+    expect(legacy.autoCompactDefault).toBe(true);
+
+    // A non-legacy kind without a row: all-null pair, default ON alike.
+    const noRow = (await (await getSettings(FAKE_AP20_KIND_ID)).json()) as KindSettingsWire;
+    expect(noRow.autoCompactDefault).toBe(true);
+
+    // A row that EXISTS but never named the field (the pre-AP-20 row shape,
+    // and every partial patch that does not touch it): the stored NULL
+    // resolves to ON — the pre-AP-20 effective behavior must not change.
+    // Runs BEFORE the patch test below flips this kind's default.
+    const rowNoDefault = (await (await patchSettings(FAKE_AP20_KIND_ID, { providerProfileId: "prov_ap20_row" })).json()) as KindSettingsWire;
+    expect(rowNoDefault.autoCompactDefault).toBe(true);
+  });
+
+  test("PATCH accepts autoCompactDefault; absent keeps the stored value (AP-20)", async () => {
+    const first = (await (await patchSettings(FAKE_AP20_KIND_ID, { autoCompactDefault: false })).json()) as KindSettingsWire;
+    expect(first.autoCompactDefault).toBe(false);
+
+    // A later patch that does not name the field keeps the stored value.
+    const second = (await (await patchSettings(FAKE_AP20_KIND_ID, { modelName: "model_ap20_keep" })).json()) as KindSettingsWire;
+    expect(second.autoCompactDefault).toBe(false);
+
+    // Flipping back is a plain boolean write.
+    const third = (await (await patchSettings(FAKE_AP20_KIND_ID, { autoCompactDefault: true })).json()) as KindSettingsWire;
+    expect(third.autoCompactDefault).toBe(true);
   });
 
   test("a non-legacy kind without a row reads all-null fields (SC-7)", async () => {

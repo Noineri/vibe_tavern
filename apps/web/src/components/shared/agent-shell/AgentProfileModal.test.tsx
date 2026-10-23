@@ -332,6 +332,7 @@ function seedKindDefault(defaultProfileId: string | null): void {
 					defaultProfileId,
 					updatedAt: "",
 					servesChatModes: [],
+					autoCompactDefault: true,
 				},
 			},
 			isArmServer: false,

@@ -1262,6 +1262,7 @@ describe("ExperienceCopilotShell — provider binding persistence (SC-0e: per-ki
             defaultProfileId: null,
             updatedAt: "",
             servesChatModes: [],
+            autoCompactDefault: true,
           },
         },
       },
