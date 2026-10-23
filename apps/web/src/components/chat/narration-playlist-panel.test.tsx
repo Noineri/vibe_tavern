@@ -799,7 +799,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
   });
 
   it("formats the seek clock as m:ss", async () => {
-    const { formatPlaybackTime } = await import("./NarrationPlaylist.js");
+    const { formatPlaybackTime } = await import("./playlist-seek-bar.js");
     expect(formatPlaybackTime(0)).toBe("0:00");
     expect(formatPlaybackTime(5)).toBe("0:05");
     expect(formatPlaybackTime(65)).toBe("1:05");
