@@ -40,6 +40,10 @@ const EMPTY_EVENTS: AgentThreadEventWire[] = [];
 
 const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
 
+// AP-29 follow-up 3: the stable empty hide set (no id hide — failure /
+// cancel / thread switch / landed refetch all converge here).
+const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
+
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
  * owns the persisted message list and the two-buffer state; this component
@@ -83,6 +87,15 @@ export interface AgentMessageListProps {
    *  only the live reasoning, never joined to the replaced turn). Omitted
    *  / false = the fb55c477a behavior (a continuation still joins). */
   isRegenerating?: boolean;
+  /** AP-29 follow-up 3: the replaced rows' ids recorded at regenerate start
+   *  (the controller's `hiddenRegeneratedIds` — every assistant row after
+   *  the last user row then). Hides EXACTLY these ids past the settle until
+   *  the refetch lands without them, so the replaced turn never reappears
+   *  for one frame; the flag above still covers the flight itself. Intersected
+   *  with the current messages every render (a landed refetch carries none
+   *  of them, so the new turn shows on that same render — never a blank).
+   *  Omitted / null = no id hide (failure / cancel / thread switch drop it). */
+  hiddenRegeneratedIds?: readonly string[] | null;
   /** TAG-9: answer handler for the live awaiting ask card — bound by the
    *  shell with the current draft buffers (mirrors the input area's onSend).
    *  SC-23f: also carries the permission card's decision (just another
@@ -141,6 +154,7 @@ export function AgentMessageList({
   pendingUserContent,
   isSending = false,
   isRegenerating = false,
+  hiddenRegeneratedIds = null,
   onAnswer,
   pendingAskAnswer = null,
   pendingPermissionAnswer = null,
@@ -370,8 +384,22 @@ export function AgentMessageList({
   // this flow (they render through the anchor maps below); the trailing
   // tool group and the trailing caption belong to the last turn, so the
   // render below hides them with the same flag.
-  const isHiddenReplacedRow = (role: string, visibleIndex: number): boolean =>
-    isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex;
+  // AP-29 follow-up 3: the recorded id set hides EXACTLY its rows past the
+  // settle (the flag above drops there) — intersected with the CURRENT
+  // visible rows, so a landed refetch (which carries none of them) shows
+  // the new turn on that same render; anchored accordion/cards/captions
+  // ride their anchor's fragment, the trailing group rides `hideActive`.
+  const activeHiddenIds = useMemo(() => {
+    if (hiddenRegeneratedIds === null || hiddenRegeneratedIds.length === 0) return EMPTY_HIDDEN_IDS;
+    const visibleIds = new Set(visibleMessages.map((entry) => entry.message.id));
+    const active = new Set<string>();
+    for (const id of hiddenRegeneratedIds) if (visibleIds.has(id)) active.add(id);
+    return active;
+  }, [visibleMessages, hiddenRegeneratedIds]);
+  const hideActive = isRegenerating || activeHiddenIds.size > 0;
+  const isHiddenReplacedRow = (role: string, visibleIndex: number, messageId: string): boolean =>
+    (isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex) ||
+    activeHiddenIds.has(messageId);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
   // AP-29: live reasoning streams as text-only (no duration lands until the
@@ -403,13 +431,13 @@ export function AgentMessageList({
   const liveTurnHasVisibleText = useMemo(() => {
     if (hasPendingUserContent) return false;
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
-      if (isHiddenReplacedRow(visibleMessages[i]!.message.role, i)) continue;
       const m = visibleMessages[i]!.message;
+      if (isHiddenReplacedRow(m.role, i, m.id)) continue;
       if (m.role === "user") return false;
       if (m.role === "assistant" && m.content.trim().length > 0) return true;
     }
     return false;
-  }, [visibleMessages, hasPendingUserContent, isRegenerating, lastUserVisibleIndex]);
+  }, [visibleMessages, hasPendingUserContent, isRegenerating, lastUserVisibleIndex, activeHiddenIds]);
 
   // AP-29 follow-up: the live part continues the last persisted turn (no
   // optimistic user row opens a fresh one) — when that turn already earns
@@ -420,9 +448,12 @@ export function AgentMessageList({
   // AP-29 follow-up 2: a regenerate NEVER joins — the replaced turn hides
   // (see `isHiddenReplacedRow`), so the new turn streams as a fresh turn
   // with its own caption carrying only the live reasoning.
+  // AP-29 follow-up 3: a still-hidden post-settle turn never joins either
+  // (the flag dropped but the set holds) — joining a hidden caption would
+  // swallow the live reasoning, so the fresh caption below owns it instead.
   const liveContinuesLastTurn = !hasPendingUserContent && visibleMessages.length > 0;
   const liveJoinsLastTurn =
-    !isRegenerating && hostTitle !== null && liveContinuesLastTurn && turnCaptions.lastTurnEarnsCaption;
+    !isRegenerating && activeHiddenIds.size === 0 && hostTitle !== null && liveContinuesLastTurn && turnCaptions.lastTurnEarnsCaption;
   const { captionBefore, trailingCaption } = useMemo(() => {
     if (!liveJoinsLastTurn || !hasLiveReasoning || turnCaptions.lastTurnSlotId === null) {
       return { captionBefore: turnCaptions.captionBefore, trailingCaption: turnCaptions.trailingCaption };
@@ -517,7 +548,9 @@ export function AgentMessageList({
             // event separators all render inside this fragment, so the one
             // cut covers them (the last user row, digests, and earlier
             // turns never match `isHiddenReplacedRow`).
-            if (isHiddenReplacedRow(entry.message.role, visibleIndex)) return null;
+            // AP-29 follow-up 3: the id cut covers the same fragment past
+            // the settle (the flag dropped, the set holds).
+            if (isHiddenReplacedRow(entry.message.role, visibleIndex, entry.message.id)) return null;
             // AP-11: one bubble's row — the turn callbacks merged with the
             // list's own boundaries (last turn, digest cover, streaming).
             // Without callbacks the block gets exactly what it got before
@@ -586,15 +619,19 @@ export function AgentMessageList({
           {/* AP-29 follow-up 2: the trailing tool group belongs to the last
               turn — it hides with the replaced turn (see
               `isHiddenReplacedRow`); the live feed below carries the new
-              turn's tools. */}
-          {!isRegenerating && trailingCaption !== null && hostTitle !== null ? (
+              turn's tools.
+              AP-29 follow-up 3: the id set hides it past the settle too
+              (`hideActive`); the intersection inside `activeHiddenIds` empties
+              on the landed refetch, so the new turn's group shows on that
+              same render. */}
+          {!hideActive && trailingCaption !== null && hostTitle !== null ? (
             <AgentHostCaption
               title={hostTitle}
               reasoning={trailingCaption.reasoning}
               reasoningDurationMs={trailingCaption.reasoningDurationMs}
             />
           ) : null}
-          {!isRegenerating && <AgentAnchorItems items={trailingItems} ctx={anchorCtx} />}
+          {!hideActive && <AgentAnchorItems items={trailingItems} ctx={anchorCtx} />}
 
           {renderEventSeparators(trailingEvents)}
 

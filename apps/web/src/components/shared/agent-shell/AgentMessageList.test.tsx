@@ -2380,3 +2380,132 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
     expect(getByText("live thought")).toBeDefined();
   });
 });
+
+// ─── AP-29 follow-up 3: no flash of the replaced turn after a successful regenerate ───
+// WAS (characterized at 216edbcda): `isRegenerating` dropped at the settle on
+// success while `messages` still held the pre-regenerate rows — the replaced
+// turn rendered again until the settle refetch landed. NOW: the controller
+// records the replaced rows' ids at regenerate start (`hiddenRegeneratedIds`)
+// and the list hides exactly those ids past the settle; the set empties when a
+// `messages` array arrives without them (the refetch landing the new turn).
+// Refusal / failure / cancel drop the set at once, so the old turn renders
+// right after the settle with the error card. The in-flight flag path above
+// is unchanged (positional hide while the stream runs).
+describe("ExperienceCopilotMessageList — replaced turn stays hidden past the settle (AP-29 follow-up 3)", () => {
+  function oldTurnThread() {
+    return [
+      message({ id: "u0", role: "user", content: "earlier question" }),
+      message({ id: "a0", role: "assistant", content: "earlier answer" }),
+      message({ id: "u1", role: "user", content: "go" }),
+      message({
+        id: "c1", role: "assistant", content: "", reasoning: "old thought", reasoningDurationMs: 1200,
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+        ]),
+      }),
+      captionToolRow("t1", "c1"),
+      message({ id: "a1", role: "assistant", content: "old reply" }),
+    ];
+  }
+
+  it("after the settle and before the refetch the replaced turn is not rendered", () => {
+    // Post-settle props on success: the flag cleared, the live text cleared
+    // exactly as for a normal send, the id set holds the replaced rows, and
+    // `messages` still holds the pre-regenerate rows (the refetch is in flight).
+    const { getByText, queryByText, queryByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={oldTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["c1", "a1"]}
+      />,
+    );
+
+    // The replaced turn's rows hide whole — text, tool accordion, caption —
+    // while the last user row and everything before it stay visible.
+    expect(getByText("go")).toBeDefined();
+    expect(getByText("earlier question")).toBeDefined();
+    expect(getByText("earlier answer")).toBeDefined();
+    expect(queryByText("old reply")).toBeNull();
+    expect(queryByTestId("copilot-tool-accordion")).toBeNull();
+    expect(queryByText("old thought")).toBeNull();
+    // Only the earlier turn's caption remains (the replaced turn's own hid
+    // with its rows; no live content earns a fresh one here).
+    expect(getAllByTestId("copilot-host-caption")).toHaveLength(1);
+  });
+
+  it("after the refetch (rows gone) a stale set hides nothing — the new turn shows on that render", () => {
+    // The same render that lands the refetch: the new rows' ids were never
+    // recorded, so intersecting the stale set with the current rows empties
+    // it — no one-frame blank of the new turn while the hook's effect drops
+    // the stored set on the next pass.
+    const { getByText, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u0", role: "user", content: "earlier question" }),
+          message({ id: "a0", role: "assistant", content: "earlier answer" }),
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a9", role: "assistant", content: "new reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["c1", "a1"]}
+      />,
+    );
+
+    expect(getByText("new reply")).toBeDefined();
+    expect(queryByText("old reply")).toBeNull();
+  });
+
+  it("failure: with no hide set the old turn renders right after the settle, with the error card", () => {
+    // Post-settle props on failure: the set dropped at once (as the flag did
+    // before), the refetch returns the stored old turn, the failure owns the
+    // card — the feed shows the old turn plus the card, never a blank.
+    const onRetryTurn = mock(() => {});
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={null}
+        turnFailure={{ category: "rate_limit" }}
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    expect(getByText("first answer")).toBeDefined();
+    expect(getByText("second answer")).toBeDefined();
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+  });
+
+  it("the id hide never touches other turns, user rows, or digest cards", () => {
+    const { container, getByText, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "u2", role: "user", content: "second question" }),
+          message({ id: "a2", role: "assistant", content: "second answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["a2"]}
+      />,
+    );
+
+    expect(getByText("old question")).toBeDefined();
+    expect(getByText("old answer")).toBeDefined();
+    expect(getByText("second question")).toBeDefined();
+    expect(queryByText("second answer")).toBeNull();
+    expect(container.querySelectorAll('[data-role="digest"]')).toHaveLength(1);
+  });
+});

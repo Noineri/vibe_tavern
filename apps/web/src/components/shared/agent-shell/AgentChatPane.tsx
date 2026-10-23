@@ -296,7 +296,11 @@ export function AgentChatPane({
             // AP-29 follow-up 2: a regenerate in flight hides the replaced
             // turn (the server already deleted it) and streams the new turn
             // as a fresh turn.
+            // AP-29 follow-up 3: the recorded ids keep it hidden past the
+            // settle until the refetch lands without them (no flash of the
+            // replaced turn).
             isRegenerating={ctrl.isRegenerating}
+            hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
             pendingAskAnswer={ctrl.pendingAskAnswer}
             pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
             emptyTitle={t(host.i18n.emptyTitle)}

@@ -192,6 +192,8 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     // AP-13: the live turn failure the error card reads (same rule).
     // AP-29 follow-up 2: the regenerate flight flag the list reads (same rule).
     isRegenerating: false,
+    // AP-29 follow-up 3: the recorded replaced-row ids the list reads (same rule).
+    hiddenRegeneratedIds: null,
     turnFailure: null,
     pendingDelete: null,
     requestDeleteTurn: mock(),
@@ -706,5 +708,29 @@ describe("AgentChatPane — starter prompts (AP-18)", () => {
     expect(utils.queryByTestId("agent-starter-0")).toBeNull();
     // The empty title/subtitle still render (AS-8c3a, untouched).
     expect(utils.getByText("agent_title")).toBeDefined();
+  });
+});
+
+// ─── AP-29 follow-up 3: the pane forwards the recorded hide set to the list ───
+// WAS (216edbcda): the pane passed only the in-flight flag — after a
+// successful settle the replaced turn flashed back until the refetch. NOW:
+// the controller's `hiddenRegeneratedIds` rides the same seam, so the
+// settle → refetch window hides exactly the recorded rows.
+describe("AgentChatPane — regenerate hide-set wiring (AP-29 follow-up 3)", () => {
+  it("forwards hiddenRegeneratedIds: the recorded rows stay hidden past the settle", () => {
+    const ctrl = makeCtrl({ hiddenRegeneratedIds: ["a2"] });
+    const { getByText, queryByText } = renderPane({
+      ctrl,
+      messages: [
+        message({ id: "u1", role: "user", content: "first question" }),
+        message({ id: "a1", role: "assistant", content: "first answer" }),
+        message({ id: "u2", role: "user", content: "second question" }),
+        message({ id: "a2", role: "assistant", content: "second answer" }),
+      ],
+    });
+
+    expect(getByText("first answer")).toBeDefined();
+    expect(getByText("second question")).toBeDefined();
+    expect(queryByText("second answer")).toBeNull();
   });
 });
