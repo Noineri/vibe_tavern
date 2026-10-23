@@ -224,13 +224,13 @@ export function ContextBreakdownRows({
 	const { t } = useT();
 
 	return <>
-		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
-		{permanentItems.map((item, i) => <div key={i} className={cn("mb-1 flex justify-between text-xs text-t2", i === permanentItems.length - 1 && "mb-1.5")}><span>{item.label}</span><span className="tabular-nums text-t1">{item.value.toLocaleString()}</span></div>)}
-		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
-		<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{history.toLocaleString()}</span></div>
-		<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
-		<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
-		<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
+		<div className="mb-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
+		{permanentItems.map((item, i) => <div key={i} className={cn("mb-1 flex justify-between text-[calc(var(--ui-fs)-2px)] leading-4 text-t2", i === permanentItems.length - 1 && "mb-1.5")}><span>{item.label}</span><span className="tabular-nums text-t1">{item.value.toLocaleString()}</span></div>)}
+		<div className="mb-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
+		<div className="mb-1 flex justify-between text-[calc(var(--ui-fs)-2px)] leading-4 text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{history.toLocaleString()}</span></div>
+		<div className="mb-1.5 flex justify-between text-[calc(var(--ui-fs)-2px)] leading-4 text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
+		<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
+		<div className="mt-0.5 flex justify-between text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
 	</>;
 }
 

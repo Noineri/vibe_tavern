@@ -87,7 +87,7 @@ export function AiAssistantShell({
       {/* Content */}
       <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
         {providerCount === 0 ? (
-          <div className="py-6 text-center font-ui text-[13px] text-t3">{noProvidersLabel}</div>
+          <div className="py-6 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{noProvidersLabel}</div>
         ) : (
           children
         )}

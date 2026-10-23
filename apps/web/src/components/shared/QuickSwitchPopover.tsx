@@ -231,7 +231,7 @@ export function QuickSwitchPopover({
 											onSelect(item.value);
 											setOpen(false);
 										}}
-										className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[13px] text-t1 outline-none transition-colors hover:bg-s2 focus-visible:bg-s2 data-[active=true]:bg-accent-dim"
+										className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors hover:bg-s2 focus-visible:bg-s2 data-[active=true]:bg-accent-dim"
 									>
 										<span className="flex w-4 shrink-0 justify-center text-accent-t">
 											{value === item.value && <Icons.Check />}
@@ -244,7 +244,7 @@ export function QuickSwitchPopover({
 								))}
 							</div>
 						) : (
-							<div className="px-4 py-2 font-ui text-[12px] text-t3">{emptyText}</div>
+							<div className="px-4 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{emptyText}</div>
 						)}
 					</div>
 					{footer && <div className="mt-1 border-t border-border px-2 pt-1">{footer}</div>}

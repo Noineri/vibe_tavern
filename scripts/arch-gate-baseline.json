@@ -65,9 +65,9 @@
     "services/api/src/shared/st-directory-scanner.ts": 1441
   },
   "fixedFontSizes": {
-    "pixelClasses": 1104,
-    "tailwindSizeClasses": 224,
-    "inlineFontSizes": 4,
+    "pixelClasses": 985,
+    "tailwindSizeClasses": 206,
+    "inlineFontSizes": 3,
     "cssFontSizes": 12
   }
 }

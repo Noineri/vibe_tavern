@@ -158,8 +158,8 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
     const { labels } = props;
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
-        <div className="font-ui text-[12px] leading-relaxed text-t3">{labels.tooLarge}</div>
+        <div className="mb-1 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{labels.tooLarge}</div>
       </div>
     );
   }
@@ -170,20 +170,20 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
     if (!hasChanges) {
       return (
         <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-          <div className="font-ui text-[12px] text-t3">{labels.noChanges}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{labels.noChanges}</div>
         </div>
       );
     }
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
-          <div className="font-mono text-[11px] tabular-nums">
+          <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+          <div className="font-mono text-[calc(var(--ui-fs)-3px)] tabular-nums">
             <span className="text-success-text">+{summary.added}</span>{" "}
             <span className="text-danger-text">-{summary.removed}</span>
           </div>
         </div>
-        <p className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45] [overflow-wrap:anywhere]">
+        <p className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] [overflow-wrap:anywhere]">
           {summary.words.map((word, idx) => (
             <span
               key={idx}
@@ -205,7 +205,7 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
   if (summary.added === 0 && summary.removed === 0) {
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-        <div className="font-ui text-[12px] text-t3">{labels.noChanges}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{labels.noChanges}</div>
       </div>
     );
   }
@@ -213,13 +213,13 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
   return (
     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
-        <div className="font-mono text-[11px] tabular-nums">
+        <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="font-mono text-[calc(var(--ui-fs)-3px)] tabular-nums">
           <span className="text-success-text">+{summary.added}</span>{" "}
           <span className="text-danger-text">-{summary.removed}</span>
         </div>
       </div>
-      <pre className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
+      <pre className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
         {summary.lines.map((line, idx) => (
           <div
             key={idx}

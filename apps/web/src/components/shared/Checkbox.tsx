@@ -94,7 +94,7 @@ export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxP
     }
 
     const labelContent = typeof label === "string" ? (
-      <span className="text-[13px]">{label}</span>
+      <span className="text-[calc(var(--ui-fs)-1px)]">{label}</span>
     ) : (
       label
     );

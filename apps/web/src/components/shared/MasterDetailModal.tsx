@@ -285,7 +285,7 @@ export function MasterDetailModal<T extends string = string>({
               {parentBack.label}
             </button>
           )}
-          <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[18px] mb-1")}>
+          <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[calc(var(--ui-fs)+4px)] mb-1")}>
             {title}
             {dirty && (
               <CustomTooltip content={t("unsaved_changes_title")}>
@@ -294,7 +294,7 @@ export function MasterDetailModal<T extends string = string>({
             )}
           </div>
           {!isMobile && subtitle && (
-            <div className="font-ui text-[13px] text-t3">{subtitle}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{subtitle}</div>
           )}
         </div>
         <div className="flex items-center gap-2">

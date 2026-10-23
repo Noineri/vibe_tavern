@@ -78,7 +78,7 @@ export function MaskedConnectionKeyField({
         </button>
       </div>
       {emptyStored && (
-        <div data-testid={statusTestId} className="mt-1 font-ui text-[11px] text-t4">
+        <div data-testid={statusTestId} className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
           {storedStatus}
         </div>
       )}

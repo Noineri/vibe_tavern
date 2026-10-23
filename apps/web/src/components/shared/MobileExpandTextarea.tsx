@@ -57,13 +57,13 @@ export function MobileExpandTextarea({
               className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"
               onClick={() => setOpen(false)}
             >
-              <span className="text-lg leading-none">←</span>
+              <span className="text-[calc(var(--ui-fs)+4px)] leading-none">←</span>
             </div>
             <div className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)+1px)] font-medium text-t1">
               {label || t("edit_field")}
             </div>
             <div
-              className="flex h-8 cursor-pointer items-center justify-center rounded-md bg-accent px-4 font-ui text-[13px] font-medium text-on-accent transition-colors hover:bg-accent/90"
+              className="flex h-8 cursor-pointer items-center justify-center rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-accent transition-colors hover:bg-accent/90"
               onClick={handleDone}
             >
               {t("done_btn")}

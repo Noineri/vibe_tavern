@@ -233,7 +233,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
 
   if (loading) {
     return (
-      <div className="mb-3 flex items-center gap-2 font-ui text-[11px] text-t3">
+      <div className="mb-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
         <span className="inline-block h-3 w-3 animate-spin rounded-full border border-border2 border-t-transparent" />
         {t("bound_resources_loading")}
       </div>
@@ -247,7 +247,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
           {t("bound_lorebooks_label")}
         </span>
         <CustomTooltip content={t("bound_lorebooks_hint")}>
-          <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+          <span className="cursor-help text-t4 text-[calc(var(--ui-fs)-3px)]">ⓘ</span>
         </CustomTooltip>
         {busyId && (
           <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-full border border-border2 border-t-transparent" />
@@ -268,7 +268,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
         lorebookSectionLabel={t("bound_lorebooks_section")}
       />
       {lorebookCaption && (
-        <p className="mb-2 mt-1 font-ui text-[11px] leading-snug text-t4">{lorebookCaption}</p>
+        <p className="mb-2 mt-1 font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t4">{lorebookCaption}</p>
       )}
 
       <div className="mt-3 mb-1.5 flex items-center gap-1.5">
@@ -276,7 +276,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
           {t("bound_scripts_label")}
         </span>
         <CustomTooltip content={t("bound_scripts_hint")}>
-          <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+          <span className="cursor-help text-t4 text-[calc(var(--ui-fs)-3px)]">ⓘ</span>
         </CustomTooltip>
       </div>
       <LinkBindingPopover
@@ -294,7 +294,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
         scriptSectionLabel={t("bound_scripts_section")}
       />
       {scriptCaption && (
-        <p className="mb-2 mt-1 font-ui text-[11px] leading-snug text-t4">{scriptCaption}</p>
+        <p className="mb-2 mt-1 font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t4">{scriptCaption}</p>
       )}
 
       {entityKind === "character" && (
@@ -304,7 +304,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
               {t("bound_regex_label")}
             </span>
             <CustomTooltip content={t("bound_regex_hint")}>
-              <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+              <span className="cursor-help text-t4 text-[calc(var(--ui-fs)-3px)]">ⓘ</span>
             </CustomTooltip>
           </div>
           <LinkBindingPopover

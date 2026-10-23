@@ -147,7 +147,7 @@ export function NumberInput({
         className={cn(
           // tabular-nums: digits are equal-width so the value doesn't shift the
           // input width (and surrounding layout) as it changes via +/- buttons.
-          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[13px] tabular-nums text-t1 outline-none",
+          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1 outline-none",
           hideControls ? "px-3 text-left" : "text-center",
           inputClassName
         )}

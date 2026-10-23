@@ -168,7 +168,7 @@ export function DropdownSelect({
         value={o.id}
         onSelect={() => handleSelect(o.id)}
         className={cn(
-          "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+          "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
           // cmdk sets data-selected="true"|"false" on every item, so the
           // selector must pin the value (=true) — bare data-[selected]
           // (presence) matches both and hides the active highlight.
@@ -186,7 +186,7 @@ export function DropdownSelect({
         <div className="flex min-w-0 flex-col gap-[1px]">
           <span className="min-w-0 break-words">{o.label}</span>
           {o.detail && (
-            <span className="min-w-0 break-words text-[11px] text-t2">
+            <span className="min-w-0 break-words text-[calc(var(--ui-fs)-3px)] text-t2">
               {o.detail}
             </span>
           )}
@@ -217,7 +217,7 @@ export function DropdownSelect({
           className={cn(
             "flex items-center justify-between gap-2 font-ui transition-colors duration-150",
             triggerClassName ??
-              "w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] text-[13px] text-t1 hover:border-accent" +
+              "w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] text-[calc(var(--ui-fs)-1px)] text-t1 hover:border-accent" +
                 (open ? " border-accent" : ""),
             disabled && "pointer-events-none opacity-40",
             className,
@@ -228,7 +228,7 @@ export function DropdownSelect({
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
               {display}
               {triggerDetail && selected?.detail ? (
-                <span className="ml-2 text-[11px] font-medium text-t2">
+                <span className="ml-2 text-[calc(var(--ui-fs)-3px)] font-medium text-t2">
                   {selected.detail}
                 </span>
               ) : null}
@@ -263,7 +263,7 @@ export function DropdownSelect({
                   placeholder={searchPlaceholder ?? t("dropdown_search_placeholder")}
                   value={search}
                   onValueChange={setSearch}
-                  className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
+                  className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-accent"
                 />
               </div>
             )}
@@ -278,7 +278,7 @@ export function DropdownSelect({
                   value={EMPTY_VALUE}
                   onSelect={() => handleSelect("")}
                   className={cn(
-                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
                     !value
                       ? "bg-accent-dim font-medium text-accent-t"
                       : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
@@ -292,7 +292,7 @@ export function DropdownSelect({
                     g.options.length > 0 ? (
                       <div key={g.id}>
                         {g.label && (
-                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[calc(var(--ui-fs)-3.5px)] font-medium uppercase tracking-wide text-t3">
                             {g.label}
                           </div>
                         )}
@@ -302,7 +302,7 @@ export function DropdownSelect({
                   )
                 : filtered.map(renderOption)}
               {(filteredGroups ? flatGroupedCount === 0 : filtered.length === 0) && (
-                <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">
+                <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                   —
                 </div>
               )}

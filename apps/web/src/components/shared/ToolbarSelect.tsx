@@ -196,14 +196,14 @@ export function ToolbarSelect({
 								{items.map((item) => (
 									<Fragment key={item.value}>
 										{item.sectionLabel && (
-											<div className="px-4 pb-0.5 pt-2 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+											<div className="px-4 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3.5px)] font-medium uppercase tracking-wide text-t3">
 												{item.sectionLabel}
 										</div>
 									)}
 									<Select.Item
 										value={item.value}
 										data-testid={itemTestId?.(item.value)}
-										className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[13px] text-t1 outline-none transition-colors data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim"
+										className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim"
 									>
 										<span className="flex w-4 shrink-0 justify-center text-accent-t">
 											<Select.ItemIndicator>
@@ -231,7 +231,7 @@ export function ToolbarSelect({
 								))}
 							</div>
 						) : (
-							<div className="px-4 py-2 font-ui text-[12px] text-t3">{emptyText}</div>
+							<div className="px-4 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{emptyText}</div>
 						)}
 					</Select.Viewport>
 					{footer && <div className="mt-1 border-t border-border px-2 pt-1">{footer}</div>}
@@ -296,7 +296,7 @@ function ToolbarSelectMobile({
 						{filtered.map((item) => (
 							<Fragment key={item.value}>
 								{item.sectionLabel && (
-									<div className="px-5 pb-0.5 pt-2 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+									<div className="px-5 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3.5px)] font-medium uppercase tracking-wide text-t3">
 										{item.sectionLabel}
 									</div>
 								)}

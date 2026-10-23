@@ -185,7 +185,7 @@ function Field({
     case "array": {
       const items = Array.isArray(value) ? value : [];
       const content = items.length === 0
-        ? <span className="text-[11px] text-t4">{emptyLabel}</span>
+        ? <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{emptyLabel}</span>
         : items.map((item, i) => <ArrayItem key={i} index={i} itemNode={node.items} value={item} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />);
       const groupTone = variant === "compact" ? undefined : resolveSceneTone(node, value);
       if (variant === "hud") {
@@ -256,7 +256,7 @@ function ArrayItem({
     return (
       <div className={cn(variant === "hud" ? "scene-state-hud-record relative border border-border2 bg-s3/50 px-2 py-2" : variant === "clean" ? "scene-state-clean-record rounded border border-border2 bg-s3 px-2 py-1.5" : variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
         {variant === "hud" && <HudRecordCorners />}
-        <span className={cn("text-[10px] text-t4", variant === "hud" && "uppercase tracking-[0.12em]")}>{itemNode.label ?? `#${index + 1}`}</span>
+        <span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4", variant === "hud" && "uppercase tracking-[0.12em]")}>{itemNode.label ?? `#${index + 1}`}</span>
         {child
           ? <Fields entries={Object.entries(itemNode.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
           : <Dash />}
@@ -296,7 +296,7 @@ function Leaf({
     return (
       <KvRow label={label} variant={variant} inline={inline}>
         {variant === "compact" && <ToneDot tone={tone} />}
-        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", valueColor)}>{text}</span>
+        <span className={cn("text-[calc(var(--ui-fs)-3px)]", variant === "clean" && "scene-state-value", valueColor)}>{text}</span>
       </KvRow>
     );
   }
@@ -318,7 +318,7 @@ function Leaf({
         return (
           <div className="scene-state-hud-meter-row flex min-w-0 flex-col gap-1">
             <KvRow label={label} variant={variant} inline={inline}>
-              <span className={cn("text-[11px] font-medium tabular-nums", meterValueColor)}>{formatNum(n)}</span>
+              <span className={cn("text-[calc(var(--ui-fs)-3px)] font-medium tabular-nums", meterValueColor)}>{formatNum(n)}</span>
             </KvRow>
             <HudMeter label={label} value={n} min={min} max={max} fillPercent={pct} tone={tone} />
           </div>
@@ -326,7 +326,7 @@ function Leaf({
       }
       return (
         <div className={cn("flex min-w-0 items-center gap-2", variant === "clean" && "scene-state-clean-meter-row")}>
-          {label !== undefined && <span className="shrink-0 text-[11px] text-t4">{label}</span>}
+          {label !== undefined && <span className="shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4">{label}</span>}
           <div
             role="meter"
             aria-valuenow={n}
@@ -337,7 +337,7 @@ function Leaf({
           >
             <div className={cn("h-full rounded-full", meterFill)} style={{ width: `${pct}%` }} />
           </div>
-          <span className={cn("shrink-0 text-[11px] font-medium tabular-nums", variant === "clean" && "scene-state-value", meterValueColor)}>{formatNum(n)}</span>
+          <span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] font-medium tabular-nums", variant === "clean" && "scene-state-value", meterValueColor)}>{formatNum(n)}</span>
         </div>
       );
     }
@@ -353,7 +353,7 @@ function Leaf({
     return (
       <KvRow label={label} variant={variant} inline={inline}>
         {variant === "compact" && <ToneDot tone={tone} />}
-        <span className={cn(`text-[11px] tabular-nums ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"}`, variant === "clean" && "scene-state-value")}>
+        <span className={cn(`text-[calc(var(--ui-fs)-3px)] tabular-nums ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"}`, variant === "clean" && "scene-state-value")}>
           {valueText}{rangeSuffix}
           {isHugeRange && variant !== "compact" && n != null && max != null && <span className="text-t4"> / {formatNum(max)}</span>}
         </span>
@@ -372,7 +372,7 @@ function Leaf({
   return (
     <KvRow label={label} variant={variant} inline={inline}>
       {variant === "compact" && <ToneDot tone={tone} />}
-      <span className={cn(`text-[11px] ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"} [overflow-wrap:anywhere]`, variant === "clean" && "scene-state-value")}>{text}</span>
+      <span className={cn(`text-[calc(var(--ui-fs)-3px)] ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"} [overflow-wrap:anywhere]`, variant === "clean" && "scene-state-value")}>{text}</span>
     </KvRow>
   );
 }
@@ -387,7 +387,7 @@ function KvRow({ label, variant, inline = false, children }: { label: string | u
   const hud = variant === "hud";
   return (
     <div className={clean ? (inline ? "inline-flex min-w-0 items-baseline gap-1.5" : "flex min-w-0 items-baseline justify-between gap-2") : hud ? "scene-state-hud-row flex min-w-0 items-baseline gap-2" : "flex min-w-0 items-baseline gap-1.5"}>
-      {label !== undefined && <span className={hud ? "scene-state-hud-label min-w-0 text-[11px] uppercase tracking-[0.12em] text-t4 [overflow-wrap:anywhere]" : "shrink-0 text-[11px] text-t4"}>{variant === "compact" && !label.endsWith(":") ? `${label}:` : label}</span>}
+      {label !== undefined && <span className={hud ? "scene-state-hud-label min-w-0 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.12em] text-t4 [overflow-wrap:anywhere]" : "shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4"}>{variant === "compact" && !label.endsWith(":") ? `${label}:` : label}</span>}
       {hud && label !== undefined && <span aria-hidden="true" className="scene-state-hud-dot-leader mb-1 min-w-2 flex-1 border-b border-dotted border-border" />}
       <div className={clean && !inline ? "min-w-0 flex-1 text-right" : hud ? "min-w-0 flex-1 text-right [overflow-wrap:anywhere]" : "min-w-0 flex-1"}>{children}</div>
     </div>
@@ -396,9 +396,9 @@ function KvRow({ label, variant, inline = false, children }: { label: string | u
 
 function ContainerLabel({ label, variant, tone }: { label: string; variant?: SceneRenderVariant; tone?: SceneTone }) {
   if (tone && variant !== undefined) {
-    return <span className={variant === "clean" ? `text-[10px] font-medium tracking-[0.04em] ${SCENE_TONE_TEXT[tone]}` : `scene-state-hud-label text-[10px] font-semibold uppercase tracking-[0.12em] ${SCENE_TONE_TEXT[tone]}`}>{label}</span>;
+    return <span className={variant === "clean" ? `text-[calc(var(--ui-fs)-4px)] font-medium tracking-[0.04em] ${SCENE_TONE_TEXT[tone]}` : `scene-state-hud-label text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.12em] ${SCENE_TONE_TEXT[tone]}`}>{label}</span>;
   }
-  return <span className={variant === "clean" ? "text-[10px] font-medium tracking-[0.04em] text-t4" : variant === "hud" ? "scene-state-hud-label text-[10px] font-semibold uppercase tracking-[0.12em] text-t4" : "text-[10px] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
+  return <span className={variant === "clean" ? "text-[calc(var(--ui-fs)-4px)] font-medium tracking-[0.04em] text-t4" : variant === "hud" ? "scene-state-hud-label text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.12em] text-t4" : "text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
 }
 
 /** Decorative tone dot for `compact` — the ONLY tone surface there (aria-hidden). */
@@ -413,7 +413,7 @@ function CleanGroupHeader({ label, tone }: { label: string; tone?: SceneTone }) 
   return (
     <div className="scene-state-clean-group-header flex min-w-0 items-center gap-2">
       <span className={cn("h-px w-3 shrink-0", hairline)} />
-      <span className={`min-w-0 text-[11px] font-semibold ${labelColor} [overflow-wrap:anywhere]`}>{label}</span>
+      <span className={`min-w-0 text-[calc(var(--ui-fs)-3px)] font-semibold ${labelColor} [overflow-wrap:anywhere]`}>{label}</span>
       <span className={cn("h-px min-w-3 flex-1", hairline)} />
     </div>
   );
@@ -423,7 +423,7 @@ function HudPanelHeader({ label, tone }: { label: string; tone?: SceneTone }) {
   return (
     <div className={`scene-state-hud-panel-header flex min-w-0 items-center gap-2 border-b ${tone ? SCENE_TONE_BORDER_SOFT[tone] : "border-accent/40"} pb-1`}>
       <span className={cn("h-px w-3 shrink-0", tone ? SCENE_TONE_FILL[tone] : "bg-accent")} />
-      <span className={`scene-state-hud-label min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] ${tone ? SCENE_TONE_TEXT[tone] : "text-t3"} [overflow-wrap:anywhere]`}>{label}</span>
+      <span className={`scene-state-hud-label min-w-0 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.16em] ${tone ? SCENE_TONE_TEXT[tone] : "text-t3"} [overflow-wrap:anywhere]`}>{label}</span>
       <span className={cn("h-px min-w-2 flex-1", tone ? SCENE_TONE_FILL_SOFT[tone] : "bg-accent/40")} />
     </div>
   );
@@ -463,7 +463,7 @@ function HudMeter({ label, value, min, max, fillPercent, tone }: { label: string
 }
 
 function Dash() {
-  return <span className="text-[11px] text-t4">—</span>;
+  return <span className="text-[calc(var(--ui-fs)-3px)] text-t4">—</span>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
