@@ -16,7 +16,7 @@ import { ProviderForm } from "../settings/provider/ProviderForm.js";
 import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ProviderModalModelSelector } from "../settings/provider/ProviderModalModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
-import { NOVELAI_SAMPLER_FORM_DEFAULTS } from "../../lib/provider-sampler-values.js";
+import { buildWizardFormSeed } from "./setup-wizard-form-seed.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
@@ -132,65 +132,7 @@ function ProviderStep({
   const existingProfile = provider.providerProfiles[0] ?? null;
   const alreadyHasProfile = !!existingProfile;
 
-  const [form, setForm] = useState<FormState>(() => ({
-    id: existingProfile?.id ?? "",
-    name: existingProfile?.name ?? "Default",
-    providerPreset: existingProfile?.providerPreset ?? "",
-    baseUrl: existingProfile?.endpoint ?? "",
-    apiKey: "",
-    hasStoredApiKey: !!existingProfile,
-    model: existingProfile?.defaultModel ?? "",
-    visionModel: existingProfile?.visionModel ?? "",
-    temperature: existingProfile?.temperature ?? 1,
-    topP: existingProfile?.topP ?? 1,
-    minP: existingProfile?.minP ?? 0,
-    topK: existingProfile?.topK ?? 0,
-    topA: existingProfile?.topA ?? 0,
-    typicalP: existingProfile?.typicalP ?? 1,
-    tfsZ: existingProfile?.tfsZ ?? 1,
-    adaptiveTarget: existingProfile?.adaptiveTarget ?? -1,
-    adaptiveDecay: existingProfile?.adaptiveDecay ?? 0.9,
-    dynatempRange: existingProfile?.dynatempRange ?? 0,
-    dynatempExponent: existingProfile?.dynatempExponent ?? 1,
-    topNSigma: existingProfile?.topNSigma ?? 0,
-    smoothingFactor: existingProfile?.smoothingFactor ?? 0,
-    repeatLastN: existingProfile?.repeatLastN ?? 0,
-    mirostat: existingProfile?.mirostat ?? 0,
-    mirostatTau: existingProfile?.mirostatTau ?? 5,
-    mirostatEta: existingProfile?.mirostatEta ?? 0.1,
-    dryMultiplier: existingProfile?.dryMultiplier ?? 0,
-    dryBase: existingProfile?.dryBase ?? 1.75,
-    dryAllowedLength: existingProfile?.dryAllowedLength ?? 2,
-    drySequenceBreakers: existingProfile?.drySequenceBreakers ?? [],
-    dryPenaltyLastN: existingProfile?.dryPenaltyLastN ?? -1,
-    xtcThreshold: existingProfile?.xtcThreshold ?? 0.1,
-    xtcProbability: existingProfile?.xtcProbability ?? 0,
-    frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
-    presencePenalty: existingProfile?.presencePenalty ?? 0,
-    repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
-    ...NOVELAI_SAMPLER_FORM_DEFAULTS, // NAI-1a convoy: wire fields arrive in NAI-1b
-    maxTokens: existingProfile?.maxTokens ?? 2000,
-    contextBudget: existingProfile?.contextBudget ?? 16000,
-    pinContextBudget: existingProfile?.pinContextBudget ?? false,
-    tokenPadding: existingProfile?.tokenPadding ?? 0,
-    generationMode: existingProfile?.generationMode ?? "chat",
-    bindPerModel: existingProfile?.bindPerModel ?? false,
-    modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
-    modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
-    editingModelId: null,
-    stopSequences: existingProfile?.stopSequences ?? [],
-    bannedStrings: existingProfile?.bannedStrings ?? [],
-    logitBias: existingProfile?.logitBias ?? [],
-    seed: existingProfile?.seed ?? null,
-    reasoningEffort: existingProfile?.reasoningEffort ?? "auto",
-    showReasoning: existingProfile?.showReasoning ?? false,
-    streamResponse: existingProfile?.streamResponse ?? true,
-    customSamplers: existingProfile?.customSamplers ?? false,
-    proxyMode: existingProfile?.proxyMode ?? "inherit",
-    proxyId: existingProfile?.proxyId ?? null,
-    samplerSetId: existingProfile?.samplerSetId ?? null,
-    generationFormat: existingProfile?.generationFormat ?? null,
-  }));
+  const [form, setForm] = useState<FormState>(() => buildWizardFormSeed(existingProfile));
 
   const [testOk, setTestOk] = useState<boolean | null>(alreadyHasProfile ? true : null);
   const [testing, setTesting] = useState(false);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
-import { MODEL_FAVORITE_SCOPE, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
+import { MODEL_FAVORITE_SCOPE, PROVIDER_PROFILE_GENERATION_DEFAULTS, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
 import { computeSavePatch, computeOverlayPatch, computeBindingIdentityPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
@@ -11,6 +11,7 @@ import { useProviderDataStore } from "../stores/provider-data-store.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, TestChatResponse } from "../api/types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
+import { NEW_PROFILE_CONTEXT_BUDGET } from "../lib/new-profile-defaults.js";
 import {
   loadProviderProfilesAction,
   loadFavoriteModelsAction,
@@ -360,22 +361,22 @@ export function useProviderProfiles() {
         name: getT()("new_profile"),
         providerPreset: PROVIDER_TYPE.openaiCompat,
         endpoint: "",
-        temperature: 1.0,
-        topP: 1.0,
-        minP: 0,
-        topK: 0,
-        topA: 0,
-        frequencyPenalty: 0.0,
-        presencePenalty: 0.0,
-        repetitionPenalty: 1.0,
-        maxTokens: 2000,
-        contextBudget: 16000,
-        stopSequences: [],
-        seed: null,
-        reasoningEffort: "auto",
-        showReasoning: false,
-        streamResponse: true,
-        customSamplers: false,
+        temperature: PROVIDER_PROFILE_GENERATION_DEFAULTS.temperature,
+        topP: PROVIDER_PROFILE_GENERATION_DEFAULTS.topP,
+        minP: PROVIDER_PROFILE_GENERATION_DEFAULTS.minP,
+        topK: PROVIDER_PROFILE_GENERATION_DEFAULTS.topK,
+        topA: PROVIDER_PROFILE_GENERATION_DEFAULTS.topA,
+        frequencyPenalty: PROVIDER_PROFILE_GENERATION_DEFAULTS.frequencyPenalty,
+        presencePenalty: PROVIDER_PROFILE_GENERATION_DEFAULTS.presencePenalty,
+        repetitionPenalty: PROVIDER_PROFILE_GENERATION_DEFAULTS.repetitionPenalty,
+        maxTokens: PROVIDER_PROFILE_GENERATION_DEFAULTS.maxTokens,
+        contextBudget: NEW_PROFILE_CONTEXT_BUDGET,
+        stopSequences: [...PROVIDER_PROFILE_GENERATION_DEFAULTS.stopSequences],
+        seed: PROVIDER_PROFILE_GENERATION_DEFAULTS.seed,
+        reasoningEffort: PROVIDER_PROFILE_GENERATION_DEFAULTS.reasoningEffort,
+        showReasoning: PROVIDER_PROFILE_GENERATION_DEFAULTS.showReasoning,
+        streamResponse: PROVIDER_PROFILE_GENERATION_DEFAULTS.streamResponse,
+        customSamplers: PROVIDER_PROFILE_GENERATION_DEFAULTS.customSamplers,
         proxyMode: "inherit",
         proxyId: null,
       });
