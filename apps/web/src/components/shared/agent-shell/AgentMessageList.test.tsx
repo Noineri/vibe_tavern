@@ -132,8 +132,15 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByText("Here are the rules")).toBeDefined();
   });
 
-  it("shows the live reasoning block in the co-author pattern when pendingReasoning is non-empty (UX 2026-08-16 remark 4)", () => {
-    const { getByTestId, queryByTestId, rerender } = render(
+  // ── AP-29: the live block is the inline preset on the live caption line ─
+  // WAS (characterized pre-change, UX 2026-08-16 remark 4): a separate
+  // `copilot-pending-reasoning-row` (avatar + the co-author's minimal block)
+  // rendered above the pending text. NOW (plan §AP-29): the live block uses
+  // the SAME inline preset in the SAME place as the persisted one — the
+  // toggle sits on the live caption row; at settle it hands over to the
+  // persisted caption toggle with no gap and no duplicate.
+  it("shows the live reasoning toggle on the live caption row (AP-29 inline preset)", () => {
+    const { container, getByText, getByTestId, queryByText, queryByTestId, rerender } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
@@ -143,7 +150,7 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByTestId("copilot-host-caption")).toBeNull();
 
     rerender(
       <AgentMessageList
@@ -155,12 +162,23 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    // The row exists and carries the co-author MessageReasoning minimal body.
-    // Body starts collapsed (defaultOpen=false) — expand via the header click.
-    const row = getByTestId("copilot-pending-reasoning-row");
-    expect(row.getAttribute("data-role")).toBe("assistant");
-    fireEvent.click(row.querySelector("button")!);
-    expect(row.textContent).toContain("thinking about the rules");
+    // The toggle lives ON the caption row (title + reasoning part only),
+    // collapsed by default — the old separate pending row is gone.
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("✦ agent_title");
+    expect(caption.textContent).toContain("reasoning");
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByText("thinking about the rules")).toBeNull();
+    // The live turn streams no duration (pendingReasoning is text-only).
+    expect(caption.textContent).not.toContain("(4.2s)");
+
+    // Expanding puts the mono body on its own full-width line under the
+    // row, above the turn's text.
+    fireEvent.click(getByText("reasoning"));
+    const body = getByText("thinking about the rules");
+    expect(caption.contains(body)).toBe(true);
+    expect(body.closest(".basis-full")).not.toBeNull();
+    expect(container.querySelector(".basis-full")!.textContent).toContain("thinking about the rules");
   });
 
   it("shows the live pendingText assistant bubble when non-empty", () => {
@@ -1374,6 +1392,174 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     const captions = getAllByTestId("copilot-host-caption");
     expect(captions).toHaveLength(1);
     expect(captions[0]!.nextElementSibling!.textContent).toContain("Step one");
+  });
+});
+
+// ─── AP-29: kept reasoning in the co-author's block (inline preset) ───────
+// A persisted assistant turn that carries reasoning shows the SHARED
+// MessageReasoning (never a new component) ON the caption line: collapsed,
+// the row reads «✦ title · label (4.2s) caret»; expanded, the minimal mono
+// body opens full-width under that row, above the turn's text and tool
+// rows. WAS (characterized at AP-28): wire fields persisted + served, but
+// NOTHING rendered them. NOW: the inline preset below.
+describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
+  it("a persisted turn with reasoning shows the toggle on the caption row, collapsed by default", () => {
+    const { getByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("✦ agent_title");
+    expect(caption.textContent).toContain("reasoning");
+    expect(caption.textContent).toContain("(4.2s)");
+    // Collapsed: the body is absent; the turn text still follows the row.
+    expect(queryByText("kept thought")).toBeNull();
+    expect(caption.nextElementSibling!.textContent).toContain("visible reply");
+  });
+
+  it("expanding puts the body on its own full-width line under the caption row", () => {
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    fireEvent.click(getByText("reasoning"));
+    const caption = getByTestId("copilot-host-caption");
+    const body = getByText("kept thought");
+    // The body stays INSIDE the caption row (its own full-width flex line)
+    // and the turn's text still follows the row — never pushed elsewhere.
+    expect(caption.contains(body)).toBe(true);
+    expect(body.closest(".basis-full")).not.toBeNull();
+    expect(body.className).toContain("font-mono");
+    expect(caption.nextElementSibling!.textContent).toContain("visible reply");
+  });
+
+  it("a turn whose first row is a tool carrier shows the carrier's reasoning on the caption", () => {
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "", reasoning: "carrier thought", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          captionToolRow("t1", "c1"),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // AP-28 attaches the pair to the FIRST assistant row (text OR carrier),
+    // so the caption above the turn's first visible text carries it.
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(1.2s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(getByText("carrier thought")).toBeDefined();
+  });
+
+  it("null reasoning renders no block — the caption stays the bare title", () => {
+    const { getByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toBe("✦ agent_title");
+    expect(queryByText("reasoning")).toBeNull();
+  });
+
+  it("copy forwards the turn text WITHOUT the kept reasoning", () => {
+    const turnRow = turnRowCallbacks();
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-copy"));
+    expect(turnRow.onCopy.mock.calls[0]).toEqual(["visible reply"]);
+  });
+
+  it("a finished live turn shows exactly ONE block (the persisted toggle)", () => {
+    // Post-settle props: the controller cleared pendingReasoning, the
+    // reloaded turn carries its reasoning — one toggle, no live remnant.
+    const { queryAllByText, queryByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByText("kept thought")).toBeNull();
+  });
+
+  it("a continuation streaming after persisted text keeps the live toggle in the fallback row", () => {
+    // The answer-continuation path (no optimistic user row) streams while
+    // the turn already shows persisted text — no second caption; the live
+    // toggle keeps its own row until the settle+refetch handover.
+    const { getByTestId, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "earlier reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning="continuation thought"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(2);
+    expect(getByTestId("copilot-host-caption").textContent).toContain("(4.2s)");
+    expect(getByTestId("copilot-pending-reasoning-row").textContent).toContain("reasoning");
   });
 });
 

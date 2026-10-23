@@ -18,8 +18,13 @@ import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
  *   Used by the Co-Author chat (reasoning there is "what the model thought"
  *   while drafting edit instructions, so a code-like mono block fits better
  *   than prose styling).
+ * - `"inline"` — caption-sized header (dot separator, label, duration, small
+ *   caret), no boxing container (`contents`: the header button sits inline
+ *   in the host caption row), the AnimatedDisclosure body takes the row's
+ *   full width on the next line, minimal mono body. Used by the agent feed
+ *   (AP-29) for both the live and the persisted turn reasoning.
  */
-export type ReasoningVariant = "rich" | "minimal";
+export type ReasoningVariant = "rich" | "minimal" | "inline";
 
 interface VariantStyle {
 	/** Outer container (border + background + any margin). */
@@ -32,6 +37,10 @@ interface VariantStyle {
 	showDuration: boolean;
 	/** Show the expand/collapse caret on the trailing edge. */
 	showCaret: boolean;
+	/** Show a middle-dot separator before the label (the inline preset sits
+	 *  inside a caption line — the dot divides the caption title from the
+	 *  toggle). Optional: the rich/minimal entries stay byte-identical. */
+	showSeparator?: boolean;
 	/** Body wrapper classes (AnimatedDisclosure root). */
 	bodyWrapper: string;
 	/** Body typography classes (applied to the inner content). */
@@ -58,6 +67,17 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 		showDuration: false,
 		showCaret: false,
 		bodyWrapper: "border-t border-border px-3 py-2",
+		bodyText: "font-mono text-[11px] text-t3 whitespace-pre-wrap",
+		bodyAs: "mono",
+	},
+	inline: {
+		container: "contents",
+		header: "flex cursor-pointer select-none items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:text-t2",
+		showIcon: false,
+		showDuration: true,
+		showCaret: true,
+		showSeparator: true,
+		bodyWrapper: "basis-full pt-1",
 		bodyText: "font-mono text-[11px] text-t3 whitespace-pre-wrap",
 		bodyAs: "mono",
 	},
@@ -93,7 +113,7 @@ interface MessageReasoningProps {
  * Collapsible block that displays model reasoning (chain-of-thought)
  * above the main message content. Collapsed by default.
  *
- * Two visual presets via the `variant` prop — see {@link ReasoningVariant}.
+ * Three visual presets via the `variant` prop — see {@link ReasoningVariant}.
  * For redacted reasoning: shows placeholder text instead of reasoning content.
  */
 function getReasoningSlotExtra(ctx: MessageSlotContext): MessageReasoningSlotExtra | null {
@@ -148,6 +168,7 @@ export function MessageReasoning({
 		<div className={s.container}>
 			<button type="button" className={s.header} onClick={() => setOpen(!open)}>
 				{s.showIcon && <Icons.brain />}
+				{s.showSeparator === true && <span aria-hidden="true">·</span>}
 				<span>{t("reasoning")}</span>
 				{s.showDuration && durationLabel && (
 					<span className="normal-case tracking-normal">{durationLabel}</span>

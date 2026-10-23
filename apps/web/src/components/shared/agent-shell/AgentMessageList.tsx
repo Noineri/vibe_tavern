@@ -24,6 +24,7 @@ import { AgentPermissionCard } from "./AgentPermissionCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
 import { AgentTurnErrorSlot } from "./AgentTurnErrorSlot.js";
 import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
+import { AgentHostCaption } from "./AgentHostCaption.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { Icons } from "../icons.js";
 import { AgentEmptyState } from "./AgentEmptyState.js";
@@ -63,19 +64,6 @@ function recordProposalOf(activity: AgentToolActivity): RecordProposal | undefin
   return undefined;
 }
 
-/** AP-4: the flat assistant feed's per-turn caption («✦ {host title}»,
- *  mockup §1) — a quiet secondary small `font-ui` line, NOT a heading, with
- *  mockup spacing above the turn's first visible text segment. Rendered by
- *  the list (the block stays caption-agnostic); the title is the host
- *  descriptor's existing title, resolved through `useT` — no new i18n key. */
-function AgentHostCaption({ title }: { title: string }) {
-  return (
-    <div className="mb-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3" data-testid="copilot-host-caption">
-      ✦ {title}
-    </div>
-  );
-}
-
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
  * owns the persisted message list and the two-buffer state; this component
@@ -98,9 +86,12 @@ export interface AgentMessageListProps {
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
   pendingText: string;
-  /** Live model reasoning for the pending turn — rendered above the pending
-   *  bubble with the co-author's MessageReasoning "minimal" pattern (UX
-   *  2026-08-16 remark 4). Live-only: cleared on settle, not persisted. */
+  /** Live model reasoning for the pending turn — rendered with the
+   *  co-author's MessageReasoning `inline` preset on the live caption line
+   *  (AP-29 — the same preset, same place as the persisted toggle). Live-only
+   *  state: cleared on settle, when the reloaded turn carries the persisted
+   *  pair (the handover shows no gap and no duplicate — the clear precedes
+   *  the async refetch, so production never renders both at once). */
   pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
@@ -469,6 +460,9 @@ export function AgentMessageList({
   }, [visibleMessages]);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
+  // AP-29: live reasoning streams as text-only (no duration lands until the
+  // turn persists) — the duration slot stays null like the minimal row did.
+  const hasLiveReasoning = pendingReasoning.trim().length > 0;
 
   // AP-4: one caption per assistant turn, above the turn's first VISIBLE text
   // segment (a turn that starts with hidden tool calls shows it above its
@@ -478,21 +472,33 @@ export function AgentMessageList({
   // on them either); only user rows reset it, only non-empty assistant rows
   // set it. Tool rows are absent here by construction
   // (`orderMessagesWithDigests` keeps user/assistant/digest only).
-  const captionMessageIds = useMemo(() => {
+  // AP-29: the same pass collects each turn's kept reasoning — AP-28
+  // attaches the pair to the turn's FIRST assistant row (text OR tool-call
+  // carrier), so the caption above the turn's first visible text carries it.
+  const { captionMessageIds, captionReasoning } = useMemo(() => {
     const ids = new Set<string>();
+    const reasoning = new Map<string, { reasoning: string; reasoningDurationMs: number | null }>();
     let turnHasVisibleText = false;
+    let turnReasoning: { reasoning: string; reasoningDurationMs: number | null } | null = null;
     for (const entry of visibleMessages) {
       const m = entry.message;
       if (m.role === "user") {
         turnHasVisibleText = false;
+        turnReasoning = null;
         continue;
       }
-      if (m.role === "assistant" && m.content.trim().length > 0 && !turnHasVisibleText) {
-        ids.add(m.id);
-        turnHasVisibleText = true;
+      if (m.role === "assistant") {
+        if (turnReasoning === null && m.reasoning?.trim()) {
+          turnReasoning = { reasoning: m.reasoning, reasoningDurationMs: m.reasoningDurationMs ?? null };
+        }
+        if (m.content.trim().length > 0 && !turnHasVisibleText) {
+          ids.add(m.id);
+          if (turnReasoning !== null) reasoning.set(m.id, turnReasoning);
+          turnHasVisibleText = true;
+        }
       }
     }
-    return ids;
+    return { captionMessageIds: ids, captionReasoning: reasoning };
   }, [visibleMessages]);
 
   // AP-4: the live feed and pending text continue the current turn — they
@@ -598,7 +604,11 @@ export function AgentMessageList({
                 {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
                 {captionMessageIds.has(entry.message.id) && hostTitle !== null ? (
                   <div className="flex min-w-0 flex-col">
-                    <AgentHostCaption title={hostTitle} />
+                    <AgentHostCaption
+                      title={hostTitle}
+                      reasoning={captionReasoning.get(entry.message.id)?.reasoning}
+                      reasoningDurationMs={captionReasoning.get(entry.message.id)?.reasoningDurationMs}
+                    />
                     <AgentMessageBlock
                       message={entry.message}
                       messageMarkup={messageMarkup}
@@ -642,24 +652,31 @@ export function AgentMessageList({
             />
           )}
 
-          {pendingReasoning && (
-            <div className="flex gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
+          {/* AP-29: the live turn's caption — the inline reasoning toggle on
+              the caption line (the same preset, same place as the persisted
+              one, so the settle handover swaps data, not chrome). Hoisted
+              above ALL live content: one site, never duplicated. It earns the
+              caption exactly when a persisted turn would (no visible
+              persisted text yet); the toggle itself appears whenever
+              reasoning streams, even before the first text. */}
+          {!liveTurnHasVisibleText && hostTitle !== null && (hasPendingText || hasLiveReasoning) && (
+            <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? pendingReasoning : null} />
+          )}
+          {/* The no-caption case (the turn already showed persisted text —
+              an answer-continuation streaming without an optimistic user row)
+              keeps the live toggle in its own row until the handover. */}
+          {hasLiveReasoning && (liveTurnHasVisibleText || hostTitle === null) && (
+            <div className="flex flex-wrap items-center gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-s3">
                 <Icons.Sparkles className="h-4 w-4 text-accent-t" />
               </div>
-              <div className="min-w-0 max-w-[80%]">
-                <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="minimal" />
-              </div>
+              <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="inline" />
             </div>
           )}
 
           {(() => {
             const rendered = [];
             let accordionPlaced = false;
-            // AP-4: the feed is the current turn — its first VISIBLE text
-            // segment carries the turn caption when the turn has shown no
-            // persisted text yet (the same list rule as the persisted pass).
-            let liveCaptionTitle: string | null = liveTurnHasVisibleText ? null : hostTitle;
             for (const entry of feed) {
               if (entry.kind === "activity") {
                 const activity = activityById.get(entry.id);
@@ -701,10 +718,9 @@ export function AgentMessageList({
               }
               // Post-settle: the controller clears `pendingText`, so feed text
               // is suppressed while refetched history owns the persisted rows.
+              // AP-29: live text never carries its own caption — the hoisted
+              // live caption above owns it (one site, never duplicated).
               if (!hasPendingText) continue;
-              const showLiveCaption = liveCaptionTitle !== null && entry.text.trim().length > 0;
-              const liveTitle = liveCaptionTitle;
-              if (showLiveCaption) liveCaptionTitle = null;
               const segment = (
                 <AgentMessageBlock
                   messageMarkup={messageMarkup}
@@ -716,16 +732,7 @@ export function AgentMessageList({
                   })}
                 />
               );
-              if (showLiveCaption && liveTitle !== null) {
-                rendered.push(
-                  <div key={entry.id} className="flex min-w-0 flex-col">
-                    <AgentHostCaption title={liveTitle} />
-                    {segment}
-                  </div>,
-                );
-              } else {
-                rendered.push(<Fragment key={entry.id}>{segment}</Fragment>);
-              }
+              rendered.push(<Fragment key={entry.id}>{segment}</Fragment>);
             }
             return rendered;
           })()}
@@ -742,18 +749,8 @@ export function AgentMessageList({
                 })}
               />
             );
-            // AP-4: the pending reply is its turn's first visible text when
-            // the turn has shown no persisted text yet (same list rule) — it
-            // earns the caption; otherwise it streams bare under the
-            // captioned turn.
-            if (!liveTurnHasVisibleText && hostTitle !== null) {
-              return (
-                <div className="flex min-w-0 flex-col">
-                  <AgentHostCaption title={hostTitle} />
-                  {pendingBlock}
-                </div>
-              );
-            }
+            // AP-29: the pending reply always streams bare — the hoisted
+            // live caption above owns the caption (one site).
             return pendingBlock;
           })()}
 

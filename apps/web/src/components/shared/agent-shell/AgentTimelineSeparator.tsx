@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AgentThreadEventWire } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
+import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { useT } from "../../../i18n/context.js";
 
 /**
@@ -14,7 +15,10 @@ import { useT } from "../../../i18n/context.js";
  * expand on click to the frozen content the assistant saw; `branch_forked`
  * carries nothing to show and never expands. The expanded body scrolls
  * internally (`max-h-64`, the digest card's precedent in
- * `AgentMessageBlock.tsx`) and never stretches the feed.
+ * `AgentMessageBlock.tsx`) and never stretches the feed. The body opens
+ * through the shared `AnimatedDisclosure` (AP-29 — the height+opacity motion
+ * the lorebook accordion uses); its own sizing/scroll/chrome classes stay on
+ * the inner element, never on the animated wrapper.
  */
 export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire }) {
   const { t } = useT();
@@ -67,14 +71,14 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
         <span className="min-w-0">{label}</span>
         <Icons.Caret direction={expanded ? "u" : "d"} className="h-3 w-3 shrink-0" />
       </button>
-      {expanded && (
+      <AnimatedDisclosure open={expanded}>
         <div
           data-testid="timeline-separator-body"
           className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1"
         >
           <SeparatorBody event={event} />
         </div>
-      )}
+      </AnimatedDisclosure>
     </div>
   );
 }
