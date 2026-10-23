@@ -89,7 +89,15 @@ export function AgentSettingsModal({
 	// The dropdown is one-step (choose = apply) while the assignment hook is
 	// two-step (select, then assign): the choice parks here and the commit
 	// effect below applies it through the hook once the target resolves.
+	// A FAILED write resets the park (see `onFailed`) so the trigger shows
+	// the effective profile again and choosing the same profile retries.
 	const [chosenId, setChosenId] = useState<string | null>(null);
+	// The commit edge pins the committed choice (see below) — the hook
+	// object is fresh every render, so without it the effect would re-fire
+	// the write on every parent re-render until the server round-trip
+	// clears the choice. Reset on failure and on close (a stale pin would
+	// swallow a same-profile retry, even in a later modal session).
+	const committedRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -100,6 +108,7 @@ export function AgentSettingsModal({
 			setProfileOpen(false);
 			setSkillOpen(false);
 			setChosenId(null);
+			committedRef.current = null;
 		}
 	}, [isOpen, agentKind, loadProfiles, loadSkills]);
 
@@ -117,15 +126,15 @@ export function AgentSettingsModal({
 		isOpen,
 		t,
 		onAssigned: () => setChosenId(null),
+		onFailed: () => {
+			committedRef.current = null;
+			setChosenId(null);
+		},
 	});
 	const effectiveId = isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId;
 
 	// The commit edge (see `chosenId` above): guards + writes live in the
 	// hook (`assign` / `assignHere` no-op when the choice is already active).
-	// The ref pins the committed choice — the hook object is fresh every
-	// render, so without it the effect would re-fire the write on every
-	// parent re-render until the server round-trip clears the choice.
-	const committedRef = useRef<string | null>(null);
 	useEffect(() => {
 		if (chosenId === null || chosenId === committedRef.current) return;
 		if (!profiles.some((p) => p.id === chosenId)) return;
@@ -145,6 +154,13 @@ export function AgentSettingsModal({
 	const entries = skillEntries ?? [];
 	const builtinCount = entries.filter((e) => e.source === "builtin").length;
 	const customCount = entries.filter((e) => e.source === "user").length;
+	// Each non-zero part renders through its own plural-aware key (the
+	// sidechat_event_rp_sync shape — base + _one/_few/_many/_other, `count`
+	// at the call site); a zero part is left out, both-zero keeps the empty
+	// line.
+	const skillParts: string[] = [];
+	if (builtinCount > 0) skillParts.push(t("agent_settings_skills_builtin", { n: builtinCount, count: builtinCount }));
+	if (customCount > 0) skillParts.push(t("agent_settings_skills_custom", { n: customCount, count: customCount }));
 
 	return (
 		<>
@@ -194,7 +210,6 @@ export function AgentSettingsModal({
 										searchable={false}
 										triggerTestId="agent-settings-profile-select"
 										triggerClassName="flex h-8 min-w-0 max-w-[160px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
-										triggerLeading={<Icons.Caret direction="d" />}
 									/>
 									<button
 										type="button"
@@ -233,9 +248,7 @@ export function AgentSettingsModal({
 							testId="agent-settings-row-skills"
 							icon={<Icons.Book className="h-[18px] w-[18px]" />}
 							title={t("agent_settings_skills")}
-							sub={entries.length === 0
-								? t("agent_settings_no_skills")
-								: t("agent_settings_skills_counts", { builtin: builtinCount, custom: customCount })}
+							sub={skillParts.length > 0 ? skillParts.join(" · ") : t("agent_settings_no_skills")}
 							control={
 								<button
 									type="button"

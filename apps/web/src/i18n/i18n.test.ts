@@ -114,4 +114,20 @@ describe("i18n count pluralization", () => {
 		expect(String(ruInst.t("branch_count", { count: 5 }))).toBe("5 веток");
 		expect(String(ruInst.t("branch_count", { count: 21 }))).toBe("21 ветка");
 	});
+
+	it("settings skill parts decline (AP-27 follow-up: one plural-aware key per part)", async () => {
+		const enInst = await makeInstance("en");
+		for (const n of [1, 3, 5]) {
+			expect(String(enInst.t("agent_settings_skills_builtin", { n, count: n }))).toBe(`${n} built-in`);
+			expect(String(enInst.t("agent_settings_skills_custom", { n, count: n }))).toBe(`${n} custom`);
+		}
+
+		const ruInst = await makeInstance("ru");
+		expect(String(ruInst.t("agent_settings_skills_builtin", { n: 1, count: 1 }))).toBe("1 встроенный");
+		expect(String(ruInst.t("agent_settings_skills_builtin", { n: 3, count: 3 }))).toBe("3 встроенных");
+		expect(String(ruInst.t("agent_settings_skills_builtin", { n: 5, count: 5 }))).toBe("5 встроенных");
+		expect(String(ruInst.t("agent_settings_skills_custom", { n: 1, count: 1 }))).toBe("1 свой");
+		expect(String(ruInst.t("agent_settings_skills_custom", { n: 3, count: 3 }))).toBe("3 своих");
+		expect(String(ruInst.t("agent_settings_skills_custom", { n: 5, count: 5 }))).toBe("5 своих");
+	});
 });

@@ -15,7 +15,10 @@ import type { TFunc } from "../../../i18n/context.js";
  * "use here" — the built-in row pins the literal sentinel so the chat runs
  * the seed even under a custom default — and the kind default "use by
  * default" — the built-in clears it). Failures reuse the assignment error
- * copy; every success closes the modal through `onAssigned`.
+ * copy and report through the optional `onFailed` (AP-27 follow-up: the
+ * settings summary's one-step dropdown parks its choice outside the hook,
+ * so it needs the failure signal to unpark); every success closes the
+ * modal through `onAssigned`.
  */
 export const BUILTIN_PROFILE_ID = "builtin";
 
@@ -64,6 +67,12 @@ export interface AgentProfileAssignmentInput {
 	isOpen: boolean;
 	t: TFunc;
 	onAssigned: () => void;
+	/** Failure signal for one-step callers (the settings summary dropdown)
+	 *  that park their choice outside the hook — lets them unpark on a
+	 *  failed write so the control shows the effective profile again and a
+	 *  same-choice retry re-fires. Two-step callers (the profile modal)
+	 *  keep their selection and omit this. */
+	onFailed?: () => void;
 }
 
 export interface AgentProfileAssignment {
@@ -92,6 +101,7 @@ export function useAgentProfileAssignment({
 	isOpen,
 	t,
 	onAssigned,
+	onFailed,
 }: AgentProfileAssignmentInput): AgentProfileAssignment {
 	// Mirror the resolver's null→builtin fallback so the active row is marked
 	// even when nothing has been explicitly assigned yet.
@@ -152,6 +162,7 @@ export function useAgentProfileAssignment({
 				onAssigned();
 			} catch {
 				toast.error(t("copilot_profile_assign_failed"));
+				onFailed?.();
 			}
 		})();
 	};
@@ -170,6 +181,7 @@ export function useAgentProfileAssignment({
 				onAssigned();
 			} catch {
 				toast.error(t("copilot_profile_assign_failed"));
+				onFailed?.();
 			}
 		})();
 	};
@@ -186,6 +198,7 @@ export function useAgentProfileAssignment({
 				onAssigned();
 			} catch {
 				toast.error(t("copilot_profile_assign_failed"));
+				onFailed?.();
 			}
 		})();
 	};

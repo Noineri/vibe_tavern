@@ -43,8 +43,10 @@ const realSkillModal = await import("./AgentSkillModal.js");
 mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
 	useT: () => ({
-		t: (key: string, opts?: { builtin?: number; custom?: number }) =>
-			opts !== undefined ? `${key}:${opts.builtin}/${opts.custom}` : key,
+		// Identity with the single `{n}` count echoed (the new per-part
+		// plural keys pass `{ n, count }`; the old combined key is gone).
+		t: (key: string, opts?: Record<string, unknown>) =>
+			opts !== undefined ? `${key}:${String(opts.n)}` : key,
 		tDynamic: (key: string) => key,
 		locale: "en",
 		setLocale: () => {},
@@ -348,6 +350,54 @@ describe("AgentSettingsModal — profile row writes", () => {
 	});
 });
 
+describe("AgentSettingsModal — failed profile write", () => {
+	it("shows the effective profile again, and choosing the same profile retries the write", async () => {
+		setCopilotProfile.mockRejectedValueOnce(new Error("write failed"));
+		const { getByTestId } = renderSummary({ assignedProfileId: null });
+		await flushProfiles(getByTestId);
+		const select = () => getByTestId("agent-settings-profile-select") as HTMLSelectElement;
+		expect(select().value).toBe("builtin");
+
+		fireEvent.change(select(), { target: { value: "cprof_1" } });
+		// The write fails — the hook toasts and never calls `onAssigned` —
+		// so the park clears and the trigger falls back to the effective
+		// profile (nothing was applied).
+		await waitFor(() => expect(select().value).toBe("builtin"));
+		expect(setCopilotProfile).toHaveBeenCalledTimes(1);
+
+		// The pin is cleared too: choosing the same profile retries.
+		fireEvent.change(select(), { target: { value: "cprof_1" } });
+		await waitFor(() => expect(setCopilotProfile).toHaveBeenCalledTimes(2));
+	});
+
+	it("retries the same choice after the modal closes and reopens", async () => {
+		setCopilotProfile.mockRejectedValue(new Error("write failed"));
+		const onProviderChange = mock((_profileId: string, _model?: string) => undefined);
+		const base = {
+			agentKind: "experience" as const,
+			scriptId: "script-1",
+			assignedProfileId: null,
+			providerProfileId: "p1",
+			model: "m1",
+			onProviderChange,
+			onClose: mock(),
+		};
+		const utils = render(<AgentSettingsModal {...base} isOpen />);
+		await flushProfiles(utils.getByTestId);
+
+		fireEvent.change(utils.getByTestId("agent-settings-profile-select"), { target: { value: "cprof_1" } });
+		await waitFor(() => expect(setCopilotProfile).toHaveBeenCalledTimes(1));
+
+		// Close (the park + the pin reset) and reopen — the choice is
+		// parked fresh, so the write fires again.
+		utils.rerender(<AgentSettingsModal {...base} isOpen={false} />);
+		utils.rerender(<AgentSettingsModal {...base} isOpen />);
+		await flushProfiles(utils.getByTestId);
+		fireEvent.change(utils.getByTestId("agent-settings-profile-select"), { target: { value: "cprof_1" } });
+		await waitFor(() => expect(setCopilotProfile).toHaveBeenCalledTimes(2));
+	});
+});
+
 describe("AgentSettingsModal — children", () => {
 	it("«Edit profiles ›» opens the profile modal with parentBack; back returns to the summary", async () => {
 		const { getByTestId, queryByTestId } = renderSummary();
@@ -381,12 +431,44 @@ describe("AgentSettingsModal — children", () => {
 });
 
 describe("AgentSettingsModal — skills row", () => {
-	it("shows the builtin/user counts", async () => {
+	it("shows one part per non-zero source through its own plural key", async () => {
 		const { getByTestId } = renderSummary();
 		await flushProfiles(getByTestId);
 		await waitFor(() =>
-			expect(getByTestId("agent-settings-row-skills").textContent).toContain("agent_settings_skills_counts:2/1"),
+			expect(getByTestId("agent-settings-row-skills").textContent).toContain(
+				"agent_settings_skills_builtin:2 · agent_settings_skills_custom:1",
+			),
 		);
+	});
+
+	it("hides the built-in part when the kind ships no built-in skills", async () => {
+		// Sidechat + scripts ship 0 built-in skills — «0 встроенных» noise.
+		listCopilotSkills.mockResolvedValue({
+			entries: SKILL_ENTRIES.filter((e) => e.source === "user").concat([
+				{ id: "second", source: "user" as const, name: "Second", description: "d", manifestPath: "second/SKILL.md", shadowsBuiltin: false },
+				{ id: "third", source: "user" as const, name: "Third", description: "d", manifestPath: "third/SKILL.md", shadowsBuiltin: false },
+			]),
+			errors: [],
+		});
+		const { getByTestId } = renderSummary();
+		await flushProfiles(getByTestId);
+		await waitFor(() =>
+			expect(getByTestId("agent-settings-row-skills").textContent).toContain("agent_settings_skills_custom:3"),
+		);
+		expect(getByTestId("agent-settings-row-skills").textContent).not.toContain("agent_settings_skills_builtin");
+	});
+
+	it("hides the custom part when the kind has no user skills", async () => {
+		listCopilotSkills.mockResolvedValue({
+			entries: SKILL_ENTRIES.filter((e) => e.source === "builtin"),
+			errors: [],
+		});
+		const { getByTestId } = renderSummary();
+		await flushProfiles(getByTestId);
+		await waitFor(() =>
+			expect(getByTestId("agent-settings-row-skills").textContent).toContain("agent_settings_skills_builtin:2"),
+		);
+		expect(getByTestId("agent-settings-row-skills").textContent).not.toContain("agent_settings_skills_custom");
 	});
 
 	it("shows the empty line when the kind has no skills", async () => {
