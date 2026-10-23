@@ -429,6 +429,8 @@ The app has **one shared pool** of provider connection profiles (endpoints, API 
 
 The original `ProviderModal` has no Co-Author mode flag (the temporary `providerModalMode` was removed). It is RP-only: activation, `defaultModel`, vision, samplers, per-model binding.
 
+**Provider tabs — where things live** — the preset tables for the LLM, image-gen and STT tabs live in `apps/web/src/provider-presets.ts`; the family hooks (`use-image-profiles`, `use-stt-*`, `use-tts-*`, `use-whisper-model`, `use-kokoro-model`, `use-docker-status`) live in `apps/web/src/hooks/`; server-shared probe/discovery code (`packages/domain/src/tts-server-discovery.ts`) and the browser-safe capability tables (`imagegen-capabilities.ts`) stay in the domain leaf.
+
 ---
 
 ## Dev Tooling: ThemeTuner
