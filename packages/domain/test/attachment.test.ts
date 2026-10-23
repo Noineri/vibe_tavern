@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  attachmentPromptTokens,
   classifyAttachment,
   filterPromptVisibleAttachments,
   isTextMime,
@@ -276,5 +277,84 @@ describe('prompt attachment visibility (CA-1b)', () => {
     };
     const included = { ...slot, includeInPrompt: true };
     expect(filterPromptVisibleAttachments([slot, { ...slot, includeInPrompt: false }, included])).toEqual([included]);
+  });
+});
+
+describe('attachment prompt token weights (CA-1c)', () => {
+  function file(overrides: Partial<Attachment> = {}): Attachment {
+    return {
+      id: 'file_1', assetId: 'asset_file_1', type: 'file', name: 'notes.md',
+      mimeType: 'text/markdown', sizeBytes: 10, tokenCount: 400_000, ...overrides,
+    };
+  }
+
+  function unexpectedEstimate(): number {
+    throw new Error('Stored counts and non-text attachments must not estimate text');
+  }
+
+  test('images, video, audio and non-text files weigh zero even with descriptions and counts', () => {
+    for (const [type, mimeType] of [
+      ['image', 'image/png'], ['video', 'video/mp4'], ['audio', 'audio/webm'], ['file', 'application/pdf'],
+    ] as const) {
+      expect(attachmentPromptTokens([file({ type, mimeType, description: 'Description', summaryTokenCount: 50 })], unexpectedEstimate)).toBe(0);
+    }
+  });
+
+  test('every accepted text MIME weighs its stored full-text count', () => {
+    for (const mimeType of Object.keys(TEXT_MIME_TO_EXT)) {
+      expect(attachmentPromptTokens([file({ mimeType })], unexpectedEstimate)).toBe(400_000);
+    }
+  });
+
+  test('a summarized text file uses its summary count instead of its full count', () => {
+    expect(attachmentPromptTokens([file({ description: 'Summary', summaryTokenCount: 90 })], unexpectedEstimate)).toBe(90);
+  });
+
+  test('a summary without a stored count estimates the exact description, never the full file', () => {
+    const descriptions: string[] = [];
+    const description = '  Summary\n  ';
+    expect(attachmentPromptTokens([file({ description })], (text) => {
+      descriptions.push(text);
+      return 17;
+    })).toBe(17);
+    expect(descriptions).toEqual([description]);
+  });
+
+  test('a legacy file without a full count weighs zero without reading or estimating assets', () => {
+    expect(attachmentPromptTokens([file({ tokenCount: undefined })], unexpectedEstimate)).toBe(0);
+  });
+
+  test('null, absent, empty and whitespace-only descriptions use the full count, not a stale summary count', () => {
+    for (const description of [null, undefined, '', ' \t\n']) {
+      expect(attachmentPromptTokens([file({ description, summaryTokenCount: 90 })], unexpectedEstimate)).toBe(400_000);
+    }
+  });
+
+  test('stored zero full-text and summary counts are honored without fallback', () => {
+    expect(attachmentPromptTokens([file({ tokenCount: 0 })], unexpectedEstimate)).toBe(0);
+    expect(attachmentPromptTokens([file({ description: 'Summary', summaryTokenCount: 0 })], unexpectedEstimate)).toBe(0);
+  });
+
+  test('absent and empty attachment lists weigh zero', () => {
+    expect(attachmentPromptTokens(undefined, unexpectedEstimate)).toBe(0);
+    expect(attachmentPromptTokens([], unexpectedEstimate)).toBe(0);
+  });
+
+  test('mixed weights sum without mutating the attachment list', () => {
+    const attachments = [
+      file({ tokenCount: 100 }),
+      file({ description: 'Summary', summaryTokenCount: 20 }),
+      file({ description: 'Fallback' }),
+      file({ tokenCount: undefined }),
+      file({ type: 'image', mimeType: 'image/png' }),
+    ];
+    const before = structuredClone(attachments);
+    expect(attachmentPromptTokens(attachments, (text) => text.length)).toBe(128);
+    expect(attachments).toEqual(before);
+  });
+
+  test('visibility is delegated to the existing filter, not re-derived by the weight helper', () => {
+    const excluded = file({ includeInPrompt: false });
+    expect(attachmentPromptTokens(filterPromptVisibleAttachments([excluded]), unexpectedEstimate)).toBe(0);
   });
 });

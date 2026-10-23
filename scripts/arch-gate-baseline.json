@@ -49,7 +49,7 @@
     "packages/db/src/stores/message-store.ts": 1100,
     "packages/domain/src/experience-tetris-port.ts": 805,
     "packages/domain/src/imagegen-capabilities.ts": 990,
-    "packages/prompt-pipeline/src/assemble.ts": 1285,
+    "packages/prompt-pipeline/src/assemble.ts": 1283,
     "packages/prompt-pipeline/src/macro-registry.ts": 867,
     "services/api/src/api/adapters/image-gen-adapter.ts": 1477,
     "services/api/src/api/contract/runtime-api.ts": 845,

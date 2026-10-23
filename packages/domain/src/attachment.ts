@@ -236,6 +236,25 @@ export function isTextMime(mimeType: string): boolean {
   return TEXT_MIMES.has(mimeType);
 }
 
+/** Sum the prompt weight of already-visible attachments without reading assets.
+ *  Text files use their full count, or their summary count while summarized.
+ *  Legacy summaries without a count use the caller's text estimator; legacy
+ *  full files without a count and all non-text attachments weigh zero.
+ *  Visibility belongs to {@link filterPromptVisibleAttachments}, not this helper. */
+export function attachmentPromptTokens(
+  attachments: ReadonlyArray<Attachment> | undefined,
+  estimateText: (text: string) => number,
+): number {
+  let total = 0;
+  for (const attachment of attachments ?? []) {
+    if (!isTextMime(attachment.mimeType)) continue;
+    total += attachment.description?.trim()
+      ? (attachment.summaryTokenCount ?? estimateText(attachment.description))
+      : (attachment.tokenCount ?? 0);
+  }
+  return total;
+}
+
 /** Canonical text MIME for a file extension (case-insensitive, with or without
  *  the leading dot), or null when the extension is not a text-attachment type. */
 export function textMimeForExtension(extension: string): string | null {
