@@ -4,6 +4,7 @@ import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-
 import type { ProviderStreamResult } from "../../infrastructure/ai/provider-execution-types.js";
 import { resolveEffectivePrefill } from "./continue-fallback.js";
 import type { StreamStartInput } from "./continue-fallback.js";
+import { visionExecutionOptions } from "./live-chat-media.js";
 
 interface StreamStartDependencies {
   executeStream: typeof streamProviderExecutor;
@@ -34,11 +35,7 @@ export async function startProviderStream(
       ...(input.continuationFallback ? { continuationFallback: true } : {}),
       tools: input.tools,
       maxSteps: input.maxSteps,
-      cachedModels: input.visionAssets?.cachedModels,
-      visionModel: input.visionAssets?.visionModel,
-      assetLoader: input.visionAssets?.assetLoader,
-      visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
-      voiceTranscriber: input.voiceTranscriber,
+      ...visionExecutionOptions(input),
       onAttachmentDescriptions: input.onAttachmentDescriptions,
     });
     return {

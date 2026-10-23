@@ -1,10 +1,10 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatBranchId, ChatId, MessageId, PromptPresetId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
-import type { CoauthorTransport, StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderExecutionInput, ProviderStreamResult, ExtractedToolCall, ExtractedToolResult, CachedModelEntry } from "../../infrastructure/ai/provider-execution-types.js";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { ProviderStreamResult, ExtractedToolCall, ExtractedToolResult } from "../../infrastructure/ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
@@ -26,6 +26,8 @@ import type { LiveChatSendInput } from "./live-chat-send-input.js";
 import { assembleReplyPrompt } from "./live-chat-reply-prompt.js";
 import { startProviderStream } from "./live-chat-stream-start.js";
 import { notifyAssistantAppended, notifyUserMessageCreated } from "./live-chat-events.js";
+import { visionExecutionOptions, replyExecutionOptions, historyAttachmentDescriptions } from "./live-chat-media.js";
+import type { LiveChatReplyInput, LiveChatRegenerateInput, LiveChatContinueInput } from "./live-chat-reply-input.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -139,11 +141,7 @@ export class LiveChatOrchestrator {
         prefill,
         tools: prepared.tools,
         maxSteps: prepared.maxSteps,
-        cachedModels: input.visionAssets?.cachedModels,
-        visionModel: input.visionAssets?.visionModel,
-        assetLoader: input.visionAssets?.assetLoader,
-        visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
-        voiceTranscriber: input.voiceTranscriber,
+        ...visionExecutionOptions(input),
         onAttachmentDescriptions: (prepared.userMessage && input.attachments?.length)
           ? async (descriptions) => {
               await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -192,14 +190,7 @@ export class LiveChatOrchestrator {
   }
 
   /** Non-streaming continue: assemble prompt without user message → execute → append reply. */
-  async generateReply(input: {
-    chatId: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    prefill?: string;
-    signal?: AbortSignal;
-  }): Promise<{
+  async generateReply(input: LiveChatReplyInput): Promise<{
     promptMessageCount: number;
     reply: string;
     snapshot: MessageResponse;
@@ -228,6 +219,7 @@ export class LiveChatOrchestrator {
         prefill,
         tools: prompt.tools,
         maxSteps: prompt.maxSteps,
+        ...replyExecutionOptions(input, prompt, this.chatApp),
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -266,23 +258,7 @@ export class LiveChatOrchestrator {
   }
 
   /** Non-streaming regenerate: exclude target message from prompt → execute → add as variant. */
-  async regenerateMessage(input: {
-    chatId: string;
-    messageId: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    /**
-     * Optional per-request prompt preset override (Wave Q1b). When set, the
-     * assembled prompt uses this preset instead of the chat's `promptPresetId`,
-     * WITHOUT mutating the chat row. Undefined → existing cascade (unchanged).
-     * Wired into assemblePromptPreview in Q1b; accepted here from Q1a so the
-     * adapter can thread it without a second signature change.
-     */
-    presetId?: PromptPresetId;
-    prefill?: string;
-    signal?: AbortSignal;
-  }): Promise<{
+  async regenerateMessage(input: LiveChatRegenerateInput): Promise<{
     promptMessageCount: number;
     reply: string;
     snapshot: MessageResponse;
@@ -321,6 +297,7 @@ export class LiveChatOrchestrator {
         prefill,
         tools: prompt.tools,
         maxSteps: prompt.maxSteps,
+        ...replyExecutionOptions(input, prompt, this.chatApp),
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -430,14 +407,7 @@ export class LiveChatOrchestrator {
   }
 
   /** Streaming continue: assemble without user message → stream → append. */
-  async *generateReplyStream(input: {
-    chatId: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    prefill?: string;
-    signal?: AbortSignal;
-  }): AsyncGenerator<{ event: string; data: string }> {
+  async *generateReplyStream(input: LiveChatReplyInput): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
     const prompt = await assembleReplyPrompt(
@@ -449,7 +419,7 @@ export class LiveChatOrchestrator {
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
-    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions: historyAttachmentDescriptions(prompt, this.chatApp), tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
@@ -497,17 +467,7 @@ export class LiveChatOrchestrator {
   }
 
   /** Streaming regenerate: exclude target message → stream → add as variant. */
-  async *regenerateMessageStream(input: {
-    chatId: string;
-    messageId: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    /** Optional per-request prompt preset override (Wave Q1b). See regenerateMessage. */
-    presetId?: PromptPresetId;
-    prefill?: string;
-    signal?: AbortSignal;
-  }): AsyncGenerator<{ event: string; data: string }> {
+  async *regenerateMessageStream(input: LiveChatRegenerateInput): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.withTokenContext(provider, () =>
@@ -522,7 +482,7 @@ export class LiveChatOrchestrator {
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
     const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
-    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions: historyAttachmentDescriptions(prompt, this.chatApp), tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
@@ -587,16 +547,7 @@ export class LiveChatOrchestrator {
    *  detector-confirmed clean rejection retries ONCE as a user-role
    *  continuation ({@link runContinueFallback}) and remembers the pair —
    *  later clicks go straight to the fallback (skip the doomed attempt). */
-  async continueMessage(input: {
-    chatId: string;
-    messageId: string;
-    /** The selected variant's text — resolved server-side by the adapter. */
-    continuationText: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    signal?: AbortSignal;
-  }): Promise<{
+  async continueMessage(input: LiveChatContinueInput): Promise<{
     promptMessageCount: number;
     reply: string;
     snapshot: MessageResponse;
@@ -607,6 +558,7 @@ export class LiveChatOrchestrator {
     if (fallbackEntry) {
       return await runContinueFallback({
         chatRuntime: this.chatRuntime,
+        attachmentWriter: this.chatApp,
         executeNonstreaming: this.executeNonstreaming,
         applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
         withTokenContext: (provider2, fn) => this.withTokenContext(provider2, fn),
@@ -638,6 +590,7 @@ export class LiveChatOrchestrator {
         prefill,
         tools: prompt.tools,
         maxSteps: prompt.maxSteps,
+        ...replyExecutionOptions(input, prompt, this.chatApp),
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -660,6 +613,7 @@ export class LiveChatOrchestrator {
       logSendDebug("live.continue.rejection-detected", { chatId: input.chatId, messageId: input.messageId, key: memoryKey, message });
       return await runContinueFallback({
         chatRuntime: this.chatRuntime,
+        attachmentWriter: this.chatApp,
         executeNonstreaming: this.executeNonstreaming,
         applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
         withTokenContext: (provider2, fn) => this.withTokenContext(provider2, fn),
@@ -684,15 +638,7 @@ export class LiveChatOrchestrator {
    *  client, which is what makes the retry clean) retries ONCE as a
    *  user-role continuation ({@link runContinueFallbackStream}); the pair is
    *  remembered so later clicks skip the doomed prefill attempt. */
-  async *continueMessageStream(input: {
-    chatId: string;
-    messageId: string;
-    continuationText: string;
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    signal?: AbortSignal;
-  }): AsyncGenerator<{ event: string; data: string }> {
+  async *continueMessageStream(input: LiveChatContinueInput): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     const memoryKey = ContinueFallbackMemory.key(provider.profile, provider.model);
     const fallbackEntry = selectContinueEntry(provider.profile, this.continueFallbackMemory.has(memoryKey));
@@ -711,7 +657,7 @@ export class LiveChatOrchestrator {
     );
     const prefill = input.continuationText;
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
-    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, prefill, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    const { streamResult, startedAt, generationMetadata } = await this.startStream({ ...input, ...provider, prefill, onAttachmentDescriptions: historyAttachmentDescriptions(prompt, this.chatApp), tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
       providerResponse: streamResult.providerResponse,
@@ -751,6 +697,7 @@ export class LiveChatOrchestrator {
   private async *continueFallbackStream(input: ContinueFallbackAttemptInput & { profile: StoredProviderProfileRecord; model: string }, provider: { profile: StoredProviderProfileRecord; model: string }, reason: ContinueFallbackReason): AsyncGenerator<{ event: string; data: string }> {
     yield* runContinueFallbackStream({
       chatRuntime: this.chatRuntime,
+      attachmentWriter: this.chatApp,
       startStream: (startInput, prompt) => this.startStream(startInput, prompt),
       drainStream: <TFinal extends DrainFinalSnapshot>(drainInput: DrainStreamInput<TFinal>) => this.drainStream(drainInput),
       withTokenContext: (scoped, fn) => this.withTokenContext(scoped, fn),

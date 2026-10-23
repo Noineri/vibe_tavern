@@ -138,6 +138,18 @@ export class ChatAdapter implements ChatRuntimeApi {
 		};
 	}
 
+	private async resolveReplyMediaAssets(profile: StoredProviderProfileRecord) {
+		return {
+			visionAssets: {
+				cachedModels: await resolveCachedModels(this.stores, profile),
+				visionModel: profile.visionModel,
+				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
+				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
+			},
+			voiceTranscriber: await this.resolveVoiceTranscriber(),
+		};
+	}
+
 	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
@@ -163,13 +175,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			diceCommit: resolveDiceCommit(body),
 			experienceCommit: resolveExperienceCommit(body),
 			coauthorEditorState: body.coauthorEditorState,
-			visionAssets: {
-				cachedModels: await resolveCachedModels(this.stores, profile),
-				visionModel: profile.visionModel,
-				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
-				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
-			},
-			voiceTranscriber: await this.resolveVoiceTranscriber(),
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		logSendDebug("api.runtime.send.success", {
 			chatId,
@@ -196,13 +202,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				diceCommit: resolveDiceCommit(body),
 				experienceCommit: resolveExperienceCommit(body),
 				coauthorEditorState: body.coauthorEditorState,
-				visionAssets: {
-					cachedModels: await resolveCachedModels(this.stores, profile),
-					visionModel: profile.visionModel,
-					assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
-					visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
-				},
-				voiceTranscriber: await this.resolveVoiceTranscriber(),
+				...await this.resolveReplyMediaAssets(profile),
 			});
 		} catch (err) {
 			if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
@@ -227,6 +227,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -241,6 +242,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
@@ -272,6 +274,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -297,6 +300,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
@@ -308,6 +312,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -320,6 +325,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
