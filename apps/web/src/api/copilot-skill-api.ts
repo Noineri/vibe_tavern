@@ -9,6 +9,7 @@
 import type {
   SkillCatalog,
   SkillCatalogEntryDto,
+  SkillContentDto,
   SkillImportResult,
 } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../lib/agent-host-registry.js";
@@ -31,6 +32,15 @@ function skillEntryUrl(kind: AgentKind, id: string): string {
 /** `GET /api/copilot/skills/:id?kind=` — one catalog entry of one kind's library, or `null` if absent. */
 export async function readCopilotSkill(kind: AgentKind, id: string): Promise<SkillCatalogEntryDto | null> {
   const response = await apiFetch(skillEntryUrl(kind, id));
+  if (response.status === 404) return null;
+  return unwrapRpc(response);
+}
+
+/** `GET /api/copilot/skills/:id/content?kind=` — the AP-21 full content view
+ *  (`{ id, path, content, body, files }`) of one kind's library, or `null`
+ *  when the skill is absent. Lazy-loaded by the skill library detail pane. */
+export async function readCopilotSkillContent(kind: AgentKind, id: string): Promise<SkillContentDto | null> {
+  const response = await apiFetch(`${skillEntryUrl(kind, id)}/content`);
   if (response.status === 404) return null;
   return unwrapRpc(response);
 }

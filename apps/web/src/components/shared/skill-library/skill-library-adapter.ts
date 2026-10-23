@@ -1,4 +1,4 @@
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 
 /**
  * Data + label seam for the one shared skill library modal (AP-22,
@@ -16,16 +16,18 @@ import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
  * `coauthor.skill.*`), so the wrapper supplies ITS namespace's keys and the
  * view resolves them through `tDynamic` — the deliberately loose-key sibling
  * of `t`, because these key strings are adapter data, not call-site literals.
- * Key-for-key with the pre-merge modals; the merge adds NO new keys.
+ * AP-22 merged key-for-key with the pre-merge modals; AP-23 adds the polish
+ * keys (body preview, toggles, tech details, empty copy, import CTA) and
+ * drops the keys whose UI is gone (`close` — the `MasterDetailFooter`
+ * primitive owns Close; `empty`/`empty_sub` — superseded by the mockup
+ * empty copy; `inspect_hint` — the detail hint line is gone).
  */
 export interface SkillLibraryLabels {
 	/** Global modal title / subtitle. */
 	title: string;
 	subtitle: string;
-	/** Footer close button. */
-	close: string;
-	/** Header import button (idle / in-progress labels). */
-	import: string;
+	/** List-bottom + empty-state import buttons (idle / in-progress labels). */
+	importCta: string;
 	importing: string;
 	/** Import result toasts. */
 	importSuccess: string;
@@ -33,9 +35,9 @@ export interface SkillLibraryLabels {
 	/** Master list header + loading line. */
 	listLabel: string;
 	loading: string;
-	/** Empty library / empty detail states. */
-	empty: string;
-	emptySub: string;
+	/** Empty library (mockup §7 explanation + CTA) / empty detail states. */
+	emptyTitle: string;
+	emptyBody: string;
 	emptyDetail: string;
 	/** Delete action label + result toasts. */
 	delete: string;
@@ -44,7 +46,7 @@ export interface SkillLibraryLabels {
 	/** Delete confirm (plain case — no modules reference the skill). */
 	deleteConfirmTitle: string;
 	deleteConfirmBody: string;
-	/** Source badges + user-shadows-builtin marker. */
+	/** Source tag («свой» / «встроенный») + user-shadows-builtin marker. */
 	user: string;
 	builtIn: string;
 	shadow: string;
@@ -53,26 +55,38 @@ export interface SkillLibraryLabels {
 	idLabel: string;
 	manifestLabel: string;
 	sourceLabel: string;
-	inspectHint: string;
+	/** Skill body preview (the AP-21 frontmatter-stripped `body`). */
+	bodyLabel: string;
+	showFull: string;
+	collapse: string;
+	contentLoading: string;
+	/** «Технические детали» disclosure (trigger + hint + files row). */
+	techDetails: string;
+	techDetailsHint: string;
+	filesLabel: string;
 }
 
 /**
  * Testids the view renders. The pre-merge modals used different prefixes
  * (`copilot-skill-*` vs `skill-*`); the wrappers keep their exact pre-merge
- * testids so their suites pass unchanged against the merged view.
+ * prefixes. AP-23 drops the per-row + detail delete testids (delete lives in
+ * the shared footer now — suites find it by its label text) and adds the
+ * preview/disclosure hooks.
  */
 export interface SkillLibraryTestids {
 	/** Hidden folder-upload input. */
 	folderInput: string;
-	/** Header import button. */
+	/** Import button (list-bottom dock, or the empty-state CTA — only one
+	 *  renders at a time). */
 	importBtn: string;
-	/** Per-row delete button (view appends the skill id). */
-	deleteBtn: (skillId: string) => string;
-	/** Detail-pane delete button. */
-	detailDeleteBtn: string;
 	/** Per-row wrapper testid (view appends the skill id). Omit for no row
 	 *  testid — the Co-Author wrapper's rows never carried one. */
 	row?: (skillId: string) => string;
+	/** Skill body clamp toggle + tech-details disclosure trigger. */
+	previewToggle: string;
+	techDetailsToggle: string;
+	/** The rendered body preview block. */
+	contentBody: string;
 }
 
 /**
@@ -113,6 +127,13 @@ export interface SkillLibraryAdapter {
 	/** Delete one user skill by id. A pure built-in is rejected by the
 	 *  server. Refreshes the catalog. */
 	remove: (skillId: string) => Promise<void>;
+	/** Lazy full content view for one skill (AP-21 `.../skills/:id/content`:
+	 *  `{ id, path, content, body, files }`), or `null` when absent. The
+	 *  modal calls it when the detail opens — ONE shape, each wrapper binds
+	 *  its own namespaced client fn. STABILITY CONTRACT: same as `load` —
+	 *  the identity must not change across renders (the detail effect keys
+	 *  on it). */
+	readContent: (id: string) => Promise<SkillContentDto | null>;
 	/** Optional delete reference guard — absent means every delete goes
 	 *  straight to a plain confirm (the agent copilot libraries have no
 	 *  module bindings to consult). */

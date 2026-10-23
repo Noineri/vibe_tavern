@@ -14,6 +14,7 @@
 import type {
   SkillCatalog,
   SkillCatalogEntryDto,
+  SkillContentDto,
   SkillImportResult,
 } from "@vibe-tavern/api-contracts";
 import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
@@ -28,6 +29,17 @@ export async function listCoauthorSkills(): Promise<SkillCatalog> {
 /** `GET /api/coauthor/skills/:id` — one catalog entry, or `null` if absent. */
 export async function readCoauthorSkill(id: string): Promise<SkillCatalogEntryDto | null> {
   const response = await client.api.coauthor.skills[":id"].$get({ param: { id } });
+  if (response.status === 404) return null;
+  return unwrapRpc(response);
+}
+
+/** `GET /api/coauthor/skills/:id/content` — the AP-21 full content view
+ *  (`{ id, path, content, body, files }`), or `null` when the skill is
+ *  absent. Lazy-loaded by the skill library detail pane. Goes through
+ *  `apiFetch` (not the treaty client) so the URL is built the same way as
+ *  every other `:id`-suffixed skill route in this file. */
+export async function readCoauthorSkillContent(id: string): Promise<SkillContentDto | null> {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/coauthor/skills/${encodeURIComponent(id)}/content`);
   if (response.status === 404) return null;
   return unwrapRpc(response);
 }

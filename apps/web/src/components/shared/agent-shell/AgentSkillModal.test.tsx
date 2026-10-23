@@ -33,12 +33,14 @@ mock.module("../../../i18n/context.js", () => ({
 const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
+const readContentMock = mock();
 mock.module("../../../api/copilot-skill-api.js", () => ({
 	...realSkillApi,
 	listCopilotSkills: listSkillsMock,
 	readCopilotSkill: mock(),
 	deleteCopilotSkill: deleteSkillMock,
 	importCopilotSkills: importSkillsMock,
+	readCopilotSkillContent: readContentMock,
 }));
 
 mock.module("../MasterDetailModal.js", () => ({
@@ -128,6 +130,14 @@ beforeEach(() => {
 	deleteSkillMock.mockResolvedValue({ id: "my-card-skill" });
 	importSkillsMock.mockReset();
 	importSkillsMock.mockResolvedValue({ importedSkillIds: ["my-card-skill"], importedTopLevelDirs: ["my-card-skill"] });
+	readContentMock.mockReset();
+	readContentMock.mockResolvedValue({
+		id: "my-card-skill",
+		path: "my-card-skill/SKILL.md",
+		content: "# My Card Skill\n\nUser-imported skill.",
+		body: "User-imported skill.",
+		files: [],
+	});
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 });
 
@@ -143,27 +153,44 @@ describe("CopilotSkillModal — catalog list + read-only built-ins", () => {
 		expect(listSkillsMock).toHaveBeenCalledWith("experience");
 	});
 
-	it("a pure built-in skill has no delete affordance", async () => {
-		const { getByText, queryByTestId } = renderModal();
-		await waitFor(() => expect(getByText("Experience Authoring")).toBeDefined());
-		expect(queryByTestId("copilot-skill-delete-btn-experience-authoring")).toBeNull();
+	it("rows show the description, not the id (AP-23)", async () => {
+		const { getByText, queryByText } = renderModal();
+		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
+		expect(getByText("User-imported skill.")).toBeDefined();
+		expect(queryByText("my-card-skill")).toBeNull();
 	});
 
-	it("a user skill exposes a delete affordance", async () => {
-		const { getByTestId, getByText } = renderModal();
-		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
-		expect(getByTestId("copilot-skill-delete-btn-my-card-skill")).toBeDefined();
+	it("a pure built-in skill has no delete affordance (footer owns delete)", async () => {
+		const { getByTestId, getByText, queryByText } = renderModal();
+		await waitFor(() => expect(getByText("Experience Authoring")).toBeDefined());
+		fireEvent.pointerDown(getByTestId("copilot-skill-row-experience-authoring"));
+		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("experience", "experience-authoring"));
+		expect(queryByText("copilot_skill_delete")).toBeNull();
 	});
 });
 
 describe("CopilotSkillModal — delete user skill", () => {
-	it("asks for confirmation then calls deleteCopilotSkill", async () => {
+	it("selecting a user skill exposes the footer delete, then confirms", async () => {
 		const { getByTestId, getByText } = renderModal();
 		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
-		fireEvent.click(getByTestId("copilot-skill-delete-btn-my-card-skill"));
+		fireEvent.pointerDown(getByTestId("copilot-skill-row-my-card-skill"));
+		await waitFor(() => expect(getByText("copilot_skill_delete")).toBeDefined());
+		fireEvent.click(getByText("copilot_skill_delete"));
 		await waitFor(() => expect(getByTestId("confirm-modal")).toBeDefined());
 		fireEvent.click(getByTestId("confirm-ok"));
 		await waitFor(() => expect(deleteSkillMock).toHaveBeenCalledWith("experience", "my-card-skill"));
+	});
+});
+
+describe("CopilotSkillModal — skill content (AP-23)", () => {
+	it("selecting a skill lazily reads its content for the modal kind", async () => {
+		const { getByTestId, getByText } = renderModal("script");
+		await waitFor(() => expect(listSkillsMock).toHaveBeenCalledWith("script"));
+		expect(readContentMock).not.toHaveBeenCalled();
+		fireEvent.pointerDown(getByTestId("copilot-skill-row-my-card-skill"));
+		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("script", "my-card-skill"));
+		expect(getByText("copilot_skill_body_label")).toBeDefined();
+		expect(getByTestId("copilot-skill-content-body").textContent).toBe("User-imported skill.");
 	});
 });
 
@@ -182,12 +209,18 @@ describe("CopilotSkillModal — per-kind library (AS-8d2)", () => {
 	});
 
 	it("delete passes the kind", async () => {
+		// Seed AND serve the script entry: the open effect's `load` would
+		// otherwise replace the seeded cache with the default catalog and
+		// drop the selection before the footer renders.
+		listSkillsMock.mockResolvedValue({ entries: [SCRIPT_USER_ENTRY], errors: [] });
 		useCopilotSkillStore.setState({
 			catalogs: { script: { entries: [SCRIPT_USER_ENTRY], errors: [], hasLoaded: true } },
 			isLoading: false,
 		});
-		const { getByTestId } = renderModal("script");
-		fireEvent.click(getByTestId("copilot-skill-delete-btn-script-skill"));
+		const { getByTestId, getByText } = renderModal("script");
+		fireEvent.pointerDown(getByTestId("copilot-skill-row-script-skill"));
+		await waitFor(() => expect(getByText("copilot_skill_delete")).toBeDefined());
+		fireEvent.click(getByText("copilot_skill_delete"));
 		await waitFor(() => expect(getByTestId("confirm-modal")).toBeDefined());
 		fireEvent.click(getByTestId("confirm-ok"));
 		await waitFor(() => expect(deleteSkillMock).toHaveBeenCalledWith("script", "script-skill"));

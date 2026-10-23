@@ -2,21 +2,21 @@ import { SkillLibraryModal } from "../shared/skill-library/skill-library-modal.j
 import type { SkillLibraryAdapter } from "../shared/skill-library/skill-library-adapter.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
+import { readCoauthorSkillContent } from "../../api/skill-api.js";
 import { listCoauthorModulesAction } from "../../stores/api-actions/chat-actions.js";
 
 /** The Co-Author wrapper's i18n keys (nested `coauthor.skill.*` namespace). */
 const LABELS: SkillLibraryAdapter["labels"] = {
 	title: "coauthor.skill.title",
 	subtitle: "coauthor.skill.subtitle",
-	close: "coauthor.skill.close",
-	import: "coauthor.skill.import",
+	importCta: "coauthor.skill.import_cta",
 	importing: "coauthor.skill.importing",
 	importSuccess: "coauthor.skill.import_success",
 	importFailed: "coauthor.skill.import_failed",
 	listLabel: "coauthor.skill.list_label",
 	loading: "coauthor.skill.loading",
-	empty: "coauthor.skill.empty",
-	emptySub: "coauthor.skill.empty_sub",
+	emptyTitle: "coauthor.skill.empty_title",
+	emptyBody: "coauthor.skill.empty_body",
 	emptyDetail: "coauthor.skill.empty_detail",
 	delete: "coauthor.skill.delete",
 	deleted: "coauthor.skill.deleted",
@@ -30,7 +30,13 @@ const LABELS: SkillLibraryAdapter["labels"] = {
 	idLabel: "coauthor.skill.id_label",
 	manifestLabel: "coauthor.skill.manifest_label",
 	sourceLabel: "coauthor.skill.source_label",
-	inspectHint: "coauthor.skill.inspect_hint",
+	bodyLabel: "coauthor.skill.body_label",
+	showFull: "coauthor.skill.show_full",
+	collapse: "coauthor.skill.collapse",
+	contentLoading: "coauthor.skill.content_loading",
+	techDetails: "coauthor.skill.tech_details",
+	techDetailsHint: "coauthor.skill.tech_details_hint",
+	filesLabel: "coauthor.skill.files_label",
 };
 
 /**
@@ -57,8 +63,9 @@ export function CoauthorSkillModal() {
 		testids: {
 			folderInput: "skill-folder-input",
 			importBtn: "skill-import-btn",
-			deleteBtn: (skillId) => `skill-delete-btn-${skillId}`,
-			detailDeleteBtn: "skill-detail-delete-btn",
+			previewToggle: "skill-preview-toggle",
+			techDetailsToggle: "skill-tech-details-toggle",
+			contentBody: "skill-content-body",
 		},
 		entries,
 		isLoading,
@@ -67,6 +74,9 @@ export function CoauthorSkillModal() {
 		load,
 		importTree,
 		remove,
+		// Module-level client fn — already stable across renders (satisfies
+		// the adapter's `readContent` stability contract with no wrapper).
+		readContent: readCoauthorSkillContent,
 		referenceGuard: {
 			findReferencingModules: async (skillId) => {
 				const modules = await listCoauthorModulesAction();

@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import { SkillLibraryModal } from "../skill-library/skill-library-modal.js";
 import type { SkillLibraryAdapter } from "../skill-library/skill-library-adapter.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
+import { readCopilotSkillContent } from "../../../api/copilot-skill-api.js";
+import type { MasterDetailParentBack } from "../MasterDetailModal.js";
 import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../../../lib/agent-host-registry.js";
 
@@ -13,15 +15,14 @@ const EMPTY_SKILL_ENTRIES: SkillCatalogEntryDto[] = [];
 const LABELS: SkillLibraryAdapter["labels"] = {
 	title: "copilot_skill_title",
 	subtitle: "copilot_skill_subtitle",
-	close: "copilot_skill_close",
-	import: "copilot_skill_import",
+	importCta: "copilot_skill_import_cta",
 	importing: "copilot_skill_importing",
 	importSuccess: "copilot_skill_import_success",
 	importFailed: "copilot_skill_import_failed",
 	listLabel: "copilot_skill_list_label",
 	loading: "copilot_skill_loading",
-	empty: "copilot_skill_empty",
-	emptySub: "copilot_skill_empty_sub",
+	emptyTitle: "copilot_skill_empty_title",
+	emptyBody: "copilot_skill_empty_body",
 	emptyDetail: "copilot_skill_empty_detail",
 	delete: "copilot_skill_delete",
 	deleted: "copilot_skill_deleted",
@@ -35,7 +36,13 @@ const LABELS: SkillLibraryAdapter["labels"] = {
 	idLabel: "copilot_skill_id_label",
 	manifestLabel: "copilot_skill_manifest_label",
 	sourceLabel: "copilot_skill_source_label",
-	inspectHint: "copilot_skill_inspect_hint",
+	bodyLabel: "copilot_skill_body_label",
+	showFull: "copilot_skill_show_full",
+	collapse: "copilot_skill_collapse",
+	contentLoading: "copilot_skill_content_loading",
+	techDetails: "copilot_skill_tech_details",
+	techDetailsHint: "copilot_skill_tech_details_hint",
+	filesLabel: "copilot_skill_files_label",
 };
 
 /**
@@ -57,9 +64,11 @@ export interface AgentSkillModalProps {
   /** The agent kind whose library this instance manages (AS-8d2) — every
    *  catalog read and mutation runs under this kind only. */
   agentKind: AgentKind;
+  /** Optional drill-down parent (AP-3): absent = no back link. */
+  parentBack?: MasterDetailParentBack;
 }
 
-export function AgentSkillModal({ isOpen, onClose, agentKind }: AgentSkillModalProps) {
+export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: AgentSkillModalProps) {
 	const entries = useCopilotSkillStore((s) => s.catalogs[agentKind]?.entries ?? EMPTY_SKILL_ENTRIES);
 	const isLoading = useCopilotSkillStore((s) => s.isLoading);
 	const hasLoaded = useCopilotSkillStore((s) => s.catalogs[agentKind]?.hasLoaded ?? false);
@@ -68,17 +77,20 @@ export function AgentSkillModal({ isOpen, onClose, agentKind }: AgentSkillModalP
 	const remove = useCopilotSkillStore((s) => s.remove);
 
 	// Bound for the kind and stable across renders — the shared modal's open
-	// effect keys on `adapter.load` (see the adapter's stability contract).
+	// + content effects key on `adapter.load` / `adapter.readContent` (see
+	// the adapter's stability contracts).
 	const loadThisKind = useCallback(() => load(agentKind), [load, agentKind]);
+	const readContentThisKind = useCallback((id: string) => readCopilotSkillContent(agentKind, id), [agentKind]);
 
 	const adapter: SkillLibraryAdapter = {
 		labels: LABELS,
 		testids: {
 			folderInput: "copilot-skill-folder-input",
 			importBtn: "copilot-skill-import-btn",
-			deleteBtn: (skillId) => `copilot-skill-delete-btn-${skillId}`,
-			detailDeleteBtn: "copilot-skill-detail-delete-btn",
 			row: (skillId) => `copilot-skill-row-${skillId}`,
+			previewToggle: "copilot-skill-preview-toggle",
+			techDetailsToggle: "copilot-skill-tech-details-toggle",
+			contentBody: "copilot-skill-content-body",
 		},
 		entries,
 		isLoading,
@@ -86,7 +98,8 @@ export function AgentSkillModal({ isOpen, onClose, agentKind }: AgentSkillModalP
 		load: loadThisKind,
 		importTree: (files) => importTree(agentKind, files),
 		remove: (skillId) => remove(agentKind, skillId),
+		readContent: readContentThisKind,
 	};
 
-	return <SkillLibraryModal isOpen={isOpen} onClose={onClose} adapter={adapter} />;
+	return <SkillLibraryModal isOpen={isOpen} onClose={onClose} adapter={adapter} parentBack={parentBack} />;
 }
