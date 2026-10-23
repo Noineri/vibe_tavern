@@ -21,6 +21,8 @@ import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-binding.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
+import { useAttachmentDraft } from "../../hooks/use-attachment-draft.js";
+import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -37,12 +39,22 @@ export function useCoauthorInputArea() {
 	const isSending = useIsSending();
 	const connection = useProviderStore((s) => s.connection);
 	const activeChatId = useChatStore((s) => s.activeChatId);
+	const draftAttachments = useChatStore((s) => s.draftAttachments);
+	const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
+	const removeDraftAttachment = useChatStore((s) => s.removeDraftAttachment);
+	const attachmentDraft = useAttachmentDraft({
+		attachments: draftAttachments,
+		add: addDraftAttachment,
+		remove: removeDraftAttachment,
+		allowedKinds: ["image", "file"],
+		getAttachments: () => useChatStore.getState().draftAttachments,
+	});
 
 	// Co-Author readiness: the binding provides profile + model. The connection
 	// probe is RP-only, but Co-Author generation works as long as the binding
 	// resolves a profile with an endpoint + model (the adapter resolves it).
 	const canUseLiveApi = binding.isReady;
-	const canSend = Boolean(draft.trim()) && !isSending && canUseLiveApi;
+	const canSend = Boolean(draft.trim() || draftAttachments.length > 0) && !isSending && canUseLiveApi;
 
 	// --- Co-Author-scoped favorites, including supported/unknown/unsupported rows ---
 	const activeProfileId = binding.profileId;
@@ -53,10 +65,10 @@ export function useCoauthorInputArea() {
 		void binding.quickSwitchModel(modelId);
 	};
 
-	// --- Send label state machine (same logic as RP InputArea, minus attachments) ---
+	// --- Send label state machine (shared text/attachment send path with RP) ---
 	function renderSendLabel(): string {
 		if (isSending) return t("sending");
-		if (canUseLiveApi && draft.trim()) return t("send_message");
+		if (canUseLiveApi && (draft.trim() || draftAttachments.length > 0)) return t("send_message");
 		if (!canUseLiveApi) return t("send_unavailable");
 		return t("type_a_message");
 	}
@@ -97,6 +109,7 @@ export function useCoauthorInputArea() {
 	const maxTokens = binding.generationSettings?.maxTokens ?? 0;
 	const totalUsed = permanent + buckets.history + inputTokens;
 	const availableBudget = Math.max(0, contextSize - maxTokens);
+	const attachmentOverflow = estimateAttachmentOverflow({ totalUsed, availableBudget, attachments: draftAttachments });
 	const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
 	// Annotated (not inferred) so the narrow union survives object-property
 	// widening in the return type — `TokenCounterPopover` expects the literal
@@ -107,6 +120,7 @@ export function useCoauthorInputArea() {
 	return {
 		t,
 		chat,
+		...attachmentDraft, draftAttachments, attachmentOverflow,
 		draft, setDraft, isSending, activeChatId, canUseLiveApi, canSend,
 		needsModel: !canUseLiveApi,
 		activeProfileId, favorites, activeModelId, handleSelectModel,

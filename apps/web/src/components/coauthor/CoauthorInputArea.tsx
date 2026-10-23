@@ -11,12 +11,14 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { CoauthorMobileInputArea } from "./CoauthorMobileInputArea.js";
 import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area.js";
+import { AttachmentPreview } from "../chat/AttachmentPreview.js";
+import { AttachmentOverflowWarning } from "../chat/attachment-overflow-warning.js";
 
 /**
  * Co-Author message box (CS-22). A parallel input surface to the RP
  * {@link InputArea}, intentionally leaner: co-author edits a card template,
  * not a roleplay, so the RP-only persona switch, AI-impersonation pill, prompt
- * preset switcher, and image attachments are all absent here.
+ * preset switcher are absent here; images and text files share the RP path.
  *
  * What it keeps:
  * - the message box itself (shared `AutoTextarea`, §9 — no hand-rolled textarea)
@@ -54,6 +56,8 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 		draft, setDraft, isSending, activeChatId, canSend, canUseLiveApi,
 		activeModelId, favorites, handleSelectModel,
 		sendLabel, sendButtonText,
+		fileInputRef, accept, draftAttachments, onFileInputChange, handlePaste,
+		isDragOver, handleDragOver, handleDragLeave, handleDrop,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	} = data;
 
@@ -66,8 +70,20 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 				"relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200",
 				!activeChatId && "pointer-events-none opacity-45",
 			)}
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={handleDrop}
 		>
+			{data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+				{isDragOver && (
+					<div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
+						<span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">
+							<Icons.target /> {t("drop_image_here")}
+						</span>
+					</div>
+				)}
+				<input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
 				<AutoTextarea
 					bare
 					data-testid="coauthor-input-textarea"
@@ -77,6 +93,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 					placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
+					onPaste={handlePaste}
 					onKeyDown={(e) => {
 						if (e.key === "Enter" && !e.shiftKey) {
 							e.preventDefault();
@@ -84,6 +101,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						}
 					}}
 				/>
+				{draftAttachments.length > 0 && <AttachmentPreview attachments={draftAttachments} onRemove={data.remove} />}
 
 				<div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
 					{/* Quick module switch — desktop Select / mobile BottomSheet (ToolbarSelect). */}
@@ -125,6 +143,17 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 					/>
 
 					<div className="ml-auto flex items-center gap-[9px]">
+						<CustomTooltip content={t("attach_image")}>
+							<button
+								type="button"
+								aria-label={t("attach_image")}
+								className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-45"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={draftAttachments.length >= 5}
+							>
+								<Icons.paperclip />
+							</button>
+						</CustomTooltip>
 						{/* Context Counter — shared TokenCounterPopover (Radix Popover flyout). */}
 						<TokenCounterPopover
 							permanent={permanent}
