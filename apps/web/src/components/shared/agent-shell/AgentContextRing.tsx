@@ -145,7 +145,9 @@ export function AgentContextRing({
 
   const sheet = open && mobile && (
     <BottomSheet open={true} onClose={() => setOpen(false)} title={sheetTitle}>
-      {body}
+      {/* The sheet's content slot has no inset of its own; this matches its
+          title's px-5 so the heading, bar, legend and footer share one edge. */}
+      <div className="px-5 pb-4 pt-1">{body}</div>
     </BottomSheet>
   );
 

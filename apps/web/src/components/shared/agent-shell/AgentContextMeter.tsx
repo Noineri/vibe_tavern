@@ -6,9 +6,11 @@
  * Layout (the AP-14 mockup, owner-approved 2026-10-21; built as drawn on
  * 2026-10-23 after the first cut embedded the old one-line row): an optional
  * heading ("Context" + `% · used / budget`), the segmented bar, a legend
- * with one row per part (dot, name, tokens) plus the response reserve, the
- * measurement source, and a footer with Compact and the Auto toggle.
- * Everything is visible at once — no hover tooltip.
+ * with one row per part (dot, name, tokens; a zero part is muted) plus the
+ * response reserve, and a footer with Compact and the Auto toggle.
+ * Everything is visible at once — no hover tooltip. An estimated measurement
+ * (no provider count yet) shows "≈" before the heading figures; the separate
+ * source line was dropped (owner 2026-10-23: it read as unexplained noise).
  *
  * PRESENTATIONAL + controlled: it owns NO async work and NO context state. The
  * shell owns `useCopilotContext` (fetch/apply/compact/toggle) and passes the
@@ -56,14 +58,15 @@ const RESERVE_STYLE: CSSProperties = {
     "repeating-linear-gradient(45deg, var(--border) 0px, var(--border) 2px, transparent 2px, transparent 5px)",
 };
 
-/** SC-0j: the kind-provided segments reuse the fixed segments' fill classes in
- *  fixed-segment order (`bg-accent` = system, `bg-accent-dim` = digest,
- *  `bg-s2` = history), cycling when a kind provides more than three — reuse,
- *  not invention (the reserve hatch keeps RESERVE_STYLE at the tail).
- *  SC-13b: the sidechat kind provides FIVE segments, so the cycle extends with
- *  the existing theme colours `bg-info` and `bg-info-dim` — status colours
- *  (success, warning, danger) are excluded: they mean a state, not a part. */
-const CUSTOM_SEGMENT_FILL_CLASSES = ["bg-accent", "bg-accent-dim", "bg-s2", "bg-info", "bg-info-dim"];
+/** Part fills, in order: the fixed segments take the first three (system,
+ *  digest, history); kind-provided segments cycle through all five (SC-0j,
+ *  SC-13b). Every fill must read against the `bg-s3` track AND as an 8 px
+ *  legend dot on the panel in dark and light themes — `bg-accent-dim`,
+ *  `bg-s2` and `bg-info-dim` did not (owner 2026-10-23: dots invisible on the
+ *  phone), so the softer steps are opacity variants of solid tokens. Status
+ *  colours (success, warning, danger) are excluded: they mean a state, not a
+ *  part. The reserve keeps RESERVE_STYLE's hatch at the tail. */
+const SEGMENT_FILL_CLASSES = ["bg-accent", "bg-accent/50", "bg-t3", "bg-info", "bg-info/50"];
 
 /** Rounded usage percentage of a metered profile (0 when unmetered). The one
  *  derivation the header ring and the panel heading share. */
@@ -80,6 +83,7 @@ export function AgentContextHeading({ metrics }: { metrics: ExperienceCopilotCon
     <div data-testid="copilot-context-heading" className="flex w-full items-baseline justify-between gap-3">
       <span>{t("context_label")}</span>
       <span className="shrink-0 font-normal tabular-nums text-t2">
+        {metrics.source === "provider" ? "" : "≈ "}
         {metered
           ? `${contextPercent(metrics)}% · ${metrics.totalTokens.toLocaleString()} / ${metrics.budgetTokens.toLocaleString()}`
           : metrics.totalTokens.toLocaleString()}
@@ -125,14 +129,14 @@ export function AgentContextMeter({
             key: segment.key,
             label: labelKey !== undefined ? t(labelKey) : segment.key,
             tokens: segment.tokens,
-            fill: CUSTOM_SEGMENT_FILL_CLASSES[index % CUSTOM_SEGMENT_FILL_CLASSES.length]!,
+            fill: SEGMENT_FILL_CLASSES[index % SEGMENT_FILL_CLASSES.length]!,
             width: segments ? Math.min(1, Math.max(0, segment.tokens / segments.budgetTokens)) : null,
           };
         })
       : [
-          { key: "system", label: t("copilot_context_segment_system"), tokens: metrics.systemTokens, fill: "bg-accent", width: segments?.system ?? null },
-          { key: "digest", label: t("copilot_context_segment_digest"), tokens: metrics.digestTokens, fill: "bg-accent-dim", width: segments?.digest ?? null },
-          { key: "history", label: t("copilot_context_segment_history"), tokens: metrics.historyTokens, fill: "bg-s2", width: segments?.history ?? null },
+          { key: "system", label: t("copilot_context_segment_system"), tokens: metrics.systemTokens, fill: SEGMENT_FILL_CLASSES[0]!, width: segments?.system ?? null },
+          { key: "digest", label: t("copilot_context_segment_digest"), tokens: metrics.digestTokens, fill: SEGMENT_FILL_CLASSES[1]!, width: segments?.digest ?? null },
+          { key: "history", label: t("copilot_context_segment_history"), tokens: metrics.historyTokens, fill: SEGMENT_FILL_CLASSES[2]!, width: segments?.history ?? null },
         ];
 
   return (
@@ -184,12 +188,6 @@ export function AgentContextMeter({
         </div>
       )}
 
-      {metrics && (
-        <div data-testid="copilot-context-source" className="mt-1.5 text-[calc(var(--ui-fs)-3px)] text-t4">
-          {metrics.source === "provider" ? t("copilot_context_source_provider") : t("copilot_context_source_estimate")}
-        </div>
-      )}
-
       <div className="mt-2.5 flex items-center gap-2 border-t border-border pt-2.5">
         <button
           type="button"
@@ -229,9 +227,9 @@ function LegendRow({ dotTestId, dotClassName, dotStyle, label, tokens }: {
 }) {
   return (
     <>
-      <span data-testid={dotTestId} className={cn("h-2 w-2 shrink-0 rounded-full", dotClassName)} style={dotStyle} />
-      <span className="min-w-0">{label}</span>
-      <span className="tabular-nums">{tokens.toLocaleString()}</span>
+      <span data-testid={dotTestId} className={cn("h-2 w-2 shrink-0 rounded-full", dotClassName, tokens === 0 && "opacity-40")} style={dotStyle} />
+      <span className={cn("min-w-0", tokens === 0 && "text-t4")}>{label}</span>
+      <span className={cn("tabular-nums", tokens === 0 && "text-t4")}>{tokens.toLocaleString()}</span>
     </>
   );
 }

@@ -2788,8 +2788,6 @@
 	"copilot_context_segment_history": "История",
 	"copilot_context_segment_reserve": "Резерв",
 	"copilot_context_segment_system": "Система",
-	"copilot_context_source_estimate": "оценка",
-	"copilot_context_source_provider": "данные провайдера",
 	"copilot_context_unmetered": "Без бюджета контекста",
 	"copilot_context_no_metrics": "Контекст появится после первого ответа",
 	"copilot_todo_title": "План шагов",
