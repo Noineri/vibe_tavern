@@ -36,7 +36,7 @@ mock.module("../../../../api/stt-api.js", () => ({
 
 const { SttLocalConnectionChip } = await import("./SttLocalConnectionChip.js");
 const { STT_BACKENDS } = await import("@vibe-tavern/domain");
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 function openaiForm(): SttProfileForm {
   return {

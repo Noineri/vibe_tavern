@@ -16,9 +16,9 @@ import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
 import { STT_SERVER_GUIDES, type SttHelpStep, type SttOsKind } from "../../../../lib/stt/stt-server-guides.js";
-import { useSttDiscovery } from "./use-stt-discovery.js";
+import { useSttDiscovery } from "../../../../hooks/use-stt-discovery.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

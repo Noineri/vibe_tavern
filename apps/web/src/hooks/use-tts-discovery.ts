@@ -5,7 +5,7 @@
 import { useCallback, useState } from "react";
 
 import { diagnoseOutcome, type DiscoveredServer, type DiscoveryDiagnosticCode, type ProbeOutcome } from "@vibe-tavern/domain";
-import { discoverLocalTtsServers as apiDiscover } from "../../../../api/tts-api.js";
+import { discoverLocalTtsServers as apiDiscover } from "../api/tts-api.js";
 
 export interface TtsDiscoveryDeps {
   /** Discovery runs SERVER-SIDE (via the API route) — local servers without

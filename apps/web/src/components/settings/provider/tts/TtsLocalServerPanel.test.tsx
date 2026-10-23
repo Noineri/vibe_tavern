@@ -5,7 +5,7 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 useDomEnv();
 
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
-import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
+import { __setTtsDiscoveryDepsForTests } from "../../../../hooks/use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 

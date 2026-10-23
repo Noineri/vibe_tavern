@@ -15,7 +15,7 @@ import { lblCls } from "../../../../lib/field-tokens.js";
 import { configString } from "./stt-form-helpers.js";
 import { SttModelPicker } from "./SttModelPicker.js";
 import type { SttModelOption } from "./SttModelPicker.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

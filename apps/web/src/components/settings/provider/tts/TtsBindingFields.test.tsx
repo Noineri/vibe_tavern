@@ -5,8 +5,8 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 useDomEnv();
 
 import type { TtsLinkRecord, TtsProfileRecord } from "../../../../api/tts-api.js";
-import type { TtsProfileForm } from "./use-tts-profiles.js";
-import type { TtsLinkPutRow } from "./use-tts-links.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
+import type { TtsLinkPutRow } from "../../../../hooks/use-tts-links.js";
 
 /** Rows the seam's getLinks returns for profile "p1": one voice binding
  *  (character c1) + one mute row (character c2) — both render as pills. */
@@ -27,7 +27,7 @@ mock.module("../../../../i18n/context.js", () => ({
 }));
 
 // The hook itself runs REAL — driven through its deps seam. A mock.module of
-// "./use-tts-links.js" here would poison the later use-tts-links.test.ts in
+// "../../../../hooks/use-tts-links.js" here would poison the later use-tts-links.test.ts in
 // the same bun process (registry mocks replace the module for every later
 // importer); the seam lets both files share the one cached module safely.
 const putCalls: Array<{ id: string; rows: TtsLinkPutRow[] }> = [];
@@ -41,7 +41,7 @@ const seamDeps = {
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { TtsBindingFields } = await import("./TtsBindingFields.js");
-const { __setTtsLinksDepsForTests } = await import("./use-tts-links.js");
+const { __setTtsLinksDepsForTests } = await import("../../../../hooks/use-tts-links.js");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 const { useSnapshotStore } = await import("../../../../stores/snapshot-store.js");
 const { useBootstrapStore } = await import("../../../../stores/api-actions/bootstrap-actions.js");
@@ -80,7 +80,7 @@ function makeForm(id: string | null): TtsProfileForm {
   return { id, name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "", narratorVoiceId: "", hasStoredApiKey: false };
 }
 
-type TtsHook = ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+type TtsHook = ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 
 function makeTts(profiles: TtsProfileRecord[]): TtsHook {
   return {

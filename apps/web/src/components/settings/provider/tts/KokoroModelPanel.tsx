@@ -23,7 +23,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "../../../../i18n/context.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
-import { useTtsPreview } from "./use-tts-preview.js";
+import { useTtsPreview } from "../../../../hooks/use-tts-preview.js";
 import { Ic } from "../../../shared/icons.js";
 import {
   autoKokoroVariant,
@@ -31,7 +31,7 @@ import {
   readStoredKokoroVariant,
   type KokoroModelVariant,
 } from "../../../../lib/tts/kokoro/kokoro-load-options.js";
-import { useKokoroModel } from "./use-kokoro-model.js";
+import { useKokoroModel } from "../../../../hooks/use-kokoro-model.js";
 
 const VARIANT_LABEL_KEYS = {
   gpu: "tts_kokoro_variant_gpu_name",

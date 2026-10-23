@@ -21,9 +21,9 @@ import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js"
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
-import { useTtsDiscovery } from "./use-tts-discovery.js";
+import { useTtsDiscovery } from "../../../../hooks/use-tts-discovery.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

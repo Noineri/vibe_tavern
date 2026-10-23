@@ -30,7 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ensureSharedWhisperModel,
   getSharedWhisperClient,
-} from "../../../../lib/stt/whisper-client-instance.js";
+} from "../lib/stt/whisper-client-instance.js";
 
 export type WhisperModelState = "idle" | "downloading" | "ready" | "error";
 

@@ -1,24 +1,24 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-const realTtsApi = await import("../../../../api/tts-api.js");
-const realI18n = await import("../../../../i18n/context.js");
-const realProviderApi = await import("../../../../api/provider-api.js");
+const realTtsApi = await import("../api/tts-api.js");
+const realI18n = await import("../i18n/context.js");
+const realProviderApi = await import("../api/provider-api.js");
 // Voice-map cache seam: the hook must invalidate the chat-side snapshot
 // after every successful mutation (live incident 2026-09-05 — default
 // switch narrated with the OLD profile until a link mutation refreshed).
 // Safe mock.module pattern: real module first, spread, override one fn.
-const realVoiceMapData = await import("../../../../lib/tts/voice-map-data.js");
+const realVoiceMapData = await import("../lib/tts/voice-map-data.js");
 const refreshVoiceMapMock = mock(async () => {});
-mock.module("../../../../lib/tts/voice-map-data.js", () => ({
+mock.module("../lib/tts/voice-map-data.js", () => ({
   ...realVoiceMapData,
   refreshVoiceMapData: refreshVoiceMapMock,
 }));
 
-mock.module("../../../../i18n/context.js", () => ({
+mock.module("../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
     t: (key: string, params?: Record<string, unknown>) => {
@@ -34,7 +34,7 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
-type TtsRecord = import("../../../../api/tts-api.js").TtsProfileRecord;
+type TtsRecord = import("../api/tts-api.js").TtsProfileRecord;
 
 function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
   return {
@@ -97,7 +97,7 @@ const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }
   return [...store];
 });
 
-mock.module("../../../../api/tts-api.js", () => ({
+mock.module("../api/tts-api.js", () => ({
   ...realTtsApi,
   listAllTtsProfiles: listAllMock,
   createTtsProfile: createMock,
@@ -112,7 +112,7 @@ mock.module("../../../../api/tts-api.js", () => ({
 // override only the one function the hook touches.
 let providerStore: Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }> = [];
 const listProvidersMock = mock(async () => providerStore);
-mock.module("../../../../api/provider-api.js", () => ({
+mock.module("../api/provider-api.js", () => ({
   ...realProviderApi,
   listProviderProfiles: listProvidersMock,
 }));

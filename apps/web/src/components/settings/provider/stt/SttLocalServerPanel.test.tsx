@@ -21,10 +21,10 @@ const { render, act, cleanup } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
 
 const { SttLocalServerPanel } = await import("./SttLocalServerPanel.js");
-const { __setSttDiscoveryDepsForTests } = await import("./use-stt-discovery.js");
+const { __setSttDiscoveryDepsForTests } = await import("../../../../hooks/use-stt-discovery.js");
 const { STT_BACKENDS } = await import("@vibe-tavern/domain");
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 function openaiForm(): SttProfileForm {
   return {

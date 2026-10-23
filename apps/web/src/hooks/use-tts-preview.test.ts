@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 

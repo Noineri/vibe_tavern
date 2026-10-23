@@ -35,11 +35,11 @@ import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-poli
 import { TtsSection } from "../settings/provider/tts/TtsSection.js";
 import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
 import { TtsAudioFooter } from "../settings/provider/tts/TtsAudioFooter.js";
-import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
+import { useTtsProfiles } from "../../hooks/use-tts-profiles.js";
 import { SttSection } from "../settings/provider/stt/SttSection.js";
 import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
 import { SttFooter } from "../settings/provider/stt/SttFooter.js";
-import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
+import { useSttProfiles } from "../../hooks/use-stt-profiles.js";
 import { ImageGenSection } from "../settings/provider/imagegen/ImageGenSection.js";
 import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenProfileEditor.js";
 import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";

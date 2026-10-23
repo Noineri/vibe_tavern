@@ -26,8 +26,8 @@ import { characterToLinkTarget, personaToLinkTarget } from "../../../../lib/link
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
-import { isDefaultProfileRow, useTtsLinks } from "./use-tts-links.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import { isDefaultProfileRow, useTtsLinks } from "../../../../hooks/use-tts-links.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

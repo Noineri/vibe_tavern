@@ -17,7 +17,7 @@ import { SaveButton } from "../../../shared/SaveBar.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
 import { Icons } from "../../../shared/icons.js";
 import { TtsNarrationModeBlock } from "./TtsNarrationModeBlock.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

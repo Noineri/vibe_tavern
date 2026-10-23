@@ -5,7 +5,7 @@
 import { useCallback, useState } from "react";
 
 import { diagnoseOutcome, type DiscoveredServer, type DiscoveryDiagnosticCode, type ProbeOutcome } from "@vibe-tavern/domain";
-import { discoverLocalSttServers as apiDiscover } from "../../../../api/stt-api.js";
+import { discoverLocalSttServers as apiDiscover } from "../api/stt-api.js";
 
 /** STT local-server discovery hook (STT_PLAN ST-8). Fork of the TTS
  *  use-tts-discovery.ts — same shape, same server-side routing rationale

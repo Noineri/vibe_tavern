@@ -19,8 +19,8 @@ import {
   setTtsLinks,
   type TtsLinkRecord,
   type TtsProfileRecord,
-} from "../../../../api/tts-api.js";
-import { refreshVoiceMapData } from "../../../../lib/tts/voice-map-data.js";
+} from "../api/tts-api.js";
+import { refreshVoiceMapData } from "../lib/tts/voice-map-data.js";
 
 // ── deps seam (same pattern as use-tts-preview / tts-playback-store) ──────
 // Test-injectable API surface. A mock.module of tts-api would NOT reach this

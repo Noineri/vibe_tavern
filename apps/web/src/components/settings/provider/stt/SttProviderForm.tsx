@@ -35,7 +35,7 @@ import {
   updateConfigField,
   type SttProviderSegment,
 } from "./stt-form-helpers.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

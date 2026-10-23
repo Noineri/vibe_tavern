@@ -1,6 +1,6 @@
 import { ProviderSection } from "../provider-section.js";
 import { ProviderProfileList } from "../ProviderProfileList.js";
-import type { useSttProfiles } from "./use-stt-profiles.js";
+import type { useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 import type { SttProfileRecord } from "../../../../api/stt-api.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;

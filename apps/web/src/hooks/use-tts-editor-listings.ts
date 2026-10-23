@@ -7,10 +7,10 @@ import {
   type TtsDraftVoicesResponse,
   type TtsModelListEntry,
   type TtsVoiceRecord,
-} from "../../../../api/tts-api.js";
-import { useStoredFirstListing } from "../../../../hooks/use-stored-first-listing.js";
-import { ttsFetchedModelSpec, ttsListingConfig } from "./tts-backend-ui.js";
-import { formDraftConfig } from "./tts-form-helpers.js";
+} from "../api/tts-api.js";
+import { useStoredFirstListing } from "./use-stored-first-listing.js";
+import { ttsFetchedModelSpec, ttsListingConfig } from "../components/settings/provider/tts/tts-backend-ui.js";
+import { formDraftConfig } from "../components/settings/provider/tts/tts-form-helpers.js";
 import type { TtsProfileForm } from "./use-tts-profiles.js";
 
 export interface TtsEditorListings {

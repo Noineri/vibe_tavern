@@ -9,7 +9,7 @@
 
 import { STT_BACKENDS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
 import { STT_PROVIDER_PRESETS } from "../../../../provider-presets.js";
-import type { useSttProfiles } from "./use-stt-profiles.js";
+import type { useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 /** Config-bag marker distinguishing the Local segment from cloud
  *  OpenAI-compatible rows (SPE-8 — the TTS `localServer` twin: the backend

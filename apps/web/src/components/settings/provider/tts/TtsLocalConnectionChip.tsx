@@ -7,9 +7,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useT } from "../../../../i18n/context.js";
 import { listTtsDraftModels } from "../../../../api/tts-api.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
-import { useDockerStatus } from "./use-docker-status.js";
+import { useDockerStatus } from "../../../../hooks/use-docker-status.js";
 import { configString, formDraftConfig } from "./tts-form-helpers.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

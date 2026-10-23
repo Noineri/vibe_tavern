@@ -19,9 +19,9 @@
 import { useCallback, useRef, useState } from "react";
 
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
-import { previewTtsDraft } from "../../../../api/tts-api.js";
-import { ensureSharedKokoroModel, getSharedKokoroClient } from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
-import { useTtsPlaybackStore } from "../../../../stores/tts-playback-store.js";
+import { previewTtsDraft } from "../api/tts-api.js";
+import { ensureSharedKokoroModel, getSharedKokoroClient } from "../lib/tts/kokoro/kokoro-client-instance.js";
+import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
 
 /** Fixed test sentences — intentionally NOT localized. */
 const TTS_PREVIEW_SENTENCE = "Hello! This is a preview of the selected voice.";

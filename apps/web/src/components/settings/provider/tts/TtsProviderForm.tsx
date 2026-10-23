@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { TTS_PRESETS, getVisibleTtsPresets, getVisibleTtsPresetGroups, getTtsPresetGroup } from "../../../../lib/tts/tts-presets.js";
-import type { TtsProfileForm } from "./use-tts-profiles.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import { listTtsDraftModels, listTtsDraftVoices } from "../../../../api/tts-api.js";
 import { Icons } from "../../../shared/icons.js";
@@ -26,8 +26,8 @@ import { configString, formDraftConfig } from "./tts-form-helpers.js";
 // hook's draftAutoKeyProviderName covers the live form (create / endpoint edit).
 import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
-import { useTtsPreview } from "./use-tts-preview.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import { useTtsPreview } from "../../../../hooks/use-tts-preview.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

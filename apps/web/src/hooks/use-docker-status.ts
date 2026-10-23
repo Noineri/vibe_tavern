@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchLocalDockerStatus } from "../../../../api/tts-api.js";
+import { fetchLocalDockerStatus } from "../api/tts-api.js";
 
 export interface DockerStatusDeps {
   fetchStatus: typeof fetchLocalDockerStatus;
