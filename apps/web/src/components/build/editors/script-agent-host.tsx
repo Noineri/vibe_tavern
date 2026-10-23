@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { Extension } from "@codemirror/state";
@@ -9,7 +9,6 @@ import { useT } from "../../../i18n/context.js";
 import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ScriptDraftValues } from "../../../stores/script-draft-store.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
-import { ScriptAgentEditorTabs } from "./script-agent-editor-pane.js";
 import {
   allReviewHunkIds,
   applyHunksToBuffer,
@@ -35,6 +34,8 @@ import {
   startScriptAgentSession,
   streamScriptAgent,
 } from "../../../api/script-agent-api.js";
+import { ScriptAgentEditorTabs, type ScriptEditorTab } from "./script-agent-editor-pane.js";
+import { useAgentPendingReviewPublish } from "../../shared/agent-shell/use-agent-pending-review-publish.js";
 
 /**
  * The `script` agent host (AGENT_SHELL_PLAN, Wave 4 / AS-8b) — the script
@@ -170,6 +171,7 @@ function useScriptAgentReviewSession({
   contextPersonaId,
   isSending,
   onUpdateDraft,
+  openReview,
   scriptKind,
   t,
   threadId,
@@ -181,6 +183,11 @@ function useScriptAgentReviewSession({
   contextPersonaId: string | undefined;
   isSending: boolean;
   onUpdateDraft: (patch: Partial<ScriptDraftValues>) => void;
+  /** AP-15: the pending-review summary's `open` callable source — the host
+   *  pane owns the editor tab, so IT defines what "open the review" means
+   *  (switch to the Code tab, where the review bar + decorations live).
+   *  Published verbatim into the store; the session only carries it. */
+  openReview: () => void;
   scriptKind: "prompt" | "dice";
   t: TFunc;
   threadId: string | null;
@@ -401,6 +408,20 @@ function useScriptAgentReviewSession({
     if (skippedHunkIds.length > 0) toast.warning(t("copilot_review_hunks_skipped", { n: skippedHunkIds.length }));
   }, [review, acceptedHunkIds, dismissedHunkIds, setAccepted, setDismissed, t]);
 
+  // ── AP-15: pending-review summary seam ──────────────────────────────
+  // Mirror this thread's pending state into the ONE plain store the shell's
+  // pending-changes strip will read (the shared publish hook owns the
+  // lifecycle contract: publish on count change, clear on zero/unmount, no
+  // stale callables). Pure side effect — every review behavior above is
+  // untouched. `open` comes from the host pane (it owns the Code/Test tab).
+  useAgentPendingReviewPublish({
+    kind: SCRIPT_KIND,
+    threadId,
+    pendingByBuffer: [{ id: "code", pending: review?.pendingCount ?? 0 }],
+    acceptAll,
+    open: openReview,
+  });
+
   // CD-8: freeze the still-pending proposal right before a new turn's send
   // clears the live turn store — it keeps hanging until the model revises it
   // or the user resolves it. Nothing is auto-applied.
@@ -456,6 +477,12 @@ function ScriptAgentEditorPane({
 }) {
   const { t } = useT();
   const scriptKind = hostProps.activeScript.scriptKind === "dice" ? "dice" : "prompt";
+  // AP-15: the pane owns the Code/Test tab (lifted out of the presentational
+  // tabs so the pending-review seam can switch back to the review surface) —
+  // `open` means "show the Code tab", where the review bar + decorations
+  // live (the single spelling of this pane's review surface).
+  const [tab, setTab] = useState<ScriptEditorTab>("code");
+  const openReview = useCallback(() => setTab("code"), []);
   const {
     acceptedHunkIds,
     acceptAll,
@@ -473,6 +500,7 @@ function ScriptAgentEditorPane({
     contextPersonaId: hostProps.contextPersonaId,
     isSending,
     onUpdateDraft: hostProps.onUpdateDraft,
+    openReview,
     scriptKind,
     t,
     threadId,
@@ -569,6 +597,8 @@ function ScriptAgentEditorPane({
       codeReadOnly={review !== null}
       isSending={isSending}
       reviewOpen={review !== null}
+      tab={tab}
+      onTabChange={setTab}
       reviewBar={reviewBar}
       characterName={hostProps.characterName}
       links={hostProps.scriptLinks}

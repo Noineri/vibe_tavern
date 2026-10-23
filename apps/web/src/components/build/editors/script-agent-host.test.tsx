@@ -35,6 +35,7 @@ import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type { ScriptAgentHostProps } from "./script-agent-host.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
+import { useAgentPendingReviewStore } from "../../../stores/agent-pending-review-store.js";
 import { useAgentReviewOutcomeStore } from "../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
@@ -286,6 +287,9 @@ beforeEach(() => {
   mobileOverride = false;
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  // AP-15: the pending-review summary seam — same rationale as the round
+  // store reset (an unmounted test's entry must not leak into the next mount).
+  useAgentPendingReviewStore.setState({ summariesByThread: {} });
   useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeSuite, supersededByThread: supersededBeforeSuite });
   // The ScriptTester inside the editing surface skips its settings fetch when
   // the singleton is already loaded — seed it so no settings request fires.
@@ -753,5 +757,79 @@ describe("script-agent-editor-tabs — Code toolbar strip (AS-8c4e)", () => {
     const utils = renderScriptShell(script, { apiRefOpen: true });
     await flushSessionLoad();
     expect(utils.getByText("script_api_context")).toBeDefined();
+  });
+});
+
+// ─── AP-15: pending-review summary seam ─────────────────────────────────────
+
+describe("script-agent-host — AP-15: pending-review summary seam", () => {
+  /** The AP-15 store entry of this suite's thread (the script kind namespaces
+   *  its key — pinned by the store's own suite). */
+  const seamEntry = () => useAgentPendingReviewStore.getState().summariesByThread["script:script-thread-new"];
+
+  /** The AS-9 send flow: a real turn (snapshot) against the code buffer,
+   *  then the model's write_buffer answer as the pending proposal. */
+  async function startProposal(script: ScriptRecord, hostOver: Partial<ScriptAgentHostProps> = {}) {
+    const utils = renderScriptShell(script, hostOver);
+    await flushSessionLoad();
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "rewrite it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("script", "script-thread-new", {
+        toolCallId: "w-seam",
+        toolName: "write_buffer",
+        status: "done",
+        target: "code",
+        proposed: PROPOSED_CODE,
+        summary: "rewrite",
+      });
+    });
+    return utils;
+  }
+
+  it("publishes the code buffer's pending count with its bufferSpecs label key; resolution clears", async () => {
+    const onUpdateDraft = mock();
+    const script = makeScript({ id: "script-seam", code: BASE_CODE });
+    await startProposal(script, { onUpdateDraft });
+
+    // The seam entry lands with the single code buffer's descriptor label key.
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(seamEntry()!.buffers).toEqual([{ labelKey: "script_code_label", pending: 2 }]);
+
+    // The store's acceptAll is the session's: it applies the proposed buffer
+    // into the draft (the strip's «Принять все», AP-16).
+    await act(async () => {
+      seamEntry()!.acceptAll();
+    });
+    await waitFor(() => expect(onUpdateDraft).toHaveBeenCalledWith({ code: PROPOSED_CODE }));
+
+    // Full resolution clears the entry — nothing pending, no strip.
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
+  });
+
+  it("open returns the pane to the Code tab; unmount clears the entry (no stale callables)", async () => {
+    const script = makeScript({ id: "script-seam-open", code: BASE_CODE });
+    const utils = await startProposal(script);
+
+    // The entry publishes regardless of the visible tab — switch to Check.
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    fireEvent.click(utils.getByRole("radio", { name: "script_tab_check" }));
+    await waitFor(() => expect(utils.getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("false"));
+    expect(seamEntry()).toBeDefined();
+
+    // The store's open callable is the pane's: it shows the Code tab, where
+    // the review bar + decorations live (the strip's open action, AP-16).
+    await act(async () => {
+      seamEntry()!.open();
+    });
+    await waitFor(() => expect(utils.getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    // Unmount drops the entry — the callables die with the pane.
+    utils.unmount();
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
   });
 });

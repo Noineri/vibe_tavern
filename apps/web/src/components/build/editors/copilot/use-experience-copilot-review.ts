@@ -8,6 +8,7 @@ import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-stat
 import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import { syncPersistedCopilotRound } from "../../../../lib/experience-copilot-draft.js";
 import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
+import { useAgentPendingReviewPublish } from "../../../shared/agent-shell/use-agent-pending-review-publish.js";
 import { useShallow } from "zustand/react/shallow";
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import {
@@ -18,7 +19,14 @@ import {
 } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 import { revertHunksFromBuffer } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
-import { buildExperienceCopilotReviewSnapshot, experienceReviewRoundId } from "../../../../lib/experience-copilot-review-snapshot.js";
+import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
+import {
+  cancelStoredExperienceOutcomes,
+  recordExperienceRevertedOutcomes,
+  recordExperienceReviewOutcome,
+  useExperienceReviewOutcomeRecorder,
+  useExperienceReviewSupersession,
+} from "./experience-review-outcomes.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 import { toast } from "sonner";
@@ -61,44 +69,6 @@ export function useExperienceCopilotReviewFeedback({
   return { testFeedback, launchContextRef, handleLaunchContextChange, handleSendToCopilot };
 }
 
-/** Records a successful local buffer application with all prior applied hunks for the round. */
-export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled = false, replaceApplied = false }: {
-  kind: AgentKind;
-  threadId: string;
-  target: "rules" | "visual";
-  bufferReview: CopilotBufferReview;
-  accepted: ReadonlySet<number>;
-  dismissed: ReadonlySet<number>;
-  applied: ReadonlySet<number>;
-  cancelled?: boolean;
-  /** Reversal paths replace prior local application evidence with surviving hunks. */
-  replaceApplied?: boolean;
-}): void {
-  const prior = useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(kind, threadId)]?.[target];
-  const roundId = experienceReviewRoundId(bufferReview.base, bufferReview.proposed);
-  const appliedHunkIds = replaceApplied
-    ? new Set(applied)
-    : new Set([...(prior?.record.roundId === roundId ? prior.appliedHunkIds : []), ...applied]);
-  const [record] = buildExperienceCopilotReviewSnapshot([{
-    target,
-    base: bufferReview.base,
-    proposed: bufferReview.proposed,
-    offeredHunkIds: [...allReviewHunkIds(bufferReview)],
-    acceptedHunkIds: accepted,
-    dismissedHunkIds: dismissed,
-    appliedHunkIds,
-    cancelled,
-  }]).targets;
-  if (record) useAgentReviewOutcomeStore.getState().record(kind, threadId, record, [...appliedHunkIds]);
-}
-
-/** Binds the host's current thread to successful local application recording. */
-export function useExperienceReviewOutcomeRecorder(kind: AgentKind, threadId: string | null) {
-  return useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false, replaceApplied = false) => {
-    if (threadId) recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled, replaceApplied });
-  }, [kind, threadId]);
-}
-
 /** Resolves a cancelled round against the actual buffer, retaining unanchored applies. */
 export function cancelExperienceReviewHunks({ bufferReview, prevAccepted, prevDismissed, bufferText, setAccepted, setDismissed, onChange }: {
   bufferReview: CopilotBufferReview;
@@ -139,60 +109,6 @@ export function useExperienceCopilotVisualValidation(review: CopilotBufferReview
   return useMemo(() => validateVisualSource(review ? review.proposed : visualSource), [review, visualSource]);
 }
 
-/** Records a non-application review transition without losing prior local applies. */
-export function recordExperienceReviewOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, cancelled = false }: {
-  kind: AgentKind;
-  threadId: string;
-  target: "rules" | "visual";
-  bufferReview: CopilotBufferReview;
-  accepted: ReadonlySet<number>;
-  dismissed: ReadonlySet<number>;
-  cancelled?: boolean;
-}): void {
-  recordExperienceAppliedOutcome({
-    kind,
-    threadId,
-    target,
-    bufferReview,
-    accepted,
-    dismissed,
-    applied: new Set(),
-    cancelled,
-  });
-}
-
-/** Marks every active target cancelled before a revert drops its live proposal. */
-export function recordExperienceRevertedOutcomes(kind: AgentKind, threadId: string, targets: ReadonlyArray<{
-  target: "rules" | "visual";
-  review: CopilotBufferReview | null;
-  accepted: ReadonlySet<number>;
-  dismissed: ReadonlySet<number>;
-}>): void {
-  for (const { target, review, accepted, dismissed } of targets) {
-    if (!review) continue;
-    recordExperienceReviewOutcome({
-      kind,
-      threadId,
-      target,
-      bufferReview: review,
-      accepted,
-      dismissed: new Set([...dismissed, ...allReviewHunkIds(review)]),
-      cancelled: true,
-    });
-  }
-}
-
-/** Cancels a resolved record when no rendered diff remains to reconstruct it. */
-export function cancelStoredExperienceOutcomes(kind: AgentKind, threadId: string, targets: readonly ("rules" | "visual")[]): void {
-  const state = useAgentReviewOutcomeStore.getState();
-  const outcomes = state.outcomesByThread[agentThreadKey(kind, threadId)] ?? {};
-  for (const target of targets) {
-    const outcome = outcomes[target];
-    if (!outcome) continue;
-    state.record(kind, threadId, { ...outcome.record, outcome: "cancelled" }, outcome.appliedHunkIds);
-  }
-}
-
 /** XU-6: the creation stepper in the parent mirrors the shell's current
  * authoring position. `appearance` maps to the Visual code buffer; `try` to
  * the inline sandbox tab; anything else is Rules. */
@@ -202,14 +118,6 @@ export function useExperienceCopilotStep(editorBuffer: string, codeBuffer: strin
     onStepChange?.(step);
   }, [step, onStepChange]);
   return step;
-}
-
-/** Retains one replaced target record so the model can identify supersession. */
-export function useExperienceReviewSupersession(kind: AgentKind, threadId: string | null, target: "rules" | "visual", base: string | undefined, proposed: string | undefined) {
-  useEffect(() => {
-    if (!threadId || base === undefined || proposed === undefined) return;
-    useAgentReviewOutcomeStore.getState().supersede(kind, threadId, target, experienceReviewRoundId(base, proposed));
-  }, [kind, threadId, target, base, proposed]);
 }
 
 
@@ -227,6 +135,7 @@ export function useExperienceCopilotReviewSession({
   launchContextRef,
   onRulesChange,
   onVisualChange,
+  openReview,
   rulesCode,
   rulesSaved,
   t,
@@ -243,6 +152,11 @@ export function useExperienceCopilotReviewSession({
   launchContextRef: MutableRefObject<ExperienceCopilotLaunchContext | undefined>;
   onRulesChange: (code: string) => void;
   onVisualChange: (source: string) => void;
+  /** AP-15: the pending-review summary's `open` callable source — the host
+   *  pane owns the editor tabs, so IT defines what "open the review"
+   *  means (switch to the code layer's pending buffer). Published verbatim
+   *  into the store; the session only carries it. */
+  openReview: () => void;
   rulesCode: string;
   rulesSaved: boolean | undefined;
   t: TFunc;
@@ -642,6 +556,26 @@ export function useExperienceCopilotReviewSession({
     if (result.skippedCount > 0) toast.warning(t("copilot_review_hunks_skipped", { n: result.skippedCount }));
     recordAppliedOutcome("visual", visualReview, result.accepted, result.dismissed, result.accepted, result.cancelled, true);
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, recordAppliedOutcome, t]);
+
+  // ── AP-15: pending-review summary seam ──────────────────────────────
+  // Mirror this thread's pending state into the ONE plain store the shell's
+  // pending-changes strip will read (the shared publish hook owns the
+  // lifecycle contract: publish on count change, clear on zero/unmount, no
+  // stale callables). Pure side effect — every review behavior above is
+  // untouched. `open` comes from the host pane (it owns the editor tabs).
+  useAgentPendingReviewPublish({
+    kind,
+    threadId,
+    pendingByBuffer: [
+      { id: "rules", pending: rulesReview?.pendingCount ?? 0 },
+      { id: "visual", pending: visualReview?.pendingCount ?? 0 },
+    ],
+    acceptAll: () => {
+      acceptAllRules();
+      acceptAllVisual();
+    },
+    open: openReview,
+  });
 
   const handleToolbarRevert = useCallback(() => {
     if (threadId && review.lastSnapshot) {

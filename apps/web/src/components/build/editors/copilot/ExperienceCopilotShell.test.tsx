@@ -11,8 +11,9 @@ import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
-import { useAgentTurnStore } from "../../../../stores/agent-turn-store.js";
+import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
+import { useAgentPendingReviewStore } from "../../../../stores/agent-pending-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
 import type { ProviderProfileRecord } from "../../../../api/types.js";
 
@@ -442,6 +443,9 @@ beforeEach(() => {
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  // AP-15: the pending-review summary seam — same rationale (an unmounted
+  // test's entry must not leak into the next mount).
+  useAgentPendingReviewStore.setState({ summariesByThread: {} });
   localStorage.clear();
   // CX-6: the mention catalog reads the live snapshot store — reset it so a
   // previous test's seeded characters don't leak into the next test's popover.
@@ -3036,5 +3040,106 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
     await findByTestId("script-safety-findings-modal");
     fireEvent.click(getByText("script_safety_findings_show_in_code"));
     await waitFor(() => expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)?.state.selection.main.head).toBe(findingPosition));
+  });
+});
+
+// ─── AP-15: pending-review summary seam ─────────────────────────────────────
+
+describe("ExperienceCopilotShell — AP-15: pending-review summary seam", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+  const VISUAL_BASE = "<html>old</html>";
+  const VISUAL_PROPOSED = "<html>new</html>";
+
+  /** The AP-15 store entry of this suite's thread (experience kind keys stay
+   *  the legacy bare threadId — pinned by the store's own suite). */
+  const seamEntry = () => useAgentPendingReviewStore.getState().summariesByThread["thread-new"];
+
+  async function startProposal(
+    targets: Partial<Record<"rules" | "visual", string>>,
+    over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {},
+  ) {
+    const utils = renderShell({ rulesCode: BASE, visualSource: VISUAL_BASE, ...over });
+    await flushSessionLoad();
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    // The turn's write_buffer proposals land in the live store (as the SSE
+    // tool-result path would fill them) — one per requested buffer.
+    const activities: AgentToolActivity[] = [];
+    if (targets.rules !== undefined) {
+      activities.push({ toolCallId: "w-rules", toolName: "write_buffer", status: "done", summary: "edit rules", target: "rules", proposed: targets.rules });
+    }
+    if (targets.visual !== undefined) {
+      activities.push({ toolCallId: "w-visual", toolName: "write_buffer", status: "done", summary: "edit visual", target: "visual", proposed: targets.visual });
+    }
+    await act(async () => {
+      useAgentTurnStore.setState({ turnsByThread: { "thread-new": activities } });
+    });
+    return utils;
+  }
+
+  it("publishes both buffers' pending counts with the descriptor's label keys; resolution clears", async () => {
+    const onRulesChange = mock();
+    const onVisualChange = mock();
+    const utils = await startProposal({ rules: PROPOSED, visual: VISUAL_PROPOSED }, { onRulesChange, onVisualChange });
+    // The seam entry lands with both buffers in the descriptor's bufferSpecs
+    // order (rules first, then visual).
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(seamEntry()!.buffers).toEqual([
+      { labelKey: "agent_rules", pending: 2 },
+      { labelKey: "agent_visual", pending: 1 },
+    ]);
+
+    // The store's acceptAll is the session's: it accepts BOTH buffers' hunks
+    // through the live closures (the strip's «Принять все», AP-16).
+    const entry = seamEntry()!;
+    await act(async () => {
+      entry.acceptAll();
+    });
+    await waitFor(() => expect(onRulesChange).toHaveBeenCalledWith(PROPOSED));
+    await waitFor(() => expect(onVisualChange).toHaveBeenCalledWith(VISUAL_PROPOSED));
+
+    // Full resolution clears the entry — nothing pending, no strip.
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+  });
+
+  it("open switches the editor to the Code layer's pending buffer (the strip's open action)", async () => {
+    // A non-empty visual defaults the pane to the Preview layer — the review
+    // bar is unmounted there, so the entry publishes regardless of the
+    // visible layer and `open` must land on the Code layer's pending buffer.
+    const utils = await startProposal({ rules: PROPOSED });
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(utils.queryByTestId("copilot-review-bar")).toBeNull();
+
+    await act(async () => {
+      seamEntry()!.open();
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    // The pending RULES buffer is the opened one (the rules sub-toggle).
+    expect(utils.getByRole("radio", { name: "agent_rules" }).getAttribute("aria-checked")).toBe("true");
+    expect(utils.getByRole("radio", { name: "agent_visual" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("clears the entry on unmount (no stale callables) and republishes on remount", async () => {
+    const first = await startProposal({ rules: PROPOSED });
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+
+    // Navigating away unmounts the pane — the entry (whose callables die
+    // with it) must go with it.
+    first.unmount();
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
+
+    // Coming back: the round survives in the round store (the hanging-diff
+    // contract) and the seam republishes from the restored review (the pane
+    // reopens on the Preview layer — the entry publishes regardless of the
+    // visible layer, the seam's whole point).
+    const second = renderShell({ rulesCode: BASE, visualSource: VISUAL_BASE });
+    await flushSessionLoad();
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(seamEntry()!.buffers).toEqual([{ labelKey: "agent_rules", pending: 2 }]);
   });
 });

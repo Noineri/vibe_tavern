@@ -1,7 +1,7 @@
 // fork #1 of the experience host editor pane (copilot/experience-agent-host.tsx)
 // and fork #1 of the AgentBufferReviewEditor code area
 // (shared/agent-shell/AgentBufferReviewEditor.tsx) — see the doc comment below.
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { Extension } from "@codemirror/state";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
@@ -59,6 +59,10 @@ export interface ScriptAgentEditorTabsProps {
   isSending: boolean;
   /** A review round is open — lights the Code tab's pending dot. */
   reviewOpen: boolean;
+  /** The host pane's selected tab (controlled since AP-15). */
+  tab: ScriptEditorTab;
+  /** Switch the tab (the host pane owns the state). */
+  onTabChange: (tab: ScriptEditorTab) => void;
   /** The host's review-bar JSX (or null) — rendered as is below the toolbar. */
   reviewBar: ReactNode;
   characterName: string | undefined;
@@ -76,8 +80,10 @@ export interface ScriptAgentEditorTabsProps {
 }
 
 /** The outer editor tab — Code (templates + API reference + editor) or Test
- *  (the kind-picked script tester). */
-type ScriptEditorTab = "code" | "check";
+ *  (the kind-picked script tester). Owned by the host pane (AP-15 lifted it
+ *  out of this presentational component so the pending-review seam can
+ *  switch back to the review surface). */
+export type ScriptEditorTab = "code" | "check";
 
 export function ScriptAgentEditorTabs({
   isMobile,
@@ -88,6 +94,8 @@ export function ScriptAgentEditorTabs({
   codeReadOnly,
   isSending,
   reviewOpen,
+  tab,
+  onTabChange,
   reviewBar,
   characterName,
   links,
@@ -100,7 +108,6 @@ export function ScriptAgentEditorTabs({
   onRevealLine,
 }: ScriptAgentEditorTabsProps) {
   const { t, tDynamic } = useT();
-  const [tab, setTab] = useState<ScriptEditorTab>("code");
   const scriptKind = script.scriptKind === "dice" ? "dice" : "prompt";
   const readOnly = isSending || codeReadOnly;
 
@@ -128,7 +135,7 @@ export function ScriptAgentEditorTabs({
             { value: "code", label: codeTabLabel },
             { value: "check", label: t("script_tab_check") },
           ]}
-          onChange={(value) => setTab(value === "check" ? "check" : "code")}
+          onChange={(value) => onTabChange(value === "check" ? "check" : "code")}
           compact
         />
       </div>

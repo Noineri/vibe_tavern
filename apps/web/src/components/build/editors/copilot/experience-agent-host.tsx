@@ -1,5 +1,5 @@
 // forks: 1 — script-agent-editor-pane.tsx (the editor pane: tab strip + Try body)
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { COPILOT_TOOL_KEYS, type ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import { Icons } from "../../../shared/icons.js";
@@ -137,6 +137,15 @@ function ExperienceEditorPane({
   const [codeBuffer, setCodeBuffer] = useState<CodeBuffer>("rules");
   const [rulesRevealLine, setRulesRevealLine] = useState(revealRulesLine);
 
+  // AP-15: `open` for the pending-review summary store — the pane owns the
+  // editor tabs, so it defines what "open the review" means: switch to the
+  // Code layer with the pending Rules buffer first (the SS-7 reveal
+  // precedent's exact switch). The ref indirection keeps a stable identity
+  // while the body refreshes every render (the bridge.session pattern), so
+  // the session hook's publish effect never churns on tab switches.
+  const openReviewRef = useRef<() => void>(() => {});
+  const openReview = useCallback(() => openReviewRef.current(), []);
+
   // SS-7B4: reveal requests from either the editor or the inline Try surface
   // land on the RULES editor, so leave Preview/Try and switch the code buffer.
   useEffect(() => {
@@ -191,6 +200,7 @@ function ExperienceEditorPane({
     launchContextRef,
     onRulesChange,
     onVisualChange,
+    openReview,
     rulesCode,
     rulesSaved,
     t,
@@ -199,6 +209,13 @@ function ExperienceEditorPane({
     visualSaved,
     visualSource,
   });
+
+  // AP-15: the latest "open the review" body (assigned every render, read
+  // at click time through the stable `openReview` above).
+  openReviewRef.current = () => {
+    setEditorBuffer("code");
+    setCodeBuffer(rulesReview !== null ? "rules" : "visual");
+  };
 
   // ── Editor toggle options (XU-5) ────────────────────────────────────────
   // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
