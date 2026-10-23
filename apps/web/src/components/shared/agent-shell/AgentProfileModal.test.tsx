@@ -340,6 +340,30 @@ function seedKindDefault(defaultProfileId: string | null): void {
 	});
 }
 
+// AP-24: the expected per-kind human labels (`agent-tool-labels.ts`) — the
+// suites pin the LABELS (mockup §5 tool chips), keyed by the wire keys so
+// the contract order (`COPILOT_TOOL_KEYS` / `SCRIPT_AGENT_TOOL_KEYS`) still
+// drives the sequence. Shared keys carry the same label in each map.
+const EXPERIENCE_TOOL_LABELS: Record<string, string> = {
+	write_buffer: "agent_tool_write_file",
+	edit_buffer: "agent_tool_edit_file",
+	run_test: "agent_tool_run_test",
+	run_simulate: "agent_tool_run_simulate",
+	suggest_visual_binding: "agent_tool_suggest_visual_binding",
+	plan: "agent_tool_plan",
+	read_plan: "agent_tool_read_plan_steps",
+	todo: "agent_tool_todo",
+	ask_user: "agent_tool_ask_user",
+};
+const SCRIPT_TOOL_LABELS: Record<string, string> = {
+	write_buffer: "agent_tool_write_script",
+	edit_buffer: "agent_tool_edit_script",
+	run_script_test: "agent_tool_run_script_test",
+	plan: "agent_tool_plan",
+	read_plan: "agent_tool_read_plan_steps",
+	ask_user: "agent_tool_ask_user",
+};
+
 function renderModal(over: { scriptId?: string; agentKind?: string; assignedProfileId?: string | null; chatId?: string } = {}) {
 	const props = {
 		scriptId: "script-1",
@@ -358,29 +382,35 @@ async function flush(getByTestId: (id: string) => HTMLElement) {
 }
 
 describe("CopilotProfileModal — list", () => {
-	it("lists the built-in seed + user profiles; built-in is read-only", async () => {
+	it("lists the built-in seed + user profiles with no hover edit/delete icons", async () => {
+		// AP-24 was: rows carried hover edit/delete buttons (user) or none
+		// (built-in); now (mockup §5): NO row carries them — Dup/Edit/Delete
+		// live in the MasterDetailFooter, one set for the selection.
 		const { getByTestId, queryByTestId } = renderModal();
 		await flush(getByTestId);
 		expect(getByTestId("copilot-profile-row-builtin")).toBeDefined();
 		expect(getByTestId("copilot-profile-row-cprof_1")).toBeDefined();
-		// Built-in has no edit/delete affordances.
 		expect(queryByTestId("copilot-profile-edit-btn-builtin")).toBeNull();
 		expect(queryByTestId("copilot-profile-delete-btn-builtin")).toBeNull();
-		// User profile has both.
-		expect(getByTestId("copilot-profile-edit-btn-cprof_1")).toBeDefined();
-		expect(getByTestId("copilot-profile-delete-btn-cprof_1")).toBeDefined();
+		expect(queryByTestId("copilot-profile-edit-btn-cprof_1")).toBeNull();
+		expect(queryByTestId("copilot-profile-delete-btn-cprof_1")).toBeNull();
 	});
 
-	it("highlights the assigned profile (null assignment → built-in active)", async () => {
+	it("marks the assigned profile with the in-use marker (null assignment → built-in active)", async () => {
+		// AP-24 was: the active row carried "★ "; now (mockup §5): the
+		// check + «используется» marker line, no star, no dot.
 		const { getByTestId } = renderModal({ assignedProfileId: null });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_1").textContent).not.toContain("copilot_profile_in_use");
 	});
 
-	it("highlights a user assignment", async () => {
+	it("marks a user assignment", async () => {
 		const { getByTestId } = renderModal({ assignedProfileId: "cprof_1" });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_1").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_1").textContent).toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_in_use");
 	});
 });
 
@@ -417,23 +447,38 @@ describe("CopilotProfileModal — name never cut (SC-16d)", () => {
 		expect(queryByTestId("copilot-profile-row-pills-cprof_1")).toBeNull();
 	});
 
-	it("the id line still truncates", async () => {
+	it("renders no id line", async () => {
+		// AP-24 was: a machine-id line under the pills (truncated); now
+		// (mockup §5): no id line — the name + pills + marker own the row.
+		const { getByTestId, queryByTestId } = renderModal();
+		await flush(getByTestId);
+		expect(queryByTestId("copilot-profile-row-id-builtin")).toBeNull();
+		expect(queryByTestId("copilot-profile-row-id-cprof_1")).toBeNull();
+	});
+
+	it("renders tags as 11px sentence-case (no mono uppercase pills)", async () => {
+		// AP-24 was: `font-mono text-[9px] uppercase` pills; now (mockup §5):
+		// the skill-library tag canon — font-ui, ui-fs-3px (= 11 px), no case.
 		const { getByTestId } = renderModal();
 		await flush(getByTestId);
-		const idEl = getByTestId("copilot-profile-row-id-builtin");
-		expect(idEl.textContent).toBe("builtin");
-		expect(idEl.className.split(/\s+/)).toContain("truncate");
+		const tag = getByTestId("copilot-profile-row-pills-builtin").querySelector("span");
+		expect(tag).not.toBeNull();
+		const classes = (tag as HTMLElement).className.split(/\s+/);
+		expect(classes).toContain("text-[calc(var(--ui-fs)-3px)]");
+		expect(classes).not.toContain("uppercase");
+		expect(classes).not.toContain("font-mono");
 	});
 });
 
 describe("CopilotProfileModal — duplicate built-in", () => {
 	it("opens a create editor pre-filled with the seed + copy suffix", async () => {
-		const { getByTestId } = renderModal();
+		// AP-24 was: Duplicate lived in the detail view; now (mockup §5):
+		// the footer action duplicates the selection.
+		const { getByTestId, getByText } = renderModal();
 		await flush(getByTestId);
-		// Select the built-in seed → the detail view shows the duplicate button.
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
-		await waitFor(() => expect(getByTestId("copilot-profile-view-duplicate-btn")).toBeDefined());
-		fireEvent.click(getByTestId("copilot-profile-view-duplicate-btn"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
 		const value = getByTestId("copilot-profile-name-input").getAttribute("value") ?? "";
 		expect(value).toContain("Experience Authoring");
@@ -457,9 +502,13 @@ describe("CopilotProfileModal — new profile validation", () => {
 
 describe("CopilotProfileModal — edit user profile", () => {
 	it("populates the editor and Save calls update", async () => {
-		const { getByTestId } = renderModal();
+		// AP-24 was: Edit opened from the row hover button; now (mockup §5):
+		// select the row, then the footer action edits the selection.
+		const { getByTestId, getByText } = renderModal();
 		await flush(getByTestId);
-		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
 		expect(getByTestId("copilot-profile-name-input").getAttribute("value")).toBe("Card games");
 		fireEvent.click(getByTestId("copilot-profile-save-btn"));
@@ -467,18 +516,25 @@ describe("CopilotProfileModal — edit user profile", () => {
 		expect(updateCopilotProfile).toHaveBeenCalledWith("cprof_1", expect.objectContaining({ name: "Card games" }));
 	});
 
-	it("renders all eight tool toggles and no step-limit input (TAG-10)", async () => {
-		const { getByTestId, queryByRole, getByText } = renderModal();
+	it("renders all nine tool labels and no step-limit input (TAG-10)", async () => {
+		// AP-24 was: the toggles rendered the raw wire keys; now (mockup §5):
+		// the per-kind human labels (`agent-tool-labels.ts`).
+		const { getByTestId, queryByRole, queryByText, getByText } = renderModal();
 		await flush(getByTestId);
-		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
 		// PM-7 (behavior change, owner ruling 2026-10-11): `todo` is a real
-		// toggleable key again — the list pins NINE keys (same boundary as
+		// toggleable key again — the list pins NINE labels (same boundary as
 		// before: every COPILOT_TOOL_KEYS entry renders, read_skill_file never
 		// does).
-		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "plan", "read_plan", "todo", "ask_user"];
-		for (const key of toolKeys) {
-			expect(getByText(key)).toBeDefined();
+		for (const key of COPILOT_TOOL_KEYS) {
+			expect(getByText(EXPERIENCE_TOOL_LABELS[key])).toBeDefined();
+		}
+		// No raw wire key renders anymore.
+		for (const key of COPILOT_TOOL_KEYS) {
+			expect(queryByText(key)).toBeNull();
 		}
 		// No step-limit number input remains.
 		expect(queryByRole("spinbutton")).toBeNull();
@@ -490,16 +546,18 @@ describe("CopilotProfileModal — edit user profile", () => {
 		// Edit mode: no Skills field, no catalog-driven toggle chips (the mocked
 		// useT returns keys verbatim, so the Skills label would surface as its
 		// i18n key if the section still existed).
-		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
 		expect(queryByText("copilot_profile_skills")).toBeNull();
 		expect(queryByText("experience-authoring")).toBeNull();
 		expect(queryByText("copilot_profile_skills_hint")).toBeNull();
 		// View mode (built-in seed): no skills row either — only the base prompt
-		// and the tool chips render.
+		// preview and the labelled tool chips render.
 		fireEvent.click(getByTestId("copilot-profile-cancel-btn"));
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
-		await waitFor(() => expect(getByTestId("copilot-profile-view-duplicate-btn")).toBeDefined());
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
 		expect(queryByText("copilot_profile_skills")).toBeNull();
 		expect(getByText("copilot_profile_tools")).toBeDefined();
 		// The skill catalog RPC was profile-toggle-only wiring — never called.
@@ -509,40 +567,72 @@ describe("CopilotProfileModal — edit user profile", () => {
 
 describe("CopilotProfileModal — host-owned tool keys", () => {
 	// The tool toggles are the buttons inside the tools field, in render order.
-	function renderedToolKeys(getByText: (text: string) => HTMLElement): string[] {
+	function renderedToolLabels(getByText: (text: string) => HTMLElement): string[] {
 		const field = getByText("copilot_profile_tools").parentElement;
 		return Array.from(field?.querySelectorAll("button") ?? []).map((b) => b.textContent ?? "");
 	}
 
-	it("an experience modal lists exactly COPILOT_TOOL_KEYS, in order", async () => {
+	// AP-24 was: the toggles rendered the wire keys; now (mockup §5): the
+	// per-kind labels — the suites pin label order via the contract arrays.
+	it("an experience modal lists exactly the COPILOT_TOOL_KEYS labels, in order", async () => {
 		const { getByTestId, getByText } = renderModal({ agentKind: "experience" });
 		await flush(getByTestId);
-		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
-		expect(renderedToolKeys(getByText)).toEqual([...COPILOT_TOOL_KEYS]);
+		expect(renderedToolLabels(getByText)).toEqual([...COPILOT_TOOL_KEYS].map((k) => EXPERIENCE_TOOL_LABELS[k]));
 	});
 
-	it("a script modal lists the script tool toggles and none of the experience-only ones", async () => {
+	it("a script modal lists the script tool labels and none of the experience-only ones", async () => {
 		listCopilotProfiles.mockResolvedValue([SCRIPT_BUILTIN, SCRIPT_USER]);
 		const { getByTestId, getByText } = renderModal({ agentKind: "script" });
 		await flush(getByTestId);
-		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_script_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_script_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
-		const keys = renderedToolKeys(getByText);
-		expect(keys).toEqual([...SCRIPT_AGENT_TOOL_KEYS]);
-		expect(keys).toContain("run_script_test");
-		expect(keys).not.toContain("run_simulate");
-		expect(keys).not.toContain("suggest_visual_binding");
+		const labels = renderedToolLabels(getByText);
+		expect(labels).toEqual([...SCRIPT_AGENT_TOOL_KEYS].map((k) => SCRIPT_TOOL_LABELS[k]));
+		expect(labels).toContain("agent_tool_run_script_test");
+		expect(labels).not.toContain("agent_tool_run_simulate");
+		expect(labels).not.toContain("agent_tool_suggest_visual_binding");
 	});
 
-	it("the read-only view of a script profile projects through the script keys", async () => {
+	it("write_buffer differs by kind (file vs script label)", async () => {
+		// The owner table's kind-specific pin: the same wire key resolves to
+		// a different label per kind.
+		const exp = renderModal({ agentKind: "experience" });
+		await flush(exp.getByTestId);
+		fireEvent.pointerDown(exp.getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(exp.getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(exp.getByText("copilot_profile_edit"));
+		await waitFor(() => expect(exp.getByTestId("copilot-profile-editor")).toBeDefined());
+		expect(renderedToolLabels(exp.getByText)).toContain("agent_tool_write_file");
+		expect(renderedToolLabels(exp.getByText)).not.toContain("agent_tool_write_script");
+		exp.unmount();
+		listCopilotProfiles.mockResolvedValue([SCRIPT_BUILTIN, SCRIPT_USER]);
+		const scr = renderModal({ agentKind: "script" });
+		await flush(scr.getByTestId);
+		fireEvent.pointerDown(scr.getByTestId("copilot-profile-row-cprof_script_1"));
+		await waitFor(() => expect(scr.getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(scr.getByText("copilot_profile_edit"));
+		await waitFor(() => expect(scr.getByTestId("copilot-profile-editor")).toBeDefined());
+		expect(renderedToolLabels(scr.getByText)).toContain("agent_tool_write_script");
+		expect(renderedToolLabels(scr.getByText)).not.toContain("agent_tool_write_file");
+		scr.unmount();
+	});
+
+	it("the read-only view of a script profile shows the script labels", async () => {
+		// AP-24 was: raw keys with `run_script_test` present / `run_test`
+		// absent; now: the same projection, labelled.
 		listCopilotProfiles.mockResolvedValue([SCRIPT_BUILTIN, SCRIPT_USER]);
 		const { getByTestId, getByText, queryByText } = renderModal({ agentKind: "script" });
 		await flush(getByTestId);
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
-		await waitFor(() => expect(getByTestId("copilot-profile-view-duplicate-btn")).toBeDefined());
-		expect(getByText("run_script_test")).toBeDefined();
-		expect(queryByText("run_test")).toBeNull();
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		expect(getByText("agent_tool_run_script_test")).toBeDefined();
+		expect(queryByText("agent_tool_run_test")).toBeNull();
 	});
 });
 
@@ -564,13 +654,34 @@ describe("CopilotProfileModal — assignment", () => {
 		fireEvent.click(getByTestId("copilot-profile-assign-btn"));
 		await waitFor(() => expect(setCopilotProfile).toHaveBeenCalledWith("script-1", null));
 	});
+
+	it("the running profile shows a quiet in-use state instead of the assign button", async () => {
+		// AP-24 was: the active selection kept an accent button reading
+		// `copilot_profile_active`; now (mockup §5): a quiet «✓ Используется»
+		// label — no second primary action.
+		// (The footer is scoped by testid: the mocked MasterDetailModal also
+		// renders its own `md-close` button reading "close" outside it.)
+		const { getByTestId, queryByTestId, getByText } = renderModal({ assignedProfileId: null });
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-in-use-state")).toBeDefined());
+		expect(getByTestId("copilot-profile-in-use-state").textContent).toContain("copilot_profile_in_use_label");
+		expect(queryByTestId("copilot-profile-assign-btn")).toBeNull();
+		// The footer still closes: Close + the duplicate action render.
+		expect(getByTestId("md-footer").textContent).toContain("close");
+		expect(getByText("copilot_profile_duplicate")).toBeDefined();
+	});
 });
 
 describe("CopilotProfileModal — delete user profile", () => {
 	it("asks for confirmation then removes", async () => {
-		const { getByTestId, queryByTestId } = renderModal();
+		// AP-24 was: Delete opened from the row hover button; now (mockup
+		// §5): select the row, then the footer Delete action.
+		const { getByTestId, queryByTestId, getByText } = renderModal();
 		await flush(getByTestId);
-		fireEvent.click(getByTestId("copilot-profile-delete-btn-cprof_1"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_delete")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_delete"));
 		await waitFor(() => expect(getByTestId("confirm-modal")).toBeDefined());
 		expect(queryByTestId("confirm-cancel")).toBeDefined();
 		fireEvent.click(getByTestId("confirm-ok"));
@@ -600,7 +711,9 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		const { getByTestId } = renderChatModal("cprof_here", "cprof_default");
 		await flush(getByTestId);
 		// The mocked useT returns keys verbatim, so the pills surface as keys.
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("★");
+		// AP-24 was: the effective row carried "★"; now (mockup §5): the
+		// check + «используется» marker.
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("copilot_profile_in_use");
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_default");
 		// The (mocked) chat-row GET ran for this chat + kind.
@@ -611,10 +724,11 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// SC-0k (was: nothing was marked here when the chat followed the
 		// default — basis: owner decision 3, refined 2026-10-19): the active
 		// mark sits on the EFFECTIVE profile, so the default row carries it.
+		// AP-24: the mark is the in-use marker, not "★".
 		const { getByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
 	});
 
@@ -701,8 +815,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// The state label proves the chat-row read ("builtin") applied.
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_active_here"));
 		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(true);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("copilot_profile_in_use");
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 	});
 
@@ -712,8 +826,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// pinning keeps this chat on it when the default later changes.
 		const { getByTestId } = renderChatModal(null, "cprof_default");
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("★");
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("copilot_profile_in_use");
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
 		expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_use_here");
@@ -730,7 +844,9 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_here"));
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn")).toBeDefined());
 		const buttons = Array.from(getByTestId("md-footer").querySelectorAll("button"));
-		expect(buttons.map((b) => b.getAttribute("data-testid"))).toEqual([
+		// The footer's own Close (no testid) renders first; the two chat
+		// actions keep their secondary-first order after it.
+		expect(buttons.map((b) => b.getAttribute("data-testid")).filter(Boolean)).toEqual([
 			"copilot-profile-assign-default-btn",
 			"copilot-profile-assign-here-btn",
 		]);
@@ -754,5 +870,110 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		expect(defaultBtn.className).toContain("bg-transparent");
 		expect(defaultBtn.className).not.toContain("bg-success");
 		expect(defaultBtn.className).not.toContain("bg-accent");
+	});
+});
+
+describe("CopilotProfileModal — footer matrix (AP-24, mockup §5)", () => {
+	it("a user selection shows Duplicate + Edit + Delete left, Close + Use right", async () => {
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-assign-btn")).toBeDefined());
+		// Left: the three selection actions (MasterDetailFooter actions slot).
+		expect(getByText("copilot_profile_duplicate")).toBeDefined();
+		expect(getByText("copilot_profile_edit")).toBeDefined();
+		expect(getByText("copilot_profile_delete")).toBeDefined();
+		// Right: the footer's own Close + the primary assign action.
+		expect(getByTestId("md-footer").textContent).toContain("close");
+		expect(getByTestId("copilot-profile-assign-btn").textContent).toContain("copilot_profile_assign");
+	});
+
+	it("a built-in selection shows Duplicate only on the left", async () => {
+		const { getByTestId, getByText, queryByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("md-footer")).toBeDefined());
+		expect(getByText("copilot_profile_duplicate")).toBeDefined();
+		expect(queryByText("copilot_profile_edit")).toBeNull();
+		expect(queryByText("copilot_profile_delete")).toBeNull();
+	});
+
+	it("edit mode shows Cancel + Save right, no Close and no selection actions", async () => {
+		const { getByTestId, getByText, queryByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		expect(getByTestId("copilot-profile-cancel-btn")).toBeDefined();
+		expect(getByTestId("copilot-profile-save-btn")).toBeDefined();
+		// No Close inside the footer (the mock's own `md-close` sits outside
+		// `md-footer`) and no selection actions in edit mode.
+		expect(getByTestId("md-footer").textContent).not.toContain("close");
+		expect(queryByText("copilot_profile_duplicate")).toBeNull();
+		expect(queryByText("copilot_profile_delete")).toBeNull();
+	});
+});
+
+describe("CopilotProfileModal — detail (AP-24, mockup §5)", () => {
+	const LONG_PROMPT = `You author interactive experiences. ${"Rule after rule, with examples. ".repeat(30)}`;
+
+	it("shows name + tag (custom for a user profile)", async () => {
+		// The detail title/tag carry their own testids: the row renders the
+		// same name (SC-16d), and the seed row renders a built-in pill.
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		expect(getByTestId("copilot-profile-detail-name").textContent).toBe("Card games");
+		expect(getByTestId("copilot-profile-detail-tag").textContent).toBe("copilot_profile_custom_tag");
+		expect(getByText("copilot_profile_custom_tag")).toBeDefined();
+	});
+
+	it("shows the built-in tag for the seed", async () => {
+		const { getByTestId } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		expect(getByTestId("copilot-profile-detail-name").textContent).toBe("Experience Authoring");
+		expect(getByTestId("copilot-profile-detail-tag").textContent).toBe("copilot_profile_built_in");
+	});
+
+	it("clamps a long system prompt with a show-full toggle; a short one renders whole", async () => {
+		// The AP-23 precedent: >500 chars → line-clamp-8 + «Показать целиком» /
+		// «Свернуть»; shorter bodies render whole with no toggle.
+		listCopilotProfiles.mockResolvedValue([
+			BUILTIN,
+			{ ...USER, id: "cprof_long", name: "Long prompt", basePrompt: LONG_PROMPT },
+		]);
+		const { getByTestId, getByText, queryByTestId } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_long"));
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		const preview = getByTestId("copilot-profile-prompt-preview");
+		expect(preview.textContent).toContain("Rule after rule");
+		expect(preview.getAttribute("class") ?? "").toContain("line-clamp-8");
+		// «Показать целиком» expands to the whole text.
+		fireEvent.click(getByText("copilot_skill_show_full"));
+		await waitFor(() => expect(getByText("copilot_skill_collapse")).toBeDefined());
+		expect(getByTestId("copilot-profile-prompt-preview").getAttribute("class") ?? "").not.toContain("line-clamp-8");
+		// «Свернуть» clamps again.
+		fireEvent.click(getByText("copilot_skill_collapse"));
+		await waitFor(() => expect(getByText("copilot_skill_show_full")).toBeDefined());
+		expect(getByTestId("copilot-profile-prompt-preview").getAttribute("class") ?? "").toContain("line-clamp-8");
+		// A short prompt (the seed) renders whole with no toggle.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(queryByTestId("copilot-profile-prompt-toggle")).toBeNull());
+		expect(getByTestId("copilot-profile-prompt-preview").getAttribute("class") ?? "").not.toContain("line-clamp-8");
+	});
+
+	it("the read-only view shows the experience tool labels", async () => {
+		const { getByTestId, getByText, queryByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		expect(getByText("agent_tool_write_file")).toBeDefined();
+		expect(getByText("agent_tool_run_test")).toBeDefined();
+		expect(queryByText("write_buffer")).toBeNull();
 	});
 });

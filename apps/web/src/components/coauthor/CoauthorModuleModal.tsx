@@ -1,3 +1,5 @@
+// forks: 1 — AgentProfileModal (apps/web/src/components/shared/agent-shell/AgentProfileModal.tsx)
+// is fork #1 (the profile modal frame-clones this module modal; AP-24).
 import { useEffect, useState } from "react";
 import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
