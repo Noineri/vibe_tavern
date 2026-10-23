@@ -50,6 +50,15 @@ export interface Attachment {
    *  always has text to send. Ordinary user uploads never carry this flag
    *  and keep their always-included behavior. */
   includeInPrompt?: boolean;
+  /** Text files only: token count of the file's full text, computed once by
+   *  the server at upload (UTF-8 decode, BOM stripped, default encoder) and
+   *  carried on the attachment. Absent on images, audio, video and on files
+   *  uploaded before the count existed. */
+  tokenCount?: number;
+  /** Text files only: token count of the summary stored in {@link description}.
+   *  Written by the server's summarize action together with the summary and
+   *  cleared with it; absent while the file is not summarized. */
+  summaryTokenCount?: number;
   /** Image-gen-only: slot provenance (IMAGE_GENERATION_PLAN IG-14, design:
    *  "a message carrying a single image attachment + provenance metadata:
    *  mode, profileId, model, effective params, seed") — exactly the design
@@ -185,14 +194,31 @@ const AUDIO_MIMES = new Set([
   "audio/m4a",
 ]);
 
-const TEXT_MIMES = new Set([
-  "application/json",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/yaml",
-  "text/x-jsonl",
-]);
+/**
+ * The ONE source of text-file attachment types: MIME -> stored extension.
+ * Insertion order matters for {@link textMimeForExtension}: the first MIME
+ * listed for an extension is its canonical one (`.jsonl` -> `application/x-ndjson`;
+ * `text/x-jsonl` is accepted as an alias). The asset service derives its upload
+ * allow-list, extension fallback and served Content-Type from this map.
+ */
+export const TEXT_MIME_TO_EXT: Readonly<Record<string, string>> = {
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "application/json": "json",
+  "application/x-ndjson": "jsonl",
+  "text/x-jsonl": "jsonl",
+  "text/csv": "csv",
+};
+
+const TEXT_MIMES: ReadonlySet<string> = new Set(Object.keys(TEXT_MIME_TO_EXT));
+
+const TEXT_EXT_TO_MIME: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const [mime, ext] of Object.entries(TEXT_MIME_TO_EXT)) {
+    if (!map.has(ext)) map.set(ext, mime);
+  }
+  return map;
+})();
 
 /**
  * Classify a MIME type into a broad attachment category.
@@ -209,6 +235,19 @@ export function classifyAttachment(mimeType: string): AttachmentType {
 /** Check whether a MIME type represents inline-able text content. */
 export function isTextMime(mimeType: string): boolean {
   return TEXT_MIMES.has(mimeType);
+}
+
+/** Canonical text MIME for a file extension (case-insensitive, with or without
+ *  the leading dot), or null when the extension is not a text-attachment type. */
+export function textMimeForExtension(extension: string): string | null {
+  return TEXT_EXT_TO_MIME.get(extension.replace(/^\./, "").toLowerCase()) ?? null;
+}
+
+/** Canonical text MIME derived from a file name's extension, or null when the
+ *  name has no extension or the extension is not a text-attachment type. */
+export function textMimeForFileName(fileName: string): string | null {
+  const dot = fileName.lastIndexOf(".");
+  return dot < 0 ? null : textMimeForExtension(fileName.slice(dot + 1));
 }
 
 // ─── Stored attachment parsing ──────────────────────────────────────────────

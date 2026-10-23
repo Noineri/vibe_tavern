@@ -52,6 +52,10 @@ export const attachmentSchema = z.object({
   purpose: z.enum(["voice", "music", "ambient"]).optional(),
   /** Audio-only (STT_PLAN ST-6): clip length in ms for the bubble UI. */
   durationMs: z.number().int().nonnegative().optional(),
+  /** Text files only: server-computed token count from the upload response,
+   *  echoed back on send. `summaryTokenCount` / `includeInPrompt` are written
+   *  by the server and are deliberately not accepted here. */
+  tokenCount: z.number().int().nonnegative().optional(),
 });
 
 export const sendMessageSchema = z.object({

@@ -2,6 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   classifyAttachment,
+  isTextMime,
+  TEXT_MIME_TO_EXT,
+  textMimeForExtension,
+  textMimeForFileName,
   composeVoiceTranscript,
   parseStoredAttachments,
   splitVoiceTranscript,
@@ -158,5 +162,81 @@ describe('image-gen slot prompt textual fallback (IMAGE_GENERATION_PLAN IG-CF9)'
     expect(out).not.toBe(arr);
     expect(input.description).toBeNull();
     expect(out[0]?.description).toBe('a lighthouse at dusk');
+  });
+});
+
+describe('text attachment types (CA-1a)', () => {
+  const TEXT_MIME_MATRIX = [
+    'text/plain',
+    'text/markdown',
+    'application/json',
+    'application/x-ndjson',
+    'text/x-jsonl',
+    'text/csv',
+  ];
+
+  test('isTextMime is true for each of the six text MIMEs', () => {
+    for (const mime of TEXT_MIME_MATRIX) {
+      expect(isTextMime(mime)).toBe(true);
+    }
+  });
+
+  test('isTextMime is false for application/yaml (dropped), images and other types', () => {
+    expect(isTextMime('application/yaml')).toBe(false);
+    expect(isTextMime('image/png')).toBe(false);
+    expect(isTextMime('audio/webm')).toBe(false);
+    expect(isTextMime('application/octet-stream')).toBe(false);
+    expect(isTextMime('')).toBe(false);
+  });
+
+  test('every text MIME still classifies as "file" (classifyAttachment unchanged)', () => {
+    for (const mime of TEXT_MIME_MATRIX) {
+      expect(classifyAttachment(mime)).toBe('file');
+    }
+  });
+
+  test('TEXT_MIME_TO_EXT is the one source: its keys are exactly the text MIMEs', () => {
+    expect(Object.keys(TEXT_MIME_TO_EXT).sort()).toEqual([...TEXT_MIME_MATRIX].sort());
+    expect(TEXT_MIME_TO_EXT['text/x-jsonl']).toBe('jsonl');
+    expect(TEXT_MIME_TO_EXT['application/x-ndjson']).toBe('jsonl');
+  });
+
+  test('textMimeForExtension maps each extension to its canonical MIME, case-insensitively', () => {
+    expect(textMimeForExtension('txt')).toBe('text/plain');
+    expect(textMimeForExtension('md')).toBe('text/markdown');
+    expect(textMimeForExtension('json')).toBe('application/json');
+    expect(textMimeForExtension('jsonl')).toBe('application/x-ndjson');
+    expect(textMimeForExtension('csv')).toBe('text/csv');
+    expect(textMimeForExtension('CSV')).toBe('text/csv');
+    expect(textMimeForExtension('.Md')).toBe('text/markdown');
+    expect(textMimeForExtension('png')).toBeNull();
+    expect(textMimeForExtension('yaml')).toBeNull();
+    expect(textMimeForExtension('')).toBeNull();
+  });
+
+  test('textMimeForFileName reads the last extension; no extension or unknown yields null', () => {
+    expect(textMimeForFileName('notes.MD')).toBe('text/markdown');
+    expect(textMimeForFileName('archive.tar.json')).toBe('application/json');
+    expect(textMimeForFileName('log.jsonl')).toBe('application/x-ndjson');
+    expect(textMimeForFileName('README')).toBeNull();
+    expect(textMimeForFileName('photo.png')).toBeNull();
+    expect(textMimeForFileName('')).toBeNull();
+  });
+
+  test('tokenCount / summaryTokenCount ride the Attachment and survive stored-JSON parsing', () => {
+    const stored = [{
+      id: 'att_1',
+      assetId: 'asset_1',
+      type: 'file',
+      name: 'notes.md',
+      mimeType: 'text/markdown',
+      sizeBytes: 10,
+      tokenCount: 1200,
+      summaryTokenCount: 90,
+    }];
+    const parsed = parseStoredAttachments(JSON.stringify(stored));
+    const att: Attachment | undefined = parsed?.[0];
+    expect(att?.tokenCount).toBe(1200);
+    expect(att?.summaryTokenCount).toBe(90);
   });
 });

@@ -406,10 +406,8 @@ export interface ImportExportRuntimeApi {
 
 // ─── Asset ───────────────────────────────────────────────────────────
 
-export interface AssetRuntimeApi {
-	uploadAsset: (file: File) => Promise<{ assetId: string; url: string }>;
-	serveAsset: (assetId: string) => Promise<Response | null>;
-}
+import type { AssetRuntimeApi } from "./asset-runtime-contracts.js";
+export type { AssetRuntimeApi };
 
 // ─── AI Assistant ────────────────────────────────────────────────────
 

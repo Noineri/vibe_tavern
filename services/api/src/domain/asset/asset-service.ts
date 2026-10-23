@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import type { ContentStore, StorageFolder } from "@vibe-tavern/db";
 import { IMAGE_EXTENSIONS, STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { TEXT_MIME_TO_EXT, isTextMime, textMimeForExtension, textMimeForFileName } from "@vibe-tavern/domain";
 
+import { countTokensDefault } from "../../infrastructure/ai/tokenizer-service.js";
 import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -41,11 +43,34 @@ const EXT_TO_MIME: Record<string, string> = {
   flac: "audio/flac",
 };
 
-const ALLOWED_MIMES = new Set([...Object.keys(MIME_TO_EXT), ...Object.keys(AUDIO_MIME_TO_EXT)]);
+// Text attachments: extension -> served Content-Type, derived from the domain's
+// TEXT_MIME_TO_EXT (first MIME per extension is canonical). Registered here so
+// serve() / loadBuffer() / cleanup() probe the text extensions too.
+for (const ext of new Set(Object.values(TEXT_MIME_TO_EXT))) {
+  const mime = textMimeForExtension(ext);
+  if (mime) EXT_TO_MIME[ext] = mime;
+}
+
+const ALLOWED_MIMES = new Set([
+  ...Object.keys(MIME_TO_EXT),
+  ...Object.keys(AUDIO_MIME_TO_EXT),
+  ...Object.keys(TEXT_MIME_TO_EXT),
+]);
 
 /** Maximum upload size for chat attachments (20 MB — most providers cap
  *  images at this; a dictation-length voice clip is far below it). */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+
+/** MIME that browsers send when they do not know a file's type. */
+const GENERIC_MIME = "application/octet-stream";
+
+/** Result of {@link AssetService.upload}. `tokenCount` is present for text
+ *  files only; image and audio results carry no such key. */
+export interface AssetUploadResult {
+  assetId: string;
+  url: string;
+  tokenCount?: number;
+}
 
 /** Strip MediaRecorder codec parameters (`audio/webm;codecs=opus` →
  *  `audio/webm`) so the lookup tables only carry base types. */
@@ -95,12 +120,25 @@ export class AssetService {
       : entityId;
   }
 
-  async upload(file: File): Promise<{ assetId: string; url: string }> {
-    const mime = normalizeMime(file.type);
-    if (!ALLOWED_MIMES.has(mime)) {
-      throw new Error(`Unsupported attachment type: ${file.type}. Allowed: jpeg, png, gif, webp, webm, ogg, m4a, mp3, wav, flac audio.`);
+  /**
+   * Store a chat attachment (image, audio or text file) and return its handle.
+   * Text files also return `tokenCount` — computed here, not in the adapter or
+   * the route: `domain/` may import `infrastructure/ai` (the arch gate only
+   * forbids `api/` and `runtime/`), and the upload already holds the bytes, so
+   * counting at this one place covers every caller of upload().
+   */
+  async upload(file: File): Promise<AssetUploadResult> {
+    let mime = normalizeMime(file.type);
+    // Browsers often send an empty or generic type for .md / .jsonl / .csv:
+    // a known text extension then decides the type. Images and audio never
+    // take this path (an empty type on them stays refused).
+    if (mime === "" || mime === GENERIC_MIME) {
+      mime = textMimeForFileName(file.name) ?? mime;
     }
-    const ext = MIME_TO_EXT[mime] ?? AUDIO_MIME_TO_EXT[mime];
+    if (!ALLOWED_MIMES.has(mime)) {
+      throw new Error(`Unsupported attachment type: ${file.type}. Allowed: jpeg, png, gif, webp, webm, ogg, m4a, mp3, wav, flac audio; txt, md, json, jsonl, csv text.`);
+    }
+    const ext = MIME_TO_EXT[mime] ?? AUDIO_MIME_TO_EXT[mime] ?? TEXT_MIME_TO_EXT[mime];
     const assetId = `asset_${crypto.randomUUID().replace(/-/g, "")}`;
     const fileName = `${assetId}.${ext}`;
     const filePath = resolve(this.assetsDir, fileName);
@@ -109,7 +147,13 @@ export class AssetService {
       throw new Error(`Attachment too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
     }
     await Bun.write(filePath, buffer);
-    return { assetId, url: `/api/assets/${assetId}` };
+    const result: AssetUploadResult = { assetId, url: `/api/assets/${assetId}` };
+    if (isTextMime(mime)) {
+      // TextDecoder drops a leading UTF-8 BOM by default (ignoreBOM: false),
+      // so the count is the same with and without one.
+      result.tokenCount = countTokensDefault(new TextDecoder("utf-8").decode(buffer));
+    }
+    return result;
   }
 
   /**

@@ -563,3 +563,39 @@ describe("renameBranchSchema", () => {
     expectReject(renameBranchSchema.safeParse({ label: 123 }));
   });
 });
+
+describe("attachmentSchema tokenCount (CA-1a)", () => {
+  it("accepts a text file carrying a non-negative integer tokenCount (0 boundary included)", () => {
+    for (const tokenCount of [0, 1, 480_000]) {
+      expect(attachmentSchema.safeParse({ ...validAttachment(), type: "file", tokenCount }).success).toBe(true);
+    }
+  });
+
+  it("keeps tokenCount optional", () => {
+    const parsed = attachmentSchema.safeParse({ ...validAttachment(), type: "file" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect("tokenCount" in parsed.data).toBe(false);
+  });
+
+  it("rejects a negative, fractional or non-numeric tokenCount", () => {
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: -1 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: 1.5 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: "12" }));
+  });
+
+  it("strips the server-written fields summaryTokenCount and includeInPrompt (never accepted from a send)", () => {
+    const parsed = attachmentSchema.safeParse({
+      ...validAttachment(),
+      type: "file",
+      tokenCount: 10,
+      summaryTokenCount: 5,
+      includeInPrompt: false,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.tokenCount).toBe(10);
+      expect("summaryTokenCount" in parsed.data).toBe(false);
+      expect("includeInPrompt" in parsed.data).toBe(false);
+    }
+  });
+});
