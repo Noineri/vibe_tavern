@@ -29,6 +29,7 @@ import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
 import { SearchInput } from "./SearchInput.js";
 import { popoverMaxHeight } from "./popover-constants.js";
+import { useOverlayPortalSession } from "./modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 
 export interface ToolbarSelectItem {
@@ -126,6 +127,18 @@ export function ToolbarSelect({
 	// which has moved to QuickSwitchPopover.)
 	const [open, setOpen] = useState(false);
 
+	// Overlay-portal session (shared with DropdownSelect via modal-helpers):
+	// captured on the rising edge of `open` so the desktop list portals into
+	// the topmost overlay's anchor when opened inside one (Modal, BottomSheet
+	// — AP-27 follow-up 2; a bare body portal painted behind the modal) and
+	// defaults to document.body outside overlays, as today.
+	const { portalContainer, capturePortalSession } = useOverlayPortalSession();
+
+	function handleOpenChange(next: boolean) {
+		if (next) capturePortalSession();
+		setOpen(next);
+	}
+
 	if (mobile) {
 		return (
 			<ToolbarSelectMobile
@@ -151,13 +164,13 @@ export function ToolbarSelect({
 	const selectTrigger = <Select.Trigger asChild>{trigger}</Select.Trigger>;
 
 	return (
-		<Select.Root open={open} onOpenChange={setOpen} value={value ?? undefined} onValueChange={onSelect}>
+		<Select.Root open={open} onOpenChange={handleOpenChange} value={value ?? undefined} onValueChange={onSelect}>
 			{triggerTooltip ? (
 				<CustomTooltip content={triggerTooltip}>{selectTrigger}</CustomTooltip>
 			) : (
 				selectTrigger
 			)}
-			<Select.Portal>
+			<Select.Portal container={portalContainer}>
 				<Select.Content
 					position="popper"
 					side={side}

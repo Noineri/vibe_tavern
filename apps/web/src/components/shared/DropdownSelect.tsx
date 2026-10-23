@@ -4,7 +4,7 @@ import { Command } from "cmdk";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Ic } from "./icons.js";
-import { getModalPortal } from "./modal-helpers.js";
+import { useOverlayPortalSession } from "./modal-helpers.js";
 
 // cmdk (and Radix Select before it) cannot represent an empty-string value as a
 // real selectable item: an empty value is treated as "no value". The sentinel
@@ -98,18 +98,12 @@ export function DropdownSelect({
   const [search, setSearch] = useState("");
   const commandRef = useRef<HTMLDivElement>(null);
 
-  // Popup portal container, frozen per popup-open session
-  // (SHEET_PORTAL_SELF_TARGETING): re-evaluating `getModalPortal()` on every
-  // render meant a stack-top change mid-popup (or a sheet re-render while this
-  // popup is open inside it) re-targeted the portal and tore the popup down.
-  // The rising edge of `open` always goes through handleOpenChange, so the
-  // container is captured in the same event/batch as the open flip — the
-  // first popup render already sees the frozen container, no staging gap.
-  // Kept through close (Radix exit presence — never re-target an exiting
-  // popup); replaced on the next open. `container: null` means "no overlay
-  // host — default body"; the session wrapper distinguishes it from
-  // "not resolved yet".
-  const [portalSession, setPortalSession] = useState<{ container: HTMLElement | null } | null>(null);
+  // Popup portal container, frozen per popup-open session — the shared
+  // `useOverlayPortalSession` (modal-helpers; see the SHEET_PORTAL_SELF_TARGETING
+  // rationale there). The rising edge of `open` always goes through
+  // handleOpenChange, so the container is captured in the same event/batch
+  // as the open flip.
+  const { portalContainer, capturePortalSession } = useOverlayPortalSession();
 
   const selected = (groups ? groups.flatMap((g) => g.options) : options).find((o) => o.id === value);
   // Empty value: a caller's own placeholder wins (sites that pass both a
@@ -147,7 +141,7 @@ export function DropdownSelect({
   }
 
   function handleOpenChange(isOpen: boolean) {
-    if (isOpen) setPortalSession({ container: getModalPortal() });
+    if (isOpen) capturePortalSession();
     setOpen(isOpen);
     if (isOpen && searchable) setSearch("");
   }
@@ -162,16 +156,10 @@ export function DropdownSelect({
     }
   }
 
-  // When inside an overlay (Modal, BottomSheet), portal into the topmost
-  // overlay's anchor element so the content stays within that overlay's focus
-  // scope AND paints above it (modal-helpers keeps a stack of overlay portal
-  // nodes; D2). When outside any overlay, portal to body. Resolved ONCE per
-  // popup-open session (see portalSession above); the isConnected guard bounds
-  // a stale disconnected container to one frame before the next capture.
-  const portalContainer =
-    portalSession?.container && portalSession.container.isConnected
-      ? portalSession.container
-      : undefined;
+  // When inside an overlay (Modal, BottomSheet), `portalContainer` is the
+  // topmost overlay's anchor so the content stays within that overlay's
+  // focus scope AND paints above it; outside any overlay it is `undefined`
+  // (portal to body). Resolved ONCE per popup-open session by the hook.
 
   function renderOption(o: DropdownOption) {
     return (

@@ -1,3 +1,5 @@
+import { useCallback, useState } from "react";
+
 /**
  * Returns the portal container for floating UI (DropdownSelect popups,
  * nested popovers) opened inside overlays.
@@ -40,6 +42,41 @@ export function getTopmostOverlayPortal(exclude: HTMLElement | null = null): HTM
 
 export function getModalPortal(exclude: HTMLElement | null = null): HTMLElement | null {
   return getTopmostOverlayPortal(exclude) ?? document.getElementById("modal-portal");
+}
+
+/**
+ * One popup-open session of overlay-portal resolution. SINGLE SOURCE — both
+ * DropdownSelect and ToolbarSelect consume this hook; never a second
+ * hand-written copy of the resolution.
+ *
+ * Re-evaluating `getModalPortal()` on every render meant a stack-top change
+ * mid-popup (or an overlay re-render while the popup is open inside it)
+ * re-targeted the portal and tore the popup down
+ * (SHEET_PORTAL_SELF_TARGETING). So the container is captured once, on the
+ * rising edge of `open` — call `capturePortalSession()` in the same
+ * event/batch as the open flip (the first popup render already sees the
+ * frozen container, no staging gap) — kept through close (Radix exit
+ * presence: never re-target an exiting popup), and replaced on the next
+ * open. `container: null` means "no overlay host — default body"; the
+ * session wrapper distinguishes it from "not resolved yet". The
+ * `isConnected` guard bounds a stale disconnected container to one frame
+ * before the next capture. When outside any overlay the resolution is null
+ * and `portalContainer` stays `undefined`, i.e. the Radix Portal default
+ * (document.body) — today's behavior, unchanged.
+ */
+export function useOverlayPortalSession(): {
+  /** Pass to the Radix `*.Portal container` prop (`undefined` = body). */
+  portalContainer: HTMLElement | undefined;
+  /** Call on the rising edge of `open`, in the same event/batch. */
+  capturePortalSession: () => void;
+} {
+  const [portalSession, setPortalSession] = useState<{ container: HTMLElement | null } | null>(null);
+  const capturePortalSession = useCallback(() => {
+    setPortalSession({ container: getModalPortal() });
+  }, []);
+  const portalContainer =
+    portalSession?.container && portalSession.container.isConnected ? portalSession.container : undefined;
+  return { portalContainer, capturePortalSession };
 }
 
 /** The application-level modal host — stable per call, independent of the
