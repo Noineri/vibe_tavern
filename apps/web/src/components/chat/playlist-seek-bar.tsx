@@ -28,6 +28,7 @@ export function SeekBar(input: {
         max={rangeMax}
         step={0.1}
         value={position}
+        formatValue={formatPlaybackTime}
         disabled={!progress || rangeMax <= 0}
         aria-label={t("narration_playlist_seek")}
         inputTestId="playlist-seek"
