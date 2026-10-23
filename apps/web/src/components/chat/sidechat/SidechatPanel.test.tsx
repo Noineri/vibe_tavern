@@ -313,6 +313,32 @@ describe("sidechat-panel — handle opens/closes (SC-14)", () => {
     expect(queryByTestId("copilot-send-btn")).toBeNull();
   });
 
+  it("closed shows a half-opacity capsule; open shows a line that the panel's hover grows into the capsule", async () => {
+    const { getByTestId } = render(withIsolatedI18n(<SidechatPanel />));
+    await flushSessionLoad();
+
+    const closed = getByTestId("sidechat-toggle");
+    expect(closed.classList.contains("opacity-50")).toBe(true);
+    expect(closed.classList.contains("hover:opacity-100")).toBe(true);
+    expect(closed.classList.contains("focus-visible:opacity-100")).toBe(true);
+    expect(closed.querySelector(".rounded-full.w-3\\.5.h-12")).not.toBeNull();
+
+    fireEvent.click(closed);
+    await flushSessionLoad();
+    const panel = getByTestId("sidechat-panel");
+    expect(panel.classList.contains("group/edge-pane")).toBe(true);
+    const open = getByTestId("sidechat-toggle");
+    expect(open.classList.contains("opacity-50")).toBe(false);
+    const line = open.firstElementChild as HTMLElement;
+    expect(line.classList.contains("w-1")).toBe(true);
+    expect(line.classList.contains("group-hover/edge-pane:w-3.5")).toBe(true);
+    expect(line.classList.contains("group-focus-visible/handle:w-3.5")).toBe(true);
+    // The open-pane line stays inside the panel's clip frame.
+    const anchor = open.closest(".absolute.left-0");
+    expect(anchor).not.toBeNull();
+    expect(panel.contains(anchor)).toBe(true);
+  });
+
   it("clicking the handle opens the panel; the chevron flips to `>`; clicking closes", async () => {
     const { getByTestId, queryByTestId } = render(withIsolatedI18n(<SidechatPanel />));
     await flushSessionLoad();

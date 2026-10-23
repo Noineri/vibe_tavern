@@ -981,6 +981,8 @@ The modal persists the last-used model per mode in `localStorage` so the lightbu
 </ResizableSidePane>
 ```
 
+Pane-edge toggles come only from `SidechatHandle` (`chat/sidechat/SidechatHandle.tsx`): a closed pane shows a half-opacity capsule (full on hover or keyboard focus); an open pane shows a thin line that grows into the capsule while the pointer is anywhere over the pane — the pane adds `EDGE_PANE_GROUP` to its `className` for that. Each button keeps a 24 × 48 px hit area.
+
 | Prop | Type | Description |
 |------|------|-------------|
 | `open` | `boolean` | Presence: false starts the close glide, true mounts and opens |

@@ -3,7 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import type { AgentKind } from "../../../lib/agent-host-registry.js";
 import { ResizableSidePane } from "../resizable-side-pane.js";
-import { SidechatHandle } from "../../chat/sidechat/SidechatHandle.js";
+import { EDGE_PANE_GROUP, SidechatHandle } from "../../chat/sidechat/SidechatHandle.js";
 
 /**
  * The desktop two-pane assistant layout (SIDECHAT_PLAN, SC-16c) — extracted
@@ -30,8 +30,8 @@ import { SidechatHandle } from "../../chat/sidechat/SidechatHandle.js";
  * `closedView` (that slot sits where the pane was); it overlays the editor's
  * left edge from inside the editor container (absolute, never shifting the
  * editor), ≥ 44 px tall like every handle. Both handles are the shared
- * `SidechatHandle` SC-16c variants (`pane-collapse` chevron on the pane's
- * right edge, `editor-tab` on the editor's left edge) — cloned through the
+ * `SidechatHandle` SC-16c variants (`pane-collapse` line on the pane's
+ * right edge, `editor-tab` capsule on the editor's left edge) — cloned through the
  * component, never copied.
  */
 
@@ -76,7 +76,7 @@ export function AgentShellDesktopTwoPane({ kind, chatPane, editorPane }: AgentSh
         defaultWidth={AGENT_ASSISTANT_DEFAULT_WIDTH}
         minWidth={AGENT_ASSISTANT_MIN_WIDTH}
         resizeEdge="right"
-        className="border-r border-border"
+        className={`${EDGE_PANE_GROUP} border-r border-border`}
         panelTestId={`agent-assistant-panel-${kind}`}
         resizeHandleTestId={`agent-assistant-resize-${kind}`}
         slideTestId={`agent-assistant-slide-${kind}`}

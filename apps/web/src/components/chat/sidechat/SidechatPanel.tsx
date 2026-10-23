@@ -37,8 +37,6 @@
  *   checklist, plan block, feed, input.
  */
 import { AgentShell } from "../../shared/agent-shell/AgentShell.js";
-import { Icons } from "../../shared/icons.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
 import { ResizableSidePane } from "../../shared/resizable-side-pane.js";
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -49,7 +47,7 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 // Module-load registration of the `sidechat-ooc` host (SC-13b) — the shell
 // below resolves its descriptor by kind at render time.
 import { selectSidechatOwner, SIDECHAT_OPEN_KEY_PREFIX } from "./sidechat-host.js";
-import { SidechatHandle } from "./SidechatHandle.js";
+import { EDGE_PANE_GROUP, SidechatHandle } from "./SidechatHandle.js";
 
 // Re-exported for any importer that reached the key through the panel — the
 // single spelling lives in `sidechat-host.ts` (shared with the mobile tabs).
@@ -90,7 +88,7 @@ export function SidechatPanel() {
       defaultWidth={SIDECHAT_DEFAULT_WIDTH}
       minWidth={SIDECHAT_MIN_WIDTH}
       resizeEdge="left"
-      className="border-l border-border/50 bg-surface"
+      className={`${EDGE_PANE_GROUP} border-l border-border/50 bg-surface`}
       panelTestId="sidechat-panel"
       resizeHandleTestId="sidechat-resize"
       slideTestId="sidechat-slide"
@@ -100,20 +98,8 @@ export function SidechatPanel() {
       closedView={<SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />}
     >
       {/* Close handle on the panel's left edge (vertically centered); it sits
-          above the drag line, so a press on the chevron toggles instead. */}
-      <div className="absolute top-1/2 left-0 z-10 -translate-y-1/2">
-        <CustomTooltip content={label} side="left">
-          <button
-            type="button"
-            aria-label={label}
-            data-testid="sidechat-toggle"
-            onClick={() => setOpen(false)}
-            className="flex h-11 w-6 cursor-pointer items-center justify-center rounded-r-md border border-l-0 border-border bg-surface text-t3 shadow-[4px_0_12px_rgba(0,0,0,.25)] transition-colors hover:bg-s2 hover:text-t1"
-          >
-            <Icons.Caret direction="r" />
-          </button>
-        </CustomTooltip>
-      </div>
+          above the drag line, so a press on the handle toggles instead. */}
+      <SidechatHandle variant="panel-close" label={label} onToggle={() => setOpen(false)} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />
       </div>
