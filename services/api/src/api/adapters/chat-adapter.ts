@@ -16,6 +16,8 @@ import { resolveCachedModels } from "../../domain/providers/model-cache-service.
 import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, CoauthorModule } from "@vibe-tavern/api-contracts";
+import { isTextMime } from "@vibe-tavern/domain";
+import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -30,6 +32,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		 *  acyclic; the voice-message profile pointer resolves from ui_settings
 		 *  with the isDefault fallback. */
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
+		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
 	) {}
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
@@ -373,7 +376,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * zero AI calls; assembly backfills the description from it when needed).
 	 * Without either, the non-vision RP path would still fail with
 	 * VisionNotSupportedError. Restricted to image-gen slots: ordinary user
-	 * uploads keep their always-included semantics.
+	 * image uploads keep their always-included semantics; text files use the
+	 * shared attachment-actions service.
 	 */
 	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
 		// MR-4: the merged-set lookup (message row + variant rows — the DTO
@@ -381,6 +385,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 		// swiped-to regenerate slot validates like the original one.
 		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
 		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined && att.type === "file" && isTextMime(att.mimeType)) {
+			return this.attachmentActions.setIncluded(messageId, attachmentId, includeInPrompt);
+		}
 		if (att.imageGen === undefined) {
 			throw validation("Only generated image slots have an include-in-prompt toggle.");
 		}
@@ -390,6 +397,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 		await this.sessionRuntime.chatApp.updateSingleAttachmentIncludeInPrompt(messageId, attachmentId, includeInPrompt);
 		return { ok: true };
 	};
+
+	summarizeAttachment: ChatRuntimeApi["summarizeAttachment"] = (...args) =>
+		this.attachmentActions.summarizeAttachment(...args);
+	clearAttachmentSummary: ChatRuntimeApi["clearAttachmentSummary"] = (...args) =>
+		this.attachmentActions.clearAttachmentSummary(...args);
 
 	/** MR-9: rewrite the generation prompt on a generated-image slot (the
 	 *  accordion editor's save, owner 2026-09-18). Slots only; the new text
@@ -631,6 +643,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	// ─── Private helpers ────────────────────────────────────────────────
+
+	private get attachmentActions() {
+		return createChatAttachmentActions({
+			chatApp: this.sessionRuntime.chatApp, messages: this.stores.messages,
+			resolveProfile: (chatId) => this.resolveEffectiveProfileOrThrow({ chatId }),
+			assetLoader: (assetId) => this.assetService.loadBuffer(assetId), execute: this.executeAttachmentSummary,
+		});
+	}
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
 		return resolveVisionDescribePrompt(this.stores.db);

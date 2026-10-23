@@ -42,4 +42,6 @@ export interface ChatMessageRuntimeApi {
   updateAttachmentPrompt: (chatId: string, messageId: string, attachmentId: string, prompt: string) => Promise<{ ok: boolean }>;
   deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
   regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
+  summarizeAttachment: (chatId: string, messageId: string, attachmentId: string, signal?: AbortSignal) => Promise<Attachment>;
+  clearAttachmentSummary: (chatId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
 }

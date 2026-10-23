@@ -292,6 +292,16 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .delete("/api/chats/:chatId/messages/:messageId", async (c) => {
       return c.json(await runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
     })
+    .post("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/summarize", async (c) => {
+      return c.json(await runtime.summarizeAttachment(
+        c.req.param("chatId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.raw.signal,
+      ));
+    })
+    .post("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) => {
+      return c.json(await runtime.clearAttachmentSummary(
+        c.req.param("chatId"), c.req.param("messageId"), c.req.param("attachmentId"),
+      ));
+    })
     .post("/api/chats/:chatId/messages", zValidator("json", schemas.sendMessageSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
