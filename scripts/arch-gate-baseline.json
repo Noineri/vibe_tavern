@@ -56,7 +56,7 @@
     "services/api/src/domain/ai-assistant/ai-assistant-stream.ts": 1075,
     "services/api/src/domain/chat/live-chat-orchestrator.ts": 991,
     "services/api/src/domain/insights/objective-service.ts": 833,
-    "services/api/src/domain/insights/tracker-service.ts": 1170,
+    "services/api/src/domain/insights/tracker-service.ts": 1153,
     "services/api/src/domain/interactive/experience-playground.ts": 1319,
     "services/api/src/domain/interactive/experience-service.ts": 1442,
     "services/api/src/domain/prompt/lore-activation-engine.ts": 1282,
