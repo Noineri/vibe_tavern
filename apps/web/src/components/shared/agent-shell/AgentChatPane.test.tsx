@@ -229,6 +229,7 @@ function renderPane(over: {
   messages?: ExperienceCopilotMessageWire[];
   isMobile?: boolean;
   copilotContext?: CopilotContextController;
+  onStarterPick?: (text: string) => void;
 } = {}) {
   const ctrl = over.ctrl ?? makeCtrl();
   const utils = render(
@@ -267,6 +268,7 @@ function renderPane(over: {
         handlePinContext={() => {}}
         handleUnpinContext={() => {}}
         composerTopSlot={null}
+        onStarterPick={over.onStarterPick}
       />
     </I18nextProvider>,
   );
@@ -666,5 +668,39 @@ describe("AgentChatPane — pending-changes strip (AP-16)", () => {
     expect(getByTestId("copilot-pending-chip-agent_rules")).toBeDefined();
     const input = getByTestId("copilot-chat-input");
     expect((strip.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+  });
+});
+
+// ─── AP-18: starter prompts in the empty session ────────────────────────────
+// A starter click hands the TRANSLATED text to `onStarterPick` (the shell
+// turns it into a composer prefill — never sent) and focuses the composer so
+// typing continues in the prefilled draft. Focus lives in the pane (it owns
+// the composer DOM); the shell owns the prefill state.
+
+describe("AgentChatPane — starter prompts (AP-18)", () => {
+  it("clicking a starter calls onStarterPick with the text and focuses the composer (never sent)", () => {
+    const seen: string[] = [];
+    const utils = renderPane({ messages: [], onStarterPick: (text) => seen.push(text) });
+
+    // The empty session shows the experience host's starters (isolated i18n
+    // renders keys verbatim — order = the descriptor tuple).
+    const starter = utils.getByTestId("agent-starter-1");
+    expect(starter.textContent).toBe("agent_starter_experience_explain_rules");
+    fireEvent.click(starter);
+
+    expect(seen).toEqual(["agent_starter_experience_explain_rules"]);
+    // Focus lands in the composer so typing continues in the prefilled draft.
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("copilot-chat-input");
+    // Nothing was sent — the click only prefills.
+    expect(utils.ctrl.handleSend).not.toHaveBeenCalled();
+    expect(utils.ctrl.handleAnswer).not.toHaveBeenCalled();
+  });
+
+  it("no starters when the pane is not wired (the shell owns the prefill)", () => {
+    const utils = renderPane({ messages: [] });
+
+    expect(utils.queryByTestId("agent-starter-0")).toBeNull();
+    // The empty title/subtitle still render (AS-8c3a, untouched).
+    expect(utils.getByText("agent_title")).toBeDefined();
   });
 });

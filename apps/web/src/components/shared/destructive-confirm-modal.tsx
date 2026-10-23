@@ -1,11 +1,19 @@
 import type { ReactNode } from "react";
+import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { useCharacterStore, type ConfirmDialogTone } from "../../stores/character-store.js";
 import { Modal } from "./Modal.js";
 
+/** Shared core of the neutral-outline button chrome (the calm secondary) —
+ *  ONLY the utilities every arm composes verbatim. Per-arm specifics (size,
+ *  padding, text size/color, hover) stay in each arm: `cn` is join-only (no
+ *  tailwind-merge), so a conflicting utility in the core would coexist with
+ *  the arm's own and resolve by stylesheet order (CF13). Arms: `CANCEL_BTN_CLS`
+ *  below and AP-18's `STARTER_BTN_CLS` (`agent-shell/AgentEmptyState.tsx`). */
+export const SECONDARY_OUTLINE_CORE =
+  "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors";
 /** Cancel / neutral-outline button chrome (also the calm secondary). */
-const CANCEL_BTN_CLS =
-  "h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1";
+const CANCEL_BTN_CLS = cn(SECONDARY_OUTLINE_CORE, "h-8 px-3.5 text-[12.5px] text-t3 duration-150 hover:text-t1");
 /** Danger primary (the destructive default). */
 const PRIMARY_DESTRUCTIVE_CLS =
   "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";

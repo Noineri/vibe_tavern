@@ -291,6 +291,12 @@ export function AgentShell({
   // surface (the experience "send to copilot" flow) through the bridge.
   // Object identity is the trigger.
   const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
+  // AP-18: a starter click fills the composer (never sent) — a fresh object
+  // per click retriggers the composers' prefill effect; focusing lives in
+  // the pane's handler (it owns the composer DOM).
+  const handleStarterPick = useCallback((text: string): void => {
+    setInputPrefill({ text });
+  }, []);
 
   // ── AS-6b2: the shell↔host bridge ────────────────────────────────────────
   // One stable object per shell; the host's editor pane assigns `session`
@@ -578,6 +584,7 @@ export function AgentShell({
       handlePinContext={handlePinContext}
       handleUnpinContext={handleUnpinContext}
       composerTopSlot={composerTopSlot}
+      onStarterPick={handleStarterPick}
     />
   );
 

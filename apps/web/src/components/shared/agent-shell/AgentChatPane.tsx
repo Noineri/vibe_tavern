@@ -86,6 +86,9 @@ export interface AgentChatPaneProps {
   handlePinContext: (item: MentionAutocompleteItem) => void;
   handleUnpinContext: (targetType: string, targetId: string) => void;
   composerTopSlot: ReactNode;
+  /** AP-18: starter-prompt pick from the empty session — the shell turns the
+   *  text into a composer prefill (never sent); the pane focuses the composer. */
+  onStarterPick?: (text: string) => void;
 }
 
 export function AgentChatPane({
@@ -117,6 +120,7 @@ export function AgentChatPane({
   handlePinContext,
   handleUnpinContext,
   composerTopSlot,
+  onStarterPick,
 }: AgentChatPaneProps) {
   const { t } = useT();
 
@@ -171,6 +175,17 @@ export function AgentChatPane({
       ctrl.requestDeleteTurn(messageId, includeUserMessage);
     },
   }), [handleCopyTurn, ctrl.handleRegenerate, ctrl.requestDeleteTurn]);
+
+  // AP-18: a starter click prefills (via the shell's callback — the pane
+  // owns no draft state) and focuses the composer so typing continues in
+  // the prefilled draft. The composer is mounted under the empty state in
+  // this same pane; both composer arms share the testid and only one
+  // mounts per viewport (responsive dual-mode) — cf. NarrationPlaylist's
+  // document.querySelector precedent for cross-component focus.
+  const handleStarterPick = useCallback((text: string): void => {
+    onStarterPick?.(text);
+    document.querySelector<HTMLTextAreaElement>('[data-testid="copilot-chat-input"]')?.focus();
+  }, [onStarterPick]);
 
   // AP-5: while the thread's live awaiting ask exists, a composer send
   // ANSWERS it (routes to `ctrl.handleAnswer` with the draft as the answer
@@ -282,6 +297,7 @@ export function AgentChatPane({
             pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
             emptyTitle={t(host.i18n.emptyTitle)}
             emptySub={host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
+            onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
             onAnswer={(askToolCallId, answer) => {
               sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
             }}

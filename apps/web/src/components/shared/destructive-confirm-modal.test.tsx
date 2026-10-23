@@ -34,7 +34,10 @@ const PANEL_SINGLE = "w-[380px] rounded-lg border border-border bg-surface p-7 t
 const PANEL_DUAL = "w-[440px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl";
 const ROW_EXPLICIT = "flex flex-wrap justify-center gap-2.5";
 const ROW_SHELL_SINGLE = "flex justify-center gap-2.5";
-const CANCEL_BTN = "h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1";
+// The calm-secondary now composes from the shared core (SECONDARY_OUTLINE_CORE
+// + the footer's own specifics) — same utility set as before, core-first join
+// order (cn is join-only; order is incidental, the SET is the boundary).
+const CANCEL_BTN = "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors h-8 px-3.5 text-[12.5px] text-t3 duration-150 hover:text-t1";
 const PRIMARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
 const SECONDARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[12.5px] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
 const PRIMARY_CALM_BTN = "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";

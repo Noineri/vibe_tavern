@@ -25,7 +25,7 @@ import { AgentTurnErrorSlot } from "./AgentTurnErrorSlot.js";
 import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { Icons } from "../icons.js";
-import { EmptyState } from "../empty-state.js";
+import { AgentEmptyState } from "./AgentEmptyState.js";
 import { useT } from "../../../i18n/context.js";
 
 const EMPTY: AgentToolActivity[] = [];
@@ -151,6 +151,8 @@ export interface AgentMessageListProps {
    *  `handleRegenerate`). Absent = no error card renders at all (the
    *  card's retry needs a target). */
   onRetryTurn?: () => void;
+  /** AP-18: starter click → the pane prefills the composer (never sent); absent = no starters. */
+  onStarterPick?: (text: string) => void;
 }
 
 export function AgentMessageList({
@@ -168,6 +170,7 @@ export function AgentMessageList({
   onEditLast,
   turnFailure = null,
   onRetryTurn,
+  onStarterPick,
   emptyTitle,
   emptySub,
   events = EMPTY_EVENTS,
@@ -564,13 +567,7 @@ export function AgentMessageList({
 
   if (isEmpty) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <EmptyState
-          icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-          title={emptyTitle ?? t("agent_title")}
-          sub={emptySub ?? t("agent_subtitle")}
-        />
-      </div>
+      <AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")} onStarterPick={onStarterPick} />
     );
   }
 

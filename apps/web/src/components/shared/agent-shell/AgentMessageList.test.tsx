@@ -1762,3 +1762,103 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
     expect(queryByTestId("copilot-error-card")).toBeNull();
   });
 });
+
+// ─── AP-18: starter prompts in the empty session ────────────────────────────
+// The empty session (mockup §3) lists the host's four starters as full-width
+// secondary buttons BELOW the title/subtitle; a click hands the TRANSLATED
+// text to `onStarterPick` (the pane prefills the composer and focuses it —
+// never sent). WAS (characterized pre-change): the empty state rendered the
+// title/subtitle only (pinned by the AS-8c3a tests above) — no starters.
+
+describe("ExperienceCopilotMessageList — starter prompts (AP-18)", () => {
+  const EXPERIENCE_STARTERS = [
+    "agent_starter_experience_game",
+    "agent_starter_experience_explain_rules",
+    "agent_starter_experience_find_bugs",
+    "agent_starter_experience_polish_visual",
+  ];
+
+  function renderEmpty(over: { onStarterPick?: (text: string) => void } = {}) {
+    return render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onStarterPick={over.onStarterPick}
+      />,
+    );
+  }
+
+  it("renders the host's four starters in descriptor-tuple order with translated text", () => {
+    const { getByTestId } = renderEmpty({ onStarterPick: mock((_text: string) => {}) });
+
+    // Identity i18n renders each key verbatim — order = the descriptor tuple.
+    const buttons = [0, 1, 2, 3].map((index) => getByTestId(`agent-starter-${index}`));
+    expect(buttons.map((button) => button.textContent)).toEqual(EXPERIENCE_STARTERS);
+  });
+
+  it("starters are full-width left-aligned buttons below the subtitle", () => {
+    const { getByTestId, getByText } = renderEmpty({ onStarterPick: mock((_text: string) => {}) });
+
+    const first = getByTestId("agent-starter-0");
+    expect(first.tagName).toBe("BUTTON");
+    expect(first.getAttribute("type")).toBe("button");
+    expect(first.className).toContain("w-full");
+    expect(first.className).toContain("text-left");
+    // Document order: title → subtitle → starters (mockup §3).
+    const title = getByText("agent_title");
+    const sub = getByText("agent_subtitle");
+    expect(title.compareDocumentPosition(sub) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(sub.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("click calls onStarterPick with the starter text (never sent)", () => {
+    const seen: string[] = [];
+    const { getByTestId } = renderEmpty({ onStarterPick: (text: string) => seen.push(text) });
+
+    fireEvent.click(getByTestId("agent-starter-2"));
+
+    expect(seen).toEqual([EXPERIENCE_STARTERS[2]]);
+  });
+
+  it("no starters without the callback (a button without an action is a defect)", () => {
+    const { queryByTestId, getByText } = renderEmpty();
+
+    expect(getByText("agent_title")).toBeDefined();
+    expect(queryByTestId("agent-starter-0")).toBeNull();
+  });
+
+  it("no starters once messages exist (the empty state owns them)", () => {
+    const { queryByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onStarterPick={mock((_text: string) => {})}
+      />,
+    );
+
+    expect(getByText("go")).toBeDefined();
+    expect(queryByTestId("agent-starter-0")).toBeNull();
+  });
+
+  it("unknown kind renders the bare empty state (never a throw)", () => {
+    const { queryByTestId, getByText } = render(
+      <AgentMessageList
+        kind="unknown-kind" threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onStarterPick={mock((_text: string) => {})}
+      />,
+    );
+
+    expect(getByText("agent_title")).toBeDefined();
+    expect(queryByTestId("agent-starter-0")).toBeNull();
+  });
+});
