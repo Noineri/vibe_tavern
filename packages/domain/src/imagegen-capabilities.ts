@@ -2,8 +2,8 @@
  * Static image-gen backend capability table (IMAGE_GENERATION_PLAN IG-4/IG-11).
  *
  * Pure data, no I/O — the WEB-SAFE source of truth for what each image-gen
- * backend supports. Lives in the domain leaf (the STT/TTS preset-table
- * precedent: `stt-presets.ts`) because the Providers editor (apps/web)
+ * backend supports. Lives in the domain leaf (a browser-safe table used by
+ * both web and API) because the Providers editor (apps/web)
  * snapshots it onto profiles on create/backend-switch (the create contract
  * carries the capability mirror) and renders capability-gated controls from
  * it without a live round-trip — importing it from services/api would drag

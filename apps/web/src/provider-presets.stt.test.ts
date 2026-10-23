@@ -18,13 +18,15 @@ import {
 	DEFAULT_GEMINI_STT_MODEL,
 	DEFAULT_NVIDIA_STT_MODEL,
 	STT_BACKENDS,
+} from "@vibe-tavern/domain";
+import {
 	STT_PRESET_AUTH_HEADER,
 	STT_PRESET_GROUP,
 	STT_PROVIDER_PRESETS,
 	getSttNativePreset,
 	getSttPresetGroup,
 	getSttProviderPreset,
-} from "../src/index.js";
+} from "./provider-presets.js";
 
 const ROSTER_IDS = STT_PROVIDER_PRESETS.map((p) => p.id);
 

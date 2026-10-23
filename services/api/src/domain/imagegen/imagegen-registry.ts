@@ -38,8 +38,8 @@ export type {
 } from "./imagegen-backend.js";
 export type { ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
 // The static capability table lives in the DOMAIN leaf
-// (packages/domain/src/imagegen-capabilities.ts — the stt-presets.ts
-// precedent): apps/web imports it directly for capability-gated controls,
+// (packages/domain/src/imagegen-capabilities.ts — a browser-safe table used
+// by both web and API): apps/web imports it directly for capability-gated controls,
 // so it must not live behind this module (importing it here would be fine
 // for API-side code, but the table itself must stay browser-safe). It is
 // re-exported so API-side consumers keep one import path (the registry

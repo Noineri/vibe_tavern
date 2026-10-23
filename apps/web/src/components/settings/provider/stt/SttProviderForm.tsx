@@ -6,11 +6,13 @@ import { useState } from "react";
 import {
   STT_BACKENDS,
   STT_BACKEND_EMOTION_CAPABILITY,
+} from "@vibe-tavern/domain";
+import {
   STT_PROVIDER_PRESETS,
   getSttNativePreset,
   getSttProviderPreset,
   type SttProviderPreset,
-} from "@vibe-tavern/domain";
+} from "../../../../provider-presets.js";
 import { useT } from "../../../../i18n/context.js";
 import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { Icons } from "../../../shared/icons.js";

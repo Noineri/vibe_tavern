@@ -7,7 +7,8 @@
   * fork #1 of tts/tts-form-helpers.ts.
 */
 
-import { STT_BACKENDS, STT_PROVIDER_PRESETS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
+import { STT_BACKENDS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
+import { STT_PROVIDER_PRESETS } from "../../../../provider-presets.js";
 import type { useSttProfiles } from "./use-stt-profiles.js";
 
 /** Config-bag marker distinguishing the Local segment from cloud
