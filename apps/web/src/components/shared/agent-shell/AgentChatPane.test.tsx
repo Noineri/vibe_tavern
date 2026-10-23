@@ -190,6 +190,8 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     handleEditLast: mock(),
     // AP-11: the delete-confirm state the pane's modal reads (same rule).
     // AP-13: the live turn failure the error card reads (same rule).
+    // AP-29 follow-up 2: the regenerate flight flag the list reads (same rule).
+    isRegenerating: false,
     turnFailure: null,
     pendingDelete: null,
     requestDeleteTurn: mock(),

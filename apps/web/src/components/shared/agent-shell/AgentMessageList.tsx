@@ -74,6 +74,15 @@ export interface AgentMessageListProps {
   pendingUserContent: string;
   /** TAG-9: disables ask-card interactivity while a stream runs. */
   isSending?: boolean;
+  /** AP-29 follow-up 2: a regenerate is in flight — the replaced turn
+   *  (every assistant row after the last user row, with its tool accordion,
+   *  its ask / permission / proposal cards, and its caption) hides until
+   *  the settle refetch lands the stored truth. The last user row, the
+   *  digest card, and everything before the replaced turn stay visible;
+   *  the live part streams as a FRESH turn (its own hoisted caption with
+   *  only the live reasoning, never joined to the replaced turn). Omitted
+   *  / false = the fb55c477a behavior (a continuation still joins). */
+  isRegenerating?: boolean;
   /** TAG-9: answer handler for the live awaiting ask card — bound by the
    *  shell with the current draft buffers (mirrors the input area's onSend).
    *  SC-23f: also carries the permission card's decision (just another
@@ -131,6 +140,7 @@ export function AgentMessageList({
   pendingReasoning,
   pendingUserContent,
   isSending = false,
+  isRegenerating = false,
   onAnswer,
   pendingAskAnswer = null,
   pendingPermissionAnswer = null,
@@ -352,6 +362,16 @@ export function AgentMessageList({
     });
     return { lastUserVisibleIndex: userIdx, lastDigestVisibleIndex: digestIdx };
   }, [visibleMessages]);
+  // AP-29 follow-up 2: the replaced turn's cut — every ASSISTANT row after
+  // the last user row (the exact span the server's regenerate mode deletes:
+  // the last user row stays as the rerun's input, digest rows are the floor
+  // and stay, user rows are never hidden). With no user row the whole feed
+  // is one turn, so every assistant row hides. Tool-role rows never sit in
+  // this flow (they render through the anchor maps below); the trailing
+  // tool group and the trailing caption belong to the last turn, so the
+  // render below hides them with the same flag.
+  const isHiddenReplacedRow = (role: string, visibleIndex: number): boolean =>
+    isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex;
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
   // AP-29: live reasoning streams as text-only (no duration lands until the
@@ -377,15 +397,19 @@ export function AgentMessageList({
   // earn the caption only when the turn has shown no visible persisted text
   // yet (the same first-visible-segment rule). An optimistic pending user
   // row opens a fresh turn, so a reply streaming after it is trivially first.
+  // AP-29 follow-up 2: a regenerate hides the replaced turn (see
+  // `isHiddenReplacedRow`), so the scan skips it — the new turn streams as
+  // a fresh turn with its own hoisted caption below.
   const liveTurnHasVisibleText = useMemo(() => {
     if (hasPendingUserContent) return false;
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      if (isHiddenReplacedRow(visibleMessages[i]!.message.role, i)) continue;
       const m = visibleMessages[i]!.message;
       if (m.role === "user") return false;
       if (m.role === "assistant" && m.content.trim().length > 0) return true;
     }
     return false;
-  }, [visibleMessages, hasPendingUserContent]);
+  }, [visibleMessages, hasPendingUserContent, isRegenerating, lastUserVisibleIndex]);
 
   // AP-29 follow-up: the live part continues the last persisted turn (no
   // optimistic user row opens a fresh one) — when that turn already earns
@@ -393,9 +417,12 @@ export function AgentMessageList({
   // reasoning folds into the caption's block, text and tools render bare.
   // Fresh turns (empty thread / optimistic user row) keep the hoisted live
   // caption below. Unknown kinds keep the fallback pending row (no title).
+  // AP-29 follow-up 2: a regenerate NEVER joins — the replaced turn hides
+  // (see `isHiddenReplacedRow`), so the new turn streams as a fresh turn
+  // with its own caption carrying only the live reasoning.
   const liveContinuesLastTurn = !hasPendingUserContent && visibleMessages.length > 0;
   const liveJoinsLastTurn =
-    hostTitle !== null && liveContinuesLastTurn && turnCaptions.lastTurnEarnsCaption;
+    !isRegenerating && hostTitle !== null && liveContinuesLastTurn && turnCaptions.lastTurnEarnsCaption;
   const { captionBefore, trailingCaption } = useMemo(() => {
     if (!liveJoinsLastTurn || !hasLiveReasoning || turnCaptions.lastTurnSlotId === null) {
       return { captionBefore: turnCaptions.captionBefore, trailingCaption: turnCaptions.trailingCaption };
@@ -485,6 +512,12 @@ export function AgentMessageList({
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry, visibleIndex) => {
+            // AP-29 follow-up 2: the replaced turn hides whole — its
+            // bubbles, its anchored accordion/cards, its caption, and its
+            // event separators all render inside this fragment, so the one
+            // cut covers them (the last user row, digests, and earlier
+            // turns never match `isHiddenReplacedRow`).
+            if (isHiddenReplacedRow(entry.message.role, visibleIndex)) return null;
             // AP-11: one bubble's row — the turn callbacks merged with the
             // list's own boundaries (last turn, digest cover, streaming).
             // Without callbacks the block gets exactly what it got before
@@ -550,14 +583,18 @@ export function AgentMessageList({
             );
           })}
 
-          {trailingCaption !== null && hostTitle !== null ? (
+          {/* AP-29 follow-up 2: the trailing tool group belongs to the last
+              turn — it hides with the replaced turn (see
+              `isHiddenReplacedRow`); the live feed below carries the new
+              turn's tools. */}
+          {!isRegenerating && trailingCaption !== null && hostTitle !== null ? (
             <AgentHostCaption
               title={hostTitle}
               reasoning={trailingCaption.reasoning}
               reasoningDurationMs={trailingCaption.reasoningDurationMs}
             />
           ) : null}
-          {<AgentAnchorItems items={trailingItems} ctx={anchorCtx} />}
+          {!isRegenerating && <AgentAnchorItems items={trailingItems} ctx={anchorCtx} />}
 
           {renderEventSeparators(trailingEvents)}
 
@@ -586,11 +623,11 @@ export function AgentMessageList({
             !liveJoinsLastTurn && (
               <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? pendingReasoning : null} />
             )}
+          {/* AP-29 follow-up 2: the fallback live row (no host title) is
+              the bare reasoning toggle — no avatar anywhere in the feed
+              (AP-4). */}
           {hasLiveReasoning && hostTitle === null && (
             <div className="flex flex-wrap items-center gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-s3">
-                <Icons.Sparkles className="h-4 w-4 text-accent-t" />
-              </div>
               <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="inline" />
             </div>
           )}

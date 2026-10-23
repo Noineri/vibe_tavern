@@ -1232,6 +1232,52 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
     expect(onTurnSettled).toHaveBeenCalledWith(true);
   });
 
+  test("marks the turn regenerating while in flight, clears on settle; sends and answers never mark", async () => {
+    // AP-29 follow-up 2: the list hides the replaced turn while this flag
+    // holds — it must cover exactly the regenerate flight (a send opens a
+    // fresh turn with its optimistic user row instead, an answer continues
+    // its turn's caption, so neither may ever set it).
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    expect(result.current.isRegenerating).toBe(false);
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleRegenerate();
+      await Promise.resolve();
+    });
+    expect(result.current.isRegenerating).toBe(true);
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.isRegenerating).toBe(false);
+
+    // A failed regenerate clears the flag too (the settle refetch shows
+    // the stored truth — the old turn — again, not a blank).
+    nextHttpError = { message: "folded into a digest" };
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.isRegenerating).toBe(false);
+
+    // Sends and ask-answer continuations never mark (a send opens a fresh
+    // turn with its optimistic user row, an answer joins its turn).
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.isRegenerating).toBe(false);
+    await act(async () => {
+      await result.current.handleAnswer("tc-1", { text: "yes" });
+    });
+    expect(result.current.isRegenerating).toBe(false);
+  });
+
   test("passes model and send options through, still with no content", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>

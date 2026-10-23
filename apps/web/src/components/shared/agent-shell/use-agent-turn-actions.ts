@@ -305,6 +305,12 @@ export interface AgentTurnActions {
   confirmDeleteTurn: () => Promise<void>;
   /** AP-11: drop the staged delete without touching the API. */
   cancelDeleteTurn: () => void;
+  /** AP-29 follow-up 2: a regenerate is in flight — the replaced turn
+   *  (every row after the last user row) is already gone server-side, so
+   *  the feed hides it until the settle refetch lands the stored truth.
+   *  True from the regenerate's turn-start reset to its settle (success,
+   *  failure, or cancel); sends and ask-answer continuations never set it. */
+  isRegenerating: boolean;
 }
 
 export function useAgentTurnActions(
@@ -356,6 +362,14 @@ export function useAgentTurnActions(
         toast.error(getT()("message_unavailable_no_provider"));
         return;
       }
+
+      // AP-29 follow-up 2: the replaced turn is already gone server-side
+      // once this stream opens (the regenerate mode deletes it before the
+      // history load), so the feed hides it from HERE to the settle — the
+      // new turn streams as a fresh turn, never joined to the replaced one.
+      // A refusal/failure clears it below, and the settle refetch shows the
+      // stored truth (the old turn) again, not a blank.
+      setIsRegenerating(true);
 
       // Same turn-start reset as a send: the replaced turn's live activities
       // drop (the SSE below rebuilds them), and any stale ask/permission
@@ -420,6 +434,7 @@ export function useAgentTurnActions(
         isSendingRef.current = false;
         // AP-13: the retry answered — the card clears with the failure.
         setTurnFailure(null);
+        setIsRegenerating(false);
         onTurnSettled?.(true);
       } catch (error) {
         if (controller.signal.aborted) {
@@ -433,6 +448,7 @@ export function useAgentTurnActions(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
+        setIsRegenerating(false);
         onTurnSettled?.(false);
       } finally {
         abortRef.current = null;
@@ -484,8 +500,15 @@ export function useAgentTurnActions(
   // thread — the controller resets its ask/permission overrides the same way).
   const [pendingDelete, setPendingDelete] = useState<AgentPendingDelete | null>(null);
 
+  // AP-29 follow-up 2: the regenerate flight flag (see handleRegenerate).
+  // A thread switch drops it like the staged delete (never hide against
+  // the wrong thread — a switch mid-stream is disabled shell-side, so this
+  // is unreachable in production, the same guard shape as below).
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
   useEffect(() => {
     setPendingDelete(null);
+    setIsRegenerating(false);
   }, [threadId]);
 
   const requestDeleteTurn = useCallback(
@@ -510,5 +533,5 @@ export function useAgentTurnActions(
     [pendingDelete, handleDeleteTurn],
   );
 
-  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn };
+  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn, isRegenerating };
 }

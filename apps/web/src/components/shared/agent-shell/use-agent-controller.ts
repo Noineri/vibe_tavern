@@ -678,5 +678,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, handleCancel };
 }

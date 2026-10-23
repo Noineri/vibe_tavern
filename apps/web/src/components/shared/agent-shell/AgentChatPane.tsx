@@ -293,6 +293,10 @@ export function AgentChatPane({
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
             isSending={ctrl.isSending}
+            // AP-29 follow-up 2: a regenerate in flight hides the replaced
+            // turn (the server already deleted it) and streams the new turn
+            // as a fresh turn.
+            isRegenerating={ctrl.isRegenerating}
             pendingAskAnswer={ctrl.pendingAskAnswer}
             pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
             emptyTitle={t(host.i18n.emptyTitle)}
