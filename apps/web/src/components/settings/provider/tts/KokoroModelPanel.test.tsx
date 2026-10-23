@@ -25,18 +25,18 @@ mock.module("../../../../i18n/context.js", () => ({
 }));
 
 // Auto-preview interception — via the RESETTABLE deps seam, not a module
-// mock: mock.module("./use-tts-preview.js") is process-global and would leak
+// mock: mock.module("../../../../hooks/use-tts-preview.js") is process-global and would leak
 // a stubbed useTtsPreview into every later file in a shared bun-test process
 // (observed: use-tts-preview.test.ts phantom failures in combined runs).
 // The seam keeps the real hook logic; only synthesize/play are intercepted,
 // and afterEach resets it to null.
-import { __setTtsPreviewDepsForTests, type TtsPreviewDeps } from "./use-tts-preview.js";
+import { __setTtsPreviewDepsForTests, type TtsPreviewDeps } from "../../../../hooks/use-tts-preview.js";
 
 import {
   __setKokoroModelDepsForTests,
   type KokoroModelClient,
   type KokoroModelDeps,
-} from "./use-kokoro-model.js";
+} from "../../../../hooks/use-kokoro-model.js";
 import { clearStoredKokoroVariant } from "../../../../lib/tts/kokoro/kokoro-load-options.js";
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");

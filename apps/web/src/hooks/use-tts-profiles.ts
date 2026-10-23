@@ -4,10 +4,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
-import { useT } from "../../../../i18n/context.js";
-import { listProviderProfiles } from "../../../../api/provider-api.js";
-import { matchAutoKeyProviderName, type AutoKeyProviderCandidate } from "./tts-form-helpers.js";
-import { TTS_PRESET_CONFIG_KEY } from "./tts-backend-ui.js";
+import { useT } from "../i18n/context.js";
+import { listProviderProfiles } from "../api/provider-api.js";
+import { matchAutoKeyProviderName, type AutoKeyProviderCandidate } from "../components/settings/provider/tts/tts-form-helpers.js";
+import { TTS_PRESET_CONFIG_KEY } from "../components/settings/provider/tts/tts-backend-ui.js";
 import {
   createTtsProfile,
   deleteTtsProfile,
@@ -16,8 +16,8 @@ import {
   setTtsDefault,
   updateTtsProfile,
   type TtsProfileRecord,
-} from "../../../../api/tts-api.js";
-import { refreshVoiceMapData } from "../../../../lib/tts/voice-map-data.js";
+} from "../api/tts-api.js";
+import { refreshVoiceMapData } from "../lib/tts/voice-map-data.js";
 
 export interface TtsProfileForm {
   id: string | null;

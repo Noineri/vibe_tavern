@@ -32,9 +32,9 @@ import {
 import { useT } from "../../../../i18n/context.js";
 import { Ic } from "../../../shared/icons.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
-import { useWhisperModel } from "./use-whisper-model.js";
+import { useWhisperModel } from "../../../../hooks/use-whisper-model.js";
 import { currentWhisperLane } from "../../../../lib/stt/whisper-client-instance.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

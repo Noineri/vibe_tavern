@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
@@ -12,7 +12,7 @@ import {
   type TtsLinkPutRow,
   type TtsLinksDeps,
 } from "./use-tts-links.js";
-import type { TtsLinkRecord } from "../../../../api/tts-api.js";
+import type { TtsLinkRecord } from "../api/tts-api.js";
 
 const { render, act, cleanup } = await import("@testing-library/react");
 

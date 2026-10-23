@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import * as buildConfig from "../build-config.js";
-import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { PROVIDER_PROFILE_GENERATION_DEFAULTS as D, PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
@@ -40,21 +40,21 @@ function createInitialConnectionState(): ConnectionState {
     models: [],
     providerType: PROVIDER_TYPE.openaiCompat,
     providerPreset: "",
-    temperature: 1.0,
-    topP: 1.0,
-    minP: 0,
-    topK: 0,
-    topA: 0,
-    frequencyPenalty: 0.0,
-    presencePenalty: 0.0,
-    repetitionPenalty: 1.0,
-    maxTokens: 2000,
-    stopSequences: [],
-    seed: null,
-    reasoningEffort: "auto",
-    showReasoning: false,
-    streamResponse: true,
-    customSamplers: false,
+    temperature: D.temperature,
+    topP: D.topP,
+    minP: D.minP,
+    topK: D.topK,
+    topA: D.topA,
+    frequencyPenalty: D.frequencyPenalty,
+    presencePenalty: D.presencePenalty,
+    repetitionPenalty: D.repetitionPenalty,
+    maxTokens: D.maxTokens,
+    stopSequences: [...D.stopSequences],
+    seed: D.seed,
+    reasoningEffort: D.reasoningEffort,
+    showReasoning: D.showReasoning,
+    streamResponse: D.streamResponse,
+    customSamplers: D.customSamplers,
   };
 }
 

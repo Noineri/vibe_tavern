@@ -74,7 +74,7 @@ function normalizeForm(form: Record<string, unknown> | null | undefined) {
   return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, ...form } as never;
 }
 
-function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
   const base = {
     profiles: [],
     loading: false,
@@ -102,7 +102,7 @@ function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
   if (overrides.form !== undefined) {
     (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
   }
-  return merged as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+  return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 }
 
 afterEach(async () => {
@@ -114,7 +114,7 @@ afterEach(async () => {
  *  LLM mechanism renders the base card + config sections (voices, model
  *  card, tuning, bindings) only in this state; the connection form is the
  *  separate edit screen. Derives the profiles record from the form. */
-function viewTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+function viewTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
   const base = makeTts(overrides);
   const form = base.form as { id: string | null; name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId?: string; hasStoredApiKey?: boolean } | null;
   const record =
@@ -143,8 +143,8 @@ function viewTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
 /** One typed seam for loose form fixtures in the step-11c tests: the file-wide
  *  `as never` convenience cast is a ratchet-budgeted pattern (test-hygiene),
  *  so tests added since do not extend it. */
-function asForm(form: Record<string, unknown>): NonNullable<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>["form"]> {
-  return form as unknown as NonNullable<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>["form"]>;
+function asForm(form: Record<string, unknown>): NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]> {
+  return form as unknown as NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]>;
 }
 
 describe("TtsProfileEditor", () => {
@@ -1256,7 +1256,7 @@ describe("TtsProfileEditor — TE2-9 test card states", () => {
 });
 
 describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () => {
-  function collapsedTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+  function collapsedTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
     const profiles = [
       {
         id: "p1",
@@ -1322,7 +1322,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     if (overrides.form !== undefined) {
       (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
     }
-    return merged as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+    return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
   }
 
   it("collapsed keeps voices, speed and bindings visible (plan row)", async () => {
@@ -1459,7 +1459,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   });
 
   it("preview button is rendered and triggers useTtsPreview (mock deps seam)", async () => {
-    const { __setTtsPreviewDepsForTests } = await import("./use-tts-preview.js");
+    const { __setTtsPreviewDepsForTests } = await import("../../../../hooks/use-tts-preview.js");
     const synthesize = mock(async () => ({ blob: new Blob(["x"], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
     const play = mock(async () => {});
     __setTtsPreviewDepsForTests({ synthesize: synthesize as never, play: play as never });
@@ -1645,7 +1645,7 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
       remove: mock(async () => {}),
       cancelEdit: mock(() => {}),
       reload: mock(async () => {}),
-    } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+    } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();

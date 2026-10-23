@@ -11,7 +11,7 @@ import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { configString } from "./tts-form-helpers.js";
 import { ttsPresetIdOf } from "./tts-backend-ui.js";
 import type { TtsTagDialect } from "../../../../lib/tts/tts-tags.js";
-import type { TtsProfileForm } from "./use-tts-profiles.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 
 /** i18n key for the per-dialect tooltip; null when the profile strips tags
  *  (TPE-15: the badge is hidden in that case, so no tooltip is needed). */

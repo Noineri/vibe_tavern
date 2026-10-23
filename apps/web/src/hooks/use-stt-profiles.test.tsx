@@ -1,15 +1,15 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-const realSttApi = await import("../../../../api/stt-api.js");
-const realProviderApi = await import("../../../../api/provider-api.js");
-const realTtsApi = await import("../../../../api/tts-api.js");
-const realI18n = await import("../../../../i18n/context.js");
+const realSttApi = await import("../api/stt-api.js");
+const realProviderApi = await import("../api/provider-api.js");
+const realTtsApi = await import("../api/tts-api.js");
+const realI18n = await import("../i18n/context.js");
 
-mock.module("../../../../i18n/context.js", () => ({
+mock.module("../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
     t: (key: string, params?: Record<string, unknown>) => {
@@ -25,7 +25,7 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
-type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;
+type SttRecord = import("../api/stt-api.js").SttProfileRecord;
 
 function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   return {
@@ -57,11 +57,11 @@ let providerStore: Array<{ endpoint: string; hasStoredApiKey: boolean; name: str
 let ttsStore: Array<{ backend: string; hasStoredApiKey: boolean; name: string }> = [];
 const listProvidersMock = mock(async () => [...providerStore]);
 const listTtsMock = mock(async () => [...ttsStore]);
-mock.module("../../../../api/provider-api.js", () => ({
+mock.module("../api/provider-api.js", () => ({
   ...realProviderApi,
   listProviderProfiles: listProvidersMock,
 }));
-mock.module("../../../../api/tts-api.js", () => ({
+mock.module("../api/tts-api.js", () => ({
   ...realTtsApi,
   listAllTtsProfiles: listTtsMock,
 }));
@@ -117,7 +117,7 @@ const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }
   return [...store];
 });
 
-mock.module("../../../../api/stt-api.js", () => ({
+mock.module("../api/stt-api.js", () => ({
   ...realSttApi,
   listAllSttProfiles: listAllMock,
   createSttProfile: createMock,

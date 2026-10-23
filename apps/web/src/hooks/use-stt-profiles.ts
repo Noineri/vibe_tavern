@@ -13,7 +13,7 @@ import {
   STT_BACKEND_EMOTION_CAPABILITY,
   type SttBackendType,
 } from "@vibe-tavern/domain";
-import { useT } from "../../../../i18n/context.js";
+import { useT } from "../i18n/context.js";
 import {
   createSttProfile,
   deleteSttProfile,
@@ -22,14 +22,14 @@ import {
   setSttDefault,
   updateSttProfile,
   type SttProfileRecord,
-} from "../../../../api/stt-api.js";
-import { listProviderProfiles } from "../../../../api/provider-api.js";
-import { listAllTtsProfiles } from "../../../../api/tts-api.js";
+} from "../api/stt-api.js";
+import { listProviderProfiles } from "../api/provider-api.js";
+import { listAllTtsProfiles } from "../api/tts-api.js";
 import {
   matchSttAutoKeyProviderName,
   type SttAutoKeyProviderCandidate,
   type SttAutoKeyTtsCandidate,
-} from "./stt-form-helpers.js";
+} from "../components/settings/provider/stt/stt-form-helpers.js";
 
 export interface SttProfileForm {
   id: string | null;

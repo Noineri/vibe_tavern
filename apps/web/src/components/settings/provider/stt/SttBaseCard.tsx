@@ -6,7 +6,7 @@ import { useT } from "../../../../i18n/context.js";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { configString } from "./stt-form-helpers.js";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 interface SttBaseCardProps {
   /** Current form (clean, collapsed state — label/status derivation). */

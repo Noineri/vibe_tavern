@@ -15,8 +15,8 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import type { TtsVoiceRecord } from "../../../../api/tts-api.js";
-import { useTtsPreview } from "./use-tts-preview.js";
-import { useTtsEditorListings } from "./use-tts-editor-listings.js";
+import { useTtsPreview } from "../../../../hooks/use-tts-preview.js";
+import { useTtsEditorListings } from "../../../../hooks/use-tts-editor-listings.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
 import { backendForVariant, ttsPresetIdOf, ttsProviderSegmentOf, ttsUiSpecFor, ttsUiVariantOf, type TtsTuningFieldSpec, type TtsUiVariant } from "./tts-backend-ui.js";
@@ -28,7 +28,7 @@ import { TtsSectionCard } from "./TtsSectionCard.js";
 import { TtsVoiceCloneCard } from "./TtsVoiceCloneCard.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
 import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
-import type { TtsProfileForm, useTtsProfiles } from "./use-tts-profiles.js";
+import type { TtsProfileForm, useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

@@ -5,16 +5,16 @@
  *  waiting for a request that must NOT happen. The request shapes and the
  *  re-run rules are pinned through the editor in TtsProfileEditor.test.tsx. */
 import { describe, expect, it, mock } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
 // Safe mock.module pattern: real module first, spread, override ONLY the two
 // listing calls (nothing here may reach the network).
-const realTtsApi = await import("../../../../api/tts-api.js");
+const realTtsApi = await import("../api/tts-api.js");
 const listTtsDraftVoicesMock = mock(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
 const listTtsDraftModelsMock = mock(async () => []);
-mock.module("../../../../api/tts-api.js", () => ({
+mock.module("../api/tts-api.js", () => ({
   ...realTtsApi,
   listTtsDraftVoices: listTtsDraftVoicesMock,
   listTtsDraftModels: listTtsDraftModelsMock,

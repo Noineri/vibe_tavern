@@ -23,8 +23,8 @@ import {
   getActiveKokoroVariant,
   getSharedKokoroClient,
   loadSharedKokoroModel,
-} from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
-import { detectWebGpu, type KokoroModelVariant } from "../../../../lib/tts/kokoro/kokoro-load-options.js";
+} from "../lib/tts/kokoro/kokoro-client-instance.js";
+import { detectWebGpu, type KokoroModelVariant } from "../lib/tts/kokoro/kokoro-load-options.js";
 
 export type KokoroModelState = "idle" | "downloading" | "ready" | "error";
 

@@ -2,8 +2,8 @@ import {
   STT_BACKENDS,
   STT_BACKEND_EMOTION_CAPABILITY,
   WHISPER_MODELS,
-  getSttNativePreset,
 } from "@vibe-tavern/domain";
+import { getSttNativePreset } from "../../../../provider-presets.js";
 import { useT } from "../../../../i18n/context.js";
 import { whisperAcceptsLanguage } from "../../../../lib/stt/whisper-language.js";
 import { WHISPER_LANGUAGES, whisperLanguageLabel } from "../../../../lib/stt/whisper-languages.js";
@@ -15,7 +15,7 @@ import { lblCls } from "../../../../lib/field-tokens.js";
 import { configString } from "./stt-form-helpers.js";
 import { SttModelPicker } from "./SttModelPicker.js";
 import type { SttModelOption } from "./SttModelPicker.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

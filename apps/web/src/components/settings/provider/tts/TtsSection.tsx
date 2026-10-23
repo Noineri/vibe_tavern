@@ -1,6 +1,6 @@
 import { ProviderSection } from "../provider-section.js";
 import { ProviderProfileList } from "../ProviderProfileList.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
