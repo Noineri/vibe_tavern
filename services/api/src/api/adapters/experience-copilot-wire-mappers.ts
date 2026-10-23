@@ -56,6 +56,8 @@ export function toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMes
     content: m.content,
     toolCallsJson: m.toolCallsJson,
     toolCallId: m.toolCallId,
+    reasoning: m.reasoning,
+    reasoningDurationMs: m.reasoningDurationMs,
     createdAt: m.createdAt,
   };
 }

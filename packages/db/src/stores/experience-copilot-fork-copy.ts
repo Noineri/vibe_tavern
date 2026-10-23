@@ -148,6 +148,10 @@ export async function forkChatThreadToBranch(
         content: row.content,
         toolCallsJson: row.toolCallsJson,
         toolCallId: row.toolCallId,
+        // AP-28: the row's reasoning pair copies verbatim with the rest of
+        // the row (a fork keeps the full history, reasoning included).
+        reasoning: row.reasoning,
+        reasoningDurationMs: row.reasoningDurationMs,
         seq: row.seq,
         createdAt: row.createdAt,
       });

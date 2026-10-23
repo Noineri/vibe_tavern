@@ -65,6 +65,8 @@ function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): Experience
     content: "Earlier context was compacted: the rules buffer gained a `score` action.",
     toolCallsJson: null,
     toolCallId: "u3",
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "2026-08-15T10:00:00.000Z",
     ...over,
   };
@@ -140,6 +142,8 @@ function assistantMsg(over: Partial<ExperienceCopilotMessageWire> = {}): Experie
     content: "Consider asking about her brother",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };

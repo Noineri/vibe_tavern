@@ -1975,6 +1975,15 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   content: text('content').notNull().default(''),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
+  // AP-28 (AGENT_SHELL_POLISH): the turn's reasoning, persisted onto the
+  // FIRST assistant row the turn's persist pass writes (text row or
+  // tool-call row). Same nullable pair as `message_variants` on the RP side:
+  // text joined burst-by-burst in arrival order, duration = the summed
+  // per-burst elapsed ms. Null on every other row and on turns without
+  // reasoning; display-only — NEVER fed back into the model prompt
+  // (`storeMessagesToHistory` reads neither column).
+  reasoning: text('reasoning'),
+  reasoningDurationMs: integer('reasoning_duration_ms'),
   // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
   // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
   // messages interleave with agent_thread_context_events rows on the merged

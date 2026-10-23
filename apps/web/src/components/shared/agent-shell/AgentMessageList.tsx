@@ -18,6 +18,7 @@ import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, 
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
+import { syntheticAgentMessage } from "./agent-synthetic-message.js";
 import { AgentAskCard } from "./AgentAskCard.js";
 import { AgentPermissionCard } from "./AgentPermissionCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
@@ -632,15 +633,12 @@ export function AgentMessageList({
           {hasPendingUserContent && (
             <AgentMessageBlock
               messageMarkup={messageMarkup}
-              message={{
+              message={syntheticAgentMessage({
                 id: "__pending-user",
                 threadId,
                 role: "user",
                 content: pendingUserContent,
-                toolCallsJson: null,
-                toolCallId: null,
-                createdAt: "",
-              }}
+              })}
             />
           )}
 
@@ -710,15 +708,12 @@ export function AgentMessageList({
               const segment = (
                 <AgentMessageBlock
                   messageMarkup={messageMarkup}
-                  message={{
+                  message={syntheticAgentMessage({
                     id: entry.id,
                     threadId,
                     role: "assistant",
                     content: entry.text,
-                    toolCallsJson: null,
-                    toolCallId: null,
-                    createdAt: "",
-                  }}
+                  })}
                 />
               );
               if (showLiveCaption && liveTitle !== null) {
@@ -739,15 +734,12 @@ export function AgentMessageList({
             const pendingBlock = (
               <AgentMessageBlock
                 messageMarkup={messageMarkup}
-                message={{
+                message={syntheticAgentMessage({
                   id: "__pending-assistant",
                   threadId,
                   role: "assistant",
                   content: pendingText,
-                  toolCallsJson: null,
-                  toolCallId: null,
-                  createdAt: "",
-                }}
+                })}
               />
             );
             // AP-4: the pending reply is its turn's first visible text when

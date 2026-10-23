@@ -160,6 +160,37 @@ describe("ExperienceCopilotStore", () => {
     expect(after!.updatedAt >= before!.updatedAt).toBe(true);
   });
 
+  // AP-28: the reasoning pair round-trips through appendMessage/listMessages —
+  // values when written, nulls when omitted (rows written before the columns
+  // existed read the same nulls: the migration is additive with no backfill).
+  test("appendMessage round-trips the reasoning pair (AP-28)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap28", "T");
+
+    const withReasoning = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "answer",
+      reasoning: "first burst\n\nsecond burst",
+      reasoningDurationMs: 4200,
+    });
+    expect(withReasoning.reasoning).toBe("first burst\n\nsecond burst");
+    expect(withReasoning.reasoningDurationMs).toBe(4200);
+
+    const withoutReasoning = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "plain answer",
+    });
+    expect(withoutReasoning.reasoning).toBeNull();
+    expect(withoutReasoning.reasoningDurationMs).toBeNull();
+
+    // listMessages (the loop's history load) reads the same pair back.
+    const listed = await store.listMessages(thread.id);
+    expect(listed.map((m) => [m.role, m.reasoning, m.reasoningDurationMs])).toEqual([
+      ["assistant", "first burst\n\nsecond burst", 4200],
+      ["assistant", null, null],
+    ]);
+  });
+
   test("appendMessage + listSessions ordering: most recently touched session first", async () => {
     const { store } = await setup();
     const SCRIPT = "script_order";

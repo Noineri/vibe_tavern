@@ -969,6 +969,8 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       content: "",
       toolCallsJson: null,
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "",
       ...over,
     });
@@ -1414,6 +1416,8 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
     content: `${role} ${id}`,
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "2026-10-22T00:00:00.000Z",
   });
 

@@ -29,6 +29,8 @@ function msg(id: string, role: string, toolCallId: string | null = null): Experi
     content: `content-${id}`,
     toolCallsJson: null,
     toolCallId,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
   };
 }

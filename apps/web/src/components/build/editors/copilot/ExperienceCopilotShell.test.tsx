@@ -101,6 +101,8 @@ function makeDigest(threadId: string): ExperienceCopilotMessageWire {
     content: "summary",
     toolCallsJson: null,
     toolCallId: "u1",
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
   };
 }
@@ -412,6 +414,8 @@ function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilo
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };

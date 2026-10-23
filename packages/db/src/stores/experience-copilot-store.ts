@@ -20,6 +20,11 @@ export interface AppendMessageInput {
   toolCallsJson?: string | null;
   /** Correlated tool-call id for tool-result messages (nullable). */
   toolCallId?: string | null;
+  /** AP-28: the turn's reasoning — pinned by the stream loop on the FIRST
+   *  assistant row of a turn; omitted/null on every other row. */
+  reasoning?: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms (rides with `reasoning`). */
+  reasoningDurationMs?: number | null;
 }
 
 // ─── Return types ─────────────────────────────────────────────────────────────
@@ -78,6 +83,13 @@ export interface ExperienceCopilotMessage {
   content: string;
   toolCallsJson: string | null;
   toolCallId: string | null;
+  /** AP-28: the turn's reasoning (first assistant row of the turn only);
+   *  null on every other row, on turns without reasoning, and on rows
+   *  written before the column existed (additive migration, no backfill). */
+  reasoning: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms; null whenever `reasoning`
+   *  is null. */
+  reasoningDurationMs: number | null;
   /** Frozen-context seq (SC-1): allocated from the thread's next_seq on
    *  chat-owned threads (interleaving with context events); NULL on
    *  script/draft threads and on rows written before SC-1. */
@@ -376,6 +388,8 @@ export class ExperienceCopilotStore {
           content: input.content ?? '',
           toolCallsJson: input.toolCallsJson ?? null,
           toolCallId: input.toolCallId ?? null,
+          reasoning: input.reasoning ?? null,
+          reasoningDurationMs: input.reasoningDurationMs ?? null,
           seq,
           createdAt: now,
         })

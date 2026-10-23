@@ -6,8 +6,9 @@
  * sibling `agent-split-turn.ts` since SC-23e), digest-boundary pre-split, provider
  * stream consumption via `streamText`, the SSE event relay (`text-delta`,
  * `reasoning-delta`, `tool-call`, `tool-result`, `finish`, `error`, `abort`),
- * TF-3 ordered turn persistence, CM-4 context metrics, and the CM-6
- * fire-and-forget auto-compaction trigger. Everything KIND-SPECIFIC — context
+ * TF-3 ordered turn persistence, AP-28 turn-reasoning persistence (the turn's
+ * reasoning rides onto the first assistant row the turn writes), CM-4 context
+ * metrics, and the CM-6 fire-and-forget auto-compaction trigger. Everything KIND-SPECIFIC — context
  * loading, agent-profile resolution, prompt assembly, tool-set building — is
  * injected through {@link AgentStreamSeams}; the experience wiring in the old
  * module supplies them (a second kind's turn runs the same loop with its own
@@ -43,6 +44,14 @@ import {
   type AgentTurnAnswer,
 } from "./agent-split-turn.js";
 import { applyAgentTurnRegenerate, type AgentTurnDeleteTurn } from "./agent-regenerate.js";
+import {
+  persistTurn,
+  createReasoningCapture,
+  captureReasoningDelta,
+  closeReasoningBurst,
+  type AgentTurnAppendInput,
+  type AgentTurnSegment,
+} from "./agent-turn-persist.js";
 
 // ─── Store / thread / request shapes (structural subsets) ────────────────────
 
@@ -68,13 +77,10 @@ export interface AgentStreamStoredMessage {
 }
 
 /** The `appendMessage` input shape the loop writes (user rows, assistant text
- *  rows, tool-call runs, tool-result rows). */
-export interface AgentStreamAppendInput {
-  role: string;
-  content?: string;
-  toolCallsJson?: string | null;
-  toolCallId?: string | null;
-}
+ *  rows, tool-call runs, tool-result rows) — owned by the turn-persist sibling
+ *  (`agent-turn-persist.ts`) since AP-28; aliased here so the loop's store
+ *  contract reads one vocabulary. */
+export type AgentStreamAppendInput = AgentTurnAppendInput;
 
 /** Structural store subset the generic loop needs (method syntax keeps param
  *  bivariance, so the concrete per-kind store satisfies this without
@@ -82,7 +88,7 @@ export interface AgentStreamAppendInput {
 export interface AgentStreamStore<THREAD extends AgentStreamThread = AgentStreamThread> {
   getById(threadId: string): Promise<THREAD | null>;
   listMessages(threadId: string): Promise<readonly AgentStreamStoredMessage[]>;
-  appendMessage(threadId: string, input: AgentStreamAppendInput): Promise<unknown>;
+  appendMessage(threadId: string, input: AgentTurnAppendInput): Promise<unknown>;
   setToolResultOutput(
     threadId: string,
     toolCallId: string,
@@ -138,6 +144,10 @@ export interface AgentStreamDeps<THREAD extends AgentStreamThread = AgentStreamT
    *  Injectable so tests substitute a fake WITHOUT `mock.module("ai")` — under
    *  bun:test that mock is process-global and permanent. */
   readonly streamText?: typeof streamText;
+  /** AP-28: the wall clock (ms) the reasoning-burst durations are measured
+   *  against. Defaults to `Date.now` (the RP loop's convention); injectable so
+   *  tests drive deterministic durations without sleeps. */
+  readonly nowMs?: () => number;
   /** CM-6 fire-and-forget auto-compaction trigger, called AFTER the turn's
    *  metrics are persisted. Never awaited; absent → no auto-compaction. */
   readonly autoCompact?: (threadId: string) => Promise<void>;
@@ -374,79 +384,10 @@ function toModelMessages(
   });
 }
 
-// ─── Turn persistence (TF-3) ─────────────────────────────────────────────────
-
-/** One chronologically ordered piece of the assistant turn (TF-3). The stream
- *  loop records segments in arrival order; persistTurn walks them so stored
- *  rows preserve the model's text → tool-call → tool-result → text sequence
- *  (the old accumulator flattened the whole turn into tool rows + ONE final
- *  text row, losing the interleaving). */
-type AgentTurnSegment =
-  | { kind: "text"; text: string }
-  | {
-      kind: "toolCall";
-      toolCallId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      providerOptions?: ToolCallPart["providerOptions"];
-    }
-  | { kind: "toolResult"; toolCallId: string; toolName: string; output: unknown; isError: boolean };
-
-/** Persist the assistant half of the turn as chronologically ordered rows: a
- *  non-empty text segment → an assistant text row; a RUN of consecutive
- *  tool-call segments (parallel calls in one step) → one assistant row in
- *  `toolCallsJson`; a tool-result segment → one tool row. Each write is
- *  independent (no transaction) so a failure loses only itself (append-only,
- *  ordered by createdAt). */
-async function persistTurn(
-  store: AgentStreamStore,
-  threadId: string,
-  segments: readonly AgentTurnSegment[],
-): Promise<void> {
-  let pendingToolCalls: AgentPersistedToolCall[] = [];
-  const flushToolCalls = async () => {
-    if (pendingToolCalls.length === 0) return;
-    const persisted = pendingToolCalls;
-    pendingToolCalls = [];
-    await store.appendMessage(threadId, {
-      role: "assistant",
-      content: "",
-      toolCallsJson: JSON.stringify(persisted),
-    });
-  };
-
-  for (const seg of segments) {
-    if (seg.kind === "toolCall") {
-      // Consecutive tool calls stay in ONE assistant row until any other
-      // segment kind arrives (mirrors parallel calls in a single step).
-      pendingToolCalls.push({
-        type: "tool-call",
-        toolCallId: seg.toolCallId,
-        toolName: seg.toolName,
-        input: seg.args,
-        ...(seg.providerOptions ? { providerOptions: seg.providerOptions } : {}),
-      });
-      continue;
-    }
-    await flushToolCalls();
-    if (seg.kind === "toolResult") {
-      const payload: AgentPersistedToolResult = { toolName: seg.toolName, output: seg.output };
-      await store.appendMessage(threadId, {
-        role: "tool",
-        content: JSON.stringify(payload),
-        toolCallId: seg.toolCallId,
-      });
-    } else if (seg.text.trim()) {
-      // Assistant text (the model's explanation), only when non-empty — a
-      // whitespace-only segment stays unpersisted, same as the old accumulator.
-      await store.appendMessage(threadId, {
-        role: "assistant",
-        content: seg.text,
-      });
-    }
-  }
-  await flushToolCalls();
-}
+// ─── Turn persistence (TF-3) lives in the sibling `agent-turn-persist.ts` ────
+// (AP-28 extraction: the segment vocabulary + the persist walk + the reasoning
+// capture moved out when this file hit the arch-gate size cap; the loop below
+// records segments, feeds the capture, and calls `persistTurn`.)
 
 // ─── The generic turn loop ───────────────────────────────────────────────────
 
@@ -659,6 +600,11 @@ export async function* streamAgentTurn<
 
   let textAccumulator = "";
   let reasoningAccumulator = "";
+  // AP-28: burst-aware twin of `reasoningAccumulator` (the capture lives in
+  // the turn-persist sibling) — the flat accumulator keeps feeding the SSE
+  // relay, the capture feeds persistence.
+  const reasoningCapture = createReasoningCapture();
+  const nowMs = deps.nowMs ?? Date.now;
   // TF-3: the turn's pieces in ARRIVAL order. Consecutive text-deltas coalesce
   // into one open text segment; a tool-call chunk closes the open text segment
   // (the next text-delta opens a new one), so the stored rows preserve the
@@ -674,8 +620,14 @@ export async function* streamAgentTurn<
     for await (const chunk of mapped as AsyncIterable<ProviderStreamChunk>) {
       if (signal?.aborted) {
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-        await persistTurn(deps.store, request.threadId, segments);
+        await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
         return;
+      }
+      // AP-28: a non-reasoning chunk closes the open reasoning burst (the
+      // mapped stream drops SDK reasoning-start/end markers, so at this seam
+      // "the first non-reasoning chunk" is exactly the burst's end).
+      if (chunk.type !== "reasoning-delta" && reasoningCapture.openStartMs !== null) {
+        closeReasoningBurst(reasoningCapture, nowMs());
       }
       if (chunk.type === "text-delta" && chunk.delta) {
         textAccumulator += chunk.delta;
@@ -683,6 +635,7 @@ export async function* streamAgentTurn<
         yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
       } else if (chunk.type === "reasoning-delta") {
         reasoningAccumulator += chunk.textDelta;
+        captureReasoningDelta(reasoningCapture, chunk.textDelta, nowMs());
         yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
       } else if (chunk.type === "tool-call") {
         // Replay metadata (Gemini 3 thoughtSignature, aggregator per-call
@@ -724,7 +677,7 @@ export async function* streamAgentTurn<
   } catch (err) {
     if (signal?.aborted) {
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-      await persistTurn(deps.store, request.threadId, segments);
+      await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
       return;
     }
     const message = extractProviderErrorMessage(err);
@@ -732,13 +685,13 @@ export async function* streamAgentTurn<
     debug("provider-error", { threadId: request.threadId, message, category });
     yield { event: "error", data: JSON.stringify({ message, category }) };
     // Still persist whatever was accumulated so far (partial turn).
-    await persistTurn(deps.store, request.threadId, segments);
+    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
   if (signal?.aborted) {
     yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-    await persistTurn(deps.store, request.threadId, segments);
+    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
@@ -753,7 +706,7 @@ export async function* streamAgentTurn<
     finishReason = "error";
   }
 
-  await persistTurn(deps.store, request.threadId, segments);
+  await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
 
   if (reasoningAccumulator) {
     yield { event: "reasoning-done", data: JSON.stringify({}) };

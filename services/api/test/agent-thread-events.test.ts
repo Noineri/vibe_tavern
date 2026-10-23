@@ -234,15 +234,18 @@ describe("GET /api/agent/threads/:threadId/events (SC-19a)", () => {
 		// Exactly the adapter member's output — the route keeps delegating to
 		// the same member it always did.
 		expect(rows).toEqual(await copilotWire.experienceCopilotListMessages(thread.id));
-		// The wire field set is the canonical seven — no `seq` and nothing the
-		// events route introduced leaked into it.
+		// The wire field set is the canonical nine — AP-28 added the nullable
+		// reasoning pair to `experience_copilot_messages`; the SC-19a premise
+		// holds (no `seq`, nothing the events route introduced leaked into it).
 		expect(rows).toHaveLength(1);
-		// Lexicographic order: content, createdAt, id, role, threadId,
-		// toolCallId, toolCallsJson.
+		// Lexicographic order: content, createdAt, id, reasoning,
+		// reasoningDurationMs, role, threadId, toolCallId, toolCallsJson.
 		expect(Object.keys(rows[0]).sort()).toEqual([
 			"content",
 			"createdAt",
 			"id",
+			"reasoning",
+			"reasoningDurationMs",
 			"role",
 			"threadId",
 			"toolCallId",

@@ -42,6 +42,8 @@ export function mapMessage(row: typeof experienceCopilotMessages.$inferSelect): 
     content: row.content,
     toolCallsJson: row.toolCallsJson,
     toolCallId: row.toolCallId,
+    reasoning: row.reasoning,
+    reasoningDurationMs: row.reasoningDurationMs,
     seq: row.seq,
     createdAt: row.createdAt,
   };
