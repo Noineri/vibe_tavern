@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import {
   resolveMultimodalContent,
   VisionNotSupportedError,
   type VisionGateConfig,
 } from "../src/infrastructure/ai/vision-gate.js";
 import type { Attachment } from "@vibe-tavern/domain";
-import { filterPromptVisibleAttachments, withImageGenPromptFallback } from "@vibe-tavern/domain";
+import { filterPromptVisibleAttachments, TEXT_MIME_TO_EXT, withImageGenPromptFallback } from "@vibe-tavern/domain";
 
 // Vision gate is a pure transform over message attachments: the primary model's
 // vision capability decides pixels-vs-text, and `description` matters only on
@@ -57,6 +57,165 @@ function assetLoader(assetId: string): Promise<Buffer | null> {
 
 const VISION_GATE: VisionGateConfig = { hasVision: true, visionModel: "vm" };
 const NO_VISION_GATE: VisionGateConfig = { hasVision: false, visionModel: "vm" };
+
+describe("vision-gate: exact image prompt characterization (CA-1b)", () => {
+  test("non-vision described image flipped to file keeps its exact text parts", async () => {
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "look", attachments: [{ ...describedImage(), type: "file" }] },
+      NO_VISION_GATE,
+      async () => { throw new Error("A described image must not load its asset"); },
+    );
+    expect(parts).toEqual([
+      { type: "text", text: "look" },
+      { type: "text", text: "[Attached file: img_1.png]\na red square" },
+    ]);
+  });
+
+  test("vision image keeps its exact text and image parts", async () => {
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "look", attachments: [describedImage()] },
+      VISION_GATE,
+      assetLoader,
+    );
+    expect(parts).toEqual([
+      { type: "text", text: "look" },
+      { type: "image", image: IMAGE_BYTES, mediaType: "image/png" },
+    ]);
+  });
+});
+
+describe("vision-gate: text files from stored assets (CA-1b)", () => {
+  function textFile(overrides: Partial<Attachment> = {}): Attachment {
+    return {
+      id: "file_1", assetId: "asset_file_1", type: "file", name: "notes.md",
+      mimeType: "text/markdown", sizeBytes: 10, ...overrides,
+    };
+  }
+
+  for (const gate of [NO_VISION_GATE, VISION_GATE]) {
+    test(`all text MIMEs send full UTF-8 text and never pixels (hasVision=${gate.hasVision})`, async () => {
+      const text = "  First line\nUnicode: \u00e9 \u65e5\nLast line  \n";
+      for (const [mimeType, ext] of Object.entries(TEXT_MIME_TO_EXT)) {
+        const attachment = textFile({ name: `notes.${ext}`, mimeType, sizeBytes: Buffer.byteLength(text) });
+        const load = mock(async (_assetId: string) => Buffer.from(text));
+        const parts = await resolveMultimodalContent(
+          { role: "user", content: "read this", attachments: [attachment] }, gate, load,
+        );
+        expect(parts).toEqual([
+          { type: "text", text: "read this" },
+          { type: "text", text: `[Attached file: notes.${ext}]\n${text}` },
+        ]);
+        expect(load.mock.calls).toEqual([[attachment.assetId]]);
+      }
+    });
+  }
+
+  test("a generated 5 MiB file reaches the text part whole, without truncation", async () => {
+    const text = "0123456789abcdef".repeat(5 * 1024 * 1024 / 16);
+    const prefix = "[Attached file: notes.md]\n";
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "", attachments: [textFile({ sizeBytes: Buffer.byteLength(text) })] },
+      NO_VISION_GATE, async () => Buffer.from(text),
+    );
+    expect(parts).toHaveLength(1);
+    const part = parts[0];
+    if (part?.type !== "text") throw new Error("Expected the full file as a TextPart");
+    expect(part.text.length).toBe(prefix.length + 5 * 1024 * 1024);
+    expect(part.text).toBe(prefix + text);
+  });
+
+  test("UTF-8 decoding strips a leading BOM", async () => {
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("full text\n")]);
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "", attachments: [textFile()] },
+      NO_VISION_GATE, async () => bytes,
+    );
+    expect(parts).toEqual([{ type: "text", text: "[Attached file: notes.md]\nfull text\n" }]);
+  });
+
+  test("a non-empty summary wins verbatim and never loads the asset on either gate", async () => {
+    const load = mock(async () => { throw new Error("A summary must bypass asset loading"); });
+    for (const gate of [NO_VISION_GATE, VISION_GATE]) {
+      const parts = await resolveMultimodalContent(
+        { role: "user", content: "", attachments: [textFile({ description: "  Summary\n  " })] },
+        gate, load,
+      );
+      expect(parts).toEqual([{ type: "text", text: "[Attached file: notes.md]\n  Summary\n  " }]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("null, absent and whitespace-only descriptions load the full file", async () => {
+    for (const description of [undefined, null, " \t\n"]) {
+      const parts = await resolveMultimodalContent(
+        { role: "user", content: "", attachments: [textFile({ description })] },
+        NO_VISION_GATE, async () => Buffer.from("stored text"),
+      );
+      expect(parts).toEqual([{ type: "text", text: "[Attached file: notes.md]\nstored text" }]);
+    }
+  });
+
+  test("a missing file emits its placeholder without throwing on either gate", async () => {
+    for (const gate of [NO_VISION_GATE, VISION_GATE]) {
+      const parts = await resolveMultimodalContent(
+        { role: "user", content: "read this", attachments: [textFile()] }, gate, async () => null,
+      );
+      expect(parts).toEqual([
+        { type: "text", text: "read this" },
+        { type: "text", text: "[Attached file: notes.md — file is no longer available]" },
+      ]);
+    }
+  });
+
+  test("an empty stored text file still emits its file header", async () => {
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "", attachments: [textFile({ sizeBytes: 0 })] },
+      NO_VISION_GATE, async () => Buffer.alloc(0),
+    );
+    expect(parts).toEqual([{ type: "text", text: "[Attached file: notes.md]\n" }]);
+  });
+
+  test("assembly exclusion removes a file before the gate and never loads it", async () => {
+    const load = mock(async () => { throw new Error("An excluded file must never load"); });
+    for (const description of [undefined, "Excluded summary"]) {
+      const parts = await resolveMultimodalContent(
+        { role: "user", content: "read this", attachments: assemblyVisible([textFile({ includeInPrompt: false, description })]) },
+        NO_VISION_GATE, load,
+      );
+      expect(parts).toEqual([{ type: "text", text: "read this" }]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("non-text files keep described-only output and never load their assets", async () => {
+    const load = mock(async () => { throw new Error("Non-text files must not load"); });
+    const binary = textFile({ name: "document.pdf", mimeType: "application/pdf" });
+    for (const gate of [NO_VISION_GATE, VISION_GATE]) {
+      const parts = await resolveMultimodalContent(
+        { role: "user", content: "", attachments: [binary, { ...binary, description: "A document" }] }, gate, load,
+      );
+      expect(parts).toEqual([{ type: "text", text: "[Attached file: document.pdf]\nA document" }]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("user text comes first, then text files in attachment order", async () => {
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "read in order", attachments: [
+        textFile({ assetId: "first", name: "first.md" }),
+        textFile({ description: "second summary", name: "second.md" }),
+        textFile({ assetId: "third", name: "third.md" }),
+      ] },
+      NO_VISION_GATE, async (assetId) => Buffer.from(`${assetId} text`),
+    );
+    expect(parts).toEqual([
+      { type: "text", text: "read in order" },
+      { type: "text", text: "[Attached file: first.md]\nfirst text" },
+      { type: "text", text: "[Attached file: second.md]\nsecond summary" },
+      { type: "text", text: "[Attached file: third.md]\nthird text" },
+    ]);
+  });
+});
 
 describe("vision-gate: resolveMultimodalContent routing", () => {
   test("vision primary + raw image → ImagePart", async () => {

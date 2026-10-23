@@ -42,13 +42,12 @@ export interface Attachment {
   purpose?: AudioPurpose;
   /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
   durationMs?: number;
-  /** Image-gen-slot only (IMAGE_GENERATION_PLAN IG-18; design: "per-image
-   *  'include in prompt' opt-in (default off — pure illustration)"). Absent =
-   *  OFF — the assembly drops the slot's attachment from the RP prompt
-   *  entirely (see {@link filterPromptVisibleAttachments}). Enabling requires
-   *  a vision description (server-enforced) so the non-vision executor path
-   *  always has text to send. Ordinary user uploads never carry this flag
-   *  and keep their always-included behavior. */
+  /** Prompt visibility, decided by {@link filterPromptVisibleAttachments}.
+   *  Image-gen slots are opt-in (IG-18): absent or false = OFF; only true
+   *  includes them. Enabling requires a description or generation prompt
+   *  (server-enforced) for the non-vision executor path.
+   *  Ordinary uploads are included when absent or true; explicit false
+   *  excludes them. The text-file include route writes this flag in Wave 2. */
   includeInPrompt?: boolean;
   /** Text files only: token count of the file's full text, computed once by
    *  the server at upload (UTF-8 decode, BOM stripped, default encoder) and
@@ -283,15 +282,19 @@ export function parseStoredAttachments(raw: string | null | undefined): Attachme
 
 /** Prompt-visibility filter for message attachments (IG-18): generated image
  * slots are pure illustration by default — the attachment is dropped from
- * the assembled prompt unless the per-image opt-in is ON. Everything else
- * (user uploads, voice notes, files) keeps its existing behavior. Without
+ * the assembled prompt unless includeInPrompt is explicitly true. Ordinary
+ * uploads (images, voice notes, files) are included when the flag is absent
+ * or true, and excluded only by explicit false. This is the ONE visibility
+ * rule for every prompt consumer. Without
  * this gate a slot in history would ride the executor's multimodal path
  * unconditionally: pixels for vision primaries, and a hard
  * VisionNotSupportedError on every later RP turn for non-vision primaries
  * (the slot's image is undescribed — the describe step covers only the
  * current user message's attachments). */
 export function filterPromptVisibleAttachments(attachments: Attachment[]): Attachment[] {
-  return attachments.filter((a) => a.imageGen === undefined || a.includeInPrompt === true);
+  return attachments.filter((a) => a.imageGen !== undefined
+    ? a.includeInPrompt === true
+    : a.includeInPrompt !== false);
 }
 
 /** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN
@@ -320,4 +323,3 @@ export function withImageGenPromptFallback(attachments: Attachment[]): Attachmen
     return { ...a, description: prompt };
   });
 }
-

@@ -20,6 +20,7 @@
 */
 
 import type { Attachment } from "@vibe-tavern/domain";
+import { isTextMime, log } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
@@ -187,13 +188,26 @@ export async function resolveMultimodalContent(
     (a) => a.type !== "image" && a.type !== "video" && a.type !== "audio",
   );
 
-  // Non-image/video attachments (e.g. files) → text when they carry a
-  // description; otherwise dropped (no native multimodal handling). Same on
-  // both paths — these never need vision. Audio is EXCLUDED: it is fully
+  // Text files use their summary when present, otherwise the full stored text.
+  // Other non-media attachments keep their described-only behavior. Match text
+  // by MIME, not type: described images can arrive flipped to "file" in memory.
+  // Same on both paths — these never need vision. Audio is EXCLUDED: it is fully
   // handled by the audio branch above (double-emitting a described voice
   // note here would duplicate the transcript in the prompt).
   for (const att of otherAttachments) {
-    if (att.description?.trim()) {
+    if (isTextMime(att.mimeType)) {
+      if (att.description?.trim()) {
+        parts.push({ type: "text", text: `[Attached file: ${att.name}]\n${att.description}` });
+      } else {
+        const buffer = await assetLoader(att.assetId);
+        if (buffer === null) {
+          log.tag("attachments").warn("Text attachment asset missing: assetId=%s name=%s", att.assetId, att.name);
+          parts.push({ type: "text", text: `[Attached file: ${att.name} — file is no longer available]` });
+        } else {
+          parts.push({ type: "text", text: `[Attached file: ${att.name}]\n${new TextDecoder().decode(buffer)}` });
+        }
+      }
+    } else if (att.description?.trim()) {
       parts.push({
         type: "text",
         text: `[Attached ${att.type}: ${att.name}]\n${att.description}`,

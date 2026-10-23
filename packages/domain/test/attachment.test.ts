@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   classifyAttachment,
+  filterPromptVisibleAttachments,
   isTextMime,
   TEXT_MIME_TO_EXT,
   textMimeForExtension,
@@ -238,5 +239,42 @@ describe('text attachment types (CA-1a)', () => {
     const att: Attachment | undefined = parsed?.[0];
     expect(att?.tokenCount).toBe(1200);
     expect(att?.summaryTokenCount).toBe(90);
+  });
+});
+
+describe('prompt attachment visibility (CA-1b)', () => {
+  const textFile: Attachment = {
+    id: 'file_1', assetId: 'asset_file_1', type: 'file', name: 'notes.md',
+    mimeType: 'text/markdown', sizeBytes: 10,
+  };
+
+  test('ordinary text file with explicit false is excluded', () => {
+    expect(filterPromptVisibleAttachments([{ ...textFile, includeInPrompt: false }])).toEqual([]);
+  });
+
+  test('ordinary text file without the flag is included', () => {
+    expect(filterPromptVisibleAttachments([textFile])).toEqual([textFile]);
+  });
+
+  test('ordinary image without the flag is included', () => {
+    const image: Attachment = { ...textFile, type: 'image', name: 'photo.png', mimeType: 'image/png' };
+    expect(filterPromptVisibleAttachments([image])).toEqual([image]);
+  });
+
+  test('every ordinary attachment kind obeys explicit false and true', () => {
+    for (const type of ['file', 'image', 'video', 'audio'] as const) {
+      const excluded: Attachment = { ...textFile, type, includeInPrompt: false };
+      const included: Attachment = { ...excluded, includeInPrompt: true };
+      expect(filterPromptVisibleAttachments([excluded, included])).toEqual([included]);
+    }
+  });
+
+  test('image-gen slots stay opt-in: absent and false off, only true on', () => {
+    const slot: Attachment = {
+      ...textFile, type: 'image', mimeType: 'image/png',
+      imageGen: { mode: 'portrait', profileId: 'profile_1', params: {} },
+    };
+    const included = { ...slot, includeInPrompt: true };
+    expect(filterPromptVisibleAttachments([slot, { ...slot, includeInPrompt: false }, included])).toEqual([included]);
   });
 });
