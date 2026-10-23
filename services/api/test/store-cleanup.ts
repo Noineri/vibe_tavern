@@ -13,7 +13,17 @@
 // never touches unrelated files). No-op when nothing was opened; never throws.
 
 import { afterAll } from "bun:test";
-import { closeAllDbs } from "@vibe-tavern/db";
+import { closeAllDbs, enableTestDbTemplate } from "@vibe-tavern/db";
+
+// TS-1 (TEST_SUITE_SPEED_REPORT): serve eligible fresh test databases from a
+// once-migrated template instead of replaying 122 migrations per build
+// (~264 ms → <1 ms; this suite spent ~250–300 s of its ~400 s on migration
+// replay through createStoreContainer/createRuntimeStore file DBs). The
+// template is rebuilt from the CURRENT migrations on every run by the first
+// eligible createDb; tests needing the real migration path keep it via
+// override folders, pre-existing files, or { realMigrations: true } — see
+// packages/db/src/db-template.ts. Test preloads are the ONLY callers.
+enableTestDbTemplate();
 
 // Captured at preload import — before any test creates a temp dir — so the
 // sweep only removes dirs created during THIS run.

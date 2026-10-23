@@ -1,5 +1,6 @@
 export * from './db-schema.js';
 export { createDb, closeAllDbs, resolveMigrationsFolder, type AppDb, type DbTransaction } from './db-connection.js';
+export { enableTestDbTemplate, type CreateDbOptions } from './db-template.js';
 export {
   createStoreContainer,
   IncrementingStoreIdGenerator,
