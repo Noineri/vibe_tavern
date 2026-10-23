@@ -158,7 +158,10 @@ describe("useAgentController — permission decisions (SC-23f)", () => {
 
     expect(result.current.pendingPermissionAnswer).toBeNull();
     expect(result.current.isSending).toBe(false);
-    expect(toastError).toHaveBeenCalled();
+    // WAS: the answer failure toasted. NOW (AP-13): the card carries it —
+    // no toast, the record carries the category (a plain Error has none).
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
   });
 
   test("a MID-stream failure keeps the decision (the backend already persisted it)", async () => {

@@ -9,11 +9,14 @@
  * composer (AP-5 — the composer answers the live ask), so the card is
  * options + skip only.
  *
- * forks: 1 — AgentPermissionCard.tsx (SC-23f, the `read_message_prompt`
+ * forks: 2 — AgentPermissionCard.tsx (SC-23f, the `read_message_prompt`
  * permission gate; it takes this frame — the accent left rule, the header
  * row's layout and sizes, its title at the base ladder size in `text-t1`,
  * the `--ui-fs` ladder throughout, phone targets ≥ 44 px, the muted receipt
- * style — deviations D1–D5 named in the copy's header).
+ * style — deviations D1–D5 named in the copy's header) +
+ * AgentTurnErrorCard.tsx (AGENT_SHELL_POLISH AP-13, the turn-failure card;
+ * takes the frame's shape, surface bg, and `--ui-fs` ladder — deviations
+ * D1–D2 named in the copy's header).
  *
  * Submitting goes through the TAG-5 split-turn answer mode (style B): the
  * answer REPLACES the awaiting tool-result row server-side (no separate user

@@ -519,8 +519,12 @@ describe("useExperienceCopilotController — cancel and error", () => {
 
     expect(result.current.isSending).toBe(false);
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
-    // server_error is a transient category → transient description toast.
-    expect(toastError).toHaveBeenCalledWith("boom", { description: "provider_error_transient_desc" });
+    // WAS (AP-10 basis): server_error toasted with the transient description
+    // (`toastError("boom", { description: "provider_error_transient_desc" })`).
+    // NOW (AP-13): the card carries the failure — no toast, the record
+    // carries the category (the description key derives from it).
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "server_error" });
   });
 });
 
@@ -1145,7 +1149,10 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
 
     expect(result.current.pendingAskAnswer).toBeNull();
     expect(result.current.isSending).toBe(false);
-    expect(toastError).toHaveBeenCalled();
+    // WAS: the answer failure toasted. NOW (AP-13): the card carries it —
+    // no toast, the record carries the category (the 400 carried none).
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
   });
 
@@ -1259,7 +1266,7 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
     expect("regenerate" in (answerCopilotAsk.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
   });
 
-  test("a pre-stream failure toasts, clears the flags, settles false", async () => {
+  test("a pre-stream failure records the failure, clears the flags, settles false", async () => {
     const onTurnSettled = mock();
     nextHttpError = { message: "nothing to regenerate" };
     const { result } = renderHook(() =>
@@ -1272,7 +1279,10 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
 
     expect(result.current.isSending).toBe(false);
     expect(result.current.pendingUserContent).toBe("");
-    expect(toastError).toHaveBeenCalled();
+    // WAS: the regenerate failure toasted. NOW (AP-13): the card carries
+    // it — no toast, the record carries the category (the 400 carried none).
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
     expect(onTurnSettled).toHaveBeenCalledWith(false);
   });
@@ -1485,6 +1495,130 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
     expect(deleteCalls).toHaveLength(0);
     expect(streamExperienceCopilot).not.toHaveBeenCalled();
     expect(onTurnSettled).not.toHaveBeenCalled();
+  });
+});
+
+describe("useExperienceCopilotController — turn failure record (AP-13)", () => {
+  test("a failed send records the failure — no toast (the card carries it)", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockRejectedValue(new ProviderStreamError("boom", "server_error"));
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+
+    // WAS (AP-10): a category-aware error toast
+    // (`toastError("boom", { description: "provider_error_transient_desc" })`).
+    // NOW: the turn failure owns the surface — the card renders the
+    // category description, so the toast is gone.
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "server_error" });
+    expect(result.current.isSending).toBe(false);
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith(false);
+  });
+
+  test("a non-provider send failure records { category: 'unknown' }", async () => {
+    streamExperienceCopilot.mockRejectedValue(new Error("socket hung up"));
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
+  });
+
+  test("a successful turn clears the recorded failure", async () => {
+    streamExperienceCopilot.mockRejectedValueOnce(new ProviderStreamError("boom", "rate_limit"));
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.turnFailure).toEqual({ category: "rate_limit" });
+
+    await act(async () => {
+      await result.current.handleSend("hi again");
+    });
+    expect(result.current.turnFailure).toBeNull();
+  });
+
+  test("a regenerate failure REPLACES the recorded failure", async () => {
+    streamExperienceCopilot.mockRejectedValueOnce(new ProviderStreamError("bad key", "authentication"));
+    streamExperienceCopilot.mockRejectedValueOnce(new ProviderStreamError("slow", "rate_limit"));
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.turnFailure).toEqual({ category: "authentication" });
+
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    // The retry's failure replaces the card's content (same slot, new category).
+    expect(toastError).not.toHaveBeenCalled();
+    expect(result.current.turnFailure).toEqual({ category: "rate_limit" });
+  });
+
+  test("failure state is keyed per thread (a switch shows that thread's failure or none)", async () => {
+    streamExperienceCopilot.mockRejectedValue(new ProviderStreamError("boom", "timeout"));
+    const { result, rerender } = renderHook(
+      ({ threadId }: { threadId: string | null }) =>
+        useAgentController({ transport: testTransport, kind: "experience", threadId, providerProfileId: PROVIDER }),
+      { initialProps: { threadId: THREAD as string | null } },
+    );
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.turnFailure).toEqual({ category: "timeout" });
+
+    await act(async () => {
+      rerender({ threadId: "thread-2" });
+    });
+    expect(result.current.turnFailure).toBeNull();
+
+    await act(async () => {
+      rerender({ threadId: THREAD });
+    });
+    expect(result.current.turnFailure).toEqual({ category: "timeout" });
+  });
+
+  test("cancel records no failure (quiet info toast only)", async () => {
+    holdStreamOpen = true;
+    streamExperienceCopilot.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hi");
+      await Promise.resolve();
+    });
+    expect(result.current.isSending).toBe(true);
+
+    await act(async () => {
+      result.current.handleCancel();
+      await pending;
+    });
+
+    expect(result.current.turnFailure).toBeNull();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastInfo).toHaveBeenCalledWith("generation_cancelled");
   });
 });
 });

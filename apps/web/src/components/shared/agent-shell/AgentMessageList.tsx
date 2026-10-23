@@ -11,7 +11,7 @@ import {
 } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
-import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
+import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
@@ -21,6 +21,7 @@ import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { AgentAskCard } from "./AgentAskCard.js";
 import { AgentPermissionCard } from "./AgentPermissionCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
+import { AgentTurnErrorSlot } from "./AgentTurnErrorSlot.js";
 import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { Icons } from "../icons.js";
@@ -142,6 +143,14 @@ export interface AgentMessageListProps {
    *  Threaded to every block; only the last user row renders the opener
    *  (the row's `canEditLast` gate). Absent = no edit affordance anywhere. */
   onEditLast?: (content: string) => void;
+  /** AP-13: the thread's live turn failure (controller state, keyed per
+   *  thread) — renders the loud error card at the feed end. Null/absent =
+   *  no live failure (the quiet after-reload card below may still render). */
+  turnFailure?: AgentTurnFailure | null;
+  /** AP-13: retry the failed turn (the pane wires the controller's
+   *  `handleRegenerate`). Absent = no error card renders at all (the
+   *  card's retry needs a target). */
+  onRetryTurn?: () => void;
 }
 
 export function AgentMessageList({
@@ -157,6 +166,8 @@ export function AgentMessageList({
   pendingPermissionAnswer = null,
   turnRow,
   onEditLast,
+  turnFailure = null,
+  onRetryTurn,
   emptyTitle,
   emptySub,
   events = EMPTY_EVENTS,
@@ -756,6 +767,16 @@ export function AgentMessageList({
             }
             return pendingBlock;
           })()}
+
+          {/* AP-13: the turn-failure card at the feed end — the slot owns
+              the loud/quiet decision (extracted under the file-size
+              ratchet; see AgentTurnErrorSlot). */}
+          <AgentTurnErrorSlot
+            turnFailure={turnFailure}
+            visibleMessages={visibleMessages}
+            isSending={isSending}
+            onRetryTurn={onRetryTurn}
+          />
         </div>
       </div>
 

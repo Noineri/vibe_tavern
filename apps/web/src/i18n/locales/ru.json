@@ -2775,6 +2775,8 @@
 	"copilot_turn_delete_title": "Удалить ход?",
 	"copilot_turn_delete_body": "Ваше сообщение и ответ помощника на него будут удалены.",
 	"copilot_turn_delete_assistant_body": "Ответ помощника и все его действия в этом ходе будут удалены.",
+	"copilot_turn_error_title": "Не удалось получить ответ",
+	"copilot_turn_error_unanswered_title": "Ответ не получен",
 	"agent_plan_title": "План",
 	"agent_plan_updated": "План обновлён",
 	"agent_plan_editor": "Редактор плана",

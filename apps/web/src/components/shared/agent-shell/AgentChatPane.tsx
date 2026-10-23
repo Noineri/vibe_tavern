@@ -155,6 +155,12 @@ export function AgentChatPane({
       if (result.ok) toast.success(t("copied"));
     });
   }, [t]);
+  // AP-13: the error card's retry — the controller's `handleRegenerate`
+  // (no new server surface; its failure replaces the card's content).
+  // Stable like the row actions above (the handler is a useCallback).
+  const handleRetryTurn = useCallback((): void => {
+    void ctrl.handleRegenerate();
+  }, [ctrl.handleRegenerate]);
   const turnRow: AgentTurnRowCallbacks = useMemo(() => ({
     onCopy: handleCopyTurn,
     onRegenerate: () => {
@@ -276,6 +282,11 @@ export function AgentChatPane({
               sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
             }}
             turnRow={turnRow}
+            // AP-13: the error card's live failure + retry (the failure is
+            // keyed per thread in the controller; the quiet after-reload
+            // card derives from the messages inside the list).
+            turnFailure={ctrl.turnFailure}
+            onRetryTurn={handleRetryTurn}
             // AP-12: the inline-edit submit (delete the last exchange, then
             // send) — straight from the controller (the same fire-and-forget
             // shape as the onAnswer arm above).

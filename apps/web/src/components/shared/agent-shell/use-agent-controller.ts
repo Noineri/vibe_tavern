@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getT } from "../../../i18n/locale-helpers.js";
-import { showProviderErrorToast, useAgentTurnActions, type AgentPendingAskAnswer, type AgentPendingPermissionAnswer, type AgentTurnActions } from "./use-agent-turn-actions.js";
-import type {
-  AgentHostTransport,
-  AgentKind,
-  AgentSendOptions,
-  CopilotAnswerInput,
-  CopilotStreamOpts,
+import { copilotTurnFailureOf, useAgentTurnActions, type AgentPendingAskAnswer, type AgentPendingPermissionAnswer, type AgentTurnActions, type AgentTurnFailure } from "./use-agent-turn-actions.js";
+import {
+  agentThreadKey,
+  type AgentHostTransport,
+  type AgentKind,
+  type AgentSendOptions,
+  type CopilotAnswerInput,
+  type CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
 import {
   useAgentTurnStore,
@@ -96,7 +97,7 @@ export type { AgentSendOptions } from "../../../lib/agent-host-registry.js";
 
 /** Re-exported from the turn-actions module (which owns the types) so
 ex *  existing importers (`AgentMessageList`) keep resolving them here. */
-export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer };
+export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure };
 
 export interface AgentController extends AgentTurnActions {
   isSending: boolean;
@@ -121,6 +122,11 @@ export interface AgentController extends AgentTurnActions {
    *  network before the SSE opened) rolls it back: the backend never rewrote
    *  the row, so the card must return to interactive. */
   pendingAskAnswer: AgentPendingAskAnswer | null;
+  /** AP-13: the thread's last turn failure (the error card's live state —
+   *  null = the last turn did not fail). Keyed per thread (a switch shows
+   *  that thread's failure or none); a successful turn clears it; a retry's
+   *  failure replaces it. Cancel records nothing. */
+  turnFailure: AgentTurnFailure | null;
   handleSend: (content: string, opts?: AgentSendOptions) => Promise<void>;
   /** TAG-9: answer a pending `ask_user` question (style B split-turn) —
    *  streams the continuation with the `answer` body (no new user row).
@@ -192,10 +198,32 @@ export function useAgentController(
   // TAG-9: drop a stale optimistic ask resolution on thread switch (the new
   // thread's persisted rows are the truth for its own asks). SC-23f: the
   // permission override drops with it (same truth — the new thread's rows).
+  // AP-13: the failure record does NOT drop — it is keyed per thread, so a
+  // switch shows that thread's failure or none (the selector below reads
+  // the map through the CURRENT thread's key).
   useEffect(() => {
     setPendingAskAnswer(null);
     setPendingPermissionAnswer(null);
   }, [threadId]);
+
+  // AP-13: the last turn failure per thread (the error card's live state).
+  // The map retains every thread's failure across switches (a successful
+  // turn deletes its thread's entry); `writeTurnFailure` takes the key
+  // explicitly so a late settle never clears the WRONG thread's entry.
+  const [turnFailures, setTurnFailures] = useState<Readonly<Record<string, AgentTurnFailure>>>({});
+  const turnFailure = threadId !== null ? turnFailures[agentThreadKey(kind, threadId)] ?? null : null;
+  const writeTurnFailure = useCallback((key: string, failure: AgentTurnFailure | null): void => {
+    setTurnFailures((prev) => {
+      if (failure === null) {
+        if (prev[key] === undefined) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      if (prev[key]?.category === failure.category) return prev;
+      return { ...prev, [key]: failure };
+    });
+  }, []);
 
   // TAG-9: ONE builder for the SSE→store callbacks, shared by handleSend and
   // handleAnswer. The live tool routing must stay field-for-field with the
@@ -388,10 +416,14 @@ export function useAgentController(
       // rationale as the RP controller's co-author clearTurn). Also drop any
       // stale optimistic ask resolution (TAG-9) — by now the persisted rows
       // carry the true ask state. SC-23f: the permission override drops with
-      // it (same truth — the persisted rows).
+      // it (same truth — the persisted rows). AP-13: the stale failure drops
+      // with them — a new turn supersedes the card while it runs (its
+      // failure replaces the card in the catch below).
       useAgentTurnStore.getState().clearTurn(kind, threadId);
       setPendingAskAnswer(null);
       setPendingPermissionAnswer(null);
+      const failureKey = agentThreadKey(kind, threadId);
+      writeTurnFailure(failureKey, null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -444,12 +476,16 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
+        // AP-13: the turn answered — the card clears with the failure.
+        writeTurnFailure(failureKey, null);
         onTurnSettled?.(true);
       } catch (error) {
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
-          showProviderErrorToast(error, getT());
+          // AP-13: the turn failure owns the surface — the card renders the
+          // category description, so the toast is gone.
+          writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
         setPendingText("");
         setPendingReasoning("");
@@ -492,8 +528,12 @@ export function useAgentController(
 
       // The answer resumes the question turn (style B): clear the live turn
       // so the awaiting activity yields to the persisted row (TAG-7 note),
-      // and drop any stale override from a previous answer.
+      // and drop any stale override from a previous answer. AP-13: the
+      // stale failure drops with them (the answer is a new turn attempt —
+      // same supersede rule as a send).
       useAgentTurnStore.getState().clearTurn(kind, threadId);
+      const failureKey = agentThreadKey(kind, threadId);
+      writeTurnFailure(failureKey, null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -567,6 +607,8 @@ export function useAgentController(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
+        // AP-13: the turn answered — the card clears with the failure.
+        writeTurnFailure(failureKey, null);
         onTurnSettled?.(true);
       } catch (error) {
         // A failure BEFORE the stream opened (validation 400, network) means
@@ -582,7 +624,9 @@ export function useAgentController(
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
-          showProviderErrorToast(error, getT());
+          // AP-13: the turn failure owns the surface — the card renders the
+          // category description, so the toast is gone.
+          writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
         setPendingText("");
         setPendingReasoning("");
@@ -619,6 +663,12 @@ export function useAgentController(
       setPendingReasoning,
       setPendingAskAnswer,
       setPendingPermissionAnswer,
+      // AP-13: the regenerate path writes the same per-thread failure the
+      // send/answer paths above own — bound to the CURRENT thread (the hook
+      // guards a missing thread before touching it, like it guards a send).
+      setTurnFailure: (failure) => {
+        if (threadId !== null) writeTurnFailure(agentThreadKey(kind, threadId), failure);
+      },
     },
   });
 
@@ -627,5 +677,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, handleCancel };
 }

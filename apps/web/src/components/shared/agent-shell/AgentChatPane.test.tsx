@@ -188,6 +188,8 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     handleDeleteTurn: mock(),
     handleEditLast: mock(),
     // AP-11: the delete-confirm state the pane's modal reads (same rule).
+    // AP-13: the live turn failure the error card reads (same rule).
+    turnFailure: null,
     pendingDelete: null,
     requestDeleteTurn: mock(),
     confirmDeleteTurn: mock(),
@@ -481,5 +483,55 @@ describe("AgentChatPane — turn delete confirm (AP-11)", () => {
 
     expect(getByTestId("turn-delete-confirm")).toBeDefined();
     expect(getByTestId("turn-delete-title").textContent).toBe("copilot_turn_delete_title");
+  });
+});
+
+describe("AgentChatPane — error card wiring (AP-13)", () => {
+  it("a live turn failure renders the loud card; its retry calls handleRegenerate", () => {
+    const ctrl = makeCtrl({ turnFailure: { category: "timeout" } });
+    const { getByTestId, getByText } = renderPane({ ctrl });
+
+    // The isolated i18n has empty resources — t() echoes keys (the AP-11
+    // confirm pattern above).
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+    expect(getByText("copilot_turn_error_title")).toBeDefined();
+    expect(getByTestId("copilot-error-card-description").textContent).toBe(
+      "provider_error_transient_desc",
+    );
+    fireEvent.click(getByTestId("copilot-error-card-retry"));
+    expect(ctrl.handleRegenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("no live failure on an unanswered thread renders the quiet card; retry still regenerates", () => {
+    const ctrl = makeCtrl();
+    const { getByTestId, getByText, queryByTestId } = renderPane({ ctrl });
+
+    // WAS (characterized before AP-13 existed): an unanswered thread
+    // rendered NOTHING at the feed end. NOW: the quiet after-reload card.
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("unanswered");
+    expect(getByText("copilot_turn_error_unanswered_title")).toBeDefined();
+    expect(queryByTestId("copilot-error-card-description")).toBeNull();
+    fireEvent.click(getByTestId("copilot-error-card-retry"));
+    // Retry = regenerate (no new server surface), never a fresh send.
+    expect(ctrl.handleRegenerate).toHaveBeenCalledTimes(1);
+    expect(ctrl.handleSend).not.toHaveBeenCalled();
+  });
+
+  it("a settled thread (the assistant answered) renders no card", () => {
+    const { queryByTestId } = renderPane({
+      messages: [
+        message({ id: "u1", role: "user", content: "plan it" }),
+        message({ id: "a1", role: "assistant", content: "done" }),
+      ],
+    });
+
+    expect(queryByTestId("copilot-error-card")).toBeNull();
+  });
+
+  it("the card renders on mobile too (mockup §3 is viewport-agnostic)", () => {
+    const ctrl = makeCtrl({ turnFailure: { category: "server_error" } });
+    const { getByTestId } = renderPane({ ctrl, isMobile: true });
+
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
   });
 });

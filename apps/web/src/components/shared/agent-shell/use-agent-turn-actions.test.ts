@@ -366,6 +366,7 @@ function hookArgs(over: { threadId?: string | null } = {}) {
       setPendingReasoning: mock(() => {}),
       setPendingAskAnswer: mock(() => {}),
       setPendingPermissionAnswer: mock(() => {}),
+      setTurnFailure: mock(() => {}),
     },
   };
 }
@@ -454,5 +455,39 @@ describe("useAgentTurnActions — delete confirm", () => {
     expect(result.current.pendingDelete).not.toBeNull();
     rerender({ threadId: "thread-2" });
     expect(result.current.pendingDelete).toBeNull();
+  });
+});
+
+// ─── AP-13: the ONE category→description derivation (toast + card share it) ───
+// WAS (characterized at AP-10, basis: the toast branches in
+// use-agent-turn-actions.ts): auth → auth desc; rate_limit/timeout/network/
+// server_error → transient desc; empty_response/parse_error → empty desc;
+// everything else → bare toast. NOW: the same mapping, named and shared.
+
+describe("copilotFailureDescriptionKey — the shared toast/card derivation", () => {
+  it("maps the auth category to the guidance text", async () => {
+    const { copilotFailureDescriptionKey } = await import("./use-agent-turn-actions.js");
+    expect(copilotFailureDescriptionKey("authentication")).toBe("provider_error_auth_desc");
+  });
+
+  it("maps the transient categories to the try-again text", async () => {
+    const { copilotFailureDescriptionKey } = await import("./use-agent-turn-actions.js");
+    for (const category of ["rate_limit", "timeout", "network", "server_error"] as const) {
+      expect(copilotFailureDescriptionKey(category)).toBe("provider_error_transient_desc");
+    }
+  });
+
+  it("maps the empty categories to the regenerate text", async () => {
+    const { copilotFailureDescriptionKey } = await import("./use-agent-turn-actions.js");
+    for (const category of ["empty_response", "parse_error"] as const) {
+      expect(copilotFailureDescriptionKey(category)).toBe("provider_error_empty_desc");
+    }
+  });
+
+  it("returns undefined for undescribed categories (the toast stays bare, the card hides its description)", async () => {
+    const { copilotFailureDescriptionKey } = await import("./use-agent-turn-actions.js");
+    for (const category of ["unknown", "invalid_request", "aborted", "subscription_required"] as const) {
+      expect(copilotFailureDescriptionKey(category)).toBeUndefined();
+    }
   });
 });

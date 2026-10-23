@@ -688,6 +688,8 @@ export default interface Resources {
     "copilot_turn_delete_assistant_body": "The assistant's reply and all its actions in this turn will be deleted.",
     "copilot_turn_delete_body": "Your message and the assistant's reply to it will be deleted.",
     "copilot_turn_delete_title": "Delete turn?",
+    "copilot_turn_error_title": "Couldn't get a response",
+    "copilot_turn_error_unanswered_title": "No response received",
     "copy": "Copy",
     "could_not_load_app_state": "Could not load application state.",
     "create_character_manual": "Create Character",

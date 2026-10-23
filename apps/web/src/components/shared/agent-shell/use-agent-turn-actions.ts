@@ -16,6 +16,7 @@ import {
   experienceCopilotContextMetricsSchema,
   type ExperienceCopilotContextMetrics,
   type ExperienceCopilotMessageWire,
+  type ProviderErrorCategory,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 
@@ -35,7 +36,39 @@ import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 // Categories where the failure is likely transient (retry after a short wait) —
 // the message alone is enough; we just add a "try again" hint. Mirrors the RP
 // controller's `TRANSIENT_PROVIDER_CATEGORIES` set (see lib/provider-error-toast.ts).
-const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
+const TRANSIENT_PROVIDER_CATEGORIES: ReadonlySet<ProviderErrorCategory> = new Set(["rate_limit", "timeout", "network", "server_error"]);
+
+/**
+ * AP-13: the thread's last turn failure (controller state, keyed per thread
+ * — switching threads shows that thread's failure or none). Carries the
+ * server-classified category so the error card renders the SAME description
+ * the toast rendered (the ONE mapping below); a successful turn clears it,
+ * a retry's failure replaces it.
+ */
+export interface AgentTurnFailure {
+  category: ProviderErrorCategory;
+}
+
+/** AP-13: the error from a failed turn run narrowed to the failure record. */
+export function copilotTurnFailureOf(error: unknown): AgentTurnFailure {
+  return { category: error instanceof ProviderStreamError ? error.category : "unknown" };
+}
+
+/**
+ * AP-13: the ONE category→description derivation the turn-failure surface
+ * shares — the toast (below) and the error card (AgentTurnErrorCard) both
+ * render through it, so the card carries exactly what the toast carried.
+ * Undefined = no description (the toast stays bare, the card hides its
+ * description line).
+ */
+export function copilotFailureDescriptionKey(
+  category: ProviderErrorCategory,
+): "provider_error_auth_desc" | "provider_error_transient_desc" | "provider_error_empty_desc" | undefined {
+  if (category === "authentication") return "provider_error_auth_desc";
+  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) return "provider_error_transient_desc";
+  if (category === "empty_response" || category === "parse_error") return "provider_error_empty_desc";
+  return undefined;
+}
 
 /**
  * Category-aware provider-error toast. `showProviderErrorToast` in
@@ -47,18 +80,9 @@ const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network
  */
 export function showProviderErrorToast(error: unknown, t: TFunc): void {
   const message = error instanceof Error && error.message ? error.message : t("message_send_failed");
-  const category = error instanceof ProviderStreamError ? error.category : "unknown";
-
-  if (category === "authentication") {
-    toast.error(message, { description: t("provider_error_auth_desc") });
-    return;
-  }
-  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
-    toast.error(message, { description: t("provider_error_transient_desc") });
-    return;
-  }
-  if (category === "empty_response" || category === "parse_error") {
-    toast.error(message, { description: t("provider_error_empty_desc") });
+  const descriptionKey = copilotFailureDescriptionKey(copilotTurnFailureOf(error).category);
+  if (descriptionKey !== undefined) {
+    toast.error(message, { description: t(descriptionKey) });
     return;
   }
   toast.error(message);
@@ -104,6 +128,9 @@ export interface AgentTurnStateControls {
   setPendingReasoning: (value: string) => void;
   setPendingAskAnswer: (value: AgentPendingAskAnswer | null) => void;
   setPendingPermissionAnswer: (value: AgentPendingPermissionAnswer | null) => void;
+  /** AP-13: write/clear the thread's last turn failure (the error card's
+   *  live state — bound to the controller's current thread). */
+  setTurnFailure: (failure: AgentTurnFailure | null) => void;
 }
 
 export interface UseAgentTurnActionsArgs {
@@ -284,7 +311,7 @@ export function useAgentTurnActions(
   args: UseAgentTurnActionsArgs,
 ): AgentTurnActions {
   const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, turnState } = args;
-  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer } = turnState;
+  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure } = turnState;
 
   // AP-10: the shared delete core for handleDeleteTurn and handleEditLast —
   // guards, busy flags, the transport call, the send-style error path. The
@@ -333,9 +360,12 @@ export function useAgentTurnActions(
       // Same turn-start reset as a send: the replaced turn's live activities
       // drop (the SSE below rebuilds them), and any stale ask/permission
       // override clears (the settle+refetch shows the persisted truth).
+      // AP-13: a retry supersedes the card — the stale failure clears while
+      // the new turn runs (its failure replaces the card below).
       useAgentTurnStore.getState().clearTurn(kind, threadId);
       setPendingAskAnswer(null);
       setPendingPermissionAnswer(null);
+      setTurnFailure(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -388,12 +418,16 @@ export function useAgentTurnActions(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
+        // AP-13: the retry answered — the card clears with the failure.
+        setTurnFailure(null);
         onTurnSettled?.(true);
       } catch (error) {
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
-          showProviderErrorToast(error, getT());
+          // AP-13: the turn failure owns the surface — the card renders
+          // the category description, so the toast is gone.
+          setTurnFailure(copilotTurnFailureOf(error));
         }
         setPendingText("");
         setPendingReasoning("");
@@ -404,7 +438,7 @@ export function useAgentTurnActions(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure],
   );
 
   const handleEditLast = useCallback(

@@ -1611,3 +1611,138 @@ describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
     expect(queryByTestId("copilot-turn-edit")).toBeNull();
   });
 });
+
+describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
+  it("live failure: loud card at the feed end (after the last entry), retry calls onRetryTurn", () => {
+    const onRetryTurn = mock(() => {});
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnFailure={{ category: "rate_limit" }}
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    const card = getByTestId("copilot-error-card");
+    expect(card.getAttribute("data-variant")).toBe("failed");
+    // The card reuses the toast's category description (one derivation).
+    expect(getByTestId("copilot-error-card-description").textContent).toBe(
+      "provider_error_transient_desc",
+    );
+    // Placement: the card FOLLOWS the last persisted entry (the feed end,
+    // where the pending block lives — a failed turn has neither).
+    const lastBubble = getByText("second answer");
+    expect(lastBubble.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    fireEvent.click(getByTestId("copilot-error-card-retry") as HTMLButtonElement);
+    expect(onRetryTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("after-reload derivation: last row is an unanswered user message → quiet card + retry", () => {
+    const onRetryTurn = mock(() => {});
+    const { getByTestId, getByText, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    const card = getByTestId("copilot-error-card");
+    expect(card.getAttribute("data-variant")).toBe("unanswered");
+    expect(getByText("copilot_turn_error_unanswered_title")).toBeDefined();
+    // The category is unknown after a reload — no description.
+    expect(queryByTestId("copilot-error-card-description")).toBeNull();
+    const lastBubble = getByText("stuck question");
+    expect(lastBubble.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    fireEvent.click(getByTestId("copilot-error-card-retry") as HTMLButtonElement);
+    expect(onRetryTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("live failure wins over the quiet derivation (the retry's failure replaces the content)", () => {
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnFailure={{ category: "authentication" }}
+        onRetryTurn={mock(() => {})}
+      />,
+    );
+
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+    expect(getByText("copilot_turn_error_title")).toBeDefined();
+    expect(getByTestId("copilot-error-card-description").textContent).toBe(
+      "provider_error_auth_desc",
+    );
+  });
+
+  it("no card while streaming (the turn is in flight, not failed)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent="stuck question"
+        isSending
+        onRetryTurn={mock(() => {})}
+      />,
+    );
+
+    expect(queryByTestId("copilot-error-card")).toBeNull();
+  });
+
+  it("no card for an answered thread (last row is the assistant's)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onRetryTurn={mock(() => {})}
+      />,
+    );
+
+    expect(queryByTestId("copilot-error-card")).toBeNull();
+  });
+
+  it("no card for an empty thread (the empty state owns that)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onRetryTurn={mock(() => {})}
+      />,
+    );
+
+    expect(queryByTestId("copilot-error-card")).toBeNull();
+  });
+
+  it("no card without a retry target (the card's retry needs a handler)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnFailure={{ category: "timeout" }}
+      />,
+    );
+
+    expect(queryByTestId("copilot-error-card")).toBeNull();
+  });
+});
