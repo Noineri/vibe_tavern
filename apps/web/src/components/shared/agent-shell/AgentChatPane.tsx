@@ -26,6 +26,7 @@ import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import type { AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { AgentInputArea } from "./AgentInputArea.js";
 import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
+import { AgentPendingStrip } from "./AgentPendingStrip.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
 
 /**
@@ -295,6 +296,12 @@ export function AgentChatPane({
             // shape as the onAnswer arm above).
             onEditLast={(content) => { void ctrl.handleEditLast(content); }}
           />
+          {/* AP-16: the pending-changes strip — ONE mount above BOTH composer
+              arms (both sit under this pane, so a single site covers desktop
+              + phone; the mockup strip is viewport-agnostic). The strip hides
+              itself when nothing is pending for this thread and in the
+              sidechat — no kind-switch here. */}
+          <AgentPendingStrip kind={kind} threadId={threadId} />
           {isMobile ? (
             <AgentMobileInputArea
               answeringAsk={answeringAsk}

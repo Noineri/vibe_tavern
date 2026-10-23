@@ -11,13 +11,14 @@
  * AgentInputArea.test.tsx trio, `...real` spread), so the send click drives
  * the real textarea/send-button wiring and the real routing decision.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentPendingReviewStore } from "../../../stores/agent-pending-review-store.js";
 import type { AgentController } from "./use-agent-controller.js";
 import type { CopilotContextController } from "../../../hooks/use-copilot-context.js";
 
@@ -296,7 +297,12 @@ function submitComposer(utils: { getByTestId: (id: string) => HTMLElement }, tex
 
 beforeEach(() => {
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  useAgentPendingReviewStore.setState({ summariesByThread: {} });
 });
+
+// AP-16: the pane seeds the pending-review store in its strip tests — clear
+// after the file so no entry leaks to later files sharing the worker.
+afterAll(() => useAgentPendingReviewStore.setState({ summariesByThread: {} }));
 
 describe("AgentChatPane — the composer answers the live ask (AP-5)", () => {
   it("a send with no live ask is a normal message (handleSend, never handleAnswer)", () => {
@@ -595,5 +601,70 @@ describe("AgentChatPane — error card wiring (AP-13)", () => {
     const { getByTestId } = renderPane({ ctrl, isMobile: true });
 
     expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+  });
+});
+
+// ─── AP-16: the pending-changes strip mounts above the composer ─────────
+// Seeded through the REAL pending-review store (the AP-15 seam); the
+// isolated i18n echoes keys, so chips assert as strip display keys (the
+// same key-echo pattern as the AP-11 confirm above). The strip's own file
+// pins the mapping, the actions, and the sidechat hide; here only the
+// pane contract: mounts above the composer when THIS thread has an entry,
+// absent otherwise, on both viewports.
+
+describe("AgentChatPane — pending-changes strip (AP-16)", () => {
+  function seedPending() {
+    useAgentPendingReviewStore.getState().publish("experience", THREAD, {
+      buffers: [
+        { labelKey: "agent_rules", pending: 3 },
+        { labelKey: "agent_visual", pending: 5 },
+      ],
+      acceptAll: mock(),
+      open: mock(),
+    });
+  }
+
+  it("absent with an empty store (nothing pending)", () => {
+    const { queryByTestId } = renderPane();
+
+    expect(queryByTestId("copilot-pending-changes-strip")).toBeNull();
+  });
+
+  it("mounts above the composer when the store has this thread's entry", () => {
+    seedPending();
+    const { getByTestId } = renderPane();
+
+    const strip = getByTestId("copilot-pending-changes-strip");
+    expect(getByTestId("copilot-pending-chip-agent_rules").textContent).toBe("agent_pending_rules · 3");
+    expect(getByTestId("copilot-pending-chip-agent_visual").textContent).toBe("agent_pending_appearance · 5");
+    // Above the composer: the strip precedes the input in document order.
+    const input = getByTestId("copilot-chat-input");
+    expect((strip.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+  });
+
+  it("the strip's actions reach the published callables through the pane", () => {
+    const acceptAll = mock();
+    const open = mock();
+    useAgentPendingReviewStore.getState().publish("experience", THREAD, {
+      buffers: [{ labelKey: "agent_rules", pending: 1 }],
+      acceptAll,
+      open,
+    });
+    const { getByTestId } = renderPane();
+
+    fireEvent.click(getByTestId("copilot-pending-open"));
+    expect(open).toHaveBeenCalledTimes(1);
+    fireEvent.click(getByTestId("copilot-pending-accept-all"));
+    expect(acceptAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("mounts on mobile too (mockup §1 is viewport-agnostic)", () => {
+    seedPending();
+    const { getByTestId } = renderPane({ isMobile: true });
+
+    const strip = getByTestId("copilot-pending-changes-strip");
+    expect(getByTestId("copilot-pending-chip-agent_rules")).toBeDefined();
+    const input = getByTestId("copilot-chat-input");
+    expect((strip.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
   });
 });
