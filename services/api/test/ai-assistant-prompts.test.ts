@@ -6,6 +6,7 @@ import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { resolveSystemPrompt, getDefaultPromptForMode } from "../src/domain/ai-assistant/ai-assistant-prompts.js";
 import { resolvePromptAssetPath, loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { getDefaultPromptFile } from "../src/domain/ai-assistant/ai-assistant-modes.js";
+import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 
 import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.ts";
 
@@ -77,6 +78,29 @@ describe("scene_schema prompt — format-aware default selection", () => {
     const result = await resolveSystemPrompt(db, "scene_schema", { promptFormat: "xml" });
     expect(result.source).toBe("default");
     expect(result.prompt).toContain("XML-safe names required");
+  });
+
+  it("both scene-schema prompts teach tone coding: toneBy and all four tone tokens", async () => {
+    for (const file of ["scene-schema-json.md", "scene-schema-xml.md"]) {
+      const asset = await loadPromptAsset(file);
+      expect(asset, `${file} lacks the Tone coding section`).toContain("## Tone coding");
+      expect(asset, `${file} does not mention toneBy`).toContain("toneBy");
+      for (const token of ["accent", "success", "warning", "danger"]) {
+        expect(asset, `${file} does not name the tone token ${token}`).toContain(`"${token}"`);
+      }
+    }
+  });
+
+  it("the last worked example of each scene-schema prompt parses through the DSL contract and carries tones", async () => {
+    for (const file of ["scene-schema-json.md", "scene-schema-xml.md"]) {
+      const asset = await loadPromptAsset(file);
+      const blocks = [...asset.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((match) => match[1]!);
+      const example = blocks[blocks.length - 1]!;
+      const result = sceneTrackerDslSchema.safeParse(JSON.parse(example));
+      expect(result.success, `${file} worked example failed the scene DSL contract`).toBe(true);
+      expect(example, `${file} worked example shows no toneBy`).toContain("toneBy");
+      expect(example, `${file} worked example shows no tone`).toContain('"tone"');
+    }
   });
 });
 
