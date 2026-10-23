@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { isTextMime, splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
+import { ChatFileAttachment } from "./chat-file-attachment.js";
 import { ImageBlock, type ImageBlockImage } from "./ImageBlock.js";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
@@ -161,7 +162,8 @@ export function AttachmentGrid({
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
           ) : att.imageGen !== undefined ? null : isTextMime(att.mimeType) ? (
-            <FileAttachmentChip key={att.id || att.assetId} attachment={att} />
+            messageId && att.type === "file" ? <ChatFileAttachment key={att.id || att.assetId} attachment={att} messageId={messageId} />
+              : <FileAttachmentChip key={att.id || att.assetId} attachment={att} />
           ) : (
           <button
             key={att.id || att.assetId}

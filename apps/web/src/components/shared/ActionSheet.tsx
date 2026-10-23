@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { BottomSheet } from "./BottomSheet.js";
@@ -21,6 +21,8 @@ export interface ActionSheetItem {
    *  to grey out Edit while a variant's Scene is generating. Generic — any
    *  feature may disable a row. */
   disabled?: boolean;
+  /** Optional group boundary, e.g. before the destructive file action. */
+  separatorBefore?: boolean;
   /** Optional always-visible trailing icon buttons rendered at the row's right
    *  edge (e.g. per-version rename/delete). Mobile has no hover, so these are
    *  shown by default — NOT revealed on hover. The row's main tap target still
@@ -61,8 +63,9 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
         // trailing icon buttons. Mobile shows trailing always (no hover).
         if (!item.trailing || item.trailing.length === 0) {
           return (
+            <Fragment key={i}>
+            {item.separatorBefore && <div role="separator" className="mx-4 my-1 h-px bg-border" />}
             <button type="button"
-              key={i}
               disabled={item.disabled}
               className={cn(
                 "flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 text-left",
@@ -80,10 +83,13 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
               </span>
               <span className={cn("font-ui", item.danger && "font-medium")}>{item.label}</span>
             </button>
+            </Fragment>
           );
         }
         return (
-          <div key={i} className="flex items-center pr-3">
+          <Fragment key={i}>
+          {item.separatorBefore && <div role="separator" className="mx-4 my-1 h-px bg-border" />}
+          <div className="flex items-center pr-3">
             <button type="button"
               disabled={item.disabled}
               className={cn(
@@ -116,6 +122,7 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
               </button>
             ))}
           </div>
+          </Fragment>
         );
       })}
       {/* Cancel */}

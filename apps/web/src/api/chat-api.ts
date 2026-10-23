@@ -286,9 +286,9 @@ export async function updateAttachmentDescription(
   return response.json();
 }
 
-/** IG-18: set the per-image "include in prompt" opt-in on a generated-image
- *  slot attachment (server validates: slots only; enabling requires a filled
- *  vision description). Returns the route's { ok: true } envelope. */
+/** IG-18 / CA-2b: set prompt visibility for a generated-image slot or text
+ *  file. The server keeps the image-slot identity gate and validates the kind.
+ *  Returns the route's { ok: true } envelope. */
 export async function updateAttachmentIncludeInPrompt(
   chatId: string,
   messageId: string,
@@ -304,10 +304,7 @@ export async function updateAttachmentIncludeInPrompt(
       body: JSON.stringify({ includeInPrompt }),
     },
   );
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `Failed to update include-in-prompt: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
   return response.json();
 }
 
