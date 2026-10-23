@@ -75,7 +75,7 @@ export function SkillEditor({ draft, onChange, labels, testids, t }: {
 					<button
 						type="button"
 						data-testid={testids.aiAssistBtn}
-						className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+						className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
 						onClick={() => setIsAiOpen(true)}
 					>
 						<Ic.brain /> {tStrict("script_ai_helper")}

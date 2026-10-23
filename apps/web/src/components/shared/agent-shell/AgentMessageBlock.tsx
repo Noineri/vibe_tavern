@@ -316,8 +316,8 @@ function DigestCard({
       >
         <div className="flex items-center gap-2">
           <Icons.Stack className="h-3.5 w-3.5 shrink-0 text-t3" />
-          <span className="font-ui text-[12px] font-medium text-t2">{t("copilot_context_digest_title")}</span>
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("copilot_context_digest_title")}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
             {coveredCount != null && coveredCount > 0 && (
               <span>{t("copilot_context_digest_caption", { n: coveredCount })}</span>
             )}
@@ -330,7 +330,7 @@ function DigestCard({
         {expanded && (
           <div
             data-testid="copilot-digest-card-body"
-            className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-mono text-[12px] leading-[1.5] text-msg-t1 whitespace-pre-wrap"
+            className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1 whitespace-pre-wrap"
           >
             {message.content}
           </div>

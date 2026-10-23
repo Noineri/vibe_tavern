@@ -327,7 +327,7 @@ const diffTheme = EditorView.theme({
 	},
 	".cm-copilotDiffGhost": {
 		fontFamily: "var(--font-mono)",
-		fontSize: "12px",
+		fontSize: "calc(var(--ui-fs)-2px)",
 		color: "var(--t4)",
 		textDecoration: "line-through",
 		opacity: 0.75,
@@ -344,7 +344,7 @@ const diffTheme = EditorView.theme({
 		backgroundColor: "var(--s2)",
 		color: "var(--t2)",
 		fontFamily: "var(--font-ui)",
-		fontSize: "12px",
+		fontSize: "calc(var(--ui-fs)-2px)",
 		cursor: "pointer",
 	},
 	".cm-copilotDiffAccept": {
@@ -357,7 +357,7 @@ const diffTheme = EditorView.theme({
 		backgroundColor: "var(--accent)",
 		color: "var(--on-accent)",
 		fontFamily: "var(--font-ui)",
-		fontSize: "12px",
+		fontSize: "calc(var(--ui-fs)-2px)",
 		cursor: "pointer",
 	},
 });

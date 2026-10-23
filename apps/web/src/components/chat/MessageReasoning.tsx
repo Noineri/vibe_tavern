@@ -52,7 +52,7 @@ interface VariantStyle {
 const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 	rich: {
 		container: "mb-2 overflow-hidden rounded-md border border-border bg-surface",
-		header: "flex w-full cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2",
+		header: "flex w-full cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2",
 		showIcon: true,
 		showDuration: true,
 		showCaret: true,
@@ -62,12 +62,12 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 	},
 	minimal: {
 		container: "overflow-hidden rounded border border-border",
-		header: "flex w-full cursor-pointer select-none items-center px-3 py-1.5 font-ui text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+		header: "flex w-full cursor-pointer select-none items-center px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-t2",
 		showIcon: false,
 		showDuration: false,
 		showCaret: false,
 		bodyWrapper: "border-t border-border px-3 py-2",
-		bodyText: "font-mono text-[11px] text-t3 whitespace-pre-wrap",
+		bodyText: "font-mono text-[calc(var(--mfs)-6px)] text-t3 whitespace-pre-wrap",
 		bodyAs: "mono",
 	},
 	inline: {
@@ -78,7 +78,7 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 		showCaret: true,
 		showSeparator: true,
 		bodyWrapper: "basis-full pt-1",
-		bodyText: "font-mono text-[11px] text-t3 whitespace-pre-wrap",
+		bodyText: "font-mono text-[calc(var(--mfs)-6px)] text-t3 whitespace-pre-wrap",
 		bodyAs: "mono",
 	},
 };

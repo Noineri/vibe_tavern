@@ -325,7 +325,7 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 								<span>{tDynamic(guard.referencedBody)}</span>
 								<div className="flex flex-wrap justify-center gap-1.5">
 									{pendingDelete.referencedBy.map((name) => (
-										<span key={name} className="rounded-full border border-danger/40 bg-danger-dim px-2 py-0.5 font-ui text-[11px] text-danger-text">{name}</span>
+										<span key={name} className="rounded-full border border-danger/40 bg-danger-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">{name}</span>
 									))}
 								</div>
 								<span className="text-t4">{tDynamic(guard.referencedHint)}</span>
@@ -392,7 +392,7 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 							t={tDynamic}
 						/>
 					) : (
-						<div className="font-ui text-[13px] text-t3">{tDynamic(labels.emptyDetail)}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{tDynamic(labels.emptyDetail)}</div>
 					)
 				}
 				footer={
@@ -469,7 +469,7 @@ interface SkillListProps {
 
 function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids, t, onSelect, onNew, onImport, isImporting }: SkillListProps) {
 	if (isLoading && !hasLoaded) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t(labels.loading)}</div>;
+		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t(labels.loading)}</div>;
 	}
 	// Mockup §6: rows are name + one-line description (no id, no actions).
 	// «+ New skill» docks above the import at the list bottom (mockup §8); the
@@ -520,7 +520,7 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 					<button
 						type="button"
 						data-testid={testids.newSkillBtn}
-						className="mx-2.5 mt-2 flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-2 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-t1"
+						className="mx-2.5 mt-2 flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:border-accent hover:text-t1"
 						onClick={onNew}
 					>
 						<Icons.Plus className="h-3.5 w-3.5" />
@@ -529,7 +529,7 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 					<button
 						type="button"
 						data-testid={testids.importBtn}
-						className="mx-2.5 mt-2 flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-2 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40"
+						className="mx-2.5 mt-2 flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:border-accent hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40"
 						disabled={isImporting}
 						onClick={onImport}
 					>
@@ -570,7 +570,7 @@ function SkillDetail({ skill, content, isContentLoading, contentFailed, isBodyEx
 		<div className="flex flex-col gap-5">
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
-					<h3 className="font-body text-[17px] font-semibold text-t1">{skill.name}</h3>
+					<h3 className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{skill.name}</h3>
 					<span className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 						{skill.source === "user" ? t(labels.user) : t(labels.builtIn)}
 					</span>
@@ -624,25 +624,25 @@ function SkillDetail({ skill, content, isContentLoading, contentFailed, isBodyEx
 				<AnimatedDisclosure open={isTechOpen}>
 					<dl className="mt-2 flex flex-col gap-3">
 						<PreviewRow label={t(labels.idLabel)}>
-							<span className="font-mono text-[12px] text-t1">{skill.id}</span>
+							<span className="font-mono text-[calc(var(--ui-fs)-2px)] text-t1">{skill.id}</span>
 						</PreviewRow>
 						<PreviewRow label={t(labels.manifestLabel)}>
-							<span className="font-mono text-[11px] break-all text-t2">{skill.manifestPath}</span>
+							<span className="font-mono text-[calc(var(--ui-fs)-3px)] break-all text-t2">{skill.manifestPath}</span>
 						</PreviewRow>
 						<PreviewRow label={t(labels.sourceLabel)}>
-							<span className="font-ui text-[12px] text-t2">
+							<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
 								{skill.source === "user" ? t(labels.user) : t(labels.builtIn)}
 								{skill.shadowsBuiltin && ` · ${t(labels.shadow)}`}
 							</span>
 						</PreviewRow>
 						{skill.shadowsBuiltin && (
-							<p className="font-ui text-[11px] leading-relaxed text-t3">{t(labels.shadowTitle)}</p>
+							<p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3">{t(labels.shadowTitle)}</p>
 						)}
 						{content && content.files.length > 0 && (
 							<PreviewRow label={t(labels.filesLabel)}>
 								<div className="flex flex-col gap-1">
 									{content.files.map((file) => (
-										<span key={file} className="font-mono text-[11px] break-all text-t2">{file}</span>
+										<span key={file} className="font-mono text-[calc(var(--ui-fs)-3px)] break-all text-t2">{file}</span>
 									))}
 								</div>
 							</PreviewRow>
@@ -659,7 +659,7 @@ function SkillDetail({ skill, content, isContentLoading, contentFailed, isBodyEx
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
+			<dt className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
 			<dd>{children}</dd>
 		</div>
 	);

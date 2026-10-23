@@ -97,7 +97,7 @@ export function AgentActivityCard({
         data-tool={activity.toolName}
         {...(activity.target ? { "data-target": activity.target } : {})}
         className={cn(
-          "flex min-w-0 items-start gap-1.5 px-2 py-1.5 font-ui text-[11px] font-medium tracking-[0.03em]",
+          "flex min-w-0 items-start gap-1.5 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.03em]",
           errored ? "text-danger-text" : "text-t2",
         )}
       >
@@ -106,7 +106,7 @@ export function AgentActivityCard({
         {isProposal && (
           <span
             data-testid="copilot-activity-target"
-            className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent"
+            className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"
           >
             {targetText}
           </span>
@@ -114,11 +114,11 @@ export function AgentActivityCard({
         {streaming && <span className="italic text-t3">…</span>}
       </div>
       {toolCaption?.detail !== undefined ? (
-        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">
+        <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">
           {toolCaption.detail}
         </div>
       ) : errored ? (
-        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">
+        <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">
           {t("agent_tool_failed")}
         </div>
       ) : null}

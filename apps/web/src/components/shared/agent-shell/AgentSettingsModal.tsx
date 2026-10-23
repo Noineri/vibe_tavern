@@ -209,12 +209,12 @@ export function AgentSettingsModal({
 										disabled={!profilesLoaded || profiles.length === 0}
 										searchable={false}
 										triggerTestId="agent-settings-profile-select"
-										triggerClassName="flex h-8 min-w-0 max-w-[160px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
+										triggerClassName="flex h-8 min-w-0 max-w-[160px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1.5px)] text-t1 transition-colors hover:bg-s3"
 									/>
 									<button
 										type="button"
 										data-testid="agent-settings-edit-profiles-btn"
-										className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+										className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
 										onClick={() => setProfileOpen(true)}
 									>
 										{t("agent_settings_edit_profiles")}
@@ -253,7 +253,7 @@ export function AgentSettingsModal({
 								<button
 									type="button"
 									data-testid="agent-settings-open-library-btn"
-									className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+									className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
 									onClick={() => setSkillOpen(true)}
 								>
 									{t("agent_settings_open_library")}

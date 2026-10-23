@@ -329,7 +329,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 							closeDetail={closeDetail}
 						/>
 					) : (
-						<div className="font-ui text-[13px] text-t3">{t("copilot_profile_empty")}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_empty")}</div>
 					)
 				}
 				footer={
@@ -455,11 +455,11 @@ interface ProfileListProps {
 
 function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, onSelect, onAdd }: ProfileListProps) {
 	if (isLoading) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("copilot_profile_loading")}</div>;
+		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_loading")}</div>;
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">
 				{t("copilot_profile_list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -572,7 +572,7 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 		<div className="flex flex-col gap-5">
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
-					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[17px] font-semibold text-t1">{profile.name}</h3>
+					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{profile.name}</h3>
 					<span data-testid="copilot-profile-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 						{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
 					</span>
@@ -584,7 +584,7 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 					<pre
 						data-testid="copilot-profile-prompt-preview"
 						className={cn(
-							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2",
+							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2",
 							!promptExpanded && isLongPrompt && "line-clamp-8",
 						)}
 					>
@@ -606,11 +606,11 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map((key) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{resolveAgentProfileToolLabel(t, profile.agentKind, key)}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{resolveAgentProfileToolLabel(t, profile.agentKind, key)}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("copilot_profile_no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("copilot_profile_no_skills")}</span>
 					)}
 				</PreviewRow>
 			</dl>
@@ -652,7 +652,7 @@ function ProfileEditor({ draft, t, agentKind, toolKeys, onUpdate, onToggleTool }
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("copilot_profile_base_prompt_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("copilot_profile_base_prompt_hint")}</p>
 			</div>
 
 			<Field label={t("copilot_profile_tools")}>
@@ -664,7 +664,7 @@ function ProfileEditor({ draft, t, agentKind, toolKeys, onUpdate, onToggleTool }
 								key={key}
 								type="button"
 								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 								)}
 								onClick={() => onToggleTool(key)}
@@ -684,9 +684,9 @@ function ProfileEditor({ draft, t, agentKind, toolKeys, onUpdate, onToggleTool }
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<label className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
+			<label className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
 			{children}
-			{hint && <p className="font-ui text-[10px] leading-relaxed text-t3">{hint}</p>}
+			{hint && <p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{hint}</p>}
 		</div>
 	);
 }
@@ -694,7 +694,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
+			<dt className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
 			<dd>{children}</dd>
 		</div>
 	);

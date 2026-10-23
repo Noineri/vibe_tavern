@@ -119,7 +119,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10"
                 onClick={onCancel}
               >
-                <span className="text-[11px] font-bold">✕</span>
+                <span className="text-[calc(var(--ui-fs)-3px)] font-bold">✕</span>
               </button>
             ) : (
               <button

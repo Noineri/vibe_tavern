@@ -131,7 +131,7 @@ export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
           aria-label={t("copilot_todo_expand")}
           className={cn(
             "group flex w-full min-w-0 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1",
-            "text-left text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+            "text-left text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-t2",
           )}
         >
           <NodeGlyph status={summaryStatus} />
@@ -154,7 +154,7 @@ export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
     >
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><Ic.target /></span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("copilot_todo_title")}</span>
+        <span className="text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t("copilot_todo_title")}</span>
         <span className="shrink-0 tabular-nums text-t4">{remaining}</span>
         <CustomTooltip content={t("copilot_todo_collapse")}>
           <button
@@ -179,7 +179,7 @@ export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
             </span>
             <span
               className={cn(
-                "min-w-0 flex-1 truncate font-ui text-[11px]",
+                "min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-3px)]",
                 item.status === "completed" && "text-success-text line-through",
                 item.status === "abandoned" && "text-t4 line-through",
                 item.status === "active" && "text-t2",

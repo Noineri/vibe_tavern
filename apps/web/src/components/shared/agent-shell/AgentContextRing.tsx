@@ -66,7 +66,7 @@ export function AgentContextRing({
       <CustomTooltip content={t("copilot_context_no_metrics")} side="bottom">
         <span
           data-testid="copilot-context-ring-idle"
-          className="min-w-0 max-w-[140px] shrink truncate px-1 font-ui text-[11px] text-t4"
+          className="min-w-0 max-w-[140px] shrink truncate px-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
         >
           {t("copilot_context_no_metrics")}
         </span>
@@ -102,7 +102,7 @@ export function AgentContextRing({
       className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-t3 transition-colors hover:bg-s2 hover:text-t1"
     >
       <ContextRing percent={percent} tokenState={tokenState} size={18} radius={7} strokeWidth={2.4} />
-      <span className={cn("font-ui text-[11px] tabular-nums", urgent && "text-danger-text")}>
+      <span className={cn("font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums", urgent && "text-danger-text")}>
         {percent}%
       </span>
     </button>
@@ -116,7 +116,7 @@ export function AgentContextRing({
       onClick={() => setOpen(true)}
       className="flex h-7 shrink-0 items-center rounded-md px-1.5 text-t3 transition-colors hover:bg-s2 hover:text-t1"
     >
-      <span className="font-ui text-[11px] tabular-nums">{metrics.totalTokens.toLocaleString()}</span>
+      <span className="font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums">{metrics.totalTokens.toLocaleString()}</span>
     </button>
   );
 

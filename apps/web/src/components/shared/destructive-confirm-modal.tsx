@@ -13,16 +13,16 @@ import { Modal } from "./Modal.js";
 export const SECONDARY_OUTLINE_CORE =
   "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors";
 /** Cancel / neutral-outline button chrome (also the calm secondary). */
-const CANCEL_BTN_CLS = cn(SECONDARY_OUTLINE_CORE, "h-8 px-3.5 text-[12.5px] text-t3 duration-150 hover:text-t1");
+const CANCEL_BTN_CLS = cn(SECONDARY_OUTLINE_CORE, "h-8 px-3.5 text-[calc(var(--ui-fs)-1.5px)] text-t3 duration-150 hover:text-t1");
 /** Danger primary (the destructive default). */
 const PRIMARY_DESTRUCTIVE_CLS =
-  "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
+  "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
 /** Accent primary (the calm tone) — the app's primary-button canon. */
 const PRIMARY_CALM_CLS =
-  "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
+  "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
 /** Danger-outline secondary (the destructive default). */
 const SECONDARY_DESTRUCTIVE_CLS =
-  "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[12.5px] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
+  "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
 /** Calm secondary: neutral, Cancel's outline style verbatim. */
 const SECONDARY_CALM_CLS = CANCEL_BTN_CLS;
 
@@ -62,10 +62,10 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
       <div
         className={hasSecondary ? PANEL_MULTI_CLS : PANEL_SINGLE_CLS}
       >
-        <div className="mb-2 text-base font-medium text-t1">
+        <div className="mb-2 text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">
           {input.title}
         </div>
-        <div className="mb-6 text-[13px] leading-[1.55] text-t3">
+        <div className="mb-6 text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t3">
           {input.body}
         </div>
         <div className={ROW_EXPLICIT_CLS}>
@@ -113,10 +113,10 @@ export function ShellDestructiveConfirmModal() {
       <div
         className={hasSecondary ? PANEL_MULTI_CLS : PANEL_SINGLE_CLS}
       >
-        <div className="mb-2 text-base font-medium text-t1">
+        <div className="mb-2 text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">
           {confirmDestroy.title}
         </div>
-        <div className="mb-6 text-[13px] leading-[1.55] text-t3">
+        <div className="mb-6 text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t3">
           {confirmDestroy.body}
         </div>
         <div className={hasSecondary ? ROW_EXPLICIT_CLS : ROW_SHELL_SINGLE_CLS}>

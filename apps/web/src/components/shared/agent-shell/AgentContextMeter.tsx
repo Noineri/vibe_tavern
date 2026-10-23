@@ -196,7 +196,7 @@ export function AgentContextMeter({
           disabled={compactDisabled}
           onClick={onCompact}
           className={cn(
-            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border bg-s3 px-2.5 font-ui text-[11px] transition-all hover:bg-s2",
+            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2",
             urgent ? "border-warning/60 text-warning-text" : "border-border text-t2 hover:text-t1",
             "disabled:cursor-default disabled:opacity-50 disabled:hover:bg-s3",
           )}
@@ -206,7 +206,7 @@ export function AgentContextMeter({
         </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <span className="font-ui text-[11px] text-t3">{t("copilot_context_auto")}</span>
+          <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("copilot_context_auto")}</span>
           <Toggle
             checked={autoCompact}
             onChange={onToggleAutoCompact}

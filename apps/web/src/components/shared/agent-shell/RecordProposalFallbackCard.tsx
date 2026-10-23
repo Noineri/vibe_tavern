@@ -59,14 +59,14 @@ export function RecordProposalFallbackCard({ proposal }: RecordProposalFallbackC
         <span className="mt-px shrink-0 leading-[1.45] text-t3"><Icons.FileText /></span>
         <span
           data-testid="record-proposal-fallback-title"
-          className="min-w-0 whitespace-normal break-words font-ui text-[12px] font-medium leading-snug text-t2"
+          className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium leading-snug text-t2"
         >
           {t("agent.record_proposal.unsupported_title")} · {proposal.recordType} · {t(opKey)}
         </span>
         {proposal.status === "pending" && (
           <span
             data-testid="record-proposal-fallback-status"
-            className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent"
+            className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"
           >
             {t("agent.record_proposal.status_pending")}
           </span>

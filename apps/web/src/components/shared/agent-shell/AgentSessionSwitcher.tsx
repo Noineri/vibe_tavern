@@ -100,7 +100,7 @@ export function AgentSessionSwitcher({
           )}
         >
           <Icons.Chat className="h-3.5 w-3.5 shrink-0 text-t3" />
-          <span className="min-w-0 flex-1 truncate font-ui text-[13px] text-t1">{activeLabel}</span>
+          <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{activeLabel}</span>
           <Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
         </button>
       </Popover.Trigger>
@@ -145,7 +145,7 @@ export function AgentSessionSwitcher({
                     </span>
                     {isActive && <Icons.Check className="h-3.5 w-3.5 shrink-0 text-accent-t" />}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-t4">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t4">
                     {date && <span className="shrink-0 tabular-nums">{date}</span>}
                     {isArchived && (
                       <>
@@ -227,7 +227,7 @@ export function AgentSessionSwitcher({
               if (disabled) return;
               onNew();
             }}
-            className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2 text-left font-ui text-[12.5px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+            className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2 text-left font-ui text-[calc(var(--ui-fs)-1.5px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <Icons.Plus className="h-3.5 w-3.5 shrink-0 text-accent-t" />
             <span className="truncate">{t("agent_new_session")}</span>

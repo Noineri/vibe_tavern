@@ -37,10 +37,12 @@ const ROW_SHELL_SINGLE = "flex justify-center gap-2.5";
 // The calm-secondary now composes from the shared core (SECONDARY_OUTLINE_CORE
 // + the footer's own specifics) — same utility set as before, core-first join
 // order (cn is join-only; order is incidental, the SET is the boundary).
-const CANCEL_BTN = "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors h-8 px-3.5 text-[12.5px] text-t3 duration-150 hover:text-t1";
-const PRIMARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
-const SECONDARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[12.5px] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
-const PRIMARY_CALM_BTN = "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
+// Behavior change (FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 2): the four
+// button constants were `text-[12.5px]` → now `text-[calc(var(--ui-fs)-1.5px)]`.
+const CANCEL_BTN = "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors h-8 px-3.5 text-[calc(var(--ui-fs)-1.5px)] text-t3 duration-150 hover:text-t1";
+const PRIMARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
+const SECONDARY_DESTRUCTIVE_BTN = "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
+const PRIMARY_CALM_BTN = "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
 
 function panelOf(baseElement: HTMLElement, title: string): HTMLElement {
   const titleEl = Array.from(baseElement.querySelectorAll("div")).find((d) => d.textContent === title);
