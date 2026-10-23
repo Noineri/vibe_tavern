@@ -5,7 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ToolbarSelectItem } from "../ToolbarSelect.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import type { ProviderProfileRecord } from "../../../api/types.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
 
@@ -31,25 +31,38 @@ interface FakeToolbarSelectProps {
   value: string | null;
   onSelect: (value: string) => void;
   emptyText?: ReactNode;
+  searchable?: boolean;
   contentWidth?: number;
 }
 
 // Radix Select.Content does not mount under happy-dom (no layout), so the real
 // ToolbarSelect's dropdown cannot be driven. This stub renders the trigger plus
-// one button per item, so the controlled onSelect wiring is exercised directly.
+// one row per item (a div, like the desktop DropdownSelect stub — the real row
+// is a Radix item, not a button, and the star toggle is itself a <button>),
+// so the controlled onSelect wiring is exercised directly.
+// Section labels and leading/trailing nodes render inline (the trailing node
+// wrapped in a stopPropagation span — the primitive's documented contract:
+// "Pointer events on it are stopped so tapping it does NOT select the item").
 function FakeToolbarSelect(props: FakeToolbarSelectProps) {
   return (
     <div>
       {props.trigger}
       {props.items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          data-testid={props.itemTestId?.(item.value) ?? item.value}
-          onClick={() => props.onSelect(item.value)}
-        >
-          {item.label}
-        </button>
+        <div key={item.value}>
+          {item.sectionLabel != null && item.sectionLabel !== "" && (
+            <div>{item.sectionLabel}</div>
+          )}
+          <div
+            data-testid={props.itemTestId?.(item.value) ?? item.value}
+            onClick={() => props.onSelect(item.value)}
+          >
+            {item.leading}
+            {item.label}
+            {item.trailing != null && (
+              <span onClick={(e) => e.stopPropagation()}>{item.trailing}</span>
+            )}
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -72,7 +85,33 @@ const realProviderActions = await import("../../../stores/api-actions/provider-a
 mock.module("../../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
   loadFavoriteModelsAction: async () => {},
-  toggleFavoriteModelAction: async () => {},
+  // The pills' star toggles fire-and-forget through this action and converge
+  // via the store — the fake applies that convergence synchronously so the
+  // toggle boundary is pinnable without a server (add ↔ remove by `removing`).
+  toggleFavoriteModelAction: async (
+    profileId: string,
+    modelId: string,
+    label: string | null | undefined,
+    contextLength: number | null | undefined,
+    removing: boolean,
+  ) => {
+    const state = useProviderDataStore.getState();
+    const current = state.copilotFavoritesByProfile[profileId] ?? [];
+    const next: FavoriteProviderModelRecord[] = removing
+      ? current.filter((f) => f.modelId !== modelId)
+      : [...current, {
+          id: `fav-${modelId}`,
+          providerProfileId: profileId,
+          modelId,
+          label: label ?? modelId,
+          contextLength: contextLength ?? null,
+          scope: "copilot",
+          createdAt: "",
+        }];
+    useProviderDataStore.setState({
+      copilotFavoritesByProfile: { ...state.copilotFavoritesByProfile, [profileId]: next },
+    });
+  },
 }));
 
 beforeAll(async () => {
@@ -276,5 +315,89 @@ describe("ExperienceCopilotMobileInputArea — Escape cancels the turn (AP-19)",
 
     expect(props.onCancel).not.toHaveBeenCalled();
     expect(props.onSend).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AP-26b: phone pills characterization (pre-move) ─────────────────────────
+// Pins TODAY's inline phone pills so the move into `AgentModelPills mobile`
+// keeps them byte-identical: trigger labels, the favorites/all sections, the
+// star-toggle contract, the select contract. These pass UNCHANGED after the
+// move (same test ids through the same ToolbarSelect stub).
+
+describe("ExperienceCopilotMobileInputArea — phone pills (AP-26b)", () => {
+  const TWO_MODEL_PROFILES = [
+    {
+      id: "p1",
+      name: "OpenAI Pro",
+      cachedModels: { models: [
+        { id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } },
+        { id: "m2", label: "Model Two", contextLength: 64000, capabilities: { tools: true } },
+      ] },
+    },
+    {
+      id: "p2",
+      name: "Anthropic",
+      cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
+    },
+  ] as unknown as ProviderProfileRecord[];
+
+  function seedTwoModelsWithFavorite() {
+    useProviderDataStore.setState({
+      profiles: TWO_MODEL_PROFILES,
+      copilotFavoritesByProfile: {
+        p1: [{ id: "fav-m1", providerProfileId: "p1", modelId: "m1", label: "Model One", contextLength: 128000, scope: "copilot", createdAt: "" }],
+      },
+    });
+  }
+
+  it("pills render with the active profile name and the active model label", () => {
+    const { getByTestId } = renderMobileInput({});
+
+    expect(getByTestId("copilot-provider-pill").textContent).toContain("OpenAI Pro");
+    expect(getByTestId("copilot-model-pill").textContent).toContain("Model One");
+  });
+
+  it("model sheet: favorites section with its label and leading stars, then all-models WITHOUT the favorited model", () => {
+    seedTwoModelsWithFavorite();
+    const { getByTestId, getByText, queryAllByTestId } = renderMobileInput({});
+
+    // Favorites section carries its label; the favorited row renders exactly
+    // once — the leading star (svg) sits before the label text, and the
+    // trailing toggle offers the unstar (filled) action.
+    expect(getByText("copilot_model_favorites_section")).toBeDefined();
+    expect(queryAllByTestId("copilot-model-option-m1")).toHaveLength(1);
+    const favRow = getByTestId("copilot-model-option-m1");
+    expect(favRow.textContent).toContain("Model One");
+    const favHtml = favRow.innerHTML;
+    expect(favHtml.indexOf("<svg")).toBeGreaterThanOrEqual(0);
+    expect(favHtml.indexOf("<svg")).toBeLessThan(favHtml.indexOf("Model One"));
+    expect(getByTestId("copilot-model-star-m1")).toBeDefined();
+    // All-models section carries its label and lists only the non-favorite.
+    expect(getByText("copilot_model_all_section")).toBeDefined();
+    expect(getByTestId("copilot-model-option-m2")).toBeDefined();
+  });
+
+  it("a star tap toggles the favorite and NEVER selects the row", () => {
+    seedTwoModelsWithFavorite();
+    const { getByTestId, queryAllByTestId, props } = renderMobileInput({});
+
+    fireEvent.click(getByTestId("copilot-model-star-m2"));
+
+    // The composer's binding is untouched...
+    expect(props.onProviderChange).not.toHaveBeenCalled();
+    // ...while the favorites converge through the store (m2 joins m1) and
+    // the row moves to the favorites section (still rendered exactly once).
+    const after = useProviderDataStore.getState().copilotFavoritesByProfile["p1"] ?? [];
+    expect(after.map((f) => f.modelId).sort()).toEqual(["m1", "m2"]);
+    expect(queryAllByTestId("copilot-model-option-m2")).toHaveLength(1);
+  });
+
+  it("picking a model calls onProviderChange with the profile id + model id", () => {
+    seedTwoModelsWithFavorite();
+    const { getByTestId, props } = renderMobileInput({});
+
+    fireEvent.click(getByTestId("copilot-model-option-m2"));
+
+    expect(props.onProviderChange).toHaveBeenCalledWith("p1", "m2");
   });
 });
