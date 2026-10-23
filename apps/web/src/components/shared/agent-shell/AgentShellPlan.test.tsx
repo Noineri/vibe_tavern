@@ -137,11 +137,21 @@ function chatDescriptor(kind: string): AgentHostDescriptor {
 		kind,
 		i18n: {
 			title: "agent_title",
+			kindLabel: "agent_kind_sidechat",
 			placeholder: "agent_input_placeholder",
 			loading: "agent_loading",
 			emptyTitle: "agent_title",
 			emptySub: "agent_subtitle",
 		},
+		// AP-17: required on every descriptor (exactly four keys — the tuple
+		// type makes a wrong count a compile break); the real hosts' values are
+		// pinned by agent-host-registry.test.ts.
+		starterPromptKeys: [
+			"agent_starter_sidechat_recap",
+			"agent_starter_sidechat_feelings",
+			"agent_starter_sidechat_twists",
+			"agent_starter_sidechat_pacing",
+		],
 		toolKeys: [],
 		profileAssignment: { target: "chat" },
 		// AP-2: required on every descriptor (a missing markup is a compile break).
@@ -158,11 +168,21 @@ function descriptor(kind: string, withPlan: boolean): AgentHostDescriptor {
 		kind,
 		i18n: {
 			title: "agent_title",
+			kindLabel: "agent_kind_script",
 			placeholder: "agent_input_placeholder",
 			loading: "agent_loading",
 			emptyTitle: "agent_title",
 			emptySub: "agent_subtitle",
 		},
+		// AP-17: required on every descriptor (exactly four keys — the tuple
+		// type makes a wrong count a compile break); the real hosts' values are
+		// pinned by agent-host-registry.test.ts.
+		starterPromptKeys: [
+			"agent_starter_script_explain",
+			"agent_starter_script_fix_bugs",
+			"agent_starter_script_comment",
+			"agent_starter_script_simplify",
+		],
 		toolKeys: [],
 		profileAssignment: { target: "script" },
 		// AP-2: required on every descriptor (a missing markup is a compile break).

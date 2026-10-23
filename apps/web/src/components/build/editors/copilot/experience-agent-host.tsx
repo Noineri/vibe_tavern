@@ -441,6 +441,9 @@ registerAgentHost({
     // stays host-flavored — it is the EDITOR's shared back label, and the
     // shell test pins its aria-label byte-exactly.
     title: "agent_title",
+    // AP-17: the kind heading for the strip/modal (mockup section 3, the RU
+    // mini-apps kind label).
+    kindLabel: "agent_kind_experience",
     subtitle: "agent_subtitle",
     placeholder: "agent_input_placeholder",
     loading: "agent_loading",
@@ -448,6 +451,15 @@ registerAgentHost({
     emptySub: "agent_subtitle",
     mobileBackLabelKey: "experience_editor_back",
   },
+  // AP-17: the empty-session starter prompts (mockup section 3, the
+  // mini-apps row) — rendered by AP-18 as click-to-fill composer chips,
+  // never sent directly.
+  starterPromptKeys: [
+    "agent_starter_experience_game",
+    "agent_starter_experience_explain_rules",
+    "agent_starter_experience_find_bugs",
+    "agent_starter_experience_polish_visual",
+  ],
   // The toggleable tool keys of the experience assistant profiles — the shared
   // profile modal reads them from here (no kind literal in the shell).
   toolKeys: COPILOT_TOOL_KEYS,

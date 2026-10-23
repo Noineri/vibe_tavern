@@ -159,11 +159,22 @@ registerAgentHost({
   kind: SIDECHAT_AGENT_KIND,
   i18n: {
     title: "agent_title",
+    // AP-17: the kind heading for the strip/modal (mockup section 3, the
+    // RU sidechat kind label).
+    kindLabel: "agent_kind_sidechat",
     placeholder: "sidechat_input_placeholder",
     loading: "agent_loading",
     emptyTitle: "agent_title",
     emptySub: "sidechat_empty_hint",
   },
+  // AP-17: the empty-session starter prompts (mockup §3, sidechat row) —
+  // rendered by AP-18 as click-to-fill composer chips, never sent directly.
+  starterPromptKeys: [
+    "agent_starter_sidechat_recap",
+    "agent_starter_sidechat_feelings",
+    "agent_starter_sidechat_twists",
+    "agent_starter_sidechat_pacing",
+  ],
   // The toggleable tool keys of the sidechat profiles — the wire contract's
   // six keys since SC-23e (the single source for toggleable-tool names), so
   // the shared profile modal never branches on the kind.

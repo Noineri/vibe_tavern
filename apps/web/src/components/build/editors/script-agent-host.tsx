@@ -631,6 +631,9 @@ registerAgentHost({
   kind: SCRIPT_KIND,
   i18n: {
     title: "agent_title",
+    // AP-17: the kind heading for the strip/modal (mockup section 3, the RU
+    // scripts kind label).
+    kindLabel: "agent_kind_script",
     subtitle: "agent_script_subtitle",
     placeholder: "agent_input_placeholder",
     loading: "agent_loading",
@@ -638,6 +641,15 @@ registerAgentHost({
     emptySub: "agent_script_subtitle",
     mobileBackLabelKey: "import_back",
   },
+  // AP-17: the empty-session starter prompts (mockup section 3, the scripts
+  // row) — rendered by AP-18 as click-to-fill composer chips, never sent
+  // directly.
+  starterPromptKeys: [
+    "agent_starter_script_explain",
+    "agent_starter_script_fix_bugs",
+    "agent_starter_script_comment",
+    "agent_starter_script_simplify",
+  ],
   // The toggleable tool keys of the script assistant profiles — the shared
   // profile modal reads them from here (no kind literal in the shell).
   toolKeys: SCRIPT_AGENT_TOOL_KEYS,

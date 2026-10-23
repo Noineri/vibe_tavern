@@ -1,7 +1,7 @@
 /**
  * agent-host-registry — register/get/unsubscribe/duplicate/re-register.
  */
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import {
   AgentHostAlreadyRegisteredError,
   UnknownAgentHostError,
@@ -33,11 +33,21 @@ function descriptor(kind: string): AgentHostDescriptor {
       // registry treats the keys as opaque tokens either way; real keys keep
       // the fixture honest against the locale source.
       title: "agent_title",
+      kindLabel: "agent_kind_script",
       placeholder: "agent_input_placeholder",
       loading: "agent_loading",
       emptyTitle: "agent_title",
       emptySub: "agent_subtitle",
     },
+    // AP-17: required on every descriptor (exactly four keys — the tuple
+    // type makes a wrong count a compile break); the fixture reuses the
+    // script host's four real keys to stay honest against the locale source.
+    starterPromptKeys: [
+      "agent_starter_script_explain",
+      "agent_starter_script_fix_bugs",
+      "agent_starter_script_comment",
+      "agent_starter_script_simplify",
+    ],
     toolKeys: [],
     // SC-0g: the registry-mechanics fixture is script-owned (the field is
     // required on every descriptor; the chat target is pinned by the modal's
@@ -200,5 +210,58 @@ describe("agent-host-registry", () => {
     } finally {
       unsubscribeSecond();
     }
+  });
+});
+
+// ── AP-17: the built-in hosts' starter prompts + kind labels ───────────────
+// The registry-mechanics tests above use synthetic fixtures; these pins read
+// the THREE real host modules (module-load registration — the AgentChatPane
+// test's dynamic-import precedent) so the per-host VALUES are pinned in one
+// cross-host place (the experience host has no test file of its own). The
+// KEY STRINGS, not the translated copy, are the contract here — the mockup
+// verbatim RU values live in `i18n/locales/ru.json` and are kept in en/ru
+// parity by the i18n gate.
+describe("agent-host-registry — built-in hosts (AP-17)", () => {
+  const KINDS = ["experience", "script", "sidechat-ooc"] as const;
+
+  beforeAll(async () => {
+    await import("../components/build/editors/copilot/experience-agent-host.js");
+    await import("../components/build/editors/script-agent-host.js");
+    await import("../components/chat/sidechat/sidechat-host.js");
+  });
+
+  it("every built-in host carries a kindLabel and exactly four starter prompt keys", () => {
+    for (const kind of KINDS) {
+      const host = getAgentHost(kind);
+      expect(typeof host.i18n.kindLabel).toBe("string");
+      expect(host.starterPromptKeys).toHaveLength(4);
+    }
+  });
+
+  it("pins each built-in host's kindLabel key", () => {
+    expect(getAgentHost("experience").i18n.kindLabel).toBe("agent_kind_experience");
+    expect(getAgentHost("script").i18n.kindLabel).toBe("agent_kind_script");
+    expect(getAgentHost("sidechat-ooc").i18n.kindLabel).toBe("agent_kind_sidechat");
+  });
+
+  it("pins each built-in host's four starter prompt keys in mockup order", () => {
+    expect(getAgentHost("experience").starterPromptKeys).toEqual([
+      "agent_starter_experience_game",
+      "agent_starter_experience_explain_rules",
+      "agent_starter_experience_find_bugs",
+      "agent_starter_experience_polish_visual",
+    ]);
+    expect(getAgentHost("script").starterPromptKeys).toEqual([
+      "agent_starter_script_explain",
+      "agent_starter_script_fix_bugs",
+      "agent_starter_script_comment",
+      "agent_starter_script_simplify",
+    ]);
+    expect(getAgentHost("sidechat-ooc").starterPromptKeys).toEqual([
+      "agent_starter_sidechat_recap",
+      "agent_starter_sidechat_feelings",
+      "agent_starter_sidechat_twists",
+      "agent_starter_sidechat_pacing",
+    ]);
   });
 });

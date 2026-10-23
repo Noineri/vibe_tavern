@@ -32,10 +32,18 @@ beforeAll(async () => {
     kind: "sc13a-caption-host",
     i18n: {
       title: "agent_title",
+      kindLabel: "agent_kind_script",
       placeholder: "agent_input_placeholder",
       loading: "agent_loading",
       emptyTitle: "agent_title",
     },
+    // AP-17: required on every descriptor (four keys, tuple-typed).
+    starterPromptKeys: [
+      "agent_starter_script_explain",
+      "agent_starter_script_fix_bugs",
+      "agent_starter_script_comment",
+      "agent_starter_script_simplify",
+    ],
     toolKeys: [],
     profileAssignment: { target: "chat" },
     // AP-2: required on every descriptor (a missing markup is a compile break).

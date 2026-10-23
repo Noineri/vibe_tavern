@@ -246,10 +246,18 @@ beforeAll(async () => {
 		kind: CHAT_KIND,
 		i18n: {
 			title: "agent_title",
+			kindLabel: "agent_kind_sidechat",
 			placeholder: "agent_input_placeholder",
 			loading: "agent_loading",
 			emptyTitle: "agent_title",
 		},
+		// AP-17: required on every descriptor (four keys, tuple-typed).
+		starterPromptKeys: [
+			"agent_starter_sidechat_recap",
+			"agent_starter_sidechat_feelings",
+			"agent_starter_sidechat_twists",
+			"agent_starter_sidechat_pacing",
+		],
 		toolKeys: ["ask_user"],
 		profileAssignment: { target: "chat" },
 		// AP-2: required on every descriptor (a missing markup is a compile break).

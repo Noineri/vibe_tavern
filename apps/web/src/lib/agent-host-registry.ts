@@ -375,6 +375,13 @@ export interface AgentHostDescriptor {
   /** i18n KEYS (not strings) — the shell resolves them through `useT`. */
   i18n: {
     title: AgentI18nKey;
+    /** AP-17: the kind's heading label key (RU: the mini-apps / scripts /
+     *  sidechat kind labels) — the strip/modal kind heading the shell renders
+     *  beside the host-neutral `title` ("AI assistant"), so a surface listing
+     *  the kinds never hand-types the label. Required on every descriptor
+     *  (AP-2 pattern): a host that forgets it is a compile break, not a
+     *  silent fallback. Rendered by AP-18; nothing reads it yet. */
+    kindLabel: AgentI18nKey;
     subtitle?: AgentI18nKey;
     placeholder: AgentI18nKey;
     loading: AgentI18nKey;
@@ -390,6 +397,14 @@ export interface AgentHostDescriptor {
      *  does not render at all). */
     mobileBackLabelKey?: AgentI18nKey;
   };
+  /** AP-17: the kind's FOUR starter-prompt keys (AGENT_SHELL_POLISH mockup
+   *  §3 — the empty-session prompt chips). A fixed-length tuple, not an open
+   *  array: the mockup draws exactly four per host, so the length is part of
+   *  the contract and the compiler enforces it at every registration site
+   *  (AP-2 required-field pattern). The shell resolves each key through
+   *  `useT` and a click fills the composer (never sends) — rendered by
+   *  AP-18; nothing reads this field yet. */
+  starterPromptKeys: readonly [AgentI18nKey, AgentI18nKey, AgentI18nKey, AgentI18nKey];
   /** The toggleable tool keys of this kind's assistant profiles (the keys of a
    *  profile's `toolSet`). The shared profile modal renders its toggles from
    *  here, so it never branches on the kind. */

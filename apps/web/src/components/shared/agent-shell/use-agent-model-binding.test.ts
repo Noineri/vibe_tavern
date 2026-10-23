@@ -130,10 +130,18 @@ beforeAll(async () => {
 		kind: "sc0e-hook",
 		i18n: {
 			title: "agent_title",
+			kindLabel: "agent_kind_script",
 			placeholder: "agent_input_placeholder",
 			loading: "agent_loading",
 			emptyTitle: "agent_title",
 		},
+		// AP-17: required on every descriptor (four keys, tuple-typed).
+		starterPromptKeys: [
+			"agent_starter_script_explain",
+			"agent_starter_script_fix_bugs",
+			"agent_starter_script_comment",
+			"agent_starter_script_simplify",
+		],
 		toolKeys: [],
 		// SC-0g: both script-owned hosts are `script`-assigned (the field is
 		// required on every descriptor).
@@ -150,10 +158,18 @@ beforeAll(async () => {
 		kind: "sc0e-hook-dangling",
 		i18n: {
 			title: "agent_title",
+			kindLabel: "agent_kind_script",
 			placeholder: "agent_input_placeholder",
 			loading: "agent_loading",
 			emptyTitle: "agent_title",
 		},
+		// AP-17: required on every descriptor (four keys, tuple-typed).
+		starterPromptKeys: [
+			"agent_starter_script_explain",
+			"agent_starter_script_fix_bugs",
+			"agent_starter_script_comment",
+			"agent_starter_script_simplify",
+		],
 		toolKeys: [],
 		// SC-0g: both script-owned hosts are `script`-assigned (the field is
 		// required on every descriptor).
