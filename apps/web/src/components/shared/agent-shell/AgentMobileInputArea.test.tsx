@@ -227,3 +227,54 @@ describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
     expect(onPinContext).toHaveBeenCalledWith({ targetType: "character", id: "c1", label: "Alice", hint: "wanderer" });
   });
 });
+
+// ─── AP-19: Escape stops the streaming turn ──────────────────────────────────
+
+describe("ExperienceCopilotMobileInputArea — Escape cancels the turn (AP-19)", () => {
+  const CATALOG = [
+    { targetType: "character", id: "c1", label: "Alice", hint: "wanderer" },
+    { targetType: "skill", id: "sk1", label: "Skill A" },
+  ] as const;
+
+  const chatInput = () =>
+    document.querySelector('textarea[data-testid="copilot-chat-input"]') as HTMLTextAreaElement;
+
+  const typeInto = (text: string, caret = text.length) => {
+    const ta = chatInput();
+    fireEvent.change(ta, { target: { value: text } });
+    ta.setSelectionRange(caret, caret);
+    fireEvent.select(ta);
+  };
+
+  it("Escape while isSending cancels the turn — bare Enter stays the newline key (E4)", () => {
+    const { props } = renderMobileInput({ isSending: true });
+
+    typeInto("draft stays");
+    fireEvent.keyDown(chatInput(), { key: "Enter" });
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape with the mention picker OPEN closes the picker and does NOT cancel (picker priority)", () => {
+    const { props } = renderMobileInput({ isSending: true, mentionCatalog: CATALOG });
+
+    typeInto("@");
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(2);
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("Escape while NOT streaming does nothing new", () => {
+    const { props } = renderMobileInput({ isSending: false });
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+});

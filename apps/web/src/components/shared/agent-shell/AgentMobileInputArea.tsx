@@ -96,7 +96,18 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
   // E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
   // enter key is the newline key; sending happens via the send button only.
   // The mention picker still intercepts its own keys (Enter/Tab/Arrows/Escape)
-  // before any fallback; desktop (ExperienceCopilotInputArea) keeps Enter-to-send.
+  // before any fallback; desktop (AgentInputArea) keeps Enter-to-send.
+
+  // AP-19: the ONE fallback keydown on mobile — Escape while the turn
+  // streams cancels it (the controller's quiet abort; no error card). Bare
+  // Enter stays the newline key (E4 above), and the picker's own Escape
+  // wins while its popover is open (the hook runs before this fallback).
+  const handleCancelKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape" && isSending) {
+      e.preventDefault();
+      onCancel();
+    }
+  };
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
@@ -182,7 +193,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             onSelect={mention.handleSelect}
             onClick={mention.handleClick}
             onBlur={mention.handleBlur}
-            onKeyDown={(e) => mention.handleKeyDown(e)}
+            onKeyDown={(e) => mention.handleKeyDown(e, handleCancelKeyDown)}
           />
           <div className="flex shrink-0 items-center">
             {isSending ? (

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import { experienceCopilotThreads } from "../src/db-schema.js";
 import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
+import { deriveThreadTitleFromFirstMessage } from "../src/stores/experience-copilot-auto-title.js";
 import type { CopilotContextMetrics } from "../src/stores/experience-copilot-row-parse.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -578,5 +579,73 @@ describe("ExperienceCopilotStore — setToolResultOutput (TAG-5)", () => {
     expect(
       await store.setToolResultOutput(thread.id, "tc_other_thread", { toolName: "ask_user", output: {} }),
     ).toBeNull();
+  });
+});
+
+// ─── AP-19: auto-title from the first user message ──────────────────────────
+
+describe("deriveThreadTitleFromFirstMessage (AP-19 — the ONE derivation)", () => {
+  test("first line only — everything after the first newline drops", () => {
+    expect(deriveThreadTitleFromFirstMessage("Fix the rules\nsecond line\nthird")).toBe("Fix the rules");
+  });
+
+  test("runs of whitespace collapse to single spaces; edges trim", () => {
+    expect(deriveThreadTitleFromFirstMessage("  make   it \t darker  ")).toBe("make it darker");
+  });
+
+  test("hard cap 120 chars on the collapsed first line", () => {
+    expect(deriveThreadTitleFromFirstMessage("x".repeat(200))).toHaveLength(120);
+  });
+});
+
+describe("ExperienceCopilotStore — auto-title from the first user message (AP-19)", () => {
+  test("empty title: the first user message titles the thread (first line, collapsed)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_set");
+
+    await store.appendMessage(thread.id, { role: "user", content: "  Polish the  rules\nplease\nand thank you" });
+
+    expect((await store.getById(thread.id))!.title).toBe("Polish the rules");
+  });
+
+  test("a >120-char first line titles with exactly its first 120 chars", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_cap");
+
+    await store.appendMessage(thread.id, { role: "user", content: "y".repeat(300) });
+
+    expect((await store.getById(thread.id))!.title).toBe("y".repeat(120));
+  });
+
+  test("rename wins: a thread titled before its first message is never auto-titled", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_rename", "Owner name");
+
+    await store.appendMessage(thread.id, { role: "user", content: "first message line" });
+
+    expect((await store.getById(thread.id))!.title).toBe("Owner name");
+  });
+
+  test("only the FIRST user message titles — a later user row leaves even an empty title empty", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_later");
+
+    await store.appendMessage(thread.id, { role: "user", content: "original opener" });
+    // The user clears the title back to "" (the client numbered-fallback
+    // state); the NEXT user message must not re-derive it.
+    await store.renameSession(thread.id, "");
+    await store.appendMessage(thread.id, { role: "user", content: "second message" });
+
+    expect((await store.getById(thread.id))!.title).toBe("");
+  });
+
+  test("non-user rows never title the thread", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_roles");
+
+    await store.appendMessage(thread.id, { role: "assistant", content: "assistant opener" });
+    await store.appendMessage(thread.id, { role: "tool", content: "{}", toolCallId: "tc_ap19" });
+
+    expect((await store.getById(thread.id))!.title).toBe("");
   });
 });

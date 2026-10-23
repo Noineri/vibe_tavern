@@ -137,6 +137,14 @@ export function AgentInputArea(props: AgentInputAreaProps) {
       e.preventDefault();
       handleSend();
     }
+    // AP-19: Escape while the turn streams cancels it (the controller's
+    // quiet abort — no error card). The mention picker's own Escape wins
+    // while its popover is open: the hook handles that key before this
+    // fallback ever runs, and a not-streaming Escape falls through untouched.
+    if (e.key === "Escape" && isSending) {
+      e.preventDefault();
+      onCancel();
+    }
   };
 
   return (

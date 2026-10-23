@@ -7,6 +7,7 @@ import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink,
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
+import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -418,7 +419,8 @@ export class ExperienceCopilotStore {
 
   /**
    * Append a message to a thread and bump the thread's updated_at so it surfaces
-   * as the most recently touched session. Returns the inserted message. Both
+   * as the most recently touched session. Returns the inserted message (a
+   * user row on an UNTITLED thread also auto-titles it — AP-19). Both
    * writes run in a synchronous transaction so updated_at always reflects the
    * last appended message (a failure on either rolls both back). SC-1: on a
    * CHAT-OWNED thread the same transaction also allocates the next gapless
@@ -430,6 +432,7 @@ export class ExperienceCopilotStore {
     const now = this.clock.now();
     const id = this.idGen.next('expcop_msg');
     this.db.transaction((tx) => {
+      if (input.role === 'user') applyFirstMessageAutoTitle(tx, threadId, input.content ?? '');
       const seq = this.allocateSeqAndTouchThread(tx, threadId, now);
       tx
         .insert(experienceCopilotMessages)

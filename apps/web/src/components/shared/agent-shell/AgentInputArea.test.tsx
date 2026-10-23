@@ -396,3 +396,52 @@ describe("ExperienceCopilotInputArea — pinned context (CX-6)", () => {
     expect(onSend).toHaveBeenCalledWith("hello");
   });
 });
+
+// ─── AP-19: Escape stops the streaming turn ──────────────────────────────────
+
+describe("ExperienceCopilotInputArea — Escape cancels the turn (AP-19)", () => {
+  const CATALOG = [
+    { targetType: "character", id: "c1", label: "Alice", hint: "wanderer" },
+    { targetType: "skill", id: "sk1", label: "Skill A" },
+  ] as const;
+
+  const chatInput = () =>
+    document.querySelector('textarea[data-testid="copilot-chat-input"]') as HTMLTextAreaElement;
+
+  const typeInto = (text: string, caret = text.length) => {
+    const ta = chatInput();
+    fireEvent.change(ta, { target: { value: text } });
+    ta.setSelectionRange(caret, caret);
+    fireEvent.select(ta);
+  };
+
+  it("Escape while isSending cancels the turn (quiet abort, no draft change)", () => {
+    const { props } = renderInput({ isSending: true });
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape with the mention picker OPEN closes the picker and does NOT cancel (picker priority)", () => {
+    const { props } = renderInput({ isSending: true, mentionCatalog: CATALOG });
+
+    typeInto("@");
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(2);
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    // The picker's own Escape wins: the popover closes, the stream keeps going.
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0);
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("Escape while NOT streaming does nothing new (no cancel, no send)", () => {
+    const { props } = renderInput({ isSending: false });
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+});
