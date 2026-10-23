@@ -526,6 +526,31 @@ export const skillImportResultSchema = z.object({
 export type SkillImportResult = z.infer<typeof skillImportResultSchema>;
 
 /**
+ * Full content view of one skill (AGENT_SHELL_POLISH, AP-21) — the payload of
+ * `GET .../skills/:id/content` on BOTH the copilot (per kind) and Co-Author
+ * skill routes. The manifest crosses the wire three ways: `content` is the
+ * RAW manifest file (frontmatter included); `body` is the same text with the
+ * frontmatter block stripped (the skill editor's text view); `files` are the
+ * skill folder's POSIX-style relative file paths (the technical-details list)
+ * with the manifest itself EXCLUDED — it is already surfaced as
+ * `content`/`body`. The read goes through the sandboxed `readSkillFile` (user
+ * shadow first), so no absolute filesystem path crosses the wire.
+ */
+export const skillContentSchema = z.object({
+  /** Stable skill id = the skill directory name. */
+  id: z.string(),
+  /** Root-relative manifest path that was read (`<id>/SKILL.md`) — portable. */
+  path: z.string(),
+  /** Raw manifest text, YAML frontmatter included. */
+  content: z.string(),
+  /** The manifest text WITHOUT its frontmatter block. */
+  body: z.string(),
+  /** Relative file paths inside the skill folder (manifest excluded), sorted. */
+  files: z.array(z.string()),
+});
+export type SkillContentDto = z.infer<typeof skillContentSchema>;
+
+/**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
  * the per-section `edit_*` tools (edit_personality / edit_scenario /
  * edit_examples) and by the frontend operation-card renderer (Wave 6), so the

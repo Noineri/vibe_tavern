@@ -26,9 +26,10 @@
 import { lstat, mkdir, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
+import { parseSkillManifest, buildSkillCatalog, skillManifestBody } from "./skill-scanner.js";
 import type { SkillCatalog, SkillCatalogEntry, ScanRoot } from "./skill-scanner.js";
-import type { SkillImportResult } from "@vibe-tavern/api-contracts";
+import { readSkillFile, SkillReadError } from "./skill-read-tool.js";
+import type { SkillImportResult, SkillContentDto } from "@vibe-tavern/api-contracts";
 // Re-export so callers importing from this module keep resolving; the
 // canonical wire type lives in api-contracts (single source of truth).
 export type { SkillImportResult };
@@ -336,6 +337,40 @@ export async function listTopLevelDirs(rootDir: string): Promise<string[]> {
   }
 }
 
+/**
+ * List the ordinary files inside ONE skill folder (AP-21): POSIX-style paths
+ * relative to the skill directory, sorted, with `SKILL.md` EXCLUDED (the
+ * manifest is surfaced separately as the content view's `content`/`body`, so
+ * listing it again would be redundant). Symlinks are skipped and never
+ * followed — the same sandbox convention as the scanner's `listSkillDirs` and
+ * `readSkillFile`, so the listing can never escape the skill folder. A
+ * missing/unreadable folder reads as an empty list (the same tolerant
+ * convention as {@link listTopLevelDirs}); the caller then shows the skill as
+ * manifest-only.
+ */
+export async function listSkillFolderFiles(skillDir: string): Promise<string[]> {
+  const files: string[] = [];
+
+  try {
+    for await (const entry of new Bun.Glob("**/*").scan({
+      cwd: skillDir,
+      dot: true,
+      followSymlinks: false,
+      onlyFiles: true,
+    })) {
+      const stat = await lstat(join(skillDir, entry));
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      const posixPath = entry.replace(/\\/g, "/");
+      if (posixPath === MANIFEST_NAME) continue;
+      files.push(posixPath);
+    }
+
+    return files.sort();
+  } catch {
+    return [];
+  }
+}
+
 // ─── Service (owns roots, caches built-in ids) ───────────────────────────────
 
 /**
@@ -370,6 +405,36 @@ export class SkillLibraryService {
   readCatalogEntry = async (id: string): Promise<SkillCatalogEntry | null> => {
     const { entries } = await this.listCatalog();
     return entries.find((e) => e.id === id) ?? null;
+  };
+
+  /**
+   * Full content view of one skill (AGENT_SHELL_POLISH, AP-21) — the ONE
+   * derivation both skill route families (Co-Author and per-kind copilot) call:
+   * the manifest read goes through the SAME sandboxed {@link readSkillFile} the
+   * model tool uses, with the user root first so a user shadow of a built-in
+   * wins (matching the catalog precedence); `body` is the manifest text with
+   * its frontmatter block stripped (the skill editor's text view, derived by
+   * the scanner's single fence parser); `files` lists the WINNING folder's
+   * relative file paths with the manifest excluded. Returns `null` when the id
+   * is not in the catalog or the manifest is unreadable through the sandboxed
+   * reader — an unreadable manifest reads as not-found, the metadata routes'
+   * 404 convention.
+   */
+  readSkillContent = async (id: string): Promise<SkillContentDto | null> => {
+    const entry = await this.readCatalogEntry(id);
+    if (entry === null) return null;
+
+    try {
+      // User root first — the same root order the catalog merge uses, so the
+      // manifest read and the folder listing always describe the same winner.
+      const manifest = await readSkillFile(`${id}/${MANIFEST_NAME}`, [this.userRoot, this.builtinRoot]);
+      const body = skillManifestBody(manifest.content) ?? manifest.content;
+      const files = await listSkillFolderFiles(entry.skillDir);
+      return { id, path: manifest.path, content: manifest.content, body, files };
+    } catch (err) {
+      if (err instanceof SkillReadError) return null;
+      throw err;
+    }
   };
 
   /** The resolved roots this service reads from / writes to. */

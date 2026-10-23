@@ -9,6 +9,11 @@ import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js"
  *  - `GET  /api/coauthor/skills`        — metadata-only catalog: built-in + user
  *    skills merged with user precedence. No file bodies; no absolute paths.
  *  - `GET  /api/coauthor/skills/:id`     — one catalog entry by id (404 if absent).
+ *  - `GET  /api/coauthor/skills/:id/content` — full content view (AP-21): the
+ *    raw manifest via the sandboxed `readSkillFile` (user shadow first), the
+ *    frontmatter-stripped `body`, and the folder's relative file `files`
+ *    (manifest excluded). Same shape on the copilot skill routes — the ONE
+ *    domain derivation (`SkillLibraryService.readSkillContent`) serves both.
  *  - `POST /api/coauthor/skills/import`  — multipart upload where each file
  *    part's FIELD NAME is its relative path (e.g. `my-skill/SKILL.md`,
  *    `my-skill/assets/template.md`). This is the natural shape a browser
@@ -29,6 +34,15 @@ export function createCoauthorSkillRoutes(runtime: CoauthorSkillsRuntimeApi) {
       const entry = await runtime.readSkill(id);
       if (!entry) return c.json({ error: `skill '${id}' does not exist` }, 404);
       return c.json(entry);
+    })
+    .get("/api/coauthor/skills/:id/content", async (c) => {
+      const id = c.req.param("id");
+      // `null` covers both a missing skill and an unreadable manifest — the
+      // metadata route's 404 convention (no route-level fs access; the whole
+      // read lives in the sandboxed domain derivation).
+      const content = await runtime.readSkillContent(id);
+      if (!content) return c.json({ error: `skill '${id}' does not exist` }, 404);
+      return c.json(content);
     })
     .post("/api/coauthor/skills/import", async (c) => {
       let body: Record<string, unknown>;

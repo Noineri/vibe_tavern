@@ -4,7 +4,7 @@
 // contracts.ts; runtime-api.ts re-exports everything so existing import paths
 // keep resolving).
 
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
 
 // ─── Co-Author Skills (filesystem skill libraries) ──────────────────
@@ -28,6 +28,11 @@ export interface CoauthorSkillsRuntimeApi {
 	listSkills: () => Promise<{ entries: SkillCatalogEntryDto[]; errors: { source: "builtin" | "user"; id: string; reason: string }[] }>;
 	/** One catalog entry by id, or `null` if no such skill exists in either root. */
 	readSkill: (id: string) => Promise<SkillCatalogEntryDto | null>;
+	/** Full content view of one skill (AP-21): raw manifest (`content`),
+	 *  frontmatter-stripped text (`body`), and the folder's relative file paths
+	 *  (`files`, manifest excluded) — read through the sandboxed `readSkillFile`
+	 *  (user shadow first). `null` when the skill does not exist (404). */
+	readSkillContent: (id: string) => Promise<SkillContentDto | null>;
 }
 
 /** Copilot skills keyed by agent kind (AS-8d1): the copilot-skill routes

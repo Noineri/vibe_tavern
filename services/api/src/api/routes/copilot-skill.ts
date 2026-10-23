@@ -14,6 +14,11 @@ import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js"
  *  - `GET    /api/copilot/skills`       — metadata-only catalog: built-in + user
  *    skills merged with user precedence. No file bodies; no absolute paths.
  *  - `GET    /api/copilot/skills/:id`   — one catalog entry by id (404 if absent).
+ *  - `GET    /api/copilot/skills/:id/content` — full content view (AP-21): the
+ *    raw manifest via the sandboxed `readSkillFile` (user shadow first), the
+ *    frontmatter-stripped `body`, and the folder's relative file `files`
+ *    (manifest excluded). Same shape on the Co-Author skill routes — the ONE
+ *    domain derivation (`SkillLibraryService.readSkillContent`) serves both.
  *  - `POST   /api/copilot/skills/import` — multipart upload where each file
  *    part's FIELD NAME is its relative path (e.g. `my-skill/SKILL.md`).
  *  - `DELETE /api/copilot/skills/:id`   — remove one user skill directory. A
@@ -32,6 +37,16 @@ export function createCopilotSkillRoutes(runtime: CopilotSkillsByKindRuntimeApi)
       const entry = await skills.readSkill(id);
       if (!entry) return c.json({ error: `skill '${id}' does not exist` }, 404);
       return c.json(entry);
+    })
+    .get("/api/copilot/skills/:id/content", async (c) => {
+      const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");
+      const id = c.req.param("id");
+      // `null` covers both a missing skill and an unreadable manifest — the
+      // metadata route's 404 convention (no route-level fs access; the whole
+      // read lives in the sandboxed domain derivation).
+      const content = await skills.readSkillContent(id);
+      if (!content) return c.json({ error: `skill '${id}' does not exist` }, 404);
+      return c.json(content);
     })
     .post("/api/copilot/skills/import", async (c) => {
       const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");

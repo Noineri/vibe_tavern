@@ -47,4 +47,6 @@ export class CoauthorSkillAdapter implements CoauthorSkillsRuntimeApi {
 		const entry = await this.skillLibrary.readCatalogEntry(id);
 		return entry ? toDto(entry) : null;
 	};
+
+	readSkillContent = (id: string) => this.skillLibrary.readSkillContent(id);
 }

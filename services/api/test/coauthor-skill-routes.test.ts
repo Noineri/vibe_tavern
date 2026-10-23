@@ -112,6 +112,73 @@ describe("DELETE /api/coauthor/skills/:id", () => {
   });
 });
 
+describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () => {
+  test("built-in skill → 200: raw manifest, frontmatter-stripped body, folder files without the manifest", async () => {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
+    await mkdir(join(builtinRoot, "profile-overview", "references"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "references", "rules.md"), "# Rules\n");
+    await Bun.write(join(builtinRoot, "profile-overview", "assets", "template.md"), "# Template\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/profile-overview/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe("profile-overview");
+    expect(body.path).toBe("profile-overview/SKILL.md");
+    // content = the RAW manifest (frontmatter included).
+    expect(body.content).toBe(manifest("profile-overview", "built-in"));
+    // body = content WITHOUT the frontmatter block — the editor's skill text.
+    expect(body.body).toBe("# profile-overview\n");
+    expect(body.body).not.toContain("---");
+    // files = relative POSIX paths inside the skill folder, manifest excluded, sorted.
+    expect(body.files).toEqual(["assets/template.md", "references/rules.md"]);
+    // No absolute filesystem path crosses the wire.
+    expect(JSON.stringify(body)).not.toContain(builtinRoot.replace(/\\/g, "/"));
+  });
+
+  test("user skill → 200 from the user root", async () => {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(userRoot, "my-skill"), { recursive: true });
+    await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
+    await Bun.write(join(userRoot, "my-skill", "notes.md"), "notes\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/my-skill/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("description: mine");
+    expect(body.files).toEqual(["notes.md"]);
+  });
+
+  test("shadowed skill → the USER copy wins for content AND files (readSkillFile precedence)", async () => {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(builtinRoot, "shared"), { recursive: true });
+    await Bun.write(join(builtinRoot, "shared", "SKILL.md"), manifest("shared", "built-in version"));
+    await Bun.write(join(builtinRoot, "shared", "builtin-only.md"), "builtin only\n");
+    await mkdir(join(userRoot, "shared"), { recursive: true });
+    await Bun.write(join(userRoot, "shared", "SKILL.md"), manifest("shared", "user-customized version"));
+    await Bun.write(join(userRoot, "shared", "user-only.md"), "user only\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/shared/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("user-customized version");
+    expect(body.content).not.toContain("built-in version");
+    // The file list mirrors the WINNING folder — the user's — not a merge.
+    expect(body.files).toEqual(["user-only.md"]);
+  });
+
+  test("missing skill → 404", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills/no-such-skill/content");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(/does not exist/);
+  });
+});
+
 describe("GET /api/coauthor/skills — catalog", () => {
   test("list returns the merged metadata-only catalog (built-in + user, user precedence)", async () => {
     // Seed a built-in and a user skill that shadows it, plus a user-only skill.
