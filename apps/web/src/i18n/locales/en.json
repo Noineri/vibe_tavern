@@ -3487,6 +3487,7 @@
 	"promptManager.servicePrompts.field.chat_impersonate_enhance": "Draft Improvement AI",
 	"promptManager.servicePrompts.field.summary": "Summary",
 	"promptManager.servicePrompts.field.regex": "Regex Assistant",
+	"promptManager.servicePrompts.field.skill": "Skill AI",
 	"promptManager.servicePrompts.field.objective_generate": "Objective Generate",
 	"promptManager.servicePrompts.field.objective_generate_goals": "Objective Goals",
 	"promptManager.servicePrompts.field.objective_check": "Objective Check",

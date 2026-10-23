@@ -20,6 +20,7 @@ export const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = 
 	message_merge: "ai_assistant_mode_message_merge",
 	message_tts_annotate: "ai_assistant_mode_message_tts_annotate",
 	regex: "promptManager.servicePrompts.field.regex",
+	skill: "promptManager.servicePrompts.field.skill",
 	summary: "promptManager.servicePrompts.field.summary",
 	objective_generate: "promptManager.servicePrompts.field.objective_generate",
 	objective_generate_goals: "promptManager.servicePrompts.field.objective_generate_goals",

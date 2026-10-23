@@ -2018,6 +2018,37 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
   });
 
+  test("AP-23b: skill field renders inside the assistant family with its label; siblings intact", async () => {
+    const def = makeServiceProfile();
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def], activeProfileId: null });
+    getServiceDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
+    // Open ONLY the assistant family accordion — the new key must land there.
+    const assistantToggle = Array.from(view.baseElement.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("promptManager.servicePrompts.family.assistant"),
+    );
+    expect(assistantToggle).toBeTruthy();
+    await act(async () => { fireEvent.click(assistantToggle!); });
+    const q = within(view.baseElement);
+    await waitFor(() => expect(q.getByText("promptManager.servicePrompts.field.skill")).toBeTruthy());
+    // Siblings in the same family stay intact (label-key queries per the i18n mock).
+    expect(q.getByText("promptManager.servicePrompts.field.regex")).toBeTruthy();
+    expect(q.getByText("ai_assistant_mode_script")).toBeTruthy();
+  });
+
   test("service detail switches dirty tracking via pane", async () => {
     const def = makeServiceProfile();
     const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false, overrides: { summary: "hi" } };

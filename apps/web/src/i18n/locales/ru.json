@@ -3549,6 +3549,7 @@
 	"promptManager.servicePrompts.field.chat_impersonate_enhance": "ИИ-улучшение черновика",
 	"promptManager.servicePrompts.field.summary": "Сводка",
 	"promptManager.servicePrompts.field.regex": "Помощник по регексам",
+	"promptManager.servicePrompts.field.skill": "ИИ-помощник для навыков",
 	"promptManager.servicePrompts.field.objective_generate": "Генерация цели",
 	"promptManager.servicePrompts.field.objective_generate_goals": "Генерация задач цели",
 	"promptManager.servicePrompts.field.objective_check": "Проверка цели",

@@ -2390,6 +2390,7 @@ export default interface Resources {
     "promptManager.servicePrompts.field.script_agent_compaction": "Script assistant digest",
     "promptManager.servicePrompts.field.sidechat_ooc_base": "Sidechat Base",
     "promptManager.servicePrompts.field.sidechat_ooc_digest": "Sidechat digest",
+    "promptManager.servicePrompts.field.skill": "Skill AI",
     "promptManager.servicePrompts.field.summary": "Summary",
     "promptManager.servicePrompts.field.tracker_template": "Tracker Template",
     "promptManager.servicePrompts.liveBadge": "live",

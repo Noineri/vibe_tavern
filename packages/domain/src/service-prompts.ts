@@ -17,7 +17,7 @@ export type ServicePromptFieldFamily =
   (typeof SERVICE_PROMPT_FIELD_FAMILIES)[keyof typeof SERVICE_PROMPT_FIELD_FAMILIES];
 
 export const SERVICE_PROMPT_FIELDS = {
-  // assistant (12)
+  // assistant (14)
   script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   dice_script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   lore_entry: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
@@ -32,8 +32,10 @@ export const SERVICE_PROMPT_FIELDS = {
   message_merge: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_tts_annotate: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   tracker_template: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
-  // assistant (12) — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
+  // assistant — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
   regex: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  // assistant — skill drafting for the skill library (AGENT_SHELL_POLISH AP-23b)
+  skill: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   // summary (1)
   summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.summary },
   // insights (4)
@@ -73,6 +75,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "message_tts_annotate",
   "tracker_template",
   "regex",
+  "skill",
   "summary",
   "objective_generate",
   "objective_generate_goals",
