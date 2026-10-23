@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import {
 	ARCH_GATE_MAX_LINES,
 	collectFixedFontSizes,
+	collectFractionalLadderOffsets,
 	collectLayerImports,
 	collectOversizedFiles,
 	emptyFixedFontSizeCounts,
@@ -188,5 +189,79 @@ describe("fixed font-size ratchet", () => {
 		expect(output).toContain("Architecture gate: OK — all current violations are within baseline.");
 		expect(output).toContain("[fixed-font-size] pixelClasses: 4 (was 5)");
 		expect(output).toContain("bun scripts/arch-gate.ts --update-baseline");
+	});
+});
+
+describe("fractional ladder offset ban", () => {
+	test("red: a fractional --ui-fs/--mfs offset fails the gate naming the rounding rule", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Probe.tsx",
+				'<a className="text-[calc(var(--ui-fs)-1.5px)]">x</a>\n<b className="text-[calc(var(--mfs)+1.5px)]">y</b>\n',
+			);
+			const offsets = collectFractionalLadderOffsets(root);
+			expect(offsets).toEqual([
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 1, column: 26, text: "var(--ui-fs)-1.5px" },
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 2, column: 26, text: "var(--mfs)+1.5px" },
+			]);
+			const report = evaluateArchGate(
+				{ layerImports: [], oversizedFiles: {}, fixedFontSizes: emptyFixedFontSizeCounts() },
+				[],
+				{},
+				emptyFixedFontSizeCounts(),
+				offsets,
+			);
+			expect(report.fractionalLadderOffsets).toHaveLength(2);
+			const output = formatArchGateReport(report);
+			expect(output).toContain("Architecture gate: FAIL — 2 new architecture violation(s) detected.");
+			expect(output).toContain("[fractional-ladder-offset] apps/web/src/components/shared/Probe.tsx:1:26");
+			expect(output).toContain("var(--ui-fs)-1.5px");
+			expect(output).toContain("round toward the base — the absolute value of the offset rounds down (-1.5px → -1px, -3.5px → -3px, +1.5px → +1px)");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("green: whole-pixel offsets and non-font fractional values are not the rule's business", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			// tracking/leading/padding fractional utilities, gap-1.5, rounded-[2.5px],
+			// a spaced css calc and the underscore tailwind form must all be judged
+			// only when the ladder variable itself carries the fractional offset.
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Whole.tsx",
+				[
+				'<a className="text-[calc(var(--ui-fs)-1px)] tracking-[0.06em] leading-[1.4] gap-1.5 p-2.5 rounded-[2.5px]">x</a>',
+				'<b style={{ fontSize: "calc(var(--ui-fs)+2px)" }}>y</b>',
+			].join("\n") + "\n",
+			);
+			writeFixture(root, "apps/web/src/styles.css", ".ok{font-size: calc(var(--ui-fs) - 1px)}\n");
+			expect(collectFractionalLadderOffsets(root)).toEqual([]);
+			const report = evaluateArchGate(
+				{ layerImports: [], oversizedFiles: {}, fixedFontSizes: emptyFixedFontSizeCounts() },
+				[],
+				{},
+				emptyFixedFontSizeCounts(),
+				[],
+			);
+			expect(formatArchGateReport(report)).toContain("Architecture gate: OK — all current violations are within baseline.");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("same scope and exclusions as the fixed-font rule: tests and components/dev ignored", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(root, "apps/web/src/components/shared/Skip.test.tsx", '<a className="text-[calc(var(--ui-fs)-1.5px)]">t</a>\n');
+			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<a className="text-[calc(var(--ui-fs)-1.5px)]">dev</a>\n');
+			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size: calc(var(--ui-fs) - 1.5px)}\n");
+			expect(collectFractionalLadderOffsets(root)).toEqual([]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

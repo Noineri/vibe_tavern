@@ -209,7 +209,7 @@ export function AgentSettingsModal({
 										disabled={!profilesLoaded || profiles.length === 0}
 										searchable={false}
 										triggerTestId="agent-settings-profile-select"
-										triggerClassName="flex h-8 min-w-0 max-w-[160px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1.5px)] text-t1 transition-colors hover:bg-s3"
+										triggerClassName="flex h-8 min-w-0 max-w-[160px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:bg-s3"
 									/>
 									<button
 										type="button"

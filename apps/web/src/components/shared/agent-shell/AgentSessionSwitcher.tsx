@@ -227,7 +227,7 @@ export function AgentSessionSwitcher({
               if (disabled) return;
               onNew();
             }}
-            className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2 text-left font-ui text-[calc(var(--ui-fs)-1.5px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+            className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2 text-left font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <Icons.Plus className="h-3.5 w-3.5 shrink-0 text-accent-t" />
             <span className="truncate">{t("agent_new_session")}</span>

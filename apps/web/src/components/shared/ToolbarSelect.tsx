@@ -196,7 +196,7 @@ export function ToolbarSelect({
 								{items.map((item) => (
 									<Fragment key={item.value}>
 										{item.sectionLabel && (
-											<div className="px-4 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3.5px)] font-medium uppercase tracking-wide text-t3">
+											<div className="px-4 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wide text-t3">
 												{item.sectionLabel}
 										</div>
 									)}
@@ -296,7 +296,7 @@ function ToolbarSelectMobile({
 						{filtered.map((item) => (
 							<Fragment key={item.value}>
 								{item.sectionLabel && (
-									<div className="px-5 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3.5px)] font-medium uppercase tracking-wide text-t3">
+									<div className="px-5 pb-0.5 pt-2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wide text-t3">
 										{item.sectionLabel}
 									</div>
 								)}

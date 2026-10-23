@@ -26,24 +26,29 @@ function writeFixture(root: string, relativePath: string, content: string): void
 
 describe("font-size ladder mapping", () => {
 	test("maps every pixel size from the audit census onto the --ui-fs ladder", () => {
+		// Behavior change (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6): fractional
+		// census sizes used to keep their half-pixel offsets (12.5px → -1.5px,
+		// 10.5px → -3.5px, 15.5px → +1.5px, 11.5px → -2.5px) → now every offset
+		// rounds toward the base (|offset| down), so they collapse onto the
+		// neighbouring whole-pixel rungs.
 		const census: Array<[number, string]> = [
 			[9, "text-[calc(var(--ui-fs)-5px)]"],
 			[10, "text-[calc(var(--ui-fs)-4px)]"],
-			[10.5, "text-[calc(var(--ui-fs)-3.5px)]"],
+			[10.5, "text-[calc(var(--ui-fs)-3px)]"],
 			[11, "text-[calc(var(--ui-fs)-3px)]"],
+			[11.5, "text-[calc(var(--ui-fs)-2px)]"],
 			[12, "text-[calc(var(--ui-fs)-2px)]"],
-			[12.5, "text-[calc(var(--ui-fs)-1.5px)]"],
+			[12.5, "text-[calc(var(--ui-fs)-1px)]"],
 			[13, "text-[calc(var(--ui-fs)-1px)]"],
 			[14, "text-[var(--ui-fs)]"],
 			[15, "text-[calc(var(--ui-fs)+1px)]"],
-			[15.5, "text-[calc(var(--ui-fs)+1.5px)]"],
+			[15.5, "text-[calc(var(--ui-fs)+1px)]"],
 			[16, "text-[calc(var(--ui-fs)+2px)]"],
 			[17, "text-[calc(var(--ui-fs)+3px)]"],
 			[18, "text-[calc(var(--ui-fs)+4px)]"],
 			[22, "text-[calc(var(--ui-fs)+8px)]"],
 			// Live in the tree today outside the report's itemized list.
 			[8, "text-[calc(var(--ui-fs)-6px)]"],
-			[11.5, "text-[calc(var(--ui-fs)-2.5px)]"],
 		];
 		for (const [px, expected] of census) expect(pixelClassFor(px)).toBe(expected);
 	});
@@ -64,7 +69,7 @@ describe("font-size ladder mapping", () => {
 	});
 
 	test("maps styles.css font-size rules", () => {
-		expect(cssFontSizeFor(12.5)).toBe("font-size: calc(var(--ui-fs)-1.5px)");
+		expect(cssFontSizeFor(12.5)).toBe("font-size: calc(var(--ui-fs)-1px)");
 		expect(cssFontSizeFor(14)).toBe("font-size: var(--ui-fs)");
 	});
 
@@ -72,6 +77,19 @@ describe("font-size ladder mapping", () => {
 		expect(pixelClassFor(12, MFS_LADDER)).toBe("text-[calc(var(--mfs)-5px)]");
 		expect(pixelClassFor(17, MFS_LADDER)).toBe("text-[var(--mfs)]");
 		expect(pixelClassFor(19, MFS_LADDER)).toBe("text-[calc(var(--mfs)+2px)]");
+	});
+
+	test("rounds fractional sizes toward the base on both ladders (diagnosis 6)", () => {
+		expect(pixelClassFor(12.5)).toBe("text-[calc(var(--ui-fs)-1px)]");
+		expect(pixelClassFor(10.5)).toBe("text-[calc(var(--ui-fs)-3px)]");
+		expect(pixelClassFor(15.5)).toBe("text-[calc(var(--ui-fs)+1px)]");
+		expect(pixelClassFor(12.5, MFS_LADDER)).toBe("text-[calc(var(--mfs)-4px)]");
+		expect(pixelClassFor(10.5, MFS_LADDER)).toBe("text-[calc(var(--mfs)-6px)]");
+		expect(pixelClassFor(19.5, MFS_LADDER)).toBe("text-[calc(var(--mfs)+2px)]");
+		// Within half a pixel of the reference the offset rounds down to zero —
+		// the bare base variable, never a ±0px calc.
+		expect(pixelClassFor(14.25)).toBe("text-[var(--ui-fs)]");
+		expect(pixelClassFor(17.5, MFS_LADDER)).toBe("text-[var(--mfs)]");
 	});
 });
 
@@ -171,7 +189,7 @@ describe("font-size codemod conversion", () => {
 	test("converts styles.css font-size rules", () => {
 		const source = ".scene-note{font-size:12.5px}\n.build-tag{font-size:11px}";
 		const result = convertSourceFontSizes(FONT_SIZE_CSS_TARGET, source);
-		expect(result.output).toBe(".scene-note{font-size: calc(var(--ui-fs)-1.5px)}\n.build-tag{font-size: calc(var(--ui-fs)-3px)}");
+		expect(result.output).toBe(".scene-note{font-size: calc(var(--ui-fs)-1px)}\n.build-tag{font-size: calc(var(--ui-fs)-3px)}");
 	});
 
 	test("lists chat message files without converting them in the default mode", () => {

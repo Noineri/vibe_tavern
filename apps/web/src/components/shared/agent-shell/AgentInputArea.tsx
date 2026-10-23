@@ -122,7 +122,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
         {topSlot}
         <AutoTextarea
           bare
-          className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1.5px)] !leading-tight")}
+          className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
           maxRows={12}
           minRows={3}
           data-testid="copilot-chat-input"

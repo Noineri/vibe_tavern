@@ -69,13 +69,13 @@ export function PromptModal(input: PromptModalProps) {
         />
         <div className="mt-6 flex justify-end gap-2.5">
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1.5px)] text-t3 transition-colors duration-150 hover:text-t1"
+            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={input.onCancel}
           >
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={submit}
             disabled={!trimmed}
           >

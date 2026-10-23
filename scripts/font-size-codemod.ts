@@ -8,7 +8,10 @@
  * reuses — no hand conversion:
  *
  * - `text-[Npx]`                → `text-[calc(var(--ui-fs)-Kpx)]`, K = 14 - N
- *                                  (N = 14 → `text-[var(--ui-fs)]`, N > 14 → `+K`)
+ *                                  (N = 14 → `text-[var(--ui-fs)]`, N > 14 → `+K`;
+ *                                  |K| rounds DOWN — ladder offsets are whole
+ *                                  pixels only: 12.5px → `-1px`, 10.5px →
+ *                                  `-3px`, 15.5px → `+1px`)
  * - `text-xs|sm|base|lg|xl|2xl` → the calc class for the class's px at the
  *                                  16px root PLUS its Tailwind line height
  *                                  (`leading-4/5/6/7/7/8`) — an arbitrary value
@@ -111,18 +114,20 @@ function normalizeRelativePath(file: string): string {
 	return file.split(path.sep).join("/");
 }
 
-function formatNumber(value: number): string {
-	return String(Number.parseFloat(value.toFixed(4)));
-}
-
-/** The ladder value for a px size: `calc(var(--ui-fs)-3px)` / `var(--ui-fs)`. */
+/** The ladder value for a px size: `calc(var(--ui-fs)-3px)` / `var(--ui-fs)`.
+ *  Offsets are whole pixels only (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6):
+ *  the ladder variables are whole numbers, so a fractional offset always
+ *  lands between pixels and smears glyph edges. The offset rounds toward the
+ *  base — its absolute value rounds down (12.5px → `-1px`, 10.5px → `-3px`,
+ *  15.5px → `+1px`); the `--mfs` reference follows the same rule. */
 export function ladderValue(sizePx: number, options: LadderOptions = {}): string {
 	const variable = options.variable ?? UI_FS_VARIABLE;
 	const referencePx = options.referencePx ?? UI_FS_REFERENCE_PX;
 	if (sizePx === referencePx) return `var(${variable})`;
-	const delta = formatNumber(Math.abs(sizePx - referencePx));
+	const offset = Math.floor(Math.abs(sizePx - referencePx));
+	if (offset === 0) return `var(${variable})`;
 	const sign = sizePx < referencePx ? "-" : "+";
-	return `calc(var(${variable})${sign}${delta}px)`;
+	return `calc(var(${variable})${sign}${offset}px)`;
 }
 
 export function pixelClassFor(sizePx: number, options: LadderOptions = {}): string {

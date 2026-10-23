@@ -220,7 +220,7 @@ export function AgentModelPills(props: AgentModelPillsProps) {
           <button
             type="button"
             data-testid="copilot-provider-pill"
-            className="flex h-8 min-w-0 max-w-[120px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1.5px)] text-t1 transition-colors hover:bg-s3"
+            className="flex h-8 min-w-0 max-w-[120px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:bg-s3"
           >
             <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
             <span className="min-w-0 truncate">{activeProfile?.name ?? t("agent_provider_select")}</span>
@@ -245,7 +245,7 @@ export function AgentModelPills(props: AgentModelPillsProps) {
         contentWidth={320}
         triggerLeading={<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />}
         triggerClassName={cn(
-          "h-8 w-[240px] shrink rounded-[5px] bg-s2 px-2.5 text-[calc(var(--ui-fs)-1.5px)] text-t1 transition-colors hover:bg-s3",
+          "h-8 w-[240px] shrink rounded-[5px] bg-s2 px-2.5 text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:bg-s3",
           model ? "" : "text-t3",
         )}
         options={models.map((m) => ({ id: m.id, label: m.label }))}

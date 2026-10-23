@@ -5,7 +5,9 @@
  * not acquire new dependencies on the API/runtime layers, oversized source
  * files may not grow, and `apps/web/src` may not gain fixed font sizes (pixel
  * classes, Tailwind size classes, inline `fontSize`, `styles.css` px rules).
- * Baselines only shrink through --update-baseline.
+ * Fractional `--ui-fs`/`--mfs` ladder offsets are a plain ban with no baseline
+ * (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6). Baselines only shrink through
+ * --update-baseline.
  */
 import { API } from "typescript/unstable/async";
 import { isExportDeclaration, isImportDeclaration, isStringLiteral } from "typescript/unstable/ast";
@@ -33,6 +35,8 @@ const SIZE_ROOTS = new Set(["apps", "services", "packages", "scripts"]);
 const LAYER_IMPORT_HINT = "domain/ must not depend on api/ or runtime/; move the needed code down into domain/ (or packages/*), or take a narrow interface instead of the SessionRuntime coordinator.";
 const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending. Deleting or compressing existing lines (code, comments, or whitespace) is NOT a remedy: this ratchet exists so budgets shrink by moving code out, never by trimming — if no cohesive part can be extracted, stop and escalate instead.";
 const FIXED_FONT_SIZE_LOCATE_HINT = "locate the new occurrence(s): bun scripts/font-size-codemod.ts --dry-run apps/web/src";
+const FRACTIONAL_LADDER_OFFSET_HINT =
+	"ladder offsets are whole pixels only: --ui-fs/--mfs are whole numbers, so a fractional offset always renders between pixels and smears glyph edges; round toward the base — the absolute value of the offset rounds down (-1.5px → -1px, -3.5px → -3px, +1.5px → +1px) (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6)";
 const FIXED_FONT_SIZE_HINTS: Record<keyof FixedFontSizeCounts, string> = {
 	pixelClasses: `size chrome text from the --ui-fs ladder instead: text-[11px] → ${pixelClassFor(11)} (text-[Npx] → text-[calc(var(--ui-fs)-Kpx)], K = 14 - N; N = 14 → text-[var(--ui-fs)])`,
 	tailwindSizeClasses: `map the class by its px at the 16px root and keep its line height: text-xs → ${tailwindClassFor("xs")}, text-sm → ${tailwindClassFor("sm")}, text-lg → ${tailwindClassFor("lg")}`,
@@ -74,6 +78,14 @@ export interface FixedFontSizeGrowth {
 	current: number;
 }
 
+/** A fractional `--ui-fs`/`--mfs` ladder offset (plain ban, no baseline). */
+export interface FractionalLadderOffset {
+	readonly file: string;
+	readonly line: number;
+	readonly column: number;
+	readonly text: string;
+}
+
 export interface OversizedFileChange {
 	file: string;
 	baseline: number;
@@ -103,6 +115,7 @@ export interface ArchGateReport {
 	removedOversizedFiles: RemovedOversizedFile[];
 	growingFixedFontSizes: FixedFontSizeGrowth[];
 	shrunkFixedFontSizes: FixedFontSizeGrowth[];
+	fractionalLadderOffsets: FractionalLadderOffset[];
 }
 
 const FIXED_FONT_SIZE_KIND_KEYS = {
@@ -113,6 +126,11 @@ const FIXED_FONT_SIZE_KIND_KEYS = {
 } as const satisfies Record<FontSizeKind, keyof FixedFontSizeCounts>;
 
 const FIXED_FONT_SIZE_PATTERNS = ["pixelClasses", "tailwindSizeClasses", "inlineFontSizes", "cssFontSizes"] as const;
+
+/** `var(--ui-fs)`/`var(--mfs)` followed by a fractional ±N.Mpx offset — the
+ *  separators cover the codemod's compact form, Tailwind's `_` escapes and
+ *  plain css spaces. */
+const FRACTIONAL_LADDER_OFFSET_PATTERN = /var\(--(?:ui-fs|mfs)\)[ \t_]*[+-][ \t_]*\d+\.\d+px/g;
 
 function normalizePath(file: string): string {
 	return file.split(path.sep).join("/");
@@ -255,11 +273,28 @@ export function collectFixedFontSizes(root: string = ROOT): FixedFontSizeCounts 
 	return counts;
 }
 
+/** Fractional ladder offsets under `apps/web/src` (same scope and exclusions
+ *  as the fixed-font rule) — a plain ban: any occurrence fails the gate. */
+export function collectFractionalLadderOffsets(root: string = ROOT): FractionalLadderOffset[] {
+	const offsets: FractionalLadderOffset[] = [];
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		const source = readFileSync(path.resolve(root, file), "utf8");
+		for (const match of source.matchAll(FRACTIONAL_LADDER_OFFSET_PATTERN)) {
+			if (match.index === undefined) continue;
+			const before = source.slice(0, match.index);
+			const lineStart = before.lastIndexOf("\n") + 1;
+			offsets.push({ file, line: before.split("\n").length, column: match.index - lineStart + 1, text: match[0] });
+		}
+	}
+	return offsets;
+}
+
 export function evaluateArchGate(
 	baseline: ArchGateBaseline,
 	layerImports: readonly LayerImport[],
 	oversizedFiles: Readonly<Record<string, number>>,
 	fixedFontSizes: Readonly<FixedFontSizeCounts> = emptyFixedFontSizeCounts(),
+	fractionalLadderOffsets: readonly FractionalLadderOffset[] = [],
 ): ArchGateReport {
 	const baselineLayerImports = new Set(baseline.layerImports);
 	const currentLayerImports = new Set(layerImports.map(toLayerKey));
@@ -272,6 +307,7 @@ export function evaluateArchGate(
 		layerImports: [...layerImports],
 		oversizedFiles: { ...oversizedFiles },
 		fixedFontSizes: { ...fixedFontSizes },
+		fractionalLadderOffsets: [...fractionalLadderOffsets],
 		newLayerImports: layerImports.filter((entry) => !baselineLayerImports.has(toLayerKey(entry))),
 		removedLayerImportKeys: baseline.layerImports.filter((key) => !currentLayerImports.has(key)).sort(),
 		growingOversizedFiles: currentOversizedFiles.flatMap(([file, current]) => {
@@ -306,7 +342,8 @@ function hasFailures(report: ArchGateReport): boolean {
 		report.newLayerImports.length > 0 ||
 		report.growingOversizedFiles.length > 0 ||
 		report.newOversizedFiles.length > 0 ||
-		report.growingFixedFontSizes.length > 0
+		report.growingFixedFontSizes.length > 0 ||
+		report.fractionalLadderOffsets.length > 0
 	);
 }
 
@@ -326,7 +363,8 @@ export function formatArchGateReport(report: ArchGateReport): string {
 			report.newLayerImports.length +
 			report.growingOversizedFiles.length +
 			report.newOversizedFiles.length +
-			report.growingFixedFontSizes.length;
+			report.growingFixedFontSizes.length +
+			report.fractionalLadderOffsets.length;
 		lines.push(`Architecture gate: FAIL — ${failureCount} new architecture violation(s) detected.`);
 		for (const entry of report.newLayerImports) {
 			lines.push(`  [domain-layer-import] services/api/src/${entry.file}:${entry.line}`);
@@ -349,6 +387,11 @@ export function formatArchGateReport(report: ArchGateReport): string {
 		}
 		if (report.growingFixedFontSizes.length > 0) {
 			lines.push(`    → ${FIXED_FONT_SIZE_LOCATE_HINT}`);
+		}
+		for (const entry of report.fractionalLadderOffsets) {
+			lines.push(`  [fractional-ladder-offset] ${entry.file}:${entry.line}:${entry.column}`);
+			lines.push(`    ${entry.text}`);
+			lines.push(`    → ${FRACTIONAL_LADDER_OFFSET_HINT}`);
 		}
 	} else {
 		lines.push("Architecture gate: OK — all current violations are within baseline.");
@@ -452,6 +495,7 @@ async function main(): Promise<number> {
 	const layerImports = await collectLayerImports();
 	const oversizedFiles = collectOversizedFiles();
 	const fixedFontSizes = collectFixedFontSizes();
+	const fractionalLadderOffsets = collectFractionalLadderOffsets();
 	if (!existsSync(BASELINE_PATH)) {
 		if (!updateBaseline) {
 			console.error(`arch-gate: no baseline found at ${path.relative(ROOT, BASELINE_PATH)}.`);
@@ -478,7 +522,7 @@ async function main(): Promise<number> {
 		console.error(`arch-gate: ${error instanceof Error ? error.message : String(error)}`);
 		return 1;
 	}
-	const report = evaluateArchGate(baseline, layerImports, oversizedFiles, fixedFontSizes);
+	const report = evaluateArchGate(baseline, layerImports, oversizedFiles, fixedFontSizes, fractionalLadderOffsets);
 
 	if (updateBaseline) {
 		if (hasFailures(report)) {

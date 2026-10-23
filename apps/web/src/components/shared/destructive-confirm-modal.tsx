@@ -13,16 +13,16 @@ import { Modal } from "./Modal.js";
 export const SECONDARY_OUTLINE_CORE =
   "cursor-pointer rounded-md border border-border bg-transparent font-ui transition-colors";
 /** Cancel / neutral-outline button chrome (also the calm secondary). */
-const CANCEL_BTN_CLS = cn(SECONDARY_OUTLINE_CORE, "h-8 px-3.5 text-[calc(var(--ui-fs)-1.5px)] text-t3 duration-150 hover:text-t1");
+const CANCEL_BTN_CLS = cn(SECONDARY_OUTLINE_CORE, "h-8 px-3.5 text-[calc(var(--ui-fs)-1px)] text-t3 duration-150 hover:text-t1");
 /** Danger primary (the destructive default). */
 const PRIMARY_DESTRUCTIVE_CLS =
-  "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
+  "h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110";
 /** Accent primary (the calm tone) — the app's primary-button canon. */
 const PRIMARY_CALM_CLS =
-  "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
+  "h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110";
 /** Danger-outline secondary (the destructive default). */
 const SECONDARY_DESTRUCTIVE_CLS =
-  "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1.5px)] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
+  "h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-danger transition-colors duration-150 hover:bg-danger/10";
 /** Calm secondary: neutral, Cancel's outline style verbatim. */
 const SECONDARY_CALM_CLS = CANCEL_BTN_CLS;
 
