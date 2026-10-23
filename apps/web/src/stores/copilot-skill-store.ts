@@ -9,12 +9,14 @@
  * another kind's cached entries.
  */
 import { create } from "zustand";
-import type { SkillCatalogEntryDto, SkillCatalogError } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillCatalogError, SkillSaveDto } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../lib/agent-host-registry.js";
 import {
   listCopilotSkills,
   importCopilotSkills,
   deleteCopilotSkill,
+  createCopilotSkill,
+  updateCopilotSkill,
 } from "../api/copilot-skill-api.js";
 
 /** One kind's cached skills library. */
@@ -44,6 +46,14 @@ export interface CopilotSkillActions {
   /** Delete one user skill of one kind's library by id. A pure built-in is
    *  rejected by the server. Refreshes that kind's catalog. */
   remove: (kind: AgentKind, id: string) => Promise<void>;
+  /** Save a NEW user skill of one kind's library (AP-23d) — delegates to
+   *  `createCopilotSkill` and refreshes that kind's catalog. Returns the
+   *  FRESH entry so the caller can select it. */
+  saveNew: (kind: AgentKind, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+  /** Save an EXISTING user skill of one kind's library (AP-23d) — delegates
+   *  to `updateCopilotSkill` and refreshes that kind's catalog. Returns the
+   *  FRESH entry. */
+  saveExisting: (kind: AgentKind, id: string, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
 }
 
 export type CopilotSkillStore = CopilotSkillState & CopilotSkillActions;
@@ -82,6 +92,18 @@ export const useCopilotSkillStore = create<CopilotSkillStore>()((set, get) => ({
   remove: async (kind, id) => {
     await deleteCopilotSkill(kind, id);
     await get().load(kind);
+  },
+
+  saveNew: async (kind, input) => {
+    const saved = await createCopilotSkill(kind, input);
+    await get().load(kind);
+    return saved;
+  },
+
+  saveExisting: async (kind, id, input) => {
+    const saved = await updateCopilotSkill(kind, id, input);
+    await get().load(kind);
+    return saved;
   },
 }));
 

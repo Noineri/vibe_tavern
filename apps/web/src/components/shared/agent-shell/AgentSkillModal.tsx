@@ -4,7 +4,7 @@ import type { SkillLibraryAdapter } from "../skill-library/skill-library-adapter
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { readCopilotSkillContent } from "../../../api/copilot-skill-api.js";
 import type { MasterDetailParentBack } from "../MasterDetailModal.js";
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillSaveDto } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../../../lib/agent-host-registry.js";
 
 /** Empty library fallback (module const — a `?? []` inline would return a new
@@ -43,6 +43,17 @@ const LABELS: SkillLibraryAdapter["labels"] = {
 	techDetails: "copilot_skill_tech_details",
 	techDetailsHint: "copilot_skill_tech_details_hint",
 	filesLabel: "copilot_skill_files_label",
+	newSkill: "copilot_skill_new_skill",
+	edit: "copilot_skill_edit",
+	duplicate: "copilot_skill_duplicate",
+	cancel: "copilot_skill_cancel",
+	save: "copilot_skill_save",
+	saved: "copilot_skill_saved",
+	saveFailed: "copilot_skill_save_failed",
+	nameLabel: "copilot_skill_name_label",
+	whenLabel: "copilot_skill_when_label",
+	whenHint: "copilot_skill_when_hint",
+	copyName: "copilot_skill_copy_name",
 };
 
 /**
@@ -75,12 +86,18 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 	const load = useCopilotSkillStore((s) => s.load);
 	const importTree = useCopilotSkillStore((s) => s.importTree);
 	const remove = useCopilotSkillStore((s) => s.remove);
+	const saveNew = useCopilotSkillStore((s) => s.saveNew);
+	const saveExisting = useCopilotSkillStore((s) => s.saveExisting);
 
 	// Bound for the kind and stable across renders — the shared modal's open
 	// + content effects key on `adapter.load` / `adapter.readContent` (see
 	// the adapter's stability contracts).
 	const loadThisKind = useCallback(() => load(agentKind), [load, agentKind]);
 	const readContentThisKind = useCallback((id: string) => readCopilotSkillContent(agentKind, id), [agentKind]);
+	// The editor's save: null id creates, a set id updates (the ONE adapter
+	// seam — the modal never touches the clients directly).
+	const saveThisKind = useCallback((id: string | null, input: SkillSaveDto) =>
+		id ? saveExisting(agentKind, id, input) : saveNew(agentKind, input), [saveExisting, saveNew, agentKind]);
 
 	const adapter: SkillLibraryAdapter = {
 		labels: LABELS,
@@ -91,6 +108,11 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 			previewToggle: "copilot-skill-preview-toggle",
 			techDetailsToggle: "copilot-skill-tech-details-toggle",
 			contentBody: "copilot-skill-content-body",
+			newSkillBtn: "copilot-skill-new-btn",
+			editorName: "copilot-skill-editor-name",
+			editorWhen: "copilot-skill-editor-when",
+			editorBody: "copilot-skill-editor-body",
+			aiAssistBtn: "copilot-skill-ai-assist-btn",
 		},
 		entries,
 		isLoading,
@@ -99,6 +121,7 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 		importTree: (files) => importTree(agentKind, files),
 		remove: (skillId) => remove(agentKind, skillId),
 		readContent: readContentThisKind,
+		save: saveThisKind,
 	};
 
 	return <SkillLibraryModal isOpen={isOpen} onClose={onClose} adapter={adapter} parentBack={parentBack} />;

@@ -34,6 +34,8 @@ const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
 const readContentMock = mock();
+const createSkillMock = mock();
+const updateSkillMock = mock();
 mock.module("../../../api/copilot-skill-api.js", () => ({
 	...realSkillApi,
 	listCopilotSkills: listSkillsMock,
@@ -41,6 +43,8 @@ mock.module("../../../api/copilot-skill-api.js", () => ({
 	deleteCopilotSkill: deleteSkillMock,
 	importCopilotSkills: importSkillsMock,
 	readCopilotSkillContent: readContentMock,
+	createCopilotSkill: createSkillMock,
+	updateCopilotSkill: updateSkillMock,
 }));
 
 mock.module("../MasterDetailModal.js", () => ({
@@ -137,6 +141,24 @@ beforeEach(() => {
 		content: "# My Card Skill\n\nUser-imported skill.",
 		body: "User-imported skill.",
 		files: [],
+	});
+	createSkillMock.mockReset();
+	createSkillMock.mockResolvedValue({
+		id: "fresh-skill",
+		source: "user",
+		name: "Script New",
+		description: "Fresh.",
+		manifestPath: "fresh-skill/SKILL.md",
+		shadowsBuiltin: false,
+	});
+	updateSkillMock.mockReset();
+	updateSkillMock.mockResolvedValue({
+		id: "my-card-skill",
+		source: "user",
+		name: "My Card Skill",
+		description: "User-imported skill.",
+		manifestPath: "my-card-skill/SKILL.md",
+		shadowsBuiltin: false,
 	});
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 });
@@ -240,5 +262,31 @@ describe("CopilotSkillModal — per-kind library (AS-8d2)", () => {
 		expect(queryByText("Cached Script Skill")).toBeDefined();
 		expect(queryByText("Cached Experience Skill")).toBeNull();
 		await waitFor(() => expect(listSkillsMock).toHaveBeenCalledWith("script"));
+	});
+});
+
+describe("CopilotSkillModal — editor save seam (AP-23d)", () => {
+	it("creates a new skill through createCopilotSkill with the modal kind", async () => {
+		const { getByTestId, getByText } = renderModal("script");
+		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-skill-new-btn"));
+		fireEvent.change(getByTestId("copilot-skill-editor-name"), { target: { value: "Script New" } });
+		fireEvent.change(getByTestId("copilot-skill-editor-when"), { target: { value: "Fresh." } });
+		fireEvent.change(getByTestId("copilot-skill-editor-body"), { target: { value: "Fresh body." } });
+		fireEvent.click(getByText("copilot_skill_save"));
+		// The client seam carries the kind (was: no create path existed).
+		await waitFor(() => expect(createSkillMock).toHaveBeenCalledWith("script", { name: "Script New", description: "Fresh.", body: "Fresh body." }));
+	});
+
+	it("updates an edited skill through updateCopilotSkill with the modal kind", async () => {
+		const { getByTestId, getByText } = renderModal("experience");
+		await waitFor(() => expect(getByText("My Card Skill")).toBeDefined());
+		fireEvent.pointerDown(getByTestId("copilot-skill-row-my-card-skill"));
+		await waitFor(() => expect(getByText("copilot_skill_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_skill_edit"));
+		fireEvent.change(getByTestId("copilot-skill-editor-body"), { target: { value: "Edited body." } });
+		fireEvent.click(getByText("copilot_skill_save"));
+		await waitFor(() => expect(updateSkillMock).toHaveBeenCalledWith("experience", "my-card-skill", { name: "My Card Skill", description: "User-imported skill.", body: "Edited body." }));
+		expect(createSkillMock).not.toHaveBeenCalled();
 	});
 });

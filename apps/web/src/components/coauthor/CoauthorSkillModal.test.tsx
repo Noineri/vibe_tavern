@@ -39,6 +39,8 @@ const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
 const readContentMock = mock();
+const createSkillMock = mock();
+const updateSkillMock = mock();
 mock.module("../../api/skill-api.js", () => ({
 	...realSkillApi,
 	listCoauthorSkills: listSkillsMock,
@@ -46,6 +48,8 @@ mock.module("../../api/skill-api.js", () => ({
 	deleteCoauthorSkill: deleteSkillMock,
 	importCoauthorSkills: importSkillsMock,
 	readCoauthorSkillContent: readContentMock,
+	createCoauthorSkill: createSkillMock,
+	updateCoauthorSkill: updateSkillMock,
 }));
 
 // ─── api-actions mock: the module list the reference guard consults ──────
@@ -128,6 +132,24 @@ beforeEach(() => {
 		content: "# Modern Botmaking\n\nUser-imported card skill.",
 		body: "User-imported card skill.",
 		files: ["references/notes.md"],
+	});
+	createSkillMock.mockReset();
+	createSkillMock.mockResolvedValue({
+		id: "fresh-skill",
+		source: "user",
+		name: "Fresh Skill",
+		description: "Fresh.",
+		manifestPath: "fresh-skill/SKILL.md",
+		shadowsBuiltin: false,
+	});
+	updateSkillMock.mockReset();
+	updateSkillMock.mockResolvedValue({
+		id: "janitor-modern-botmaking",
+		source: "user",
+		name: "Modern Botmaking",
+		description: "User-imported card skill.",
+		manifestPath: "janitor-modern-botmaking/SKILL.md",
+		shadowsBuiltin: false,
 	});
 	listModulesMock.mockResolvedValue([]);
 	useCoauthorSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
@@ -213,5 +235,32 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		// Plain body (no referencing module name rendered).
 		expect(getByTestId("confirm-body").textContent).toBe("coauthor.skill.delete_confirm_body");
 		expect(queryByTestId("Other" as never)).toBeNull();
+	});
+});
+
+describe("CoauthorSkillModal — editor save seam (AP-23d)", () => {
+	it("creates a new skill through createCoauthorSkill (no kind — one Co-Author library)", async () => {
+		const { getByText, getByTestId } = render(<CoauthorSkillModal />);
+		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
+		fireEvent.click(getByTestId("skill-new-btn"));
+		fireEvent.change(getByTestId("skill-editor-name"), { target: { value: "Fresh Skill" } });
+		fireEvent.change(getByTestId("skill-editor-when"), { target: { value: "Fresh." } });
+		fireEvent.change(getByTestId("skill-editor-body"), { target: { value: "Fresh body." } });
+		fireEvent.click(getByText("coauthor.skill.save"));
+		// (was: no create path existed — the library was import-only.)
+		await waitFor(() => expect(createSkillMock).toHaveBeenCalledWith({ name: "Fresh Skill", description: "Fresh.", body: "Fresh body." }));
+		expect(updateSkillMock).not.toHaveBeenCalled();
+	});
+
+	it("updates an edited skill through updateCoauthorSkill", async () => {
+		const { getByText, getByTestId } = render(<CoauthorSkillModal />);
+		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(getByText("coauthor.skill.edit")).toBeDefined());
+		fireEvent.click(getByText("coauthor.skill.edit"));
+		fireEvent.change(getByTestId("skill-editor-body"), { target: { value: "Edited body." } });
+		fireEvent.click(getByText("coauthor.skill.save"));
+		await waitFor(() => expect(updateSkillMock).toHaveBeenCalledWith("janitor-modern-botmaking", { name: "Modern Botmaking", description: "User-imported card skill.", body: "Edited body." }));
+		expect(createSkillMock).not.toHaveBeenCalled();
 	});
 });

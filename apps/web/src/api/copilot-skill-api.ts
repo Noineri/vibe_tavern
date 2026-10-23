@@ -11,6 +11,7 @@ import type {
   SkillCatalogEntryDto,
   SkillContentDto,
   SkillImportResult,
+  SkillSaveDto,
 } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../lib/agent-host-registry.js";
 import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
@@ -42,6 +43,41 @@ export async function readCopilotSkill(kind: AgentKind, id: string): Promise<Ski
 export async function readCopilotSkillContent(kind: AgentKind, id: string): Promise<SkillContentDto | null> {
   const response = await apiFetch(`${skillEntryUrl(kind, id)}/content`);
   if (response.status === 404) return null;
+  return unwrapRpc(response);
+}
+
+/**
+ * `POST /api/copilot/skills?kind=` — save a NEW user skill of one kind's
+ * library (AP-23d): body `{ name, description, body }`; the folder id is
+ * derived from the name and de-duplicated server-side. Goes through
+ * `apiFetch` (not the treaty client) so the `?kind=` query is sent exactly
+ * like every other kind-scoped mutation in this file.
+ */
+export async function createCopilotSkill(kind: AgentKind, input: SkillSaveDto): Promise<SkillCatalogEntryDto> {
+  const token = getMobileToken();
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/copilot/skills?kind=${encodeURIComponent(kind)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await unwrapError(response);
+  return unwrapRpc(response);
+}
+
+/**
+ * `PUT /api/copilot/skills/:id?kind=` — save an EXISTING user skill of one
+ * kind's library (AP-23d): same body; rewrites only that skill's SKILL.md.
+ * A built-in id is rejected and a missing id is a 404 — both surface via
+ * `unwrapError`. Same `apiFetch` + `?kind=` reason as the create above.
+ */
+export async function updateCopilotSkill(kind: AgentKind, id: string, input: SkillSaveDto): Promise<SkillCatalogEntryDto> {
+  const token = getMobileToken();
+  const response = await apiFetch(skillEntryUrl(kind, id), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await unwrapError(response);
   return unwrapRpc(response);
 }
 

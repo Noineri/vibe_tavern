@@ -37,6 +37,17 @@ const LABELS: SkillLibraryAdapter["labels"] = {
 	techDetails: "coauthor.skill.tech_details",
 	techDetailsHint: "coauthor.skill.tech_details_hint",
 	filesLabel: "coauthor.skill.files_label",
+	newSkill: "coauthor.skill.new_skill",
+	edit: "coauthor.skill.edit",
+	duplicate: "coauthor.skill.duplicate",
+	cancel: "coauthor.skill.cancel",
+	save: "coauthor.skill.save",
+	saved: "coauthor.skill.saved",
+	saveFailed: "coauthor.skill.save_failed",
+	nameLabel: "coauthor.skill.name_label",
+	whenLabel: "coauthor.skill.when_label",
+	whenHint: "coauthor.skill.when_hint",
+	copyName: "coauthor.skill.copy_name",
 };
 
 /**
@@ -57,6 +68,8 @@ export function CoauthorSkillModal() {
 	const load = useCoauthorSkillStore((s) => s.load);
 	const importTree = useCoauthorSkillStore((s) => s.importTree);
 	const remove = useCoauthorSkillStore((s) => s.remove);
+	const saveNew = useCoauthorSkillStore((s) => s.saveNew);
+	const saveExisting = useCoauthorSkillStore((s) => s.saveExisting);
 
 	const adapter: SkillLibraryAdapter = {
 		labels: LABELS,
@@ -66,6 +79,11 @@ export function CoauthorSkillModal() {
 			previewToggle: "skill-preview-toggle",
 			techDetailsToggle: "skill-tech-details-toggle",
 			contentBody: "skill-content-body",
+			newSkillBtn: "skill-new-btn",
+			editorName: "skill-editor-name",
+			editorWhen: "skill-editor-when",
+			editorBody: "skill-editor-body",
+			aiAssistBtn: "skill-ai-assist-btn",
 		},
 		entries,
 		isLoading,
@@ -77,6 +95,9 @@ export function CoauthorSkillModal() {
 		// Module-level client fn — already stable across renders (satisfies
 		// the adapter's `readContent` stability contract with no wrapper).
 		readContent: readCoauthorSkillContent,
+		// The editor's save: null id creates, a set id updates (the ONE
+		// adapter seam — the modal never touches the clients directly).
+		save: (id, input) => (id ? saveExisting(id, input) : saveNew(input)),
 		referenceGuard: {
 			findReferencingModules: async (skillId) => {
 				const modules = await listCoauthorModulesAction();

@@ -38,7 +38,11 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "lore_entry" | "md_import" | "scene_schema" | "scene_rules";
+  // The union is LOCAL (deliberately not the backend `AiAssistantMode`): each
+  // member is a caller that passed its own review (lore_entry, md_import,
+  // scene_schema, scene_rules, skill for the AP-23d skill editor). The value
+  // flows straight into the request `mode`, so a member must exist server-side.
+  apiMode?: "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "skill";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;

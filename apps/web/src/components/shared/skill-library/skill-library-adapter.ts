@@ -1,4 +1,4 @@
-import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillContentDto, SkillSaveDto } from "@vibe-tavern/api-contracts";
 
 /**
  * Data + label seam for the one shared skill library modal (AP-22,
@@ -64,6 +64,22 @@ export interface SkillLibraryLabels {
 	techDetails: string;
 	techDetailsHint: string;
 	filesLabel: string;
+	/** Editor (AP-23d, mockup §8): the docked new-skill entry point,
+	 *  the footer edit/duplicate verbs, and the editor field labels. */
+	newSkill: string;
+	edit: string;
+	duplicate: string;
+	cancel: string;
+	save: string;
+	/** Save result toasts. */
+	saved: string;
+	saveFailed: string;
+	/** Editor fields: the name field, the when-to-use field + its verbatim
+	 *  hint, and the duplicate prefill ("{name} (copy)", interpolated). */
+	nameLabel: string;
+	whenLabel: string;
+	whenHint: string;
+	copyName: string;
 }
 
 /**
@@ -87,6 +103,13 @@ export interface SkillLibraryTestids {
 	techDetailsToggle: string;
 	/** The rendered body preview block. */
 	contentBody: string;
+	/** Editor (AP-23d): the docked new-skill button + the three editor
+	 *  fields (name / when / body) + the compact AI-assist button. */
+	newSkillBtn: string;
+	editorName: string;
+	editorWhen: string;
+	editorBody: string;
+	aiAssistBtn: string;
 }
 
 /**
@@ -134,6 +157,14 @@ export interface SkillLibraryAdapter {
 	 *  the identity must not change across renders (the detail effect keys
 	 *  on it). */
 	readContent: (id: string) => Promise<SkillContentDto | null>;
+	/**
+	 * Save one user skill (AP-23d) — the ONE adapter seam behind the editor's
+	 * Save button: a `null` id creates (POST — the folder id derives from the
+	 * name server-side, so duplicates save as NEW), a set id updates (PUT —
+	 * rewrites only that skill's SKILL.md). Each wrapper binds its own
+	 * kind-scoped store actions; both refresh the catalog before resolving.
+	 */
+	save: (id: string | null, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
 	/** Optional delete reference guard — absent means every delete goes
 	 *  straight to a plain confirm (the agent copilot libraries have no
 	 *  module bindings to consult). */

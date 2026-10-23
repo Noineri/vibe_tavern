@@ -6,6 +6,7 @@ import {
 	type MasterDetailParentBack,
 } from "../MasterDetailModal.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
+import { ConfirmCloseModal } from "../confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import { EmptyState } from "../empty-state.js";
 import { Icons } from "../icons.js";
@@ -16,24 +17,29 @@ import { cn } from "../../../lib/cn.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillLibraryAdapter, SkillLibraryLabels, SkillLibraryTestids } from "./skill-library-adapter.js";
+import { BLANK_SKILL_DRAFT, SkillEditor, type SkillDraft } from "./skill-editor.js";
 
 /**
  * THE one skill library modal (AP-22, AGENT_SHELL_POLISH Wave 5 — a pure
  * merge of `AgentSkillModal` + `CoauthorSkillModal` markup; AP-23 applies the
- * mockup §6–7 visual design to that merged surface). A thin `SkillLibraryModal`
- * view over a {@link SkillLibraryAdapter}: the agent copilot wrapper (per-kind,
- * controlled open/close) and the global-store Co-Author wrapper bind their
- * store, their i18n namespace, and their testids; the wrappers carry NO markup.
- * Any future copy of this UI is fork #1 OF this modal — extend the adapter.
+ * mockup §6–7 visual design to that merged surface; AP-23d adds the mockup §8
+ * skill editor). A thin `SkillLibraryModal` view over a {@link SkillLibraryAdapter}:
+ * the agent copilot wrapper (per-kind, controlled open/close) and the
+ * global-store Co-Author wrapper bind their store, their i18n namespace, and
+ * their testids; the wrappers carry NO markup. Any future copy of this UI is
+ * fork #1 OF this modal — extend the adapter.
  *
  * Layout (mockup §6–7): master rows show name + one-line description (no id,
  * no per-row actions); the detail shows name + «свой»/«встроенный» tag, the
  * description, a clamped «Текст навыка» preview (AP-21 `body`, lazy-loaded
  * when the detail opens) with «Показать целиком»/«Свернуть», and a collapsed
  * «Технические детали» disclosure (id, path, source, shadow note, file list).
- * The footer is the shared `MasterDetailFooter` («Удалить» left for user
- * skills, Close right). «Импортировать папку» docks at the list bottom; the
- * empty library shows the explanation + import CTA.
+ * The footer is the shared `MasterDetailFooter` (view: Edit / Duplicate /
+ * Delete left for user skills, Duplicate only for built-ins, Close right;
+ * edit: Cancel / Save right). The new-skill entry docks at the list bottom
+ * ABOVE the import dock; the empty
+ * library shows the explanation + import CTA. The editor (`skill-editor.tsx`)
+ * is an ADDITIONAL detail mode — the AP-23 view stays untouched.
  */
 export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 	isOpen: boolean;
@@ -48,6 +54,25 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [isImporting, setIsImporting] = useState(false);
+	/** Editor session (AP-23d, mockup §8): `new` = blank or duplicate-prefilled
+	 *  (both save via create — the folder id derives from the name
+	 *  server-side), `edit` = an existing user skill (saves via update).
+	 *  While set, the detail pane renders `SkillEditor` instead of the view. */
+	const [editSession, setEditSession] = useState<{ mode: "new" } | { mode: "edit"; id: string } | null>(null);
+	const [draft, setDraft] = useState<SkillDraft>(BLANK_SKILL_DRAFT);
+	/** Draft snapshot at session start — the dirty baseline. The body slot is
+	 *  back-filled when the lazy content arrives (see the fill effect). */
+	const [draftBase, setDraftBase] = useState<SkillDraft>(BLANK_SKILL_DRAFT);
+	/** Skill id whose lazy body still has to land in the draft (edit/duplicate
+	 *  started before the view's `readContent` resolved — never clobbers a
+	 *  body the user already typed). */
+	const [bodySourceId, setBodySourceId] = useState<string | null>(null);
+	const [isSaving, setIsSaving] = useState(false);
+	/** Guarded exit (AP-23d dirty guard, the PromptManagerModal convention):
+	 *  leaving a dirty editor — modal close, Cancel, or selecting another
+	 *  row — asks via `ConfirmCloseModal` instead of silently discarding.
+	 *  A clean editor exits immediately (no guard). */
+	const [pendingExit, setPendingExit] = useState<null | { kind: "close" } | { kind: "cancel" } | { kind: "select"; id: string }>(null);
 	/** Pending delete: the skill id + the module names that still reference it
 	 *  (empty when no module references the skill or no guard is supplied). */
 	const [pendingDelete, setPendingDelete] = useState<{ id: string; referencedBy: string[] } | null>(null);
@@ -76,12 +101,48 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 			setContentFailed(false);
 			setIsBodyExpanded(false);
 			setIsTechOpen(false);
+			setEditSession(null);
+			setDraft(BLANK_SKILL_DRAFT);
+			setDraftBase(BLANK_SKILL_DRAFT);
+			setBodySourceId(null);
+			setIsSaving(false);
+			setPendingExit(null);
 		}
 		// `adapter.load` is stable per the adapter's contract; the rest of the
 		// adapter object is rebuilt each wrapper render.
 	}, [isOpen, adapter.load]);
 
 	const selected = adapter.entries.find((e) => e.id === selectedId) ?? null;
+	const isDirty = editSession !== null &&
+		(draft.name !== draftBase.name || draft.description !== draftBase.description || draft.body !== draftBase.body);
+
+	// Late body arrival for an edit/duplicate session started before the
+	// view's `readContent` resolved: back-fill the untouched body slot once.
+	// A body the user already typed is never clobbered.
+	useEffect(() => {
+		if (!editSession || !bodySourceId || !content || content.id !== bodySourceId) return;
+		if (draft.body !== draftBase.body) return;
+		setDraft({ ...draftBase, body: content.body });
+		setDraftBase({ ...draftBase, body: content.body });
+		setBodySourceId(null);
+	});
+
+	const handleSelect = (id: string, openDetail?: () => void) => {
+		openDetail?.();
+		if (!editSession) {
+			setSelectedId(id);
+			return;
+		}
+		// List navigation out of a dirty editor asks first (same guard as
+		// close/cancel); a clean editor switches immediately.
+		if (isDirty) {
+			setPendingExit({ kind: "select", id });
+			return;
+		}
+		setEditSession(null);
+		setBodySourceId(null);
+		setSelectedId(id);
+	};
 
 	// Lazy-load the skill body whenever the detail opens. Stale responses
 	// (selection changed or modal closed mid-flight) are dropped; the loading
@@ -110,11 +171,6 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 		return () => { cancelled = true; };
 		// `readContent` is stable per the adapter's contract.
 	}, [isOpen, selectedId, readContent]);
-
-	const handleSelect = (id: string, openDetail?: () => void) => {
-		setSelectedId(id);
-		openDetail?.();
-	};
 
 	const handleImportClick = () => {
 		fileInputRef.current?.click();
@@ -166,6 +222,85 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 		}
 	};
 
+	/** Editor entry points (AP-23d, mockup §8). `new` (blank or duplicate
+	 *  prefill) saves via create; `edit` (an existing user skill) via update.
+	 *  The body slot takes the lazy content when it already landed for this
+	 *  skill, else the fill effect back-fills it on arrival. */
+	const beginSession = (session: { mode: "new" } | { mode: "edit"; id: string }, base: SkillDraft, skill: SkillCatalogEntryDto | null) => {
+		setDraft(base);
+		setDraftBase(base);
+		setBodySourceId(skill && (!content || content.id !== skill.id) ? skill.id : null);
+		setEditSession(session);
+	};
+
+	const handleStartNew = () => {
+		beginSession({ mode: "new" }, BLANK_SKILL_DRAFT, null);
+	};
+
+	const handleStartEdit = (skill: SkillCatalogEntryDto) => {
+		beginSession({ mode: "edit", id: skill.id }, {
+			name: skill.name,
+			description: skill.description,
+			body: content && content.id === skill.id ? content.body : "",
+		}, skill);
+	};
+
+	const handleStartDuplicate = (skill: SkillCatalogEntryDto) => {
+		beginSession({ mode: "new" }, {
+			name: tDynamic(labels.copyName, { name: skill.name }),
+			description: skill.description,
+			body: content && content.id === skill.id ? content.body : "",
+		}, skill);
+	};
+
+	/** Save — create for `new` (blank + duplicate alike: the folder id
+	 *  derives from the copy name server-side), update for `edit`. The
+	 *  stores refresh the catalog, so on success the detail returns to the
+	 *  VIEW of the saved skill (a create selects the new entry). */
+	const handleSave = async () => {
+		if (!editSession || isSaving) return;
+		const input = { name: draft.name.trim(), description: draft.description, body: draft.body };
+		// The button disables on a blank name; double-guard the op itself.
+		if (!input.name) return;
+		setIsSaving(true);
+		try {
+			const saved = await adapter.save(editSession.mode === "edit" ? editSession.id : null, input);
+			setEditSession(null);
+			setBodySourceId(null);
+			setSelectedId(saved.id);
+			toast.success(tDynamic(labels.saved));
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : tDynamic(labels.saveFailed));
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
+	const applyExit = (exit: { kind: "close" } | { kind: "cancel" } | { kind: "select"; id: string }) => {
+		setEditSession(null);
+		setPendingExit(null);
+		setBodySourceId(null);
+		if (exit.kind === "close") onClose();
+		else if (exit.kind === "select") setSelectedId(exit.id);
+	};
+
+	/** Any exit from the editor — modal close, Cancel, or list navigation.
+	 *  A dirty editor asks via `ConfirmCloseModal` (the PromptManagerModal
+	 *  convention); a clean one exits immediately. DECISION (mockup §8 says
+	 *  only that dirty edits ask before closing): the guard covers all three
+	 *  exits, since Cancel and row-switch discard just like closing. */
+	const requestExit = (exit: { kind: "close" } | { kind: "cancel" } | { kind: "select"; id: string }) => {
+		if (editSession && isDirty) {
+			setPendingExit(exit);
+			return;
+		}
+		applyExit(exit);
+	};
+
+	const handleRequestClose = () => {
+		requestExit({ kind: "close" });
+	};
+
 	const guard = adapter.referenceGuard;
 
 	return (
@@ -204,12 +339,19 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 					onCancel={() => setPendingDelete(null)}
 				/>
 			)}
+			{pendingExit && (
+				<ConfirmCloseModal
+					onConfirm={() => applyExit(pendingExit)}
+					onCancel={() => setPendingExit(null)}
+				/>
+			)}
 			<MasterDetailModal
 				isOpen={isOpen}
-				onClose={onClose}
+				onClose={handleRequestClose}
 				title={tDynamic(labels.title)}
 				subtitle={tDynamic(labels.subtitle)}
 				parentBack={parentBack}
+				dirty={isDirty}
 				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
 				masterContent={({ openDetail }) => (
 					<SkillList
@@ -221,12 +363,21 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 						testids={testids}
 						t={tDynamic}
 						onSelect={(id) => handleSelect(id, openDetail)}
+						onNew={() => { handleStartNew(); openDetail(); }}
 						onImport={handleImportClick}
 						isImporting={isImporting}
 					/>
 				)}
 				detailContent={() =>
-					selected ? (
+					editSession ? (
+						<SkillEditor
+							draft={draft}
+							onChange={setDraft}
+							labels={labels}
+							testids={testids}
+							t={tDynamic}
+						/>
+					) : selected ? (
 						<SkillDetail
 							skill={selected}
 							content={content}
@@ -245,19 +396,55 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 					)
 				}
 				footer={
-					<MasterDetailFooter
-						actions={
-							selected?.source === "user"
-								? [{
-									icon: <Icons.Trash />,
-									label: tDynamic(labels.delete),
-									destructive: true,
-									onClick: () => { void handleDelete(selected); },
-								}]
-								: []
-						}
-						onClose={onClose}
-					/>
+					editSession ? (
+						<MasterDetailFooter
+							right={
+								<>
+									<button
+										type="button"
+										className="h-[37px] cursor-pointer rounded-md bg-transparent py-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+										onClick={() => requestExit({ kind: "cancel" })}
+									>
+										{tDynamic(labels.cancel)}
+									</button>
+									<button
+										type="button"
+										disabled={!draft.name.trim() || isSaving}
+										className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
+										onClick={() => { void handleSave(); }}
+									>
+										{tDynamic(labels.save)}
+									</button>
+								</>
+							}
+						/>
+					) : (
+						<MasterDetailFooter
+							actions={
+									!selected ? [] : selected.source === "user"
+										? [{
+												icon: <Icons.Edit />,
+												label: tDynamic(labels.edit),
+												onClick: () => handleStartEdit(selected),
+											}, {
+												icon: <Icons.Copy />,
+												label: tDynamic(labels.duplicate),
+												onClick: () => handleStartDuplicate(selected),
+											}, {
+												icon: <Icons.Trash />,
+												label: tDynamic(labels.delete),
+												destructive: true,
+												onClick: () => { void handleDelete(selected); },
+											}]
+										: [{
+												icon: <Icons.Copy />,
+												label: tDynamic(labels.duplicate),
+												onClick: () => handleStartDuplicate(selected),
+											}]
+							}
+							onClose={onClose}
+						/>
+					)
 				}
 			/>
 		</>
@@ -275,17 +462,19 @@ interface SkillListProps {
 	testids: SkillLibraryTestids;
 	t: TDynamic;
 	onSelect: (id: string) => void;
+	onNew: () => void;
 	onImport: () => void;
 	isImporting: boolean;
 }
 
-function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids, t, onSelect, onImport, isImporting }: SkillListProps) {
+function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids, t, onSelect, onNew, onImport, isImporting }: SkillListProps) {
 	if (isLoading && !hasLoaded) {
 		return <div className="p-4 font-ui text-[13px] text-t3">{t(labels.loading)}</div>;
 	}
 	// Mockup §6: rows are name + one-line description (no id, no actions).
-	// The import docks at the list bottom (like "+ New"); the empty library
-	// (mockup §7) shows the explanation + import CTA instead of the list.
+	// «+ New skill» docks above the import at the list bottom (mockup §8); the
+	// empty library (mockup §7) shows the explanation + import CTA instead of
+	// the list.
 	return (
 		<div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
 			<div className={cn(lblCls, "shrink-0 px-4")}>
@@ -328,6 +517,15 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 							);
 						})}
 					</div>
+					<button
+						type="button"
+						data-testid={testids.newSkillBtn}
+						className="mx-2.5 mt-2 flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-2 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-t1"
+						onClick={onNew}
+					>
+						<Icons.Plus className="h-3.5 w-3.5" />
+						{t(labels.newSkill)}
+					</button>
 					<button
 						type="button"
 						data-testid={testids.importBtn}
