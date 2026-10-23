@@ -26,6 +26,7 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { ContextRing, getContextUsage } from "../shared/TokenCounterPopover.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
+import { AttachmentOverflowWarning } from "./attachment-overflow-warning.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
@@ -96,6 +97,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
       {/* LS-4b: per-send prefill strip — one-shot override over the input
           area; visibility gated on local-backend prefill capability. */}
       <PerSendPrefillStrip supported={data.perSendPrefillSupported} />
+      {data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
       <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
         {/* Toolbar row. The persona chip is the flexible element (min-w-0, the
             name ellipsizes); every other control is shrink-0, so the row never
@@ -156,7 +158,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             {showWarningDot && <span aria-hidden="true" className="absolute -right-[3px] -top-[3px] h-3.5 w-3.5 rounded-full border-2 border-s2 bg-danger" />}
           </button>
         </div>
-        {draftAttachments.length > 0 && <AttachmentPreview />}
+        {draftAttachments.length > 0 && <AttachmentPreview attachments={draftAttachments} onRemove={data.remove} />}
         {/* Input row */}
         <div className="flex items-end gap-2">
           <input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />

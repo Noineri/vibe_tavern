@@ -4,26 +4,27 @@
  * toggles, and music/ambient clips are playback-only (no transcript UI).
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import React from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render, act } = await import("@testing-library/react");
+const { render, act, fireEvent, waitFor } = await import("@testing-library/react");
 
 const { default: userEvent } = await import("@testing-library/user-event");
 
 // House i18n test pattern: raw keys render as-is.
 const realI18n = await import("../../i18n/context.js");
+const en = (await import("../../i18n/locales/en.json")).default;
 mock.module("../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
     // Interpolates single-brace params (the ST-7 tone row passes {tone}) —
     // otherwise the raw-key passthrough loses the split value under test.
     t: (key: string, params?: Record<string, unknown>) =>
-      params && typeof params === "object" && "tone" in params
+      key === "attachment_tokens" ? en.attachment_tokens.replace("{tokens}", String(params?.tokens)) : params && typeof params === "object" && "tone" in params
         ? `${key}:${String(params.tone)}`
         : key,
     tDynamic: (key: string) => key,
@@ -36,6 +37,23 @@ mock.module("../../i18n/context.js", () => ({
 import { AttachmentGrid } from "./AttachmentGrid.js";
 
 type GridAttachment = NonNullable<Parameters<typeof AttachmentGrid>[0]["attachments"]>[number];
+
+const chatApi = await import("../../api/chat-api.js");
+const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
+const actionSpies: Array<{ mockRestore: () => void }> = [];
+const restoreActionSpies = () => {
+  for (const spy of actionSpies.splice(0)) spy.mockRestore();
+};
+afterEach(restoreActionSpies);
+afterAll(restoreActionSpies);
+
+const textFile: GridAttachment = {
+  id: "att-file", assetId: "asset_file", type: "file", name: "notes.md",
+  mimeType: "text/markdown", sizeBytes: 1200, tokenCount: 12400,
+};
+const image: GridAttachment = {
+  id: "att-image", assetId: "asset_image", type: "image", name: "a.png", mimeType: "image/png", sizeBytes: 4,
+};
 
 function voiceAttachment(overrides: Partial<GridAttachment> = {}) {
   return {
@@ -134,5 +152,80 @@ describe("AttachmentGrid voice bubble (ST-6)", () => {
     );
     expect(view.queryByTestId("voice-bubble")).toBeNull();
     expect(view.container.querySelector("img")).toBeTruthy();
+  });
+});
+
+describe("lightbox full-message write characterization (CA-1e)", () => {
+  test("description edits preserve the file and audio beside the image", async () => {
+    const save = spyOn(chatApi, "updateAttachmentDescription").mockResolvedValue({ ok: true });
+    // Instrument the existing action without replacing its implementation.
+    const update = spyOn(useSnapshotStore.getState(), "updateMessage");
+    actionSpies.push(save, update);
+    const attachments = [textFile, image, voiceAttachment()];
+    const view = render(<AttachmentGrid attachments={attachments} messageId="message_1" />);
+    fireEvent.click(view.getByAltText("a.png"));
+    fireEvent.click(view.getByTitle("Add description"));
+    fireEvent.change(view.getByPlaceholderText("describe_attachment_placeholder"), { target: { value: "A tower" } });
+    fireEvent.click(view.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("message_1", {
+      attachments: [textFile, { ...image, description: "A tower" }, attachments[2]],
+    }));
+    expect(save).toHaveBeenCalledWith("_", "message_1", image.id, "A tower");
+  });
+
+  test("deleting an image preserves non-media siblings in the message update", async () => {
+    const remove = spyOn(chatApi, "deleteAttachment").mockResolvedValue({ ok: true });
+    const update = spyOn(useSnapshotStore.getState(), "updateMessage");
+    actionSpies.push(remove, update);
+    const audio = voiceAttachment();
+    const view = render(<AttachmentGrid attachments={[textFile, image, audio]} messageId="message_1" />);
+    fireEvent.click(view.getByAltText("a.png"));
+    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("_", "message_1", image.id));
+    expect(update).toHaveBeenCalledWith("message_1", { attachments: [textFile, audio] });
+  });
+});
+
+describe("sent file chips and media-only navigation (CA-1e)", () => {
+  test("sent markdown is a read-only counted file chip, never an image", () => {
+    const view = render(<AttachmentGrid attachments={[textFile]} />);
+    const chip = view.getByTestId("file-attachment-chip");
+    expect(view.getByTitle(textFile.name).textContent).toBe(textFile.name);
+    expect(view.getByTitle(textFile.name).nextElementSibling?.textContent).toBe(en.attachment_tokens.replace("{tokens}", (textFile.tokenCount!).toLocaleString()));
+    expect(chip.querySelector("img")).toBeNull();
+    expect(chip.querySelector("button")).toBeNull();
+  });
+
+  test("a file before one image does not shift the clicked image or create navigation", () => {
+    const view = render(<AttachmentGrid attachments={[textFile, image]} />);
+    fireEvent.click(view.getByAltText(image.name));
+    expect(view.getAllByAltText(image.name)).toHaveLength(2);
+    expect(view.queryByTestId("attachment-lightbox-next")).toBeNull();
+    expect(view.queryByTestId("attachment-lightbox-prev")).toBeNull();
+  });
+
+  test("prev/next skips files and audio and wraps between the media entries", () => {
+    const secondImage = { ...image, id: "second", assetId: "asset_second", name: "b.png" };
+    const view = render(<AttachmentGrid attachments={[textFile, image, voiceAttachment(), secondImage]} />);
+    fireEvent.click(view.getByAltText("b.png"));
+    expect(view.getAllByAltText("b.png")).toHaveLength(2);
+    fireEvent.click(view.getByTestId("attachment-lightbox-next"));
+    expect(view.getAllByAltText("a.png")).toHaveLength(2);
+    expect(view.getAllByAltText("b.png")).toHaveLength(1);
+    fireEvent.click(view.getByTestId("attachment-lightbox-prev"));
+    expect(view.getAllByAltText("b.png")).toHaveLength(2);
+  });
+
+  test("regenerating an image description preserves every non-media sibling", async () => {
+    const regenerate = spyOn(chatApi, "regenerateAttachmentDescription").mockResolvedValue({ description: "A tower" });
+    const update = spyOn(useSnapshotStore.getState(), "updateMessage");
+    actionSpies.push(regenerate, update);
+    const audio = voiceAttachment();
+    const view = render(<AttachmentGrid attachments={[textFile, image, audio]} messageId="message_1" />);
+    fireEvent.click(view.getByAltText(image.name));
+    fireEvent.click(view.getByTitle("regenerate_description_title"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("message_1", { attachments: [textFile, { ...image, description: "A tower" }, audio] }));
+    expect(regenerate).toHaveBeenCalledTimes(1);
   });
 });

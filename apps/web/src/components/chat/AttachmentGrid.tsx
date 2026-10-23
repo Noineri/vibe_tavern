@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
+import { isTextMime, splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
+import { FileAttachmentChip } from "./file-attachment-chip.js";
 import { ImageBlock, type ImageBlockImage } from "./ImageBlock.js";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
@@ -151,18 +152,25 @@ export function AttachmentGrid({
       ...(messageId && att.id ? { onEditPrompt: editPromptFor(att) } : {}),
     }));
 
+  const lightboxAttachments = attachments.filter((att) => att.type === "image" || att.type === "video");
+
   return (
     <>
       <div className="mt-2.5 flex flex-wrap gap-2 select-none">
-        {attachments.map((att, idx) =>
+        {attachments.map((att) =>
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
-          ) : att.imageGen !== undefined ? null : (
+          ) : att.imageGen !== undefined ? null : isTextMime(att.mimeType) ? (
+            <FileAttachmentChip key={att.id || att.assetId} attachment={att} />
+          ) : (
           <button
             key={att.id || att.assetId}
             type="button"
             className="group relative flex h-24 w-auto cursor-zoom-in overflow-hidden rounded-lg border border-border/50 bg-s2/50 shadow-sm transition-all hover:border-accent hover:shadow-md active:scale-[0.98]"
-            onClick={() => setLightboxIndex(idx)}
+            onClick={() => {
+              const index = lightboxAttachments.indexOf(att);
+              if (index >= 0) setLightboxIndex(index);
+            }}
           >
             {att.type === "image" ? (
               <img
@@ -214,7 +222,8 @@ export function AttachmentGrid({
 
       {lightboxIndex !== null && (
         <Lightbox
-          attachments={attachments}
+          attachments={lightboxAttachments}
+          messageAttachments={attachments}
           messageId={messageId}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
@@ -224,7 +233,7 @@ export function AttachmentGrid({
   );
 }
 
-function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachments: Attachment[]; messageId?: string; initialIndex: number; onClose: () => void }) {
+function Lightbox({ attachments, messageAttachments, messageId, initialIndex, onClose }: { attachments: Attachment[]; messageAttachments: Attachment[]; messageId?: string; initialIndex: number; onClose: () => void }) {
   const { t } = useT();
   const [index, setIndex] = useState(initialIndex);
   const [editing, setEditing] = useState(false);
@@ -262,10 +271,10 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     // and reflects in the thumbnail caption. localDescription is just an
     // optimistic overlay for the current lightbox session.
     const updateMessage = useSnapshotStore.getState().updateMessage;
-    const nextAttachments = attachments.map((a) => (a.id === att.id ? { ...a, description } : a));
+    const nextAttachments = messageAttachments.map((a) => (a.id === att.id ? { ...a, description } : a));
     updateMessage(messageId, { attachments: nextAttachments });
     setLocalDescription((prev) => ({ ...prev, [index]: description }));
-  }, [messageId, att?.id, attachments, index]);
+  }, [messageId, att?.id, messageAttachments, index]);
 
   const saveDescription = useCallback(async () => {
     if (!messageId || !att?.id) return;
@@ -312,13 +321,15 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     // Optimistic: drop the attachment from canonical message data so the grid
     // re-renders without it at once. Each attachment owns a unique assetId, so
     // there's no cross-message ref to preserve.
-    const remaining = attachments.filter((a) => a.id !== att.id);
+    const remaining = messageAttachments.filter((a) => a.id !== att.id);
     const updateMessage = useSnapshotStore.getState().updateMessage;
     updateMessage(messageId, { attachments: remaining });
     // If we just removed the last one, close the lightbox (the grid hides itself).
     if (remaining.length === 0) { onClose(); return; }
     // Otherwise clamp the index if we deleted the tail item.
-    if (index > remaining.length - 1) setIndex(remaining.length - 1);
+    const remainingMedia = attachments.filter((a) => a.id !== att.id);
+    if (remainingMedia.length === 0) onClose();
+    else if (index > remainingMedia.length - 1) setIndex(remainingMedia.length - 1);
     try {
       const { deleteAttachment } = await import("../../api/chat-api.js");
       await deleteAttachment("_", messageId, att.id);
@@ -327,7 +338,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
       console.error("Failed to delete attachment:", err);
       toast.error(t("attachment_delete_failed"));
     }
-  }, [messageId, att?.id, attachments, index, onClose, t]);
+  }, [messageId, att?.id, attachments, messageAttachments, index, onClose, t]);
 
   useKeyDown("Escape", onClose, { enabled: !!att && !editing });
 
@@ -370,7 +381,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
             )}
             <button
               className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
-              onClick={() => setConfirmDeleteOpen(true)}
+              onClick={(event) => { event.stopPropagation(); setConfirmDeleteOpen(true); }}
               title={t("delete_attachment_title")}
             >
               <Icons.del className="h-4 w-4" />
@@ -390,12 +401,14 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         <>
           <button
             className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+            data-testid="attachment-lightbox-prev"
             onClick={goPrev}
           >
             <Icons.Caret direction="l" className="h-6 w-6" />
           </button>
           <button
             className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+            data-testid="attachment-lightbox-next"
             onClick={goNext}
           >
             <Icons.Caret direction="r" className="h-6 w-6" />

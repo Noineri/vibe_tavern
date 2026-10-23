@@ -80,7 +80,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
       new File(["video"], "a.mp4", { type: "video/mp4" }),
     ]);
     expect(env.upload).not.toHaveBeenCalled();
-    expect(errors.mock.calls.map(([message]) => message)).toEqual(Array(3).fill("unsupported_image_format"));
+    expect(errors.mock.calls.map(([message]) => message)).toEqual(Array(3).fill("unsupported_attachment_format"));
   });
 
   test("over 20 MB is refused; exactly 20 MB is accepted", async () => {
@@ -181,7 +181,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
     env.result.current.handlePaste(event.event);
     await env.result.current.addFiles([file]);
     expect(env.upload).not.toHaveBeenCalled();
-    expect(errors).toHaveBeenCalledWith("unsupported_image_format");
+    expect(errors).toHaveBeenCalledWith("unsupported_attachment_format");
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(env.result.current.accept).not.toContain("audio/");
   });

@@ -62,7 +62,7 @@ export function useAttachmentDraft(
     for (const file of files) {
       const mime = resolveAttachmentUploadMime(file.type, file.name);
       if (!acceptsMime(mime)) {
-        toast.error(t("unsupported_image_format"));
+        toast.error(t("unsupported_attachment_format"));
       } else if (file.size > 20 * 1024 * 1024) {
         toast.error(t("file_too_large"));
       } else if (readAttachments().length + pending.current >= 5) {

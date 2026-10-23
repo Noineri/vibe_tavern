@@ -16,6 +16,7 @@ import { effectiveContextBudget, resolvePerSendPrefillSupport } from "@vibe-tave
 import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useAttachmentDraft, VALID_AUDIO_TYPES } from "../../hooks/use-attachment-draft.js";
+import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -196,6 +197,7 @@ export function useInputArea() {
   const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
   const totalUsed = permanent + buckets.history + inputTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);
+  const attachmentOverflow = estimateAttachmentOverflow({ totalUsed, availableBudget, attachments: draftAttachments });
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState: "ok" | "mid" | "warn" = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
@@ -206,7 +208,7 @@ export function useInputArea() {
     personas, activePersonaId, promptPresets, activePromptPresetId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     ...attachmentDraft, draftAttachments, handleVoiceRecorded,
-    canSend, buckets, inputTokens, permanent, availableBudget, tokenState,
+    canSend, buckets, inputTokens, permanent, availableBudget, tokenState, attachmentOverflow,
     showGenerateMore, handleGenerateMore,
     // LS-4b/LS-8: the per-send prefill entry point renders only when BOTH
     // gates pass — the shared fail-closed capability resolution in
