@@ -2722,7 +2722,6 @@
 	"copilot_context_segment_system": "System",
 	"copilot_context_source_estimate": "estimated",
 	"copilot_context_source_provider": "provider-measured",
-	"copilot_context_total": "Total",
 	"copilot_context_unmetered": "No context budget",
 	"copilot_context_no_metrics": "Context usage appears after the first reply",
 	"copilot_todo_title": "Step plan",

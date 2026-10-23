@@ -587,7 +587,6 @@ export default interface Resources {
     "copilot_context_segment_system": "System",
     "copilot_context_source_estimate": "estimated",
     "copilot_context_source_provider": "provider-measured",
-    "copilot_context_total": "Total",
     "copilot_context_unmetered": "No context budget",
     "copilot_mention_empty": "Nothing available to mention.",
     "copilot_mention_no_matches": "No matches for “{query}”.",

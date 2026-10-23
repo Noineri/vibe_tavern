@@ -1,23 +1,8 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
-import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
-
-// CustomTooltip wraps children in a Radix Tooltip that never anchors under
-// happy-dom (same reason the shell test mocks it). Render children AND the
-// tooltip content inline — SC-0j pins the kind-provided segment LABELS, which
-// surface only in the tooltip rows, so the content must render for those
-// assertions (the track/segment/control contract stays the primary pin).
-mock.module("../../../components/shared/Tooltip.js", () => ({
-  CustomTooltip: ({ children, content }: { children: ReactNode; content: ReactNode }) => (
-    <>
-      {children}
-      {content}
-    </>
-  ),
-}));
 
 // The shared Toggle wraps Radix Switch; mock it to a plain button so the meter
 // test drives it deterministically without Radix's happy-dom anchoring.
@@ -94,6 +79,23 @@ describe("ExperienceContextMeter", () => {
     expect(digest.style.width).toBe("10%");
     expect(history.style.width).toBe("5%");
     expect(reserve.style.width).toBe("10%");
+  });
+
+  it("shows the panel at once: legend rows with tokens, the reserve, the source, and the heading on request", () => {
+    const plain = renderMeter();
+    const legend = plain.getByTestId("copilot-context-legend");
+    for (const text of ["copilot_context_segment_system", "copilot_context_segment_digest", "copilot_context_segment_history", "copilot_context_segment_reserve"]) {
+      expect(legend.textContent).toContain(text);
+    }
+    for (const tokens of [2500, 1000, 500]) expect(legend.textContent).toContain(tokens.toLocaleString());
+    expect(plain.getByTestId("copilot-context-source").textContent).toBe("copilot_context_source_estimate");
+    expect(plain.queryByTestId("copilot-context-heading")).toBeNull();
+    plain.unmount();
+
+    const headed = renderMeter({ showHeading: true, metrics: metrics({ source: "provider" }) });
+    expect(headed.getByTestId("copilot-context-heading").textContent).toContain("40% · ");
+    expect(headed.getByTestId("copilot-context-source").textContent).toBe("copilot_context_source_provider");
+    headed.unmount();
   });
 
   it("renders an unmetered label when budget is 0 (no misleading zero bar)", () => {
@@ -191,7 +193,7 @@ describe("AgentContextMeter kind-provided segments (SC-0j)", () => {
 
   it("sums the custom segments to the displayed total", () => {
     const m = customMetrics();
-    const { getByTestId, getByText } = renderMeter({ metrics: m, segmentLabels: { ...labels } });
+    const { getByTestId } = renderMeter({ metrics: m, segmentLabels: { ...labels }, showHeading: true });
 
     const widths = ["lore", "summaries", "messages"].map(
       (key) => parseFloat(getByTestId(`copilot-context-segment-${key}`).style.width),
@@ -199,7 +201,10 @@ describe("AgentContextMeter kind-provided segments (SC-0j)", () => {
     const rendered = widths.reduce((a, b) => a + b, 0);
     expect(rendered).toBe((m.totalTokens / m.budgetTokens) * 100);
     expect(m.segments?.reduce((a, s) => a + s.tokens, 0)).toBe(m.totalTokens);
-    expect(getByText("copilot_context_total")).toBeDefined();
+    // Was a "Total" row in the hover tooltip; the panel heading now carries the total (AP-14 mockup).
+    expect(getByTestId("copilot-context-heading").textContent).toContain(
+      `${m.totalTokens.toLocaleString()} / ${m.budgetTokens.toLocaleString()}`,
+    );
   });
 
   it("renders the raw key when the label map misses a segment (wiring bug stays visible)", () => {
@@ -289,6 +294,8 @@ describe("AgentContextMeter five sidechat fills (SC-13b)", () => {
     expect(getByTestId("copilot-context-segment-system").className.split(/\s+/)).toContain("bg-accent");
     expect(getByTestId("copilot-context-segment-digest").className.split(/\s+/)).toContain("bg-accent-dim");
     expect(getByTestId("copilot-context-segment-history").className.split(/\s+/)).toContain("bg-s2");
-    expect(queryByTestId("copilot-context-segment-dot-system")).toBeNull();
+    // Behavior change (AP-14 mockup): the fixed segments now get legend dots too (was: none).
+    expect(getByTestId("copilot-context-segment-dot-system").className.split(/\s+/)).toContain("bg-accent");
+    expect(queryByTestId("copilot-context-segment-dot-lore")).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import { getModalPortal } from "../modal-helpers.js";
 import { BottomSheet } from "../BottomSheet.js";
 import { ContextRing } from "../TokenCounterPopover.js";
 import { CustomTooltip } from "../Tooltip.js";
-import { AgentContextMeter } from "./AgentContextMeter.js";
+import { AgentContextHeading, AgentContextMeter, contextPercent } from "./AgentContextMeter.js";
 
 export interface AgentContextRingProps {
   metrics: ExperienceCopilotContextMetrics | null;
@@ -28,8 +28,8 @@ export interface AgentContextRingProps {
 /**
  * AgentContextRing (AGENT_SHELL_POLISH AP-14) — the header's compact context
  * trigger: a ring with the used % between the session switcher and the gear
- * (mockup §1). Clicking opens the EXISTING `AgentContextMeter` body (bar,
- * segments, «Сжать», «Авто») in a Radix popover on desktop and a BottomSheet
+ * (mockup §1). Clicking opens the `AgentContextMeter` panel (heading, bar,
+ * legend, source, Compact, Auto) in a Radix popover on desktop and a BottomSheet
  * on the phone — the `TokenCounterPopover` / `ImageGenFineTuningChip`
  * dual-mode pattern (ONE trigger, desktop-only popover content, a `BottomSheet`
  * sibling on mobile, the same body on both).
@@ -75,12 +75,13 @@ export function AgentContextRing({
   }
 
   const metered = metrics.budgetTokens > 0;
-  const percent = metered ? Math.round((metrics.totalTokens / metrics.budgetTokens) * 100) : 0;
+  const percent = contextPercent(metrics);
   const urgent = isMeterUrgent(metrics);
   const tokenState = urgent ? "warn" : "ok";
 
   const body = (
     <AgentContextMeter
+      showHeading={!mobile}
       metrics={metrics}
       segmentLabels={segmentLabels}
       autoCompact={autoCompact}
@@ -131,7 +132,7 @@ export function AgentContextRing({
             side="bottom"
             align="center"
             sideOffset={4}
-            className="glass-blur z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            className="glass-blur z-[220] w-[280px] rounded-lg border border-border2 bg-glass-bg px-3.5 py-3 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -140,21 +141,7 @@ export function AgentContextRing({
     </Popover.Root>
   );
 
-  const sheetTitle = metered ? (
-    <div className="flex w-full items-center justify-between gap-3">
-      <span>{t("context_label")}</span>
-      <span className="shrink-0 font-normal tabular-nums text-t2">
-        {percent}% · {metrics.totalTokens.toLocaleString()} / {metrics.budgetTokens.toLocaleString()}
-      </span>
-    </div>
-  ) : (
-    <div className="flex w-full items-center justify-between gap-3">
-      <span>{t("context_label")}</span>
-      <span className="shrink-0 font-normal tabular-nums text-t2">
-        {metrics.totalTokens.toLocaleString()}
-      </span>
-    </div>
-  );
+  const sheetTitle = <AgentContextHeading metrics={metrics} />;
 
   const sheet = open && mobile && (
     <BottomSheet open={true} onClose={() => setOpen(false)} title={sheetTitle}>
