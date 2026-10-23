@@ -1,19 +1,16 @@
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// No i18n mock here: `useT()` without a `LocaleProvider` ancestor returns the
+// context default (`t: key => key` — see the `createContext` default in
+// `i18n/context.tsx`), so the key assertions below hold with the REAL module
+// and nothing leaks into co-loaded files. A `mock.module` on this first-party
+// module would be process-wide in a bundled run and reduce every co-loaded
+// `useT()` (including a real `LocaleProvider`) to key-fallback — the exact
+// poisoning this file caused for the RU separator suite (AgentMessageList's
+// provider-less key assertions are the same safe pattern).
 
 let MessageReasoning: typeof import("./MessageReasoning.js").MessageReasoning;
 let render: typeof import("@testing-library/react").render;
