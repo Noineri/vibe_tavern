@@ -329,6 +329,14 @@ export function filterPromptVisibleAttachments(attachments: Attachment[]): Attac
     : a.includeInPrompt !== false);
 }
 
+/** The shared stored-row projection used by RP and Co-Author history.
+ * Empty columns omit the field; present columns retain RP's empty-list shape
+ * even when every attachment is excluded or the JSON cannot be parsed. */
+export function promptVisibleAttachmentsOf(raw: string | null | undefined): Attachment[] | undefined {
+  if (!raw) return undefined;
+  return withImageGenPromptFallback(filterPromptVisibleAttachments(parseStoredAttachments(raw) ?? []));
+}
+
 /** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN
  *  IG-CF9): when a slot IS included in the prompt (`includeInPrompt === true`
  *  — the explicit per-slot eye button, no auto-describing), its textual

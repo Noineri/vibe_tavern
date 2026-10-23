@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments, filterPromptVisibleAttachments, withImageGenPromptFallback, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig, resolveEffectiveGenerationFormat, CUSTOM_TEMPLATE_SELECTION_PREFIX, GENERATION_FORMAT_MODE, log, type ProviderGenerationFormat } from "@vibe-tavern/domain";
+import { brandId, promptVisibleAttachmentsOf, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig, resolveEffectiveGenerationFormat, CUSTOM_TEMPLATE_SELECTION_PREFIX, GENERATION_FORMAT_MODE, log, type ProviderGenerationFormat } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -471,7 +471,7 @@ export class PromptAssemblyService {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
-        ...(message.attachmentsJson ? { attachments: withImageGenPromptFallback(filterPromptVisibleAttachments(parseStoredAttachments(message.attachmentsJson) ?? [])) } : {}),
+        ...(message.attachmentsJson ? { attachments: promptVisibleAttachmentsOf(message.attachmentsJson) } : {}),
         ...(rolls?.length ? { diceRolls: rolls.map(storeRollToSnapshot) } : {}),
         ...(reports.length ? { experienceReports: reports } : {}),
       };

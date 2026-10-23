@@ -11,6 +11,7 @@ import {
   resolveAttachmentUploadMime,
   composeVoiceTranscript,
   parseStoredAttachments,
+  promptVisibleAttachmentsOf,
   splitVoiceTranscript,
   withImageGenPromptFallback,
   type Attachment,
@@ -302,6 +303,20 @@ describe('prompt attachment visibility (CA-1b)', () => {
     };
     const included = { ...slot, includeInPrompt: true };
     expect(filterPromptVisibleAttachments([slot, { ...slot, includeInPrompt: false }, included])).toEqual([included]);
+  });
+});
+
+describe('stored prompt visibility projection (CA-3a)', () => {
+  const image: Attachment = { id: 'img', assetId: 'asset', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 };
+  test('empty columns omit the field; a present empty array preserves the RP shape', () => {
+    for (const raw of [undefined, null, '']) expect(promptVisibleAttachmentsOf(raw)).toBeUndefined();
+    expect(promptVisibleAttachmentsOf('[]')).toEqual([]);
+  });
+  test('excludes files and off image-gen slots, keeps ordinary images and backfills included slots', () => {
+    const file: Attachment = { ...image, id: 'file', type: 'file', mimeType: 'text/markdown', includeInPrompt: false };
+    const off: Attachment = { ...image, id: 'off', imageGen: { mode: 'portrait', profileId: 'p', prompt: 'Tower', params: {} } };
+    const on = { ...off, id: 'on', includeInPrompt: true };
+    expect(promptVisibleAttachmentsOf(JSON.stringify([file, off, image, on]))).toEqual([image, { ...on, description: 'Tower' }]);
   });
 });
 
