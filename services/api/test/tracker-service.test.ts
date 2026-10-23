@@ -225,6 +225,80 @@ describe("composeSceneInstruction (SCN-5)", () => {
 		const instruction = composeSceneInstruction("BASE", TEST_SCHEMA, []);
 		expect(instruction).toContain("[]");
 	});
+
+	const VOCABULARY_PHRASE = "output exactly that word";
+	const TONED_SCHEMA = {
+		timeOfDay: { $type: "string", toneBy: { Dawn: "warning", Night: "danger" } },
+		citadel: {
+			$type: "object",
+			properties: {
+				condition: { $type: "string", toneBy: { Stable: "success", Ruined: "danger" } },
+				level: { $type: "number", tone: "accent" },
+			},
+		},
+		units: {
+			$type: "array",
+			items: {
+				$type: "object",
+				properties: { rank: { $type: "string", toneBy: { SR: "accent", R: "success" } } },
+			},
+		},
+		mood: { $type: "string", tone: "warning" },
+		notes: { $type: "string", toneBy: {} },
+	} as const;
+
+	it("lists the toneBy words verbatim per string field path (top-level, nested object, array item)", () => {
+		const instruction = composeSceneInstruction("BASE", TONED_SCHEMA, []);
+		expect(instruction).toContain(VOCABULARY_PHRASE);
+		expect(instruction).toContain('"timeOfDay":["Dawn","Night"]');
+		expect(instruction).toContain('"citadel.condition":["Stable","Ruined"]');
+		expect(instruction).toContain('"units[].rank":["SR","R"]');
+		// Only string nodes with a non-empty map get an entry: a bare `tone`, an empty
+		// `toneBy`, and a number node never appear.
+		expect(instruction).not.toContain('"mood":[');
+		expect(instruction).not.toContain('"notes":[');
+		expect(instruction).not.toContain('"citadel.level"');
+	});
+
+	it("places the vocabulary block after the labels block and before the required-output line", () => {
+		const instruction = composeSceneInstruction("BASE", {
+			timeOfDay: { $type: "string", label: "Time", toneBy: { Night: "danger" } },
+		}, []);
+		const labels = instruction.indexOf("Field labels");
+		const vocabulary = instruction.indexOf(VOCABULARY_PHRASE);
+		const required = instruction.indexOf("Required output: one JSON object");
+		expect(labels).toBeGreaterThan(-1);
+		expect(vocabulary).toBeGreaterThan(labels);
+		expect(required).toBeGreaterThan(vocabulary);
+	});
+
+	it("keeps toneBy and tone out of the schema JSON sent to the model", () => {
+		const instruction = composeSceneInstruction("BASE", TONED_SCHEMA, []);
+		const schemaPart = instruction.slice(
+			instruction.indexOf("Scene schema ("),
+			instruction.indexOf("Recent scene continuity"),
+		);
+		expect(schemaPart).toContain('"timeOfDay"');
+		expect(schemaPart).not.toContain("toneBy");
+		expect(schemaPart).not.toMatch(/"tone"\s*:/);
+		expect(schemaPart).not.toContain("Dawn");
+	});
+
+	it("adds no vocabulary block without a toneBy node, and a toneBy-free schema yields exactly the old instruction", () => {
+		const schema = {
+			mood: { $type: "string", label: "Mood", tone: "accent" },
+			hp: { $type: "number", min: 0, max: 100 },
+		} as const;
+		const instruction = composeSceneInstruction("BASE", schema, []);
+		expect(instruction).not.toContain(VOCABULARY_PHRASE);
+		expect(instruction).toBe(
+			"BASE\n\n" +
+				'Scene schema (produce one JSON object with exactly these fields, no extras): {"mood":{"$type":"string"},"hp":{"$type":"number","min":0,"max":100}}\n\n' +
+				"Recent scene continuity (prior states — evolve them to match the current scene): []" +
+				'\n\nField labels (human names for the schema keys; they do NOT add, rename, or remove any field — output the machine keys exactly as in the schema): ["mood: Mood"]' +
+				"\n\nRequired output: one JSON object matching the schema exactly.",
+		);
+	});
 });
 
 // ─── service (DI execute + resolvePrompt) ───────────────────────────────────
