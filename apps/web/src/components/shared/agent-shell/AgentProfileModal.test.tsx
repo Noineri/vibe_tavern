@@ -977,3 +977,15 @@ describe("CopilotProfileModal — detail (AP-24, mockup §5)", () => {
 		expect(queryByText("write_buffer")).toBeNull();
 	});
 });
+
+describe("CopilotProfileModal — no skills surface (AP-27)", () => {
+	it("has no Manage-skills header action; skills open from the settings summary", async () => {
+		// AP-27 was: a «Manage skills» header button opened the skill
+		// library from here; now (mockup §4): the summary's skills row
+		// owns that entry — the header renders no skills action at all.
+		const { getByTestId, queryByTestId } = renderModal();
+		await flush(getByTestId);
+		expect(queryByTestId("copilot-profile-manage-skills-btn")).toBeNull();
+		expect(getByTestId("md-header-actions").textContent).toBe("");
+	});
+});

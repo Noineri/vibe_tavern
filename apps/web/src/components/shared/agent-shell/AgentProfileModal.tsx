@@ -7,7 +7,7 @@
 // prompt preview + toggle, labelled tool chips) → footer (left actions,
 // right Close + primary / quiet state, edit Cancel + Save).
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import { EmptyState } from "../empty-state.js";
 import { AutoTextarea } from "../auto-textarea.js";
@@ -21,7 +21,6 @@ import { cn } from "../../../lib/cn.js";
 import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
-import { AgentSkillModal } from "./AgentSkillModal.js";
 import { resolveAgentProfileToolLabel } from "./agent-tool-labels.js";
 import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
 
@@ -67,8 +66,9 @@ type DetailMode = "view" | "edit" | "create";
  * in the read-only view, the editor form for create / edit. Skills are
  * UNGATED (PM-8, owner ruling 2026-10-12): the model sees every scanned
  * skill regardless of profile, so there are no per-profile skill toggles —
- * the "Manage skills" header button opens `AgentSkillModal` for the
- * import/delete library instead. "Duplicate" pre-fills a new user profile.
+ * AP-27 moved the import/delete library to the settings summary
+ * (`AgentSettingsModal` opens `AgentSkillModal` from its skills row), so
+ * this modal keeps no skill surface. "Duplicate" pre-fills a new user profile.
  * Assignment writes `scripts.copilotProfileId` via `setCopilotProfile`
  * (built-in → null = unassign) for script-target hosts; chat-target hosts
  * write the (chat, kind) row + the kind default through
@@ -95,9 +95,12 @@ export interface AgentProfileModalProps {
 	assignedProfileId: string | null;
 	isOpen: boolean;
 	onClose: () => void;
+	/** Optional drill-down parent (AP-27): the settings summary passes its
+	 *  own title here — absent = standalone, no back link. */
+	parentBack?: MasterDetailParentBack;
 }
 
-export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
+export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose, parentBack }: AgentProfileModalProps) {
 	const { t } = useT();
 	const host = getAgentHost(agentKind);
 	const toolKeys = host.toolKeys;
@@ -118,7 +121,6 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	const [dirty, setDirty] = useState(false);
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
-	const [skillManagerOpen, setSkillManagerOpen] = useState(false);
 
 	const selected = profiles.find((p) => p.id === selectedId) ?? null;
 
@@ -147,7 +149,6 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 			setDirty(false);
 			setConfirmDeleteId(null);
 			setConfirmDiscardOpen(false);
-			setSkillManagerOpen(false);
 		}
 	}, [isOpen, loadProfiles, agentKind]);
 
@@ -286,24 +287,13 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 					onCancel={() => setConfirmDeleteId(null)}
 				/>
 			)}
-			<AgentSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} agentKind={agentKind} />
 			<MasterDetailModal
 				isOpen={isOpen}
 				onClose={close}
 				title={t("copilot_profile_title")}
 				subtitle={t("copilot_profile_subtitle")}
 				dirty={dirty}
-				headerActions={
-					<button
-						type="button"
-						data-testid="copilot-profile-manage-skills-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={() => setSkillManagerOpen(true)}
-					>
-						<Icons.Book className="h-3.5 w-3.5" />
-						{t("copilot_profile_manage_skills")}
-					</button>
-				}
+				parentBack={parentBack}
 				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
 				masterContent={({ openDetail }) => (
 					<ProfileList

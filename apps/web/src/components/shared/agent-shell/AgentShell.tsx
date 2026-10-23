@@ -26,7 +26,7 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatPane } from "./AgentChatPane.js";
-import { AgentProfileModal } from "./AgentProfileModal.js";
+import { AgentSettingsModal } from "./AgentSettingsModal.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -85,7 +85,7 @@ export interface AgentShellProps {
    *  Desktop never passes it. */
   editTabHeader?: ReactNode;
   /** The agent profile assigned to this owner (`scripts.copilotProfileId`),
-   *  or null (built-in seed). Drives the gear button's profile modal. */
+   *  or null (built-in seed). Drives the gear button's settings summary. */
   assignedProfileId?: string | null;
   /** Host-specific props, opaque to the shell — forwarded through
    *  `AgentHostContext.hostProps` to renderEditorPane/buildSendOptions. */
@@ -284,8 +284,9 @@ export function AgentShell({
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
 
-  // ── Toolbar modal open state (profile) ──────────────────────────────────
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
+  //  the profile modal is its child now) ───────────────────────────────────
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
   // UX 2026-08-16 remark 6 — prefill handed to the chat input by a HOST
   // surface (the experience "send to copilot" flow) through the bridge.
@@ -570,7 +571,7 @@ export function AgentShell({
       handleActivate={handleActivate}
       handleNewSession={handleNewSession}
       handleRenameSession={handleRenameSession}
-      setProfileModalOpen={setProfileModalOpen}
+      setSettingsModalOpen={setSettingsModalOpen}
       copilotContext={copilotContext}
       ctrl={ctrl}
       sendWithOptions={sendWithOptions}
@@ -596,20 +597,25 @@ export function AgentShell({
   const hasEditorPane = renderEditorPane !== undefined;
   const editorPane = hasEditorPane ? renderEditorPane(hostCtx) : null;
 
-  // ── Toolbar modals (profile only) ────────────────────────────────────────
+  // ── Toolbar modals (AP-27: the settings summary only) ────────────────────
   // XU-5/XU-6: the preview moved OUT of a modal into the editor's default tab
   // (the inline `ExperienceFrame`), the sandbox became the inline Try tab in
   // BOTH modes (quote 10), and the rules tester was absorbed into the
-  // sandbox's diagnostics (XU-4) — so no sandbox modal remains.
+  // sandbox's diagnostics (XU-4) — so no sandbox modal remains. The profile
+  // + skill modals open as the summary's children (with parentBack), never
+  // from the shell directly.
   const modals = (
     <>
-      <AgentProfileModal
+      <AgentSettingsModal
+        agentKind={kind}
         scriptId={scriptId}
         chatId={owner.kind === "chat" ? owner.chatId : undefined}
-        agentKind={kind}
         assignedProfileId={assignedProfileId}
-        isOpen={profileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
+        providerProfileId={providerProfileId}
+        model={model}
+        onProviderChange={handleProviderChange}
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
       />
     </>
   );

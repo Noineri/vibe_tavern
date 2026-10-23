@@ -254,7 +254,7 @@ function renderPane(over: {
         handleActivate={async () => {}}
         handleNewSession={async () => {}}
         handleRenameSession={async () => {}}
-        setProfileModalOpen={() => {}}
+        setSettingsModalOpen={() => {}}
         copilotContext={over.copilotContext ?? COPILOT_CONTEXT}
         ctrl={over.ctrl ?? ctrl}
         sendWithOptions={(dispatch) => dispatch(EMPTY_OPTIONS)}

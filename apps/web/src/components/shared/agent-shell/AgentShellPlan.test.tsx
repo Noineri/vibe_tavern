@@ -78,14 +78,14 @@ mock.module("../ToolbarSelect.js", () => ({
 	ToolbarSelect: FakeToolbarSelect,
 }));
 
-// The profile modal is pinned in its own suite — stub it so no profile fetch
+// The settings summary is pinned in its own suite — stub it so no settings fetch
 // can fire here. SC-13a: the stub exposes the ids it received, so the
 // chat-owner test pins the shell's wiring (chatId through, no script id).
-const realProfileModal = await import("./AgentProfileModal.js");
-mock.module("./AgentProfileModal.js", () => ({
-	...realProfileModal,
-	AgentProfileModal: ({ isOpen, chatId, scriptId }: { isOpen: boolean; chatId?: string; scriptId?: string }) =>
-		(isOpen ? <div data-testid="sc0i-profile-modal-stub" data-chat-id={chatId ?? ""} data-script-id={scriptId ?? ""} /> : null),
+const realSettingsModal = await import("./AgentSettingsModal.js");
+mock.module("./AgentSettingsModal.js", () => ({
+	...realSettingsModal,
+	AgentSettingsModal: ({ isOpen, chatId, scriptId }: { isOpen: boolean; chatId?: string; scriptId?: string }) =>
+		(isOpen ? <div data-testid="sc0i-settings-modal-stub" data-chat-id={chatId ?? ""} data-script-id={scriptId ?? ""} /> : null),
 }));
 
 // Radix Popover.Content never mounts under happy-dom — render it inline so
@@ -326,7 +326,7 @@ describe("AgentShell plan section from the host (SC-0i)", () => {
 // ─── SC-13a: the shell serves a chat-owned host ────────────────────────────
 
 describe("AgentShell chat owner (SC-13a)", () => {
-	it("a chat owner mounts without throwing and the profile modal receives the chat id", async () => {
+	it("a chat owner mounts without throwing and the settings summary receives the chat id", async () => {
 		// Pre-SC-13a this render threw: the shell derived the script id
 		// unconditionally (`scriptOwnerId` throws for a chat owner).
 		const { getByTestId } = render(
@@ -336,10 +336,11 @@ describe("AgentShell chat owner (SC-13a)", () => {
 		);
 		// Settle signal (same anchor as above): the loaded-session branch.
 		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
-		// The gear opens the profile modal; the stub exposes the ids the
+		// AP-27 was: the gear opened the profile modal; now (mockup §4): the
+		// gear opens the settings summary — the stub exposes the ids the
 		// shell passed — the chat id rides through, no script id is derived.
 		fireEvent.click(getByTestId("copilot-profile-gear-btn"));
-		const stub = getByTestId("sc0i-profile-modal-stub");
+		const stub = getByTestId("sc0i-settings-modal-stub");
 		expect(stub.getAttribute("data-chat-id")).toBe("sc13a-chat");
 		expect(stub.getAttribute("data-script-id")).toBe("");
 	});
