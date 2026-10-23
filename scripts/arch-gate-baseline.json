@@ -41,7 +41,7 @@
     "apps/web/src/lib/tts/tts-orchestrator.ts": 1050,
     "apps/web/src/stores/experience-store.ts": 993,
     "packages/api-contracts/src/schemas/interactive-schema.ts": 1027,
-    "packages/db/src/db-connection.ts": 1083,
+    "packages/db/src/db-connection.ts": 849,
     "packages/db/src/stores/chat-store.ts": 937,
     "packages/db/src/stores/dice-roll-store.ts": 835,
     "packages/db/src/stores/experience-store.ts": 1624,
