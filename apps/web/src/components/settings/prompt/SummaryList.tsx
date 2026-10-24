@@ -21,17 +21,17 @@ export function SummaryList({
   const { t } = useT();
 
   if (loadState === "idle") {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_summary_no_context")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_summary_no_context")}</p>;
   }
   if (loadState === "loading") {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_summary_loading")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_summary_loading")}</p>;
   }
   if (loadState === "error") {
-    return <p className="font-ui text-[11px] text-danger-text">{t("cc_summary_load_error")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">{t("cc_summary_load_error")}</p>;
   }
 
   if (entries.length === 0) {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_summary_empty")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_summary_empty")}</p>;
   }
 
   return (
@@ -59,22 +59,22 @@ function SummaryRow({ entry }: { entry: CanvasSummaryEntry }) {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="min-w-0 truncate font-ui text-[12px] text-t1">
+        <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
           {entry.label.trim() || t("unnamed")}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
           {range && (
-            <span className="font-mono text-[10px] text-t4">{range}</span>
+            <span className="font-mono text-[calc(var(--ui-fs)-4px)] text-t4">{range}</span>
           )}
           <SourceBadge source={entry.source} />
-          <span className={cn("text-[10px] text-t4 transition-transform", open && "rotate-90")} aria-hidden="true">▶</span>
+          <span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", open && "rotate-90")} aria-hidden="true">▶</span>
         </span>
       </button>
       <AnimatedDisclosure
         open={open}
         className="border-t border-border2 px-2.5 py-2"
       >
-        <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
+        <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t2">
           {entry.content.trim() || t("cc_lore_empty_content")}
         </p>
       </AnimatedDisclosure>
@@ -89,7 +89,7 @@ function SourceBadge({ source }: { source: CanvasSummaryEntry["source"] }) {
       : source === "auto" ? t("cc_summary_source_auto")
         : t("cc_summary_source_manual");
   return (
-    <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">
+    <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase tracking-[0.04em] opacity-70">
       {label}
     </span>
   );

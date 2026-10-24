@@ -180,13 +180,13 @@ export function TtsVoiceCloneCard({ backend, config, profileId, capabilities, on
           <button
             type="button"
             data-testid="tts-clone-file-btn"
-            className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             onClick={() => fileRef.current?.click()}
           >
             <Ic.import />
             {t("tts_clone_choose_file")}
           </button>
-          <span data-testid="tts-clone-file-name" className="min-w-0 truncate font-ui text-[12px] text-t3">
+          <span data-testid="tts-clone-file-name" className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             {files.length === 0
               ? t("tts_clone_no_file")
               : files.length === 1
@@ -208,7 +208,7 @@ export function TtsVoiceCloneCard({ backend, config, profileId, capabilities, on
         {files.length > 1 && (
           <div data-testid="tts-clone-sample-list" className="flex flex-col gap-0.5">
             {files.map((file, index) => (
-              <span key={`${file.name}-${index}`} data-testid="tts-clone-sample-row" className="min-w-0 truncate font-ui text-[11px] text-t3">
+              <span key={`${file.name}-${index}`} data-testid="tts-clone-sample-row" className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                 {t("tts_clone_sample_row", {
                   name: file.name,
                   seconds: (durations?.[index] ?? 0).toFixed(1),
@@ -218,7 +218,7 @@ export function TtsVoiceCloneCard({ backend, config, profileId, capabilities, on
           </div>
         )}
         {totalSeconds !== null && (
-          <div data-testid="tts-clone-samples-total" className="font-ui text-[11px] text-t3">
+          <div data-testid="tts-clone-samples-total" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("tts_clone_samples_total", {
               seconds: totalSeconds.toFixed(1),
               count: files.length,
@@ -226,25 +226,25 @@ export function TtsVoiceCloneCard({ backend, config, profileId, capabilities, on
           </div>
         )}
         {totalSeconds !== null && (totalSeconds < 10 || totalSeconds > 30) && (
-          <div data-testid="tts-clone-duration-warning" className="font-ui text-[11px] text-t4">
+          <div data-testid="tts-clone-duration-warning" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
             {t("tts_clone_duration_warning")}
           </div>
         )}
-        <div data-testid="tts-clone-hint" className="font-ui text-[11px] text-t4">
+        <div data-testid="tts-clone-hint" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
           {t("tts_clone_hint", { formats: formats.join(" · "), size: maxMb })}
         </div>
         {backend === "minimax" ? (
-          <div data-testid="tts-clone-hint-minimax" className="font-ui text-[11px] text-t4">
+          <div data-testid="tts-clone-hint-minimax" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
             {t("tts_clone_hint_minimax")}
           </div>
         ) : null}
         {backend === "volcengine" ? (
-          <div data-testid="tts-clone-hint-volcengine" className="font-ui text-[11px] text-t4">
+          <div data-testid="tts-clone-hint-volcengine" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
             {t("tts_clone_hint_volcengine")}
           </div>
         ) : null}
         {capabilities.cloneCaveatKey === "siliconflow" ? (
-          <div data-testid="tts-clone-hint-siliconflow" className="font-ui text-[11px] text-t4">
+          <div data-testid="tts-clone-hint-siliconflow" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
             {t("tts_clone_hint_siliconflow")}
           </div>
         ) : null}
@@ -254,19 +254,19 @@ export function TtsVoiceCloneCard({ backend, config, profileId, capabilities, on
           type="button"
           data-testid="tts-clone-submit"
           disabled={busy}
-          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
           onClick={() => void handleClone()}
         >
           <Ic.user />
           {busy ? t("tts_clone_busy") : t("tts_clone_action")}
         </button>
         {error !== null && (
-          <span data-testid="tts-clone-error" className="font-ui text-[11px] text-danger">
+          <span data-testid="tts-clone-error" className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
             {error}
           </span>
         )}
         {result !== null && (
-          <span data-testid="tts-clone-success" className="font-ui text-[11px] text-t2">
+          <span data-testid="tts-clone-success" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
             {result}
           </span>
         )}

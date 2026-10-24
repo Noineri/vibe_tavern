@@ -48,10 +48,10 @@ export function TtsModelPicker({
       label={label}
       showPricing={false}
       renderRowBadges={(model) => model.isFree ? (
-        <span className="shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">free</span>
+        <span className="shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-success">free</span>
       ) : null}
       renderRowDescription={(model) => model.description ? (
-        <div className="mt-0.5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-t4">{model.description}</div>
+        <div className="mt-0.5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-4px)] text-t4">{model.description}</div>
       ) : null}
     />
   );

@@ -13,8 +13,8 @@ export type LoreAnchorLoadState = "idle" | "loading" | "ready" | "error";
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-t4">{label}</span>
-      <span className="min-w-0 break-words font-ui text-[11px] text-t2">{value}</span>
+      <span className="font-mono text-[calc(var(--ui-fs)-4px)] uppercase tracking-wider text-t4">{label}</span>
+      <span className="min-w-0 break-words font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{value}</span>
     </div>
   );
 }
@@ -45,15 +45,15 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
         disabled={!hasDetail}
         onClick={() => hasDetail && setOpen((v) => !v)}
       >
-        <span className="min-w-0 truncate font-ui text-[12px] text-t1">
+        <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
           {entry.title.trim() || t("unnamed")}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
-          <span className="max-w-[45%] truncate font-mono text-[10px] text-t4">
+          <span className="max-w-[45%] truncate font-mono text-[calc(var(--ui-fs)-4px)] text-t4">
             {entry.lorebookName}
           </span>
           {hasDetail && (
-            <span className={cn("text-[10px] text-t4 transition-transform", open && "rotate-90")} aria-hidden="true">▶</span>
+            <span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", open && "rotate-90")} aria-hidden="true">▶</span>
           )}
         </span>
       </button>
@@ -82,7 +82,7 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
           )}
         </div>
         {entry.content !== undefined && (
-          <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
+          <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t2">
             {entry.content.trim() || t("cc_lore_empty_content")}
           </p>
         )}
@@ -103,18 +103,18 @@ export function LoreAnchorList({
   const { t } = useT();
 
   if (loadState === "idle") {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_lore_no_context")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_lore_no_context")}</p>;
   }
   if (loadState === "loading") {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_lore_loading")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_lore_loading")}</p>;
   }
   if (loadState === "error") {
-    return <p className="font-ui text-[11px] text-danger-text">{t("cc_lore_load_error")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">{t("cc_lore_load_error")}</p>;
   }
 
   const matching = entries.filter((entry) => entry.position === position);
   if (matching.length === 0) {
-    return <p className="font-ui text-[11px] text-t4">{t("cc_lore_empty")}</p>;
+    return <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("cc_lore_empty")}</p>;
   }
 
   return (

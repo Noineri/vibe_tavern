@@ -63,7 +63,7 @@ function SamplerField({
         disabled={disabled}
         help={tooltip ? (
           <CustomTooltip content={tooltip} side="top" align="start">
-            <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+            <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[calc(var(--ui-fs)-4px)] leading-none font-semibold normal-case tracking-normal text-t3">?</span>
           </CustomTooltip>
         ) : undefined}
       />
@@ -88,7 +88,7 @@ function Toggle({ label, checked, onChange }: ToggleProps) {
       >
         <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[18px]" : "translate-x-0.5")} />
       </div>
-      <div className="font-ui text-[13px] font-medium text-t1">{label}</div>
+      <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{label}</div>
     </div>
   );
 }
@@ -453,7 +453,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
             </CustomTooltip>
           </div>
           {values.providerPreset === PROVIDER_TYPE.koboldCpp && (
-            <div className="mt-1 font-ui text-[11px] text-t3 italic">{t("context_kobold_hint")}</div>
+            <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 italic">{t("context_kobold_hint")}</div>
           )}
         </div>
 
@@ -466,7 +466,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
             <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
               <span>{t("token_padding")}</span>
               <CustomTooltip content={t("token_padding_hint")} side="top" align="start">
-                <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+                <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[calc(var(--ui-fs)-4px)] leading-none font-semibold normal-case tracking-normal text-t3">?</span>
               </CustomTooltip>
             </label>
             <InlineNumField
@@ -532,7 +532,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
             // Mobile (MOBILE_UI_DEFECTS_REPORT step 2): the header columnates —
             // title row, then the set row below it. Desktop keeps the original
             // single horizontal row (title | set row).
-            'flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between',
+            'flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between',
             advOpen && '!rounded-b-none'
           )}
         >
@@ -572,7 +572,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                     autoFocus
                   />
                   {morphShowConflict && (
-                    <div className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+                    <div className="mt-0.5 flex items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-warning">
                       <span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
                       {t('sampler_set_name_exists')}
                     </div>
@@ -612,7 +612,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                   /* Inline slot (AGENTS.md inline-row gotcha): bounded auto
                      width, NO form-fill trigger, NO detail in the collapsed
                      trigger; the popup gets its own fixed width. */
-                  triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+                  triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[calc(var(--ui-fs)-2px)] hover:border-accent"
                   triggerDetail={false}
                   contentWidth={260}
                   triggerLeading={
@@ -1058,7 +1058,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                 <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                   <span>{t("sampler_dry_sequence_breakers")}</span>
                   <CustomTooltip content={t("sampler_dry_sequence_breakers_hint")} side="top" align="start">
-                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[calc(var(--ui-fs)-4px)] leading-none font-semibold normal-case tracking-normal text-t3">?</span>
                   </CustomTooltip>
                 </label>
                 <ChipInput
@@ -1078,7 +1078,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                 <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                   <span>{t("sampler_banned_strings")}</span>
                   <CustomTooltip content={t("sampler_banned_strings_hint")} side="top" align="start">
-                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[calc(var(--ui-fs)-4px)] leading-none font-semibold normal-case tracking-normal text-t3">?</span>
                   </CustomTooltip>
                 </label>
                 <ChipInput

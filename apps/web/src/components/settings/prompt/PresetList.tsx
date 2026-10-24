@@ -72,7 +72,7 @@ const SortablePresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEd
           onClick={(e) => e.stopPropagation()}
           className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none">≡</span>
         </button>
       )}
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
@@ -287,7 +287,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
                 activeDragPreset.id === activePresetId ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2"
               )}
             >
-              <span className="text-base leading-none text-t4">≡</span>
+              <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
               <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{activeDragPreset.name}</span>
             </div>
           ) : null}

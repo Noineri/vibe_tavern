@@ -85,7 +85,7 @@ export function ProviderForm({
             placeholder={t("profile_name_placeholder")}
           />
           {duplicateNameWarning && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+            <div className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("profile_name_exists")}
             </div>
@@ -148,7 +148,7 @@ export function ProviderForm({
         <div className="flex items-center gap-3">
           <Toggle checked={form.streamResponse !== false} onChange={(v) => updateForm('streamResponse', v as FormState['streamResponse'])} className="!mb-0 !inline-flex" />
           <div>
-            <div className="font-ui text-[13px] font-medium text-t1">
+            <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
               {t("stream_response")}
             </div>
             <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
@@ -173,12 +173,12 @@ export function ProviderForm({
       {/* Test connection card */}
       <div className="my-3 rounded-lg border border-border bg-surface p-3.5">
         {!form.apiKey && !form.hasStoredApiKey ? (
-          <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
+          <div className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_connection_enter_key")}
           </div>
         ) : !form.model ? (
-          <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
+          <div className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_model_selected_begin")}
           </div>
@@ -187,7 +187,7 @@ export function ProviderForm({
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
               <button type="button"
                 className={cn(
-                  'min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5',
+                  'min-h-11 rounded-md border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium transition-colors sm:min-h-0 sm:py-1.5',
                   testOk === true
                     ? 'border-success/30 bg-success/10 text-success'
                     : testOk === false
@@ -204,16 +204,16 @@ export function ProviderForm({
                   testing={testingChat}
                   result={chatResult}
                   onTest={() => void onTestChat()}
-                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
                   resultContainerClassName="mt-3"
-                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success"
-                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"
+                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] italic text-success"
+                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger"
                 />
               )}
             </div>
             {testOk === true && (
               <div className="mt-3">
-                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
+                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-success">
                   <Icons.Check />
                   {t("connection_successful")}
                 </span>
@@ -221,7 +221,7 @@ export function ProviderForm({
             )}
             {testOk === false && (
               <div className="mt-3">
-                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
+                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
                   <Icons.Close />
                   {t("connection_failed")}
                 </span>

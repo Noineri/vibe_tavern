@@ -92,7 +92,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="stt-setup-help-accordion">
         <div
           className={cn(
-            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
             helpOpen && "!rounded-b-none",
           )}
         >
@@ -106,7 +106,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
         <AnimatedDisclosure open={helpOpen} className="border-t border-border2 bg-surface p-4" data-testid="stt-setup-help-body">
           <div className="flex flex-col gap-3">
-            <div className="font-ui text-[11px] text-t4">{t("stt_local_help_hint")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("stt_local_help_hint")}</div>
 
             {/* Step 1 — choose the server. */}
             <div data-testid="stt-help-step-choose" className="flex flex-col gap-1.5">
@@ -124,11 +124,11 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                       selected ? "border-accent" : "border-border",
                     )}
                   >
-                    <span className="flex items-center gap-2 font-ui text-[12px] font-medium text-t1">
+                    <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
                       {selected && <Icons.Check />}
                       {guide.name}
                     </span>
-                    <span className="font-ui text-[11px] text-t3">{t(guide.descriptionKey)}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t(guide.descriptionKey)}</span>
                   </button>
                 );
               })}
@@ -150,14 +150,14 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
             <div
               data-testid="stt-help-terminal-hint"
-              className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4"
+              className="flex items-center justify-between gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
             >
               <span>{t("stt_local_terminal_hint")}</span>
               {checklist.total > 0 && (
                 <button
                   type="button"
                   data-testid="stt-help-reset-checks"
-                  className="shrink-0 cursor-pointer font-ui text-[11px] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
+                  className="shrink-0 cursor-pointer font-ui text-[calc(var(--ui-fs)-3px)] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
                   onClick={checklist.reset}
                 >
                   {t("stt_local_reset_checks")}
@@ -190,7 +190,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                     );
                   })}
                   {s.noteKey !== undefined && (
-                    <div className="font-ui text-[11px] text-t4">{t(s.noteKey)}</div>
+                    <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t(s.noteKey)}</div>
                   )}
                 </div>
               );
@@ -217,13 +217,13 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                         <button
                           type="button"
                           data-testid={`stt-help-use-${guide.id}`}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-white transition-colors hover:bg-accent/90"
                           onClick={() => updateConfigField(stt, form, "endpoint", guide.endpoint)}
                         >
                           {t("stt_local_adopt")}
                         </button>
                       ) : (
-                        <div data-testid="stt-help-wire-mismatch" className="shrink-0 font-ui text-[11px] text-t3">
+                        <div data-testid="stt-help-wire-mismatch" className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                           {t(guide.wire === "whisper-cpp" ? "stt_local_wire_needs_whisper_cpp" : "stt_local_wire_needs_compat")}
                         </div>
                       )}
@@ -232,7 +232,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                 </>
               );
             })()}
-            {copyError !== null && <div className="font-ui text-[11px] text-danger">{copyError}</div>}
+            {copyError !== null && <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">{copyError}</div>}
           </div>
         </AnimatedDisclosure>
       </div>
@@ -245,25 +245,25 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
           type="button"
           data-testid="stt-local-scan"
           disabled={discovery.scanning}
-          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
           onClick={() => void discovery.discover()}
         >
           {discovery.scanning ? t("stt_local_scanning") : t("stt_local_scan_btn")}
         </button>
 
         {discovery.error !== null && (
-          <div data-testid="stt-discover-error" className="font-ui text-[12px] text-danger">
+          <div data-testid="stt-discover-error" className="font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
             {discovery.error}
           </div>
         )}
 
         {!discovery.scanning && discovery.error === null && discovery.servers.length === 0 && discovery.notFoundCodes !== null && (
           <>
-            <div data-testid="stt-discover-none" className="font-ui text-[12px] text-t3">
+            <div data-testid="stt-discover-none" className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
               {t("stt_local_none")}
             </div>
             {diagKey !== null && (
-              <div data-testid="stt-discover-diag" className="font-ui text-[11px] text-t3">
+              <div data-testid="stt-discover-diag" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                 {tDynamic(diagKey)}
               </div>
             )}
@@ -281,9 +281,9 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                   className="flex items-center justify-between gap-2 rounded-md border border-border bg-s1 px-3 py-2"
                 >
                   <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate font-mono text-[11px] text-t3">{server.baseUrl}</span>
+                    <span className="truncate font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{server.baseUrl}</span>
                     {server.modelIds.length > 0 && (
-                      <span className="truncate font-ui text-[11px] text-t4">
+                      <span className="truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                         {server.modelIds.slice(0, 3).join(", ")}
                       </span>
                     )}
@@ -294,8 +294,8 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                     disabled={isAdopted}
                     className={
                       isAdopted
-                        ? "flex cursor-default items-center gap-1 rounded bg-accent/20 px-2 py-1 font-ui text-[11px] text-accent"
-                        : "flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                        ? "flex cursor-default items-center gap-1 rounded bg-accent/20 px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent"
+                        : "flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-white transition-colors hover:bg-accent/90"
                     }
                     onClick={() => adoptServer(server.baseUrl, server.modelIds)}
                   >

@@ -69,7 +69,7 @@ export function GuideCommandRow({
       <button
         type="button"
         data-testid={`${testPrefix}-copy-${copyId}`}
-        className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+        className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
         onClick={onCopy}
       >
         <Icons.Copy />

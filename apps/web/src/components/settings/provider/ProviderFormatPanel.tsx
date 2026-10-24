@@ -108,7 +108,7 @@ function SequenceField(props: {
 				onChange={(e) => props.onChange(e.target.value)}
 				spellCheck={false}
 			/>
-			{props.hint && <div className="mt-1 font-ui text-[11px] text-t3">{props.hint}</div>}
+			{props.hint && <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{props.hint}</div>}
 		</div>
 	);
 }
@@ -129,7 +129,7 @@ function FramedSection(props: {
 		<div data-testid={props.testId} className="overflow-hidden rounded-lg border border-border2">
 			<div className={cn("flex w-full items-center justify-between gap-2 bg-s2 px-3 py-2.5 transition-colors hover:bg-[var(--border)]", props.open && "rounded-b-none")}>
 				<span
-					className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-2 font-ui text-[13px] font-medium text-t1")}
+					className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1")}
 					onClick={props.onToggle}
 					aria-expanded={props.open}
 					data-testid={props.testId ? `${props.testId}-toggle` : undefined}
@@ -405,7 +405,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 										autoFocus
 									/>
 									{morphShowConflict && (
-										<div data-testid="provider-format-name-exists" className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+										<div data-testid="provider-format-name-exists" className="mt-0.5 flex items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-warning">
 											<span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
 											{t("providerFormat.templateNameExists")}
 										</div>
@@ -463,7 +463,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 									/* Inline slot (AGENTS.md inline-row gotcha): bounded auto
 									   width, no form-fill trigger, no detail in the collapsed
 									   trigger; the popup gets its own fixed width. */
-									triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+									triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[calc(var(--ui-fs)-2px)] hover:border-accent"
 									triggerDetail={false}
 									contentWidth={260}
 									triggerLeading={
@@ -601,7 +601,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 							data-testid="provider-format-preview-toggle"
 							aria-expanded={previewOpen}
 							onClick={() => setPreviewOpen((v) => !v)}
-							className="flex w-full cursor-pointer items-center gap-2 bg-s2 px-3 py-2 font-ui text-[12px] font-medium text-t1 transition-colors hover:bg-[var(--border)]"
+							className="flex w-full cursor-pointer items-center gap-2 bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1 transition-colors hover:bg-[var(--border)]"
 						>
 							<span className={cn("transition-transform", previewOpen && "rotate-90")}>
 								<Icons.Caret direction="r" />
@@ -610,7 +610,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 						</button>
 						<AnimatedDisclosure open={previewOpen}>
 							<div className="border-t border-border2 bg-surface p-3">
-								<div className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-s2 p-3 font-mono text-xs leading-relaxed" data-testid="provider-format-preview-body">
+								<div className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-s2 p-3 font-mono text-[calc(var(--ui-fs)-2px)] leading-4 leading-relaxed" data-testid="provider-format-preview-body">
 									{buildFormatPreviewSegments(manualFormat, {
 										system: t("providerFormat.previewDemoSystem"),
 										user: t("providerFormat.previewDemoUser"),
@@ -627,7 +627,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 										</span>
 									))}
 								</div>
-								<div className="mt-2 font-ui text-[11px] text-t3">{t("providerFormat.previewLegend")}</div>
+								<div className="mt-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("providerFormat.previewLegend")}</div>
 							</div>
 						</AnimatedDisclosure>
 					</div>
@@ -659,7 +659,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 								/>
 								<div>
 									<div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("promptManager.format.wrap")}</div>
-									<div className="font-ui text-[11px] text-t3">{t("promptManager.format.wrapHint")}</div>
+									<div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("promptManager.format.wrapHint")}</div>
 								</div>
 							</div>
 
@@ -674,7 +674,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 									]}
 									onChange={(v) => updateManual({ namesBehavior: v })}
 								/>
-								<div className="mt-1 font-ui text-[11px] text-t3">{t("promptManager.format.namesHint")}</div>
+								<div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("promptManager.format.namesHint")}</div>
 							</div>
 						</div>
 
@@ -684,7 +684,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 						{isManual && form.stopSequences.length === 0 && (
 							<div className="flex items-start gap-2 rounded-md border border-border2 bg-s2 px-3 py-2.5" data-testid="provider-format-stops-empty-hint">
 								<div className="mt-0.5 text-t3 [&_svg]:h-[14px] [&_svg]:w-[14px]"><Icons.Alert /></div>
-								<div className="font-ui text-[11px] text-t3">{t("providerFormat.stopsEmptyHint")}</div>
+								<div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("providerFormat.stopsEmptyHint")}</div>
 							</div>
 						)}
 					</div>
@@ -699,7 +699,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 				</div>
 			)}
 			{fallbackActive && (
-				<div className="mt-1 font-ui text-[11px] text-t3">
+				<div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
 					{t("providerFormat.fallbackNote")}
 				</div>
 			)}

@@ -67,7 +67,7 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
             onChange={(checked) => updateConfigField(tts, form, field.key, checked || undefined)}
             aria-label={t(field.labelKey)}
           />
-          <div className="font-ui text-[13px] font-medium text-t1">{t(field.labelKey)}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t(field.labelKey)}</div>
         </div>
       </div>
     );
@@ -240,7 +240,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                * sits under the input — the discovery path instead of a
                * static catalog. */
               <div className="my-4">
-                <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{t(modelSpec.labelKey)}</div>
+                <div className="mb-3 border-b border-border2 pb-2 font-ui text-[var(--ui-fs)] font-semibold text-t1">{t(modelSpec.labelKey)}</div>
                 <TextInput
                   data-testid="tts-field-model"
                   value={configString(form.config, modelSpec.key)}
@@ -252,7 +252,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                     href={modelSpec.docsUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+                    className="mt-2 inline-flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-accent"
                   >
                     <Icons.Book className="h-3.5 w-3.5" />
                     {t("tts_model_docs_link")}
@@ -278,7 +278,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                 type="button"
                 data-testid="tts-preview-btn"
                 disabled={preview.state !== "idle" || form.voiceId === ""}
-                className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+                className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
                 onClick={() =>
                   preview.preview({
                     backend: form.backend,
@@ -300,7 +300,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                     : t("tts_preview")}
               </button>
               {preview.error && (
-                <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
+                <div data-testid="tts-preview-error" className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
                   {preview.error}
                 </div>
               )}
@@ -338,7 +338,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-tuning-accordion">
           <div
             className={cn(
-              "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+              "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
               tuningOpen && "!rounded-b-none",
             )}
           >
@@ -372,8 +372,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               aria-label={t("tts_playback_wait_full_label")}
             />
             <div>
-              <div className="font-ui text-[13px] font-medium text-t1">{t("tts_playback_wait_full_label")}</div>
-              <div className="mt-0.5 font-ui text-[11px] text-t3">{t("tts_playback_wait_full_hint")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("tts_playback_wait_full_label")}</div>
+              <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("tts_playback_wait_full_hint")}</div>
             </div>
           </div>
         </div>
@@ -384,7 +384,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       ) : null}
 
       {tts.error && (
-        <div data-testid="tts-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
+        <div data-testid="tts-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
           {tts.error}
         </div>
       )}
@@ -471,7 +471,7 @@ export function TtsVoiceFields({
           triggerTestId="tts-narrator-voice-select"
         />
       </div>
-      <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+      <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("tts_field_narrator_voice_hint")}</div>
         </div>
       </>
     );
@@ -481,7 +481,7 @@ export function TtsVoiceFields({
       <div className="mb-3">
         <label className={lblCls}>{t("tts_field_voice")}</label>
         {showVoicesLoading ? (
-      <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+      <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
         {t("tts_voices_loading")}
       </div>
         ) : voicesError !== null ? (
@@ -493,7 +493,7 @@ export function TtsVoiceFields({
           onChange={(e) => updateForm("voiceId", e.target.value)}
           placeholder={manualPlaceholder}
         />
-        <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
+        <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
           {t("tts_voices_load_error")}
         </div>
       </>
@@ -502,7 +502,7 @@ export function TtsVoiceFields({
         // Empty library on a clone-capable server (chatterbox shape): the
         // honest state is "no voices yet" — uploading the first one IS the
         // feature (owner 2026-09-05: never render this as a load failure).
-        <div data-testid="tts-voices-empty" className="mt-1 font-ui text-[12px] text-t3">
+        <div data-testid="tts-voices-empty" className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           {t("tts_voices_empty_library")}
         </div>
       ) : (
@@ -541,7 +541,7 @@ export function TtsVoiceFields({
             data-testid="tts-voices-refresh"
             onClick={() => onRefreshVoices()}
             disabled={voicesLoading}
-            className="mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+            className="mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
             title={t("tts_refresh_voices")}
           >
             <Icons.Regen />
@@ -552,7 +552,7 @@ export function TtsVoiceFields({
       <div className="mb-3">
         <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
         {showVoicesLoading ? (
-      <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+      <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
         {t("tts_voices_loading")}
       </div>
         ) : voicesError !== null || voices === null || voices.length === 0 ? (
@@ -575,7 +575,7 @@ export function TtsVoiceFields({
         />
       </div>
         )}
-        <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("tts_field_narrator_voice_hint")}</div>
       </div>
     </>
   );

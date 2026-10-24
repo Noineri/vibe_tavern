@@ -279,7 +279,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             data-testid="stt-profile-name-input"
           />
           {duplicateNameWarning && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+            <div className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]">
                 <Icons.Alert />
               </span>
@@ -304,7 +304,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           {nativePreset?.englishOnly === true && (
             <div
               data-testid="stt-nvidia-en-only-hint"
-              className="mt-1 flex items-center gap-1 text-[11px] text-warning"
+              className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning"
             >
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
                 <Icons.Alert />
@@ -313,7 +313,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             </div>
           )}
           {form.backend === STT_BACKENDS.Deepgram && (
-            <div data-testid="stt-deepgram-ru-note" className="mt-1 font-ui text-[11px] text-t3">
+            <div data-testid="stt-deepgram-ru-note" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
               {t("stt_deepgram_ru_note")}
             </div>
           )}
@@ -421,7 +421,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
                 type="button"
                 data-testid="stt-test-connection-btn"
                 className={cn(
-                  "min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5",
+                  "min-h-11 rounded-md border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium transition-colors sm:min-h-0 sm:py-1.5",
                   testOk === true
                     ? "border-success/30 bg-success/10 text-success"
                     : testOk === false
@@ -447,9 +447,9 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       ) : (
         <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="stt-browser-test-note">
-          <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
+          <div className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
             <Icons.Check className="h-3.5 w-3.5 shrink-0 text-success" />
-            <span className="font-ui text-[12px] text-t4">{t("stt_test_browser_note")}</span>
+            <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("stt_test_browser_note")}</span>
           </div>
         </div>
       )}

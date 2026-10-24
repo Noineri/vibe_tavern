@@ -168,13 +168,13 @@ const SortableProfileRow = React.memo(
           onClick={(e) => e.stopPropagation()}
           className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none">≡</span>
         </button>
         <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isActive ? "bg-accent" : "bg-transparent")} />
         <CustomTooltip content={profile.name}>
           <span
             className={cn(
-              "min-w-0 flex-1 truncate font-ui text-[13px] font-medium",
+              "min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium",
               isSelected ? "text-accent-t" : "text-t2",
             )}
           >
@@ -581,15 +581,15 @@ export function ImagePromptTemplatesPane({
         </div>
       </div>
       {loadState === "loading" && (
-        <div className="px-4 py-6 font-ui text-[13px] text-t3">{t("loading")}</div>
+        <div className="px-4 py-6 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("loading")}</div>
       )}
       {loadState === "error" && (
         <div className="px-4 py-4">
-          <div className="font-ui text-[13px] text-danger">{t("imagePromptTemplates.loadError")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-danger">{t("imagePromptTemplates.loadError")}</div>
           <button
             type="button"
             onClick={() => void refreshList()}
-            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] text-t2 hover:bg-s3"
+            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s3"
           >
             {t("retry")}
           </button>
@@ -635,12 +635,12 @@ export function ImagePromptTemplatesPane({
                   <CustomTooltip content={p.name}>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 truncate font-ui text-[13px] font-medium",
+                        "min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium",
                         isSelected ? "text-accent-t" : "text-t2",
                       )}
                     >
                       {p.name}
-                      <span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[10px] text-success">
+                      <span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-success">
                         {t("promptManager.servicePrompts.liveBadge")}
                       </span>
                     </span>
@@ -706,9 +706,9 @@ export function ImagePromptTemplatesPane({
             <DragOverlay dropAnimation={null}>
               {activeDragItem ? (
                 <div className={cn("flex items-center gap-2 border-l-2 min-h-[48px] px-3", activeDragItem.id === selectedId ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2")}>
-                  <span className="text-base leading-none text-t4">≡</span>
+                  <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
                   <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", activeDragItem.id === activeProfileId ? "bg-accent" : "bg-transparent")} />
-                  <span className="truncate font-ui text-[13px] font-medium text-t1">{activeDragItem.name}</span>
+                  <span className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{activeDragItem.name}</span>
                 </div>
               ) : null}
             </DragOverlay>
@@ -741,7 +741,7 @@ export function ImagePromptTemplatesPane({
           <button
             type="button"
             onClick={() => setIsCreating(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[12px] text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:border-border hover:bg-s2 hover:text-t1"
           >
             <Icons.Plus />
             {t("promptManager.servicePrompts.newProfile")}
@@ -913,14 +913,14 @@ export function ImagePromptTemplatesPane({
 
   const detailNode = (
     <div className="flex flex-col gap-4">
-      {detailState === "loading" && <div className="font-ui text-[13px] text-t3">{t("loading")}</div>}
+      {detailState === "loading" && <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("loading")}</div>}
       {detailState === "error" && (
         <div>
-          <div className="font-ui text-[13px] text-danger">{tDynamic(detailErrorKey ?? "imagePromptTemplates.loadError")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-danger">{tDynamic(detailErrorKey ?? "imagePromptTemplates.loadError")}</div>
           <button
             type="button"
             onClick={() => setDetailNonce((n) => n + 1)}
-            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] text-t2 hover:bg-s3"
+            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s3"
           >
             {t("retry")}
           </button>
@@ -940,7 +940,7 @@ export function ImagePromptTemplatesPane({
             </label>
           )}
           {isDefaultSelected && (
-            <div className="rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t2">
+            <div className="rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
               <span className="font-medium text-t1">{detail.profile.name}</span>
               <span className="ml-2 text-t3">{t("imagePromptTemplates.profile.defaultReadOnlyHint")}</span>
             </div>

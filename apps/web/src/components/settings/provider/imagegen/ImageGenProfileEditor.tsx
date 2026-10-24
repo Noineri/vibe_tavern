@@ -75,7 +75,7 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
       ) : null}
 
       {imageGen.error && (
-        <div data-testid="image-gen-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
+        <div data-testid="image-gen-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
           {imageGen.error}
         </div>
       )}

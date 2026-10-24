@@ -332,7 +332,7 @@ export function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             data-testid="image-gen-family-detect"
             onClick={() => void handleDetect()}
             disabled={pinning || detecting}
-            className="flex min-h-[33.5px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[13px] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+            className="flex min-h-[33.5px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
           >
             {detecting ? (
               <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
@@ -350,7 +350,7 @@ export function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             <CustomTooltip content={t("image_gen_family_detect_pick_model_first")}>
               <span
                 data-testid="image-gen-family-detect-disabled"
-                className="flex min-h-[33.5px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[13px] font-medium text-t4"
+                className="flex min-h-[33.5px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t4"
               >
                 <Icons.brain />
                 {t("image_gen_family_detect")}

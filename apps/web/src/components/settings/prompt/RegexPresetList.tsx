@@ -750,7 +750,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
                   ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2"
               )}
             >
-              <span className="text-base leading-none text-t4">≡</span>
+              <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
               <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
                 {activeDragItem.kind === "profile"
                   ? profiles.find((p) => p.id === activeDragItem.id)?.name ?? activeDragItem.id

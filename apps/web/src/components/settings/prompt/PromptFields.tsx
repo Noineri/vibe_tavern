@@ -112,7 +112,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
 
               <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
                 <div className="flex items-center gap-2">
-                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
                   <DropdownSelect
                     className="w-[120px]"
                     searchable={false}
@@ -128,7 +128,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("position_label")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wider text-t3">{t("position_label")}</span>
                   <DropdownSelect
                     className="w-[180px]"
                     searchable={false}
@@ -144,11 +144,11 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                   {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
                     <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
                       <div className="flex items-center gap-2">
-                        <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                        <span aria-hidden="true" className="font-mono text-[calc(var(--ui-fs)-2px)] text-t3">←</span>
                         <span className="sr-only">{t("insert_depth_label")}</span>
                         <input
                           type="number"
-                          className="h-[33px] w-[46px] rounded-[6px] border border-border bg-s2 px-1 text-center font-ui text-[13px] text-t1 outline-none transition-[border-color] hover:border-accent focus:border-accent disabled:opacity-50"
+                          className="h-[33px] w-[46px] rounded-[6px] border border-border bg-s2 px-1 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] hover:border-accent focus:border-accent disabled:opacity-50"
                           min={0}
                           value={draft?.authorsNoteDepth ?? 4}
                           onChange={(e) => onUpdateField("authorsNoteDepth", parseInt(e.target.value) || 0)}

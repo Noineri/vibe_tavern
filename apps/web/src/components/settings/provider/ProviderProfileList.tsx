@@ -114,7 +114,7 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
           onClick={(e) => e.stopPropagation()}
           className="mr-1 flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none">≡</span>
         </button>
       )}
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -125,13 +125,13 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
           )}
         />
         <div className="min-w-0 flex-1 py-2">
-          <div className="truncate text-[13px] font-medium">
+          <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium">
             {isActive ? '★ ' : ''}
             {p.name}
           </div>
           <div
             className={cn(
-              'mt-0.5 text-[11px]',
+              'mt-0.5 text-[calc(var(--ui-fs)-3px)]',
               isEditing ? 'text-accent-t' : 'text-t4',
             )}
           >
@@ -212,9 +212,9 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
         const isActive = rowActive?.(profile) ?? activeProfileId === profile.id;
         return (
           <div className="flex items-center gap-2 border-l-[3px] border-l-transparent pl-4 pr-2 min-h-[56px] bg-s2">
-            <span className="text-base leading-none text-t4">≡</span>
+            <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
             <div className={cn('h-2 w-2 shrink-0 rounded-full', statusClassName(profile, isActive, editingId === profile.id))} />
-            <span className="truncate text-[13px] font-medium text-t1">{isActive ? '★ ' : ''}{profile.name}</span>
+            <span className="truncate text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{isActive ? '★ ' : ''}{profile.name}</span>
           </div>
         );
       })()
@@ -222,7 +222,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
 
   return (
     <div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-      <div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+      <div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">
         {t(titleKey)}
       </div>
 
@@ -270,7 +270,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
       {!selectionOnly && (
         <div
           data-testid={testidStem ? `${testidStem}-new-profile-btn` : undefined}
-          className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
+          className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
           onClick={() => { void onAddProfile?.(); openDetail(); }}
         >
           {t(newProfileKey)}

@@ -69,20 +69,20 @@ function VariantCards({
                 : "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border border-border bg-s1 px-3 py-2 text-left hover:bg-s2 disabled:pointer-events-none disabled:opacity-50"
             }
           >
-            <span className="flex items-center gap-2 font-ui text-[12px] text-t1">
+            <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
               {t(VARIANT_LABEL_KEYS[id])}
               {id === "gpu" && webgpuAvailable && (
-                <span className="rounded bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] text-accent">
+                <span className="rounded bg-accent/15 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent">
                   {t("tts_kokoro_variant_recommended")}
                 </span>
               )}
             </span>
-            <span className="font-ui text-[11px] text-t3">
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
               {t(id === "gpu" ? "tts_kokoro_variant_gpu_hint" : "tts_kokoro_variant_cpu_hint")} ·{" "}
               {t("tts_kokoro_variant_size", { mb: info.approxMb })}
             </span>
             {!available && (
-              <span className="font-ui text-[11px] text-t3">{t("tts_kokoro_variant_gpu_unavailable")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("tts_kokoro_variant_gpu_unavailable")}</span>
             )}
           </button>
         );
@@ -125,7 +125,7 @@ export function KokoroModelPanel() {
       <button
         type="button"
         data-testid="tts-kokoro-model-download-btn"
-        className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+        className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
         onClick={downloadAndClose}
       >
         <Ic.download />
@@ -137,17 +137,17 @@ export function KokoroModelPanel() {
   if (model.state === "ready") {
     return (
       <div data-testid="tts-kokoro-model-ready" className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5 font-ui text-[12px] text-t3">
+        <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <Ic.check />
           {t("tts_kokoro_model_ready")}
         </div>
         {model.activeVariant !== null && (
-          <div data-testid="tts-kokoro-model-active" className="font-ui text-[11px] text-t3">
+          <div data-testid="tts-kokoro-model-active" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("tts_kokoro_model_active", { name: t(VARIANT_LABEL_KEYS[model.activeVariant]) })}
           </div>
         )}
         {model.fallbackNotice !== null && (
-          <div data-testid="tts-kokoro-model-fallback" className="font-ui text-[11px] text-warning-text">
+          <div data-testid="tts-kokoro-model-fallback" className="font-ui text-[calc(var(--ui-fs)-3px)] text-warning-text">
             {t("tts_kokoro_model_fell_back", { reason: model.fallbackNotice })}
           </div>
         )}
@@ -155,7 +155,7 @@ export function KokoroModelPanel() {
           <button
             type="button"
             data-testid="tts-kokoro-model-switch-btn"
-            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             onClick={() => setChoosing(true)}
           >
             {t("tts_kokoro_model_switch")}
@@ -170,7 +170,7 @@ export function KokoroModelPanel() {
   if (model.state === "downloading") {
     return (
       <div data-testid="tts-kokoro-model-downloading" className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2 font-ui text-[11px] text-t3">
+        <div className="flex items-center justify-between gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
           <span>{t("tts_kokoro_model_downloading")}</span>
           <span className="tabular-nums">
             {model.pct !== null ? `${model.pct}%` : ""}
@@ -192,13 +192,13 @@ export function KokoroModelPanel() {
       {picker}
       {model.state === "error" && (
         <div className="flex flex-col gap-1.5">
-          <div data-testid="tts-kokoro-model-error" className="font-ui text-[11px] text-danger">
+          <div data-testid="tts-kokoro-model-error" className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
             {t("tts_kokoro_model_failed")}: {model.error}
           </div>
           <button
             type="button"
             data-testid="tts-kokoro-model-retry-btn"
-            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             onClick={downloadAndClose}
           >
             {t("retry")}

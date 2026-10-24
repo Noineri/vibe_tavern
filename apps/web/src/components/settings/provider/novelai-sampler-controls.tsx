@@ -121,7 +121,7 @@ export function NovelaiPhraseRepPenControl({ values, onChange, supports }: Novel
       <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
         <span>{t("sampler_phrase_rep_pen")}</span>
         <CustomTooltip content={t("sampler_phrase_rep_pen_hint")} side="top" align="start">
-          <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+          <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[calc(var(--ui-fs)-4px)] leading-none font-semibold normal-case tracking-normal text-t3">?</span>
         </CustomTooltip>
       </label>
       <DropdownSelect

@@ -97,7 +97,7 @@ export function SttRecognitionSection({
             searchable={false}
             triggerTestId="stt-whisper-model-select"
           />
-          <div data-testid="stt-backend-browser-note" className="mt-1 font-ui text-[11px] text-t3">
+          <div data-testid="stt-backend-browser-note" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("stt_field_whisper_hint")}
           </div>
         </div>
@@ -106,7 +106,7 @@ export function SttRecognitionSection({
           <label className={lblCls}>{t("stt_field_model")}</label>
           <div
             data-testid="stt-whispercpp-server-model-hint"
-            className="rounded-md border border-border bg-s1 px-3 py-2 font-ui text-[11px] text-t3"
+            className="rounded-md border border-border bg-s1 px-3 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
           >
             {t("stt_whispercpp_server_hint")}
           </div>
@@ -170,8 +170,8 @@ export function SttRecognitionSection({
               className="mt-0.5"
             />
             <span className="flex flex-col gap-0.5">
-              <span className="font-ui text-[13px] text-t1">{t("stt_emotion_label")}</span>
-              <span className="font-ui text-[11px] text-t3">{t("stt_emotion_hint")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{t("stt_emotion_label")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("stt_emotion_hint")}</span>
             </span>
           </div>
         </div>

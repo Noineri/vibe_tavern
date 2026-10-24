@@ -27,7 +27,7 @@ export function PerSendPrefillToggle({ checked, onChange, disabled }: PerSendPre
       />
       <div className="min-w-0">
         <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("per_send_prefill_enable")}</div>
-        <div className="font-ui text-[11px] text-t3">{t("per_send_prefill_enable_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("per_send_prefill_enable_hint")}</div>
       </div>
     </div>
   );

@@ -71,26 +71,26 @@ function ModelCards({
                 : "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border border-border bg-s1 px-3 py-2 text-left hover:bg-s2"
             }
           >
-            <span className="flex items-center gap-2 font-ui text-[12px] text-t1">
+            <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1">
               {info.label}
               {info.id === DEFAULT_WHISPER_MODEL_ID && (
-                <span className="rounded bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] text-accent">
+                <span className="rounded bg-accent/15 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent">
                   {t("stt_whisper_model_default")}
                 </span>
               )}
               {info.englishOnly && (
-                <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t3">
+                <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t3">
                   {t("stt_whisper_model_english_only")}
                 </span>
               )}
               <span
                 data-testid="stt-whisper-model-lane"
-                className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t3"
+                className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t3"
               >
                 {t(lane === "webgpu" ? "stt_whisper_lane_gpu" : "stt_whisper_lane_cpu")}
               </span>
             </span>
-            <span className="font-ui text-[11px] text-t3">
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
               {/* GPU lane (WebGPU → fp32 encoder + q4 decoder) downloads a
                *  different, larger file set — the size hint must describe
                *  what will ACTUALLY land (owner 2026-09-05), and the lane
@@ -142,7 +142,7 @@ export function WhisperModelPanel({
       <button
         type="button"
         data-testid="stt-whisper-model-download-btn"
-        className="flex h-7 w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+        className="flex h-7 w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
         onClick={downloadAndClose}
       >
         <Ic.download />
@@ -155,12 +155,12 @@ export function WhisperModelPanel({
     const activeInfo = model.activeModel !== null ? findWhisperModel(model.activeModel) : null;
     return (
       <div data-testid="stt-whisper-model-ready" className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5 font-ui text-[12px] text-t3">
+        <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <Ic.check />
           {t("stt_whisper_model_ready")}
         </div>
         {model.activeModel !== null && (
-          <div data-testid="stt-whisper-model-active" className="font-ui text-[11px] text-t3">
+          <div data-testid="stt-whisper-model-active" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("stt_whisper_model_active", { name: activeInfo?.label ?? model.activeModel })}
           </div>
         )}
@@ -168,7 +168,7 @@ export function WhisperModelPanel({
           <button
             type="button"
             data-testid="stt-whisper-model-switch-btn"
-            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             onClick={() => setChoosing(true)}
           >
             {t("stt_whisper_model_switch")}
@@ -183,7 +183,7 @@ export function WhisperModelPanel({
   if (model.state === "downloading") {
     return (
       <div data-testid="stt-whisper-model-downloading" className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2 font-ui text-[11px] text-t3">
+        <div className="flex items-center justify-between gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
           <span>{t("stt_whisper_model_downloading")}</span>
           <span className="tabular-nums">
             {model.pct !== null ? `${model.pct}%` : ""}
@@ -205,13 +205,13 @@ export function WhisperModelPanel({
       {picker}
       {model.state === "error" && (
         <div className="flex flex-col gap-1.5">
-          <div data-testid="stt-whisper-model-error" className="font-ui text-[11px] text-danger">
+          <div data-testid="stt-whisper-model-error" className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
             {t("stt_whisper_model_failed")}: {model.error}
           </div>
           <button
             type="button"
             data-testid="stt-whisper-model-retry-btn"
-            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            className="flex w-fit cursor-pointer items-center rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             onClick={downloadAndClose}
           >
             {t("retry")}

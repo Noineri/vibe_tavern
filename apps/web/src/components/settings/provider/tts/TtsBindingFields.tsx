@@ -67,7 +67,7 @@ export function TtsBindingFields({ tts, form }: { tts: TtsHook; form: NonNullabl
     <div className="flex flex-col gap-4">
       <div data-testid="tts-bind-section" className="flex flex-col gap-1">
         <label className={lblCls}>{t("tts_bind_section")}</label>
-        <div className="font-ui text-[11px] text-t4">{t("tts_bind_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("tts_bind_hint")}</div>
         <LinkBindingPopover
           links={voiceLinks}
           characters={linkCharacters}
@@ -88,7 +88,7 @@ export function TtsBindingFields({ tts, form }: { tts: TtsHook; form: NonNullabl
       {showMute && (
         <div data-testid="tts-mute-section" className="flex flex-col gap-1">
           <label className={lblCls}>{t("tts_mute_section")}</label>
-          <div className="font-ui text-[11px] text-t4">{t("tts_mute_hint")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("tts_mute_hint")}</div>
           <LinkBindingPopover
             links={mutedLinks}
             characters={linkCharacters}
@@ -104,7 +104,7 @@ export function TtsBindingFields({ tts, form }: { tts: TtsHook; form: NonNullabl
       )}
 
       {error !== null && (
-        <div data-testid="tts-links-error" className="font-ui text-[12px] text-danger">
+        <div data-testid="tts-links-error" className="font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
           {t("tts_links_error")}: {error}
         </div>
       )}
