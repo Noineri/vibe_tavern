@@ -26,6 +26,7 @@
  * hold identically after it, which is the whole point of pinning them.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { installReactMarkdownSeam } from "../../test/react-markdown-seam.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -43,6 +44,14 @@ mock.module("../components/build/editors/GalleryViewer.js", () => ({
   ),
 }));
 
+// react-markdown seam — the ONE factory shared with markdown.memo.test.tsx
+// (co-load contract, owner order 2026-10-24): registering the identical shape
+// here makes mock.module's last-write-wins harmless under a co-loaded pair
+// run, the same discipline as the GalleryViewer factory above. This file's own
+// assertions don't need the mock — the seam delegates to the real renderer —
+// but without this registration a co-loaded sibling's factory would replace
+// the real renderer for this file's renders (34/78 failed that way).
+installReactMarkdownSeam();
 
 let Markdown: typeof import("./markdown.js").Markdown;
 
