@@ -180,6 +180,11 @@ mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
 }));
 
 // MasterDetailModal passthrough (render master + detail + footer + headerActions flat).
+// Co-load contract (ML-1 rework, ML-8 rework): the `...real` spread supplies
+// the REAL MasterDetailMobileDrillDown (with its `master_detail_open` aria) —
+// an aria-less `() => null` stub poisons master-list.test.tsx's caret pin
+// (mock.module is process-global, last-write-wins). `useMasterDetail` stays
+// shape-identical with master-list.test.tsx (`isDetailOpen: false`).
 mock.module("../MasterDetailModal.js", () => ({
 	...realMasterDetailModal,
 	MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
@@ -202,8 +207,7 @@ mock.module("../MasterDetailModal.js", () => ({
 			</div>
 		);
 	},
-	MasterDetailMobileDrillDown: () => null,
-	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
+	useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
 mock.module("../destructive-confirm-modal.js", () => ({

@@ -176,8 +176,11 @@ mock.module("../../api/skill-api.js", () => ({
 
 // MasterDetailModal passthrough: render master + detail + footer + headerActions
 // flat. Supports both node and render-prop children.
-// `...real` spread preserves MasterDetailMobileDrillDown + other exports for
-// subsequent test files (mock.module is process-global — AGENTS.md gotcha).
+// Co-load contract (ML-1 rework, ML-8 rework): the `...real` spread supplies
+// the REAL MasterDetailMobileDrillDown (with its `master_detail_open` aria) —
+// an aria-less `() => null` stub poisons master-list.test.tsx's caret pin
+// (mock.module is process-global, last-write-wins). `useMasterDetail` stays
+// shape-identical with master-list.test.tsx (`isDetailOpen: false`).
 
 mock.module("../shared/MasterDetailModal.js", () => ({
 		...realMasterDetailModal,
@@ -201,8 +204,7 @@ mock.module("../shared/MasterDetailModal.js", () => ({
 			</div>
 		);
 	},
-	MasterDetailMobileDrillDown: () => null,
-	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
+	useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
 // DestructiveConfirmModal passthrough (also uses `...real` spread).
