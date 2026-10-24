@@ -142,7 +142,11 @@ describe("ProviderModal follow-the-active-model", () => {
     const view = render(<ProviderModal {...props} />);
     expect(view.container.textContent ?? "").not.toContain("Follow Test Profile");
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
-    await waitFor(() => expect(view.getByText("Follow Test Profile")).toBeTruthy());
+    // Behavior change: was a single `getByText` (the row title read "★ Follow
+    // Test Profile"); now the ★ lives in the status slot per
+    // MASTER_LIST_PRIMITIVE_PLAN ML-1 rework (row rules), so the bare name
+    // renders twice: row title + detail title.
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
   });
 
   test("favorited active model: overlay fetched, merged into the form, 'Editing' badge shown", async () => {
@@ -150,7 +154,10 @@ describe("ProviderModal follow-the-active-model", () => {
     const props = makeProps(makeProfile(), makeFavorites(["m-fav"]));
     const view = render(<ProviderModal {...props} />);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
-    await waitFor(() => expect(view.getByText("Follow Test Profile")).toBeTruthy());
+    // Behavior change: was a single `getByText`; now the bare name renders in
+    // both the row title and the detail title (ML-1 rework: ★ moved to the
+    // status slot per the row rules).
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
     await waitFor(() => expect(overlayFetchLog).toContainEqual({ profileId: "prof1", modelId: "m-fav" }));
     // The overlay's temperature reached the temperature control. Behavior change:
     // the label no longer interpolates the live value, so the probe reads the
@@ -164,7 +171,10 @@ describe("ProviderModal follow-the-active-model", () => {
     const props = makeProps(makeProfile({ defaultModel: "m-plain" }), makeFavorites(["m-fav"]));
     const view = render(<ProviderModal {...props} />);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
-    await waitFor(() => expect(view.getByText("Follow Test Profile")).toBeTruthy());
+    // Behavior change: was a single `getByText`; now the bare name renders in
+    // both the row title and the detail title (ML-1 rework: ★ moved to the
+    // status slot per the row rules).
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
     // Base badge appears; nothing was fetched for the non-favorite.
     await waitFor(() => expect(view.getByText(/binding_base_badge/)).toBeTruthy());
     expect(overlayFetchLog.some((e) => e.modelId === "m-plain")).toBe(false);

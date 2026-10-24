@@ -241,8 +241,12 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     expect(within(view.baseElement).getByText("providers_category_llm")).toBeTruthy();
     expect(within(view.baseElement).getByText("providers_category_audio")).toBeTruthy();
     expect(within(view.baseElement).getByText("providers_category_stt")).toBeTruthy();
-    // LLM master list visible (profile name)
-    expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+    // LLM master list visible (profile name).
+    // Behavior change: was a single `getByText("Alpha")` (the row title read
+    // "★ Alpha" — the ★ prefix kept it distinct from the detail header); now
+    // the ★ lives in the status slot per MASTER_LIST_PRIMITIVE_PLAN ML-1 rework
+    // (row rules), so the bare name renders twice: row title + detail title.
+    expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
     // TTS placeholder not visible on LLM tab
     expect(within(view.baseElement).queryByText("tts_section_placeholder")).toBeNull();
   });
@@ -279,7 +283,10 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     const llmRadio = within(view.baseElement).getByRole("radio", { name: "providers_category_llm" });
     await user.click(llmRadio);
     await waitFor(() => {
-      expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+      // Behavior change: was a single `getByText("Alpha")`; now the bare name
+      // renders in both the row title and the detail title (ML-1 rework: ★
+      // moved to the status slot per the row rules).
+      expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
     });
     expect(within(view.baseElement).queryByText("tts_section_title")).toBeNull();
   });
@@ -328,8 +335,11 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     expect(within(view.baseElement).getByText("providers_category_audio")).toBeTruthy();
     expect(within(view.baseElement).getByText("providers_category_stt")).toBeTruthy();
     expect(within(view.baseElement).getByText("providers_category_image")).toBeTruthy();
-    // LLM master list still visible on the default tab
-    expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+    // LLM master list still visible on the default tab.
+    // Behavior change: was a single `getByText("Alpha")`; now the bare name
+    // renders in both the row title and the detail title (ML-1 rework: ★ moved
+    // to the status slot per the row rules).
+    expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
   });
 
   it("clicking Image switches to the image-gen placeholder section, hides the provider list and the LLM footer; LLM restores it", async () => {
@@ -352,7 +362,10 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     const llmRadio = within(view.baseElement).getByRole("radio", { name: "providers_category_llm" });
     await user.click(llmRadio);
     await waitFor(() => {
-      expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+      // Behavior change: was a single `getByText("Alpha")`; now the bare name
+      // renders in both the row title and the detail title (ML-1 rework: ★
+      // moved to the status slot per the row rules).
+      expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
     });
     expect(within(view.baseElement).queryByTestId("image-gen-section")).toBeNull();
   });
