@@ -760,6 +760,6 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     threadId: string,
     body: ExperienceCopilotTurnDeleteRequest,
   ): Promise<ExperienceCopilotTurnDeleteResult> =>
-    deleteCopilotTurnWire(this.stores.db, threadId, body);
+    deleteCopilotTurnWire(this.stores.db, threadId, body, { store: this.stores.experienceCopilot, cleanup: this.attachmentAssetCleanup });
 
 }

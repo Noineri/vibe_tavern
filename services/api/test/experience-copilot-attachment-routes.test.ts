@@ -197,3 +197,84 @@ describe('agent attachment routes (CA-4d1)', () => {
     expect(h.cleanup).not.toHaveBeenCalled();
   });
 });
+
+describe('agent turn attachment cleanup (CA-4d2)', () => {
+  async function deleteTurn(h: Awaited<ReturnType<typeof setup>>, messageId: string, includeUserMessage: boolean, threadId = h.thread.id) {
+    return h.app.request(`http://localhost/api/experience-copilot/${threadId}/turns/delete`, h.json({ messageId, includeUserMessage }));
+  }
+  test('deleting the exchange deletes all user files after removing the rows, with unchanged wire shape', async () => {
+    const h = await setup();
+    const first = await h.file('First file');
+    const second = await h.file('Second file');
+    const user = await h.seed([first, second]);
+    const assistant = await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'assistant', content: 'Answer' });
+    h.cleanup.mockImplementation(async (assetId) => {
+      expect(await h.stores.experienceCopilot.listMessages(h.thread.id)).toEqual([]);
+      h.assets.cleanup(assetId);
+    });
+    const response = await deleteTurn(h, assistant.id, true);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deletedMessageIds: [user.id, assistant.id], deletedUserMessageId: user.id });
+    expect(h.cleanup).toHaveBeenCalledTimes(2);
+    expect(await h.assets.loadBuffer(first.assetId)).toBeNull();
+    expect(await h.assets.loadBuffer(second.assetId)).toBeNull();
+  });
+  test('a forked thread keeps the shared asset until its own turn is deleted', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const { source, message, copy } = await h.forkWithAttachment(file);
+    expect((await deleteTurn(h, message.id, true, source.id)).status).toBe(200);
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+    const copied = (await h.stores.experienceCopilot.listMessages(copy.id))[0]!;
+    expect(copied.attachments).toEqual([file]);
+    expect((await deleteTurn(h, copied.id, true, copy.id)).status).toBe(200);
+    expect(h.cleanup).toHaveBeenCalledWith(file.assetId);
+    expect(await h.assets.loadBuffer(file.assetId)).toBeNull();
+  });
+  test('a digest-floor refusal deletes neither rows nor files', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const user = await h.seed([file]);
+    await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'assistant', content: 'Answer' });
+    const anchor = await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'user', content: 'Kept turn' });
+    await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'digest', content: 'Digest', toolCallId: anchor.id });
+    const before = await h.stores.experienceCopilot.listMessages(h.thread.id);
+    expect((await deleteTurn(h, user.id, true)).status).toBe(409);
+    expect(await h.stores.experienceCopilot.listMessages(h.thread.id)).toEqual(before);
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+  });
+  test('deleting only the assistant turn preserves the user attachment and its file', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const user = await h.seed([file]);
+    const assistant = await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'assistant', content: 'Answer' });
+    const response = await deleteTurn(h, assistant.id, false);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deletedMessageIds: [assistant.id], deletedUserMessageId: null });
+    expect(await h.stores.experienceCopilot.findMessageAttachment(user.id, file.id)).toEqual(file);
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+  });
+  test('user-row refusal and missing message/thread delete no assets', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const user = await h.seed([file]);
+    expect((await deleteTurn(h, user.id, false)).status).toBe(400);
+    expect((await deleteTurn(h, 'missing', true)).status).toBe(404);
+    expect((await deleteTurn(h, user.id, true, 'missing-thread')).status).toBe(404);
+    expect(await h.stores.experienceCopilot.findMessageAttachment(user.id, file.id)).toEqual(file);
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+  });
+  test('absent cleanup deletes the rows without deleting files', async () => {
+    const h = await setup(false);
+    const file = await h.file();
+    const user = await h.seed([file]);
+    expect((await deleteTurn(h, user.id, true)).status).toBe(200);
+    expect(await h.stores.experienceCopilot.listMessages(h.thread.id)).toEqual([]);
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+    expect(h.cleanup).not.toHaveBeenCalled();
+  });
+});
