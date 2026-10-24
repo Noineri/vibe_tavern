@@ -19,6 +19,7 @@ import {
   type ProviderErrorCategory,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../../../api/provider-stream-error.js";
+import type { Attachment } from "@vibe-tavern/domain";
 
 /**
  * Agent turn actions (AGENT_SHELL_POLISH, Wave 3 / AP-10) — the turn-action
@@ -117,6 +118,20 @@ function findLastUserMessageId(messages: readonly ExperienceCopilotMessageWire[]
     if (row?.role === "user") return row.id;
   }
   return null;
+}
+
+/**
+ * CA-4e3: the last user row's attachments (edit-last resends them as they
+ * are — the editor edits text only). Empty array when no user row exists or
+ * the row carries none.
+ */
+function findLastUserAttachments(messages: readonly ExperienceCopilotMessageWire[] | undefined): readonly Attachment[] {
+  if (messages === undefined) return [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const row = messages[i];
+    if (row?.role === "user") return row.attachments ?? [];
+  }
+  return [];
 }
 
 /**
@@ -363,12 +378,14 @@ export function useAgentTurnActions(
   // refetches once for the whole edit). `null` = a silent guard exit (no
   // thread / already sending) — the caller settles nothing.
   const deleteTurnRun = useCallback(
-    async (messageId: string, includeUserMessage: boolean): Promise<boolean | null> => {
+    async (messageId: string, includeUserMessage: boolean, keepAttachmentFiles = false): Promise<boolean | null> => {
       if (!threadId || isSendingRef.current) return null;
       isSendingRef.current = true;
       setIsSending(true);
       try {
-        await transport.deleteTurn(threadId, { messageId, includeUserMessage });
+        // CA-4e1: edit-last passes `keepAttachmentFiles` — the row's files are
+        // resent with the edited turn, so they must outlive the row delete.
+        await transport.deleteTurn(threadId, { messageId, includeUserMessage, ...(keepAttachmentFiles ? { keepAttachmentFiles: true } : {}) });
         return true;
       } catch (error) {
         showProviderErrorToast(error, getT());
@@ -512,8 +529,14 @@ export function useAgentTurnActions(
     async (content: string): Promise<void> => {
       const trimmed = content.trim();
 
-      // Silent guards (no toast): empty content, missing thread, already sending.
-      if (!trimmed || !threadId || isSendingRef.current) return;
+      // CA-4e3: the last user row's attachments ride the resend as they are
+      // (the editor edits text only — agent call 2026-10-24), so an
+      // attachment-only row keeps editing legal with empty text.
+      const attachments = findLastUserAttachments(threadMessages);
+
+      // Silent guards (no toast): no text AND no attachments, missing thread,
+      // already sending.
+      if ((!trimmed && attachments.length === 0) || !threadId || isSendingRef.current) return;
 
       // The last exchange resolves from the CURRENT persisted messages (the
       // `threadMessages` arg — controller state, never a fetch). No user row
@@ -528,18 +551,19 @@ export function useAgentTurnActions(
         return;
       }
 
-      // Delete the last exchange WITH its user row first. A failed delete
-      // (e.g. the digest floor) never sends — the error already surfaced in
-      // the delete core, the feed is untouched, settle so the shell refetches.
-      // The success path does NOT settle here: the send below settles once
-      // for the whole edit (a single refetch).
-      const ok = await deleteTurnRun(lastUserId, true);
+      // Delete the last exchange WITH its user row first, KEEPING the row's
+      // physical files (the resend below points at them — CA-4e1). A failed
+      // delete (e.g. the digest floor) never sends — the error already
+      // surfaced in the delete core, the feed is untouched, settle so the
+      // shell refetches. The success path does NOT settle here: the send
+      // below settles once for the whole edit (a single refetch).
+      const ok = await deleteTurnRun(lastUserId, true, true);
       if (ok !== true) {
         if (ok === false) onTurnSettled?.(false);
         return;
       }
 
-      await sendTurn(trimmed);
+      await sendTurn(trimmed, { attachments });
     },
     [threadId, threadMessages, deleteTurnRun, sendTurn, onTurnSettled, isSendingRef],
   );

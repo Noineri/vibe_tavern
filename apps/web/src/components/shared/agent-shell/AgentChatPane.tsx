@@ -198,7 +198,7 @@ export function AgentChatPane({
   // selector is the ONE derivation of "is there a live ask" — the ask card's
   // interactive rule reads the same source, so the answerable card and the
   // answering send can never disagree.
-  const handleComposerSend = (content: string, _attachments: Attachment[]) => {
+  const handleComposerSend = (content: string, attachments: Attachment[]) => {
     const turnState = useAgentTurnStore.getState();
     const key = threadId !== null ? agentThreadKey(kind, threadId) : null;
     const liveAsk =
@@ -217,9 +217,10 @@ export function AgentChatPane({
         // `[]` and kept its drafted attachments.
         void ctrl.handleAnswer(liveAsk.toolCallId, { text: content }, options);
       } else {
-        // CA-4e2: the composer's second argument is accepted but not used
-        // yet — CA-4e3 wires the attachments into the send options/body.
-        void ctrl.handleSend(content, options);
+        // CA-4e3: the composer's attachments ride the send options (the
+        // controller maps them onto the body); an answer never carries them,
+        // and an empty list adds nothing to the options.
+        void ctrl.handleSend(content, attachments.length > 0 ? { ...options, attachments } : options);
       }
     });
   };
@@ -297,6 +298,7 @@ export function AgentChatPane({
             pendingText={ctrl.pendingText}
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
+            pendingUserAttachments={ctrl.pendingUserAttachments}
             isSending={ctrl.isSending}
             // AP-29 follow-up 2: a regenerate in flight hides the replaced
             // turn (the server already deleted it) and streams the new turn

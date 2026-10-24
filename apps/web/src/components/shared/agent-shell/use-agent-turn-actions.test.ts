@@ -460,6 +460,82 @@ describe("useAgentTurnActions — delete confirm", () => {
   });
 });
 
+// ─── CA-4e3: edit-last keeps the row's attachment files and resends them ─────
+
+describe("useAgentTurnActions — edit-last attachments (CA-4e3)", () => {
+  beforeEach(() => {
+    globalThis.fetch = routerFetch;
+    deleteCalls = [];
+    settled = [];
+  });
+
+  const file: import("@vibe-tavern/domain").Attachment = {
+    id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+    mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+  };
+
+  it("deletes with keepAttachmentFiles and resends the row's attachments as they are", async () => {
+    const sendTurn = mock(async (_content: string, _opts?: unknown) => {});
+    const deleteTurn = mock<AgentHostTransport["deleteTurn"]>(
+      async () => ({ deletedMessageIds: ["u1"], deletedUserMessageId: "u1" }),
+    );
+    const threadMessages = [
+      message({ id: "u1", role: "user", content: "Read this", attachments: [file] }),
+      message({ id: "a1", role: "assistant" }),
+    ];
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), threadMessages, sendTurn, transport: stubTransport(deleteTurn) }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("revised");
+    });
+
+    expect(deleteTurn).toHaveBeenCalledTimes(1);
+    expect(deleteTurn.mock.calls[0][1]).toEqual({ messageId: "u1", includeUserMessage: true, keepAttachmentFiles: true });
+    expect(sendTurn).toHaveBeenCalledTimes(1);
+    expect(sendTurn.mock.calls[0]).toEqual(["revised", { attachments: [file] }]);
+  });
+
+  it("an attachment-only row edits with empty text", async () => {
+    const sendTurn = mock(async (_content: string, _opts?: unknown) => {});
+    const deleteTurn = mock<AgentHostTransport["deleteTurn"]>(
+      async () => ({ deletedMessageIds: ["u1"], deletedUserMessageId: "u1" }),
+    );
+    const threadMessages = [
+      message({ id: "u1", role: "user", content: "", attachments: [file] }),
+      message({ id: "a1", role: "assistant" }),
+    ];
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), threadMessages, sendTurn, transport: stubTransport(deleteTurn) }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("   ");
+    });
+
+    expect(deleteTurn).toHaveBeenCalledTimes(1);
+    expect(sendTurn).toHaveBeenCalledTimes(1);
+    expect(sendTurn.mock.calls[0][0]).toBe("");
+  });
+
+  it("a plain staged delete still sends no keepAttachmentFiles (CA-4d2 unchanged)", async () => {
+    const deleteTurn = mock<AgentHostTransport["deleteTurn"]>(
+      async () => ({ deletedMessageIds: [], deletedUserMessageId: null }),
+    );
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), transport: stubTransport(deleteTurn) }),
+    );
+
+    act(() => result.current.requestDeleteTurn("u1", true));
+    await act(async () => {
+      await result.current.confirmDeleteTurn();
+    });
+
+    expect(deleteTurn.mock.calls[0][1]).toEqual({ messageId: "u1", includeUserMessage: true });
+  });
+});
+
 // ─── AP-13: the ONE category→description derivation (toast + card share it) ───
 // WAS (characterized at AP-10, basis: the toast branches in
 // use-agent-turn-actions.ts): auth → auth desc; rate_limit/timeout/network/

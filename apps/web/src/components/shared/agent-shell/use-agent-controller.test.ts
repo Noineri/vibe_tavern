@@ -189,6 +189,17 @@ const THREAD = "thread-1";
 const PROVIDER = "provider-1";
 const routerFetch = Object.assign(fetchRouter, { preconnect: () => {} });
 
+// CA-4e3: the one draft attachment fixture + its `toSendAttachment`
+// projection (the ONE send mapper — tokenCount preserved, no extra fields).
+const attachmentFile: import("@vibe-tavern/domain").Attachment = {
+  id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+  mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+};
+const sentAttachment = {
+  id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+  mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+};
+
 describe("useExperienceCopilotController transport fixture", () => {
 
 /** Minimal controllable promise for driving the stubbed stream to completion. */
@@ -227,6 +238,89 @@ afterAll(() => {
   translate.mockRestore();
   toastError.mockRestore();
   toastInfo.mockRestore();
+});
+
+describe("useExperienceCopilotController — attachments (CA-4e3)", () => {
+  test("the send body carries the composer's attachments through the ONE send mapper", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("read this", { attachments: [attachmentFile] });
+    });
+
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.content).toBe("read this");
+    expect(body.attachments).toEqual([sentAttachment]);
+  });
+
+  test("an attachment-only send omits content and still streams", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("   ", { attachments: [attachmentFile] });
+    });
+
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect("content" in body).toBe(false);
+    expect(body.attachments).toEqual([sentAttachment]);
+  });
+
+  test("no text and no attachments stays the silent guard", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("   ", {});
+    });
+
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+  });
+
+  test("pendingUserAttachments is set during the stream and cleared after", async () => {
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hello", { attachments: [attachmentFile] });
+      await Promise.resolve();
+    });
+    expect(result.current.pendingUserAttachments).toEqual([attachmentFile]);
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.pendingUserAttachments).toEqual([]);
+  });
+
+  test("an answer never carries attachments even when the options hold them", async () => {
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc1", { text: "ans" }, { attachments: [attachmentFile] });
+    });
+
+    expect(answerCopilotAsk).toHaveBeenCalledTimes(1);
+    const body = answerCopilotAsk.mock.calls[0][1] as Record<string, unknown>;
+    expect("attachments" in body).toBe(false);
+  });
 });
 
 describe("useExperienceCopilotController — handleSend stream lifecycle", () => {
@@ -1232,6 +1326,30 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
     expect(onTurnSettled).toHaveBeenCalledWith(true);
   });
 
+  test("a regenerate carries no attachments even when the options hold them (CA-4e3: not a content send)", async () => {
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleRegenerate({ attachments: [attachmentFile] });
+      await Promise.resolve();
+    });
+
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect("attachments" in body).toBe(false);
+    expect("content" in body).toBe(false);
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+  });
+
   test("marks the turn regenerating while in flight, clears on settle; sends and answers never mark", async () => {
     // AP-29 follow-up 2: the list hides the replaced turn while this flag
     // holds — it must cover exactly the regenerate flight (a send opens a
@@ -1455,11 +1573,12 @@ describe("useExperienceCopilotController — handleDeleteTurn (AP-10)", () => {
 });
 
 describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
-  const msg = (id: string, role: string): ExperienceCopilotMessageWire => ({
+  const msg = (id: string, role: string, attachments?: import("@vibe-tavern/domain").Attachment[]): ExperienceCopilotMessageWire => ({
     id,
     threadId: THREAD,
     role,
     content: `${role} ${id}`,
+    ...(attachments !== undefined ? { attachments } : {}),
     toolCallsJson: null,
     toolCallId: null,
     reasoning: null,
@@ -1481,7 +1600,7 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
 
     // Edit-last resolves the last USER row (u2 — not the trailing assistant
     // row) and deletes it WITH its user row.
-    expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "u2", includeUserMessage: true } }]);
+    expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "u2", includeUserMessage: true, keepAttachmentFiles: true } }]);
     // ...then sends the trimmed content as a fresh turn.
     expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
     expect(streamExperienceCopilot.mock.calls[0][1]).toEqual({ content: "revised question", providerProfileId: PROVIDER });
@@ -1528,6 +1647,43 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
     expect(toastError).toHaveBeenCalled();
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
     expect(onTurnSettled).toHaveBeenCalledWith(false);
+  });
+
+  test("the row's attachments ride the resend mapped through toSendAttachment (CA-4e3)", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const file = attachmentFile;
+    const threadMessages = [msg("u1", "user", [file]), msg("a1", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("revised");
+    });
+
+    expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "u1", includeUserMessage: true, keepAttachmentFiles: true } }]);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.attachments).toEqual([sentAttachment]);
+    expect(body.content).toBe("revised");
+  });
+
+  test("empty content with an attachment row still edits (CA-4e3)", async () => {
+    const onTurnSettled = mock();
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const threadMessages = [msg("u1", "user", [attachmentFile]), msg("a1", "assistant")];
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, threadMessages }),
+    );
+
+    await act(async () => {
+      await result.current.handleEditLast("   ");
+    });
+
+    expect(deleteCalls).toHaveLength(1);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect("content" in body).toBe(false);
+    expect(body.attachments).toEqual([sentAttachment]);
   });
 
   test("empty content is a silent guard (no delete, no send, no settle)", async () => {

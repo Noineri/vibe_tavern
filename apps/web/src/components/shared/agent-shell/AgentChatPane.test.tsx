@@ -179,6 +179,7 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     pendingText: "",
     pendingReasoning: "",
     pendingUserContent: "",
+    pendingUserAttachments: [],
     pendingAskAnswer: null,
     pendingPermissionAnswer: null,
     handleSend: mock(),

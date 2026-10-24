@@ -25,7 +25,7 @@ import type {
   ExperienceCopilotThreadWire,
   RecordProposal,
 } from "@vibe-tavern/api-contracts";
-import type { AgentPlanOwner, AgentThreadOwner } from "@vibe-tavern/domain";
+import type { AgentPlanOwner, AgentThreadOwner, Attachment } from "@vibe-tavern/domain";
 import type Resources from "../i18n/resources.js";
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 import type { ProviderProfileRecord } from "../api/types.js";
@@ -170,6 +170,11 @@ export interface AgentSendOptions {
    *  selection at freeze time, the schema rejects anything else). Only the
    *  `sidechat-ooc` kind reads the field; the other kinds ignore it. */
   attachedVariants?: { messageId: string; variantId: string }[];
+  /** CA-4e3 — the composer's draft attachments for this turn (full domain
+   *  `Attachment` objects; the controller maps them onto the send body via
+   *  the ONE send mapper `toSendAttachment`). An attachment-only send omits
+   *  `content`. Answers (ask/permission) never carry the field. */
+  attachments?: readonly Attachment[];
 }
 
 /**

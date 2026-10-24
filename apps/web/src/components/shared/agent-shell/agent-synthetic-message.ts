@@ -11,18 +11,24 @@
  * "absent, never undefined" discipline in a single derivation.
  */
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { Attachment } from "@vibe-tavern/domain";
 
 export function syntheticAgentMessage(input: {
   id: string;
   threadId: string;
   role: "user" | "assistant";
   content: string;
+  /** CA-4e3: the optimistic user row's attachments (absent = none). */
+  attachments?: readonly Attachment[];
 }): ExperienceCopilotMessageWire {
   return {
     id: input.id,
     threadId: input.threadId,
     role: input.role,
     content: input.content,
+    ...(input.attachments !== undefined && input.attachments.length > 0
+      ? { attachments: [...input.attachments] }
+      : {}),
     toolCallsJson: null,
     toolCallId: null,
     reasoning: null,
