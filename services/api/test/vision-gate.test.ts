@@ -1,12 +1,19 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   renderAttachmentsAsText,
   resolveMultimodalContent,
+  unseenImagePolicy,
   VisionNotSupportedError,
   type VisionGateConfig,
 } from "../src/infrastructure/ai/vision-gate.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import { filterPromptVisibleAttachments, TEXT_MIME_TO_EXT, withImageGenPromptFallback } from "@vibe-tavern/domain";
+import { CONTINUATION_USER_INSTRUCTION, prepareSdkMessages, type SdkMessage } from "../src/infrastructure/ai/provider-executor-utils.js";
+
+let warningSpy: ReturnType<typeof spyOn> | undefined;
+function restoreWarning() { warningSpy?.mockRestore(); warningSpy = undefined; }
+afterEach(restoreWarning);
+afterAll(restoreWarning);
 
 // Vision gate is a pure transform over message attachments: the primary model's
 // vision capability decides pixels-vs-text, and `description` matters only on
@@ -58,6 +65,83 @@ function assetLoader(assetId: string): Promise<Buffer | null> {
 
 const VISION_GATE: VisionGateConfig = { hasVision: true, visionModel: "vm" };
 const NO_VISION_GATE: VisionGateConfig = { hasVision: false, visionModel: "vm" };
+
+describe("unseen history image policy (CA-1g)", () => {
+  test("note emits one part per raw image/video and one warning per message, without loading assets", async () => {
+    warningSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const load = mock(async () => { throw new Error("Notes must not load media"); });
+    const parts = await resolveMultimodalContent({ role: "user", content: "Earlier", attachments: [
+      rawImage(), { ...rawImage('clip'), type: "video", name: "clip.mp4", mimeType: "video/mp4" },
+    ] }, NO_VISION_GATE, load, { unseenImagePolicy: "note" });
+    expect(parts).toEqual([
+      { type: "text", text: "Earlier" },
+      { type: "text", text: "[Image attachment: img_1.png]\nThe current model cannot see this attachment and no description is available." },
+      { type: "text", text: "[Image attachment: clip.mp4]\nThe current model cannot see this attachment and no description is available." },
+    ]);
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith("[vision-gate] Undescribed history media replaced with notes: %s", "img_1.png, clip.mp4");
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("the default and explicit error policies still throw for raw images", async () => {
+    for (const options of [undefined, { unseenImagePolicy: "error" as const }]) {
+      await expect(resolveMultimodalContent({ role: "user", content: "Now", attachments: [rawImage()] }, NO_VISION_GATE, assetLoader, options)).rejects.toBeInstanceOf(VisionNotSupportedError);
+    }
+  });
+
+  test("note does not change pixels or an available description", async () => {
+    expect(await resolveMultimodalContent({ role: "user", content: "", attachments: [describedImage()] }, NO_VISION_GATE, assetLoader, { unseenImagePolicy: "note" })).toEqual([
+      { type: "text", text: "[Image attachment: img_1.png]\nImage description: a red square" },
+    ]);
+    expect(await resolveMultimodalContent({ role: "user", content: "", attachments: [rawImage()] }, VISION_GATE, assetLoader, { unseenImagePolicy: "note" })).toEqual([
+      { type: "image", image: IMAGE_BYTES, mediaType: "image/png" },
+    ]);
+  });
+
+  test("the decision singles out the last user in the original input, including a single-message list", () => {
+    const messages = [{ role: "system" }, { role: "user" }, { role: "assistant" }, { role: "user" }, { role: "system" }, { role: "assistant" }];
+    expect(messages.map((_, index) => unseenImagePolicy(messages, index))).toEqual(["note", "note", "note", "error", "note", "note"]);
+    expect(unseenImagePolicy([{ role: "user" }], 0)).toBe("error");
+    expect(unseenImagePolicy([{ role: "system" }], 0)).toBe("note");
+    expect(unseenImagePolicy([], 0)).toBe("note");
+  });
+
+  for (const providerType of ["openai_compat", "google"] as const) {
+    test(`${providerType}: earlier image becomes a note after system reorder and current image still errors, including continuation/prefill`, async () => {
+      const messages: SdkMessage[] = [
+        { role: "system", content: "First system" },
+        { role: "user", content: "Earlier", attachments: [rawImage()] },
+        { role: "system", content: "Later system" },
+        { role: "assistant", content: "Earlier reply" },
+        { role: "user", content: "Now" },
+      ];
+      const before = structuredClone(messages);
+      for (const extra of [{}, { continuationFallback: true }, { prefill: "Start" }]) {
+        const options = { providerType, visionGate: NO_VISION_GATE, assetLoader, ...extra };
+        const result = await prepareSdkMessages(messages, options);
+        expect(result.conversationMessages.find((message) => Array.isArray(message.content))).toEqual({
+          role: "user", content: [
+            { type: "text", text: "Earlier" },
+            { type: "text", text: "[Image attachment: img_1.png]\nThe current model cannot see this attachment and no description is available." },
+          ],
+        });
+        if (extra.continuationFallback) expect(result.conversationMessages.at(-1)).toEqual({ role: "user", content: CONTINUATION_USER_INSTRUCTION });
+        if (providerType === "google") expect(result.conversationMessages[0]).toEqual({ role: "system", content: "First system\n\nLater system" });
+        const current: SdkMessage[] = messages.map((message) => message.role === "user"
+          ? { ...message, attachments: message.content === "Now" ? [rawImage()] : undefined } : message);
+        await expect(prepareSdkMessages(current, options)).rejects.toBeInstanceOf(VisionNotSupportedError);
+      }
+      expect(messages).toEqual(before);
+    });
+  }
+
+  test("original indexes, not object identity, decide even when two entries reuse a message object", async () => {
+    const repeated: SdkMessage = { role: "user", content: "Same", attachments: [rawImage()] };
+    expect(unseenImagePolicy([repeated, repeated], 0)).toBe("note");
+    expect(unseenImagePolicy([repeated, repeated], 1)).toBe("error");
+    await expect(prepareSdkMessages([repeated, repeated], { providerType: "google", visionGate: NO_VISION_GATE, assetLoader })).rejects.toBeInstanceOf(VisionNotSupportedError);
+  });
+});
 
 describe("vision-gate: exact image prompt characterization (CA-1b)", () => {
   test("non-vision described image flipped to file keeps its exact text parts", async () => {

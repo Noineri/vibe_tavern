@@ -12,7 +12,8 @@
  *  • Non-vision primary → the executor describes the image FIRST (via the
  *    configured fallback-vision model), then this gate sends only the textual
  *    description. A raw undescribed image reaching the non-vision path means
- *    no fallback was configured → VisionNotSupportedError.
+ *    no fallback was configured → VisionNotSupportedError on the current turn,
+ *    or a text note for an earlier message (CA-1g).
  *
  * `describeAttachments` (the parallel/first describe step) lives here too; the
  * executor calls it and persists descriptions before/assembling each turn.
@@ -111,6 +112,17 @@ export class VisionNotSupportedError extends Error {
 
 export type AttachmentAssetLoader = (assetId: string) => Promise<Buffer | null>;
 
+export type UnseenImagePolicy = "error" | "note";
+
+/** Decide on INPUT messages, before provider reorder, continuation or prefill.
+ * The last user message is the current turn; earlier messages cannot block it. */
+export function unseenImagePolicy(messages: readonly { role: string }[], index: number): UnseenImagePolicy {
+  for (let current = messages.length - 1; current >= 0; current--) {
+    if (messages[current].role === "user") return index === current ? "error" : "note";
+  }
+  return "note";
+}
+
 /** Render already-visible attachments for a text-only consumer such as summary
  *  memory. Never describes images or transcribes audio; old untranscribed voice
  *  notes are omitted rather than failing the summary. Only text files load bytes.
@@ -155,13 +167,15 @@ export async function renderAttachmentsAsText(
  *
  * For raw image/video attachments:
  * - If hasVision → load asset and create ImagePart
- * - If no hasVision → throw VisionNotSupportedError
+ * - If no hasVision → throw VisionNotSupportedError by default; the explicit
+ *   history policy "note" emits a short unavailable-image note instead
  *   (the executor should have already described them if a visionModel was set)
  */
 export async function resolveMultimodalContent(
   message: SdkMessage,
   gate: VisionGateConfig,
   assetLoader: (assetId: string) => Promise<Buffer | null>,
+  options: { unseenImagePolicy?: UnseenImagePolicy } = {},
 ): Promise<Array<TextPart | ImagePart>> {
   const parts: Array<TextPart | ImagePart> = [];
 
@@ -211,7 +225,8 @@ export async function resolveMultimodalContent(
   //    image first (executor runs describeAttachments before calling us). We
   //    send only the textual description — no pixels. A raw undescribed image
   //    reaching here means no fallback was configured (or the describe step
-  //    failed) → VisionNotSupportedError.
+   //    failed) → VisionNotSupportedError for the current turn (the default),
+   //    or one text note per image/video in an earlier message (CA-1g).
   //
   // Routing invariant: the DB persists `type: "image"` + `description`; only
   // the executor's in-memory copy flips `type` to `"file"`. So we route by
@@ -261,7 +276,7 @@ export async function resolveMultimodalContent(
     return parts;
   }
 
-  // Non-vision primary: described images → textual description; raw → error.
+  // Non-vision primary: described images → description; raw → error or note.
   const describedImages = imageVideoAttachments.filter((a) => a.description?.trim());
   const rawImages = imageVideoAttachments.filter((a) => !a.description?.trim());
 
@@ -273,9 +288,14 @@ export async function resolveMultimodalContent(
   }
 
   if (rawImages.length > 0) {
-    // The executor should have described these (vision fallback configured).
-    // Reaching here means no fallback was set OR describe failed — honest error.
-    throw new VisionNotSupportedError(rawImages.map((a) => a.name));
+    if (options.unseenImagePolicy !== "note") {
+      // The current turn still gets the honest configuration error.
+      throw new VisionNotSupportedError(rawImages.map((a) => a.name));
+    }
+    log.tag("vision-gate").warn("Undescribed history media replaced with notes: %s", rawImages.map((a) => a.name).join(", "));
+    for (const att of rawImages) {
+      parts.push({ type: "text", text: `[Image attachment: ${att.name}]\nThe current model cannot see this attachment and no description is available.` });
+    }
   }
 
   return parts;
