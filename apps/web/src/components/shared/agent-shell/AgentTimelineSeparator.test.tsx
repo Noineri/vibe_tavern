@@ -281,3 +281,38 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
     expect(feedOrder(container)).toEqual(["user", "assistant"]);
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The frozen RP texts are user/model text —
+// they opt back in; the separator labels and author captions stay out.
+describe("AgentTimelineSeparator — page translation (follow-up 2026-10-24)", () => {
+  it("expanded frozen texts carry translate=yes, chrome labels do not", () => {
+    const { container, getByText } = renderRu(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "a1", role: "assistant", content: "assistant replies" })]}
+        events={[
+          rpSyncEvent("e-rp", ["frozen one"], "a1"),
+          variantsEvent("e-var", null),
+          selectionEvent("e-sel", null),
+          forkEvent("e-fork", null),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const toggles = container.querySelectorAll('[data-testid="timeline-separator-toggle"]');
+    fireEvent.click(toggles[0]!);
+    expect(getByText("frozen one").getAttribute("translate")).toBe("yes");
+    fireEvent.click(toggles[1]!);
+    expect(getByText("frozen variant one").getAttribute("translate")).toBe("yes");
+    fireEvent.click(toggles[2]!);
+    expect(getByText("the previous reply").getAttribute("translate")).toBe("yes");
+    // Chrome: the separator labels and the toggle itself stay untranslated.
+    expect(getByText("── РП продвинулся на 1 сообщение ──").getAttribute("translate")).toBeNull();
+    expect(toggles[0]!.getAttribute("translate")).toBeNull();
+  });
+});

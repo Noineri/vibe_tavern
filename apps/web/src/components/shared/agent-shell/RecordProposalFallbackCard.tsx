@@ -82,8 +82,11 @@ export function RecordProposalFallbackCard({ proposal }: RecordProposalFallbackC
         </div>
       )}
 
+      {/* The proposed payload is MODEL text — page-translatable (owner
+          follow-up 2026-10-24); title / target / hint / accept are chrome. */}
       <div
         data-testid="record-proposal-fallback-payload"
+        translate="yes"
         className={cn(codeQuoteCls, "max-h-40 overflow-auto")}
       >
         {preview ?? t("agent.record_proposal.bad_payload")}

@@ -90,6 +90,12 @@ export function AgentActivityCard({
   // either way — the old `truncate` hid it visually only).
   const titleCls = isRead ? "min-w-0 truncate" : "min-w-0 whitespace-normal break-words";
 
+  // Page translation (owner follow-up 2026-10-24): this slot primarily
+  // carries MODEL text (summaries, read paths) — `translate="yes"` like the
+  // RP bodies. The two plan-label branches are our chrome, but they share
+  // this element; re-translating an already-localized label is harmless.
+  // The target chip (a buffer label) and the error/detail rows below are
+  // pure chrome and stay out.
   return (
     <div className="overflow-hidden rounded-md">
       <div
@@ -102,7 +108,7 @@ export function AgentActivityCard({
         )}
       >
         <span className={cn(statusClass, "shrink-0 leading-[1.45]")}>{statusIcon}</span>
-        <span data-testid="copilot-activity-title" className={cn(titleCls, "leading-[1.45]")}>{title}</span>
+        <span translate="yes" data-testid="copilot-activity-title" className={cn(titleCls, "leading-[1.45]")}>{title}</span>
         {isProposal && (
           <span
             data-testid="copilot-activity-target"

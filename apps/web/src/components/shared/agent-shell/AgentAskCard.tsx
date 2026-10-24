@@ -97,8 +97,12 @@ export function AgentAskCard({ ask, interactive, onSubmit }: AgentAskCardProps) 
         </div>
       )}
 
+      {/* The model's question — page-translatable (owner follow-up 2026-10-24):
+          the page opts out in `index.html`, model text opts back in. The
+          header / skip / badge around it are our chrome and stay out. */}
       <span
         data-testid="copilot-ask-question"
+        translate="yes"
         className={cn(
           "min-w-0 whitespace-normal break-words font-ui leading-snug",
           state === "awaiting" ? "text-[var(--ui-fs)] text-t1" : "text-[calc(var(--ui-fs)-2px)] text-t4",
@@ -126,7 +130,9 @@ export function AgentAskCard({ ask, interactive, onSubmit }: AgentAskCardProps) 
                 )}
               >
                 <span className="shrink-0 text-t4">{index + 1}</span>
-                <span className="min-w-0 flex-1 whitespace-normal break-words">{option}</span>
+                {/* The model's option label — page-translatable; the number
+                    and the recommended badge beside it are our chrome. */}
+                <span translate="yes" className="min-w-0 flex-1 whitespace-normal break-words">{option}</span>
                 {isRecommended && (
                   <span className="shrink-0 rounded bg-accent/15 px-1.5 py-px text-[calc(var(--ui-fs)-3px)] text-accent">
                     {t("copilot_ask_recommended_badge")}
@@ -138,9 +144,12 @@ export function AgentAskCard({ ask, interactive, onSubmit }: AgentAskCardProps) 
         </div>
       )}
 
+      {/* The user's own answer text — page-translatable like any user
+          message (the muted question above is already opted in). */}
       {state === "answered" && (
         <div
           data-testid="copilot-ask-answer"
+          translate="yes"
           className="min-w-0 whitespace-normal break-words font-ui text-[var(--ui-fs)] leading-snug text-t1"
         >
           → {ask.answer}

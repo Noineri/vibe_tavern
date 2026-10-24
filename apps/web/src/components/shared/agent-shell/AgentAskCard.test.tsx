@@ -152,3 +152,26 @@ describe("CopilotAskCard (TAG-9, AP-7 redesign)", () => {
     expect(ruMap["copilot_ask_recommended_badge"]).toBe("рекомендую");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The model's question, its option labels and
+// the user's answer echo opt back in; chrome (skip, numbers, badges) stays out.
+describe("CopilotAskCard — page translation (follow-up 2026-10-24)", () => {
+  it("question + option labels + user answer carry translate=yes", () => {
+    const { getByTestId } = renderCard(ask({}));
+    expect(getByTestId("copilot-ask-question").getAttribute("translate")).toBe("yes");
+    expect(getByTestId("copilot-ask-chip-0").children[1]!.getAttribute("translate")).toBe("yes");
+
+    const answered = renderCard(ask({ status: "answered", answer: "Rules, definitely" }));
+    expect(answered.getByTestId("copilot-ask-answer").getAttribute("translate")).toBe("yes");
+  });
+
+  it("chrome carries no opt-in: skip button, row numbers and badges stay untranslated", () => {
+    const { getByTestId } = renderCard(ask({}));
+    expect(getByTestId("copilot-ask-skip").getAttribute("translate")).toBeNull();
+    const row = getByTestId("copilot-ask-chip-0");
+    expect(row.children[0]!.getAttribute("translate")).toBeNull();
+    expect(row.getAttribute("translate")).toBeNull();
+  });
+});

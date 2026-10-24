@@ -159,8 +159,11 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
         </span>
       </div>
 
+      {/* The proposed objective is MODEL text — page-translatable (owner
+          follow-up 2026-10-24); the status chip and buttons are chrome. */}
       <div
         data-testid="objective-proposal-description"
+        translate="yes"
         className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium leading-snug text-t2"
       >
         {description}
@@ -169,6 +172,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
       {reason !== undefined && (
         <div
           data-testid="objective-proposal-reason"
+          translate="yes"
           className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
         >
           {reason}

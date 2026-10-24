@@ -135,7 +135,9 @@ export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
           )}
         >
           <NodeGlyph status={summaryStatus} />
-          <span className="min-w-0 flex-1 truncate">
+          {/* The current goal is the MODEL's todo title — page-translatable
+              (owner follow-up 2026-10-24); the count beside it is chrome. */}
+          <span translate="yes" className="min-w-0 flex-1 truncate">
             {current ? current.title : t("copilot_todo_done")}
           </span>
           <span className="shrink-0 tabular-nums text-t4">· {remaining}</span>
@@ -177,7 +179,10 @@ export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
             <span className="mt-[1px] flex shrink-0 items-center justify-center">
               <NodeGlyph status={item.status} />
             </span>
+            {/* The MODEL's todo titles — page-translatable (owner follow-up
+                2026-10-24); the panel header and counts are our chrome. */}
             <span
+              translate="yes"
               className={cn(
                 "min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-3px)]",
                 item.status === "completed" && "text-success-text line-through",

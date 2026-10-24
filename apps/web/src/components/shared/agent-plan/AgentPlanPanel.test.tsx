@@ -90,3 +90,28 @@ describe("AgentPlanPanel", () => {
     expect(onOpenEditor).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The task titles and the active task's body
+// are MODEL text — they opt back in; the header and editor button stay out.
+describe("AgentPlanPanel — page translation (follow-up 2026-10-24)", () => {
+  it("collapsed current title + expanded task titles and active body carry translate=yes", () => {
+    const { container, getByText, getByTestId } = renderPanel();
+    expect(getByText("Build editor").getAttribute("translate")).toBe("yes");
+
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    // Container-scoped: the title text now exists in the expanded list.
+    const optedIn = [...container.querySelectorAll('[translate="yes"]')].map((el) => el.textContent);
+    expect(optedIn).toContain("Build editor");
+    expect(optedIn).toContain("Wire chat");
+    expect(optedIn).toContain("Active task details");
+  });
+
+  it("chrome carries no opt-in: the plan title label and editor button stay untranslated", () => {
+    const { getByTestId, getByText } = renderPanel();
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(getByText("agent_plan_title").getAttribute("translate")).toBeNull();
+    expect(getByTestId("agent-plan-open-editor").getAttribute("translate")).toBeNull();
+  });
+});

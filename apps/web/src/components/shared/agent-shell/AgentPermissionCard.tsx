@@ -104,11 +104,17 @@ export function AgentPermissionCard({ permission, interactive, onDecision }: Age
 
       {state === "awaiting" && (
         <>
-          <OverflowTooltip
-            text={permission.replyFirstLine ?? ""}
-            side="top"
-            className="font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-t2"
-          />
+          {/* The reply's first line is the USER's RP text — page-translatable
+              (owner follow-up 2026-10-24). `OverflowTooltip` owns its node,
+              so the opt-in wraps it; the title / meta / buttons around it are
+              our chrome and stay out. */}
+          <div translate="yes" className="min-w-0">
+            <OverflowTooltip
+              text={permission.replyFirstLine ?? ""}
+              side="top"
+              className="font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-t2"
+            />
+          </div>
           <div
             data-testid="copilot-permission-meta"
             className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4"

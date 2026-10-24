@@ -361,3 +361,30 @@ describe("CopilotActivityCard — caption params (SC-13a)", () => {
     expect(getByTestId("copilot-activity-title").textContent).toBe("3 hunks pending");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The title slot carries MODEL text — it opts
+// back in; the target chip (a buffer label) and the card root stay out.
+describe("AgentActivityCard — page translation (follow-up 2026-10-24)", () => {
+  it("title carries translate=yes (model summary)", () => {
+    const { getByTestId } = render(
+      <AgentActivityCard
+        kind="experience"
+        activity={activity({ toolCallId: "w1", toolName: "write_buffer", status: "done", summary: "added the score action" })}
+      />,
+    );
+    expect(getByTestId("copilot-activity-title").getAttribute("translate")).toBe("yes");
+  });
+
+  it("chrome carries no opt-in: target chip stays untranslated", () => {
+    const { getByTestId } = render(
+      <AgentActivityCard
+        kind="experience"
+        activity={activity({ toolCallId: "v1", toolName: "edit_buffer", status: "done", summary: "tweaked visual", target: "visual", proposed: "new visual" })}
+      />,
+    );
+    expect(getByTestId("copilot-activity-title").getAttribute("translate")).toBe("yes");
+    expect(getByTestId("copilot-activity-target").getAttribute("translate")).toBeNull();
+  });
+});

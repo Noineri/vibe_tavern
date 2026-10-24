@@ -114,3 +114,27 @@ describe("CopilotTodoPanel (TAG-8)", () => {
     }
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The todo titles are MODEL text — they opt
+// back in; the panel header and counts are chrome and stay out.
+describe("CopilotTodoPanel — page translation (follow-up 2026-10-24)", () => {
+  it("collapsed current title + expanded item titles carry translate=yes", () => {
+    const { container, getByText, getByTestId } = renderPanel(PLAN);
+    expect(getByText("Write the rules buffer").getAttribute("translate")).toBe("yes");
+
+    fireEvent.click(getByTestId("copilot-todo-panel"));
+    // Container-scoped: the title text now exists in the expanded list.
+    const optedIn = [...container.querySelectorAll('[translate="yes"]')].map((el) => el.textContent);
+    expect(optedIn).toContain("Write the rules buffer");
+    expect(optedIn).toContain("Bind the visual");
+  });
+
+  it("chrome carries no opt-in: the header label and the panel root stay untranslated", () => {
+    const { getByTestId, getByText } = renderPanel(PLAN);
+    fireEvent.click(getByTestId("copilot-todo-panel"));
+    expect(getByText("copilot_todo_title").getAttribute("translate")).toBeNull();
+    expect(getByTestId("copilot-todo-panel").getAttribute("translate")).toBeNull();
+  });
+});

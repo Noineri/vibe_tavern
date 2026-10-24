@@ -277,3 +277,16 @@ describe("ObjectiveProposalCard (SC-13c)", () => {
     expect(ruRecord["agent.objective_proposal.request_failed"]).toBe("Не удалось выполнить запрос предложения");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The description + reason are MODEL text —
+// they opt back in; the accept button (chrome) stays out.
+describe("ObjectiveProposalCard — page translation (follow-up 2026-10-24)", () => {
+  it("description + reason carry translate=yes, chrome accept button does not", () => {
+    const { getByTestId } = render(<ObjectiveProposalCard proposal={proposal({})} threadId="thread-1" />);
+    expect(getByTestId("objective-proposal-description").getAttribute("translate")).toBe("yes");
+    expect(getByTestId("objective-proposal-reason").getAttribute("translate")).toBe("yes");
+    expect(getByTestId("objective-proposal-accept").getAttribute("translate")).toBeNull();
+  });
+});

@@ -652,3 +652,50 @@ describe("ExperienceCopilotMessageBlock — message markup (AP-2)", () => {
     expect(bubble!.className).not.toContain("[&_em]");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The page opts out in `index.html`
+// (`translate="no"`); every model/user text element in the shell opts back in
+// with `translate="yes"`. Chrome (action buttons, digest header) stays out.
+describe("ExperienceCopilotMessageBlock — page translation (follow-up 2026-10-24)", () => {
+  it("assistant body carries translate=yes (the streaming reply goes through the same block)", () => {
+    const { getByText } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />,
+    );
+
+    expect(getByText("Consider asking about her brother").parentElement!.getAttribute("translate")).toBe("yes");
+  });
+
+  it("user body carries translate=yes", () => {
+    const { getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+      />,
+    );
+
+    expect(getByText("What should I say?").parentElement!.getAttribute("translate")).toBe("yes");
+  });
+
+  it("expanded digest body carries translate=yes (the summary is model text)", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("copilot-digest-card-toggle"));
+    expect(getByTestId("copilot-digest-card-body").getAttribute("translate")).toBe("yes");
+  });
+
+  it("chrome carries no opt-in: action button and digest header stay untranslated", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+    expect(getByTestId("fixture-action").getAttribute("translate")).toBeNull();
+
+    const digest = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+    expect(digest.getByTestId("copilot-digest-card-toggle").getAttribute("translate")).toBeNull();
+  });
+});

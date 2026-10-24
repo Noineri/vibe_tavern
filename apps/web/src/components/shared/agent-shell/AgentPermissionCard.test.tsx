@@ -217,3 +217,22 @@ describe("CopilotPermissionCard — token count pluralisation (SC-23g)", () => {
     expect(getByTestId("copilot-permission-meta").textContent).toBe("variant 2 · ≈1 token");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The reply's first line is the USER's RP
+// text — it opts back in; the title / meta / buttons are chrome and stay out.
+describe("CopilotPermissionCard — page translation (follow-up 2026-10-24)", () => {
+  it("reply first line carries translate=yes (user text)", () => {
+    const { getByText } = renderCard(permission({}));
+    expect(getByText("First line of the swipe").closest("div[translate]")!.getAttribute("translate")).toBe("yes");
+  });
+
+  it("chrome carries no opt-in: title, meta and both buttons stay untranslated", () => {
+    const { getByTestId } = renderCard(permission({}));
+    expect(getByTestId("copilot-permission-title").getAttribute("translate")).toBeNull();
+    expect(getByTestId("copilot-permission-meta").getAttribute("translate")).toBeNull();
+    expect(getByTestId("copilot-permission-allow").getAttribute("translate")).toBeNull();
+    expect(getByTestId("copilot-permission-deny").getAttribute("translate")).toBeNull();
+  });
+});

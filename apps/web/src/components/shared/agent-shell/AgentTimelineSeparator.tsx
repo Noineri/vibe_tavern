@@ -102,7 +102,10 @@ function SeparatorBody({ event }: { event: Exclude<AgentThreadEventWire, { kind:
               {message.authorName && (
                 <div className="mb-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{message.authorName}</div>
               )}
-              <div className="whitespace-pre-wrap">{message.text}</div>
+              {/* Frozen RP message text (user/model) — page-translatable
+                  (owner follow-up 2026-10-24); the author caption is a name
+                  (identification data, never translated) and stays out. */}
+              <div translate="yes" className="whitespace-pre-wrap">{message.text}</div>
             </div>
           ))}
         </div>
@@ -119,7 +122,9 @@ function SeparatorBody({ event }: { event: Exclude<AgentThreadEventWire, { kind:
                   {t("sidechat_chip_selected", { n: index + 1 })}
                 </div>
               )}
-              <div className="whitespace-pre-wrap">{variant.text}</div>
+              {/* Frozen variant text (user/model RP text) — page-translatable;
+                  the selected marker above is our chrome and stays out. */}
+              <div translate="yes" className="whitespace-pre-wrap">{variant.text}</div>
             </div>
           ))}
         </div>
@@ -127,9 +132,10 @@ function SeparatorBody({ event }: { event: Exclude<AgentThreadEventWire, { kind:
     case "selection_changed":
       return (
         <div className="flex flex-col gap-2">
-          <div className="whitespace-pre-wrap">{event.payload.previous.text}</div>
+          {/* Frozen pre/post RP texts (user/model) — page-translatable. */}
+          <div translate="yes" className="whitespace-pre-wrap">{event.payload.previous.text}</div>
           <Icons.Caret direction="d" className="h-3 w-3 shrink-0 self-center text-t3" />
-          <div className="whitespace-pre-wrap">{event.payload.current.text}</div>
+          <div translate="yes" className="whitespace-pre-wrap">{event.payload.current.text}</div>
         </div>
       );
   }

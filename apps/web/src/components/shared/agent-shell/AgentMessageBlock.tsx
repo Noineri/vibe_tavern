@@ -102,8 +102,14 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // the `overflow-wrap:anywhere` / `[&_.md-pre]:[overflow-wrap:normal]` pair,
   // and the AP-2 Markdown variant below. Only the chrome around it differs
   // per role: the user keeps the bubble, the assistant renders flat.
+  // Page translation (owner follow-up 2026-10-24): `index.html` opts the
+  // whole page out (`translate="no"`) and roleplay bodies opt back in —
+  // the agent shell does the same here. This ONE body element carries every
+  // assistant AND user message (the streaming reply goes through this block
+  // too), so `translate="yes"` sits on it, never on the chrome around it
+  // (the MessageActionRow buttons stay untranslated — already our language).
   const body = (
-    <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
+    <div translate="yes" className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
       {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
        * code, paths, ids) wrap instead of spilling past the bubble edge.
        * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
@@ -330,6 +336,7 @@ function DigestCard({
         {expanded && (
           <div
             data-testid="copilot-digest-card-body"
+            translate="yes"
             className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1 whitespace-pre-wrap"
           >
             {message.content}

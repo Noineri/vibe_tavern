@@ -82,7 +82,9 @@ export function AgentPlanPanel({ plan, onOpenEditor, locked }: AgentPlanPanelPro
           className="group flex min-w-0 flex-1 items-center gap-1.5 text-left transition-colors hover:text-t2"
         >
           <NodeGlyph status={summaryStatus} />
-          <span className="min-w-0 flex-1 truncate">{current ? current.title : t("agent_plan_done")}</span>
+          {/* The current task is the MODEL's plan title — page-translatable
+              (owner follow-up 2026-10-24); the count beside it is chrome. */}
+          <span translate="yes" className="min-w-0 flex-1 truncate">{current ? current.title : t("agent_plan_done")}</span>
           <span className="shrink-0 tabular-nums text-t4">· {remaining} {t("agent_plan_remaining")}</span>
           <Chevron open={false} />
         </button>
@@ -107,8 +109,10 @@ export function AgentPlanPanel({ plan, onOpenEditor, locked }: AgentPlanPanelPro
           <li key={task.id} data-testid={`agent-plan-task-${task.status}`} className="flex items-start gap-1.5 py-0.5">
             <span className="mt-[1px] flex shrink-0 items-center justify-center"><NodeGlyph status={task.status} /></span>
             <span className="min-w-0 flex-1">
-              <span className={cn("block truncate font-ui text-[calc(var(--ui-fs)-3px)]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
-              {task.status === "active" && task.body && <span className="mt-0.5 block whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{task.body}</span>}
+              {/* The MODEL's task titles and the active task's detail —
+                  page-translatable (owner follow-up 2026-10-24). */}
+              <span translate="yes" className={cn("block truncate font-ui text-[calc(var(--ui-fs)-3px)]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
+              {task.status === "active" && task.body && <span translate="yes" className="mt-0.5 block whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{task.body}</span>}
             </span>
           </li>
         ))}

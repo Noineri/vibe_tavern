@@ -85,3 +85,15 @@ describe("RecordProposalFallbackCard (AS-5)", () => {
     expect(ruRecord["agent.record_proposal.bad_payload"]).toBe("(некорректные данные)");
   });
 });
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The payload preview is MODEL text — it opts
+// back in; the disabled Accept (chrome) stays out.
+describe("RecordProposalFallbackCard — page translation (follow-up 2026-10-24)", () => {
+  it("payload preview carries translate=yes, chrome accept button does not", () => {
+    const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
+    expect(getByTestId("record-proposal-fallback-payload").getAttribute("translate")).toBe("yes");
+    expect(getByTestId("record-proposal-fallback-accept").getAttribute("translate")).toBeNull();
+  });
+});
