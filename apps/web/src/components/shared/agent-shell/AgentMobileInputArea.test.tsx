@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -11,7 +11,17 @@ useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentMobileInputArea: typeof import("./AgentMobileInputArea.js").AgentMobileInputArea;
+
+// CA-4e2: attachment uploads + image-route reads stubbed at the module
+// boundary (CA-1h2/CA-1h3 style), restored after every test (R3).
+const assets = await import("../../../api/asset-api.js");
+const imageRoutes = await import("../../../api/image-route-api.js");
+const spies: Array<{ mockRestore(): void }> = [];
+afterEach(() => {
+  for (const spy of spies.splice(0)) spy.mockRestore();
+});
 
 // ── SAFE mock.module stubs (capture real first, spread `...real`) ──
 
@@ -115,7 +125,7 @@ mock.module("../../../stores/api-actions/provider-actions.js", () => ({
 }));
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ AgentMobileInputArea } = await import("./AgentMobileInputArea.js"));
 });
 
@@ -399,5 +409,71 @@ describe("ExperienceCopilotMobileInputArea — phone pills (AP-26b)", () => {
     fireEvent.click(getByTestId("copilot-model-option-m2"));
 
     expect(props.onProviderChange).toHaveBeenCalledWith("p1", "m2");
+  });
+});
+
+// ─── CA-4e2: attachments through the shared composer layer ──────────────────
+
+describe("ExperienceCopilotMobileInputArea — attachments (CA-4e2)", () => {
+  /** Spies BEFORE render (useAttachmentDraft binds its upload seam at render
+   *  time as a default parameter — same ordering as the CA-1h2/3 co-author
+   *  tests); renders, attaches one .md, waits for its chip. */
+  async function renderWithTextFile(over: Partial<Parameters<typeof AgentMobileInputArea>[0]> = {}) {
+    const upload = spyOn(assets, "uploadAsset").mockResolvedValue({ assetId: "file", url: "file", tokenCount: 42 });
+    spies.push(upload);
+    const view = renderMobileInput(over);
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["notes"], "notes.md", { type: "" })] },
+    });
+    await waitFor(() => expect(view.getByTestId("file-attachment-chip")).toBeDefined());
+    return view;
+  }
+
+  it("attaching through the file input renders a chip under the textarea", async () => {
+    const view = await renderWithTextFile();
+    expect(view.getByTitle("notes.md")).toBeDefined();
+  });
+
+  it("an attachment-only send calls onSend with empty text and the attachment", async () => {
+    const onSend = mock();
+    const view = await renderWithTextFile({ onSend });
+    expect((view.getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(view.getByTestId("copilot-send-btn"));
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [content, sent] = onSend.mock.calls[0] as [string, Array<{ assetId: string; type: string }>];
+    expect(content).toBe("");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ assetId: "file", type: "file" });
+  });
+
+  it("the paperclip is disabled while answering an ask and the attachments stay", async () => {
+    const view = await renderWithTextFile();
+    view.rerender(withIsolatedI18n(<AgentMobileInputArea {...view.props} answeringAsk={true} />));
+    expect((view.getByRole("button", { name: "attach_image" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(view.getByTestId("copilot-chat-input"), { target: { value: "answer" } });
+    fireEvent.click(view.getByTestId("copilot-send-btn"));
+    expect(view.props.onSend).toHaveBeenCalledWith("answer", []);
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+  });
+
+  it("the overflow warning shows with metrics that overflow and never blocks send", async () => {
+    const view = await renderWithTextFile({ contextMetrics: { totalTokens: 90, budgetTokens: 100 } });
+    expect(view.getByText("attachments_overflow_warning")).toBeDefined();
+    expect((view.getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("an image on a route-none model shows the vision warning; Send stays enabled", async () => {
+    const fetchRoute = spyOn(imageRoutes, "fetchProfileImageRoute").mockResolvedValue("none");
+    spies.push(fetchRoute);
+    const upload = spyOn(assets, "uploadAsset").mockResolvedValue({ assetId: "image", url: "image" });
+    spies.push(upload);
+    const view = renderMobileInput();
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["png"], "capture.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(fetchRoute).toHaveBeenCalledWith("p1", "m1"));
+    await waitFor(() => expect(view.getByText("attachment_vision_warning")).toBeDefined());
+    expect((view.getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import type {
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
+import type { Attachment } from "@vibe-tavern/domain";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
@@ -197,7 +198,7 @@ export function AgentChatPane({
   // selector is the ONE derivation of "is there a live ask" — the ask card's
   // interactive rule reads the same source, so the answerable card and the
   // answering send can never disagree.
-  const handleComposerSend = (content: string) => {
+  const handleComposerSend = (content: string, _attachments: Attachment[]) => {
     const turnState = useAgentTurnStore.getState();
     const key = threadId !== null ? agentThreadKey(kind, threadId) : null;
     const liveAsk =
@@ -212,8 +213,12 @@ export function AgentChatPane({
         : null;
     sendWithOptions((options) => {
       if (liveAsk !== null) {
+        // CA-4a1: an answer carries text only — the composer already passed
+        // `[]` and kept its drafted attachments.
         void ctrl.handleAnswer(liveAsk.toolCallId, { text: content }, options);
       } else {
+        // CA-4e2: the composer's second argument is accepted but not used
+        // yet — CA-4e3 wires the attachments into the send options/body.
         void ctrl.handleSend(content, options);
       }
     });
@@ -341,6 +346,7 @@ export function AgentChatPane({
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
               topSlot={composerTopSlot}
+              contextMetrics={copilotContext.metrics}
             />
           ) : (
             <AgentInputArea
@@ -357,6 +363,7 @@ export function AgentChatPane({
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
               topSlot={composerTopSlot}
+              contextMetrics={copilotContext.metrics}
             />
           )}
           {/* AP-11: the staged turn delete confirms here (mockup §3) — the
