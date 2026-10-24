@@ -351,7 +351,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                 sideOffset={4}
                 className="glass-blur z-50 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
-                <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
+                <div className="border-b border-border/50 px-3 py-2 font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
                 {coauthorChats.length === 0 ? (
                   <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
                 ) : (
@@ -387,7 +387,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                               disabled={coauthorBusy}
                             >
                               <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
-                              <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
+                              <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
                             </button>
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               <button
@@ -457,7 +457,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           className="vibe-md-editor rounded-lg border border-border"
           style={{ minHeight: 420 }}
         />
-        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
+        <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("vmd_editor_hint")}</p>
       </div>
 
       {/* ONE "Advanced fields" accordion — creator notes, personality summary,
@@ -502,7 +502,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                 />
               </CustomTooltip>
               <div className={cn("flex min-h-8 items-center gap-2", (mesExampleMode || "always") !== "depth" && "pointer-events-none opacity-30")}>
-                <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+                <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
                 <NumberInput
                   className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
                   min={0}
@@ -514,7 +514,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
               </div>
             </div>
           </div>
-          <p className="font-ui text-[11px] text-t4">{t("vmd_examples_in_body_hint")}</p>
+          <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("vmd_examples_in_body_hint")}</p>
         </div>
         <TextAreaField
           form={form}
@@ -560,7 +560,7 @@ function Accordion({ title, storageKey, defaultOpen, children }: AccordionProps)
     <div className="mb-4 overflow-hidden rounded-lg border border-border bg-s2">
       <button
         type="button"
-        className="flex w-full cursor-pointer items-center justify-between bg-surface px-4 py-3 font-body text-[15px] font-medium text-t1 transition-colors hover:bg-s2"
+        className="flex w-full cursor-pointer items-center justify-between bg-surface px-4 py-3 font-body text-[calc(var(--ui-fs)+1px)] font-medium text-t1 transition-colors hover:bg-s2"
         onClick={() => setIsOpen((o) => !o)}
         aria-expanded={isOpen}
       >

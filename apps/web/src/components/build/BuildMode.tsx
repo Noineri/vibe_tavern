@@ -272,9 +272,9 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
     const renderTraceFetchStatus = (): ReactNode => {
       if (traceFetchStatus === "error") {
         return (
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-error/40 bg-error/10 px-3 py-2 font-ui text-[13px] text-error-text">
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-error/40 bg-error/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-error-text">
             <span>{traceFetchError ? `${t("trace_error")}: ${traceFetchError}` : t("trace_error")}</span>
-            <button type="button" className="shrink-0 rounded bg-error/20 px-2.5 py-1 text-[12px] font-medium text-error-text active:bg-error/30" onClick={onRefetchTraceHistory}>
+            <button type="button" className="shrink-0 rounded bg-error/20 px-2.5 py-1 text-[calc(var(--ui-fs)-2px)] font-medium text-error-text active:bg-error/30" onClick={onRefetchTraceHistory}>
               {t("trace_retry")}
             </button>
           </div>
@@ -282,7 +282,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
       }
       if (traceFetchStatus === "loading" && promptTraceHistory.length === 0) {
         return (
-          <div className="mb-3 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t3">
+          <div className="mb-3 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
             {t("trace_loading")}
           </div>
         );
@@ -293,7 +293,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
     if (isMobile) {
       return (
         <div className="pb-4">
-          <h1 className="mb-4 font-body text-[22px] font-semibold leading-tight text-t1">{t("build_prompt_trace")}</h1>
+          <h1 className="mb-4 font-body text-[calc(var(--ui-fs)+8px)] font-semibold leading-tight text-t1">{t("build_prompt_trace")}</h1>
 
           {renderTraceFetchStatus()}
 
@@ -305,12 +305,12 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
             />
           </label>
 
-          <p className="mb-5 font-ui text-[14px] leading-[1.55] text-t3">{t("trace_mobile_hint")}</p>
+          <p className="mb-5 font-ui text-[var(--ui-fs)] leading-[1.55] text-t3">{t("trace_mobile_hint")}</p>
 
           {trace && 'id' in trace ? (
             <div className="mb-3 grid grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2">
               <button type="button"
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-lg text-t3 active:bg-s3 disabled:opacity-35"
+                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-[calc(var(--ui-fs)+4px)] leading-7 text-t3 active:bg-s3 disabled:opacity-35"
                 disabled={currentTraceIndex >= promptTraceHistory.length - 1}
                 onClick={() => {
                   const prev = promptTraceHistory[currentTraceIndex + 1];
@@ -321,7 +321,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
                 value={(trace as PromptTraceRecordDto).id}
                 onChange={setSelectedTraceId}
                 searchable={false}
-                className="h-10 min-w-0 rounded-md bg-s2 px-3 py-0 text-[13px]"
+                className="h-10 min-w-0 rounded-md bg-s2 px-3 py-0 text-[calc(var(--ui-fs)-1px)]"
                 options={promptTraceHistory.map((item, index) => {
                   const itemTotal = item.tokenAccounting?.total ?? item.layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
                   return {
@@ -332,7 +332,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
                 })}
               />
               <button type="button"
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-lg text-t3 active:bg-s3 disabled:opacity-35"
+                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-[calc(var(--ui-fs)+4px)] leading-7 text-t3 active:bg-s3 disabled:opacity-35"
                 disabled={currentTraceIndex <= 0}
                 onClick={() => {
                   const next = promptTraceHistory[currentTraceIndex - 1];
@@ -348,8 +348,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
 
               <div className="mt-4 flex flex-col gap-3">
                 {imageAttachmentsCount > 0 && (
-                  <div className="flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2.5 font-ui text-[12px] text-info">
-                    <span className="text-[14px]">🖼️</span>
+                  <div className="flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-info">
+                    <span className="text-[var(--ui-fs)]">🖼️</span>
                     {t("trace_sent_with_attachments", { n: imageAttachmentsCount })}
                   </div>
                 )}
@@ -362,7 +362,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
               </div>
             </div>
           ) : (
-            <div className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[13px] italic text-t3">
+            <div className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[calc(var(--ui-fs)-1px)] italic text-t3">
               {t("trace_no_traces_yet")}
             </div>
           )}
@@ -374,12 +374,12 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
       <div>
         {renderTraceFetchStatus()}
         <div className="mb-1.5 flex items-center justify-between">
-          <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
+          <div className="mb-1.5 font-body text-[calc(var(--ui-fs)+8px)] font-medium text-t1">
             {t("build_prompt_trace")}
           </div>
           {trace && (
             <div
-              className="rounded-full bg-s2 px-2.5 py-1 font-ui text-[13px] text-t2"
+              className="rounded-full bg-s2 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t2"
             >
               {t("trace_total_tokens", { n: formatTokenCount(totalTokens) })}
             </div>
@@ -391,7 +391,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
               {/* Trace navigator */}
               <div className="flex items-center gap-2">
                 <button type="button"
-                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
+                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
                   disabled={currentTraceIndex >= promptTraceHistory.length - 1}
                   onClick={() => {
                     const prev = promptTraceHistory[currentTraceIndex + 1];
@@ -400,11 +400,11 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
                 >
                   ← {t("trace_prev")}
                 </button>
-                <span className="text-xs text-t2">
+                <span className="text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
                   {t("trace_turn", { n: promptTraceHistory.length - currentTraceIndex })}
                 </span>
                 <button type="button"
-                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
+                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
                   disabled={currentTraceIndex <= 0}
                   onClick={() => {
                     const next = promptTraceHistory[currentTraceIndex - 1];
@@ -421,8 +421,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
                 {imageAttachmentsCount > 0 && (
                   <>
                     {" · "}
-                    <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-xs text-info">
-                      <span className="text-[12px]">🖼️</span>
+                    <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-info">
+                      <span className="text-[calc(var(--ui-fs)-2px)]">🖼️</span>
                       {t("trace_sent_with_attachments", { n: imageAttachmentsCount })}
                     </span>
                   </>
@@ -437,7 +437,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
           )}
           {trace?.compactionSummary && (
             <div
-              className="mt-1.5 rounded-[6px] border border-warning/50 bg-warning-dim px-2.5 py-1.5 font-body text-xs text-warning-text"
+              className="mt-1.5 rounded-[6px] border border-warning/50 bg-warning-dim px-2.5 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-4 text-warning-text"
             >
               <strong>{t("trace_compaction_label")}</strong>{" "}
               <span className="whitespace-pre-wrap">{trace.compactionSummary}</span>
@@ -445,14 +445,14 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
           )}
           {trace?.prefill && (
             <div
-              className="mt-1.5 rounded-[6px] border border-border2 bg-s2 px-2.5 py-1.5 font-body text-xs"
+              className="mt-1.5 rounded-[6px] border border-border2 bg-s2 px-2.5 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-4"
             >
               <strong className="text-t2">{t("trace_prefill_label")}</strong>{" "}
               <span className="whitespace-pre-wrap text-t3">{trace.prefill}</span>
             </div>
           )}
           {visionDescriptions.length > 0 && (
-            <div className="mt-1.5 rounded-[6px] border border-info/30 bg-info/10 px-2.5 py-1.5 font-body text-xs text-info">
+            <div className="mt-1.5 rounded-[6px] border border-info/30 bg-info/10 px-2.5 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-4 text-info">
               <strong>{t("trace_sent_with_attachments", { n: visionDescriptions.length })}</strong>
               <div className="mt-1 space-y-1 whitespace-pre-wrap text-info-text">
                 {visionDescriptions.map((item) => (
@@ -481,7 +481,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
           </div>
         ) : (
           <div
-            className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[13px] italic text-t3"
+            className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[calc(var(--ui-fs)-1px)] italic text-t3"
           >
           {t("trace_no_traces_yet")}
           </div>

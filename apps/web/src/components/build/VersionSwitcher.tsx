@@ -208,7 +208,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
       <>
         <div className="mb-5 flex items-center gap-2">
           <button type="button"
-            className="flex min-h-[36px] flex-1 cursor-pointer items-center gap-2 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 transition-colors hover:border-accent disabled:opacity-40"
+            className="flex min-h-[36px] flex-1 cursor-pointer items-center gap-2 rounded-md border border-border bg-s2 px-3 text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:border-accent disabled:opacity-40"
             onClick={() => setSheetOpen(true)}
             disabled={!!disabled || loading}
           >
@@ -223,7 +223,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
           items={[
             ...versions.map((v) => ({
               icon: v.isActive
-                ? <span className="text-[13px] font-bold text-accent-t">✓</span>
+                ? <span className="text-[calc(var(--ui-fs)-1px)] font-bold text-accent-t">✓</span>
                 : <span className="w-[11px]" />,
               label: labelFor(v),
               action: () => requestActivate(v.id),
@@ -325,7 +325,7 @@ function NewVersionButton({ onClick, busy, disabled }: { onClick: () => void; bu
   const { t } = useT();
   return (
     <button type="button"
-      className="flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-3 font-ui text-[12px] text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
+      className="flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
       disabled={busy || disabled}
       onClick={onClick}
       title={t("version_branch")}

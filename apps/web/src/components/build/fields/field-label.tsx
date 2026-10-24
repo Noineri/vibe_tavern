@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 
 const FIELD_LABEL_CLASS =
-  "mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3";
+  "mb-1.5 block text-[calc(var(--ui-fs)-2px)] font-medium uppercase leading-tight tracking-[0.05em] text-t3";
 
 interface FieldLabelProps {
   children: ReactNode;

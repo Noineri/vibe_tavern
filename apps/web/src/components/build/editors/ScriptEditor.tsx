@@ -110,7 +110,7 @@ function SortableScriptCard({ script, isActive, isMobile, links, linksLoaded, un
 						className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center text-t3 active:cursor-grabbing"
 						onClick={e => e.stopPropagation()}
 					>
-						<span className="text-[calc(var(--ui-fs)+6px)] leading-7 leading-none">≡</span>
+						<span className="text-[calc(var(--ui-fs)+6px)] leading-none">≡</span>
 					</button>
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>

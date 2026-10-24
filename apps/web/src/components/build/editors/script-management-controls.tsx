@@ -67,7 +67,7 @@ export function ScriptManagementControls({
   // toggle was removed: it could never persist (updateScriptSchema
   // excludes scriptKind), so it silently reverted on save.
   const kindBadge = (
-    <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
+    <div className="rounded px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-wide bg-s3 text-t2">
       {scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
     </div>
   );
@@ -104,7 +104,7 @@ export function ScriptManagementControls({
   return (
     <>
       <TextInput
-        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
+        className="min-w-0 max-md:w-auto flex-1 !text-[calc(var(--ui-fs)+1px)] font-semibold"
         type="text"
         value={name}
         onChange={(e) => onUpdateDraft({ name: e.target.value })}
@@ -125,7 +125,7 @@ export function ScriptManagementControls({
             is wrong for scripts. */}
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
+            "shrink-0 rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase",
             enabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
           )}
         >
@@ -146,7 +146,7 @@ export function ScriptManagementControls({
         {/* Save-state text is desktop-only: on mobile the state is conveyed by
             the SaveButton's visual state. */}
         <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", draftSaveState === "error" ? "text-danger" : "text-t3")}
+          className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", draftSaveState === "error" ? "text-danger" : "text-t3")}
           title={draftError ?? undefined}
         >
           {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}

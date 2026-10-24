@@ -134,7 +134,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 
 	return (
 		<div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-			<div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
+			<div className="mb-3 text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.06em] text-accent-t">
 				{t("script_test_panel")}
 			</div>
 			<div className={cn("flex gap-2.5", isMobile && "flex-col")}>
@@ -154,19 +154,19 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 				/>
 				<button
 					type="button"
-					className={cn("h-9 shrink-0 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")}
+					className={cn("h-9 shrink-0 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")}
 					onClick={runTest}
 				>
 					{t("script_test_run")}
 				</button>
 			</div>
-			<p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3">{t("script_test_input_hint")}</p>
+			<p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3">{t("script_test_input_hint")}</p>
 
 			{/* Advanced test inputs (P2/P3): character fields + persona */}
 			<div className="mt-2">
 				<button
 					type="button"
-					className="flex cursor-pointer items-center gap-1 font-ui text-[11px] text-t3 transition-all hover:text-t1"
+					className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:text-t1"
 					onClick={() => setTestAdvanced((v) => !v)}
 				>
 					<span className="inline-block transition-transform" style={{ transform: testAdvanced ? "rotate(90deg)" : "none" }}>
@@ -177,26 +177,26 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 				{testAdvanced && (
 					<div className="mt-2 space-y-2 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 						<div>
-							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_name")}</label>
+							<label className="mb-1 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_test_character_name")}</label>
 							<TextInput value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
 						</div>
 						<div>
-							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_personality")}</label>
+							<label className="mb-1 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_test_character_personality")}</label>
 							<AutoTextarea mono value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div>
-							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_scenario")}</label>
+							<label className="mb-1 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_test_character_scenario")}</label>
 							<AutoTextarea mono value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div className="border-t border-border pt-2">
-							<div className="mb-1 font-ui text-[11px] font-medium text-t2">{t("script_test_persona_fields")}</div>
+							<div className="mb-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{t("script_test_persona_fields")}</div>
 							<div className="space-y-2">
 								<div>
-									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_name")}</label>
+									<label className="mb-1 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_test_persona_name")}</label>
 									<TextInput value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
 								</div>
 								<div>
-									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_desc")}</label>
+									<label className="mb-1 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_test_persona_desc")}</label>
 									<AutoTextarea mono value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} minRows={3} maxRows={12} />
 								</div>
 							</div>
@@ -218,46 +218,46 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 					<div className="mt-3 space-y-2">
 						{testResult.errors.length > 0 && (
 							<div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_test_error")}</div>
-								<pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-danger-text">{t("script_test_error")}</div>
+								<pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">
 									{testResult.errors.map((e) => (typeof e === "string" ? e : `${e.scriptName ?? "Script"}: ${e.error}${e.line ? ` (line ${e.line})` : ""}`)).join("\n")}
 								</pre>
 							</div>
 						)}
 						{!hasAnyOutput && (
 							<div className="rounded-md border border-warning bg-warning-dim" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase text-warning-text">{t("script_test_no_effect")}</div>
-								<div className="mt-1 font-ui text-[11px] leading-relaxed text-t2">{t("script_test_no_effect_hint")}</div>
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-warning-text">{t("script_test_no_effect")}</div>
+								<div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2">{t("script_test_no_effect_hint")}</div>
 							</div>
 						)}
 						{hasAnyOutput && (
 							<>
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-									<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
+									<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
 									{testResult.personality ? (
 										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.personality}</pre>
 									) : (
-										<p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>
+										<p className="mt-1 font-mono text-[calc(var(--ui-fs)-2px)] italic text-t3">({t("script_test_no_change")})</p>
 									)}
 								</div>
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-									<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
+									<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
 									{testResult.scenario ? (
 										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.scenario}</pre>
 									) : (
-										<p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>
+										<p className="mt-1 font-mono text-[calc(var(--ui-fs)-2px)] italic text-t3">({t("script_test_no_change")})</p>
 									)}
 								</div>
 							</>
 						)}
 						{testResult.injectedMessages.length > 0 && (
 							<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_injected")}</div>
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_injected")}</div>
 								<div className="mt-1 space-y-1.5">
 									{testResult.injectedMessages.map((msg, i) => (
 										<div key={i} className="flex items-start gap-2">
-											<span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
-											<pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{msg.content}</pre>
+											<span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase text-t3">{msg.role}</span>
+											<pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] text-t2">{msg.content}</pre>
 										</div>
 									))}
 								</div>
@@ -265,12 +265,12 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 						)}
 						{testResult.console.length > 0 && (
 							<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_console")}</div>
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_console")}</div>
 								<div className="mt-1 space-y-0.5">
 									{testResult.console.map((entry, i) => (
 										<div key={i} className="flex items-start gap-2">
-											<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
-											<pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{entry.args}</pre>
+											<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
+											<pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] text-t2">{entry.args}</pre>
 										</div>
 									))}
 								</div>
@@ -278,20 +278,20 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 						)}
 						{Object.keys(testResult.state).length > 0 && (
 							<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_state")}</div>
-								<pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{JSON.stringify(testResult.state, null, 2)}</pre>
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_state")}</div>
+								<pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] text-t2">{JSON.stringify(testResult.state, null, 2)}</pre>
 							</div>
 						)}
 						{Object.keys(testResult.shared).length > 0 && (
 							<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-								<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_shared")}</div>
-								<pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{JSON.stringify(testResult.shared, null, 2)}</pre>
+								<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_shared")}</div>
+								<pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] text-t2">{JSON.stringify(testResult.shared, null, 2)}</pre>
 							</div>
 						)}
 					</div>
 				);
 			})()}
-			{testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">{t("script_running")}</div>}
+			{testingScript && <div className="mt-3 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("script_running")}</div>}
 
 			{/* SS-7: the warning surface gating this run (portal-rendered; only one
 		    of the two can be open — plain when no blocking findings, findings

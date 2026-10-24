@@ -171,7 +171,7 @@ export function ScriptAgentEditorTabs({
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
                   <CustomTooltip content={t("script_links_hint")}>
-                    <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+                    <span className="cursor-help text-t4 text-[calc(var(--ui-fs)-3px)]">ⓘ</span>
                   </CustomTooltip>
                 </div>
                 <LinkBindingPopover
@@ -197,11 +197,11 @@ export function ScriptAgentEditorTabs({
               <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_templates")}</div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === (script.scriptKind || "prompt")).map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => onAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => onAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
                 <button
                   type="button"
-                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={onToggleApiRef}
                 >
                   <Ic.book /> {t("script_api_reference")}
