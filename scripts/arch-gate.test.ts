@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	ARCH_GATE_MAX_LINES,
+	collectBannedDndKitImports,
 	collectBannedFixedFontSizes,
 	collectFixedFontSizes,
 	collectFractionalLadderOffsets,
@@ -260,6 +261,121 @@ describe("fractional ladder offset ban", () => {
 			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<a className="text-[calc(var(--ui-fs)-1.5px)]">dev</a>\n');
 			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size: calc(var(--ui-fs) - 1.5px)}\n");
 			expect(collectFractionalLadderOffsets(root)).toEqual([]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("dnd-kit import ban outside the master-list primitive (ML-10)", () => {
+	test("red: a component importing dnd-kit drag runtime fails the gate", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			// a hand-rolled master list: drag runtime from every dnd-kit package,
+			// including a mixed sortable clause (the arrayMove allowance is exact)
+			// and a bare side-effect import.
+			writeFixture(
+				root,
+				"apps/web/src/components/settings/NewList.tsx",
+				[
+					'import { DndContext } from "@dnd-kit/core";',
+					'import { arrayMove, useSortable } from "@dnd-kit/sortable";',
+					"import {",
+					"\tCSS",
+					'} from "@dnd-kit/utilities";',
+					'import "@dnd-kit/sortable";',
+					"export const Probe = CSS;",
+				].join("\n") + "\n",
+			);
+
+			const banned = collectBannedDndKitImports(root);
+			expect(banned).toEqual([
+				{
+					file: "apps/web/src/components/settings/NewList.tsx",
+					line: 1,
+					column: 1,
+					module: "@dnd-kit/core",
+					statement: 'import { DndContext } from "@dnd-kit/core"',
+				},
+				{
+					file: "apps/web/src/components/settings/NewList.tsx",
+					line: 2,
+					column: 1,
+					module: "@dnd-kit/sortable",
+					statement: 'import { arrayMove, useSortable } from "@dnd-kit/sortable"',
+				},
+				{
+					file: "apps/web/src/components/settings/NewList.tsx",
+					line: 3,
+					column: 1,
+					module: "@dnd-kit/utilities",
+					statement: 'import { CSS } from "@dnd-kit/utilities"',
+				},
+				{
+					file: "apps/web/src/components/settings/NewList.tsx",
+					line: 6,
+					column: 1,
+					module: "@dnd-kit/sortable",
+					statement: 'import "@dnd-kit/sortable"',
+				},
+			]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], [], banned);
+			expect(report.bannedDndKitImports).toHaveLength(4);
+			const output = formatArchGateReport(report);
+			expect(output).toContain("Architecture gate: FAIL — 4 new architecture violation(s) detected.");
+			expect(output).toContain("[dnd-kit-import] apps/web/src/components/settings/NewList.tsx:1:1");
+			expect(output).toContain('import { arrayMove, useSortable } from "@dnd-kit/sortable"');
+			expect(output).toContain("master-detail lists render through the shared master-list primitive");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("green: arrayMove-only, type-only, the primitive folder and the named exemptions pass", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			// a migrated consumer: arrayMove (bare, aliased, beside an inline type
+			// specifier) and a statement-level `import type` wire nothing.
+			writeFixture(
+				root,
+				"apps/web/src/components/settings/prompt/Consumer.tsx",
+				[
+					'import { arrayMove } from "@dnd-kit/sortable";',
+					'import { type DragEndEvent, arrayMove as move } from "@dnd-kit/sortable";',
+					'import type { DragEndEvent as CoreEvent } from "@dnd-kit/core";',
+					"export const Probe = [arrayMove, move];",
+				].join("\n") + "\n",
+			);
+			// the primitive owns the drag mechanics — full runtime imports allowed.
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/master-list/master-list-part.tsx",
+				[
+					'import { DndContext, DragOverlay } from "@dnd-kit/core";',
+					'import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";',
+					'import { CSS } from "@dnd-kit/utilities";',
+					"export const Probe = [DndContext, DragOverlay, SortableContext, useSortable, verticalListSortingStrategy, CSS];",
+				].join("\n") + "\n",
+			);
+			// a named non-master-detail drag surface.
+			writeFixture(
+				root,
+				"apps/web/src/components/settings/prompt/InjectionTable.tsx",
+				[
+					'import { useSortable, SortableContext } from "@dnd-kit/sortable";',
+					'import { DndContext } from "@dnd-kit/core";',
+					"export const Probe = [useSortable, SortableContext, DndContext];",
+				].join("\n") + "\n",
+			);
+			// out of scope: test file, components/dev and a hook (mechanics live in
+			// hooks/, not in a list component).
+			writeFixture(root, "apps/web/src/components/settings/Skip.test.tsx", 'import { useSortable } from "@dnd-kit/sortable";\nexport const Probe = useSortable;\n');
+			writeFixture(root, "apps/web/src/components/dev/DevTool.tsx", 'import { DndContext } from "@dnd-kit/core";\nexport const Probe = DndContext;\n');
+			writeFixture(root, "apps/web/src/hooks/SomeHook.ts", 'import { DndContext } from "@dnd-kit/core";\nexport const Probe = DndContext;\n');
+
+			expect(collectBannedDndKitImports(root)).toEqual([]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], [], []);
+			expect(formatArchGateReport(report)).toContain("Architecture gate: OK — all current violations are within baseline.");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
