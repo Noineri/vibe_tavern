@@ -720,17 +720,71 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     expect(view.queryByRole("button", { name: "attachment_file_actions" })).toBeNull();
   });
 
-  it("an image in a persisted user message opens the lightbox with NO edit/regenerate/delete control", async () => {
+  it("a persisted image's lightbox shows the RP action set (behavior change: view-only → RP actions, basis owner 2026-10-24)", async () => {
     const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
     fireEvent.click(view.getByRole("button"));
-    const overlay = await waitFor(() => {
-      const found = document.querySelector(".fixed.inset-0");
-      expect(found).not.toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
+    // WAS (CA-4f): view-only — no edit / regenerate / delete control. NOW:
+    // the shell's action seam supplies the RP lightbox's three controls.
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).not.toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull();
+  });
+
+  it("regenerate calls the agent client with the picker's profile + model", async () => {
+    const regenerate = spyOn(client, "regenerateAgentAttachmentDescription").mockResolvedValue({ description: "Fresh." });
+    spies.push(regenerate);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="regenerate_description_title"]')!);
+    await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1));
+    const call = regenerate.mock.calls[0]!;
+    expect(call.slice(0, 4)).toEqual(["thread-1", "u1", "img1", { providerProfileId: "p1", model: "m1" }]);
+    expect(call[4]).toBeInstanceOf(AbortSignal);
+    await waitFor(() => expect(document.body.textContent).toContain("Fresh."));
+  });
+
+  it("edit and delete call the agent description/remove clients", async () => {
+    const update = spyOn(client, "updateAgentAttachmentDescription").mockResolvedValue({ ok: true });
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(update, remove);
+    // Two images: the pinned RP delete path short-circuits (closes, no API
+    // call) when the deleted image was the message's LAST attachment, so the
+    // client call is only reachable with a surviving sibling.
+    const second = { ...image, id: "img2", assetId: "asset-3", name: "b.png" };
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image, second] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="Add description"], [title="Edit description"]')).not.toBeNull());
+    // Edit: open the editor, type, save.
+    fireEvent.click(document.querySelector('[title="Add description"], [title="Edit description"]')!);
+    fireEvent.change(document.querySelector("textarea")!, { target: { value: "Hand-written." } });
+    fireEvent.click([...document.querySelectorAll("button")].find((b) => b.textContent === "Save")!);
+    await waitFor(() => expect(update).toHaveBeenCalledWith("thread-1", "u1", "img1", "Hand-written."));
+    // Delete: confirm through the destructive modal.
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    const confirm = await waitFor(() => {
+      const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
+      expect(found).toBeDefined();
       return found!;
     });
-    expect(overlay.querySelector("img")).not.toBeNull();
-    // The three chat-route controls stay hidden: the shell passes no
-    // messageId, so the lightbox's gate keeps them off (view-only, CA-4f).
+    fireEvent.click(confirm);
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+  });
+
+  it("the PENDING bubble's lightbox still has no controls", async () => {
+    const view = renderWithActions(
+      <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", content: "sending", attachments: [image] })} />,
+    );
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
     expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
     expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
     expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();

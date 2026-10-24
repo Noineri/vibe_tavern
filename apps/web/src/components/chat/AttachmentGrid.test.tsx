@@ -229,3 +229,44 @@ describe("sent file chips and media-only navigation (CA-1e)", () => {
     expect(regenerate).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── CA-4g2: the lightbox action seam ───────────────────────────────────────
+
+describe("lightbox actions seam (CA-4g2)", () => {
+  test("with imageActions the three controls call the given actions", async () => {
+    const actions = {
+      saveDescription: mock(async (_att: GridAttachment, _text: string) => {}),
+      regenerateDescription: mock(async (_att: GridAttachment, _signal: AbortSignal) => "Fresh text"),
+      remove: mock(async (_att: GridAttachment) => {}),
+      applyLocal: mock((_next: GridAttachment[]) => {}),
+    };
+    const second = { ...image, id: "att-image-2", assetId: "asset_image_2", name: "b.png" };
+    const view = render(<AttachmentGrid attachments={[image, second]} imageActions={actions} />);
+    fireEvent.click(view.getByAltText(image.name));
+    // Regenerate → the seam's call + the applied description overlay.
+    fireEvent.click(view.getByTitle("regenerate_description_title"));
+    await waitFor(() => expect(actions.regenerateDescription).toHaveBeenCalledTimes(1));
+    expect(actions.regenerateDescription.mock.calls[0]![0].id).toBe(image.id);
+    await waitFor(() => expect(document.body.textContent).toContain("Fresh text"));
+    // Edit → save through the seam (the regenerated description turned the
+    // add-hint into an edit button).
+    fireEvent.click(view.getByTitle("Edit description"));
+    fireEvent.change(view.getByPlaceholderText("describe_attachment_placeholder"), { target: { value: "A tower" } });
+    fireEvent.click(view.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(actions.saveDescription).toHaveBeenCalledWith(expect.objectContaining({ id: image.id }), "A tower"));
+    // Delete → confirm through the seam (a surviving sibling keeps the call).
+    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
+    await waitFor(() => expect(actions.remove).toHaveBeenCalledWith(expect.objectContaining({ id: image.id })));
+    expect(actions.applyLocal).toHaveBeenCalled();
+  });
+
+  test("without a messageId and without imageActions there are still no controls", () => {
+    const view = render(<AttachmentGrid attachments={[image]} />);
+    fireEvent.click(view.getByAltText(image.name));
+    expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
+  });
+});

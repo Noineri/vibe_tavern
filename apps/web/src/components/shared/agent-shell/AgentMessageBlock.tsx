@@ -12,6 +12,8 @@ import type { AgentMessageAction, AgentMessageMarkup } from "../../../lib/agent-
 import { AttachmentGrid } from "../../chat/AttachmentGrid.js";
 import { PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
 import { AgentFileAttachment } from "./agent-file-attachment.js";
+import { agentLightboxActions } from "./agent-lightbox-actions.js";
+import { useAgentAttachmentActions } from "./agent-attachment-actions-context.js";
 
 /**
  * One experience-copilot message bubble (ER-11c). Props-driven presentation:
@@ -80,6 +82,10 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // stay AFTER them.
   const [editing, setEditing] = useState(false);
   useEffect(() => { if (isBusy) setEditing(false); }, [isBusy]);
+  // CA-4g2: the lightbox's actions for PERSISTED user rows — the agent
+  // builder over the CA-4f context. The pending row renders view-only (the
+  // menu-less rule of every pending surface), so no actions there.
+  const attachmentCtx = useAgentAttachmentActions();
 
   if (message.role === "digest") {
     return <DigestCard message={message} coveredCount={coveredCount} />;
@@ -107,6 +113,9 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
       renderFile={message.id === PENDING_USER_MESSAGE_ID
         ? undefined
         : (att) => <AgentFileAttachment attachment={att} messageId={message.id} />}
+      imageActions={attachmentCtx !== null && message.id !== PENDING_USER_MESSAGE_ID
+        ? agentLightboxActions(attachmentCtx, message.id)
+        : undefined}
     />
   ) : undefined;
 

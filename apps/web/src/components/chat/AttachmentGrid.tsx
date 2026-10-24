@@ -14,6 +14,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
 import { toast } from "sonner";
+import { chatLightboxActions } from "./chat-lightbox-actions.js";
 
 /** Audio duration label ("0:07" / "1:23") for the voice bubble meta line. */
 function formatAudioDuration(ms: number): string {
@@ -77,11 +78,24 @@ function VoiceBubble({ att }: { att: Attachment }) {
   );
 }
 
+/** CA-4g2: the lightbox's three-action seam. The RP builder
+ *  (`chat-lightbox-actions.ts`) keeps its EXACT current calls; the agent
+ *  shell plugs in its own (`agent-lightbox-actions.ts`) — the same pattern
+ *  CA-2c used for files (`SentFileAttachment` + `ChatFileAttachment`). */
+export interface LightboxImageActions {
+  saveDescription(att: Attachment, text: string): Promise<void>;
+  regenerateDescription(att: Attachment, signal: AbortSignal): Promise<string>;
+  remove(att: Attachment): Promise<void>;
+  /** The canonical-data update (the RP: `useSnapshotStore.updateMessage`). */
+  applyLocal(next: Attachment[]): void;
+}
+
 export function AttachmentGrid({
   attachments,
   messageId,
   variantIndex,
   renderFile,
+  imageActions,
 }: {
   attachments?: Attachment[];
   messageId?: string;
@@ -98,6 +112,10 @@ export function AttachmentGrid({
    *  the chat mount / the plain chip. Absent → byte-identical to before (the
    *  RP mounts stay unchanged). */
   renderFile?: (attachment: Attachment) => ReactNode;
+  /** CA-4g2: overrides the lightbox's actions. Absent + a `messageId` → the
+   *  RP builder (`chatLightboxActions`); absent both → view-only lightbox
+   *  (no edit / regenerate / delete controls). RP callers pass nothing. */
+  imageActions?: LightboxImageActions;
 }) {
   const { t } = useT();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -234,7 +252,10 @@ export function AttachmentGrid({
         <Lightbox
           attachments={lightboxAttachments}
           messageAttachments={attachments}
-          messageId={messageId}
+          // CA-4g2: the actions seam — the RP builder when the caller passed
+          // a messageId and no override; an explicit override wins (the
+          // shell); neither → undefined → view-only lightbox.
+          actions={imageActions ?? (messageId !== undefined ? chatLightboxActions(messageId, attachments) : undefined)}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
         />
@@ -243,7 +264,7 @@ export function AttachmentGrid({
   );
 }
 
-function Lightbox({ attachments, messageAttachments, messageId, initialIndex, onClose }: { attachments: Attachment[]; messageAttachments: Attachment[]; messageId?: string; initialIndex: number; onClose: () => void }) {
+function Lightbox({ attachments, messageAttachments, actions, initialIndex, onClose }: { attachments: Attachment[]; messageAttachments: Attachment[]; actions?: LightboxImageActions; initialIndex: number; onClose: () => void }) {
   const { t } = useT();
   const [index, setIndex] = useState(initialIndex);
   const [editing, setEditing] = useState(false);
@@ -276,22 +297,20 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
   }, [currentDescription]);
 
   const persistDescription = useCallback((description: string) => {
-    if (!messageId || !att?.id) return;
+    if (!actions || !att?.id) return;
     // Update canonical message data so the change survives lightbox close/reopen
     // and reflects in the thumbnail caption. localDescription is just an
     // optimistic overlay for the current lightbox session.
-    const updateMessage = useSnapshotStore.getState().updateMessage;
     const nextAttachments = messageAttachments.map((a) => (a.id === att.id ? { ...a, description } : a));
-    updateMessage(messageId, { attachments: nextAttachments });
+    actions.applyLocal(nextAttachments);
     setLocalDescription((prev) => ({ ...prev, [index]: description }));
-  }, [messageId, att?.id, messageAttachments, index]);
+  }, [actions, att?.id, messageAttachments, index]);
 
   const saveDescription = useCallback(async () => {
-    if (!messageId || !att?.id) return;
+    if (!actions || !att?.id) return;
     setSaving(true);
     try {
-      const { updateAttachmentDescription } = await import("../../api/chat-api.js");
-      await updateAttachmentDescription("_", messageId, att.id, editText);
+      await actions.saveDescription(att, editText);
       persistDescription(editText);
       setEditing(false);
     } catch (err) {
@@ -299,18 +318,17 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
     } finally {
       setSaving(false);
     }
-  }, [messageId, att?.id, editText, persistDescription]);
+  }, [actions, att?.id, editText, persistDescription]);
 
   const regenerateDescription = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!messageId || !att?.id) return;
+    if (!actions || !att?.id) return;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     setRegenerating(true);
     try {
-      const { regenerateAttachmentDescription } = await import("../../api/chat-api.js");
-      const { description } = await regenerateAttachmentDescription("_", messageId, att.id, { signal: ac.signal });
+      const description = await actions.regenerateDescription(att, ac.signal);
       persistDescription(description);
     } catch (err) {
       if (!ac.signal.aborted) console.error("Failed to regenerate attachment description:", err);
@@ -318,7 +336,7 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
       setRegenerating(false);
       abortRef.current = null;
     }
-  }, [messageId, att?.id, persistDescription]);
+  }, [actions, att?.id, persistDescription]);
 
   const cancelRegenerate = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -326,14 +344,13 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
   }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (!messageId || !att?.id) return;
+    if (!actions || !att?.id) return;
     setConfirmDeleteOpen(false);
     // Optimistic: drop the attachment from canonical message data so the grid
     // re-renders without it at once. Each attachment owns a unique assetId, so
     // there's no cross-message ref to preserve.
     const remaining = messageAttachments.filter((a) => a.id !== att.id);
-    const updateMessage = useSnapshotStore.getState().updateMessage;
-    updateMessage(messageId, { attachments: remaining });
+    actions.applyLocal(remaining);
     // If we just removed the last one, close the lightbox (the grid hides itself).
     if (remaining.length === 0) { onClose(); return; }
     // Otherwise clamp the index if we deleted the tail item.
@@ -341,14 +358,13 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
     if (remainingMedia.length === 0) onClose();
     else if (index > remainingMedia.length - 1) setIndex(remainingMedia.length - 1);
     try {
-      const { deleteAttachment } = await import("../../api/chat-api.js");
-      await deleteAttachment("_", messageId, att.id);
+      await actions.remove(att);
       toast.success(t("attachment_deleted"));
     } catch (err) {
       console.error("Failed to delete attachment:", err);
       toast.error(t("attachment_delete_failed"));
     }
-  }, [messageId, att?.id, attachments, messageAttachments, index, onClose, t]);
+  }, [actions, att?.id, attachments, messageAttachments, index, onClose, t]);
 
   useKeyDown("Escape", onClose, { enabled: !!att && !editing });
 
@@ -361,7 +377,7 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
     >
       {/* Close button */}
       <div className="absolute right-4 top-4 z-10 flex gap-2">
-        {!editing && messageId && att.id && (
+        {!editing && actions !== undefined && att.id && (
           <>
             <button
               className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
@@ -447,7 +463,7 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
             {currentDescription}
           </div>
         )}
-        {!currentDescription && !editing && !regenerating && messageId && att.id && (
+        {!currentDescription && !editing && !regenerating && actions !== undefined && att.id && (
           <div className="w-full text-center text-[calc(var(--ui-fs)-2px)] leading-4 text-white/30">
             {t("no_attachment_description_hint")}
           </div>

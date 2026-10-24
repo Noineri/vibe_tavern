@@ -61,6 +61,39 @@ export async function setAgentAttachmentIncluded(
   return unwrapRpc(response);
 }
 
+/** PATCH `…/description` — write an image/video description as given (the
+ *  lightbox's edit action; CA-4g1 route). */
+export async function updateAgentAttachmentDescription(
+  threadId: string,
+  messageId: string,
+  attachmentId: string,
+  description: string,
+): Promise<{ ok: true }> {
+  const response = await client.api["experience-copilot"][":threadId"].messages[":messageId"].attachments[":attachmentId"].description.$patch({
+    param: { threadId, messageId, attachmentId },
+    json: { description },
+  });
+  return unwrapRpc(response);
+}
+
+/** POST `…/regenerate-description` — re-describe through the profile's vision
+ *  model (the lightbox's regenerate action; CA-4g1 route). The profile +
+ *  model ride the summarize ladder's optional overrides. */
+export async function regenerateAgentAttachmentDescription(
+  threadId: string,
+  messageId: string,
+  attachmentId: string,
+  options: AgentAttachmentSummaryOptions,
+  signal?: AbortSignal,
+): Promise<{ description: string }> {
+  const response = await client.api["experience-copilot"][":threadId"].messages[":messageId"].attachments[":attachmentId"]["regenerate-description"].$post({
+    param: { threadId, messageId, attachmentId },
+    json: options,
+    ...(signal !== undefined ? { init: { signal } } : {}),
+  });
+  return unwrapRpc(response);
+}
+
 /** DELETE `…/:attachmentId` — remove the row, then the server deletes the
  *  physical asset when no other row references it (SC-20 forks share ids). */
 export async function removeAgentAttachment(
