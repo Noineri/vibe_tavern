@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
+import { listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
@@ -77,7 +78,7 @@ const SortablePresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEd
       )}
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
       <CustomTooltip content={p.name}>
-        <span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")}>{p.name}</span>
+        <span className={cn(rowTitleCls, "truncate", isActive ? "text-accent-t" : "text-t2")}>{p.name}</span>
       </CustomTooltip>
       <button type="button"
         onClick={(e) => startEditing(p, e)}
@@ -189,7 +190,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
   return (
     <div className="flex flex-col flex-1 min-h-0 py-2.5">
       <div className="shrink-0 px-[13px]">
-        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
+        <div className={cn(listHeaderCls, "pt-1 pb-[5px]")}>
           {t("presets")}
         </div>
         <SearchInput
@@ -288,7 +289,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
               )}
             >
               <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
-              <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{activeDragPreset.name}</span>
+              <span className={cn(rowTitleCls, "truncate text-t1")}>{activeDragPreset.name}</span>
             </div>
           ) : null}
         </DragOverlay>

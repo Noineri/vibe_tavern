@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { cn } from "../../../lib/cn.js";
+import { listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
@@ -116,7 +117,8 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, startEditing
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
       <CustomTooltip content={p.name}>
         <span className={cn(
-          "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
+          rowTitleCls,
+          "truncate",
           isActive ? "text-accent-t" : "text-t2",
           p.disabled && "opacity-50",
         )}>{p.name}</span>
@@ -212,7 +214,8 @@ const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpand
         <span className={cn("shrink-0 text-t3 transition-transform duration-200 ease-out", isExpanded && "rotate-90")}><Icons.Caret direction="r" /></span>
         <CustomTooltip content={p.name}>
           <span className={cn(
-            "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
+            rowTitleCls,
+            "truncate",
             isActive ? "text-accent-t" : "text-t1",
             p.disabled && "opacity-50",
           )}>{p.name}</span>
@@ -631,7 +634,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
   return (
     <div className="flex flex-col flex-1 min-h-0 py-2.5">
       <div className="shrink-0 px-[13px]">
-        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
+        <div className={cn(listHeaderCls, "pt-1 pb-[5px]")}>
           {t("promptManager.regex.tabLabel")}
         </div>
         <SearchInput
@@ -751,7 +754,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
               )}
             >
               <span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
-              <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
+              <span className={cn(rowTitleCls, "truncate text-t1")}>
                 {activeDragItem.kind === "profile"
                   ? profiles.find((p) => p.id === activeDragItem.id)?.name ?? activeDragItem.id
                   : presets.find((p) => p.id === activeDragItem.id)?.name ?? activeDragItem.id}

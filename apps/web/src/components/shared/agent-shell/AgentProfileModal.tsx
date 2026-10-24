@@ -13,7 +13,7 @@ import { EmptyState } from "../empty-state.js";
 import { AutoTextarea } from "../auto-textarea.js";
 import { Icons } from "../icons.js";
 import { TextInput } from "../text-input.js";
-import { lblCls } from "../../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
@@ -459,7 +459,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
 				{t("copilot_profile_list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -496,7 +496,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 									<div className="flex min-w-0 items-center gap-1.5">
 										<span
 											data-testid={`copilot-profile-row-name-${p.id}`}
-											className={cn("whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}
+											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
 										>
 											{p.name}
 										</span>

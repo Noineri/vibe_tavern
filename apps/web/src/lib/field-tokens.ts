@@ -61,3 +61,25 @@ export const readonlyMod = "!cursor-not-allowed !opacity-60";
  *  row's own gap provides spacing opt out with a local `!mb-0`. */
 export const lblCls =
 	"mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
+
+/** Master-list row title (font audit step 10, diagnosis 7). Every
+ *  master-detail list renders its row title at this tier (`--ui-fs` − 2px,
+ *  medium, UI family) — the one row size the owner chose. Truncation vs
+ *  wrapping, colors (including the active/selected tint and the `★`
+ *  marker) and spacing stay at the call site, composed with `cn()`. */
+export const rowTitleCls =
+	"font-ui text-[calc(var(--ui-fs)-2px)] font-medium";
+
+/** Master-list row second line (font audit step 10). The description /
+ *  sub-label under a row title, one step below it (`--ui-fs` − 3px, UI
+ *  family, no weight of its own). Wrapping, color and spacing stay at the
+ *  call site, composed with `cn()`. */
+export const rowSecondCls =
+	"font-ui text-[calc(var(--ui-fs)-3px)]";
+
+/** Master-list section header (font audit step 10). The uppercase list
+ *  label above the rows (`--ui-fs` − 3px, medium, `tracking-[0.08em]`).
+ *  Spacing (including the `mb-1.5` that `lblCls` carries) stays at the call
+ *  site, composed with `cn()`. */
+export const listHeaderCls =
+	"font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3";

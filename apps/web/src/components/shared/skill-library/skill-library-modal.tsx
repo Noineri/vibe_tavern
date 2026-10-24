@@ -14,7 +14,7 @@ import { useT } from "../../../i18n/context.js";
 import type { TDynamic } from "../../../i18n/locale-helpers.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
-import { lblCls } from "../../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillLibraryAdapter, SkillLibraryLabels, SkillLibraryTestids } from "./skill-library-adapter.js";
 import { BLANK_SKILL_DRAFT, SkillEditor, type SkillDraft } from "./skill-editor.js";
@@ -477,7 +477,7 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 	// the list.
 	return (
 		<div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-			<div className={cn(lblCls, "shrink-0 px-4")}>
+			<div className={cn(listHeaderCls, "mb-1.5 shrink-0 px-4")}>
 				{t(labels.listLabel)}
 			</div>
 			{entries.length === 0 ? (
@@ -507,10 +507,10 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 									)}
 								>
 									<div className="min-w-0 flex-1">
-										<div className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}>
+										<div className={cn(rowTitleCls, "truncate", isSelected ? "text-accent-t" : "text-t2")}>
 											{skill.name}
 										</div>
-										<div className="mt-0.5 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{skill.description}</div>
+										<div className={cn(rowSecondCls, "mt-0.5 truncate text-t4")}>{skill.description}</div>
 									</div>
 									<MasterDetailMobileDrillDown onSelect={() => onSelect(skill.id)} />
 								</div>

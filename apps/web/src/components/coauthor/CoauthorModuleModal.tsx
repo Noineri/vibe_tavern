@@ -7,7 +7,7 @@ import { EmptyState } from "../shared/empty-state.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { Icons } from "../shared/icons.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -464,7 +464,7 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
 				{t("coauthor.module.list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -494,7 +494,7 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 									<div className="flex min-w-0 items-center gap-1.5">
 										<span
 											data-testid={`module-row-name-${m.id}`}
-											className={cn("whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}
+											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
 										>
 											{m.name}
 										</span>
@@ -506,7 +506,7 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 											</span>
 										</div>
 									)}
-									<div className="mt-0.5 line-clamp-2 text-[calc(var(--ui-fs)-3px)] leading-snug text-t4">{m.description}</div>
+									<div className={cn(rowSecondCls, "mt-0.5 line-clamp-2 leading-snug text-t4")}>{m.description}</div>
 									{isActive && (
 										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 											<Icons.Check className="h-3 w-3 shrink-0" />

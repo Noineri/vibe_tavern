@@ -5,7 +5,7 @@ import type { AutoSummaryConfig, ChatSummaryRecord } from "../../api/types.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
 import { MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -87,8 +87,8 @@ const SortableSummaryRow = memo(function SortableSummaryRow({
         <Toggle checked={s.includeInContext} onChange={() => onToggleInclude(s)} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{labelFor(s)}</div>
-        <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{sourceLabel(s)}</div>
+        <div className={cn(rowTitleCls, "truncate text-t1")}>{labelFor(s)}</div>
+        <div className={cn(rowSecondCls, "mt-0.5 text-t4")}>{sourceLabel(s)}</div>
       </div>
       <MasterDetailMobileDrillDown onSelect={() => onSelect(s)} />
       <button type="button"
@@ -638,8 +638,8 @@ export function useSummaryTab({
           <div className="flex cursor-grabbing items-center gap-2 border-l-2 border-l-accent bg-s3 px-3 min-h-[56px] shadow-lg">
             <span className="text-[calc(var(--ui-fs)+2px)] leading-none text-t4">≡</span>
             <div className="min-w-0 flex-1">
-              <div className="truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
-              <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
+              <div className={cn(rowTitleCls, "truncate text-t1")}>{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
+              <div className={cn(rowSecondCls, "mt-0.5 text-t4")}>{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
             </div>
           </div>
         ) : null}
@@ -650,7 +650,7 @@ export function useSummaryTab({
   /* ─── master pane content (archive label + list + new button) ─── */
   const masterContent = (
     <div className="flex flex-col min-h-0 h-full">
-      <div className="px-4 py-4 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
+      <div className={cn(listHeaderCls, "px-4 py-4")}>{t("summary_archive_label")}</div>
       {archiveList}
       <div className="border-t border-border p-3 mt-auto">
         <button type="button"

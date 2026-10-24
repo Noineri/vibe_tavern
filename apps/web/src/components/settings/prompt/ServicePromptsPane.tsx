@@ -17,7 +17,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
-import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
+import { lblCls, codeQuoteCls, listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { FIELD_LABEL_KEYS } from "./service-prompt-field-labels.js";
@@ -128,7 +128,7 @@ const SortableServiceRow = React.memo(
 				<CustomTooltip content={profile.name}>
 					<span
 						className={cn(
-							"min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium",
+							rowTitleCls, "min-w-0 flex-1 truncate",
 							isSelected ? "text-accent-t" : "text-t2",
 						)}
 					>
@@ -488,7 +488,7 @@ export function ServicePromptsPane({
 	const master = (
 		<div className="flex flex-1 flex-col min-h-0 py-2.5">
 			<div className="shrink-0 px-[13px]">
-				<div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pb-[5px] pt-1">
+				<div className={cn(listHeaderCls, "pb-[5px] pt-1")}>
 					{t("promptManager.servicePrompts.masterTitle")}
 				</div>
 			</div>
@@ -547,7 +547,7 @@ export function ServicePromptsPane({
 									<CustomTooltip content={p.name}>
 										<span
 											className={cn(
-												"min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium",
+												rowTitleCls, "min-w-0 flex-1 truncate",
 												isSelected ? "text-accent-t" : "text-t2",
 											)}
 										>
@@ -620,7 +620,7 @@ export function ServicePromptsPane({
 								<div className={cn("flex items-center gap-2 border-l-2 min-h-[48px] px-3", activeDragItem.id === selectedId ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2")}>
 									<span className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">≡</span>
 									<span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", activeDragItem.id === activeProfileId ? "bg-accent" : "bg-transparent")} />
-									<span className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{activeDragItem.name}</span>
+									<span className={cn(rowTitleCls, "truncate text-t1")}>{activeDragItem.name}</span>
 								</div>
 							) : null}
 						</DragOverlay>

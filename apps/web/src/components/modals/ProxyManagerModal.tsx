@@ -10,7 +10,7 @@ import { Icons } from "../shared/icons.js";
 import { AddButton } from "../shared/add-button.js";
 import { SAVED_DISPLAY_MS, SaveButton } from "../shared/SaveBar.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
 
 type ProxySaveState = "idle" | "saving" | "saved";
 
@@ -73,7 +73,7 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
   const { openDetail } = useMasterDetail();
   return (
     <div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-      <div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">{t("proxy_profiles_label")}</div>
+      <div className={cn(listHeaderCls, "mb-1.5 px-4")}>{t("proxy_profiles_label")}</div>
       <div className="flex-1 overflow-y-auto">
         {proxies.map((proxy) => {
           const selected = proxy.id === editingId;
@@ -85,8 +85,8 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
             >
               <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
               <div className="min-w-0 flex-1 py-2">
-                <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium">{proxy.name}</div>
-                <div className={cn("mt-0.5 truncate text-[calc(var(--ui-fs)-3px)]", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
+                <div className={cn(rowTitleCls, "truncate")}>{proxy.name}</div>
+                <div className={cn(rowSecondCls, "mt-0.5 truncate", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
               </div>
               <MasterDetailMobileDrillDown onSelect={() => onSelect(proxy)} className="py-3" />
             </div>
