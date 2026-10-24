@@ -3,14 +3,19 @@ import type { ProxyRecord } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useModalStore } from "../../stores/modal-store.js";
-import { MasterDetailModal, MasterDetailMobileDrillDown, useMasterDetail } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, useMasterDetail } from "../shared/MasterDetailModal.js";
+import { MasterList } from "../shared/master-list/master-list.js";
+import { SortableMasterListPhoneRow } from "../shared/master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../shared/master-list/master-list-overlay-row.js";
+import { arrayMove } from "@dnd-kit/sortable";
+import { reorderProxies } from "../../api/proxy-api.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { Icons } from "../shared/icons.js";
 import { AddButton } from "../shared/add-button.js";
 import { SAVED_DISPLAY_MS, SaveButton } from "../shared/SaveBar.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls } from "../../lib/field-tokens.js";
 
 type ProxySaveState = "idle" | "saving" | "saved";
 
@@ -62,41 +67,62 @@ interface ProxyManagerModalProps {
   onProvidersChanged: () => Promise<void>;
 }
 
-function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, overlay, phone drill-down row). This list supplies data + slots:
+// the connection dot, the name + default-badge-or-URL second line, and the
+// arrayMove + reorderProxies persist (the route stores the order; the
+// refreshed parent list replaces the optimistic one on success, rollback
+// otherwise — owned by the primitive's hook).
+function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd, onRefresh }: {
   proxies: ProxyRecord[];
   editingId: string | null;
   defaultProxyId: string | null;
   onSelect: (proxy: ProxyRecord) => void;
   onAdd: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   const { t } = useT();
   const { openDetail } = useMasterDetail();
+  const dot = (selected: boolean) => (
+    <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
+  );
   return (
-    <div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-      <div className={cn(listHeaderCls, "mb-1.5 px-4")}>{t("proxy_profiles_label")}</div>
-      <div className="flex-1 overflow-y-auto">
-        {proxies.map((proxy) => {
-          const selected = proxy.id === editingId;
-          return (
-            <div
-              key={proxy.id}
-              className={cn("flex min-h-[56px] cursor-pointer items-center gap-3 border-l-[3px] pl-4 pr-2 touch-manipulation transition-colors", selected ? "border-l-accent bg-accent-dim text-accent-t" : "border-l-transparent text-t2 hover:bg-s2")}
-              onPointerDown={() => onSelect(proxy)}
-            >
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
-              <div className="min-w-0 flex-1 py-2">
-                <div className={cn(rowTitleCls, "truncate")}>{proxy.name}</div>
-                <div className={cn(rowSecondCls, "mt-0.5 truncate", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
-              </div>
-              <MasterDetailMobileDrillDown onSelect={() => onSelect(proxy)} className="py-3" />
-            </div>
-          );
-        })}
-      </div>
-      <AddButton className="mx-3 mt-3 h-auto justify-center py-2 font-medium" onClick={() => { onAdd(); openDetail(); }}>
-        {t("proxy_new")}
-      </AddButton>
-    </div>
+    <MasterList<ProxyRecord>
+      items={proxies}
+      getId={(proxy) => proxy.id}
+      onReorderItems={(activeId, overId, currentItems) => {
+        const fromIdx = currentItems.findIndex((proxy) => proxy.id === activeId);
+        const toIdx = currentItems.findIndex((proxy) => proxy.id === overId);
+        if (fromIdx === -1 || toIdx === -1) {
+          return { optimisticItems: currentItems, persist: () => {} };
+        }
+        const reordered = arrayMove(currentItems, fromIdx, toIdx);
+        return {
+          optimisticItems: reordered,
+          persist: () => reorderProxies(reordered.map((proxy, i) => ({ id: proxy.id, sortOrder: i }))).then(() => onRefresh()),
+        };
+      }}
+      header={<div className={cn(listHeaderCls, "mb-1.5 px-4")}>{t("proxy_profiles_label")}</div>}
+      renderRow={(proxy) => (
+        <SortableMasterListPhoneRow
+          sortableId={proxy.id}
+          rowTestId={`proxy-row-${proxy.id}`}
+          selected={proxy.id === editingId}
+          status={dot(proxy.id === editingId)}
+          title={proxy.name}
+          secondLine={proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}
+          onSelect={() => onSelect(proxy)}
+        />
+      )}
+      renderOverlayRow={(proxy) => (
+        <MasterListDragOverlayRow status={dot(proxy.id === editingId)} title={proxy.name} />
+      )}
+      footer={
+        <AddButton className="mx-3 mt-3 h-auto justify-center py-2 font-medium" onClick={() => { onAdd(); openDetail(); }}>
+          {t("proxy_new")}
+        </AddButton>
+      }
+    />
   );
 }
 
@@ -226,7 +252,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName="p-5"
         mobileDetailClassName="p-4"
-        masterContent={() => <ProxyList proxies={proxies} editingId={draft?.id ?? null} defaultProxyId={defaultProxyId} onSelect={selectProxy} onAdd={createProxy} />}
+        masterContent={() => <ProxyList proxies={proxies} editingId={draft?.id ?? null} defaultProxyId={defaultProxyId} onSelect={selectProxy} onAdd={createProxy} onRefresh={onRefresh} />}
         detailContent={draft ? (
           <div className="space-y-4">
             <div>
