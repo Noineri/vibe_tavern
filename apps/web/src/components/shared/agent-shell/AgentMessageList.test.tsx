@@ -576,7 +576,7 @@ describe("ExperienceCopilotMessageList", () => {
     expect(queryByText("agent_subtitle")).toBeNull();
   });
 
-  it("places a compaction digest card immediately before its anchor message (CM-9)", () => {
+  it("renders a digest at its chronological place — after the last pre-compaction row (AP-33)", () => {
     const { container } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -593,15 +593,17 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    // The rendered order of roles (user/assistant/digest) must be:
-    // user → assistant → DIGEST → user → assistant (digest moved before its anchor u2).
+    // AP-33: the digest stays where the backend appended it (the compaction
+    // moment) — after every row that existed when it ran, NOT moved to its
+    // anchor. The rendered order of roles (user/assistant/digest) must be:
+    // user → assistant → user → assistant → DIGEST.
     const roles = Array.from(container.querySelectorAll("[data-role]"));
     expect(roles.map((el) => el.getAttribute("data-role"))).toEqual([
       "user",
       "assistant",
-      "digest",
       "user",
       "assistant",
+      "digest",
     ]);
   });
 });
@@ -1308,6 +1310,38 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     expect(captions[1]!.nextElementSibling!.textContent).toContain("third reply");
   });
 
+  it("a digest between two rows of one turn never splits it (AP-33)", () => {
+    // A compaction can run mid-turn (an ask-answer continuation starts a
+    // new request without a user row), leaving the digest BETWEEN two
+    // assistant rows of the SAME turn. The caption rule splits turns at
+    // user rows only — the digest is an inert member, so the turn keeps
+    // ONE caption above its first text, carrying BOTH rows' reasoning.
+    const { getAllByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({ id: "a1", role: "assistant", content: "first half", reasoning: "thought one" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u1" }),
+          message({ id: "a2", role: "assistant", content: "second half", reasoning: "thought two" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // One turn (no user row between a1 and a2) → ONE caption, above a1.
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(1);
+    expect(captions[0]!.compareDocumentPosition(getByText("first half")) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    // Expanding the caption's reasoning toggle folds BOTH rows' parts into
+    // the one block — nothing opened or closed the turn at the digest.
+    fireEvent.click(captions[0]!.querySelector("button")!);
+    expect(captions[0]!.textContent).toContain("thought one");
+    expect(captions[0]!.textContent).toContain("thought two");
+  });
+
   it("a tool-first turn shows the caption above its tool accordion, not between accordion and text", () => {
     // WAS (AP-4): the caption sat above the turn's first visible text, i.e.
     // BELOW the turn's tool accordion — it jumped at settle (the live
@@ -1917,6 +1951,43 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
     expect(getAllByTestId("copilot-turn-copy")).toHaveLength(2);
     expect(queryByTestId("copilot-turn-regenerate")).not.toBeNull();
   });
+
+  it("appended digest (real wire shape): same folded set — kept tail deletable, folded prefix not (AP-33)", () => {
+    // The backend appends the digest at the END (the compaction moment),
+    // after the whole kept tail — the digest row above sits mid-list only
+    // because that fixture predates AP-33. Both shapes must fold the SAME
+    // rows: the boundary is the digest's ANCHOR (u2 = first kept message),
+    // never the digest's own later slot.
+    const turnRow = turnRowCallbacks();
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "u2", role: "user", content: "new question" }),
+          message({ id: "a2", role: "assistant", content: "new answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    // Deletes: u2 + a2 only (the kept tail between the anchor u2 and the
+    // separator d1); the folded u1/a1 keep copy but no delete.
+    const deletes = getAllByTestId("copilot-turn-delete");
+    expect(deletes).toHaveLength(2);
+    fireEvent.click(deletes[0]!);
+    fireEvent.click(deletes[1]!);
+    expect(turnRow.onRequestDelete.mock.calls).toEqual([
+      ["u2", true],
+      ["a2", false],
+    ]);
+    expect(getAllByTestId("copilot-turn-copy")).toHaveLength(2);
+  });
 });
 
 // ─── AP-12: inline edit of the last own message ────────────────────────────
@@ -2058,6 +2129,30 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
     expect(lastBubble.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     fireEvent.click(getByTestId("copilot-error-card-retry") as HTMLButtonElement);
     expect(onRetryTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a trailing digest never masks the unanswered user row (AP-33)", () => {
+    // A compaction that died before answering leaves the digest APPENDED
+    // after the unanswered user row (its new chronological slot). The
+    // quiet derivation reads the last FLOW row — the separator must not
+    // suppress the unanswered card (`copilot_turn_error_unanswered_title`).
+    const onRetryTurn = mock(() => {});
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "stuck question" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u1" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    const card = getByTestId("copilot-error-card");
+    expect(card.getAttribute("data-variant")).toBe("unanswered");
   });
 
   it("live failure wins over the quiet derivation (the retry's failure replaces the content)", () => {
@@ -2606,6 +2701,32 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
     );
 
     // a1 sits at/before the digest anchor (folded); a2 stays editable.
+    expect(getAllByTestId("copilot-assistant-edit")).toHaveLength(1);
+  });
+
+  it("appended digest (real wire shape): kept tail editable, folded prefix not (AP-33)", () => {
+    // Same folded set with the digest appended at the END (where the
+    // backend writes it): a2 (between the anchor u2 and the separator)
+    // stays editable, a1 (folded) does not.
+    const stubs = editStubs(true);
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "u2", role: "user", content: "new question" }),
+          message({ id: "a2", role: "assistant", content: "new answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
     expect(getAllByTestId("copilot-assistant-edit")).toHaveLength(1);
   });
 

@@ -70,7 +70,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: cb,
     });
@@ -84,7 +84,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a1", role: "assistant" }),
       visibleIndex: 1,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: cb,
     });
@@ -98,7 +98,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a1", role: "assistant" }),
       visibleIndex: 1,
       lastUserVisibleIndex: 3,
-      lastDigestVisibleIndex: 2,
+      lastDigestAnchorVisibleIndex: 2,
       isSending: false,
       callbacks: cb,
     });
@@ -112,7 +112,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: 4,
+      lastDigestAnchorVisibleIndex: 4,
       isSending: false,
       callbacks: cb,
     });
@@ -126,7 +126,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "u2", role: "user", content: "plan it" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: cb,
     });
@@ -142,7 +142,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "u1", role: "user", content: "old" }),
       visibleIndex: 0,
       lastUserVisibleIndex: 3,
-      lastDigestVisibleIndex: 2,
+      lastDigestAnchorVisibleIndex: 2,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -155,7 +155,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: true,
       hostActions: [hostAction("host-action")],
       callbacks: callbacks(),
@@ -164,7 +164,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "u2", role: "user" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: true,
       callbacks: callbacks(),
     });
@@ -180,7 +180,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       hostActions: host,
       callbacks: callbacks(),
@@ -189,7 +189,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "u2", role: "user" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       hostActions: host,
       callbacks: callbacks(),
@@ -205,7 +205,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant", content: "turn text" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: cb,
     });
@@ -223,7 +223,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant", content: "turn text" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: cb,
     });
@@ -237,7 +237,7 @@ describe("buildAgentTurnRow — eligibility matrix", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -258,7 +258,7 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
       message: message({ id: "u2", role: "user", content: "plan it" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -272,7 +272,7 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
       message: message({ id: "u1", role: "user", content: "old" }),
       visibleIndex: 0,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -286,7 +286,7 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
       message: message({ id: "u2", role: "user", content: "new" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: 3,
+      lastDigestAnchorVisibleIndex: 3,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -300,7 +300,7 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
       message: message({ id: "u2", role: "user", content: "plan it" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: true,
       callbacks: callbacks(),
     });
@@ -314,7 +314,7 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
       message: message({ id: "a2", role: "assistant" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -337,7 +337,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       message: message({ id: "a2", role: "assistant", content: "second answer" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -351,7 +351,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       message: message({ id: "a1", role: "assistant", content: "first answer" }),
       visibleIndex: 1,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -369,7 +369,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       }),
       visibleIndex: 1,
       lastUserVisibleIndex: 0,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -388,7 +388,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       }),
       visibleIndex: 1,
       lastUserVisibleIndex: 0,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -401,7 +401,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       message: message({ id: "a1", role: "assistant", content: "old answer" }),
       visibleIndex: 1,
       lastUserVisibleIndex: 3,
-      lastDigestVisibleIndex: 2,
+      lastDigestAnchorVisibleIndex: 2,
       isSending: false,
       callbacks: callbacks(),
     });
@@ -415,7 +415,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       message: message({ id: "a2", role: "assistant", content: "second answer" }),
       visibleIndex: 3,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: true,
       callbacks: callbacks(),
     });
@@ -429,7 +429,7 @@ describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
       message: message({ id: "u2", role: "user", content: "plan it" }),
       visibleIndex: 2,
       lastUserVisibleIndex: 2,
-      lastDigestVisibleIndex: null,
+      lastDigestAnchorVisibleIndex: null,
       isSending: false,
       callbacks: callbacks(),
     });

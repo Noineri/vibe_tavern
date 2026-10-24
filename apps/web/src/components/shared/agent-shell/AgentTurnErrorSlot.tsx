@@ -17,8 +17,9 @@ export interface AgentTurnErrorSlotProps {
   /** The thread's live turn failure (null = no live failure this thread). */
   turnFailure: AgentTurnFailure | null;
   /** The digest-ordered flow the list renders — the quiet derivation reads
-   *  its LAST entry (a trailing digest anchors before its message, so the
-   *  visible end is what counts, not the raw wire end). */
+   *  its last FLOW row, skipping trailing digest rows (AP-33 keeps a digest
+   *  at its chronological slot, so a compaction that died before answering
+   *  leaves the separator after the unanswered user row — never masked). */
   visibleMessages: readonly OrderedCopilotMessage[];
   /** True while a turn streams (its optimistic user row is pending, not
    *  unanswered — fresh threads stream their first turn, so this also keeps
@@ -32,9 +33,16 @@ export function AgentTurnErrorSlot({ turnFailure, visibleMessages, isSending, on
   // The quiet after-reload card — the live failure state is gone (a reload
   // drops it), but the thread still waits. Content order: the loud card
   // wins when both hold (a retry's failure replaces the quiet content).
-  const lastVisibleRole = visibleMessages.length > 0
-    ? visibleMessages[visibleMessages.length - 1]!.message.role
-    : null;
+  // AP-33: a digest row can sit at the visible end (it stays where the
+  // compaction ran) — the unanswered question reads the last FLOW row, so a
+  // trailing separator never masks it.
+  let lastVisibleRole: string | null = null;
+  for (let i = visibleMessages.length - 1; i >= 0; i--) {
+    const role = visibleMessages[i]!.message.role;
+    if (role === "digest") continue;
+    lastVisibleRole = role;
+    break;
+  }
   const showUnansweredCard = lastVisibleRole === "user" && !isSending;
   if (onRetryTurn === undefined || (turnFailure === null && !showUnansweredCard)) return null;
   return <AgentTurnErrorCard failure={turnFailure} onRetry={onRetryTurn} />;

@@ -11,6 +11,7 @@ import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
+import { agentFlowBoundaries } from "./agent-flow-boundaries.js";
 import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
@@ -363,26 +364,22 @@ export function AgentMessageList({
   const pinnedRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  // CM-9: digest messages are APPENDED at the end by the backend (anchor in
-  // `toolCallId`), so reorder each digest to sit immediately before its anchor
-  // message and derive its covered-count caption. Tool-role rows are not part
-  // of this flow ordering — they render inline via `anchorItems`/`trailingItems`
-  // (TF-5).
+  // CM-9 / AP-33: digest messages are APPENDED at the end by the backend
+  // (anchor in `toolCallId`) and each renders at its own chronological slot —
+  // where the compaction ran — with its covered-count caption derived from the
+  // anchors. Tool-role rows are not part of this flow ordering — they render
+  // inline via `anchorItems`/`trailingItems` (TF-5).
   const visibleMessages = orderMessagesWithDigests(messages);
-  // AP-11: the visible-flow boundaries the turn rows derive from — the last
-  // user row's slot (regenerate = past it; -1 when the thread has no user
-  // row, i.e. the whole feed is one turn) and the last digest card's slot
-  // (delete hides at/before it; null = no digest). Indexes run over
-  // `visibleMessages` (digest-ordered), the same order the rows render in.
-  const { lastUserVisibleIndex, lastDigestVisibleIndex } = useMemo(() => {
-    let userIdx = -1;
-    let digestIdx: number | null = null;
-    visibleMessages.forEach((entry, index) => {
-      if (entry.message.role === "user") userIdx = index;
-      else if (entry.message.role === "digest") digestIdx = index;
-    });
-    return { lastUserVisibleIndex: userIdx, lastDigestVisibleIndex: digestIdx };
-  }, [visibleMessages]);
+  // AP-11 / AP-33: the visible-flow boundaries the turn rows derive from
+  // (extracted under the file-size ratchet; see `agent-flow-boundaries.ts`):
+  // the last user row's slot and the last digest's ANCHOR slot — delete/edit
+  // hide strictly before the anchor, so the kept tail between the anchor and
+  // the separator stays actionable exactly as before. Indexes run over
+  // `visibleMessages`, the same order the rows render in.
+  const { lastUserVisibleIndex, lastDigestAnchorVisibleIndex } = useMemo(
+    () => agentFlowBoundaries(visibleMessages),
+    [visibleMessages],
+  );
   // AP-29 follow-up 2: the replaced turn's cut — every ASSISTANT row after
   // the last user row (the exact span the server's regenerate mode deletes:
   // the last user row stays as the rerun's input, digest rows are the floor
@@ -567,7 +564,7 @@ export function AgentMessageList({
                 message: entry.message,
                 visibleIndex,
                 lastUserVisibleIndex,
-                lastDigestVisibleIndex,
+                lastDigestAnchorVisibleIndex,
                 isSending,
                 hostActions: messageActions,
                 callbacks: turnRow,

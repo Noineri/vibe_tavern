@@ -9,14 +9,17 @@
  *    meter renders, and the 80% urgency flag that drives the compact button's
  *    glow. Both mirror the backend's own threshold exactly (the auto-compact
  *    gate uses `totalTokens >= 0.8 * budgetTokens`).
- *  - `orderMessagesWithDigests`: the CM-9 digest-card placement. The backend
- *    APPENDS a digest message at the END of the list and stores the id of the
- *    FIRST KEPT message in the digest's `toolCallId` column (the boundary
- *    anchor). The UI keeps rendering the full history, so a digest card must be
- *    moved to sit immediately BEFORE its anchor message — not left at end of
- *    list. This function does that reordering and, for each digest, derives the
- *    "covers N messages" caption count (flow messages between this digest's
- *    anchor and the previous digest's anchor).
+ *  - `orderMessagesWithDigests`: the digest placement + covered-count
+ *    caption (CM-9, re-ruled by AP-33). The backend APPENDS a digest message
+ *    at the END of the list — where the compaction ran — and stores the id of
+ *    the FIRST KEPT message in the digest's `toolCallId` column (the boundary
+ *    anchor). The UI keeps rendering the full history; each digest stays at
+ *    its own chronological slot, after the rows that existed when the
+ *    compaction ran (owner ruling: the separator sits where the compaction
+ *    HAPPENED, not at the boundary it folded). This function keeps tool rows
+ *    out of the rendered flow and, for each digest, derives the "covers N
+ *    messages" caption count (flow messages between this digest's anchor and
+ *    the previous digest's anchor — anchors only, never the digest's slot).
  */
 
 import type {
@@ -83,18 +86,20 @@ export interface OrderedCopilotMessage {
 }
 
 /**
- * Order messages for rendering, moving each compaction digest to sit immediately
- * before its anchor message.
+ * Order messages for rendering: the user/assistant flow in list order with
+ * each compaction digest kept at its own chronological slot (AP-33 — where
+ * the compaction ran; never moved to its anchor).
  *
- * The backend appends digests at the END of the flat message list (append-only
- * store) and records the FIRST KEPT message's id in the digest's `toolCallId`
- * column. Tool-role messages are NOT rendered by the list (their activity is
- * surfaced through the turn store), so they are excluded from both the flow and
- * the covered count — "covers N messages" counts the user/assistant bubbles the
- * card replaces.
- *
- * Dangling anchors (anchor id not found) degrade to end-of-list placement —
- * never a wrong-side split (mirrors the backend's no-drop degradation).
+ * The backend appends digests at the END of the flat message list
+ * (append-only store) and records the FIRST KEPT message's id in the digest's
+ * `toolCallId` column. Tool-role messages are NOT rendered by the list (their
+ * activity is surfaced through the turn store), so they are excluded from
+ * both the flow and the covered count — "covers N messages" counts the
+ * user/assistant bubbles the card replaces. The count is derived from the
+ * anchors alone: a digest covers the flow messages between its anchor and
+ * the previous digest's anchor; a dangling anchor (id not found) degrades to
+ * the flow's end, so its count still covers the whole remaining prefix —
+ * never a wrong-side split (mirrors the backend's degradation).
  */
 export function orderMessagesWithDigests(
   messages: readonly ExperienceCopilotMessageWire[],
@@ -109,32 +114,29 @@ export function orderMessagesWithDigests(
   const flowIndex = new Map<string, number>();
   flow.forEach((m, i) => flowIndex.set(m.id, i));
 
-  // Resolve each digest's anchor position in the flow (end when dangling), then
-  // stable-sort by ascending anchor so earlier boundaries come first.
+  // Covered-count derivation (AP-33: UNCHANGED): resolve each digest's anchor
+  // position in the flow (end when dangling), then stable-sort by ascending
+  // anchor so "the previous digest" means the nearest smaller anchor. The
+  // count never reads the digest's own slot — only the anchors.
   const positioned = digests
     .map((digest) => ({
       digest,
       anchorIdx: digest.toolCallId != null ? (flowIndex.get(digest.toolCallId) ?? flow.length) : flow.length,
     }))
     .sort((a, b) => a.anchorIdx - b.anchorIdx);
+  const coveredByDigestId = new Map<string, number>();
+  positioned.forEach((entry, i) => {
+    const prevAnchor = i === 0 ? 0 : positioned[i - 1]!.anchorIdx;
+    coveredByDigestId.set(entry.digest.id, Math.max(0, entry.anchorIdx - prevAnchor));
+  });
 
-  const result: OrderedCopilotMessage[] = [];
-  let d = 0;
-  // Iterate flow positions 0..flow.length inclusive; at position i emit any
-  // digests anchored at i, then the flow message at i (when i < flow.length).
-  for (let i = 0; i <= flow.length; i++) {
-    while (d < positioned.length && positioned[d].anchorIdx === i) {
-      const prevAnchor = d === 0 ? 0 : positioned[d - 1].anchorIdx;
-      result.push({
-        message: positioned[d].digest,
-        coveredCount: Math.max(0, i - prevAnchor),
-      });
-      d++;
-    }
-    if (i < flow.length) {
-      result.push({ message: flow[i], coveredCount: null });
-    }
-  }
-
-  return result;
+  // AP-33: NO reorder — each digest renders at its own chronological slot
+  // (the compaction moment), between the rows it was appended after. Only
+  // tool rows drop out of the rendered flow.
+  return messages
+    .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "digest")
+    .map((message) => ({
+      message,
+      coveredCount: message.role === "digest" ? (coveredByDigestId.get(message.id) ?? null) : null,
+    }));
 }

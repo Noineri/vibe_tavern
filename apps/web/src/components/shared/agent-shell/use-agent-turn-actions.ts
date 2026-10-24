@@ -211,12 +211,15 @@ export interface AgentTurnRowCallbacks {
  *  Indexes run over the list's VISIBLE (digest-ordered) flow: `visibleIndex`
  *  is the message's own slot, `lastUserVisibleIndex` the last user row's
  *  slot (-1 when the thread has no user row — the whole feed is one turn),
- *  `lastDigestVisibleIndex` the last digest card's slot (null = no digest). */
+ *  `lastDigestAnchorVisibleIndex` the last digest's ANCHOR slot — the first
+ *  kept message (AP-33: delete/edit hide strictly BEFORE it, whatever sits
+ *  at the digest's own later slot; the visible end when the anchor dangles;
+ *  null = no digest). */
 export interface AgentTurnRowInput {
   message: ExperienceCopilotMessageWire;
   visibleIndex: number;
   lastUserVisibleIndex: number;
-  lastDigestVisibleIndex: number | null;
+  lastDigestAnchorVisibleIndex: number | null;
   isSending: boolean;
   hostActions?: AgentMessageAction[];
   callbacks: AgentTurnRowCallbacks;
@@ -255,8 +258,9 @@ export interface AgentTurnRowResult {
  * covered — the streaming early return covers the busy gate). The block
  * renders its opener there; folded rows and tool-call carriers report
  * nothing (copy still rides the row — reading never gates on editing).
- * Digest-covered rows (at/before the digest anchor — the 409 floor is
- * server-side, the UI hides proactively): delete hidden, copy kept. While
+ * Digest-covered rows (strictly before the last digest's anchor — the 409
+ * floor is server-side, the UI hides proactively): delete hidden, copy
+ * kept. While
  * streaming no rows render at all, either role (host rows ride the same
  * gate — the RP row hides its actions while generating). Host actions pass
  * through on assistant rows only (SC-16, unchanged); regenerate/delete need
@@ -264,9 +268,14 @@ export interface AgentTurnRowResult {
  * the ids — the text arg is ignored).
  */
 export function buildAgentTurnRow(input: AgentTurnRowInput): AgentTurnRowResult {
-  const { message, visibleIndex, lastUserVisibleIndex, lastDigestVisibleIndex, isSending, hostActions, callbacks } = input;
+  const { message, visibleIndex, lastUserVisibleIndex, lastDigestAnchorVisibleIndex, isSending, hostActions, callbacks } = input;
   if (isSending) return {};
-  const covered = lastDigestVisibleIndex !== null && visibleIndex <= lastDigestVisibleIndex;
+  // AP-33: the folded boundary is the last digest's ANCHOR (the first kept
+  // message), never the digest's own slot — the separator renders at the
+  // compaction moment, later than the anchor, and the kept tail between the
+  // two stays actionable (the same rows as when the digest sat at its
+  // anchor: covered = strictly before the anchor either way).
+  const covered = lastDigestAnchorVisibleIndex !== null && visibleIndex < lastDigestAnchorVisibleIndex;
   if (message.role === "user") {
     if (covered) return {};
     return {
