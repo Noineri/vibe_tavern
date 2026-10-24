@@ -68,6 +68,17 @@ export interface ExperienceCopilotRuntimeApi {
 	experienceCopilotClearAttachmentSummary: (threadId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
 	experienceCopilotSetAttachmentIncluded: (threadId: string, messageId: string, attachmentId: string, included: boolean) => Promise<{ ok: true }>;
 	experienceCopilotDeleteAttachment: (threadId: string, messageId: string, attachmentId: string) => Promise<{ ok: true }>;
+	/** CA-4g1: write an image/video description as given (the lightbox's
+	 *  edit action). Message-in-thread checked; a missing attachment is the
+	 *  shared not-found. Response `{ ok: true }`. */
+	experienceCopilotUpdateAttachmentDescription: (threadId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: true }>;
+	/** CA-4g1: re-describe one image/video attachment through the profile's
+	 *  vision model (the lightbox's regenerate action). The profile + model
+	 *  come from the summarize ladder (body → thread last-used → profile
+	 *  default); no vision model configured is a validation error. Unlike
+	 *  the chat twin, the request's abort signal reaches the describe call.
+	 *  Response `{ description }` — the trimmed, persisted text. */
+	experienceCopilotRegenerateAttachmentDescription: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<{ description: string }>;
 	/** CA-4e1: the shell's profile-level image-route read behind `GET
 	 *  /api/experience-copilot/image-route?providerProfileId=…&model=…`. The
 	 *  shell has no chat to resolve — it sends the picker's current

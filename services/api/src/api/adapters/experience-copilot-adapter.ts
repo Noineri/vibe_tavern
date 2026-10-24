@@ -9,7 +9,7 @@ import {
   toChatSettingsWire,
 } from "./experience-copilot-wire-mappers.js";
 import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
-import { createAgentAttachmentActions, type AttachmentAssetCleanup } from "./experience-copilot-attachment-actions.js";
+import { createAgentAttachmentActions, type AttachmentAssetCleanup, type AttachmentDescribeExecutor } from "./experience-copilot-attachment-actions.js";
 import type { AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { notFound } from "../../shared/errors.js";
 import { resolveProfileImageRoute } from "./chat-image-route.js";
@@ -129,9 +129,20 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     private readonly attachmentAssetLoader?: AttachmentAssetLoader,
     private readonly attachmentAssetCleanup?: AttachmentAssetCleanup,
     attachmentSummaryExecutor?: AttachmentSummaryExecutor,
+    /** CA-4g1 test seam — the describe call the attachment actions' regenerate
+     *  routes through (production runs vision-gate's real `describeAttachments`). */
+    private readonly attachmentDescribeExecutor?: AttachmentDescribeExecutor,
   ) {
     this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
-    this.attachmentActions = createAgentAttachmentActions({ store: stores.experienceCopilot, providers: providerProfileService, assetLoader: attachmentAssetLoader, cleanup: attachmentAssetCleanup, execute: attachmentSummaryExecutor });
+    this.attachmentActions = createAgentAttachmentActions({
+      db: stores.db,
+      store: stores.experienceCopilot,
+      providers: providerProfileService,
+      assetLoader: attachmentAssetLoader,
+      cleanup: attachmentAssetCleanup,
+      execute: attachmentSummaryExecutor,
+      ...(attachmentDescribeExecutor !== undefined ? { describe: attachmentDescribeExecutor } : {}),
+    });
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
@@ -753,6 +764,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   experienceCopilotDeleteAttachment: ExperienceCopilotRuntimeApi['experienceCopilotDeleteAttachment'] =
     (...args) => this.attachmentActions.deleteAttachment(...args);
+
+  /** CA-4g1: the lightbox's image-description pair — thin delegates over the
+   *  shared attachment-actions module (the ladder + the chat twin's rules). */
+  experienceCopilotUpdateAttachmentDescription: ExperienceCopilotRuntimeApi['experienceCopilotUpdateAttachmentDescription'] =
+    (...args) => this.attachmentActions.updateDescription(...args);
+
+  experienceCopilotRegenerateAttachmentDescription: ExperienceCopilotRuntimeApi['experienceCopilotRegenerateAttachmentDescription'] =
+    (...args) => this.attachmentActions.regenerateDescription(...args);
 
   /** CA-4e1: thin delegate — the profile lookup + the ONE image-route rule
    *  live in adapters/chat-image-route.ts (`resolveProfileImageRoute`). */

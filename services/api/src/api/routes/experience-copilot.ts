@@ -264,8 +264,23 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json") ?? {}, c.req.raw.signal,
       )),
     )
-    .post("/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) =>
-      c.json(await runtime.experienceCopilotClearAttachmentSummary(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) =>
+        c.json(await runtime.experienceCopilotClearAttachmentSummary(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/description",
+      zValidator("json", z.object({ description: z.string() })),
+      async (c) => c.json(await runtime.experienceCopilotUpdateAttachmentDescription(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json").description,
+      )),
+    )
+    .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/regenerate-description",
+      zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() }).optional()),
+      async (c) => c.json(await runtime.experienceCopilotRegenerateAttachmentDescription(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json") ?? {}, c.req.raw.signal,
+      )),
+    )
     .patch(
       "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/include-in-prompt",
       zValidator("json", z.object({ includeInPrompt: z.boolean() })),

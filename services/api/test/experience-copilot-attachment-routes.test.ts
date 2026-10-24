@@ -27,8 +27,9 @@ async function setup(cleanupEnabled = true) {
   const assets = new AssetService(join(root, 'assets'), stores.content);
   const cleanup = mock(async (id: string) => assets.cleanup(id));
   const execute = mock(async (_input: ProviderExecutionInput) => ({ text: '  Short summary.\n' }));
+  const describe = mock(async (attachments: Attachment[]) => new Map(attachments.map((att) => [att.id, '  Fresh description.  '])));
   const adapter = new ExperienceCopilotAdapter(stores, providers, undefined, undefined, undefined,
-    (id) => assets.loadBuffer(id), cleanupEnabled ? cleanup : undefined, execute);
+    (id) => assets.loadBuffer(id), cleanupEnabled ? cleanup : undefined, execute, describe);
   const app = await createApp({ runtime: { experienceCopilot: adapter } as RuntimeApi });
   async function file(text = 'Full original notes.'): Promise<Attachment> {
     const result = await assets.upload(new File([text], 'notes.md', { type: 'text/markdown' }));
@@ -52,7 +53,7 @@ async function setup(cleanupEnabled = true) {
     });
     return { source, message, copy: copy! };
   }
-  return { stores, profile, providers, thread, other, assets, cleanup, execute, file, seed, request, json, forkWithAttachment, app };
+  return { stores, profile, providers, thread, other, assets, cleanup, execute, describe, file, seed, request, json, forkWithAttachment, app };
 }
 
 describe('agent attachment routes (CA-4d1)', () => {
@@ -289,6 +290,74 @@ describe('agent turn attachment cleanup (CA-4d2)', () => {
     expect(await h.stores.experienceCopilot.listMessages(h.thread.id)).toEqual([]);
     expect(h.cleanup).not.toHaveBeenCalled();
     expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+  });
+});
+
+describe('agent attachment description routes (CA-4g1)', () => {
+  async function image(h: Awaited<ReturnType<typeof setup>>): Promise<Attachment> {
+    return { ...await h.file(), type: 'image' as const, mimeType: 'image/png', name: 'capture.png' };
+  }
+  test('the description PATCH persists as given', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const message = await h.seed([file]);
+    const response = await h.app.request(
+      `http://localhost/api/experience-copilot/${h.thread.id}/messages/${message.id}/attachments/${file.id}/description`,
+      h.json({ description: 'Hand-written.' }, 'PATCH'),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect((await h.stores.experienceCopilot.findMessageAttachment(message.id, file.id))?.description).toBe('Hand-written.');
+  });
+  test('regenerate describes through the vision model, persists trimmed, and returns the text', async () => {
+    const h = await setup();
+    await h.providers.saveProviderProfile({ ...h.profile, visionModel: 'vision-model' });
+    const shot = await image(h);
+    const message = await h.seed([shot]);
+    const response = await h.app.request(
+      `http://localhost/api/experience-copilot/${h.thread.id}/messages/${message.id}/attachments/${shot.id}/regenerate-description`,
+      h.json({ providerProfileId: h.profile.id }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ description: 'Fresh description.' });
+    expect(h.describe).toHaveBeenCalledTimes(1);
+    expect(h.describe.mock.calls[0]![1]).toBe('vision-model');
+    expect((await h.stores.experienceCopilot.findMessageAttachment(message.id, shot.id))?.description).toBe('Fresh description.');
+  });
+  test('regenerate on a text file is the chat twin validation refusal', async () => {
+    const h = await setup();
+    await h.providers.saveProviderProfile({ ...h.profile, visionModel: 'vision-model' });
+    const file = await h.file();
+    const message = await h.seed([file]);
+    const response = await h.app.request(
+      `http://localhost/api/experience-copilot/${h.thread.id}/messages/${message.id}/attachments/${file.id}/regenerate-description`,
+      h.json({ providerProfileId: h.profile.id }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: 'Only image or video attachments can be described.' } });
+    expect(h.describe).not.toHaveBeenCalled();
+  });
+  test('a profile without a vision model is the chat twin validation refusal', async () => {
+    const h = await setup();
+    const shot = await image(h);
+    const message = await h.seed([shot]);
+    const response = await h.app.request(
+      `http://localhost/api/experience-copilot/${h.thread.id}/messages/${message.id}/attachments/${shot.id}/regenerate-description`,
+      h.json({ providerProfileId: h.profile.id }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: 'No vision model configured in the active provider profile. Set one in Provider settings.' } });
+    expect(h.describe).not.toHaveBeenCalled();
+  });
+  test("another thread's message is 404 for both routes", async () => {
+    const h = await setup();
+    await h.providers.saveProviderProfile({ ...h.profile, visionModel: 'vision-model' });
+    const shot = await image(h);
+    const message = await h.seed([shot]);
+    const base = `http://localhost/api/experience-copilot/${h.other.id}/messages/${message.id}/attachments/${shot.id}`;
+    expect((await h.app.request(`${base}/description`, h.json({ description: 'x' }, 'PATCH'))).status).toBe(404);
+    expect((await h.app.request(`${base}/regenerate-description`, h.json({ providerProfileId: h.profile.id }))).status).toBe(404);
+    expect(h.describe).not.toHaveBeenCalled();
   });
 });
 
