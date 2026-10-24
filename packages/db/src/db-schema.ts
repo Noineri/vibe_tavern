@@ -259,6 +259,34 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── skillOrders ───────────────────────────────────────────────────────────────
+// Per-library manual list order for the FILESYSTEM skill catalog (ML-7). Skills
+// are directories on disk (a read-only built-in assets root + a writable user
+// root per library) with no DB row of their own, so the stored order lives in
+// this dedicated table keyed by (library, skill id): `library` names the skill
+// root the modal shows — 'coauthor' for the Co-Author library, the agent-kind
+// id for the copilot libraries ('experience' / 'script' / 'sidechat-ooc', the
+// same key the per-kind skill routes resolve through the kind registry);
+// `skill_id` is the skill's directory name (the catalog id — shadowing is
+// resolved BEFORE ordering: the catalog collapses a builtin/user id collision
+// to ONE user-won entry, so one id always has one position). The table starts
+// EMPTY (nothing to number on migration): a library with no rows serves its
+// catalog in the scanner's alphabetical order, and ids the table does not
+// know (a freshly imported or new built-in skill) sort after the known ones,
+// alphabetically — the plan's merge rule. A reorder replaces the library's
+// whole map; rows for ids the catalog no longer lists are inert until that id
+// exists again.
+export const skillOrders = sqliteTable('skill_orders', {
+  library: text('library').notNull(),
+  skillId: text('skill_id').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (table) => ({
+  // Composite PK: one position per (library, skill id) pair — a duplicate id
+  // in one reorder payload is a constraint error that rolls the whole
+  // transaction back. The PK index also serves the per-library reads.
+  pk: primaryKey({ columns: [table.library, table.skillId] }),
+}));
+
 // ─── lorebooks ────────────────────────────────────────────────────────────────
 
 export const lorebooks = sqliteTable('lorebooks', {

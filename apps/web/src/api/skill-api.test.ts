@@ -7,6 +7,7 @@
  * silently flatten or misname imported files.
  */
 import { afterEach, beforeAll, describe, expect, it, jest, mock, spyOn } from "bun:test";
+import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
@@ -18,9 +19,10 @@ useDomEnv();
 let importCoauthorSkills: typeof import("./skill-api.js").importCoauthorSkills;
 let createCoauthorSkill: typeof import("./skill-api.js").createCoauthorSkill;
 let updateCoauthorSkill: typeof import("./skill-api.js").updateCoauthorSkill;
+let reorderCoauthorSkills: typeof import("./skill-api.js").reorderCoauthorSkills;
 
 beforeAll(async () => {
-	({ importCoauthorSkills, createCoauthorSkill, updateCoauthorSkill } = await import("./skill-api.js"));
+	({ importCoauthorSkills, createCoauthorSkill, updateCoauthorSkill, reorderCoauthorSkills } = await import("./skill-api.js"));
 });
 
 /** Make a File with a `webkitRelativePath` (readonly in the DOM type, so define
@@ -186,5 +188,43 @@ describe("createCoauthorSkill / updateCoauthorSkill — save op (AP-23d)", () =>
 		) as unknown as typeof fetch;
 
 		await expect(updateCoauthorSkill("grill-me", INPUT)).rejects.toThrow(/read-only/);
+	});
+});
+
+describe("reorderCoauthorSkills client (ML-7)", () => {
+	const CATALOG: SkillCatalog = {
+		entries: [
+			{ id: "gamma", source: "user", name: "Gamma", description: "", manifestPath: "gamma/SKILL.md", shadowsBuiltin: false },
+			{ id: "alpha", source: "builtin", name: "Alpha", description: "", manifestPath: "alpha/SKILL.md", shadowsBuiltin: false },
+		],
+		errors: [],
+	};
+
+	it("PATCHes the full { updates: [{ id, sortOrder }] } payload to /api/coauthor/skills/reorder and unwraps the catalog envelope", async () => {
+		let capturedUrl: string | undefined;
+		let capturedInit: { method?: string; body?: unknown } | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = input.toString();
+			capturedInit = init;
+			return new Response(JSON.stringify(CATALOG), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as unknown as typeof fetch;
+
+		const catalog = await reorderCoauthorSkills([
+			{ id: "gamma", sortOrder: 0 },
+			{ id: "alpha", sortOrder: 1 },
+		]);
+
+		expect(capturedUrl?.endsWith("/api/coauthor/skills/reorder")).toBe(true);
+		expect(capturedInit?.method).toBe("PATCH");
+		expect(JSON.parse(capturedInit?.body as string)).toEqual({
+			updates: [
+				{ id: "gamma", sortOrder: 0 },
+				{ id: "alpha", sortOrder: 1 },
+			],
+		});
+		expect(catalog).toEqual(CATALOG);
 	});
 });

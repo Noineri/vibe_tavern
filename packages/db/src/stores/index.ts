@@ -26,6 +26,9 @@ export type { CreateProviderData, UpdateProviderData, ProviderProfile, CachedMod
 export { ProxyStore } from './proxy-store.js';
 export type { ProxyProfile } from './proxy-store.js';
 
+export { SkillOrderStore } from './skill-order-store.js';
+export type { SkillOrderRow } from './skill-order-store.js';
+
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
 

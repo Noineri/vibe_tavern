@@ -79,6 +79,21 @@ export async function deleteCoauthorSkill(id: string): Promise<{ id: string }> {
 }
 
 /**
+ * `PATCH /api/coauthor/skills/reorder` — rewrite the skill catalog's manual
+ * list order (ML-7; skills are folders on disk, so the order is stored
+ * server-side in the skill_orders table, never local storage). Payload
+ * mirrors `reorderProxies` ({ updates: [{ id, sortOrder }] }); the response
+ * is the refreshed catalog — the same envelope `listCoauthorSkills`
+ * unwraps (known ids in stored positions, unknown ids last, alphabetically).
+ */
+export async function reorderCoauthorSkills(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<SkillCatalog> {
+  const response = await client.api.coauthor.skills.reorder.$patch({ json: { updates } });
+  return unwrapRpc(response);
+}
+
+/**
  * `POST /api/coauthor/skills/import` — atomically import a skill tree. Each
  * file's FIELD NAME must be its relative path (`<skill>/SKILL.md`,
  * `<skill>/references/…`); the server validates the whole tree before writing.

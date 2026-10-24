@@ -570,6 +570,24 @@ export const skillSaveSchema = z.object({
 export type SkillSaveDto = z.infer<typeof skillSaveSchema>;
 
 /**
+ * Manual skill-catalog list-order rewrite (ML-7): the position updates for ONE
+ * skill library's ids — the payload of `PATCH .../skills/reorder` on BOTH the
+ * copilot (per kind, `?kind=`) and Co-Author skill routes. Skills are folders
+ * on disk with no DB row of their own, so the order lives in a dedicated
+ * table keyed by (library, skill id); the response is the refreshed `SkillCatalog`
+ * envelope (known ids in stored positions, ids the table does not know last,
+ * alphabetically). Same shape as `reorderCoauthorModulesSchema` /
+ * `reorderCopilotProfilesSchema`.
+ */
+export const reorderSkillsSchema = z.object({
+  updates: z.array(z.object({
+    /** Skill id — the skill's directory name (the catalog id). */
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});
+
+/**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
  * the per-section `edit_*` tools (edit_personality / edit_scenario /
  * edit_examples) and by the frontend operation-card renderer (Wave 6), so the

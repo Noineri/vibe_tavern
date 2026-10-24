@@ -32,6 +32,7 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "./copilot-skill-adapter.js";
 import type { CopilotSkillsByKindRuntimeApi } from "../contract/runtime-api.js";
+import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
@@ -170,21 +171,23 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
-		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
+		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService, stores.skillOrders, COAUTHOR_SKILL_LIBRARY);
 		// AS-8d1/SC-5: the copilot skill adapters keyed by agent kind —
 		// experience keeps the CP-5 copilot library; the script kind gets its
 		// own adapter over the script-agent roots and the sidechat kind over
-		// the sidechat roots (each absent when no service was wired).
+		// the sidechat roots (each absent when no service was wired). ML-7: each
+		// adapter's order key is its agent-kind id (the same string the
+		// per-kind routes resolve through the registry) — one stored order per
+		// kind's library.
+		const copilotSkillServices: Array<[AgentKindId, SkillLibraryService]> = [
+			["experience", copilotSkillService],
+		];
+		if (scriptSkillService !== undefined) copilotSkillServices.push(["script", scriptSkillService]);
+		if (sidechatSkillService !== undefined) copilotSkillServices.push(["sidechat-ooc", sidechatSkillService]);
 		this.copilotSkills = createCopilotSkillKindResolver(
-			new Map<AgentKindId, CopilotSkillAdapter>([
-				["experience", new CopilotSkillAdapter(copilotSkillService)],
-				...(scriptSkillService !== undefined
-					? ([["script", new CopilotSkillAdapter(scriptSkillService)]] as const)
-					: []),
-				...(sidechatSkillService !== undefined
-					? ([["sidechat-ooc", new CopilotSkillAdapter(sidechatSkillService)]] as const)
-					: []),
-			]),
+			new Map(
+				copilotSkillServices.map(([kind, service]) => [kind, new CopilotSkillAdapter(service, stores.skillOrders, kind)]),
+			),
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.agentPlan = new AgentPlanAdapter(stores);

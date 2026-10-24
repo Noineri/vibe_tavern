@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { createDb, SkillOrderStore } from "@vibe-tavern/db";
 import { createCoauthorSkillRoutes } from "../src/api/routes/coauthor-skill.js";
 import { CoauthorSkillAdapter } from "../src/api/adapters/coauthor-skill-adapter.js";
+import { COAUTHOR_SKILL_LIBRARY } from "../src/api/contract/skill-contracts.js";
 import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 import { listTopLevelDirs } from "../src/domain/coauthor/skills/skill-library.js";
 import {
@@ -35,9 +37,12 @@ afterEach(async () => {
   await Promise.all(tmpRoots.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-function makeApp() {
+async function makeApp() {
   const service = new SkillLibraryService(userRoot, builtinRoot);
-  const app = createCoauthorSkillRoutes(new CoauthorSkillAdapter(service));
+  // ML-7: a real order store over an in-memory db (template-backed) — the
+  // stored order is exercised end-to-end, same library key as production.
+  const orderStore = new SkillOrderStore(await createDb(":memory:"));
+  const app = createCoauthorSkillRoutes(new CoauthorSkillAdapter(service, orderStore, COAUTHOR_SKILL_LIBRARY));
   // Mount the production DomainError → status mapping (shared helpers, not
   // duplicated logic) so the save-path statuses (409 conflict / 404 notFound /
   // 400 validation) are observable — the same pattern as copilot-skill-routes.
@@ -61,7 +66,7 @@ const manifest = (name: string, desc = "A skill.") =>
 
 describe("POST /api/coauthor/skills/import — multipart", () => {
   test("each file part's field name is its relative path → 201 + tree written", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("janitor-card-creator/SKILL.md", new File([enc(manifest("janitor-card-creator", "Creates cards."))], "SKILL.md"));
     form.append("janitor-card-creator/assets/template.md", new File([enc("# Template\n...")], "template.md"));
@@ -79,7 +84,7 @@ describe("POST /api/coauthor/skills/import — multipart", () => {
   });
 
   test("unsafe path among parts → 400 and nothing written", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("../escape.md", new File([enc("x")], "escape.md"));
     form.append("a/SKILL.md", new File([enc(manifest("a"))], "SKILL.md"));
@@ -91,7 +96,7 @@ describe("POST /api/coauthor/skills/import — multipart", () => {
   });
 
   test("no File parts → 400", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/import", { method: "POST", body: new FormData() });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/No files/i);
@@ -100,7 +105,7 @@ describe("POST /api/coauthor/skills/import — multipart", () => {
 
 describe("DELETE /api/coauthor/skills/:id", () => {
   test("deletes an imported user skill → 200", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("gone/SKILL.md", new File([enc(manifest("gone"))], "SKILL.md"));
     expect((await app.request("/api/coauthor/skills/import", { method: "POST", body: form })).status).toBe(201);
@@ -118,7 +123,7 @@ describe("DELETE /api/coauthor/skills/:id", () => {
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
     await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/profile-overview", { method: "DELETE" });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/cannot delete built-in skill/);
@@ -127,7 +132,7 @@ describe("DELETE /api/coauthor/skills/:id", () => {
   });
 
   test("non-existent id → 400", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/never-imported", { method: "DELETE" });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/does not exist/);
@@ -143,7 +148,7 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
     await Bun.write(join(builtinRoot, "profile-overview", "references", "rules.md"), "# Rules\n");
     await Bun.write(join(builtinRoot, "profile-overview", "assets", "template.md"), "# Template\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/profile-overview/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -166,7 +171,7 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
     await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
     await Bun.write(join(userRoot, "my-skill", "notes.md"), "notes\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/my-skill/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -183,7 +188,7 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
     await Bun.write(join(userRoot, "shared", "SKILL.md"), manifest("shared", "user-customized version"));
     await Bun.write(join(userRoot, "shared", "user-only.md"), "user only\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/shared/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -194,7 +199,7 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
   });
 
   test("missing skill → 404", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/no-such-skill/content");
     expect(res.status).toBe(404);
     expect((await res.json()).error).toMatch(/does not exist/);
@@ -203,7 +208,7 @@ describe("GET /api/coauthor/skills/:id/content — skill content (AP-21)", () =>
 
 describe("POST /api/coauthor/skills — save (create, AP-23a)", () => {
   test("create → 201 with the fresh entry DTO; <id>/SKILL.md written under the user root", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -222,7 +227,7 @@ describe("POST /api/coauthor/skills — save (create, AP-23a)", () => {
   });
 
   test("create from a Russian name → transliterated id over HTTP", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -234,7 +239,7 @@ describe("POST /api/coauthor/skills — save (create, AP-23a)", () => {
   });
 
   test("missing name → zod 400; malformed JSON → 400; nothing written", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const bad = await app.request("/api/coauthor/skills", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -262,7 +267,7 @@ describe("PUT /api/coauthor/skills/:id — save (update, AP-23a)", () => {
     );
     await Bun.write(join(userRoot, "my-skill", "references", "rules.md"), "# Rules\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/my-skill", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -290,7 +295,7 @@ describe("PUT /api/coauthor/skills/:id — save (update, AP-23a)", () => {
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
     await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills/profile-overview", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -305,7 +310,7 @@ describe("PUT /api/coauthor/skills/:id — save (update, AP-23a)", () => {
   });
 
   test("missing id → 404; invalid body → zod 400", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const missing = await app.request("/api/coauthor/skills/nope", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -333,7 +338,7 @@ describe("GET /api/coauthor/skills — catalog", () => {
     await mkdir(join(userRoot, "my-skill"), { recursive: true });
     await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/coauthor/skills");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -355,7 +360,7 @@ describe("GET /api/coauthor/skills — catalog", () => {
     await mkdir(join(userRoot, "my-skill"), { recursive: true });
     await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "hello"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const ok = await app.request("/api/coauthor/skills/my-skill");
     expect(ok.status).toBe(200);
     expect((await ok.json()).description).toBe("hello");
@@ -363,5 +368,100 @@ describe("GET /api/coauthor/skills — catalog", () => {
     const missing = await app.request("/api/coauthor/skills/nope");
     expect(missing.status).toBe(404);
     expect((await missing.json()).error).toMatch(/does not exist/);
+  });
+});
+
+describe("PATCH /api/coauthor/skills/reorder — stored catalog order (ML-7)", () => {
+  /** Seed one skill directory with a parseable manifest under a root. */
+  async function seedSkill(root: string, id: string, description = "A skill.") {
+    await mkdir(join(root, id), { recursive: true });
+    await Bun.write(join(root, id, "SKILL.md"), manifest(id, description));
+  }
+
+  /** PATCH the reorder route with the given updates. */
+  async function reorder(app: ReturnType<typeof createCoauthorSkillRoutes>, updates: Array<{ id: string; sortOrder: number }>) {
+    return app.request("/api/coauthor/skills/reorder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates }),
+    });
+  }
+
+  test("GET returns the stored order: known ids in stored positions, a SHADOWED id at ONE deterministic position, unknown ids last alphabetical", async () => {
+    // The shadow case the plan calls out: builtin `shared` shadowed by a user
+    // copy. The catalog collapses them to ONE user-won entry, and the order
+    // table keys rows by id alone — so the shadowed id has exactly one
+    // position (source/shadowsBuiltin still cross the wire untouched).
+    await seedSkill(builtinRoot, "shared", "built-in");
+    await seedSkill(builtinRoot, "beta");
+    await seedSkill(userRoot, "shared", "user shadow");
+    await seedSkill(userRoot, "alpha");
+    await seedSkill(userRoot, "gamma");
+
+    const app = await makeApp();
+    const res = await reorder(app, [
+      { id: "shared", sortOrder: 0 },
+      { id: "gamma", sortOrder: 1 },
+    ]);
+    expect(res.status).toBe(200);
+
+    const list = await app.request("/api/coauthor/skills");
+    const body = await list.json();
+    // Known: shared (0), gamma (1). Unknown alphabetical: alpha, beta.
+    expect(body.entries.map((e: { id: string }) => e.id)).toEqual(["shared", "gamma", "alpha", "beta"]);
+    const shared = body.entries.find((e: { id: string }) => e.id === "shared");
+    expect(shared.source).toBe("user");
+    expect(shared.shadowsBuiltin).toBe(true);
+    expect(shared.description).toBe("user shadow");
+  });
+
+  test("the reorder response IS the refreshed catalog envelope — the same shape the GET serves", async () => {
+    await seedSkill(userRoot, "alpha");
+    await seedSkill(userRoot, "beta");
+    const app = await makeApp();
+    const res = await reorder(app, [{ id: "beta", sortOrder: 0 }, { id: "alpha", sortOrder: 1 }]);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Object.keys(body).sort()).toEqual(["entries", "errors"]);
+    expect(body.errors).toEqual([]);
+    expect(body.entries.map((e: { id: string }) => e.id)).toEqual(["beta", "alpha"]);
+  });
+
+  test("a skill that appears AFTER the reorder (fresh import / new built-in) sorts with the unknowns — last, alphabetical", async () => {
+    await seedSkill(userRoot, "alpha");
+    const app = await makeApp();
+    await reorder(app, [{ id: "alpha", sortOrder: 0 }]);
+    // Two new skills appear after the stored order was written.
+    await seedSkill(userRoot, "zeta");
+    await seedSkill(userRoot, "beta");
+    const list = await app.request("/api/coauthor/skills");
+    expect((await list.json()).entries.map((e: { id: string }) => e.id)).toEqual(["alpha", "beta", "zeta"]);
+  });
+
+  test("an UNKNOWN id in the reorder payload gets a slot: importing that id later surfaces it at its stored position", async () => {
+    await seedSkill(userRoot, "alpha");
+    const app = await makeApp();
+    // ghost is not in the catalog — the row is written anyway (inert until the id exists).
+    const res = await reorder(app, [{ id: "ghost", sortOrder: 0 }, { id: "alpha", sortOrder: 1 }]);
+    expect(res.status).toBe(200);
+    expect((await res.json()).entries.map((e: { id: string }) => e.id)).toEqual(["alpha"]);
+    // ghost appears (user import) → takes its stored slot, ahead of alpha.
+    await seedSkill(userRoot, "ghost");
+    const list = await app.request("/api/coauthor/skills");
+    expect((await list.json()).entries.map((e: { id: string }) => e.id)).toEqual(["ghost", "alpha"]);
+  });
+
+  test("a body without the updates array → zod 400; nothing stored", async () => {
+    await seedSkill(userRoot, "alpha");
+    const app = await makeApp();
+    const bad = await app.request("/api/coauthor/skills/reorder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nope: true }),
+    });
+    expect(bad.status).toBe(400);
+    // The catalog still serves the scanner's alphabetical order.
+    const list = await app.request("/api/coauthor/skills");
+    expect((await list.json()).entries.map((e: { id: string }) => e.id)).toEqual(["alpha"]);
   });
 });

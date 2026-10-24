@@ -4,7 +4,7 @@ import { AgentKindSettingsStore } from './stores/agent-kind-settings-store.js';
 import { ChatAgentSettingsStore } from './stores/chat-agent-settings-store.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CoauthorConnectionSettingsStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, SttListingSnapshotStore, TtsListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, AiInstructionTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, SkillOrderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CoauthorConnectionSettingsStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, SttListingSnapshotStore, TtsListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, AiInstructionTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -15,6 +15,9 @@ export interface StoreContainer {
   personas: PersonaStore;
   providers: ProviderStore;
   proxies: ProxyStore;
+  /** Stored catalog order per skill library (ML-7) — skills live on disk, so
+   *  their order is this dedicated table, not a column on entity rows. */
+  skillOrders: SkillOrderStore;
   chats: ChatStore;
   messages: MessageStore;
   traces: PromptTraceStore;
@@ -91,6 +94,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     proxies: new ProxyStore(db),
+    skillOrders: new SkillOrderStore(db),
     chats,
     messages: new MessageStore(db),
     traces: new PromptTraceStore(db),

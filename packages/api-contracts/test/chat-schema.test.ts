@@ -8,6 +8,7 @@ import {
   editMessageSchema,
   renameBranchSchema,
   renameChatSchema,
+  reorderSkillsSchema,
   sendMessageSchema,
   setGreetingIndexSchema,
   updateDynamicPromptSchema,
@@ -561,5 +562,30 @@ describe("renameBranchSchema", () => {
 
   it("rejects a non-string label", () => {
     expectReject(renameBranchSchema.safeParse({ label: 123 }));
+  });
+});
+
+// --- reorderSkillsSchema (ML-7) ----------------------------------------------
+
+describe("reorderSkillsSchema", () => {
+  it("accepts an id + sortOrder update list", () => {
+    const payload = { updates: [{ id: "gamma", sortOrder: 0 }, { id: "alpha", sortOrder: 1 }] };
+    expect(reorderSkillsSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("accepts an empty updates array (clears the library's stored order)", () => {
+    expect(reorderSkillsSchema.parse({ updates: [] })).toEqual({ updates: [] });
+  });
+
+  it("accepts an update id the catalog may not know yet (it gets a slot — the plan's unknown-id clause)", () => {
+    expect(reorderSkillsSchema.parse({ updates: [{ id: "not-in-catalog", sortOrder: 0 }] }).updates[0]!.id).toBe("not-in-catalog");
+  });
+
+  it("rejects a body without the updates array", () => {
+    expect(() => reorderSkillsSchema.parse({})).toThrow();
+  });
+
+  it("rejects an update entry missing sortOrder", () => {
+    expect(() => reorderSkillsSchema.parse({ updates: [{ id: "alpha" }] })).toThrow();
   });
 });

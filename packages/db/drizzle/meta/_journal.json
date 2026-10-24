@@ -876,6 +876,13 @@
       "when": 1792863559041,
       "tag": "0124_public_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "6",
+      "when": 1792864902014,
+      "tag": "0125_premium_silvermane",
+      "breakpoints": true
     }
   ]
 }

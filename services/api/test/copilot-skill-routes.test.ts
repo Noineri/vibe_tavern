@@ -3,6 +3,7 @@ import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { HTTPException } from "hono/http-exception";
 import { join } from "node:path";
+import { createDb, SkillOrderStore } from "@vibe-tavern/db";
 import { createCopilotSkillRoutes } from "../src/api/routes/copilot-skill.js";
 import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "../src/api/adapters/copilot-skill-adapter.js";
 import { SkillLibraryService, listTopLevelDirs } from "../src/domain/coauthor/skills/skill-library.js";
@@ -46,10 +47,13 @@ afterEach(async () => {
   await Promise.all(tmpRoots.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-function makeApp() {
-  const experience = new CopilotSkillAdapter(new SkillLibraryService(userRoot, builtinRoot));
-  const script = new CopilotSkillAdapter(new SkillLibraryService(scriptUserRoot, scriptBuiltinRoot));
-  const sidechat = new CopilotSkillAdapter(new SkillLibraryService(sidechatUserRoot, sidechatBuiltinRoot));
+async function makeApp() {
+  // ML-7: one SHARED order store — each kind's adapter reads/writes its own
+  // library rows (keyed by the kind id), exactly like production wiring.
+  const orderStore = new SkillOrderStore(await createDb(":memory:"));
+  const experience = new CopilotSkillAdapter(new SkillLibraryService(userRoot, builtinRoot), orderStore, "experience");
+  const script = new CopilotSkillAdapter(new SkillLibraryService(scriptUserRoot, scriptBuiltinRoot), orderStore, "script");
+  const sidechat = new CopilotSkillAdapter(new SkillLibraryService(sidechatUserRoot, sidechatBuiltinRoot), orderStore, "sidechat-ooc");
   const app = createCopilotSkillRoutes(
     createCopilotSkillKindResolver(new Map([ ["experience", experience], ["script", script], ["sidechat-ooc", sidechat] ])),
   );
@@ -79,7 +83,7 @@ const manifest = (name: string, desc = "A skill.") =>
 
 describe("POST /api/copilot/skills/import — multipart", () => {
   test("each file part's field name is its relative path → 201 + tree written", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("experience-authoring/SKILL.md", new File([enc(manifest("experience-authoring", "Creates cards."))], "SKILL.md"));
     form.append("experience-authoring/assets/template.md", new File([enc("# Template\n...")], "template.md"));
@@ -93,7 +97,7 @@ describe("POST /api/copilot/skills/import — multipart", () => {
   });
 
   test("unsafe path among parts → 400 and nothing written", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("../escape.md", new File([enc("x")], "escape.md"));
     form.append("a/SKILL.md", new File([enc(manifest("a"))], "SKILL.md"));
@@ -107,7 +111,7 @@ describe("POST /api/copilot/skills/import — multipart", () => {
 
 describe("DELETE /api/copilot/skills/:id", () => {
   test("deletes an imported user skill → 200", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("gone/SKILL.md", new File([enc(manifest("gone"))], "SKILL.md"));
     expect((await app.request("/api/copilot/skills/import", { method: "POST", body: form })).status).toBe(201);
@@ -123,7 +127,7 @@ describe("DELETE /api/copilot/skills/:id", () => {
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
     await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/profile-overview", { method: "DELETE" });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/cannot delete built-in skill/);
@@ -140,7 +144,7 @@ describe("GET /api/copilot/skills — catalog", () => {
     await mkdir(join(userRoot, "my-skill"), { recursive: true });
     await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -165,7 +169,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
     await Bun.write(join(builtinRoot, "profile-overview", "references", "rules.md"), "# Rules\n");
     await Bun.write(join(builtinRoot, "profile-overview", "assets", "template.md"), "# Template\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/profile-overview/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -188,7 +192,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
     await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
     await Bun.write(join(userRoot, "my-skill", "notes.md"), "notes\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/my-skill/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -204,7 +208,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
     await Bun.write(join(userRoot, "shared", "SKILL.md"), manifest("shared", "user-customized version"));
     await Bun.write(join(userRoot, "shared", "user-only.md"), "user only\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/shared/content");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -215,7 +219,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
   });
 
   test("missing skill → 404", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/no-such-skill/content");
     expect(res.status).toBe(404);
     expect((await res.json()).error).toMatch(/does not exist/);
@@ -227,7 +231,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
     await mkdir(join(userRoot, "dice-helper"), { recursive: true });
     await Bun.write(join(userRoot, "dice-helper", "SKILL.md"), manifest("dice-helper", "Experience side."));
 
-    const app = makeApp();
+    const app = await makeApp();
     const scriptRes = await app.request("/api/copilot/skills/dice-helper/content?kind=script");
     expect(scriptRes.status).toBe(200);
     expect((await scriptRes.json()).content).toContain("Notation recipes.");
@@ -243,7 +247,7 @@ describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => 
 
 describe("POST /api/copilot/skills + PUT /api/copilot/skills/:id — save (AP-23a)", () => {
   test("create → 201 with the fresh entry DTO written under the kind's user root", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -262,7 +266,7 @@ describe("POST /api/copilot/skills + PUT /api/copilot/skills/:id — save (AP-23
   });
 
   test("create with ?kind=script lands in the SCRIPT user root — not the experience one", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills?kind=script", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -282,7 +286,7 @@ describe("POST /api/copilot/skills + PUT /api/copilot/skills/:id — save (AP-23
     );
     await Bun.write(join(userRoot, "my-skill", "references", "rules.md"), "# Rules\n");
 
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills/my-skill", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -302,7 +306,7 @@ describe("POST /api/copilot/skills + PUT /api/copilot/skills/:id — save (AP-23
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
     await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
 
-    const app = makeApp();
+    const app = await makeApp();
     const conflict = await app.request("/api/copilot/skills/profile-overview", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -335,7 +339,7 @@ describe("?kind= per-kind dispatch (AS-8d1)", () => {
     await mkdir(join(userRoot, "exp-only"), { recursive: true });
     await Bun.write(join(userRoot, "exp-only", "SKILL.md"), manifest("exp-only", "Experience side."));
 
-    const app = makeApp();
+    const app = await makeApp();
     const scriptRes = await app.request("/api/copilot/skills?kind=script");
     expect(scriptRes.status).toBe(200);
     const scriptBody = await scriptRes.json();
@@ -353,7 +357,7 @@ describe("?kind= per-kind dispatch (AS-8d1)", () => {
   });
 
   test("an import with ?kind=script lands in the script user root — not the experience one", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const form = new FormData();
     form.append("dice-helper/SKILL.md", new File([enc(manifest("dice-helper", "Notation recipes."))], "SKILL.md"));
 
@@ -377,7 +381,7 @@ describe("?kind= per-kind dispatch (AS-8d1)", () => {
       await Bun.write(join(root, "plot-talk", "SKILL.md"), manifest("plot-talk", desc));
     }
 
-    const app = makeApp();
+    const app = await makeApp();
     const scRes = await app.request("/api/copilot/skills?kind=sidechat-ooc");
     expect(scRes.status).toBe(200);
     const scBody = await scRes.json();
@@ -399,10 +403,68 @@ describe("?kind= per-kind dispatch (AS-8d1)", () => {
   });
 
   test("unknown kind → 400 carrying UNKNOWN_AGENT_KIND (no silent fallback)", async () => {
-    const app = makeApp();
+    const app = await makeApp();
     const res = await app.request("/api/copilot/skills?kind=no-such-kind");
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.details?.code).toBe("UNKNOWN_AGENT_KIND");
+  });
+});
+
+describe("PATCH /api/copilot/skills/reorder — per-kind stored order (ML-7)", () => {
+  /** Seed one skill directory with a parseable manifest under a root. */
+  async function seedSkill(root: string, id: string, description = "A skill.") {
+    await mkdir(join(root, id), { recursive: true });
+    await Bun.write(join(root, id, "SKILL.md"), manifest(id, description));
+  }
+
+  test("reorder is scoped to ONE kind's library: reordering experience never moves script's order (one order store, per-kind rows — same skill ids, independent positions)", async () => {
+    // Same ids in both kinds' roots: only the experience rows are written.
+    await seedSkill(userRoot, "alpha");
+    await seedSkill(userRoot, "beta");
+    await seedSkill(scriptUserRoot, "alpha");
+    await seedSkill(scriptUserRoot, "beta");
+
+    const app = await makeApp();
+    const res = await app.request("/api/copilot/skills/reorder?kind=experience", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: "beta", sortOrder: 0 }, { id: "alpha", sortOrder: 1 }] }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).entries.map((e: { id: string }) => e.id)).toEqual(["beta", "alpha"]);
+
+    // The script library (same ids, no stored rows) still serves alphabetical.
+    const scriptList = await app.request("/api/copilot/skills?kind=script");
+    expect((await scriptList.json()).entries.map((e: { id: string }) => e.id)).toEqual(["alpha", "beta"]);
+  });
+
+  test("a missing kind defaults to experience (the reorder query validator's default — the dice.ts / ML-6 pattern)", async () => {
+    await seedSkill(userRoot, "alpha");
+    const app = await makeApp();
+    const res = await app.request("/api/copilot/skills/reorder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: "alpha", sortOrder: 0 }] }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).entries.map((e: { id: string }) => e.id)).toEqual(["alpha"]);
+  });
+
+  test("an empty-string kind → 400 (min(1)); a body without updates → zod 400", async () => {
+    const app = await makeApp();
+    const badKind = await app.request("/api/copilot/skills/reorder?kind=", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates: [] }),
+    });
+    expect(badKind.status).toBe(400);
+
+    const badBody = await app.request("/api/copilot/skills/reorder?kind=experience", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nope: true }),
+    });
+    expect(badBody.status).toBe(400);
   });
 });

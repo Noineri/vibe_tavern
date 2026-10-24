@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { CopilotSkillsByKindRuntimeApi } from "../contract/runtime-api.js";
 import type { SkillImportFile } from "../../domain/coauthor/skills/skill-library.js";
@@ -33,6 +34,13 @@ import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js"
  *    part's FIELD NAME is its relative path (e.g. `my-skill/SKILL.md`).
  *  - `DELETE /api/copilot/skills/:id`   — remove one user skill directory. A
  *    user shadow of a built-in is deletable; a pure built-in is rejected.
+ *  - `PATCH  /api/copilot/skills/reorder` — rewrite ONE kind's stored catalog
+ *    order (ML-7; the order is the skill_orders table keyed by the kind id).
+ *    Registered BEFORE the `:id` routes so the literal "reorder" segment is
+ *    matched here, not swallowed as a skill id (Hono matches registration
+ *    order). Carries a query validator (the dice.ts / copilot-profile-reorder
+ *    pattern) so the typed hono client can send `?kind=` on a non-GET.
+ *    Response: the refreshed catalog — the same envelope the GET serves.
  */
 export function createCopilotSkillRoutes(runtime: CopilotSkillsByKindRuntimeApi) {
   return new Hono()
@@ -41,6 +49,15 @@ export function createCopilotSkillRoutes(runtime: CopilotSkillsByKindRuntimeApi)
       const catalog = await skills.listSkills();
       return c.json(catalog);
     })
+    .patch(
+      "/api/copilot/skills/reorder",
+      zValidator("query", z.object({ kind: z.string().min(1).default("experience") })),
+      zValidator("json", schemas.reorderSkillsSchema),
+      async (c) => {
+        const skills = runtime.copilotSkillsForKind(c.req.valid("query").kind);
+        return c.json(await skills.reorderSkills(c.req.valid("json").updates));
+      },
+    )
     .get("/api/copilot/skills/:id", async (c) => {
       const skills = runtime.copilotSkillsForKind(c.req.query("kind") ?? "experience");
       const id = c.req.param("id");

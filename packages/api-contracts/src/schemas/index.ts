@@ -77,6 +77,7 @@ export {
   skillImportResultSchema,
   skillContentSchema,
   skillSaveSchema,
+  reorderSkillsSchema,
   coauthorEditItemSchema,
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,

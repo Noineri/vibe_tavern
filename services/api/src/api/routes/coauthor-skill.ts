@@ -32,12 +32,24 @@ import { SkillImportError } from "../../domain/coauthor/skills/skill-library.js"
  *    validates the whole tree before writing anything.
  *  - `DELETE /api/coauthor/skills/:id`   — remove one user skill directory. A
  *    user shadow of a built-in is deletable; a pure built-in is rejected.
+ *  - `PATCH /api/coauthor/skills/reorder` — rewrite this library's stored
+ *    catalog order (ML-7; skills live on disk, so the order is the
+ *    skill_orders table keyed by skill id). Registered BEFORE the `:id`
+ *    routes so the literal "reorder" segment is matched here, not swallowed
+ *    as a skill id (the coauthor-modules/reorder pattern; Hono matches
+ *    registration order). Response: the refreshed catalog — the same
+ *    envelope the GET serves (known ids in stored positions, unknown ids
+ *    last, alphabetically).
  */
 export function createCoauthorSkillRoutes(runtime: CoauthorSkillsRuntimeApi) {
   return new Hono()
     .get("/api/coauthor/skills", async (c) => {
       const catalog = await runtime.listSkills();
       return c.json(catalog);
+    })
+    .patch("/api/coauthor/skills/reorder", zValidator("json", schemas.reorderSkillsSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderSkills(body.updates));
     })
     .get("/api/coauthor/skills/:id", async (c) => {
       const id = c.req.param("id");

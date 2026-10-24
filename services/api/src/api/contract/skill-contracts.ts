@@ -7,6 +7,14 @@
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillImportFile, SkillImportResult, SkillSaveInput } from "../../domain/coauthor/skills/skill-library.js";
 
+/** The Co-Author skill library's order key (ML-7): the copilot skill libraries
+ *  are keyed by their agent-kind id — the SAME string the per-kind routes
+ *  resolve through the kind registry ('experience', 'script', 'sidechat-ooc')
+ *  — and the Co-Author library has no kind id, so its key is this constant.
+ *  One key per library, derived from the existing route families (never a
+ *  second hand-written list). */
+export const COAUTHOR_SKILL_LIBRARY = "coauthor";
+
 // ─── Co-Author Skills (filesystem skill libraries) ──────────────────
 // CTX-S2: import (multipart files → validated atomic tree under
 // <dataDir>/coauthor/skills) + delete one user skill directory.
@@ -41,6 +49,13 @@ export interface CoauthorSkillsRuntimeApi {
 	 *  update is a 409 conflict (built-ins are read-only). Returns the FRESH
 	 *  catalog entry DTO of the saved skill. */
 	saveSkill: (input: SkillSaveInput) => Promise<SkillCatalogEntryDto>;
+	/** Rewrite THIS library's stored catalog order (ML-7) and return the
+	 *  refreshed merged catalog — the same envelope `listSkills` serves
+	 *  (known ids in stored positions, ids the order table does not know last,
+	 *  alphabetically). The order lives in the `skill_orders` table keyed by
+	 *  (library, skill id); an update id the catalog does not list still gets a
+	 *  row (inert until that id exists). */
+	reorderSkills: (updates: Array<{ id: string; sortOrder: number }>) => Promise<{ entries: SkillCatalogEntryDto[]; errors: { source: "builtin" | "user"; id: string; reason: string }[] }>;
 }
 
 /** Copilot skills keyed by agent kind (AS-8d1): the copilot-skill routes

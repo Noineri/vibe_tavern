@@ -93,6 +93,23 @@ export async function deleteCopilotSkill(kind: AgentKind, id: string): Promise<{
 }
 
 /**
+ * `PATCH /api/copilot/skills/reorder?kind=` — rewrite ONE kind's skill
+ * catalog's manual list order (ML-7; the order is stored server-side in the
+ * skill_orders table keyed by the kind id, never local storage). Mirrors
+ * `reorderCopilotProfiles`: the kind rides the query param — the reorder
+ * route's query validator lets the typed hono client send `query` on a PATCH
+ * (the dice.ts pattern) — and the response is the refreshed catalog, the
+ * same envelope `listCopilotSkills` unwraps.
+ */
+export async function reorderCopilotSkills(
+  kind: AgentKind,
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<SkillCatalog> {
+  const response = await client.api.copilot.skills.reorder.$patch({ query: { kind }, json: { updates } });
+  return unwrapRpc(response);
+}
+
+/**
  * `POST /api/copilot/skills/import?kind=` — atomically import a skill tree
  * into one kind's library. Each file's FIELD NAME must be its relative path
  * (`<skill>/SKILL.md`, …). Returns the imported skill ids.

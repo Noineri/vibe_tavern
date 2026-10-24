@@ -1,6 +1,7 @@
 import type { CoauthorSkillsRuntimeApi, CopilotSkillsByKindRuntimeApi, SkillCatalogEntryDto } from "../contract/runtime-api.js";
 import type { SkillCatalogEntry } from "../../domain/coauthor/skills/skill-scanner.js";
 import type { SkillLibraryService, SkillSaveInput } from "../../domain/coauthor/skills/skill-library.js";
+import type { SkillOrderStore } from "@vibe-tavern/db";
 import { validation } from "../../shared/errors.js";
 import { getAgentKind, UnknownAgentKindError } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
@@ -9,9 +10,12 @@ import type { AgentKindId } from "../../domain/agent/agent-kind.js";
  * Thin adapter between the `CoauthorSkillsRuntimeApi` contract and a copilot-rooted
  * {@link SkillLibraryService} (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-5). Mirrors
  * {@link CoauthorSkillAdapter} exactly — no business logic; the service owns root
- * resolution, atomic import, built-in-immutability, and the merged catalog. The
+ * resolution, atomic import, built-in-immutability, and the merged catalog,
+ * and {@link SkillOrderStore.applyOrder} supplies the stored order (ML-7). The
  * adapter only maps domain catalog entries to the wire DTO (stripping absolute
- * filesystem paths).
+ * filesystem paths). The `library` order key is the AGENT KIND id — the same
+ * string the per-kind routes resolve through the kind registry — so each kind
+ * keeps its own stored order.
  */
 function toDto(entry: SkillCatalogEntry): SkillCatalogEntryDto {
 	return {
@@ -25,7 +29,13 @@ function toDto(entry: SkillCatalogEntry): SkillCatalogEntryDto {
 }
 
 export class CopilotSkillAdapter implements CoauthorSkillsRuntimeApi {
-	constructor(private readonly skillLibrary: SkillLibraryService) {}
+	constructor(
+		private readonly skillLibrary: SkillLibraryService,
+		/** This kind's stored order (ML-7) — its rows of the skill_orders table. */
+		private readonly orderStore: SkillOrderStore,
+		/** This library's order key: the agent-kind id (one key per kind). */
+		private readonly library: string,
+	) {}
 
 	importSkills = (files: Parameters<CoauthorSkillsRuntimeApi["importSkills"]>[0]) =>
 		this.skillLibrary.importSkills(files);
@@ -41,13 +51,23 @@ export class CopilotSkillAdapter implements CoauthorSkillsRuntimeApi {
 	listSkills = async () => {
 		const { entries, errors } = await this.skillLibrary.listCatalog();
 		return {
-			entries: entries.map(toDto),
+			// ML-7 (mirrors CoauthorSkillAdapter): the stored order (known ids in
+			// stored positions; unknown ids last, alphabetical) applied to the
+			// domain entries before the DTO mapping.
+			entries: (await this.orderStore.applyOrder(this.library, entries)).map(toDto),
 			errors: errors.map((e) => ({
 				source: e.source,
 				id: e.skillDir.split(/[\\/]/).pop() ?? e.skillDir,
 				reason: e.reason,
 			})),
 		};
+	};
+
+	/** Rewrite this kind's stored order (ML-7) and serve the refreshed catalog
+	 *  — the same envelope `listSkills` returns (mirrors CoauthorSkillAdapter). */
+	reorderSkills = async (updates: Array<{ id: string; sortOrder: number }>) => {
+		await this.orderStore.reorder(this.library, updates);
+		return await this.listSkills();
 	};
 
 	readSkill = async (id: string): Promise<SkillCatalogEntryDto | null> => {
