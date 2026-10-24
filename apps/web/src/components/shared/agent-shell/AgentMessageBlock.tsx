@@ -51,6 +51,17 @@ export interface AgentMessageBlockProps {
    *  «Изменить» opener to the user row. Gated with `onEditLast`: no submit
    *  path, no edit button. */
   canEditLast?: boolean;
+  /** AP-32: the row is an editable assistant text row (from
+   *  `buildAgentTurnRow`'s `canEditAssistant` — the AP-30 rule derived once
+   *  from the delete boundaries) — the block prepends its own «Изменить»
+   *  opener to the assistant row. Gated with `onEditAssistant`: no submit
+   *  path, no edit button. */
+  canEditAssistant?: boolean;
+  /** AP-32: save an in-place assistant edit (the controller's
+   *  `handleEditAssistant` — AP-31: true = saved + settle refetch ran, the
+   *  editor closes; false = guard/error, NO refetch, the editor stays open
+   *  with the typed draft and the handler's error toast is the surface). */
+  onEditAssistant?: (messageId: string, content: string) => Promise<boolean>;
   /** AP-12: submit an inline edit (delete the last exchange, then send —
    *  the controller's `handleEditLast`). The editor closes immediately on
    *  submit; the normal pending-user flow runs after. */
@@ -69,6 +80,8 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   turnActions,
   canEditLast = false,
   onEditLast,
+  canEditAssistant = false,
+  onEditAssistant,
   isBusy = false,
 }: AgentMessageBlockProps) {
   // AP-12: block-local editing state — the draft itself lives in
@@ -92,10 +105,23 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // SC-16: host actions stay assistant-only — user messages never carry them.
   // AP-11: turn actions ride either role; on assistant bubbles they merge
   // with the host actions in the SAME row (host first).
+  // AP-32: the assistant «Изменить» opener leads the row ahead of copy —
+  // the same renderer-constructed shape as the user's opener below
+  // (eligibility from the builder's `canEditAssistant`; the `turnRow` gate
+  // mirrors AP-12's — no row, no opener).
   const hostRow = !isUser && messageActions !== undefined && messageActions.length > 0 ? messageActions : undefined;
   const turnRow = turnActions !== undefined && turnActions.length > 0 ? turnActions : undefined;
-  const actions = hostRow !== undefined || turnRow !== undefined
-    ? [...(hostRow ?? []), ...(turnRow ?? [])]
+  const assistantEditAction: AgentMessageAction | undefined =
+    !isUser && canEditAssistant && onEditAssistant !== undefined && turnRow !== undefined
+      ? {
+        labelKey: "edit",
+        icon: Icons.Edit,
+        onSelect: () => setEditing(true),
+        testId: "copilot-assistant-edit",
+      }
+      : undefined;
+  const actions = hostRow !== undefined || turnRow !== undefined || assistantEditAction !== undefined
+    ? [...(assistantEditAction !== undefined ? [assistantEditAction] : []), ...(hostRow ?? []), ...(turnRow ?? [])]
     : undefined;
 
   // AP-4: the shared message body — the inner text container keeps `min-w-0`,
@@ -169,6 +195,33 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           initialText={message.content}
           isBusy={isBusy}
           onSubmit={(content) => { setEditing(false); onEditLast(content); }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    );
+  }
+
+  // AP-32: while editing, the editor swaps the assistant BODY in place —
+  // full width, the assistant's flat look (`layout="assistant"`, not the
+  // user bubble), «Сохранить» (`save`) + «Отмена» (`cancel_edit`); the
+  // action row hides. The caption, the reasoning toggle and the turn's
+  // anchored accordion/cards live in the list OUTSIDE this block, so they
+  // stay where they are while editing and after saving. Save awaits the
+  // AP-31 handler: success closes (the settle refetch shows the stored
+  // text — nothing regenerates); failure keeps the draft open with the
+  // typed text (the handler's error toast is the surface; the local draft
+  // is untouched, so no state to restore).
+  if (!isUser && editing && onEditAssistant !== undefined) {
+    return (
+      <div className="min-w-0" data-role={message.role}>
+        <AgentEditMessage
+          layout="assistant"
+          submitLabelKey="save"
+          initialText={message.content}
+          isBusy={isBusy}
+          onSubmit={(content) => {
+            void onEditAssistant(message.id, content).then((ok) => { if (ok) setEditing(false); });
+          }}
           onCancel={() => setEditing(false)}
         />
       </div>

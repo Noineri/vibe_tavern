@@ -319,6 +319,11 @@ export function AgentChatPane({
             // send) — straight from the controller (the same fire-and-forget
             // shape as the onAnswer arm above).
             onEditLast={(content) => { void ctrl.handleEditLast(content); }}
+            // AP-32: the assistant's in-place save — the controller's
+            // `handleEditAssistant` (AP-31) returns the outcome to the
+            // block, so the promise threads through untouched (failure
+            // keeps the draft open; the settle refetch shows saved text).
+            onEditAssistant={(messageId, content) => ctrl.handleEditAssistant(messageId, content)}
           />
           {/* AP-16: the pending-changes strip — ONE mount above BOTH composer
               arms (both sit under this pane, so a single site covers desktop

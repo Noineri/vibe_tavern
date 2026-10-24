@@ -43,10 +43,11 @@ mock.module("../Tooltip.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentMessageBlock: typeof import("./AgentMessageBlock.js").AgentMessageBlock;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ AgentMessageBlock } = await import("./AgentMessageBlock.js"));
   // The sidechat host self-registers on import (module-load registration) —
   // the wiring test below resolves its declared action by kind.
@@ -697,5 +698,223 @@ describe("ExperienceCopilotMessageBlock — page translation (follow-up 2026-10-
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
     expect(digest.getByTestId("copilot-digest-card-toggle").getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── AP-32: «Изменить» on the assistant's text rows ────────────────────────
+// WAS (characterized at AP-12, basis: the inline-edit describe above): only
+// the LAST user row carried an edit opener (`canEditLast`); assistant rows
+// carried copy / regenerate / delete only. NOW: every editable assistant
+// text row (the builder's `canEditAssistant` — the AP-30 rule derived once
+// from the delete boundaries) shows the opener in its action row; clicking
+// it swaps the message body for the SHARED editor in the assistant's flat
+// full-width shape («Сохранить» reuses `save`, «Отмена» reuses
+// `cancel_edit`), while «Сохранить» awaits the AP-31 handler — success
+// closes, failure keeps the draft open (the error toast is the handler's).
+// The opener reuses the `edit` key (the concept's one spelling — RU renders
+// the shared «Редактировать», the AP-12 wording note).
+
+function assistantEditStubs(ok: boolean) {
+  const seen: Array<{ messageId: string; content: string }> = [];
+  return {
+    seen,
+    onEditAssistant: async (messageId: string, content: string): Promise<boolean> => {
+      seen.push({ messageId, content });
+      return ok;
+    },
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — assistant edit (AP-32)", () => {
+  it("renders the edit opener FIRST in an editable assistant row", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    const edit = getByTestId("copilot-assistant-edit");
+    expect(edit.getAttribute("aria-label")).toBe("edit");
+    const rowHtml = container.querySelector('[data-testid="copilot-message-actions"]')!.innerHTML;
+    expect(rowHtml.indexOf("copilot-assistant-edit")).toBeLessThan(rowHtml.indexOf("copilot-turn-delete"));
+  });
+
+  it("no edit opener without canEditLast's assistant twin (folded rows)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit opener without onEditAssistant (no submit path)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit opener on a tool-call carrier (empty content renders nothing)", () => {
+    const { container, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({
+          id: "c1",
+          content: "",
+          toolCallsJson: JSON.stringify([{ id: "tc-1", name: "plan", arguments: {} }]),
+        })}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    expect(container.innerHTML).toBe("");
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+  });
+
+  it("clicking edit swaps the body for the flat full-width editor (the row hides)", () => {
+    const { container, getByTestId, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    const row = container.querySelector("[data-role='assistant']");
+    expect(row).not.toBeNull();
+    const editor = getByTestId("copilot-edit-message");
+    expect(row!.contains(editor)).toBe(true);
+    // Flat, not the user bubble: full width, no bubble chrome, the AP-2
+    // Markdown gone with the body, the action row hidden.
+    expect(editor.className).toContain("w-full");
+    expect(editor.className).not.toContain("max-w-[85%]");
+    expect(row!.querySelector(".bg-user-bg")).toBeNull();
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+    expect((editor.querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("Consider asking about her brother");
+    // The assistant pair: «Сохранить» (save) + «Отмена» (cancel_edit).
+    expect(getByTestId("copilot-edit-send").textContent).toBe("save");
+    expect(getByTestId("copilot-edit-cancel").textContent).toBe("cancel_edit");
+  });
+
+  it("save forwards (messageId, newText) and closes on success", async () => {
+    const stubs = assistantEditStubs(true);
+    const { getByTestId, queryByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(queryByTestId("copilot-edit-message")).toBeNull());
+    expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed answer" }]);
+    // Closed: the body (with the AP-2 variant) and its row return.
+    expect(getByText("Consider asking about her brother")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("a failed save keeps the editor open with the typed text", async () => {
+    const stubs = assistantEditStubs(false);
+    const { getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed answer" }]));
+    // Still open, draft intact — the handler's error toast is the surface.
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    expect((getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("fixed answer");
+  });
+
+  it("cancel restores the body without submitting", () => {
+    const stubs = assistantEditStubs(true);
+    const { getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "changed my mind" } });
+    fireEvent.click(getByTestId("copilot-edit-cancel"));
+    expect(stubs.seen).toEqual([]);
+    expect(getByText("Consider asking about her brother")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("a stream started elsewhere closes an open editor (no editing while streaming)", () => {
+    const stubs = assistantEditStubs(true);
+    const props = {
+      messageMarkup: "plain" as const,
+      message: assistantMsg(),
+      turnActions: [deleteTurnAction(() => {})],
+      canEditAssistant: true as const,
+      onEditAssistant: stubs.onEditAssistant,
+    };
+    const { getByTestId, queryByTestId, rerender } = render(<AgentMessageBlock {...props} />);
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    rerender(<AgentMessageBlock {...props} isBusy />);
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+  });
+
+  it("mobile renders the opener as an always-visible 44px button", () => {
+    mobileOverride = true;
+    const { getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    const button = getByTestId("copilot-assistant-edit");
+    expect(button.className).toContain("h-11");
+    expect(button.className).toContain("w-11");
+    expect(button.getAttribute("aria-label")).toBe("edit");
   });
 });

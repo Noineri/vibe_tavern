@@ -91,3 +91,42 @@ describe("AgentEditMessage — inline edit of the last own message (AP-12)", () 
     expect((getByTestId("copilot-edit-cancel") as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+// ─── AP-32: the shared editor on the assistant's rows ──────────────────────
+// WAS (characterized at AP-12, basis: the describes above): the editor owned
+// the user's bubble shape — `max-w-[85%]`, right-aligned buttons, the primary
+// always «Отправить» (`send`: this resends). NOW: the SAME editor swaps an
+// assistant row — `submitLabelKey` renames the primary («Сохранить» reuses
+// the existing `save` key; the user's «Отправить» stays the default) and
+// `layout="assistant"` takes the assistant's flat full-width shape (no
+// bubble cap, left-aligned buttons), not the user bubble.
+describe("AgentEditMessage — assistant layout (AP-32)", () => {
+  it("default primary label stays «Отправить» (the user's resend)", () => {
+    const { getByTestId } = renderEditor();
+
+    expect(getByTestId("copilot-edit-send").textContent).toBe("send");
+  });
+
+  it("submitLabelKey renames the primary (the assistant's «Сохранить» reuses save)", () => {
+    const { getByTestId } = renderEditor({ submitLabelKey: "save" });
+
+    expect(getByTestId("copilot-edit-send").textContent).toBe("save");
+  });
+
+  it("default layout keeps the user bubble shape (capped width, right-aligned buttons)", () => {
+    const { getByTestId } = renderEditor();
+
+    expect(getByTestId("copilot-edit-message").className).toContain("max-w-[85%]");
+    expect(getByTestId("copilot-edit-send").parentElement!.className).toContain("justify-end");
+  });
+
+  it("assistant layout is flat full-width (no bubble cap, left-aligned buttons)", () => {
+    const { getByTestId } = renderEditor({ layout: "assistant", submitLabelKey: "save" });
+
+    const root = getByTestId("copilot-edit-message");
+    expect(root.className).toContain("w-full");
+    expect(root.className).not.toContain("max-w-[85%]");
+    expect(getByTestId("copilot-edit-send").parentElement!.className).toContain("justify-start");
+    expect(getByTestId("copilot-edit-send").textContent).toBe("save");
+  });
+});

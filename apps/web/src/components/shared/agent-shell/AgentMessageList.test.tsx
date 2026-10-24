@@ -15,10 +15,11 @@ mock.module("../../../components/shared/Tooltip.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentMessageList: typeof import("./AgentMessageList.js").AgentMessageList;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   // Tool cards resolve target labels through the registered host
   // descriptor — the real experience host registers kind "experience"
   // (same side-effect pattern as AgentProfileModal.test.tsx).
@@ -2507,5 +2508,236 @@ describe("ExperienceCopilotMessageList — replaced turn stays hidden past the s
     expect(getByText("second question")).toBeDefined();
     expect(queryByText("second answer")).toBeNull();
     expect(container.querySelectorAll('[data-role="digest"]')).toHaveLength(1);
+  });
+});
+
+// ─── AP-32: «Изменить» on the assistant's text rows ─────────────────────────
+// WAS (characterized at AP-12, basis: the inline-edit describe above): the
+// list threaded `onEditLast` only — assistant rows had copy / regenerate /
+// delete and no edit affordance. NOW: the list threads AP-31's
+// `onEditAssistant` (messageId, content) => Promise<boolean> to every block
+// alongside the builder's per-row `canEditAssistant` (the AP-30 rule, ONE
+// derivation in `buildAgentTurnRow`); folded rows and tool-call carriers
+// show no opener. Save closes on true (the settle refetch shows the stored
+// text); failure keeps the draft open. The caption, the reasoning toggle
+// and the turn's anchored cards live outside the block — they stay put.
+describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
+  function editStubs(ok: boolean) {
+    const seen: Array<{ messageId: string; content: string }> = [];
+    return {
+      seen,
+      onEditAssistant: async (messageId: string, content: string): Promise<boolean> => {
+        seen.push({ messageId, content });
+        return ok;
+      },
+    };
+  }
+
+  it("every editable assistant text row carries the opener", () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditLast={mock((_content: string) => {})}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    // Both assistant answers (a1, a2) — edit is not last-turn-only.
+    expect(getAllByTestId("copilot-assistant-edit")).toHaveLength(2);
+  });
+
+  it("no opener without onEditAssistant (no submit path)", () => {
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditLast={mock((_content: string) => {})}
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+  });
+
+  it("folded assistant rows show no opener (only the kept tail does)", () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+          message({ id: "u2", role: "user", content: "new question" }),
+          message({ id: "a2", role: "assistant", content: "new answer" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    // a1 sits at/before the digest anchor (folded); a2 stays editable.
+    expect(getAllByTestId("copilot-assistant-edit")).toHaveLength(1);
+  });
+
+  it("tool-call carriers show no opener (only text rows do)", () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({
+            id: "c1",
+            role: "assistant",
+            content: "",
+            toolCallsJson: JSON.stringify([{ id: "tc-1", name: "plan", arguments: {} }]),
+            toolCallId: "tc-1",
+          }),
+          message({ id: "a1", role: "assistant", content: "the answer" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    expect(getAllByTestId("copilot-assistant-edit")).toHaveLength(1);
+  });
+
+  it("edit → save calls onEditAssistant with (messageId, newText) and closes on success", async () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId, getByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    // a1's opener is the first in document order (u1, a1, u2, a2).
+    fireEvent.click(getAllByTestId("copilot-assistant-edit")[0]!);
+    const box = getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement;
+    expect(box.value).toBe("first answer");
+    fireEvent.change(box, { target: { value: "fixed first answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(queryByTestId("copilot-edit-message")).toBeNull());
+    expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed first answer" }]);
+  });
+
+  it("a failed save keeps the editor open with the typed text", async () => {
+    const stubs = editStubs(false);
+    const { getAllByTestId, getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getAllByTestId("copilot-assistant-edit")[0]!);
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed first answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed first answer" }]));
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    expect((getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("fixed first answer");
+  });
+
+  it("cancel restores the row without submitting", () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId, getByTestId, queryByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getAllByTestId("copilot-assistant-edit")[0]!);
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "changed my mind" } });
+    fireEvent.click(getByTestId("copilot-edit-cancel"));
+    expect(stubs.seen).toEqual([]);
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+    expect(getByText("first answer")).toBeDefined();
+  });
+
+  it("the reasoning toggle survives opening and saving an edit", async () => {
+    const stubs = editStubs(true);
+    const { getAllByTestId, getByTestId, getByText, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({
+            id: "a1",
+            role: "assistant",
+            content: "the answer",
+            reasoning: "kept thought",
+            reasoningDurationMs: 4200,
+          }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    // The caption toggle (the AP-29 inline preset) is up before the edit.
+    expect(getByText("reasoning")).toBeDefined();
+    fireEvent.click(getAllByTestId("copilot-assistant-edit")[0]!);
+    // Still there while editing (it lives on the caption row, outside the block).
+    expect(getByText("reasoning")).toBeDefined();
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(queryByTestId("copilot-edit-message")).toBeNull());
+    expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed answer" }]);
+    expect(getByText("reasoning")).toBeDefined();
+  });
+
+  it("streaming: no assistant edit opener on any row", () => {
+    const stubs = editStubs(true);
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText="streaming…"
+        pendingReasoning=""
+        pendingUserContent=""
+        isSending
+        turnRow={turnRowCallbacks()}
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
   });
 });

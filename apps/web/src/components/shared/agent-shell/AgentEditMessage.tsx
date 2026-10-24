@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AutoTextarea } from "../auto-textarea.js";
 import { MobileExpandTextarea } from "../MobileExpandTextarea.js";
+import type { AgentI18nKey } from "../../../lib/agent-host-registry.js";
 import { useT } from "../../../i18n/context.js";
 
 // fork #1 of the RP message edit (chat/MessageBlock.tsx).
@@ -36,6 +37,10 @@ import { useT } from "../../../i18n/context.js";
 // «Редактировать», not a literal «Изменить» (named wording note — the `edit`
 // key is the concept's one spelling; a second key for the same verb would be
 // a duplicate source).
+// AP-32: the assistant's in-place save reuses this SAME editor with
+// `submitLabelKey="save"` (the existing `save` key — «Сохранить») and
+// `layout="assistant"` (flat full width, left-aligned pair); the user's
+// `send` default and bubble shape are untouched.
 export interface AgentEditMessageProps {
   /** The message text the editor opens with. */
   initialText: string;
@@ -48,9 +53,20 @@ export interface AgentEditMessageProps {
   onSubmit: (content: string) => void;
   /** Close the editor without sending (Esc key, cancel button). */
   onCancel: () => void;
+  /** AP-32: the primary button's label — default `send` («Отправить", the
+   *  user's resend). The assistant's in-place save passes `save`
+   *  («Сохранить" — the existing key, no new copy); the cancel button
+   *  always reuses `cancel_edit`. */
+  submitLabelKey?: AgentI18nKey;
+  /** AP-32: the edited row's shape — default `user` (the bubble cap +
+   *  right-aligned pair). `assistant` takes the assistant's flat full-width
+   *  shape (no cap, left-aligned pair), not the user bubble. The textarea
+   *  chrome is identical in both (the assistant body shares the bubble's
+   *  font-ui / ui-fs-1px / 1.5 type). */
+  layout?: "user" | "assistant";
 }
 
-export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel }: AgentEditMessageProps) {
+export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel, submitLabelKey = "send", layout = "user" }: AgentEditMessageProps) {
   const { t } = useT();
   const [draft, setDraft] = useState(initialText);
   const blank = draft.trim().length === 0;
@@ -61,7 +77,10 @@ export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel }: Ag
   };
 
   return (
-    <div className="w-full max-w-[85%]" data-testid="copilot-edit-message">
+    <div
+      className={layout === "assistant" ? "w-full" : "w-full max-w-[85%]"}
+      data-testid="copilot-edit-message"
+    >
       <MobileExpandTextarea
         value={draft}
         onChange={setDraft}
@@ -76,14 +95,14 @@ export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel }: Ag
           autoFocus
         />
       </MobileExpandTextarea>
-      <div className="mt-1.5 flex justify-end gap-1.5">
+      <div className={layout === "assistant" ? "mt-1.5 flex justify-start gap-1.5" : "mt-1.5 flex justify-end gap-1.5"}>
         <button
           type="button"
           data-testid="copilot-edit-send"
           className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-all duration-100 hover:brightness-110 disabled:opacity-50"
           disabled={isBusy || blank}
           onClick={submit}
-        >{t("send")}</button>
+        >{t(submitLabelKey)}</button>
         <button
           type="button"
           data-testid="copilot-edit-cancel"

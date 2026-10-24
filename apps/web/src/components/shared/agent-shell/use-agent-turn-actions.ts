@@ -230,6 +230,12 @@ export interface AgentTurnRowResult {
    *  opener flips block-local editing state, so the action is constructed
    *  at the renderer, not here; eligibility still lives in this builder). */
   canEditLast?: boolean;
+  /** AP-32: the row is an editable assistant text row (the AP-30 rule —
+   *  assistant, non-empty text, no tool calls, uncovered, not streaming)
+   *  — the block renders its own «Изменить» opener there (same renderer-
+   *  constructed shape as `canEditLast`; eligibility still lives HERE —
+   *  the ONE derivation, no second boundary computation). */
+  canEditAssistant?: boolean;
 }
 
 /**
@@ -243,6 +249,12 @@ export interface AgentTurnRowResult {
  * AP-12: the LAST user row additionally reports `canEditLast` — the block
  * renders its «Изменить» opener there (streaming and digest-cover both
  * return early above, so eligibility is last user row + not streaming).
+ * AP-32: every EDITABLE assistant text row additionally reports
+ * `canEditAssistant` — the AP-30 server rule mirrored from the SAME
+ * boundaries above (assistant, non-empty text, no `toolCallsJson`, not
+ * covered — the streaming early return covers the busy gate). The block
+ * renders its opener there; folded rows and tool-call carriers report
+ * nothing (copy still rides the row — reading never gates on editing).
  * Digest-covered rows (at/before the digest anchor — the 409 floor is
  * server-side, the UI hides proactively): delete hidden, copy kept. While
  * streaming no rows render at all, either role (host rows ride the same
@@ -296,9 +308,17 @@ export function buildAgentTurnRow(input: AgentTurnRowInput): AgentTurnRowResult 
       testId: "copilot-turn-delete",
     });
   }
+  // AP-32: the editable rule (AP-30's client mirror) — derived HERE from
+  // the same boundaries the row above uses: uncovered (the digest floor),
+  // non-empty text, no tool calls (carriers are refused server-side). The
+  // streaming gate returned early above, so no busy check here.
+  const canEditAssistant = !covered &&
+    message.content.trim().length > 0 &&
+    message.toolCallsJson == null;
   return {
     ...(hostActions !== undefined && hostActions.length > 0 ? { hostActions } : {}),
     turnActions,
+    ...(canEditAssistant ? { canEditAssistant: true as const } : {}),
   };
 }
 

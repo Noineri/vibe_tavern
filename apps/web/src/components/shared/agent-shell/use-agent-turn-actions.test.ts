@@ -323,6 +323,121 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
   });
 });
 
+// ─── AP-32: assistant-edit eligibility (`canEditAssistant`) ─────────────────
+// WAS (characterized at AP-12, basis: the row builder above): assistant rows
+// reported no edit signal — only the last USER row did (`canEditLast`). NOW:
+// every editable assistant text row (the AP-30 rule, derived HERE from the
+// same boundaries the delete uses — assistant, text, no tool calls, not
+// folded, not streaming) reports `canEditAssistant`; the block renders its
+// «Изменить» opener there. ONE derivation — no second boundary computation.
+
+describe("buildAgentTurnRow — assistant-edit eligibility (AP-32)", () => {
+  it("editable assistant text row: the copy row + canEditAssistant", () => {
+    const { turnActions, canEditAssistant } = buildAgentTurnRow({
+      message: message({ id: "a2", role: "assistant", content: "second answer" }),
+      visibleIndex: 3,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(testIds(turnActions)).toEqual(["copilot-turn-copy", "copilot-turn-regenerate", "copilot-turn-delete"]);
+    expect(canEditAssistant).toBe(true);
+  });
+
+  it("earlier-turn assistant text row: editable too (edit is not last-turn-only)", () => {
+    const { canEditAssistant } = buildAgentTurnRow({
+      message: message({ id: "a1", role: "assistant", content: "first answer" }),
+      visibleIndex: 1,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(canEditAssistant).toBe(true);
+  });
+
+  it("tool-call carrier with text: NO canEditAssistant (AP-30 refuses tool_call_row)", () => {
+    const { turnActions, canEditAssistant } = buildAgentTurnRow({
+      message: message({
+        id: "c1",
+        role: "assistant",
+        content: "carrier note",
+        toolCallsJson: JSON.stringify([{ id: "tc-1", name: "plan", arguments: {} }]),
+      }),
+      visibleIndex: 1,
+      lastUserVisibleIndex: 0,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(testIds(turnActions)).toContain("copilot-turn-copy");
+    expect(canEditAssistant).toBeUndefined();
+  });
+
+  it("empty-content carrier: NO canEditAssistant", () => {
+    const { canEditAssistant } = buildAgentTurnRow({
+      message: message({
+        id: "c1",
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([{ id: "tc-1", name: "plan", arguments: {} }]),
+      }),
+      visibleIndex: 1,
+      lastUserVisibleIndex: 0,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(canEditAssistant).toBeUndefined();
+  });
+
+  it("folded assistant text row: copy kept, NO canEditAssistant (digest floor)", () => {
+    const { turnActions, canEditAssistant } = buildAgentTurnRow({
+      message: message({ id: "a1", role: "assistant", content: "old answer" }),
+      visibleIndex: 1,
+      lastUserVisibleIndex: 3,
+      lastDigestVisibleIndex: 2,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(testIds(turnActions)).toEqual(["copilot-turn-copy"]);
+    expect(canEditAssistant).toBeUndefined();
+  });
+
+  it("streaming assistant row: no row, NO canEditAssistant", () => {
+    const { turnActions, canEditAssistant } = buildAgentTurnRow({
+      message: message({ id: "a2", role: "assistant", content: "second answer" }),
+      visibleIndex: 3,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: true,
+      callbacks: callbacks(),
+    });
+
+    expect(turnActions).toBeUndefined();
+    expect(canEditAssistant).toBeUndefined();
+  });
+
+  it("user rows never report canEditAssistant (edit-last owns that side)", () => {
+    const { canEditAssistant } = buildAgentTurnRow({
+      message: message({ id: "u2", role: "user", content: "plan it" }),
+      visibleIndex: 2,
+      lastUserVisibleIndex: 2,
+      lastDigestVisibleIndex: null,
+      isSending: false,
+      callbacks: callbacks(),
+    });
+
+    expect(canEditAssistant).toBeUndefined();
+  });
+});
+
 // ─── Delete-confirm state machine (on the hook — the modal renders from the pane) ───
 
 const originalFetch = globalThis.fetch;

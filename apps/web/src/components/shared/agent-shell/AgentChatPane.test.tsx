@@ -140,11 +140,12 @@ mock.module("../destructive-confirm-modal.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentChatPane: typeof import("./AgentChatPane.js").AgentChatPane;
 let getAgentHost: typeof import("../../../lib/agent-host-registry.js").getAgentHost;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   // The real experience host registers kind "experience" (same side-effect
   // pattern as the list tests) — the pane reads its descriptor for i18n keys.
   await import("../../build/editors/copilot/experience-agent-host.js");
@@ -734,5 +735,28 @@ describe("AgentChatPane — regenerate hide-set wiring (AP-29 follow-up 3)", () 
     expect(getByText("first answer")).toBeDefined();
     expect(getByText("second question")).toBeDefined();
     expect(queryByText("second answer")).toBeNull();
+  });
+});
+
+// ─── AP-32: the pane threads the assistant edit to the controller ──────────
+// WAS (AP-31): `ctrl.handleEditAssistant` existed but no surface called it
+// — the pane threaded `onEditLast` only. NOW: the pane passes
+// `onEditAssistant` (messageId, content) => `ctrl.handleEditAssistant` to
+// the list, so «Сохранить» on an assistant row writes through AP-30 and the
+// settle refetch shows the stored text; nothing regenerates.
+describe("AgentChatPane — assistant edit wiring (AP-32)", () => {
+  it("saving an assistant edit calls ctrl.handleEditAssistant with (messageId, newText)", async () => {
+    const { ctrl, getAllByTestId, getByTestId } = renderPane({
+      messages: [
+        message({ id: "u1", role: "user", content: "plan it" }),
+        message({ id: "a1", role: "assistant", content: "the answer" }),
+      ],
+    });
+
+    fireEvent.click(getAllByTestId("copilot-assistant-edit")[0]!);
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(ctrl.handleEditAssistant).toHaveBeenCalledTimes(1));
+    expect(ctrl.handleEditAssistant).toHaveBeenCalledWith("a1", "fixed answer");
   });
 });

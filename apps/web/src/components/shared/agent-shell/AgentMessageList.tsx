@@ -133,6 +133,12 @@ export interface AgentMessageListProps {
    *  Threaded to every block; only the last user row renders the opener
    *  (the row's `canEditLast` gate). Absent = no edit affordance anywhere. */
   onEditLast?: (content: string) => void;
+  /** AP-32: save an in-place assistant edit (the controller's
+   *  `handleEditAssistant` — AP-31). Threaded to every block; only editable
+   *  assistant text rows render the opener (the row's `canEditAssistant`
+   *  gate — the AP-30 rule, ONE derivation in `buildAgentTurnRow`).
+   *  Absent = no assistant edit affordance anywhere. */
+  onEditAssistant?: (messageId: string, content: string) => Promise<boolean>;
   /** AP-13: the thread's live turn failure (controller state, keyed per
    *  thread) — renders the loud error card at the feed end. Null/absent =
    *  no live failure (the quiet after-reload card below may still render). */
@@ -160,6 +166,7 @@ export function AgentMessageList({
   pendingPermissionAnswer = null,
   turnRow,
   onEditLast,
+  onEditAssistant,
   turnFailure = null,
   onRetryTurn,
   onStarterPick,
@@ -597,6 +604,8 @@ export function AgentMessageList({
                       turnActions={row.turnActions}
                       canEditLast={row.canEditLast === true}
                       onEditLast={onEditLast}
+                      canEditAssistant={row.canEditAssistant === true}
+                      onEditAssistant={onEditAssistant}
                       isBusy={isSending}
                     />
                   </div>
@@ -609,6 +618,8 @@ export function AgentMessageList({
                     turnActions={row.turnActions}
                     canEditLast={row.canEditLast === true}
                     onEditLast={onEditLast}
+                    canEditAssistant={row.canEditAssistant === true}
+                    onEditAssistant={onEditAssistant}
                     isBusy={isSending}
                   />
                 )}
