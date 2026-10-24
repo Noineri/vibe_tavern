@@ -18,6 +18,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { useModuleSwitch, type CoauthorInputAreaData } from "./use-coauthor-input-area.js";
 import { AttachmentPreview } from "../chat/AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "../chat/attachment-overflow-warning.js";
+import { AttachmentVisionWarning } from "../chat/attachment-vision-warning.js";
 
 export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData }) {
 	const {
@@ -59,6 +60,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 				!activeChatId && "pointer-events-none opacity-45",
 			)}
 		>
+			{data.attachmentVisionWarning && <AttachmentVisionWarning />}
 			{data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
 			<div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
 				{/* Toolbar row: module switch + attach + favorites (mobile BottomSheet) */}

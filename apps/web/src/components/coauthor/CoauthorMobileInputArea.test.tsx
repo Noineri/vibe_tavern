@@ -41,6 +41,7 @@ beforeAll(async () => {
 });
 
 const assets = await import("../../api/asset-api.js");
+const imageRoutes = await import("../../api/image-route-api.js");
 const controller = await import("../../hooks/use-chat-controller.js");
 const chatActions = await import("../../stores/api-actions/chat-actions.js");
 const { useChatStore } = await import("../../stores/chat-store.js");
@@ -191,4 +192,21 @@ describe("CoauthorMobileInputArea — Enter does not send (E4)", () => {
     fireEvent.click(getByTestId("coauthor-send-btn"));
     expect(handleSend).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('Co-Author mobile image warning (CA-1h3)', () => {
+  for (const route of ['none', 'describe'] as const) {
+    it(`image route ${route}: shared warning=${route === 'none'}, attachment-only Send stays enabled`, async () => {
+      const fetchRoute = spyOn(imageRoutes, 'fetchChatImageRoute').mockResolvedValue(route);
+      spies.push(fetchRoute);
+      const { view, handleSend } = setupComposer();
+      expect(fetchRoute).not.toHaveBeenCalled();
+      await act(async () => useChatStore.getState().addDraftAttachment({ id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 }));
+      expect(fetchRoute).toHaveBeenCalledWith('chat1');
+      expect(Boolean(view.queryByText('attachment_vision_warning'))).toBe(route === 'none');
+      expect((view.getByTestId('coauthor-send-btn') as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(view.getByTestId('coauthor-send-btn'));
+      expect(handleSend).toHaveBeenCalledTimes(1);
+    });
+  }
 });

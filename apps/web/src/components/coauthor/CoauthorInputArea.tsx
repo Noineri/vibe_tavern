@@ -13,6 +13,7 @@ import { CoauthorMobileInputArea } from "./CoauthorMobileInputArea.js";
 import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area.js";
 import { AttachmentPreview } from "../chat/AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "../chat/attachment-overflow-warning.js";
+import { AttachmentVisionWarning } from "../chat/attachment-vision-warning.js";
 
 /**
  * Co-Author message box (CS-22). A parallel input surface to the RP
@@ -74,6 +75,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
 		>
+			{data.attachmentVisionWarning && <AttachmentVisionWarning />}
 			{data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
 				{isDragOver && (

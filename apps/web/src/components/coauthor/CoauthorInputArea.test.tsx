@@ -45,6 +45,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 const assets = await import("../../api/asset-api.js");
+const imageRoutes = await import("../../api/image-route-api.js");
 const voiceMap = await import("../../lib/tts/voice-map-data.js");
 const { toast } = await import("sonner");
 const { default: userEvent } = await import("@testing-library/user-event");
@@ -332,5 +333,41 @@ describe("CoauthorInputArea attachments (CA-3b)", () => {
     expect(view.getByTestId("file-attachment-chip")).toBeDefined();
     await userEvent.setup().click(view.getByRole("button", { name: "attachment_file_actions" }));
     await waitFor(() => expect(view.getByRole("menuitem", { name: "attachment_summarize" })).toBeDefined());
+  });
+});
+
+describe('Co-Author desktop image warning (CA-1h3)', () => {
+  beforeEach(seedReady);
+  for (const route of ['none', 'describe'] as const) {
+    it(`image route ${route}: shared warning=${route === 'none'}, attachment-only Send remains enabled`, async () => {
+      const fetchRoute = spyOn(imageRoutes, 'fetchChatImageRoute').mockResolvedValue(route);
+      spies.push(fetchRoute);
+      const view = await composer();
+      expect(fetchRoute).not.toHaveBeenCalled();
+      await act(async () => useChatStore.getState().addDraftAttachment({ id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 }));
+      expect(fetchRoute).toHaveBeenCalledWith('chat1');
+      expect(Boolean(view.queryByText('attachment_vision_warning'))).toBe(route === 'none');
+      expect((view.getByTestId('coauthor-send-btn') as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(view.getByTestId('coauthor-send-btn'));
+      expect(handleSend).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('a Co-Author model switch refetches and clears the warning; vision precedes overflow', async () => {
+    const fetchRoute = spyOn(imageRoutes, 'fetchChatImageRoute').mockResolvedValue('none');
+    spies.push(fetchRoute);
+    const view = await composer();
+    await act(async () => {
+      useChatStore.getState().addDraftAttachment({ id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 });
+      useChatStore.getState().addDraftAttachment({ ...textFile, tokenCount: 5001 });
+    });
+    expect(view.getAllByRole('status').map((warning) => warning.textContent)).toEqual(['attachment_vision_warning', 'attachments_overflow_warning']);
+    fetchRoute.mockResolvedValue('describe');
+    await act(async () => useProviderDataStore.setState((state) => ({ coauthorSettingsByProfile: {
+      ...state.coauthorSettingsByProfile,
+      p1: { ...state.coauthorSettingsByProfile.p1!, modelName: 'another-model' },
+    } })));
+    expect(fetchRoute).toHaveBeenCalledTimes(2);
+    expect(view.queryByText('attachment_vision_warning')).toBeNull();
   });
 });

@@ -23,6 +23,8 @@ import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-bi
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useAttachmentDraft } from "../../hooks/use-attachment-draft.js";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
+import { fetchChatImageRoute } from "../../api/image-route-api.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -49,6 +51,9 @@ export function useCoauthorInputArea() {
 		allowedKinds: ["image", "file"],
 		getAttachments: () => useChatStore.getState().draftAttachments,
 	});
+	const imageRouteKey = JSON.stringify([activeChatId, binding.profileId, binding.model, binding.profile?.visionModel]);
+	const attachmentVisionWarning = useImageRouteWarning(draftAttachments, imageRouteKey, () =>
+		activeChatId ? fetchChatImageRoute(activeChatId) : Promise.reject(new Error("No active chat")));
 
 	// Co-Author readiness: the binding provides profile + model. The connection
 	// probe is RP-only, but Co-Author generation works as long as the binding
@@ -120,7 +125,7 @@ export function useCoauthorInputArea() {
 	return {
 		t,
 		chat,
-		...attachmentDraft, draftAttachments, attachmentOverflow,
+		...attachmentDraft, draftAttachments, attachmentOverflow, attachmentVisionWarning,
 		draft, setDraft, isSending, activeChatId, canUseLiveApi, canSend,
 		needsModel: !canUseLiveApi,
 		activeProfileId, favorites, activeModelId, handleSelectModel,
