@@ -104,6 +104,7 @@ HTML and CSS are the main toolkit; keep an existing canvas renderer when the gam
 
 For tilted, flipping or turning 3D objects, read `game-visualization/assets/depth-and-3d.md`.
 For a wedge, token or stack that must stay solid while it rotates, read `game-visualization/assets/rotating-solids.md`.
+For a shader-lit background, hundreds of particles, or a die or board drawn in real 3D, read `game-visualization/assets/webgl.md` first: the canvas can use hand-written WebGL, with a CSS fallback.
 
 ## Step 5 — Show what the player can do
 
