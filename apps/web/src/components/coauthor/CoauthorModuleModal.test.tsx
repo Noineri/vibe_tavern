@@ -35,10 +35,11 @@
  * so label assertions read as the mapped i18n key, never the raw snake_case.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -53,8 +54,14 @@ import type { TFunc } from "../../i18n/context.js";
 const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realSkillApi = await import("../../api/skill-api.js");
+const realModuleApi = await import("../../api/coauthor-module-api.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
 
 mock.module("../../i18n/context.js", () => ({
 		...realI18nContext,
@@ -117,6 +124,35 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
 	createCoauthorModuleAction,
 	updateCoauthorModuleAction,
 	deleteCoauthorModuleAction,
+}));
+
+// In-memory server for the ML-8 drag suite: `listCoauthorModulesAction` reads
+// from it on every mount (the reload proof), `reorderCoauthorModules` stores
+// into it. The modal adopts the reorder response via `onPersistOrder`.
+let serverModules: CoauthorModule[] = [];
+function applyModuleReorder(updates: Array<{ id: string; sortOrder: number }>): CoauthorModule[] {
+	const rank = new Map(updates.map((u) => [u.id, u.sortOrder]));
+	serverModules = [...serverModules].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+	return [...serverModules];
+}
+const reorderCoauthorModulesMock = mock(async (_updates: Array<{ id: string; sortOrder: number }>): Promise<CoauthorModule[]> => applyModuleReorder(_updates));
+mock.module("../../api/coauthor-module-api.js", () => ({
+	...realModuleApi,
+	reorderCoauthorModules: reorderCoauthorModulesMock,
+}));
+
+// Shape-identical with master-list.test.tsx (the co-load contract: the dnd
+// suites share one worker, so every @dnd-kit/core factory renders the REAL
+// components — a stub without aria poisons the sibling suite). Capturing the
+// DndContext handlers drives the exact drag-end boundary without fragile
+// pointer simulation in happy-dom.
+mock.module("@dnd-kit/core", () => ({
+	...realDndKit,
+	DndContext: (props: RealDndContextProps) => {
+		dndHandlers = props;
+		return <RealDndContext {...props} />;
+	},
+	DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 // CTX-S7: skill catalog the module editor's skill picker renders. Mocked so the
@@ -194,12 +230,15 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+	dndHandlers = null;
 	listCoauthorModulesAction.mockReturnValue(Promise.resolve(ALL_MODULES));
 	listSkillsMock.mockReturnValue(Promise.resolve(SKILL_CATALOG));
 	setCoauthorModuleAction.mockClear();
 	createCoauthorModuleAction.mockClear();
 	updateCoauthorModuleAction.mockClear();
 	deleteCoauthorModuleAction.mockClear();
+	reorderCoauthorModulesMock.mockClear();
+	reorderCoauthorModulesMock.mockImplementation(async (updates: Array<{ id: string; sortOrder: number }>) => applyModuleReorder(updates));
 });
 
 afterEach(() => {
@@ -579,21 +618,23 @@ describe("CoauthorModuleModal — rows (AP-25, mockup §5)", () => {
 	});
 
 	it("marks the active module with the in-use marker (null assignment → default active)", async () => {
-		// AP-25 was: the active row carried "★ "; now (AP-24 visual rules):
-		// the check + in-use marker line, no star, no dot.
+		// ML-8 was: the check + in-use text line under the description; now
+		// (MASTER_LIST_PRIMITIVE_PLAN row rules): the ★ in the primitive's
+		// status slot, never a whole-row marker line.
 		const { getByTestId } = await openAndFlush();
-		expect(getByTestId("module-row-default").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("module-row-default").textContent).not.toContain("★");
-		expect(getByTestId("module-row-cmod_1").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("module-row-default").textContent).toContain("★");
+		expect(getByTestId("module-row-default").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("module-row-cmod_1").textContent).not.toContain("★");
 	});
 
 	it("a user assignment moves the marker", async () => {
+		// ML-8 was: the in-use text line moved rows; now: the ★ does.
 		setActiveChat("cmod_1");
 		openModal();
 		const { getByTestId } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
-		expect(getByTestId("module-row-cmod_1").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("module-row-default").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("module-row-cmod_1").textContent).toContain("★");
+		expect(getByTestId("module-row-default").textContent).not.toContain("★");
 	});
 
 	it("renders the name and the pills on separate lines; the name wraps (no truncate)", async () => {
@@ -704,5 +745,82 @@ describe("CoauthorModuleModal — footer (AP-25, mockup §5)", () => {
 		await waitFor(() => expect(getByTestId("module-activate-btn")).toBeTruthy());
 		expect(getByText("coauthor.module.activate")).toBeTruthy();
 		expect(queryByTestId("module-in-use-state")).toBeNull();
+	});
+});
+
+describe("CoauthorModuleModal — drag reorder (ML-8)", () => {
+	// The ProxyManagerModal.reorder.test.tsx pattern: the captured-handler
+	// drag-end boundary, the arrayMove payload asserted, the optimistic DOM,
+	// the reload proof (unmount → fresh mount reads the server order), and
+	// the rejected-persist rollback.
+	beforeEach(() => {
+		serverModules = [...ALL_MODULES];
+		listCoauthorModulesAction.mockImplementation(() => Promise.resolve([...serverModules]));
+	});
+
+	function rowOrder(view: ReturnType<typeof render>): string[] {
+		return Array.from(view.baseElement.querySelectorAll('[data-testid^="module-row-"]'))
+			.map((el) => el.getAttribute("data-testid")!)
+			.filter((tid) => tid.startsWith("module-row-") && !tid.includes("-name-") && !tid.includes("-pills-"));
+	}
+
+	function dragEnd(activeId: string, overId: string): void {
+		expect(dndHandlers).toBeTruthy();
+		const endEvent = { active: { id: activeId }, over: { id: overId } } as unknown as Parameters<
+			NonNullable<RealDndContextProps["onDragEnd"]>
+		>[0];
+		act(() => {
+			dndHandlers!.onDragEnd!(endEvent);
+		});
+	}
+
+	async function openAndFlushRows() {
+		setActiveChat(null);
+		openModal();
+		const view = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(view.getByTestId("module-row-cmod_1")).toBeTruthy());
+		return view;
+	}
+
+	it("dragging a module persists the arrayMove payload and the order survives a remount", async () => {
+		const view = await openAndFlushRows();
+		expect(rowOrder(view)).toEqual(["module-row-default", "module-row-profile-editor", "module-row-cmod_1"]);
+
+		dragEnd("default", "cmod_1");
+		await act(async () => {});
+		expect(reorderCoauthorModulesMock).toHaveBeenCalledTimes(1);
+		expect(reorderCoauthorModulesMock.mock.calls[0]?.[0]).toEqual([
+			{ id: "profile-editor", sortOrder: 0 },
+			{ id: "cmod_1", sortOrder: 1 },
+			{ id: "default", sortOrder: 2 },
+		]);
+		// Optimistic order shows immediately (the server response has been
+		// adopted via onPersistOrder).
+		expect(rowOrder(view)).toEqual(["module-row-profile-editor", "module-row-cmod_1", "module-row-default"]);
+		view.unmount();
+
+		// Reload: a fresh mount lists the server-persisted order.
+		const reloaded = await openAndFlushRows();
+		expect(rowOrder(reloaded)).toEqual(["module-row-profile-editor", "module-row-cmod_1", "module-row-default"]);
+		reloaded.unmount();
+	});
+
+	it("a rejected persist rolls back to the committed order", async () => {
+		reorderCoauthorModulesMock.mockImplementationOnce(async () => { throw new Error("nope"); });
+		const view = await openAndFlushRows();
+
+		dragEnd("default", "cmod_1");
+		await waitFor(() => expect(reorderCoauthorModulesMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(rowOrder(view)).toEqual(["module-row-default", "module-row-profile-editor", "module-row-cmod_1"]));
+		view.unmount();
+	});
+
+	it("every module row carries a drag handle and tapping a row still selects it", async () => {
+		const view = await openAndFlushRows();
+		expect(view.getAllByLabelText("drag")).toHaveLength(3);
+
+		await act(async () => { fireEvent.pointerDown(view.getByTestId("module-row-profile-editor")); });
+		await waitFor(() => expect(view.getByTestId("module-detail-name").textContent).toBe("Profile Editor"));
+		view.unmount();
 	});
 });

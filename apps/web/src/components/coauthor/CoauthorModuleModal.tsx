@@ -1,13 +1,15 @@
 // forks: 1 — AgentProfileModal (apps/web/src/components/shared/agent-shell/AgentProfileModal.tsx)
-// is fork #1 (the profile modal frame-clones this module modal; AP-24).
+// is fork #1 (the profile modal frame-clones this module modal's shell +
+// detail/editor + footer matrix; AP-24). Both lists render through the shared
+// master-list primitive (ML-8) — the fork no longer counts the list rows.
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { ModuleList } from "./CoauthorModuleList.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
-import { EmptyState } from "../shared/empty-state.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { Icons } from "../shared/icons.js";
-import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -83,7 +85,7 @@ function draftToCreateInput(d: ModuleDraft): CoauthorModuleCreate {
 	};
 }
 
-type DetailMode = "view" | "edit" | "create";
+export type DetailMode = "view" | "edit" | "create";
 
 /**
  * CS-25: full author-module manager (MasterDetail). Built-in seed modules are
@@ -328,6 +330,7 @@ export function CoauthorModuleModal() {
 						t={t}
 						onSelect={(id) => handleSelect(id, openDetail)}
 						onAdd={() => handleNew(openDetail)}
+						onPersistOrder={(refreshed) => setModules(refreshed)}
 					/>
 				)}
 				detailContent={({ closeDetail }) =>
@@ -438,101 +441,6 @@ export function CoauthorModuleModal() {
 }
 
 // ─── Master list ────────────────────────────────────────────────────────
-
-interface ModuleListProps {
-	modules: CoauthorModule[];
-	isLoading: boolean;
-	selectedId: string | null;
-	activeModuleId: string;
-	detailMode: DetailMode;
-	t: TFunc;
-	onSelect: (id: string) => void;
-	onAdd: () => void;
-}
-
-/**
- * Master list — mirrors the canonical layout of `ProviderProfileList` /
- * `PresetList`: a full-height flex column with a section label, a scrollable
- * row list, and a dashed "+ New" affordance docked at the bottom. Rows carry
- * the name (SC-16d: wraps, never cut) + one active marker + 11 px tags — no
- * id line, no hover edit/delete icons (Dup/Edit/Delete live in the
- * `MasterDetailFooter`, one set for the selection).
- */
-function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onAdd }: ModuleListProps) {
-	if (isLoading) {
-		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.module.loading")}</div>;
-	}
-	return (
-		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
-				{t("coauthor.module.list_label")}
-			</div>
-			<div className="flex-1 overflow-y-auto">
-				{modules.length === 0 ? (
-					<div className="flex h-full items-center justify-center px-2">
-						<EmptyState
-							icon={<Icons.Tool />}
-							title={t("coauthor.module.empty")}
-							sub={t("coauthor.module.empty_sub")}
-						/>
-					</div>
-				) : (
-					modules.map((m) => {
-						const isActive = m.id === activeModuleId;
-						const isSelected = (m.id === selectedId && detailMode === "view") || (detailMode === "edit" && m.id === selectedId);
-						return (
-							<div
-								key={m.id}
-								data-testid={`module-row-${m.id}`}
-								onPointerDown={() => onSelect(m.id)}
-								className={cn(
-									"cursor-pointer border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
-									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-								)}
-							>
-								<div className="min-w-0 py-2">
-									<div className="flex min-w-0 items-center gap-1.5">
-										<span
-											data-testid={`module-row-name-${m.id}`}
-											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
-										>
-											{m.name}
-										</span>
-									</div>
-									{m.isBuiltIn && (
-										<div data-testid={`module-row-pills-${m.id}`} className="mt-1 flex flex-wrap gap-1">
-											<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-												{t("coauthor.module.built_in")}
-											</span>
-										</div>
-									)}
-									<div className={cn(rowSecondCls, "mt-0.5 line-clamp-2 leading-snug text-t4")}>{m.description}</div>
-									{isActive && (
-										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
-											<Icons.Check className="h-3 w-3 shrink-0" />
-											{t("copilot_profile_in_use")}
-										</div>
-									)}
-								</div>
-								<MasterDetailMobileDrillDown onSelect={() => onSelect(m.id)} className="py-3" />
-							</div>
-						);
-					})
-				)}
-			</div>
-			<div className="shrink-0 border-t border-border px-3 pt-3">
-				<button
-					type="button"
-					data-testid="module-new-btn"
-					className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-					onClick={() => onAdd()}
-				>
-					<Icons.Plus /> {t("coauthor.module.new")}
-				</button>
-			</div>
-		</div>
-	);
-}
 
 // ─── Read-only view (built-in + user modules) ───────────────────────────
 

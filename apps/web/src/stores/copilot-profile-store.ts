@@ -15,6 +15,7 @@ import {
   createCopilotProfile,
   updateCopilotProfile,
   deleteCopilotProfile,
+  reorderCopilotProfiles,
 } from "../api/copilot-profile-api.js";
 
 export interface CopilotProfileState {
@@ -38,6 +39,11 @@ export interface CopilotProfileActions {
   update: (id: string, input: CopilotProfileUpdate) => Promise<CopilotProfile>;
   /** Delete a user profile and refresh. The built-in id is rejected server-side. */
   remove: (id: string) => Promise<void>;
+  /** Rewrite ONE kind's user profiles' manual list order (ML-8) and adopt
+   *  the reorder response (the server returns the refreshed merged list —
+   *  the ServicePromptsPane pattern, no second fetch). The built-in seed
+   *  has no stored record and never appears in `updates`. */
+  reorder: (kind: string, updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 }
 
 export type CopilotProfileStore = CopilotProfileState & CopilotProfileActions;
@@ -76,6 +82,11 @@ export const useCopilotProfileStore = create<CopilotProfileStore>()((set, get) =
   remove: async (id) => {
     await deleteCopilotProfile(id);
     await get().load();
+  },
+
+  reorder: async (kind, updates) => {
+    const profiles = await reorderCopilotProfiles(kind, updates);
+    set({ profiles });
   },
 }));
 

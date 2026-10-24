@@ -19,10 +19,11 @@
  * is pinned.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -35,6 +36,11 @@ const realProfileApi = await import("../../../api/copilot-profile-api.js");
 const realSkillApi = await import("../../../api/copilot-skill-api.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
 
 mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
@@ -84,6 +90,19 @@ const createCopilotProfile = mock(async (_input: CopilotProfileCreate) => USER);
 const updateCopilotProfile = mock(async (_id: string, _input: CopilotProfileUpdate) => USER);
 const deleteCopilotProfile = mock(async (_id: string) => undefined);
 const setCopilotProfile = mock(async (_scriptId: string, _profileId: string | null) => undefined);
+// ML-8: the store `reorder(kind, …)` persist — the in-memory server keeps the
+// built-in seed first (it has no stored record) and orders users by payload.
+let serverProfiles: CopilotProfile[] = [];
+function applyProfileReorder(updates: Array<{ id: string; sortOrder: number }>): CopilotProfile[] {
+	const rank = new Map(updates.map((u) => [u.id, u.sortOrder]));
+	const seed = serverProfiles.find((p) => p.isBuiltIn);
+	const users = serverProfiles
+		.filter((p) => !p.isBuiltIn)
+		.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+	serverProfiles = seed ? [seed, ...users] : [...users];
+	return [...serverProfiles];
+}
+const reorderCopilotProfilesMock = mock(async (_kind: string, _updates: Array<{ id: string; sortOrder: number }>): Promise<CopilotProfile[]> => applyProfileReorder(_updates));
 
 // SC-0g: the chat-variant wiring — the SC-0f chat-row client and the SC-0d
 // kind-default action (both mocked; the modal's two buttons pin their targets).
@@ -114,6 +133,21 @@ mock.module("../../../api/copilot-profile-api.js", () => ({
 	updateCopilotProfile,
 	deleteCopilotProfile,
 	setCopilotProfile,
+	reorderCopilotProfiles: reorderCopilotProfilesMock,
+}));
+
+// Shape-identical with master-list.test.tsx (the co-load contract: the dnd
+// suites share one worker, so every @dnd-kit/core factory renders the REAL
+// components — a stub without aria poisons the sibling suite). Capturing the
+// DndContext handlers drives the exact drag-end boundary without fragile
+// pointer simulation in happy-dom.
+mock.module("@dnd-kit/core", () => ({
+	...realDndKit,
+	DndContext: (props: RealDndContextProps) => {
+		dndHandlers = props;
+		return <RealDndContext {...props} />;
+	},
+	DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 const realChatSettingsApi = await import("../../../api/agent-chat-settings-api.js");
@@ -271,6 +305,10 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+	dndHandlers = null;
+	serverProfiles = [...ALL_PROFILES];
+	reorderCopilotProfilesMock.mockClear();
+	reorderCopilotProfilesMock.mockImplementation(async (_kind: string, updates: Array<{ id: string; sortOrder: number }>) => applyProfileReorder(updates));
 	listCopilotProfiles.mockReset();
 	listCopilotProfiles.mockResolvedValue(ALL_PROFILES);
 	listCopilotSkills.mockReset();
@@ -397,20 +435,22 @@ describe("CopilotProfileModal — list", () => {
 	});
 
 	it("marks the assigned profile with the in-use marker (null assignment → built-in active)", async () => {
-		// AP-24 was: the active row carried "★ "; now (mockup §5): the
-		// check + «используется» marker line, no star, no dot.
+		// ML-8 was: the check + in-use text line under the pills; now
+		// (MASTER_LIST_PRIMITIVE_PLAN row rules): the ★ in the primitive's
+		// status slot, never a whole-row marker line.
 		const { getByTestId } = renderModal({ assignedProfileId: null });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("★");
-		expect(getByTestId("copilot-profile-row-cprof_1").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_1").textContent).not.toContain("★");
 	});
 
 	it("marks a user assignment", async () => {
+		// ML-8 was: the in-use text line moved rows; now: the ★ does.
 		const { getByTestId } = renderModal({ assignedProfileId: "cprof_1" });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_1").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_1").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("★");
 	});
 });
 
@@ -423,10 +463,11 @@ describe("CopilotProfileModal — name never cut (SC-16d)", () => {
 		expect(nameEl.textContent).toContain("Experience Authoring");
 		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
 		// Separate lines: neither element contains the other; both hang off
-		// the same row container.
+		// the primitive's title slot (ML-8 was: two sibling divs off the row
+		// container — the slot still stacks them, name first).
 		expect(nameEl.contains(pillsEl)).toBe(false);
 		expect(pillsEl.contains(nameEl)).toBe(false);
-		expect(nameEl.parentElement?.parentElement).toBe(pillsEl.parentElement);
+		expect(nameEl.parentElement).toBe(pillsEl.parentElement);
 	});
 
 	it("the name element wraps (no truncate)", async () => {
@@ -711,9 +752,9 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		const { getByTestId } = renderChatModal("cprof_here", "cprof_default");
 		await flush(getByTestId);
 		// The mocked useT returns keys verbatim, so the pills surface as keys.
-		// AP-24 was: the effective row carried "★"; now (mockup §5): the
-		// check + «используется» marker.
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("copilot_profile_in_use");
+		// ML-8 was: the check + in-use text line; now (row rules): the ★ in
+		// the primitive's status slot again.
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("★");
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_default");
 		// The (mocked) chat-row GET ran for this chat + kind.
@@ -724,11 +765,11 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// SC-0k (was: nothing was marked here when the chat followed the
 		// default — basis: owner decision 3, refined 2026-10-19): the active
 		// mark sits on the EFFECTIVE profile, so the default row carries it.
-		// AP-24: the mark is the in-use marker, not "★".
+		// ML-8: the mark is the ★ again, not the check-line.
 		const { getByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
 	});
 
@@ -815,8 +856,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// The state label proves the chat-row read ("builtin") applied.
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_active_here"));
 		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(true);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("★");
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 	});
 
@@ -826,8 +867,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// pinning keeps this chat on it when the default later changes.
 		const { getByTestId } = renderChatModal(null, "cprof_default");
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("copilot_profile_in_use");
+		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
 		expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_use_here");
@@ -987,5 +1028,141 @@ describe("CopilotProfileModal — no skills surface (AP-27)", () => {
 		await flush(getByTestId);
 		expect(queryByTestId("copilot-profile-manage-skills-btn")).toBeNull();
 		expect(getByTestId("md-header-actions").textContent).toBe("");
+	});
+});
+
+describe("CopilotProfileModal — drag reorder (ML-8)", () => {
+	// The ProxyManagerModal.reorder.test.tsx pattern: the captured-handler
+	// drag-end boundary, the kind-scoped arrayMove payload asserted, the
+	// optimistic DOM, the reload proof (store reset + fresh mount reads the
+	// server order), the rejected-persist rollback, and the pinned built-in
+	// seed without a handle.
+	const SECOND: CopilotProfile = {
+		id: "cprof_2",
+		name: "Second profile",
+		isBuiltIn: false,
+		basePrompt: "You help with a second thing.",
+		toolSet: { write_buffer: true },
+		agentKind: "experience",
+	};
+
+	beforeEach(() => {
+		serverProfiles = [BUILTIN, USER, SECOND];
+		listCopilotProfiles.mockImplementation(() => Promise.resolve([...serverProfiles]));
+	});
+
+	function rowOrder(view: ReturnType<typeof render>): string[] {
+		return Array.from(view.baseElement.querySelectorAll('[data-testid^="copilot-profile-row-"]'))
+			.map((el) => el.getAttribute("data-testid")!)
+			.filter((tid) => tid.startsWith("copilot-profile-row-") && !tid.includes("-name-") && !tid.includes("-pills-"));
+	}
+
+	function dragEnd(activeId: string, overId: string): void {
+		expect(dndHandlers).toBeTruthy();
+		const endEvent = { active: { id: activeId }, over: { id: overId } } as unknown as Parameters<
+			NonNullable<RealDndContextProps["onDragEnd"]>
+		>[0];
+		act(() => {
+			dndHandlers!.onDragEnd!(endEvent);
+		});
+	}
+
+	it("dragging a user profile persists the kind-scoped arrayMove payload and the order survives a remount", async () => {
+		const view = renderModal();
+		await flush(view.getByTestId);
+		expect(rowOrder(view)).toEqual([
+			"copilot-profile-row-builtin",
+			"copilot-profile-row-cprof_1",
+			"copilot-profile-row-cprof_2",
+		]);
+
+		dragEnd("cprof_1", "cprof_2");
+		await act(async () => {});
+		// Kind-scoped: the modal passes its own kind, and the built-in
+		// seed (no stored record) never enters the payload.
+		expect(reorderCopilotProfilesMock).toHaveBeenCalledTimes(1);
+		expect(reorderCopilotProfilesMock.mock.calls[0]).toEqual([
+			"experience",
+			[
+				{ id: "cprof_2", sortOrder: 0 },
+				{ id: "cprof_1", sortOrder: 1 },
+			],
+		]);
+		// Optimistic order shows immediately (the store adopted the reorder
+		// response); the seed stays pinned first.
+		expect(rowOrder(view)).toEqual([
+			"copilot-profile-row-builtin",
+			"copilot-profile-row-cprof_2",
+			"copilot-profile-row-cprof_1",
+		]);
+		view.unmount();
+
+		// Reload: reset the store and mount fresh — the list reads the
+		// server-persisted order.
+		useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
+		const reloaded = renderModal();
+		await flush(reloaded.getByTestId);
+		expect(rowOrder(reloaded)).toEqual([
+			"copilot-profile-row-builtin",
+			"copilot-profile-row-cprof_2",
+			"copilot-profile-row-cprof_1",
+		]);
+		reloaded.unmount();
+	});
+
+	it("a script modal passes its own kind to the reorder persist", async () => {
+		const SCRIPT_SECOND: CopilotProfile = {
+			id: "cprof_script_2",
+			name: "More dice",
+			isBuiltIn: false,
+			basePrompt: "You help with more dice.",
+			toolSet: { write_buffer: true },
+			agentKind: "script",
+		};
+		serverProfiles = [SCRIPT_BUILTIN, SCRIPT_USER, SCRIPT_SECOND];
+		listCopilotProfiles.mockImplementation(() => Promise.resolve([...serverProfiles]));
+		const view = renderModal({ agentKind: "script" });
+		await flush(view.getByTestId);
+
+		dragEnd("cprof_script_1", "cprof_script_2");
+		await act(async () => {});
+		expect(reorderCopilotProfilesMock).toHaveBeenCalledTimes(1);
+		expect(reorderCopilotProfilesMock.mock.calls[0]).toEqual([
+			"script",
+			[
+				{ id: "cprof_script_2", sortOrder: 0 },
+				{ id: "cprof_script_1", sortOrder: 1 },
+			],
+		]);
+		view.unmount();
+	});
+
+	it("the built-in seed is pinned without a handle; dragging onto it is a noop", async () => {
+		const view = renderModal();
+		await flush(view.getByTestId);
+		// Two user rows → two handles; the pinned seed carries none.
+		expect(within(view.getByTestId("copilot-profile-row-cprof_1")).getAllByLabelText("drag")).toHaveLength(1);
+		expect(within(view.getByTestId("copilot-profile-row-cprof_2")).getAllByLabelText("drag")).toHaveLength(1);
+		expect(within(view.getByTestId("copilot-profile-row-builtin")).queryByLabelText("drag")).toBeNull();
+
+		dragEnd("cprof_1", "builtin");
+		await act(async () => {});
+		expect(reorderCopilotProfilesMock).not.toHaveBeenCalled();
+		view.unmount();
+	});
+
+	it("a rejected persist rolls back to the committed order", async () => {
+		reorderCopilotProfilesMock.mockImplementationOnce(async () => { throw new Error("nope"); });
+		const view = renderModal();
+		await flush(view.getByTestId);
+
+		dragEnd("cprof_1", "cprof_2");
+		await waitFor(() => expect(reorderCopilotProfilesMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(rowOrder(view)).toEqual([
+			"copilot-profile-row-builtin",
+			"copilot-profile-row-cprof_1",
+			"copilot-profile-row-cprof_2",
+		]));
+		view.unmount();
 	});
 });

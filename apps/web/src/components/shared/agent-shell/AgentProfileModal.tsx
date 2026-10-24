@@ -1,19 +1,24 @@
 // fork #1 of CoauthorModuleModal (apps/web/src/components/coauthor/CoauthorModuleModal.tsx):
-// the profile modal frame-clones the module modal (MasterDetail shell, row /
-// detail rules, MasterDetailFooter matrix) while its data flow stays
+// the profile modal frame-clones the module modal (MasterDetail shell,
+// detail/editor, MasterDetailFooter matrix) while its data flow stays
 // profile-specific (name + basePrompt + toolSet, no description / skills /
-// max steps). Frame correspondence: list rows (name line 1 + tags + one
-// active marker, no id line, no hover icons) → detail (title + tag, clamped
-// prompt preview + toggle, labelled tool chips) → footer (left actions,
-// right Close + primary / quiet state, edit Cancel + Save).
+// max steps). Frame correspondence: detail (title + tag, clamped prompt
+// preview + toggle, labelled tool chips) → footer (left actions, right
+// Close + primary / quiet state, edit Cancel + Save). The list renders
+// through the shared master-list primitive (ML-8) — this fork no longer
+// counts the list rows.
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
+import { arrayMove } from "@dnd-kit/sortable";
+import { MasterDetailModal, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
+import { MasterList } from "../master-list/master-list.js";
+import { MasterListPhoneRow, SortableMasterListPhoneRow } from "../master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../master-list/master-list-overlay-row.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import { EmptyState } from "../empty-state.js";
 import { AutoTextarea } from "../auto-textarea.js";
 import { Icons } from "../icons.js";
 import { TextInput } from "../text-input.js";
-import { lblCls, listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
+import { lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
@@ -308,6 +313,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 						defaultProfileId={assignment.defaultProfileId}
 						detailMode={detailMode}
 						t={t}
+						agentKind={agentKind}
 						onSelect={(id) => handleSelect(id, openDetail)}
 						onAdd={() => handleNew(openDetail)}
 					/>
@@ -449,96 +455,136 @@ interface ProfileListProps {
 	defaultProfileId?: string | null;
 	detailMode: DetailMode;
 	t: TFunc;
+	/** The kind under management — the reorder persist passes THIS kind
+	 *  (ML-6: order is within one kind's list). The modal already knows it
+	 *  as a prop; the list must not reorder another kind's profiles. */
+	agentKind: string;
 	onSelect: (id: string) => void;
 	onAdd: () => void;
 }
 
-function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, onSelect, onAdd }: ProfileListProps) {
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, overlay, phone drill-down row). This list supplies data + slots:
+// the name (SC-16d: wraps, never cut) + built-in/default tags in the title
+// slot, the ★ for the effective profile in the status slot (the row rules:
+// «in use» is a marker, never a whole-row color), and the arrayMove +
+// store `reorder(kind, …)` persist (the ML-6 backend, kind-scoped).
+// The built-in seed (BUILTIN_PROFILE_ID) has no stored record, so it stays
+// pinned at the top as a handle-less `MasterListPhoneRow` — the ML-3
+// ServicePromptsPane Default-row precedent; dragging onto it is a noop.
+function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, agentKind, onSelect, onAdd }: ProfileListProps) {
+	const reorderProfiles = useCopilotProfileStore((s) => s.reorder);
 	if (isLoading) {
 		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_loading")}</div>;
 	}
 	return (
-		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
-				{t("copilot_profile_list_label")}
-			</div>
-			<div className="flex-1 overflow-y-auto">
-				{profiles.length === 0 ? (
-					<div className="flex h-full items-center justify-center px-2">
-						<EmptyState
-							icon={<Icons.Tool />}
-							title={t("copilot_profile_empty")}
-							sub={t("copilot_profile_empty_sub")}
-						/>
-					</div>
-				) : (
-					profiles.map((p) => {
-						const isActive = p.id === activeProfileId;
-						const isSelected = (p.id === selectedId && detailMode === "view") || (detailMode === "edit" && p.id === selectedId);
-						// The kind-default pill (chat-target hosts only): the
-						// null default reads as the built-in seed, mirroring
-						// the script null→builtin fallback.
-						const showDefaultPill = defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID);
-						return (
-							<div
-								key={p.id}
-								data-testid={`copilot-profile-row-${p.id}`}
-								onPointerDown={() => onSelect(p.id)}
-								className={cn(
-									"cursor-pointer border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
-									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
+		<MasterList<CopilotProfile>
+			items={profiles}
+			getId={(p) => p.id}
+			// The pinned built-in seed is never sortable (ML-3 pattern).
+			sortableIds={profiles.filter((p) => p.id !== BUILTIN_PROFILE_ID).map((p) => p.id)}
+			onReorderItems={(activeId, overId, currentItems) => {
+				// The built-in seed has no stored record: dragging onto it
+				// is a noop (the ML-3 ServicePromptsPane Default guard).
+				if (activeId === BUILTIN_PROFILE_ID || overId === BUILTIN_PROFILE_ID) {
+					return { optimisticItems: currentItems, persist: () => {} };
+				}
+				const fromIdx = currentItems.findIndex((p) => p.id === activeId);
+				const toIdx = currentItems.findIndex((p) => p.id === overId);
+				if (fromIdx === -1 || toIdx === -1) {
+					return { optimisticItems: currentItems, persist: () => {} };
+				}
+				const reordered = arrayMove(currentItems, fromIdx, toIdx);
+				return {
+					optimisticItems: reordered,
+					persist: () => reorderProfiles(agentKind, reordered.filter((p) => !p.isBuiltIn).map((p, i) => ({ id: p.id, sortOrder: i }))),
+				};
+			}}
+			header={(
+				<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
+					{t("copilot_profile_list_label")}
+				</div>
+			)}
+			emptyState={profiles.length === 0 ? (
+				<div className="flex h-full items-center justify-center px-2">
+					<EmptyState
+						icon={<Icons.Tool />}
+						title={t("copilot_profile_empty")}
+						sub={t("copilot_profile_empty_sub")}
+					/>
+				</div>
+			) : undefined}
+			renderRow={(p) => {
+				const isActive = p.id === activeProfileId;
+				const isSelected = (p.id === selectedId && detailMode === "view") || (detailMode === "edit" && p.id === selectedId);
+				// The kind-default pill (chat-target hosts only): the
+				// null default reads as the built-in seed, mirroring
+				// the script null→builtin fallback.
+				const showDefaultPill = defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID);
+				// SC-16d: the name owns line 1 alone (wraps, never cut);
+				// the pills own the line below (only when present); no id line.
+				const title = (
+					<>
+						<span
+							data-testid={`copilot-profile-row-name-${p.id}`}
+							className="whitespace-normal break-words"
+						>
+							{p.name}
+						</span>
+						{(p.isBuiltIn || showDefaultPill) && (
+							<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
+								{p.isBuiltIn && (
+									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+										{t("copilot_profile_built_in")}
+									</span>
 								)}
-							>
-								<div className="min-w-0 py-2">
-									{/* SC-16d: the name owns line 1 alone (wraps,
-									// never cut); the marker + pills own the lines
-									// below (only when present); no id line. */}
-									<div className="flex min-w-0 items-center gap-1.5">
-										<span
-											data-testid={`copilot-profile-row-name-${p.id}`}
-											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
-										>
-											{p.name}
-										</span>
-									</div>
-									{(p.isBuiltIn || showDefaultPill) && (
-										<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
-											{p.isBuiltIn && (
-												<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-													{t("copilot_profile_built_in")}
-												</span>
-											)}
-											{showDefaultPill && (
-												<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-													{t("copilot_profile_default")}
-												</span>
-											)}
-										</div>
-									)}
-									{isActive && (
-										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
-											<Icons.Check className="h-3 w-3 shrink-0" />
-											{t("copilot_profile_in_use")}
-										</div>
-									)}
-								</div>
-								<MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-3" />
+								{showDefaultPill && (
+									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+										{t("copilot_profile_default")}
+									</span>
+								)}
 							</div>
-						);
-					})
-				)}
-			</div>
-			<div className="shrink-0 border-t border-border px-3 pt-3">
-				<button
-					type="button"
-					data-testid="copilot-profile-new-btn"
-					className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-					onClick={() => onAdd()}
-				>
-					<Icons.Plus /> {t("copilot_profile_new")}
-				</button>
-			</div>
-		</div>
+						)}
+					</>
+				);
+				if (p.id === BUILTIN_PROFILE_ID) {
+					return (
+						<MasterListPhoneRow
+							rowTestId={`copilot-profile-row-${p.id}`}
+							selected={isSelected}
+							active={isActive}
+							title={title}
+							onSelect={() => onSelect(p.id)}
+						/>
+					);
+				}
+				return (
+					<SortableMasterListPhoneRow
+						sortableId={p.id}
+						rowTestId={`copilot-profile-row-${p.id}`}
+						selected={isSelected}
+						active={isActive}
+						title={title}
+						onSelect={() => onSelect(p.id)}
+					/>
+				);
+			}}
+			renderOverlayRow={(item) => (
+				<MasterListDragOverlayRow active={item.id === activeProfileId} title={item.name} />
+			)}
+			footer={(
+				<div className="shrink-0 border-t border-border px-3 pt-3">
+					<button
+						type="button"
+						data-testid="copilot-profile-new-btn"
+						className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+						onClick={() => onAdd()}
+					>
+						<Icons.Plus /> {t("copilot_profile_new")}
+					</button>
+				</div>
+			)}
+		/>
 	);
 }
 
