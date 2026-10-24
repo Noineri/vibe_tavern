@@ -16,7 +16,7 @@
  *
  * AP-25 (mockup §5, mirroring the profile modal): rows carry the name
  * (SC-16d: wraps, never cut) + one in-use marker + 11px sentence-case tag —
- * no ★, no dot, no id line, no hover edit/delete buttons; Dup/Edit/Delete
+ * no star, no extra dot, no id line, no hover edit/delete buttons; Dup/Edit/Delete
  * live in the MasterDetailFooter (built-in → Duplicate only; user → Edit +
  * Delete), right side Close + Activate or a quiet in-use state; the base
  * prompt gets the clamped preview + show-full toggle (PROMPT_CLAMP_AT=500).
@@ -63,9 +63,17 @@ type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
+// Co-load contract: `useT` must return a STABLE object. A fresh literal per
+// call hands every render a new `t`, and a subject with a `t`-dependent
+// callback in an effect (SummaryTab's loadSummaries: `useCallback(...,
+// [activeChatId, t])` + `useEffect(..., [isOpen, loadSummaries])`) re-fires
+// the effect every render and ping-pongs setState forever — the silent-hang
+// class (shared registry, last-write-wins: this file loads before
+// SummaryTab.master-list.test, so this stub serves its renders).
+const stableUseTValue = { t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true as const };
 mock.module("../../i18n/context.js", () => ({
 		...realI18nContext,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+		useT: () => stableUseTValue,
 }));
 
 const SEED_MODULES: CoauthorModule[] = [
@@ -620,23 +628,23 @@ describe("CoauthorModuleModal — rows (AP-25, mockup §5)", () => {
 	});
 
 	it("marks the active module with the in-use marker (null assignment → default active)", async () => {
-		// ML-8 was: the check + in-use text line under the description; now
-		// (MASTER_LIST_PRIMITIVE_PLAN row rules): the ★ in the primitive's
-		// status slot, never a whole-row marker line.
+		// ML-8 was: the check + in-use text line under the description, then
+		// the ★ in the primitive's status slot; now (owner follow-up
+		// 2026-10-24): the unified green dot, never a whole-row marker line.
 		const { getByTestId } = await openAndFlush();
-		expect(getByTestId("module-row-default").textContent).toContain("★");
+		expect(getByTestId("module-row-default").querySelector(".bg-success")).toBeTruthy();
 		expect(getByTestId("module-row-default").textContent).not.toContain("copilot_profile_in_use");
-		expect(getByTestId("module-row-cmod_1").textContent).not.toContain("★");
+		expect(getByTestId("module-row-cmod_1").querySelector(".bg-success,.bg-danger")).toBeNull();
 	});
 
 	it("a user assignment moves the marker", async () => {
-		// ML-8 was: the in-use text line moved rows; now: the ★ does.
+		// ML-8 was: the in-use text line moved rows, then the ★; now: the dot does.
 		setActiveChat("cmod_1");
 		openModal();
 		const { getByTestId } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
-		expect(getByTestId("module-row-cmod_1").textContent).toContain("★");
-		expect(getByTestId("module-row-default").textContent).not.toContain("★");
+		expect(getByTestId("module-row-cmod_1").querySelector(".bg-success")).toBeTruthy();
+		expect(getByTestId("module-row-default").querySelector(".bg-success,.bg-danger")).toBeNull();
 	});
 
 	it("renders the name and the pills on separate lines; the name wraps (no truncate)", async () => {

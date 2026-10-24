@@ -32,8 +32,8 @@ interface PresetListProps {
 // title, rename slot, overlay, phone drill-down row). This list supplies data
 // + slots: the rename editor (ML-2 proves the primitive's `rename` slot — it
 // replaces title + second line while active), the in-place create input, the
-// desktop hover / mobile edit buttons in trailing, and the ★ for the active
-// preset in the status slot (row rules: «in use» is a marker, never a
+// desktop hover / mobile edit buttons in trailing, and the active dot for
+// the live preset in the status slot (row rules: «in use» is a marker, never a
 // whole-row color — the accent background is the primitive's selected look).
 export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onImportPreset }: PresetListProps) {
   const { t } = useT();

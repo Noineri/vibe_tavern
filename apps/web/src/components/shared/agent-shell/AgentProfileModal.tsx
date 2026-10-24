@@ -466,7 +466,7 @@ interface ProfileListProps {
 // Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
 // title, overlay, phone drill-down row). This list supplies data + slots:
 // the name (SC-16d: wraps, never cut) + built-in/default tags in the title
-// slot, the ★ for the effective profile in the status slot (the row rules:
+// slot, the active dot for the effective profile in the status slot (the row rules:
 // «in use» is a marker, never a whole-row color), and the arrayMove +
 // store `reorder(kind, …)` persist (the ML-6 backend, kind-scoped).
 // The built-in seed (BUILTIN_PROFILE_ID) has no stored record, so it stays

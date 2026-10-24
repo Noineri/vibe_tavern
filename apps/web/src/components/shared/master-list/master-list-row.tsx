@@ -24,9 +24,13 @@ export interface MasterListRowProps {
   title?: ReactNode;
   /** Selected row (open in the detail pane): accent left border + tint. */
   selected?: boolean;
-  /** «In use» marker (the active profile / preset): a ★ in the status
-   *  cluster, never a whole-row color. */
+  /** «In use» marker (the active profile / preset / default): a green dot
+   *  in the status cluster, never a whole-row color. Inactive rows render
+   *  nothing in the marker slot — the dot means «this one is in use». */
   active?: boolean;
+  /** Dot color for the active row: success (default) or danger (the active
+   *  profile has no usable auth — the LLM provider-list tone). */
+  activeTone?: "success" | "danger";
   /** Status-marker slot (connection dot, built-in/user badge, …). */
   status?: ReactNode;
   /** Optional second line under the title (provider label, backend, …). */
@@ -50,6 +54,7 @@ export interface MasterListRowProps {
 export function MasterListRow({
   selected = false,
   active = false,
+  activeTone = "success",
   status,
   title,
   secondLine,
@@ -98,7 +103,15 @@ export function MasterListRow({
         {status || active ? (
           <span className="flex shrink-0 items-center gap-1.5">
             {status}
-            {active ? <span aria-hidden="true">★</span> : null}
+            {active ? (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  activeTone === "danger" ? "bg-danger" : "bg-success",
+                )}
+              />
+            ) : null}
           </span>
         ) : null}
         <div className="min-w-0 flex-1 py-2">

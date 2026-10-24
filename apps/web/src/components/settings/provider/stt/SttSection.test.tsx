@@ -66,6 +66,7 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     filteredProfiles: [makeRecord()] as SttRecord[],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
+    defaultProfileId: null as string | null,
   };
   return {
     ...base,
@@ -106,7 +107,39 @@ describe("SttSection", () => {
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
     expect(view.getByText("Dictation")).toBeTruthy();
-    expect(view.getByTestId("stt-profile-row").querySelector(".bg-accent")).toBeTruthy();
+    // Behavior change (was: the editing row carried an accent hand-rolled
+    // dot; now: the primitive owns the dot and selection owns the accent —
+    // owner follow-up 2026-10-24. No default set → no dot anywhere).
+    expect(view.getByTestId("stt-profile-row").querySelector(".bg-accent")).toBeNull();
+    expect(view.getByTestId("stt-profile-row").querySelector(".bg-success")).toBeNull();
+  });
+
+  it("marks the default profile with the unified green dot", async () => {
+    // Owner follow-up 2026-10-24: STT rows pass
+    // `active={p.id === hook.defaultProfileId}` — the dot follows the
+    // persisted default; inactive rows show nothing.
+    const stt = makeStt({
+      profiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
+      filteredProfiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
+      editingId: null,
+      defaultProfileId: "p1",
+    }) as unknown as ReturnType<typeof useSttProfiles>;
+    const view = render(
+      <MasterDetailModal
+        isOpen={true}
+        title="x"
+        masterContent={() => <SectionHost stt={stt} />}
+        detailContent={null}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(view.getAllByTestId("stt-profile-row")).toHaveLength(2));
+    const rows = view.getAllByTestId("stt-profile-row");
+    const defaultRow = rows.find((row) => row.getAttribute("data-profile-id") === "p1")!;
+    expect(defaultRow.querySelector(".bg-success")).toBeTruthy();
+    const otherRow = rows.find((row) => row.getAttribute("data-profile-id") === "p2")!;
+    expect(otherRow.querySelector(".bg-success")).toBeNull();
+    expect(otherRow.querySelector(".bg-danger")).toBeNull();
   });
 
   it("loading state shows the loading label", async () => {

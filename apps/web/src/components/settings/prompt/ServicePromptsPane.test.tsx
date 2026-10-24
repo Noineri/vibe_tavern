@@ -491,17 +491,18 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(queryByText("promptManager.servicePrompts.discardTitle")).toBeNull());
 	});
 
-	test("live profile is marked with the status-slot star (never a whole-row color)", async () => {
-		// Behavior change (was: an active-only 6px dot; now: ★ lives in the
-		// primitive's status slot per MASTER_LIST_PRIMITIVE_PLAN row rules,
-		// selection stays the primitive's accent look).
+	test("live profile is marked with the status-slot dot (never a whole-row color)", async () => {
+		// Behavior change (was: an active-only 6px dot, then: ★ in the
+		// primitive's status slot; now: the unified green dot — owner
+		// follow-up 2026-10-24, ★ retired. Selection stays the primitive's
+		// accent look).
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
 		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: "p2" });
 		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		expect(getByTestId("service-row-p2").textContent).toContain("★");
+		expect(getByTestId("service-row-p2").querySelector(".bg-success")).toBeTruthy();
 	});
 
 	test("row titles wrap instead of truncating", async () => {

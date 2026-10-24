@@ -8,10 +8,12 @@ import { rowTitleCls } from "../../../lib/field-tokens.js";
 export interface MasterListDragOverlayRowProps {
   status?: ReactNode;
   active?: boolean;
+  /** Dot color for the active row — same meaning as the row's `activeTone`. */
+  activeTone?: "success" | "danger";
   title: ReactNode;
 }
 
-export function MasterListDragOverlayRow({ status, active = false, title }: MasterListDragOverlayRowProps) {
+export function MasterListDragOverlayRow({ status, active = false, activeTone = "success", title }: MasterListDragOverlayRowProps) {
   return (
     <div className="flex min-h-[56px] items-center gap-2 border-l-[3px] border-l-transparent bg-s2 pr-2 pl-4">
       <span aria-hidden="true" className="text-[calc(var(--ui-fs)+2px)] leading-6 leading-none text-t4">
@@ -20,7 +22,15 @@ export function MasterListDragOverlayRow({ status, active = false, title }: Mast
       {status || active ? (
         <span className="flex shrink-0 items-center gap-1.5">
           {status}
-          {active ? <span aria-hidden="true">★</span> : null}
+          {active ? (
+            <span
+              aria-hidden="true"
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                activeTone === "danger" ? "bg-danger" : "bg-success",
+              )}
+            />
+          ) : null}
         </span>
       ) : null}
       <span className={cn(rowTitleCls, "min-w-0 break-words text-t1")}>{title}</span>

@@ -222,15 +222,16 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     expect(renderDrillDown).toHaveBeenCalled();
   });
 
-  test("live profile row carries the status-slot star; titles wrap instead of truncating", async () => {
+  test("live profile row carries the status-slot dot; titles wrap instead of truncating", async () => {
     // Behavior change (was: an active-only 6px dot + `truncate` title in a
-    // tooltip; now: ★ lives in the primitive's status slot and the title
-    // wraps (`break-words`) per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    // tooltip, then: ★ in the status slot; now: the unified green dot —
+    // owner follow-up 2026-10-24, ★ retired — and the title wraps
+    // (`break-words`) per MASTER_LIST_PRIMITIVE_PLAN row rules).
     const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
     const { getByTestId } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-profile-row-p1")).toBeTruthy());
     const row = getByTestId("image-prompt-profile-row-p1");
-    expect(row.textContent).toContain("★");
+    expect(row.querySelector(".bg-success")).toBeTruthy();
     expect(row.querySelector(".truncate")).toBeNull();
     expect(row.querySelector(".break-words")).toBeTruthy();
     // Every profile row (pinned Default included) keeps its drag handle.

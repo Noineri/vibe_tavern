@@ -161,6 +161,23 @@ describe("RegexPresetList", () => {
     expect(view.getAllByLabelText("drag")).toHaveLength(6);
   });
 
+  it("marks the active rule and the active profile with the unified dot", () => {
+    // Owner follow-up 2026-10-24 — «точку дать всем спискам»: rule and
+    // profile rows pass `active`, so the primitive renders the dot where it
+    // used to render nothing (the overlay already did).
+    const view = render(<RegexPresetList {...nestedProps()} activePresetId="r2" activeProfileId="p2" />);
+    // The primitive's dot is `h-2` — the availability badge in trailing is a
+    // smaller `h-[6px]` dot, so the pin qualifies on `h-2`.
+    const activeRule = view.getByText("Member needle").closest("div.group")!;
+    expect(activeRule.querySelector(".h-2.bg-success")).toBeTruthy();
+    const idleRule = view.getByText("Standalone").closest("div.group")!;
+    expect(idleRule.querySelector(".h-2.bg-success,.h-2.bg-danger")).toBeNull();
+    const activeProfile = view.getByText("Second profile").closest("div.group")!;
+    expect(activeProfile.querySelector(".h-2.bg-success")).toBeTruthy();
+    const idleProfile = view.getByText("First profile").closest("div.group")!;
+    expect(idleProfile.querySelector(".h-2.bg-success,.h-2.bg-danger")).toBeNull();
+  });
+
   it("uses the primitive handle (≡, drag-only) on every row", () => {
     // Behavior change (was: a translated-label grip icon in a 44px mobile
     // target; now: the primitive's ≡ handle per MASTER_LIST_PRIMITIVE_PLAN

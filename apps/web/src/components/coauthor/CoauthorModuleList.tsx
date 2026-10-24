@@ -28,7 +28,7 @@ export interface ModuleListProps {
 // Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
 // title, overlay, phone drill-down row). This list supplies data + slots:
 // the name (SC-16d: wraps, never cut) + built-in tag in the title slot, the
-// description in the second line, the ★ for the active module in the status
+// description in the second line, the active dot for the live module in the status
 // slot (the row rules: «in use» is a marker, never a whole-row color), and
 // the arrayMove + reorderCoauthorModules persist (the ML-5 backend — the
 // response is the refreshed merged list, adopted via `onPersistOrder`).

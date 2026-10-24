@@ -439,22 +439,22 @@ describe("CopilotProfileModal — list", () => {
 	});
 
 	it("marks the assigned profile with the in-use marker (null assignment → built-in active)", async () => {
-		// ML-8 was: the check + in-use text line under the pills; now
-		// (MASTER_LIST_PRIMITIVE_PLAN row rules): the ★ in the primitive's
-		// status slot, never a whole-row marker line.
+		// ML-8 was: the check + in-use text line under the pills, then the ★
+		// in the primitive's status slot; now (owner follow-up 2026-10-24):
+		// the unified green dot, never a whole-row marker line.
 		const { getByTestId } = renderModal({ assignedProfileId: null });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").querySelector(".bg-success")).toBeTruthy();
 		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_in_use");
-		expect(getByTestId("copilot-profile-row-cprof_1").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_1").querySelector(".bg-success,.bg-danger")).toBeNull();
 	});
 
 	it("marks a user assignment", async () => {
-		// ML-8 was: the in-use text line moved rows; now: the ★ does.
+		// ML-8 was: the in-use text line moved rows, then the ★; now: the dot does.
 		const { getByTestId } = renderModal({ assignedProfileId: "cprof_1" });
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_1").textContent).toContain("★");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_1").querySelector(".bg-success")).toBeTruthy();
+		expect(getByTestId("copilot-profile-row-builtin").querySelector(".bg-success,.bg-danger")).toBeNull();
 	});
 });
 
@@ -756,9 +756,9 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		const { getByTestId } = renderChatModal("cprof_here", "cprof_default");
 		await flush(getByTestId);
 		// The mocked useT returns keys verbatim, so the pills surface as keys.
-		// ML-8 was: the check + in-use text line; now (row rules): the ★ in
-		// the primitive's status slot again.
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).toContain("★");
+		// ML-8 was: the check + in-use text line, then the ★; now (owner
+		// follow-up 2026-10-24): the unified green dot again.
+		expect(getByTestId("copilot-profile-row-cprof_here").querySelector(".bg-success")).toBeTruthy();
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 		expect(getByTestId("copilot-profile-row-builtin").textContent).not.toContain("copilot_profile_default");
 		// The (mocked) chat-row GET ran for this chat + kind.
@@ -769,11 +769,11 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// SC-0k (was: nothing was marked here when the chat followed the
 		// default — basis: owner decision 3, refined 2026-10-19): the active
 		// mark sits on the EFFECTIVE profile, so the default row carries it.
-		// ML-8: the mark is the ★ again, not the check-line.
+		// ML-8: the mark is the dot again, not the check-line.
 		const { getByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_here").querySelector(".bg-success,.bg-danger")).toBeNull();
+		expect(getByTestId("copilot-profile-row-builtin").querySelector(".bg-success")).toBeTruthy();
 		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("copilot_profile_default");
 	});
 
@@ -860,8 +860,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// The state label proves the chat-row read ("builtin") applied.
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_active_here"));
 		expect((getByTestId("copilot-profile-assign-here-btn") as HTMLButtonElement).disabled).toBe(true);
-		expect(getByTestId("copilot-profile-row-builtin").textContent).toContain("★");
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-builtin").querySelector(".bg-success")).toBeTruthy();
+		expect(getByTestId("copilot-profile-row-cprof_default").querySelector(".bg-success,.bg-danger")).toBeNull();
 		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("copilot_profile_default");
 	});
 
@@ -871,8 +871,8 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 		// pinning keeps this chat on it when the default later changes.
 		const { getByTestId } = renderChatModal(null, "cprof_default");
 		await flush(getByTestId);
-		expect(getByTestId("copilot-profile-row-cprof_default").textContent).toContain("★");
-		expect(getByTestId("copilot-profile-row-cprof_here").textContent).not.toContain("★");
+		expect(getByTestId("copilot-profile-row-cprof_default").querySelector(".bg-success")).toBeTruthy();
+		expect(getByTestId("copilot-profile-row-cprof_here").querySelector(".bg-success,.bg-danger")).toBeNull();
 		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_default"));
 		await waitFor(() => expect(getByTestId("copilot-profile-assign-default-btn").textContent).toContain("copilot_profile_default"));
 		expect(getByTestId("copilot-profile-assign-here-btn").textContent).toContain("copilot_profile_use_here");

@@ -233,6 +233,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
         sortableId={sortableId}
         dragDisabled={dndDisabled}
         selected={isActive}
+        active={isActive}
         status={shadowed ? (
           <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
             <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="flex shrink-0 p-1">
@@ -280,6 +281,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
         sortableId={sortableId}
         dragDisabled={dndDisabled}
         selected={isActive}
+        active={isActive}
         title={
           <button
             type="button"

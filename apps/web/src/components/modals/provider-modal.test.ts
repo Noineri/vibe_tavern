@@ -285,7 +285,7 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     await waitFor(() => {
       // Behavior change: was a single `getByText("Alpha")`; now the bare name
       // renders in both the row title and the detail title (ML-1 rework: ★
-      // moved to the status slot per the row rules).
+      // per the row rules).
       expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
     });
     expect(within(view.baseElement).queryByText("tts_section_title")).toBeNull();
@@ -338,7 +338,7 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     // LLM master list still visible on the default tab.
     // Behavior change: was a single `getByText("Alpha")`; now the bare name
     // renders in both the row title and the detail title (ML-1 rework: ★ moved
-    // to the status slot per the row rules).
+    // per the row rules).
     expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
   });
 
@@ -364,7 +364,7 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     await waitFor(() => {
       // Behavior change: was a single `getByText("Alpha")`; now the bare name
       // renders in both the row title and the detail title (ML-1 rework: ★
-      // moved to the status slot per the row rules).
+      // per the row rules).
       expect(within(view.baseElement).getAllByText("Alpha")).toHaveLength(2);
     });
     expect(within(view.baseElement).queryByTestId("image-gen-section")).toBeNull();

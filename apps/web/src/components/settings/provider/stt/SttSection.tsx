@@ -6,8 +6,6 @@ import type { SttProfileRecord } from "../../../../api/stt-api.js";
 type SttHook = ReturnType<typeof useSttProfiles>;
 
 const sttRowSubLabel = (profile: SttProfileRecord) => profile.backend;
-const sttStatusClassName = (_profile: SttProfileRecord, _isActive: boolean, isEditing: boolean) =>
-  isEditing ? "bg-accent" : "bg-t4";
 
 export function SttSection({ stt }: { stt: SttHook }) {
   return (
@@ -23,9 +21,8 @@ export function SttSection({ stt }: { stt: SttHook }) {
         profiles={stt.profiles}
         filteredProfiles={stt.filteredProfiles ?? stt.profiles}
         editingId={stt.editingId}
-        activeProfileId={null}
+        activeProfileId={stt.defaultProfileId ?? null}
         rowSubLabel={sttRowSubLabel}
-        statusClassName={sttStatusClassName}
         titleKey="stt_section_title"
         newProfileKey="stt_profile_new"
         testidStem="stt"

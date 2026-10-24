@@ -85,10 +85,16 @@ describe("ProviderProfileList", () => {
     const view = render(<ProviderProfileList {...baseProps({ onProfileSearchChange, onAddProfile })} />);
 
     expect(view.getByText("profiles_label")).toBeTruthy();
-    // Behavior change (was: `★ Alpha` as one title text node; now: the ★ lives
-    // in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    // Behavior change (was: `★ Alpha` as one title text node, then: the ★ in
+    // the status slot; now: the unified green dot — owner follow-up
+    // 2026-10-24, ★ retired. Alpha is active with a stored key → green).
     expect(view.getByText("Alpha")).toBeTruthy();
-    expect(view.getByText("★")).toBeTruthy();
+    const alphaRow = view.getByText("Alpha").closest("div.group");
+    expect(alphaRow?.querySelector(".bg-success")).toBeTruthy();
+    // The inactive row renders no dot at all (the gray bg-t4 dot is retired).
+    const betaRow = view.getByText("Beta").closest("div.group");
+    expect(betaRow?.querySelector(".bg-success")).toBeNull();
+    expect(betaRow?.querySelector(".bg-danger")).toBeNull();
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
     fireEvent.change(view.getByPlaceholderText("search_profiles"), { target: { value: "Alpha" } });
     expect(onProfileSearchChange).toHaveBeenCalledWith("Alpha");
@@ -150,12 +156,16 @@ describe("ProviderProfileList", () => {
     ]);
   });
 
-  it("uses family slots for the title, row sub-label, active marker, status, and test-id stem", () => {
+  it("uses family slots for the title, row sub-label, active marker, tone, and test-id stem", () => {
     const profiles = [
       { id: "media-1", name: "Voice One", backend: "local", connected: true },
       { id: "media-2", name: "Voice Two", backend: "cloud", connected: false },
     ];
     const onSelectProfile = mock();
+    // Behavior change (was: a hand-rolled per-row status dot fed by
+    // `statusClassName` — gray on inactive rows, accent on the editing row;
+    // now: the primitive owns the dot. Rows pass `active` + `activeTone`
+    // only — owner follow-up 2026-10-24. Inactive rows show no dot.)
     const view = render(
       <ProviderProfileList
         profiles={profiles}
@@ -164,7 +174,7 @@ describe("ProviderProfileList", () => {
         activeProfileId={null}
         rowActive={(profile) => profile.id === "media-2"}
         rowSubLabel={(profile) => `backend:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         titleKey="tts_section_title"
         newProfileKey="tts_profile_new"
         testidStem="tts"
@@ -177,13 +187,20 @@ describe("ProviderProfileList", () => {
 
     expect(view.getByText("tts_section_title")).toBeTruthy();
     expect(view.getByText("backend:local")).toBeTruthy();
-    // Behavior change (was: `★ Voice Two` as one title text node; now: the ★
-    // lives in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    // Behavior change (was: `★ Voice Two` as one title text node, then: the ★
+    // in the status slot; now: the unified green/red dot — owner follow-up
+    // 2026-10-24. Rows pass `active` + `activeTone` only).
     expect(view.getByText("Voice Two")).toBeTruthy();
     const voiceOneRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-1");
     if (!voiceOneRow) throw new Error("Voice One row missing");
     expect(voiceOneRow.getAttribute("data-profile-id")).toBe("media-1");
-    expect(voiceOneRow.querySelector(".bg-success")).toBeTruthy();
+    // Inactive: no dot (the old connected-green dot is retired).
+    expect(voiceOneRow.querySelector(".bg-success")).toBeNull();
+    expect(voiceOneRow.querySelector(".bg-danger")).toBeNull();
+    const voiceTwoRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-2");
+    if (!voiceTwoRow) throw new Error("Voice Two row missing");
+    // Active with a danger tone: the red dot.
+    expect(voiceTwoRow.querySelector(".bg-danger")).toBeTruthy();
     expect(within(voiceOneRow).getByText("backend:local")).toBeTruthy();
     fireEvent.pointerDown(voiceOneRow);
     expect(onSelectProfile).toHaveBeenCalledWith("media-1");
@@ -202,9 +219,9 @@ describe("ProviderProfileList", () => {
         profiles={initialProfiles}
         filteredProfiles={initialProfiles}
         editingId={null}
-        activeProfileId={null}
+        activeProfileId="media-1"
         rowSubLabel={(profile) => `first:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         profileSearch=""
         onProfileSearchChange={() => {}}
         onSelectProfile={() => {}}
@@ -220,9 +237,9 @@ describe("ProviderProfileList", () => {
         profiles={updatedProfiles}
         filteredProfiles={updatedProfiles}
         editingId={null}
-        activeProfileId={null}
+        activeProfileId="media-1"
         rowSubLabel={(profile) => `second:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         profileSearch=""
         onProfileSearchChange={() => {}}
         onSelectProfile={() => {}}
@@ -231,5 +248,17 @@ describe("ProviderProfileList", () => {
 
     expect(view.getByText("second:cloud")).toBeTruthy();
     expect(view.container.querySelector(".bg-danger")).toBeTruthy();
+  });
+
+  it("renders the danger tone for the active profile without a usable key", () => {
+    // Owner follow-up 2026-10-24: the LLM default tone — active without a
+    // stored API key (and no no-key preset) renders the red dot.
+    const view = render(<ProviderProfileList {...baseProps({ editingId: null, activeProfileId: "p2" })} />);
+    const betaRow = view.getByText("Beta").closest("div.group");
+    expect(betaRow?.querySelector(".bg-danger")).toBeTruthy();
+    expect(betaRow?.querySelector(".bg-success")).toBeNull();
+    const alphaRow = view.getByText("Alpha").closest("div.group");
+    expect(alphaRow?.querySelector(".bg-danger")).toBeNull();
+    expect(alphaRow?.querySelector(".bg-success")).toBeNull();
   });
 });

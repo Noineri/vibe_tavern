@@ -185,13 +185,15 @@ describe("ImageGenSection", () => {
     });
     useImageGenChatStore.setState({ activeImageGenProfileId: "session" });
     const view = renderSection(imageGen);
-    // Behavior change (was: `★ Session choice` as one title text node; now:
-    // the ★ lives in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    // Behavior change (was: `★ Session choice` as one title text node,
+    // then: the ★ in the status slot; now: the unified green dot — owner
+    // follow-up 2026-10-24, ★ retired. The effective-active row carries it).
     await waitFor(() => expect(view.getByText("Session choice")).toBeTruthy());
     const sessionRow = view.getByText("Session choice").closest('[data-profile-id="session"]');
-    expect(sessionRow?.textContent).toContain("★");
+    expect(sessionRow?.querySelector(".bg-success")).toBeTruthy();
     const defaultRow = view.getByText("Saved default").closest('[data-profile-id="default"]');
-    expect(defaultRow?.textContent).not.toContain("★");
+    expect(defaultRow?.querySelector(".bg-success")).toBeNull();
+    expect(defaultRow?.querySelector(".bg-danger")).toBeNull();
   });
 
   it("passes hook-owned search to the unified list and disables its drag handles while active", async () => {

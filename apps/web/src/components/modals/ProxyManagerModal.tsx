@@ -69,10 +69,11 @@ interface ProxyManagerModalProps {
 
 // Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
 // title, overlay, phone drill-down row). This list supplies data + slots:
-// the connection dot, the name + default-badge-or-URL second line, and the
-// arrayMove + reorderProxies persist (the route stores the order; the
-// refreshed parent list replaces the optimistic one on success, rollback
-// otherwise — owned by the primitive's hook).
+// the name + default-badge-or-URL second line, and the arrayMove +
+// reorderProxies persist (the route stores the order; the refreshed parent
+// list replaces the optimistic one on success, rollback otherwise — owned by
+// the primitive's hook). Proxies carry no «in use» marker: the dot means
+// «this one is in use/default», and the editing row already reads selected.
 function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd, onRefresh }: {
   proxies: ProxyRecord[];
   editingId: string | null;
@@ -83,9 +84,6 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd, onRefr
 }) {
   const { t } = useT();
   const { openDetail } = useMasterDetail();
-  const dot = (selected: boolean) => (
-    <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
-  );
   return (
     <MasterList<ProxyRecord>
       items={proxies}
@@ -108,14 +106,13 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd, onRefr
           sortableId={proxy.id}
           rowTestId={`proxy-row-${proxy.id}`}
           selected={proxy.id === editingId}
-          status={dot(proxy.id === editingId)}
           title={proxy.name}
           secondLine={proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}
           onSelect={() => onSelect(proxy)}
         />
       )}
       renderOverlayRow={(proxy) => (
-        <MasterListDragOverlayRow status={dot(proxy.id === editingId)} title={proxy.name} />
+        <MasterListDragOverlayRow title={proxy.name} />
       )}
       footer={
         <AddButton className="mx-3 mt-3 h-auto justify-center py-2 font-medium" onClick={() => { onAdd(); openDetail(); }}>

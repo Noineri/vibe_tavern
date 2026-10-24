@@ -105,13 +105,17 @@ describe("PresetList", () => {
     expect(handles).toHaveLength(3);
   });
 
-  it("marks the active preset with the status-slot star (never a whole-row color)", () => {
-    // Behavior change (was: an active-only dot + accent row; now: ★ lives in
-    // the primitive's status slot per MASTER_LIST_PRIMITIVE_PLAN row rules,
-    // selection stays the primitive's accent look).
+  it("marks the active preset with the status-slot dot (never a whole-row color)", () => {
+    // Behavior change (was: an active-only dot + accent row, then: ★ in the
+    // primitive's status slot; now: the unified green dot — owner follow-up
+    // 2026-10-24, ★ retired. Selection stays the primitive's accent look).
     const view = render(<PresetList {...baseProps({ activePresetId: "p1" })} />);
     expect(view.getByText("Alpha")).toBeTruthy();
-    expect(view.getByText("★")).toBeTruthy();
+    const activeRow = view.getByText("Alpha").closest("div.group")!;
+    expect(activeRow.querySelector(".bg-success")).toBeTruthy();
+    const idleRow = view.getByText("Beta").closest("div.group")!;
+    expect(idleRow.querySelector(".bg-success")).toBeNull();
+    expect(idleRow.querySelector(".bg-danger")).toBeNull();
   });
 
   it("wraps the title instead of truncating it", () => {

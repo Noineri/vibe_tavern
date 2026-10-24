@@ -40,7 +40,7 @@ beforeAll(async () => {
 function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
   return {
     id, name, providerPreset: "openai", coauthorTransport: "chat_completions", endpoint: "https://api.test/v1",
-    defaultModel: null, isActive: false,
+    defaultModel: null, isActive: false, hasStoredApiKey: true,
     cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32_000, capabilities: { tools: true } }] },
     ...over,
   } as ClientProviderProfileRecord;
@@ -100,14 +100,14 @@ describe("CoauthorProviderModal", () => {
     });
     const view = renderModal();
     // Behavior change: was `getByText("★ Bound Profile")` (the ★ was an inline
-    // title prefix); now the ★ lives in its own aria-hidden span in the status
-    // slot per MASTER_LIST_PRIMITIVE_PLAN ML-1 rework (row rules), so the row
-    // title is the bare name and the marker is asserted separately. The bare
-    // name also renders in the connection selector, so the unscoped query sees
+    // title prefix), then the ★ in its own aria-hidden span; now the unified
+    // green dot (owner follow-up 2026-10-24, ★ retired), so the row title is
+    // the bare name and the marker is asserted separately. The bare name
+    // also renders in the connection selector, so the unscoped query sees
     // two nodes (row title + selector); the list-scoped query below pins one.
     await waitFor(() => expect(view.getAllByText("Bound Profile")).toHaveLength(2));
     const profileList = view.getByText("profiles_label").parentElement!;
-    expect(profileList.textContent).toContain("★");
+    expect(profileList.querySelector(".bg-success")).toBeTruthy();
     expect(within(profileList).getAllByText("Bound Profile")).toHaveLength(1);
     expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
     expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
@@ -131,8 +131,9 @@ describe("CoauthorProviderModal", () => {
     const view = renderModal();
     await waitFor(() => expect(view.baseElement.textContent).toContain("sampler_basic_settings"));
     // Behavior change: was a single `getByText("Alpha")` (the row title read
-    // "★ Alpha"); now the ★ lives in the status slot per the ML-1 rework row
-    // rules, so the bare name renders twice: row title + connection selector.
+    // "★ Alpha"), then the ★ in the status slot; now the unified dot per
+    // the owner follow-up 2026-10-24, so the bare name renders twice: row
+    // title + connection selector.
     expect(view.getAllByText("Alpha")).toHaveLength(2);
     expect(view.getByText("coauthor.provider.transport_label")).toBeTruthy();
     expect(view.getByText("coauthor.provider.model_label")).toBeTruthy();

@@ -134,8 +134,8 @@ function rowIdFor(row: SelectedRow): ImagePromptTemplatesPaneRowId {
 // + slots: the Default profile renders as a pinned handle-less row (lock in
 // the status slot, LIVE badge in the title), every other profile as a
 // sortable phone row (the rename editor in the `rename` slot, the hover/
-// mobile edit button + the drill-down seam in trailing, ★ for the live
-// profile in the status slot per the row rules).
+// mobile edit button + the drill-down seam in trailing, the active dot for
+// the live profile in the status slot per the row rules).
 
 export function ImagePromptTemplatesPane({
   active,

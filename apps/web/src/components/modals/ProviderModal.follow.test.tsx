@@ -143,7 +143,7 @@ describe("ProviderModal follow-the-active-model", () => {
     expect(view.container.textContent ?? "").not.toContain("Follow Test Profile");
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText` (the row title read "★ Follow
-    // Test Profile"); now the ★ lives in the status slot per
+    // Test Profile"); now the unified dot lives in the status slot per
     // MASTER_LIST_PRIMITIVE_PLAN ML-1 rework (row rules), so the bare name
     // renders twice: row title + detail title.
     await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
@@ -155,7 +155,7 @@ describe("ProviderModal follow-the-active-model", () => {
     const view = render(<ProviderModal {...props} />);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText`; now the bare name renders in
-    // both the row title and the detail title (ML-1 rework: ★ moved to the
+    // both the row title and the detail title (the unified dot now, ex-★, in the
     // status slot per the row rules).
     await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
     await waitFor(() => expect(overlayFetchLog).toContainEqual({ profileId: "prof1", modelId: "m-fav" }));
@@ -172,7 +172,7 @@ describe("ProviderModal follow-the-active-model", () => {
     const view = render(<ProviderModal {...props} />);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText`; now the bare name renders in
-    // both the row title and the detail title (ML-1 rework: ★ moved to the
+    // both the row title and the detail title (the unified dot now, ex-★, in the
     // status slot per the row rules).
     await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
     // Base badge appears; nothing was fetched for the non-favorite.

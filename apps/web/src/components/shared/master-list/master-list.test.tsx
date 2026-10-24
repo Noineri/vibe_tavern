@@ -92,6 +92,7 @@ function listProps(overrides: Record<string, unknown> = {}) {
         sortableId={item.id}
         selected={item.id === "a"}
         active={item.id === "a"}
+        activeTone={item.id === "a" ? "success" : "danger"}
         status={<div data-testid={`dot-${item.id}`} className="test-dot" />}
         title={item.name}
         secondLine={`second-${item.id}`}
@@ -141,9 +142,46 @@ describe("master-list primitive", () => {
     const plain = view.getByTestId("row-b");
     expect(plain.classList.contains("border-l-transparent")).toBe(true);
     expect(plain.classList.contains("text-t2")).toBe(true);
-    // «In use» is a ★ in the status cluster, never a whole-row color.
-    expect(within(selected).getByText("★")).toBeTruthy();
-    expect(within(plain).queryByText("★")).toBeNull();
+    // «In use» is a green dot in the status cluster, never a whole-row
+    // color (owner follow-up 2026-10-24 — unified green dot, ★ retired).
+    // Inactive rows render no dot at all (the gray bg-t4 dot is retired).
+    const activeDot = within(selected).getByTestId("dot-a").parentElement!.querySelector(".bg-success");
+    expect(activeDot).toBeTruthy();
+    expect(activeDot!.getAttribute("aria-hidden")).toBe("true");
+    expect(plain.querySelector(".bg-success")).toBeNull();
+    expect(plain.querySelector(".bg-danger")).toBeNull();
+    expect(plain.textContent).not.toContain("★");
+  });
+
+  it("renders the danger tone on the active row and in the drag overlay", () => {
+    // Owner follow-up 2026-10-24: tone survives on the dot — e.g. the LLM
+    // list's active-without-key red dot. Default stays success green.
+    const view = render(
+      <MasterList
+        items={items}
+        getId={(item: Item) => item.id}
+        onReorderItems={(_activeId: string, _overId: string, current: Item[]) => ({ optimisticItems: current, persist: () => {} })}
+        renderRow={(item: Item) => (
+          <SortableMasterListRow
+            sortableId={item.id}
+            selected={false}
+            active={item.id === "a"}
+            activeTone="danger"
+            title={item.name}
+            rowTestId={`tone-row-${item.id}`}
+          />
+        )}
+        renderOverlayRow={(item: Item) => (
+          <MasterListDragOverlayRow title={item.name} active={item.id === "a"} activeTone="danger" />
+        )}
+      />,
+    );
+    const dangerRow = view.getByTestId("tone-row-a");
+    expect(dangerRow.querySelector(".bg-danger")).toBeTruthy();
+    expect(dangerRow.querySelector(".bg-success")).toBeNull();
+    const calmRow = view.getByTestId("tone-row-b");
+    expect(calmRow.querySelector(".bg-danger")).toBeNull();
+    expect(calmRow.querySelector(".bg-success")).toBeNull();
   });
 
   it("starts drag from the handle only; tapping the row selects", () => {

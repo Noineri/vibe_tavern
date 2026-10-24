@@ -11,12 +11,12 @@ import { SortableMasterListPhoneRow } from '../../shared/master-list/master-list
 import { MasterListDragOverlayRow } from '../../shared/master-list/master-list-overlay-row.js';
 import { arrayMove } from '@dnd-kit/sortable';
 
-// Provider-family master-list source: owns the four families' slots (status
-// marker, second line, active marker) + list wiring (search, "+ New",
-// reorder payload). Row markup, the drag handle, the drag overlay and the
-// phone drill-down row live in `shared/master-list` (forks: 0 there) — this
-// list never writes row chrome classes or imports `@dnd-kit/*` beyond the
-// reorder math (`arrayMove`).
+// Provider-family master-list source: owns the four families' slots (second
+// line, active marker + tone) + list wiring (search, "+ New", reorder
+// payload). Row markup, the drag handle, the drag overlay, the phone
+// drill-down row and the active dot live in `shared/master-list` (forks: 0
+// there) — this list never writes row chrome classes or imports `@dnd-kit/*`
+// beyond the reorder math (`arrayMove`).
 export interface ProviderProfileListItem {
   id: string;
   name: string;
@@ -37,8 +37,10 @@ export interface ProviderProfileListProps<TProfile extends ProviderProfileListIt
   rowActive?: (profile: TProfile) => boolean;
   /** Family-specific secondary row label; LLM defaults to its provider-preset label. */
   rowSubLabel?: (profile: TProfile) => ReactNode;
-  /** Family-specific connection/status dot class; LLM defaults to its API-key status. */
-  statusClassName?: (profile: TProfile, isActive: boolean, isEditing: boolean) => string;
+  /** Family-specific active-dot tone; LLM defaults to its API-key auth tone
+   *  (active without a usable key renders the red dot). Families whose rows
+   *  carry no auth danger use the default. */
+  rowActiveTone?: (profile: TProfile) => "success" | "danger";
   /** Family-specific title and new-profile translation keys. */
   titleKey?: Parameters<TFunc>[0];
   newProfileKey?: Parameters<TFunc>[0];
@@ -58,10 +60,10 @@ function defaultRowSubLabel(profile: ProviderProfileListItem): string {
   return TYPE_LABELS[presetId] || presetId;
 }
 
-function defaultStatusClassName(profile: ProviderProfileListItem, isActive: boolean): string {
+function defaultRowActiveTone(profile: ProviderProfileListItem): "success" | "danger" {
   const preset = PROVIDER_PRESETS.find((candidate) => candidate.id === profile.providerPreset);
   const hasRequiredAuth = preset?.noApiKey === true || profile.hasStoredApiKey === true;
-  return isActive ? (hasRequiredAuth ? 'bg-success' : 'bg-danger') : 'bg-t4';
+  return hasRequiredAuth ? "success" : "danger";
 }
 
 export function ProviderProfileList<TProfile extends ProviderProfileListItem = ProviderProfileRecord>({
@@ -71,7 +73,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
   activeProfileId,
   rowActive,
   rowSubLabel = defaultRowSubLabel,
-  statusClassName = defaultStatusClassName,
+  rowActiveTone = defaultRowActiveTone,
   titleKey = 'profiles_label',
   newProfileKey = 'new_profile_btn',
   testidStem,
@@ -126,14 +128,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
             dragDisabled={dndDisabled}
             selected={isEditing}
             active={isActive}
-            status={
-              <div
-                className={cn(
-                  'h-2 w-2 shrink-0 rounded-full transition-colors',
-                  statusClassName(p, isActive, isEditing),
-                )}
-              />
-            }
+            activeTone={rowActiveTone(p)}
             title={p.name}
             secondLine={rowSubLabel(p)}
             onSelect={() => onSelectProfile(p.id)}
@@ -146,12 +141,8 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
         const isActive = rowActive?.(profile) ?? activeProfileId === profile.id;
         return (
           <MasterListDragOverlayRow
-            status={
-              <div
-                className={cn('h-2 w-2 shrink-0 rounded-full', statusClassName(profile, isActive, editingId === profile.id))}
-              />
-            }
             active={isActive}
+            activeTone={rowActiveTone(profile)}
             title={profile.name}
           />
         );
