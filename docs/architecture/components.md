@@ -34,6 +34,7 @@
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
 | `<MasterDetailModal>` | Custom two-pane modals | `MasterDetailModal.tsx` | Two-pane on desktop, drill-down stack on mobile |
 | `<MasterDetailFooter>` | Custom editor footers | `MasterDetailModal.tsx` | Canonical desktop/mobile actions with disabled and destructive states |
+| `<MasterList>` + `<SortableMasterListRow>` / `<MasterListPhoneRow>` + `<MasterListDragOverlayRow>` | Hand-rolled master-list rows + `@dnd-kit/*` per list | `master-list/master-list.tsx` + `master-list-row.tsx` + `master-list-phone-row.tsx` + `master-list-overlay-row.tsx` | The ONE master-detail list primitive: header/search/sortable/empty-state/footer slots, wrapping title (`rowTitleCls`), second line (`rowSecondCls`), status slot with ★ active marker, handle-only drag, pinned rows without handles |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions (+ optional secondary) |
 | `<ActionSheet>` | Mobile action menus | `ActionSheet.tsx` | Mobile bottom-sheet action menu (portaled) |

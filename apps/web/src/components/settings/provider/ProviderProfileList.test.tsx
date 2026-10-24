@@ -88,7 +88,10 @@ describe("ProviderProfileList", () => {
     const view = render(<ProviderProfileList {...baseProps({ onProfileSearchChange, onAddProfile })} />);
 
     expect(view.getByText("profiles_label")).toBeTruthy();
-    expect(view.getByText("★ Alpha")).toBeTruthy();
+    // Behavior change (was: `★ Alpha` as one title text node; now: the ★ lives
+    // in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    expect(view.getByText("Alpha")).toBeTruthy();
+    expect(view.getByText("★")).toBeTruthy();
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
     fireEvent.change(view.getByPlaceholderText("search_profiles"), { target: { value: "Alpha" } });
     expect(onProfileSearchChange).toHaveBeenCalledWith("Alpha");
@@ -96,9 +99,13 @@ describe("ProviderProfileList", () => {
     expect(onAddProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the title ellipsis inside the master column after the drag handle takes its width", () => {
+  it("wraps the title inside the master column instead of truncating it", () => {
+    // Behavior change (was: `truncate` on the title; now: `break-words` wrap
+    // per MASTER_LIST_PRIMITIVE_PLAN row rules — authored names are UI copy).
     const view = render(<ProviderProfileList {...baseProps()} />);
-    const title = view.getByText("★ Alpha");
+    const title = view.getByText("Alpha");
+    expect(title.classList.contains("truncate")).toBe(false);
+    expect(title.classList.contains("break-words")).toBe(true);
     const textColumn = title.parentElement;
     const contentRow = textColumn?.parentElement;
     if (!contentRow) throw new Error("Profile-row content wrapper missing");
@@ -173,7 +180,9 @@ describe("ProviderProfileList", () => {
 
     expect(view.getByText("tts_section_title")).toBeTruthy();
     expect(view.getByText("backend:local")).toBeTruthy();
-    expect(view.getByText("★ Voice Two")).toBeTruthy();
+    // Behavior change (was: `★ Voice Two` as one title text node; now: the ★
+    // lives in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    expect(view.getByText("Voice Two")).toBeTruthy();
     const voiceOneRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-1");
     if (!voiceOneRow) throw new Error("Voice One row missing");
     expect(voiceOneRow.getAttribute("data-profile-id")).toBe("media-1");
