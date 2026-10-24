@@ -315,6 +315,16 @@ export interface AgentTurnActions {
    *  `onTurnSettled`). NO optimistic removal: a failed delete leaves the
    *  feed as-is and surfaces the error the way send errors surface. */
   handleDeleteTurn: (messageId: string, includeUserMessage: boolean) => Promise<void>;
+  /** AP-31: edit ONE assistant text row's text in place (AP-30's route) —
+   *  the transport's `editMessage`, then the SAME settle refetch the delete
+   *  uses. Returns success to the caller (true = the edit landed; AP-32's
+   *  editor closes on it). False = failure or a silent guard (blank
+   *  content, no thread, already sending — `handleEditLast`'s guard set):
+   *  a real failure surfaced the error the delete's way (the provider-error
+   *  toast), and NOTHING settles — a failed edit changed nothing
+   *  server-side, so there is nothing to refetch (the caller keeps the
+   *  draft). */
+  handleEditAssistant: (messageId: string, content: string) => Promise<boolean>;
   /** Edit the last exchange — deletes the LAST turn (its user row
    *  included, resolved from `threadMessages`) and sends `content` as a
    *  fresh turn. A failed delete never sends. One settle for the whole
@@ -388,6 +398,37 @@ export function useAgentTurnActions(
       onTurnSettled?.(ok);
     },
     [deleteTurnRun, onTurnSettled],
+  );
+
+  // AP-31: edit one assistant text row in place — the delete's flight
+  // contract mirrored (busy flags around the single transport call, the
+  // provider-error toast on failure) with the caller-facing outcome the
+  // delete's void handlers do not have: true = landed (the settle refetch
+  // below re-renders the stored text), false = not (the caller keeps its
+  // draft). The settle fires only on success and AFTER the busy flags drop
+  // (the delete's ordering).
+  const handleEditAssistant = useCallback(
+    async (messageId: string, content: string): Promise<boolean> => {
+      const trimmed = content.trim();
+      // Silent guards (no toast): blank content, missing thread, already
+      // sending — the same set as handleEditLast.
+      if (!trimmed || !threadId || isSendingRef.current) return false;
+      isSendingRef.current = true;
+      setIsSending(true);
+      let ok = false;
+      try {
+        await transport.editMessage(threadId, messageId, trimmed);
+        ok = true;
+      } catch (error) {
+        showProviderErrorToast(error, getT());
+      } finally {
+        isSendingRef.current = false;
+        setIsSending(false);
+      }
+      if (ok) onTurnSettled?.(true);
+      return ok;
+    },
+    [threadId, transport, isSendingRef, setIsSending, onTurnSettled],
   );
 
   const handleRegenerate = useCallback(
@@ -598,5 +639,5 @@ export function useAgentTurnActions(
     [pendingDelete, handleDeleteTurn],
   );
 
-  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn, isRegenerating, hiddenRegeneratedIds };
+  return { handleRegenerate, handleDeleteTurn, handleEditAssistant, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn, isRegenerating, hiddenRegeneratedIds };
 }

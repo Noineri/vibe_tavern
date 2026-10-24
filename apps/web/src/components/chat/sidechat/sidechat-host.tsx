@@ -32,6 +32,7 @@ import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
   deleteCopilotTurn,
+  editCopilotMessage,
   listExperienceCopilotMessages,
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
@@ -196,6 +197,9 @@ registerAgentHost({
     // thread-keyed member (the server dispatches the thread routes by the
     // thread's kind, like every other thread-keyed member above).
     deleteTurn: deleteCopilotTurn,
+    // AP-31: the assistant-edit REST call — the experience client's
+    // thread-keyed member (the same thread routes as the delete above).
+    editMessage: editCopilotMessage,
     getActiveThread: (owner) => {
       const triple = chatOwnerTriple(owner);
       return getAgentChatActive(triple.chatId, triple.branchId, triple.agentKind);

@@ -328,9 +328,27 @@ describe("buildAgentTurnRow — edit-last eligibility (AP-12)", () => {
 const originalFetch = globalThis.fetch;
 let deleteCalls: Array<{ threadId: string; body: Record<string, unknown> }> = [];
 let settled: boolean[] = [];
+// AP-31: the edit route's seen requests + the canned 400 message (null =
+// success) — the same router serves the real `editCopilotMessage` client fn
+// the edit tests wire (the delete-confirm pair's pattern).
+let editCalls: Array<{ threadId: string; messageId: string; body: Record<string, unknown> }> = [];
+let editFailsWith: string | null = null;
 
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = new URL(String(input), "http://gateway.test");
+  const editMatch = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/messages\/([^/]+)$/);
+  if ((init?.method ?? "GET").toUpperCase() === "PATCH" && editMatch) {
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    editCalls.push({ threadId: editMatch[1] ?? "", messageId: editMatch[2] ?? "", body });
+    if (editFailsWith !== null) {
+      return new Response(JSON.stringify({ error: { message: editFailsWith } }), { status: 400 });
+    }
+    return new Response(JSON.stringify(message({
+      id: editMatch[2] ?? "",
+      threadId: editMatch[1] ?? "",
+      content: String(body.content ?? ""),
+    })), { status: 200 });
+  }
   const deleteMatch = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/turns\/delete$/);
   if ((init?.method ?? "GET").toUpperCase() === "POST" && deleteMatch) {
     const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -380,7 +398,12 @@ const neverCalled = () => {
   throw new Error("not implemented in this suite");
 };
 type AgentHostTransport = import("../../../lib/agent-host-registry.js").AgentHostTransport;
-function stubTransport(deleteTurn: AgentHostTransport["deleteTurn"]): AgentHostTransport {
+function stubTransport(
+  deleteTurn: AgentHostTransport["deleteTurn"],
+  // AP-31: the edit member — defaults to the never-called throw (the delete
+  // suites never edit); the edit tests inject the real client fn.
+  editMessage: AgentHostTransport["editMessage"] = neverCalled,
+): AgentHostTransport {
   return {
     sendStream: neverCalled,
     answerAsk: neverCalled,
@@ -391,6 +414,7 @@ function stubTransport(deleteTurn: AgentHostTransport["deleteTurn"]): AgentHostT
     activateSession: neverCalled,
     renameSession: neverCalled,
     setContextLinks: neverCalled,
+    editMessage,
     deleteTurn,
   } as unknown as AgentHostTransport;
 }
@@ -400,6 +424,8 @@ describe("useAgentTurnActions — delete confirm", () => {
     globalThis.fetch = routerFetch;
     deleteCalls = [];
     settled = [];
+    editCalls = [];
+    editFailsWith = null;
   });
 
   afterAll(() => {
@@ -457,6 +483,81 @@ describe("useAgentTurnActions — delete confirm", () => {
     expect(result.current.pendingDelete).not.toBeNull();
     rerender({ threadId: "thread-2" });
     expect(result.current.pendingDelete).toBeNull();
+  });
+});
+
+// ─── AP-31: edit one assistant text row in place (the handler) ──────────
+// WAS (characterized through AP-30, basis: the server landed with NO client
+// caller): no handler existed. NOW: the delete's flight contract mirrored
+// (busy flags around the single transport call) with a caller-facing
+// outcome — success settles ONCE through the SAME `onTurnSettled` refetch
+// the delete uses and returns true; a failure returns false, surfaces the
+// error the delete's way (the provider-error toast), and settles NOTHING
+// (the stored feed is unchanged — the refetch would redraw the same rows).
+
+describe("useAgentTurnActions — edit an assistant message (AP-31)", () => {
+  // The delete-confirm describe's afterAll restores the original fetch, so
+  // this describe installs the router for ITS tests (same install/restore
+  // pair — R3) and owns the edit-route state resets.
+  beforeEach(() => {
+    globalThis.fetch = routerFetch;
+    deleteCalls = [];
+    settled = [];
+    editCalls = [];
+    editFailsWith = null;
+  });
+
+  afterAll(() => {
+    if (globalThis.fetch === routerFetch) globalThis.fetch = originalFetch;
+  });
+
+  it("success: PATCHes the real route, settles once (the delete's refetch), returns true", async () => {
+    const { editCopilotMessage } = await import("../../../api/experience-copilot-api.js");
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), transport: stubTransport(neverCalled, editCopilotMessage) }),
+    );
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.handleEditAssistant("a2", "edited text");
+    });
+
+    expect(ok).toBe(true);
+    expect(editCalls).toEqual([{ threadId: "thread-1", messageId: "a2", body: { content: "edited text" } }]);
+    expect(settled).toEqual([true]);
+  });
+
+  it("failure: returns false and does NOT settle (no refetch — nothing changed server-side)", async () => {
+    editFailsWith = "row is folded into the digest";
+    const { editCopilotMessage } = await import("../../../api/experience-copilot-api.js");
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), transport: stubTransport(neverCalled, editCopilotMessage) }),
+    );
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.handleEditAssistant("a2", "edited text");
+    });
+
+    expect(ok).toBe(false);
+    expect(editCalls).toHaveLength(1);
+    expect(settled).toEqual([]);
+  });
+
+  it("blank content is a silent guard: no transport call, false, no settle", async () => {
+    const editMessage = mock<AgentHostTransport["editMessage"]>(async () => message({}));
+    const { result } = renderHook(() =>
+      useAgentTurnActions({ ...hookArgs(), transport: stubTransport(neverCalled, editMessage) }),
+    );
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.handleEditAssistant("a2", "   ");
+    });
+
+    expect(ok).toBe(false);
+    expect(editMessage).not.toHaveBeenCalled();
+    expect(settled).toEqual([]);
   });
 });
 

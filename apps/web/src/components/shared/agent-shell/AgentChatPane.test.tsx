@@ -187,6 +187,8 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     // forgets them is a compile break); the pane tests never invoke them.
     handleRegenerate: mock(),
     handleDeleteTurn: mock(),
+    // AP-31: the assistant edit (same rule; never invoked here).
+    handleEditAssistant: mock(async () => false),
     handleEditLast: mock(),
     // AP-11: the delete-confirm state the pane's modal reads (same rule).
     // AP-13: the live turn failure the error card reads (same rule).

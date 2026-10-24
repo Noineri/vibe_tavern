@@ -170,6 +170,8 @@ const testTransport = {
   // AP-10: the turn-delete REST call — the real client fn, so the delete
   // path stays observed at the HTTP boundary (the fetch router above).
   deleteTurn: experienceCopilotApi.deleteCopilotTurn,
+  // AP-31: the assistant-edit REST call — the real client fn (same reason).
+  editMessage: experienceCopilotApi.editCopilotMessage,
   // SC-0c repair (assertions unchanged): the seam takes the typed owner
   // now — mapped back exactly as the experience host does.
   getActiveThread: (owner: Parameters<typeof scriptOwnerId>[0]) => experienceCopilotApi.getExperienceCopilotActive(scriptOwnerId(owner)),

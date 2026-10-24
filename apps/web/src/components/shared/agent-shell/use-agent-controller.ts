@@ -136,7 +136,8 @@ export interface AgentController extends AgentTurnActions {
    *  bodies behave byte-identically to before. */
   handleAnswer: (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions) => Promise<void>;
   // AP-10 turn actions (handleRegenerate / handleDeleteTurn / handleEditLast)
-  // arrive through `AgentTurnActions` above — owned by `use-agent-turn-actions.ts`.
+  // and the AP-31 assistant edit (handleEditAssistant) arrive through
+  // `AgentTurnActions` above — owned by `use-agent-turn-actions.ts`.
   handleCancel: () => void;
   /** SC-23f: the optimistic resolution of the just-decided permission card
    *  (mirrors `pendingAskAnswer` — flips the card immediately, rolls back
@@ -678,5 +679,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

@@ -38,6 +38,7 @@ import type {
   activateExperienceCopilotSession,
   answerCopilotAsk,
   deleteCopilotTurn,
+  editCopilotMessage,
   listExperienceCopilotMessages,
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
@@ -262,6 +263,15 @@ export interface AgentHostTransport {
    *  assignable to this `typeof`). The fetch itself stays in the API
    *  client; the controller refetches on settle through `onTurnSettled`. */
   deleteTurn: typeof deleteCopilotTurn;
+  /** AP-31: edit ONE assistant text row's text in place (`PATCH
+   *  .../messages/:messageId` — AP-30's route): replaces the stored content,
+   *  nothing regenerated. REQUIRED like `deleteTurn` (a host that forgets
+   *  it is a compile break, not a silent no-op); hosts pass their
+   *  thread-scoped client fn (the script host its own twin — structurally
+   *  identical, so it stays assignable to this `typeof`). The controller
+   *  settles+refetches on success through `onTurnSettled` (the delete's
+   *  refetch); a failure settles nothing. */
+  editMessage: typeof editCopilotMessage;
   /** The single active thread for an owner, or null when none exists.
    *  SC-0c: takes the typed owner (chat owners route to the SC-0b client,
    *  script owners map back to the script id in one line). */

@@ -260,3 +260,27 @@ export async function deleteCopilotTurn(
   });
   return unwrapRpc(response);
 }
+
+// ─── Assistant message edit (AP-30 route / AP-31 client) ──────────────────
+
+/** Edit ONE assistant text row in place (AP-30 route, AP-31 client):
+ *  PATCHes the addressed message's stored `content` with the replacement
+ *  text — nothing regenerates (no model call), the row's id, createdAt, seq,
+ *  and reasoning pair stay, every other row stays, and the updated message
+ *  wire comes back. The caller refetches messages on settle (the delete's
+ *  contract — no optimistic rewrite). Rejects with a typed 400
+ *  (`not_assistant_row` / `tool_call_row` / `folded_row` / `empty_content` /
+ *  `empty_row`) on an ineligible row and a 404 on an unknown thread or
+ *  another thread's message — every agent kind calls the same route (no
+ *  kind dispatch, like the delete above). */
+export async function editCopilotMessage(
+  threadId: string,
+  messageId: string,
+  content: string,
+): Promise<ExperienceCopilotMessageWire> {
+  const response = await client.api["experience-copilot"][":threadId"].messages[":messageId"].$patch({
+    param: { threadId, messageId },
+    json: { content },
+  });
+  return unwrapRpc(response);
+}

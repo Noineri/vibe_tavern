@@ -17,6 +17,7 @@ import type { ReactElement, ReactNode } from "react";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotContextLink,
+  ExperienceCopilotMessageWire,
   ExperienceCopilotStreamRequest,
 } from "@vibe-tavern/api-contracts";
 import type { CopilotStreamOpts } from "../../../api/experience-copilot-api.js";
@@ -159,6 +160,19 @@ describe("controller attachedVariants body (SC-18)", () => {
       renameSession: async () => null,
       setContextLinks: async (_threadId: string, links: ExperienceCopilotContextLink[]) => links,
       deleteTurn: async () => ({ deletedMessageIds: [], deletedUserMessageId: null }),
+      // AP-31: the assistant-edit member — plain canned fn (the suite pins
+      // the send body, never edits).
+      editMessage: async (_threadId: string, messageId: string, content: string): Promise<ExperienceCopilotMessageWire> => ({
+        id: messageId,
+        threadId: _threadId,
+        role: "assistant",
+        content,
+        toolCallsJson: null,
+        toolCallId: null,
+        reasoning: null,
+        reasoningDurationMs: null,
+        createdAt: "",
+      }),
     };
   }
 

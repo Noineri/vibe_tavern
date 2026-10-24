@@ -170,3 +170,25 @@ export async function deleteScriptAgentTurn(
   });
   return unwrapRpc(response);
 }
+
+// ─── Assistant message edit (AP-30 route / AP-31 client) ──────────────────
+//
+// The twin of the experience client's `editCopilotMessage` — the SAME shared
+// thread route (the edit dispatches by thread, never kind-checks, exactly
+// like the delete above). The script host wires THIS fn (never the
+// experience client) — the twin-module rule from the header above.
+
+/** Edit ONE assistant text row in place (AP-30 route, AP-31 client). Same
+ *  contract as the experience twin: the caller refetches on settle, no
+ *  optimistic rewrite. */
+export async function editScriptAgentMessage(
+  threadId: string,
+  messageId: string,
+  content: string,
+): Promise<ExperienceCopilotMessageWire> {
+  const response = await client.api["experience-copilot"][":threadId"].messages[":messageId"].$patch({
+    param: { threadId, messageId },
+    json: { content },
+  });
+  return unwrapRpc(response);
+}

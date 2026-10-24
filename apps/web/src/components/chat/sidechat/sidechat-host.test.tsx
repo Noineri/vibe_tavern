@@ -651,6 +651,19 @@ function otherTransport(): AgentHostTransport {
     renameSession: async () => thread,
     setContextLinks: async (_threadId: string, links: ExperienceCopilotContextLink[]) => links,
     deleteTurn: async () => ({ deletedMessageIds: [], deletedUserMessageId: null }),
+    // AP-31: the assistant-edit member — canned (these preset tests never
+    // edit; present so the stub stays the full transport).
+    editMessage: async (_threadId: string, messageId: string, content: string): Promise<ExperienceCopilotMessageWire> => ({
+      id: messageId,
+      threadId: _threadId,
+      role: "assistant",
+      content,
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
+      createdAt: "",
+    }),
   };
 }
 

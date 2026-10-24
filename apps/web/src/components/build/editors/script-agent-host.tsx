@@ -26,6 +26,7 @@ import {
   activateScriptAgentSession,
   answerScriptAgentAsk,
   deleteScriptAgentTurn,
+  editScriptAgentMessage,
   getScriptAgentActive,
   listScriptAgentMessages,
   listScriptAgentSessions,
@@ -667,6 +668,9 @@ registerAgentHost({
     // AP-10: the turn-delete REST call (required member — the script twin,
     // structurally identical to the experience `typeof` the registry pins).
     deleteTurn: deleteScriptAgentTurn,
+    // AP-31: the assistant-edit REST call (required member, the delete's
+    // script twin — the same shared thread route, no kind dispatch).
+    editMessage: editScriptAgentMessage,
     // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
     // back to the script id in one line — the thread-scoped members stay
     // owner-agnostic (the same per-thread routes serve both owners).

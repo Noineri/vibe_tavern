@@ -18,6 +18,7 @@ import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
   deleteCopilotTurn,
+  editCopilotMessage,
   getExperienceCopilotActive,
   listExperienceCopilotMessages,
   listExperienceCopilotSessions,
@@ -480,6 +481,9 @@ registerAgentHost({
     // AP-10: the turn-delete REST call (required member — forgetting it is
     // a compile break). The thread route dispatches by thread, never kind.
     deleteTurn: deleteCopilotTurn,
+    // AP-31: the assistant-edit REST call (required member, the delete's
+    // sibling) — the same thread route serves every kind.
+    editMessage: editCopilotMessage,
     // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
     // back to the script id in one line — the thread-scoped members stay
     // owner-agnostic (the same per-thread routes serve both owners).
