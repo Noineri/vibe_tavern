@@ -15,6 +15,7 @@ const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 // (handle attributes, activator listeners) through SortableMasterListPhoneRow.
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
@@ -40,6 +41,11 @@ mock.module("@dnd-kit/core", () => ({
     dndHandlers = props;
     return <RealDndContext {...props} />;
   },
+  // DragOverlay mounts children only while dnd-kit's INTERNAL active state
+  // is set; the captured-handler pattern drives the hook state, never the
+  // internal one — so the preview renders inline here. Shape-identical with
+  // master-list.test.tsx (co-load contract: last-write-wins).
+  DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 let ProviderProfileList: typeof import("./ProviderProfileList.js").ProviderProfileList;

@@ -9,6 +9,7 @@ const realI18n = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
@@ -34,6 +35,11 @@ mock.module("@dnd-kit/core", () => ({
     dndHandlers = props;
     return <RealDndContext {...props} />;
   },
+  // DragOverlay mounts children only while dnd-kit's INTERNAL active state
+  // is set; the captured-handler pattern drives the hook state, never the
+  // internal one — so the preview renders inline here. Shape-identical with
+  // ProviderProfileList.test.tsx (co-load contract: last-write-wins).
+  DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 let MasterList: typeof import("./master-list.js").MasterList;
@@ -210,5 +216,37 @@ describe("master-list primitive", () => {
     expect(view.getByTestId("list-search")).toBeTruthy();
     expect(view.getByTestId("list-footer")).toBeTruthy();
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
+  });
+
+  it("renders the drag overlay for the active item while dragging", () => {
+    const { props } = listProps();
+    const view = render(<MasterList {...props} />);
+
+    expect(view.getAllByText("Beta")).toHaveLength(1);
+    expect(dndHandlers).toBeTruthy();
+    const startEvent = { active: { id: "b" } } as unknown as Parameters<
+      NonNullable<RealDndContextProps["onDragStart"]>
+    >[0];
+    act(() => {
+      dndHandlers!.onDragStart!(startEvent);
+    });
+    // The dragged row keeps its place in the list; the overlay previews it.
+    expect(view.getAllByText("Beta")).toHaveLength(2);
+    // The overlay previews the ACTIVE item only — Alpha gains no preview.
+    expect(view.getAllByText("Alpha")).toHaveLength(1);
+  });
+
+  it("renders no drag overlay while dragging when renderOverlayRow is absent", () => {
+    const { props } = listProps({ renderOverlayRow: undefined });
+    const view = render(<MasterList {...props} />);
+
+    expect(dndHandlers).toBeTruthy();
+    const startEvent = { active: { id: "b" } } as unknown as Parameters<
+      NonNullable<RealDndContextProps["onDragStart"]>
+    >[0];
+    act(() => {
+      dndHandlers!.onDragStart!(startEvent);
+    });
+    expect(view.getAllByText("Beta")).toHaveLength(1);
   });
 });

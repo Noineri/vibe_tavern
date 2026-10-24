@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DndContext, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   useReorderableList,
@@ -34,7 +34,8 @@ export interface MasterListProps<T> {
   /** One row per item — `SortableMasterListRow`, a pinned `MasterListRow`,
    *  or the phone variants. The list keys rows by `getId`. */
   renderRow: (item: T) => ReactNode;
-  /** Drag-preview content — compose with `MasterListDragOverlayRow`. */
+  /** Drag-preview content — compose with `MasterListDragOverlayRow`.
+   *  When absent, no drag preview renders during a drag. */
   renderOverlayRow?: (item: T) => ReactNode;
 }
 
@@ -84,6 +85,9 @@ export function MasterList<T>({
               : rendered.map((item) => <div key={getId(item)}>{renderRow(item)}</div>)}
           </div>
         </SortableContext>
+        <DragOverlay dropAnimation={null}>
+          {activeDragItem && renderOverlayRow ? renderOverlayRow(activeDragItem) : null}
+        </DragOverlay>
       </DndContext>
       {footer}
     </div>
