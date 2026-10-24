@@ -8,8 +8,7 @@ import {
   toKindSettingsWire,
   toChatSettingsWire,
 } from "./experience-copilot-wire-mappers.js";
-import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
-import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
+import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
 import { notFound } from "../../shared/errors.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
@@ -55,7 +54,6 @@ import {
 import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
-import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
 
@@ -98,6 +96,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  constructor body (it reads `this.stores`, which parameter properties
    * only make available there). */
   private readonly deleteTurnForRegenerate: AgentTurnDeleteTurn;
+  private readonly providerDeps: ReturnType<typeof buildAgentProviderDeps>;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -125,6 +124,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     /** Shared text-asset read for RP attachment rendering (CA-1f). */
     private readonly attachmentAssetLoader?: AttachmentAssetLoader,
   ) {
+    this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
@@ -281,21 +281,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         contextCharacterId?: string;
         contextPersonaId?: string;
       }) => resolveScriptAgentContextCards(this.stores, input),
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       // Kind-aware fallback (AS-8b): prompt/dice scripts seed the `script`
       // kind's builtin, interactive scripts the experience one.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
@@ -390,21 +376,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         assembly,
         experienceCopilot: this.stores.experienceCopilot,
       },
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       resolveProfileForChat: (thread) =>
         this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
@@ -453,21 +425,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
       getBoundVisualIds: (scriptId: string) => this.stores.scripts.getBoundVisualIds(scriptId),
       getVisual: (id: string) => this.stores.experienceResources.getVisualById(id),
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       // Profile resolution (CP-6): thread → script → copilot_profile_id → row,
       // falling back to the built-in seed. The stream already holds thread.scriptId.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),

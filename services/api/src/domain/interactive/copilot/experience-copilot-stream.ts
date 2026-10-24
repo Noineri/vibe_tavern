@@ -67,6 +67,7 @@ export type {
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ExperienceCopilotStreamDeps {
+  readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The ER-3 store (thread + message persistence). */
   readonly store: ExperienceCopilotStore;
   /** Script-owned plan persistence for the model-facing plan/read_plan tools. */
@@ -343,6 +344,7 @@ export async function* streamExperienceCopilot(
     ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
     ...(deps.autoCompact !== undefined ? { autoCompact: deps.autoCompact } : {}),
     ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
+    ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);

@@ -134,10 +134,12 @@ import {
   type SidechatOocMeterSegmentKey,
 } from "./sidechat-context.js";
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../interactive/copilot/experience-copilot-stream-contract.js";
+import { buildSidechatCoreDeps } from "./sidechat-core-deps.js";
 
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface SidechatStreamDeps {
+  readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The shared agent-thread store (thread + message persistence — the
    *  sidechat's threads live in the same store as every kind's). */
   readonly store: ExperienceCopilotStore;
@@ -771,29 +773,7 @@ export async function* streamSidechatTurn(
     },
   };
 
-  const streamDeps: AgentStreamDeps<ExperienceCopilotThread> = {
-    store: deps.store,
-    getProviderProfile: deps.getProviderProfile,
-    getEffectiveProviderProfile: deps.getEffectiveProviderProfile,
-    resolveModel: deps.resolveModel,
-    // SC-8c auto-compaction: the kind's own rule — the discussion against
-    // the room left after the static context and the RP layer — through the
-    // sidechat compaction service, with THIS turn's assembly pressure. The
-    // generic loop fires the hook fire-and-forget after the metrics persist;
-    // absent service (tests, legacy harnesses) → the sidechat never
-    // auto-compacts (the manual route still serves the kind).
-    ...(deps.compaction !== undefined
-      ? {
-          autoCompact: (threadId: string) => {
-            const pressure = autoCompactPressure;
-            if (pressure === null) return Promise.resolve();
-            return deps.compaction!.autoCompactAfterSidechatTurn(threadId, pressure);
-          },
-        }
-      : {}),
-    ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
-    ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
-  };
+  const streamDeps = buildSidechatCoreDeps(deps, () => autoCompactPressure);
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);
 }
