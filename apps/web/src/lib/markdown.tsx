@@ -36,7 +36,7 @@ interface MarkdownProps {
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
 
-type MarkdownComponentProps = {
+export type MarkdownComponentProps = {
   children?: React.ReactNode;
   className?: string;
 } & ExtraProps & Record<string, unknown>;
@@ -116,15 +116,31 @@ function hasQuotedTextClass(node: HastElement): boolean {
   return false;
 }
 
+// KaTeX output (`span.katex`, `span.katex-display`) is machine-generated math
+// markup. The quote/banner wrappers below must treat it as an opaque barrier —
+// like `code`/`pre` — so flattening can never slice a formula apart. Only the
+// agent math pipelines (markdown-math.tsx, katex runs before these plugins) ever
+// contain such elements; `chat`/`plain` trees never do, so those outputs are
+// byte-identical with the guard in place.
+function hasKatexClass(node: HastElement): boolean {
+  const className = node.properties?.className;
+  if (typeof className === "string") {
+    return className.split(/\s+/).some((c) => c === "katex" || c === "katex-display");
+  }
+  if (Array.isArray(className)) return className.includes("katex") || className.includes("katex-display");
+  return false;
+}
+
 function canFlattenChild(child: HastNode): boolean {
   if (isText(child)) return true;
   if (!isElement(child)) return false;
+  if (hasKatexClass(child)) return false;
   if (!INLINE_TAGS.has(child.tagName) || child.tagName === "code") return false;
   return child.children.every(canFlattenChild);
 }
 
 function canWrapInlineQuotes(element: HastElement): boolean {
-  if (element.tagName === "code" || element.tagName === "pre" || hasQuotedTextClass(element)) return false;
+  if (element.tagName === "code" || element.tagName === "pre" || hasQuotedTextClass(element) || hasKatexClass(element)) return false;
   return element.children.some(canFlattenChild);
 }
 
@@ -260,7 +276,7 @@ function processNode(node: HastNode): void {
 
   if (!isElement(node)) return;
 
-  if (node.tagName === "code" || node.tagName === "pre" || hasQuotedTextClass(node)) return;
+  if (node.tagName === "code" || node.tagName === "pre" || hasQuotedTextClass(node) || hasKatexClass(node)) return;
 
   const newChildren = wrapQuotesInElement(node);
   if (newChildren !== node.children) node.children = newChildren;
@@ -268,7 +284,7 @@ function processNode(node: HastNode): void {
   for (const child of node.children) processNode(child);
 }
 
-const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
+export const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
 
 // ─── Rehype plugin: System Banner ───
 
@@ -282,7 +298,7 @@ function hasSystemBannerClass(node: HastElement): boolean {
 }
 
 function canWrapSystemBanner(element: HastElement): boolean {
-  if (element.tagName === "code" || element.tagName === "pre" || hasSystemBannerClass(element)) return false;
+  if (element.tagName === "code" || element.tagName === "pre" || hasSystemBannerClass(element) || hasKatexClass(element)) return false;
   return element.children.some(canFlattenChild);
 }
 
@@ -363,7 +379,7 @@ function processBannerNode(node: HastNode): void {
 
   if (!isElement(node)) return;
 
-  if (node.tagName === "code" || node.tagName === "pre" || hasSystemBannerClass(node)) return;
+  if (node.tagName === "code" || node.tagName === "pre" || hasSystemBannerClass(node) || hasKatexClass(node)) return;
 
   const newChildren = wrapBannersInElement(node);
   if (newChildren !== node.children) node.children = newChildren;
@@ -637,11 +653,40 @@ const VARIANT_DEFAULT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, strin
   "agent-plain": "md-content md-agent-plain",
 };
 
+// Agent math (markdown-math.tsx: remark-math + rehype-katex + katex) loads as a
+// separate chunk on the first agent message containing a `$`, so the KaTeX code
+// stays out of the initial bundle. Until it resolves, the Suspense fallback shows
+// the same sync agent pipeline as before — raw `$…$` text, one swap when math lands.
+const AgentMathMarkdown = React.lazy(() => import("./markdown-math.js"));
+
+function AgentSyncMarkdown({ text, variant }: { text: string; variant: "agent-rp" | "agent-plain" }) {
+  const isAgentRp = variant === "agent-rp";
+  return (
+    <ReactMarkdown
+      remarkPlugins={isAgentRp ? CHAT_REMARK_PLUGINS : REMARK_PLUGINS}
+      rehypePlugins={isAgentRp ? AGENT_RP_REHYPE_PLUGINS : BASE_REHYPE_PLUGINS}
+      components={AGENT_COMPONENTS}
+    >
+      {isAgentRp ? preserveEscapedUnderscoreTags(text) : text}
+    </ReactMarkdown>
+  );
+}
+
 export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
   const isAgentRp = variant === "agent-rp";
   const isAgent = isAgentRp || variant === "agent-plain";
+  const agentVariant = isAgent ? variant : null;
+  if (agentVariant !== null && text.includes("$")) {
+    return (
+      <div className={className || VARIANT_DEFAULT_CLASS[agentVariant]}>
+        <React.Suspense fallback={<AgentSyncMarkdown text={text} variant={agentVariant} />}>
+          <AgentMathMarkdown text={text} variant={agentVariant} components={AGENT_COMPONENTS} />
+        </React.Suspense>
+      </div>
+    );
+  }
   const isPlainPipeline = variant === "plain" || variant === "agent-plain";
   const remarkPlugins = isPlainPipeline ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
   const rehypePlugins = isPlainPipeline
