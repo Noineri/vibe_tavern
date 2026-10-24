@@ -21,7 +21,7 @@ mock.module("../../../../i18n/context.js", () => ({
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { SttSection } = await import("./SttSection.js");
-const { useSttProfiles } = await import("./use-stt-profiles.js");
+const { useSttProfiles } = await import("../../../../hooks/use-stt-profiles.js");
 const { useMasterDetail, MasterDetailModal } = await import("../../../shared/MasterDetailModal.js");
 
 type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;

@@ -14,7 +14,9 @@
 import type {
   SkillCatalog,
   SkillCatalogEntryDto,
+  SkillContentDto,
   SkillImportResult,
+  SkillSaveDto,
 } from "@vibe-tavern/api-contracts";
 import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -29,6 +31,38 @@ export async function listCoauthorSkills(): Promise<SkillCatalog> {
 export async function readCoauthorSkill(id: string): Promise<SkillCatalogEntryDto | null> {
   const response = await client.api.coauthor.skills[":id"].$get({ param: { id } });
   if (response.status === 404) return null;
+  return unwrapRpc(response);
+}
+
+/** `GET /api/coauthor/skills/:id/content` — the AP-21 full content view
+ *  (`{ id, path, content, body, files }`), or `null` when the skill is
+ *  absent. Lazy-loaded by the skill library detail pane. Goes through
+ *  `apiFetch` (not the treaty client) so the URL is built the same way as
+ *  every other `:id`-suffixed skill route in this file. */
+export async function readCoauthorSkillContent(id: string): Promise<SkillContentDto | null> {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/coauthor/skills/${encodeURIComponent(id)}/content`);
+  if (response.status === 404) return null;
+  return unwrapRpc(response);
+}
+
+/**
+ * `POST /api/coauthor/skills` — save a NEW user skill (AP-23d): body
+ * `{ name, description, body }`; the folder id is derived from the name and
+ * de-duplicated server-side. 201 + the fresh catalog entry DTO.
+ */
+export async function createCoauthorSkill(input: SkillSaveDto): Promise<SkillCatalogEntryDto> {
+  const response = await client.api.coauthor.skills.$post({ json: input });
+  return unwrapRpc(response);
+}
+
+/**
+ * `PUT /api/coauthor/skills/:id` — save an EXISTING user skill (AP-23d):
+ * same body; rewrites only that skill's SKILL.md. A built-in id is rejected
+ * (409) and a missing id is a 404 — both surface via `unwrapError`.
+ */
+export async function updateCoauthorSkill(id: string, input: SkillSaveDto): Promise<SkillCatalogEntryDto> {
+  const response = await client.api.coauthor.skills[":id"].$put({ param: { id }, json: input });
+  if (!response.ok) throw await unwrapError(response);
   return unwrapRpc(response);
 }
 

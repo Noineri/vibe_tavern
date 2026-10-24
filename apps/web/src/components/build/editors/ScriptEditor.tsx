@@ -110,15 +110,15 @@ function SortableScriptCard({ script, isActive, isMobile, links, linksLoaded, un
 						className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center text-t3 active:cursor-grabbing"
 						onClick={e => e.stopPropagation()}
 					>
-						<span className="text-xl leading-none">≡</span>
+						<span className="text-[calc(var(--ui-fs)+6px)] leading-none">≡</span>
 					</button>
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-				<span data-testid="script-name" className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
-				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+				<span data-testid="script-name" className="flex-1 truncate text-[var(--ui-fs)] font-semibold text-t1">{script.name}</span>
+				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide bg-s3 text-t2 mr-1">
 					{script.scriptKind === "dice" ? "DICE" : "PROMPT"}
 				</div>
-				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
 					{script.enabled ? "ON" : "OFF"}
 				</div>
 			</div>
@@ -488,35 +488,35 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setImportOpen(false); setImportCode(""); }}>
           <div className="flex w-[520px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "80vh" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
-              <span className="text-sm font-semibold text-t1">{t("script_import_title")}</span>
+              <span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">{t("script_import_title")}</span>
               <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}><Ic.close /></div>
             </div>
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-              <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
+              <div className="mb-3 text-[calc(var(--ui-fs)-1px)] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
                 <AutoTextarea mono className="leading-[1.6]" maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
-                <div className="mt-2 text-[11px] text-accent-t">
+                <div className="mt-2 text-[calc(var(--ui-fs)-3px)] text-accent-t">
                   {(importCode.trim().startsWith("{") || importCode.trim().startsWith("[")) ? t("script_import_detect_json") : t("script_import_detect_js")}
                 </div>
               )}
-              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_prompt")}:</div>
+              <div className="mt-3 text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_template_group_prompt")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "prompt").map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
-              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_dice")}:</div>
+              <div className="mt-3 text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_template_group_dice")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "dice").map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
             </div>
           </div>
         </div>
@@ -552,7 +552,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     <div className="flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
-          <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
+          <div className="mb-2 text-[calc(var(--ui-fs)-1px)] text-t3">{t("script_no_scripts")}</div>
           <div className="flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
@@ -597,11 +597,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
               <div className={cn("rounded-xl border", activeDragDisplay.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
                 <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragDisplay.name}</span>
-                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+                  <span className="flex-1 truncate text-[var(--ui-fs)] font-semibold text-t1">{activeDragDisplay.name}</span>
+                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide bg-s3 text-t2 mr-1">
                     {activeDragDisplay.scriptKind === "dice" ? "DICE" : "PROMPT"}
                   </div>
-                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
                     {activeDragDisplay.enabled ? "ON" : "OFF"}
                   </div>
                 </div>
@@ -621,7 +621,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // script record — the agent panel is null then, so the view still has
   // content in that corner case instead of an empty pane.
   const scriptPlaceholderPanel = (
-    <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">
+    <div className="flex h-full items-center justify-center text-t3 font-ui text-[calc(var(--ui-fs)-1px)] italic">
       {t("script_test_no_result")}
     </div>
   );
@@ -710,7 +710,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           <button
             type="button"
             aria-label={t("import_back")}
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s2 hover:text-t1"
             onClick={handleBackToList}
           >
             {Ic.caret("l")} {t("import_back")}

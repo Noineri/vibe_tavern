@@ -3,14 +3,19 @@ import type { ProxyRecord } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useModalStore } from "../../stores/modal-store.js";
-import { MasterDetailModal, MasterDetailMobileDrillDown, useMasterDetail } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, useMasterDetail } from "../shared/MasterDetailModal.js";
+import { MasterList } from "../shared/master-list/master-list.js";
+import { SortableMasterListPhoneRow } from "../shared/master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../shared/master-list/master-list-overlay-row.js";
+import { arrayMove } from "@dnd-kit/sortable";
+import { reorderProxies } from "../../api/proxy-api.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { Icons } from "../shared/icons.js";
 import { AddButton } from "../shared/add-button.js";
 import { SAVED_DISPLAY_MS, SaveButton } from "../shared/SaveBar.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls } from "../../lib/field-tokens.js";
 
 type ProxySaveState = "idle" | "saving" | "saved";
 
@@ -62,41 +67,62 @@ interface ProxyManagerModalProps {
   onProvidersChanged: () => Promise<void>;
 }
 
-function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, overlay, phone drill-down row). This list supplies data + slots:
+// the connection dot, the name + default-badge-or-URL second line, and the
+// arrayMove + reorderProxies persist (the route stores the order; the
+// refreshed parent list replaces the optimistic one on success, rollback
+// otherwise — owned by the primitive's hook).
+function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd, onRefresh }: {
   proxies: ProxyRecord[];
   editingId: string | null;
   defaultProxyId: string | null;
   onSelect: (proxy: ProxyRecord) => void;
   onAdd: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   const { t } = useT();
   const { openDetail } = useMasterDetail();
+  const dot = (selected: boolean) => (
+    <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
+  );
   return (
-    <div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-      <div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("proxy_profiles_label")}</div>
-      <div className="flex-1 overflow-y-auto">
-        {proxies.map((proxy) => {
-          const selected = proxy.id === editingId;
-          return (
-            <div
-              key={proxy.id}
-              className={cn("flex min-h-[56px] cursor-pointer items-center gap-3 border-l-[3px] pl-4 pr-2 touch-manipulation transition-colors", selected ? "border-l-accent bg-accent-dim text-accent-t" : "border-l-transparent text-t2 hover:bg-s2")}
-              onPointerDown={() => onSelect(proxy)}
-            >
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
-              <div className="min-w-0 flex-1 py-2">
-                <div className="truncate text-[13px] font-medium">{proxy.name}</div>
-                <div className={cn("mt-0.5 truncate text-[11px]", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
-              </div>
-              <MasterDetailMobileDrillDown onSelect={() => onSelect(proxy)} className="py-3" />
-            </div>
-          );
-        })}
-      </div>
-      <AddButton className="mx-3 mt-3 h-auto justify-center py-2 font-medium" onClick={() => { onAdd(); openDetail(); }}>
-        {t("proxy_new")}
-      </AddButton>
-    </div>
+    <MasterList<ProxyRecord>
+      items={proxies}
+      getId={(proxy) => proxy.id}
+      onReorderItems={(activeId, overId, currentItems) => {
+        const fromIdx = currentItems.findIndex((proxy) => proxy.id === activeId);
+        const toIdx = currentItems.findIndex((proxy) => proxy.id === overId);
+        if (fromIdx === -1 || toIdx === -1) {
+          return { optimisticItems: currentItems, persist: () => {} };
+        }
+        const reordered = arrayMove(currentItems, fromIdx, toIdx);
+        return {
+          optimisticItems: reordered,
+          persist: () => reorderProxies(reordered.map((proxy, i) => ({ id: proxy.id, sortOrder: i }))).then(() => onRefresh()),
+        };
+      }}
+      header={<div className={cn(listHeaderCls, "mb-1.5 px-4")}>{t("proxy_profiles_label")}</div>}
+      renderRow={(proxy) => (
+        <SortableMasterListPhoneRow
+          sortableId={proxy.id}
+          rowTestId={`proxy-row-${proxy.id}`}
+          selected={proxy.id === editingId}
+          status={dot(proxy.id === editingId)}
+          title={proxy.name}
+          secondLine={proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}
+          onSelect={() => onSelect(proxy)}
+        />
+      )}
+      renderOverlayRow={(proxy) => (
+        <MasterListDragOverlayRow status={dot(proxy.id === editingId)} title={proxy.name} />
+      )}
+      footer={
+        <AddButton className="mx-3 mt-3 h-auto justify-center py-2 font-medium" onClick={() => { onAdd(); openDetail(); }}>
+          {t("proxy_new")}
+        </AddButton>
+      }
+    />
   );
 }
 
@@ -226,7 +252,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName="p-5"
         mobileDetailClassName="p-4"
-        masterContent={() => <ProxyList proxies={proxies} editingId={draft?.id ?? null} defaultProxyId={defaultProxyId} onSelect={selectProxy} onAdd={createProxy} />}
+        masterContent={() => <ProxyList proxies={proxies} editingId={draft?.id ?? null} defaultProxyId={defaultProxyId} onSelect={selectProxy} onAdd={createProxy} onRefresh={onRefresh} />}
         detailContent={draft ? (
           <div className="space-y-4">
             <div>
@@ -236,7 +262,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             <div>
               <label className={lblCls}>{t("proxy_url")}</label>
               <TextInput value={draft.url} onChange={(event) => updateDraft("url", event.target.value)} placeholder="http://proxy.example:8080" />
-              <p className="mt-1 font-ui text-[11px] text-t3">{t("proxy_url_hint")}</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("proxy_url_hint")}</p>
             </div>
             <div>
               <label className={lblCls}>{t("proxy_username")}</label>
@@ -245,26 +271,26 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             <div>
               <div className="flex items-center justify-between gap-3">
                 <label className={lblCls}>{t("proxy_password")}</label>
-                {draft.hasStoredPassword && !draft.clearStoredPassword && <span className="font-ui text-[11px] text-t3">{t("proxy_password_stored")}</span>}
+                {draft.hasStoredPassword && !draft.clearStoredPassword && <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("proxy_password_stored")}</span>}
               </div>
               <TextInput mono type="password" value={draft.password} onChange={(event) => { updateDraft("password", event.target.value); if (event.target.value) updateDraft("clearStoredPassword", false); }} autoComplete="new-password" placeholder={draft.hasStoredPassword && !draft.clearStoredPassword ? t("proxy_password_preserve") : undefined} />
               {draft.hasStoredPassword && (
-                <button type="button" className="mt-2 font-ui text-[12px] text-danger/80 transition-colors hover:text-danger" onClick={toggleClearPassword}>
+                <button type="button" className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger/80 transition-colors hover:text-danger" onClick={toggleClearPassword}>
                   {draft.clearStoredPassword ? t("cancel") : t("proxy_password_clear")}
                 </button>
               )}
-              <p className="mt-1 font-ui text-[11px] text-t3">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
             </div>
-            {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">{error}</div>}
+            {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">{error}</div>}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">{t("proxy_select_or_create")}</div>
+          <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("proxy_select_or_create")}</div>
         )}
         footer={
           <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-5 pt-3 pb-3 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-            {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
+            {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-1px)] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
             <div className="ml-auto flex items-center gap-2">
-              <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[13px] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
+              <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
               <SaveButton
                 dirty={dirty}
                 saveState={saveState}

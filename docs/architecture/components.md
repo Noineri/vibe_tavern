@@ -4,6 +4,8 @@
 >
 > Field shapes come from the **field canon** (`lib/field-tokens.ts` — bases + modifiers, one home for the whole app), enforced by the field primitives below. The decision table for "which primitive do I need" lives in the `vibe-tavern-frontend` skill (`.agents/skills/vibe-tavern-frontend/SKILL.md`); this file is the full per-component reference.
 >
+> Text sizing follows the **UI font ladder**: size text only through `calc(var(--ui-fs)±Kpx)` (or `var(--ui-fs)` itself) — never fixed pixel classes (`text-[11px]`), Tailwind size classes (`text-xs` … `text-2xl`), or inline `fontSize` values; those ignore the Tweaks «UI font size» setting and render ~3px smaller than ladder-sized neighbours at the default 17px. `scripts/arch-gate.ts` bans every fixed size under `apps/web/src` outright — any occurrence fails the gate (the audit converted them all, so there is no baseline left to count down) — and `scripts/font-size-codemod.ts` converts fixed sizes onto the ladder mechanically (`--dry-run` lists per-area counts and the flagged places). The one exception is roleplay message content, which follows the chat font size `--mfs` instead (FIXED_FONT_SIZE_AUDIT_REPORT).
+>
 > Verified against live code 2026-09-11 (full rewrite; field canon = FIELD_SYSTEM_UNIFICATION_REPORT FS-2..FS-10).
 
 ---
@@ -32,6 +34,7 @@
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
 | `<MasterDetailModal>` | Custom two-pane modals | `MasterDetailModal.tsx` | Two-pane on desktop, drill-down stack on mobile |
 | `<MasterDetailFooter>` | Custom editor footers | `MasterDetailModal.tsx` | Canonical desktop/mobile actions with disabled and destructive states |
+| `<MasterList>` + `<SortableMasterListRow>` / `<MasterListPhoneRow>` + `<MasterListDragOverlayRow>` | Hand-rolled master-list rows + `@dnd-kit/*` per list | `master-list/master-list.tsx` + `master-list-row.tsx` + `master-list-phone-row.tsx` + `master-list-overlay-row.tsx` | The ONE master-detail list primitive: header/search/sortable/empty-state/footer slots, wrapping title (`rowTitleCls`), second line (`rowSecondCls`), status slot with ★ active marker, handle-only drag, pinned rows without handles |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions (+ optional secondary) |
 | `<ActionSheet>` | Mobile action menus | `ActionSheet.tsx` | Mobile bottom-sheet action menu (portaled) |

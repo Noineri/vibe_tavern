@@ -222,6 +222,7 @@ function kindEntry(kind: string, providerProfileId: string | null, modelName: st
     defaultProfileId: null,
     updatedAt: "",
     servesChatModes: [CHAT_MODE.rp],
+    autoCompactDefault: true,
   };
 }
 

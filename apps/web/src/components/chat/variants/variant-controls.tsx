@@ -61,7 +61,7 @@ export function VariantControls(props: VariantControlsProps) {
             onSelect={(index) => onSelectVariant(index, index > selectedVariantIndex ? 1 : -1)}
           />
         ) : (
-          <span className="min-w-12 text-center font-ui text-[13px] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
+          <span className="min-w-12 text-center font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
         )}
         <button
           type="button"

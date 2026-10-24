@@ -240,4 +240,23 @@ describe("ExperienceCopilotStore — chat-owned threads (SC-0a)", () => {
     expect(await store.getActive("script_classic")).not.toBeNull();
     expect((await store.listSessions("script_classic")).filter((s) => s.chatId !== null)).toHaveLength(0);
   });
+
+  test("startNewChatSession seeds autoCompact from the kind default param (AP-20): absent keeps the column default (on), false is honored, and each row freezes its creation value", async () => {
+    const { store } = await setup();
+    // Absent param — the pre-AP-20 call shape: the column default (on).
+    const defaulted = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc", "Defaulted");
+    expect(defaulted.autoCompact).toBe(true);
+    // The kind's default off seeds the new row's toggle off (fresh triple so
+    // the archive-then-insert never interferes).
+    const off = await store.startNewChatSession("chat_1", "brnch_2", "sidechat-ooc", "Off", false);
+    expect(off.autoCompact).toBe(false);
+    expect(await store.getAutoCompact(off.id)).toBe(false);
+    // A later session born with a different default never rewrites the
+    // existing row — each thread freezes the value it was created with (the
+    // archive of the `defaulted` sibling touches archived_at only).
+    const second = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc", "Second", false);
+    expect(second.autoCompact).toBe(false);
+    expect((await store.getById(defaulted.id))?.autoCompact).toBe(true);
+    expect((await store.getById(off.id))?.autoCompact).toBe(false);
+  });
 });

@@ -115,7 +115,7 @@ export function LlmAssistSection({
 
   return (
     <section className="rounded-lg border border-border bg-surface p-3.5" data-testid="image-gen-assist-section">
-      <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_assist_title")}</div>
+      <div className="mb-3 font-ui text-[var(--ui-fs)] font-semibold text-t1">{t("image_gen_assist_title")}</div>
       <div className="flex items-center gap-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
         <Toggle
           checked={enabled}
@@ -124,7 +124,7 @@ export function LlmAssistSection({
           aria-label={t("image_gen_assist_title")}
         />
         <div className="min-w-0">
-          <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_assist_title")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_assist_title")}</div>
           <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
             {t("image_gen_assist_hint")}
           </div>
@@ -165,7 +165,7 @@ export function LlmAssistSection({
             aria-label={t("image_gen_assist_retry_label")}
           />
           <div className="min-w-0">
-            <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_assist_retry_label")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_assist_retry_label")}</div>
             <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
               {t("image_gen_assist_retry_hint")}
             </div>

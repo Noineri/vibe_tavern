@@ -40,10 +40,14 @@ beforeAll(async () => {
   ({ AgentShellTabButton } = await import("./AgentShellTabButton.js"));
 });
 
+// Behavior change (font audit step 9a): the tab label was `text-[0.9rem]` (a
+// fixed size deaf to --ui-fs — rem tracks the 16px browser root) → now
+// `text-[var(--ui-fs)]` (0.9rem = 14.4px, |14 - 14.4| rounds to 0 — the bare
+// variable). Basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict.
 const ACTIVE_CLASS =
-  "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors border-b-2 border-accent text-t1";
+  "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[var(--ui-fs)] font-medium transition-colors border-b-2 border-accent text-t1";
 const INACTIVE_CLASS =
-  "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors border-b-2 border-transparent text-t3";
+  "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[var(--ui-fs)] font-medium transition-colors border-b-2 border-transparent text-t3";
 
 describe("AgentShellTabButton — no onClose renders as before (SC-15)", () => {
   it("active tab: byte-identical outerHTML", () => {

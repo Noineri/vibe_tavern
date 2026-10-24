@@ -34,6 +34,8 @@ import type { DicePendingState } from "../../domain/dice/dice-service.js";
 import type { LorebookExportResult } from "@vibe-tavern/api-contracts";
 import type { CoauthorConnectionSettingsRuntimeApi } from "./coauthor-connection-contracts.js";
 export type { CoauthorConnectionSettingsRuntimeApi };
+import type { CoauthorModuleRuntimeApi } from "./coauthor-module-contracts.js";
+export type { CoauthorModuleRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
 import type { TrackerTemplateApi, TrackerTemplateCharacterRuntimeApi, TrackerTemplateInsightsRuntimeApi } from "./tracker-template-api.js";
 export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
@@ -139,7 +141,7 @@ export interface BootstrapRuntimeApi {
 
 // ─── Chat ────────────────────────────────────────────────────────────
 
-export interface ChatRuntimeApi extends ChatMessageRuntimeApi {
+export interface ChatRuntimeApi extends ChatMessageRuntimeApi, CoauthorModuleRuntimeApi {
 	getChatSnapshot: (chatId: string) => Promise<ChatSwitchResponse>;
 	createChatForCharacter: (characterId: string, mode?: ChatMode) => Promise<ChatCreateResponse>;
 	/** Co-Author chats for a character (mode='coauthor'), for the Co-Author
@@ -161,10 +163,6 @@ export interface ChatRuntimeApi extends ChatMessageRuntimeApi {
 	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
 	setCoauthorModule: (chatId: string, moduleId: string | null) => Promise<ConfigPatchResponse>;
-	listCoauthorModules: () => Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]>;
-	createCoauthorModule: (input: import("@vibe-tavern/api-contracts").CoauthorModuleCreate) => Promise<import("@vibe-tavern/api-contracts").CoauthorModule>;
-	updateCoauthorModule: (id: string, input: import("@vibe-tavern/api-contracts").CoauthorModuleUpdate) => Promise<import("@vibe-tavern/api-contracts").CoauthorModule>;
-	deleteCoauthorModule: (id: string) => Promise<void>;
 
 	// Branches
 	branchChat: (chatId: string, messageId: string) => Promise<BranchResponse>;

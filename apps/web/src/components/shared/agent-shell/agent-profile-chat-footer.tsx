@@ -37,7 +37,7 @@ export function AgentChatProfileFooter({
 				type="button"
 				data-testid="copilot-profile-assign-default-btn"
 				disabled={!hasSelection || isSelectedDefault}
-				className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40"
+				className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40"
 				onClick={() => { void onAssignDefault(); }}
 			>
 				{isSelectedDefault && <Icons.Check className="h-3.5 w-3.5" />}
@@ -48,7 +48,7 @@ export function AgentChatProfileFooter({
 				data-testid="copilot-profile-assign-here-btn"
 				disabled={!hasSelection || isSelectedHere}
 				className={cn(
-					"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
+					"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold transition-all",
 					isSelectedHere
 						? "cursor-default bg-success text-on-accent"
 						: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",

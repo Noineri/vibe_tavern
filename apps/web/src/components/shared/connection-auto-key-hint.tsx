@@ -15,7 +15,7 @@ interface ConnectionAutoKeyHintProps {
  * The LLM modal has no equivalent row and stays untouched. */
 export function ConnectionAutoKeyHint({ testId, message }: ConnectionAutoKeyHintProps): React.ReactElement {
   return (
-    <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[11px] text-t3" data-testid={testId}>
+    <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3" data-testid={testId}>
       <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
         <Icons.lock />
       </span>

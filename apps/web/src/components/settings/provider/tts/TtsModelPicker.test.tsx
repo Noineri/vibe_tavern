@@ -148,8 +148,10 @@ describe("TtsModelPicker refresh button height (MUI step 5 TTS adapter)", () => 
     expect(refresh.textContent).toBe("");
     // The closed trigger's metrics that 33.5px derives from: 13px text on the
     // preflight 1.5 line-height + py-[6px].
+    // Behavior change: was `text-[13px]` → now `text-[calc(var(--ui-fs)-1px)]`,
+    // basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 6.
     const trigger = view.getByRole("button", { name: /select_model/i }).closest("button")!;
-    expect(trigger.className).toContain("text-[13px]");
+    expect(trigger.className).toContain("text-[calc(var(--ui-fs)-1px)]");
     expect(trigger.className).toContain("py-[6px]");
     view.unmount();
   });

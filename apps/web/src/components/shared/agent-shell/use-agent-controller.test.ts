@@ -969,6 +969,8 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       content: "",
       toolCallsJson: null,
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "",
       ...over,
     });
@@ -1230,6 +1232,52 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
     expect(onTurnSettled).toHaveBeenCalledWith(true);
   });
 
+  test("marks the turn regenerating while in flight, clears on settle; sends and answers never mark", async () => {
+    // AP-29 follow-up 2: the list hides the replaced turn while this flag
+    // holds — it must cover exactly the regenerate flight (a send opens a
+    // fresh turn with its optimistic user row instead, an answer continues
+    // its turn's caption, so neither may ever set it).
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    expect(result.current.isRegenerating).toBe(false);
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleRegenerate();
+      await Promise.resolve();
+    });
+    expect(result.current.isRegenerating).toBe(true);
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.isRegenerating).toBe(false);
+
+    // A failed regenerate clears the flag too (the settle refetch shows
+    // the stored truth — the old turn — again, not a blank).
+    nextHttpError = { message: "folded into a digest" };
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.isRegenerating).toBe(false);
+
+    // Sends and ask-answer continuations never mark (a send opens a fresh
+    // turn with its optimistic user row, an answer joins its turn).
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.isRegenerating).toBe(false);
+    await act(async () => {
+      await result.current.handleAnswer("tc-1", { text: "yes" });
+    });
+    expect(result.current.isRegenerating).toBe(false);
+  });
+
   test("passes model and send options through, still with no content", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
@@ -1414,6 +1462,8 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
     content: `${role} ${id}`,
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "2026-10-22T00:00:00.000Z",
   });
 
@@ -1619,6 +1669,162 @@ describe("useExperienceCopilotController — turn failure record (AP-13)", () =>
     expect(result.current.turnFailure).toBeNull();
     expect(toastError).not.toHaveBeenCalled();
     expect(toastInfo).toHaveBeenCalledWith("generation_cancelled");
+  });
+});
+
+describe("useExperienceCopilotController — regenerate hide set (AP-29 follow-up 3)", () => {
+  const wire = (id: string, role: "user" | "assistant", content: string): ExperienceCopilotMessageWire => ({
+    id,
+    threadId: THREAD,
+    role,
+    content,
+    toolCallsJson: null,
+    toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
+    createdAt: "2026-10-23T00:00:00.000Z",
+  });
+  const oldThread = [
+    wire("u0", "user", "earlier"),
+    wire("a0", "assistant", "earlier answer"),
+    wire("u1", "user", "go"),
+    wire("c1", "assistant", ""),
+    wire("a1", "assistant", "old reply"),
+  ];
+  const newThread = [
+    wire("u0", "user", "earlier"),
+    wire("a0", "assistant", "earlier answer"),
+    wire("u1", "user", "go"),
+    wire("a9", "assistant", "new reply"),
+  ];
+
+  function renderWithMessages(threadMessages: ExperienceCopilotMessageWire[], threadId: string | null = THREAD) {
+    return renderHook(
+      ({ msgs, tid }: { msgs: ExperienceCopilotMessageWire[]; tid: string | null }) =>
+        useAgentController({ transport: testTransport, kind: "experience", threadId: tid, providerProfileId: PROVIDER, threadMessages: msgs }),
+      { initialProps: { msgs: threadMessages, tid: threadId } },
+    );
+  }
+
+  test("success keeps the hide set past the settle; the refetch without the rows empties it", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result, rerender } = renderWithMessages(oldThread);
+
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+
+    // The flag drops at the settle (the follow-up 2 contract, unchanged) but
+    // the SET keeps the replaced rows' ids — the pre-refetch messages still
+    // hold them, so the feed hides exactly these rows, never a flash.
+    expect(result.current.isRegenerating).toBe(false);
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    // The settle → refetch window: the same rows still present, the set holds.
+    await act(async () => {
+      rerender({ msgs: oldThread, tid: THREAD });
+    });
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    // The refetch lands the new turn (the server deleted the replaced rows):
+    // no recorded id remains, so the set empties — the natural end.
+    await act(async () => {
+      rerender({ msgs: newThread, tid: THREAD });
+    });
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+  });
+
+  test("failure drops the hide at once, so the refetch shows the stored old turn", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderWithMessages(oldThread);
+
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    nextHttpError = { message: "nothing to regenerate" };
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+
+    expect(result.current.isRegenerating).toBe(false);
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
+  });
+
+  test("cancel drops the hide at once", async () => {
+    holdStreamOpen = true;
+    streamExperienceCopilot.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderWithMessages(oldThread);
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleRegenerate();
+      await Promise.resolve();
+    });
+    expect(result.current.isRegenerating).toBe(true);
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    await act(async () => {
+      result.current.handleCancel();
+      await pending;
+    });
+
+    expect(result.current.isRegenerating).toBe(false);
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+  });
+
+  test("a later regenerate starts with a fresh set", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result, rerender } = renderWithMessages(oldThread);
+
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    // The thread moved on (two more turns since); the retry records only the
+    // rows its own hide covers — never the stale set.
+    const laterThread = [...oldThread, wire("u2", "user", "again"), wire("a2", "assistant", "second old reply")];
+    await act(async () => {
+      rerender({ msgs: laterThread, tid: THREAD });
+    });
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.hiddenRegeneratedIds).toEqual(["a2"]);
+  });
+
+  test("a thread switch drops the hide", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result, rerender } = renderWithMessages(oldThread);
+
+    await act(async () => {
+      await result.current.handleRegenerate();
+    });
+    expect(result.current.hiddenRegeneratedIds).toEqual(["c1", "a1"]);
+
+    await act(async () => {
+      rerender({ msgs: oldThread, tid: "thread-2" });
+    });
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+  });
+
+  test("sends and ask-answer continuations never set the hide", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderWithMessages(oldThread);
+
+    await act(async () => {
+      await result.current.handleSend("hi");
+    });
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
+    await act(async () => {
+      await result.current.handleAnswer("tc-1", { text: "yes" });
+    });
+    expect(result.current.hiddenRegeneratedIds).toBeNull();
   });
 });
 });

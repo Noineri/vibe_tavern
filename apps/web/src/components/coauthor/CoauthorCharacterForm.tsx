@@ -105,7 +105,7 @@ export function CoauthorCharacterForm() {
   if (!character) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="max-w-[280px] font-ui text-[0.9rem] leading-relaxed text-t2">
+        <p className="max-w-[280px] font-ui text-[var(--ui-fs)] leading-relaxed text-t2">
           {t("coauthor.diff.placeholder")}
         </p>
       </div>
@@ -529,10 +529,10 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       {/* Header bar — title + state subtitle + save. */}
       <div className="glass-bar sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-surface px-4 py-2.5">
         <div className="min-w-0">
-          <div className="truncate font-body text-[15px] font-medium text-t1">
+          <div className="truncate font-body text-[calc(var(--ui-fs)+1px)] font-medium text-t1">
             {character.name || t("unnamed")}
           </div>
-          <div className="font-ui text-[11px] text-t3">
+          <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {editorState === "reviewing"
               ? t("coauthor.review.state")
               : locked
@@ -575,7 +575,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       >
         {/* Level 1 — pinned, full content. */}
         <div className="flex items-center gap-2">
-          <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
+          <span className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
           <LinkBindingPopover
             links={[...contextLinks]}
             characters={characterTargets}
@@ -590,7 +590,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             disabled={locked}
           />
         </div>
-        <p className="mt-1 font-ui text-[11px] leading-snug text-t4">{t("coauthor.context.caption_full")}</p>
+        <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t4">{t("coauthor.context.caption_full")}</p>
         {/* Level 2/3 — bound lorebooks & scripts, awareness only. Skipped when
             the character has no persisted id (unsaved draft has no bindings). */}
         {character.id && (
@@ -622,7 +622,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             ref={editorHostRef}
             className="vibe-md-editor min-h-[360px] max-md:min-h-[calc(100dvh-140px)] rounded-lg border border-border"
           />
-          <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
+          <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("coauthor.editor.hint")}</p>
         </div>
 
         {/* Generating dim scrim — overlaps the editor body with

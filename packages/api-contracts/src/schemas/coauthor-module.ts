@@ -119,3 +119,12 @@ export type CoauthorModuleCreate = z.infer<typeof coauthorModuleCreateSchema>;
 export const coauthorModuleUpdateSchema = coauthorModuleCreateSchema.partial();
 
 export type CoauthorModuleUpdate = z.infer<typeof coauthorModuleUpdateSchema>;
+
+/** Manual list order rewrite (ML-5): one update per user-module row, applied
+ *  in a single transaction. Same shape as `reorderProxiesSchema`. */
+export const reorderCoauthorModulesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

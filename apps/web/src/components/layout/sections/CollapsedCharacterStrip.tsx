@@ -58,7 +58,7 @@ export function CollapsedCharacterStrip({
                 <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
               )}
               <span className={cn(
-                'flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm',
+                'flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-[var(--ui-fs)] leading-5',
                 tabAvatarSrc(tab) ? 'bg-s3' : isMarked ? 'bg-accent text-on-accent' : 'bg-s3 text-t2',
                 flyoutCharId === tab.id
                   ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface'

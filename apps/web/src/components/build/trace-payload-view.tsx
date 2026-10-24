@@ -65,7 +65,7 @@ function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
     }
   }
   return (
-    <span className={cn("shrink-0 rounded px-1 py-0.5 font-ui text-[10px] font-medium", cls)} title={label}>
+    <span className={cn("shrink-0 rounded px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium", cls)} title={label}>
       {label}
     </span>
   );
@@ -80,7 +80,7 @@ function MergedBadge({ count, names }: { count: number; names?: string[] }) {
 	if (count <= 0) return null;
 	return (
 		<span
-			className="shrink-0 rounded bg-s3 px-1 py-0.5 font-ui text-[10px] font-medium text-t3"
+			className="shrink-0 rounded bg-s3 px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-t3"
 			title={names && names.length > 0 ? names.join(", ") : undefined}
 		>
 			{t("trace_merged_badge", { n: count })}
@@ -345,9 +345,9 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 						onClick={() => setHistoryOpen(!historyOpen)}
 						aria-expanded={effectiveHistoryOpen}
 					>
-						<span className={cn("text-[11px] text-t4 transition-transform", effectiveHistoryOpen && "rotate-90")}>▶</span>
+						<span className={cn("text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", effectiveHistoryOpen && "rotate-90")}>▶</span>
 						<span className="min-w-0 flex-1 font-semibold text-t2">{t("trace_chat_history")}</span>
-						<span className="shrink-0 text-[11px] text-t3 tabular-nums">
+						<span className="shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums">
 							{historyMessageCount} {t("trace_messages_label")} · {historyInjectCount} {t("trace_injects_label")}
 							{historyTokens != null ? ` · ${formatTokens(historyTokens)}` : ""}
 						</span>
@@ -365,7 +365,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 										<div key={`inj-${item.layerId}`} className="overflow-hidden rounded-md bg-s2/40">
 											<button
 												type="button"
-												className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[11px] text-t3 active:bg-s3"
+												className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s3"
 												onClick={() => toggleInSet(setOpenInjects, item.layerId)}
 												aria-expanded={injectOpen}
 											>
@@ -378,11 +378,11 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth", { n: item.depth })}</span>}
 												<span className="h-px flex-1 bg-border2" />
 												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
-												<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
+												<span className={cn("shrink-0 text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
 											</button>
 											<AnimatedDisclosure
 												open={injectOpen}
-												className="whitespace-pre-wrap border-t border-border2 px-3 py-2 font-mono text-[11px] leading-[1.55] text-t1"
+												className="whitespace-pre-wrap border-t border-border2 px-3 py-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1"
 											>
 												{item.text}
 											</AnimatedDisclosure>
@@ -401,21 +401,21 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 											onClick={() => toggleInSet(setOpenGroups, item.start)}
 											aria-expanded={expanded}
 										>
-											<span className={cn("text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
-											<span className="min-w-0 flex-1 text-[12px] text-t2">
+											<span className={cn("text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+											<span className="min-w-0 flex-1 text-[calc(var(--ui-fs)-2px)] text-t2">
 												{item.count > 1
 													? t("trace_message_group_range", { start: item.start, end: item.end })
 													: t("trace_message_group_one", { n: item.start })}
 											</span>
-											<span className="min-w-0 flex-1 truncate text-[11px] text-t4">{preview.slice(0, 60)}</span>
+											<span className="min-w-0 flex-1 truncate text-[calc(var(--ui-fs)-3px)] text-t4">{preview.slice(0, 60)}</span>
 										</button>
 										<AnimatedDisclosure
 											open={expanded}
 											className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2"
 										>
 												{item.messages.map((m, i) => (
-													<div key={m.messageId ?? `${item.start}-${i}`} className="whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
-														<span className="mr-1.5 rounded bg-s3 px-1 text-[9px] uppercase text-t3">{m.role}</span>
+													<div key={m.messageId ?? `${item.start}-${i}`} className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1">
+														<span className="mr-1.5 rounded bg-s3 px-1 text-[calc(var(--ui-fs)-5px)] uppercase text-t3">{m.role}</span>
 														<MergedBadge count={m.mergedFrom?.length ?? 0} names={m.mergedFrom?.map((r) => r.layerId ?? r.messageId ?? "")} />
 														{m.content}
 													</div>
@@ -429,7 +429,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 			)}
 
 			{visiblePreamble.length === 0 && !grouping.hasHistory && (
-				<div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[13px] text-t3">
+				<div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
 					{t("trace_no_active")}
 				</div>
 			)}
@@ -477,9 +477,9 @@ function ScriptRunsAccordion({
 				onClick={() => setOpen(!open)}
 				aria-expanded={effectiveOpen}
 			>
-				<span className={cn("text-[11px] text-t4 transition-transform", effectiveOpen && "rotate-90")}>▶</span>
+				<span className={cn("text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", effectiveOpen && "rotate-90")}>▶</span>
 				<span className="min-w-0 flex-1 font-semibold text-t2">{t("trace_script_runs")}</span>
-				<span className="shrink-0 text-[11px] text-t3 tabular-nums">
+				<span className="shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums">
 					{runs.length}{errorCount > 0 ? ` · ${errorCount} ${t("trace_script_errors_label")}` : ""}
 				</span>
 			</button>
@@ -496,46 +496,46 @@ function ScriptRunsAccordion({
 						<div key={run.scriptId} className="overflow-hidden rounded-md bg-s2/40">
 							<button
 								type="button"
-								className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[11px] text-t3 active:bg-s3"
+								className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s3"
 								onClick={() => toggleScript(run.scriptId)}
 								aria-expanded={isExpanded}
 							>
-								<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", isExpanded && "rotate-90")}>▶</span>
+								<span className={cn("shrink-0 text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", isExpanded && "rotate-90")}>▶</span>
 								<span className="min-w-0 truncate font-medium text-t2">{run.scriptName}</span>
-								<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", errored ? "bg-danger-dim text-danger-text" : "bg-success-dim text-success-text")}>{errored ? t("trace_script_errored") : t("trace_script_ran")}</span>
+								<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", errored ? "bg-danger-dim text-danger-text" : "bg-success-dim text-success-text")}>{errored ? t("trace_script_errored") : t("trace_script_ran")}</span>
 							</button>
 							<AnimatedDisclosure
 								open={isExpanded}
 								className="flex flex-col gap-1.5 border-t border-border p-2"
 							>
 								{errored && run.error && (
-									<pre className="whitespace-pre-wrap font-mono text-[11px] text-danger-text">{run.error}{run.line ? ` (line ${run.line})` : ""}</pre>
+									<pre className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{run.error}{run.line ? ` (line ${run.line})` : ""}</pre>
 								)}
 								{(run.personalityMutation || run.scenarioMutation) && (
 									<div className="rounded bg-bg px-2 py-1">
-										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("trace_script_mutations")}</div>
-										{run.personalityMutation && <pre className="whitespace-pre-wrap font-mono text-[11px] text-t2">{run.personalityMutation}</pre>}
-										{run.scenarioMutation && <pre className="mt-0.5 whitespace-pre-wrap font-mono text-[11px] text-t2">{run.scenarioMutation}</pre>}
+										<div className="mb-0.5 text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide text-t4">{t("trace_script_mutations")}</div>
+										{run.personalityMutation && <pre className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{run.personalityMutation}</pre>}
+										{run.scenarioMutation && <pre className="mt-0.5 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{run.scenarioMutation}</pre>}
 									</div>
 								)}
 								{run.injectedMessages && run.injectedMessages.length > 0 && (
 									<div className="rounded bg-bg px-2 py-1">
-										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_injected")}</div>
+										<div className="mb-0.5 text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide text-t4">{t("script_test_injected")}</div>
 										{run.injectedMessages.map((msg, i) => (
 											<div key={i} className="flex items-start gap-1.5">
-												<span className="shrink-0 rounded bg-s3 px-1 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
-												<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{msg.content}</pre>
+												<span className="shrink-0 rounded bg-s3 px-1 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase text-t3">{msg.role}</span>
+												<pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{msg.content}</pre>
 											</div>
 										))}
 									</div>
 								)}
 								{run.console && run.console.length > 0 && (
 									<div className="rounded bg-bg px-2 py-1">
-										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_console")}</div>
+										<div className="mb-0.5 text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide text-t4">{t("script_test_console")}</div>
 										{run.console.map((entry, i) => (
 											<div key={i} className="flex items-start gap-1.5">
-												<span className={cn("shrink-0 rounded px-1 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
-												<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{entry.args}</pre>
+												<span className={cn("shrink-0 rounded px-1 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
+												<pre className="flex-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{entry.args}</pre>
 											</div>
 										))}
 									</div>
@@ -589,7 +589,7 @@ function LayerCard({
 			{compact ? (
 				<button
 					type="button"
-					className="flex w-full cursor-pointer items-center justify-between gap-2 px-3.5 py-2 text-left text-xs active:bg-s3"
+					className="flex w-full cursor-pointer items-center justify-between gap-2 px-3.5 py-2 text-left text-[calc(var(--ui-fs)-2px)] leading-4 active:bg-s3"
 					onClick={onToggle}
 					aria-expanded={expanded}
 				>
@@ -601,7 +601,7 @@ function LayerCard({
 					</div>
 					<div className="flex shrink-0 items-center gap-1.5 text-t3">
 						<span className="tabular-nums">{formatTokens(layer.tokenCount)}</span>
-						<span className={cn("text-[10px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+						<span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
 					</div>
 				</button>
 			) : (
@@ -615,9 +615,9 @@ function LayerCard({
 						<div className="min-w-0 flex-1 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</div>
 						{reason && <LoreReasonBadge reason={reason} />}
 						{mergedCount != null && mergedCount > 0 && <MergedBadge count={mergedCount} names={mergedNames} />}
-						<span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+						<span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
 					</div>
-					<div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-t3">
+					<div className="mt-1 flex min-w-0 items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t3">
 						<span className="min-w-0 flex-1 truncate">{layer.sourceId || layer.sourceType}</span>
 						<span className="shrink-0 tabular-nums">{formatTokens(layer.tokenCount)}</span>
 					</div>
@@ -625,7 +625,7 @@ function LayerCard({
 			)}
 			<AnimatedDisclosure
 				open={expanded}
-				className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[11px] leading-[1.55] text-t1"
+				className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1"
 			>
 				{text ?? layer.text}
 			</AnimatedDisclosure>
@@ -657,7 +657,7 @@ function FlatLayerList({
 	);
 	if (visible.length === 0) {
 		return (
-			<div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[13px] text-t3">
+			<div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
 				{t("trace_no_active")}
 			</div>
 		);

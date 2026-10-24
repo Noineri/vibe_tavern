@@ -548,7 +548,7 @@ export function MessageAiEditorModal() {
     <>
       <button
         type="button"
-        className="h-9 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+        className="h-9 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
         onClick={handleClose}
         disabled={applying}
       >
@@ -559,7 +559,7 @@ export function MessageAiEditorModal() {
           {runner.streaming ? (
             <button
               type="button"
-              className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
+              className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-danger transition-all"
               onClick={runner.stop}
             >
               {t("script_ai_stop")}
@@ -569,7 +569,7 @@ export function MessageAiEditorModal() {
               {showCandidate && !conflict && !staleEditSource && activeMode === "message_edit" && (
                 <button
                   type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => void handleApplyEdit()}
                   disabled={applying || runner.streaming}
                 >
@@ -579,7 +579,7 @@ export function MessageAiEditorModal() {
               {showCandidate && !mergeBelowMinimum && activeMode === "message_merge" && (
                 <button
                   type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => void handleSaveMerge()}
                   disabled={applying || runner.streaming || mergeBelowMinimum}
                 >
@@ -589,7 +589,7 @@ export function MessageAiEditorModal() {
               {showCandidate && !conflict && !staleEditSource && activeMode === "message_tts_annotate" && (
                 <button
                   type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => void handleSaveAnnotation()}
                   disabled={applying || runner.streaming}
                 >
@@ -599,7 +599,7 @@ export function MessageAiEditorModal() {
               <button
                 type="button"
                 className={cn(
-                  "h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all",
+                  "h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium transition-all",
                   canGenerate
                     ? "bg-accent text-on-accent hover:opacity-90"
                     : "bg-s3 text-t3 cursor-not-allowed",
@@ -630,7 +630,7 @@ export function MessageAiEditorModal() {
               <span className="text-accent shrink-0">
                 <Icons.sparkles />
               </span>
-              <span className="truncate text-sm font-semibold text-t1">
+              <span className="truncate text-[var(--ui-fs)] leading-5 font-semibold text-t1">
                 {tDynamic("message_ai_editor_title")}
               </span>
             </div>
@@ -676,10 +676,10 @@ export function MessageAiEditorModal() {
         >
           {staleTarget ? (
             <div className="rounded-md border border-border bg-bg p-4">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+              <div className="mb-1 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                 {tDynamic("message_ai_editor_stale_title")}
               </div>
-              <div className="font-ui text-[12px] leading-relaxed text-t3">
+              <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
                 {tDynamic("message_ai_editor_stale_body")}
               </div>
             </div>
@@ -688,12 +688,12 @@ export function MessageAiEditorModal() {
               {/* Status panel — assembled context (informational) + token estimate */}
               <div className="mb-4 rounded-md border border-border bg-bg p-3">
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                  <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                     {tDynamic("message_ai_editor_context_label")}
                   </div>
                   {tokenPreview && <TokenCounter text="" count={tokenPreview.tokens} />}
                 </div>
-                <div className="font-ui text-[12px] leading-relaxed text-t2">
+                <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">
                   {contextBits.length > 0
                     ? contextBits.join(" · ")
                     : tDynamic("message_ai_editor_context_empty")}
@@ -709,11 +709,11 @@ export function MessageAiEditorModal() {
 
               {/* Sources */}
               <div className="mb-4">
-                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                <div className="mb-1.5 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                   {tDynamic("message_ai_editor_sources_label")}
                 </div>
                 {staleEditSource ? (
-                  <div className="rounded-md border border-danger bg-danger-dim p-3 font-ui text-[12px] text-danger-text">
+                  <div className="rounded-md border border-danger bg-danger-dim p-3 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
                     {tDynamic("message_ai_editor_stale_source")}
                   </div>
                 ) : (
@@ -805,10 +805,10 @@ export function MessageAiEditorModal() {
               )}
               {showCandidate && editShowPlainCandidate && !staleEditSource && (
                 <div className="mb-3 rounded-md border border-border bg-bg p-3">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                  <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                     {tDynamic("message_ai_editor_candidate_label")}
                   </div>
-                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">
+                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">
                     {candidateText}
                     {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
                   </pre>
@@ -816,10 +816,10 @@ export function MessageAiEditorModal() {
               )}
               {showCandidate && activeMode === "message_merge" && (
                 <div className="mb-3 rounded-md border border-border bg-bg p-3">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                  <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                     {tDynamic("message_ai_editor_candidate_label")}
                   </div>
-                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">
+                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">
                     {candidateText}
                     {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
                   </pre>
@@ -829,28 +829,28 @@ export function MessageAiEditorModal() {
               {/* Apply / conflict / errors */}
               {conflict && (
                 <div className="mb-3 rounded-md border border-danger bg-danger-dim p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-danger-text">
+                  <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-danger-text">
                     {tDynamic("message_ai_editor_conflict_title")}
                   </div>
-                  <div className="mt-1 font-ui text-[12px] leading-relaxed text-danger-text">
+                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-danger-text">
                     {tDynamic("message_ai_editor_conflict_body")}
                   </div>
                 </div>
               )}
               {applyError && (
                 <div className="mb-3 rounded-md border border-danger bg-danger-dim p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-danger-text">
+                  <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-danger-text">
                     {t("script_ai_error")}
                   </div>
-                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{applyError}</pre>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{applyError}</pre>
                 </div>
               )}
               {runner.error && (
                 <div className="mb-3 rounded-md border border-danger bg-danger-dim p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-danger-text">
+                  <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-danger-text">
                     {t("script_ai_error")}
                   </div>
-                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{runner.error}</pre>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{runner.error}</pre>
                 </div>
               )}
             </>

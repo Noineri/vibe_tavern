@@ -122,7 +122,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
   return (
     <div className="flex flex-col gap-1.5" data-testid="experience-report-controls">
       {/* Frozen + pending counts (server-authoritative; never synthesized). */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-ui text-[11px]">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-3px)]">
         {showFrozenMalformed ? (
           <span className="text-warning-text" data-testid="experience-report-frozen-malformed">
             {t("experience_report_queued_malformed")}
@@ -142,7 +142,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
       {/* Frontier / revisions metadata (distinct from event counts). */}
       {(reportFrontier !== undefined || queueRevision !== undefined || sessionRevision !== undefined) && (
         <div
-          className="flex flex-wrap gap-x-3 gap-y-0.5 font-ui text-[10px] text-t4"
+          className="flex flex-wrap gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4"
           data-testid="experience-report-meta"
         >
           {reportFrontier !== undefined && (
@@ -168,7 +168,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
       <button
         type="button"
         className={cn(
-          "rounded px-3 py-1.5 font-ui text-[12px] font-medium transition-colors max-md:min-h-9",
+          "rounded px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors max-md:min-h-9",
           actionable && !pending
             ? "bg-accent text-on-accent hover:opacity-90"
             : "cursor-not-allowed bg-s2 text-t4",
@@ -183,7 +183,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
 
       {error && (
         <p
-          className="font-ui text-[11px] leading-relaxed text-danger-text"
+          className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text"
           role="alert"
           data-testid="experience-report-error"
         >

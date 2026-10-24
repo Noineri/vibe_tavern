@@ -99,9 +99,16 @@ describe("CoauthorProviderModal", () => {
       ],
     });
     const view = renderModal();
-    await waitFor(() => expect(view.getByText("★ Bound Profile")).toBeTruthy());
+    // Behavior change: was `getByText("★ Bound Profile")` (the ★ was an inline
+    // title prefix); now the ★ lives in its own aria-hidden span in the status
+    // slot per MASTER_LIST_PRIMITIVE_PLAN ML-1 rework (row rules), so the row
+    // title is the bare name and the marker is asserted separately. The bare
+    // name also renders in the connection selector, so the unscoped query sees
+    // two nodes (row title + selector); the list-scoped query below pins one.
+    await waitFor(() => expect(view.getAllByText("Bound Profile")).toHaveLength(2));
     const profileList = view.getByText("profiles_label").parentElement!;
-    expect(within(profileList).getAllByText("★ Bound Profile")).toHaveLength(1);
+    expect(profileList.textContent).toContain("★");
+    expect(within(profileList).getAllByText("Bound Profile")).toHaveLength(1);
     expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
     expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
     expect(within(profileList).getAllByLabelText("drag")).toHaveLength(2);
@@ -123,7 +130,10 @@ describe("CoauthorProviderModal", () => {
     useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha", { maxTokens: 2_000, contextBudget: 16_000 })] });
     const view = renderModal();
     await waitFor(() => expect(view.baseElement.textContent).toContain("sampler_basic_settings"));
-    expect(view.getByText("Alpha")).toBeTruthy();
+    // Behavior change: was a single `getByText("Alpha")` (the row title read
+    // "★ Alpha"); now the ★ lives in the status slot per the ML-1 rework row
+    // rules, so the bare name renders twice: row title + connection selector.
+    expect(view.getAllByText("Alpha")).toHaveLength(2);
     expect(view.getByText("coauthor.provider.transport_label")).toBeTruthy();
     expect(view.getByText("coauthor.provider.model_label")).toBeTruthy();
     expect(view.baseElement.textContent).not.toContain("coauthor.provider.tokens_label");

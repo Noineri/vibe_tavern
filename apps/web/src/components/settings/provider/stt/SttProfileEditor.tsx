@@ -11,7 +11,7 @@ import { SttRecognitionSection } from "./SttRecognitionSection.js";
 import { SttBaseCard } from "./SttBaseCard.js";
 import { SttLocalConnectionChip } from "./SttLocalConnectionChip.js";
 import { formDraftConfig, sttListingConfig, sttProviderSegmentOf, updateConfigField } from "./stt-form-helpers.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
@@ -131,7 +131,7 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
       ) : null}
 
       {stt.error && (
-        <div data-testid="stt-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
+        <div data-testid="stt-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
           {stt.error}
         </div>
       )}

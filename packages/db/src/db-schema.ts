@@ -218,6 +218,10 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
   maxSteps: integer('max_steps').notNull().default(5),
+  // Manual list order (drag-to-reorder, ML-5). New modules append at the end;
+  // the migration backfills existing rows to created_at ASC. Same shape as
+  // proxy_profiles / stt_profiles sort_order.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -1975,6 +1979,15 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   content: text('content').notNull().default(''),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
+  // AP-28 (AGENT_SHELL_POLISH): the turn's reasoning, persisted onto the
+  // FIRST assistant row the turn's persist pass writes (text row or
+  // tool-call row). Same nullable pair as `message_variants` on the RP side:
+  // text joined burst-by-burst in arrival order, duration = the summed
+  // per-burst elapsed ms. Null on every other row and on turns without
+  // reasoning; display-only — NEVER fed back into the model prompt
+  // (`storeMessagesToHistory` reads neither column).
+  reasoning: text('reasoning'),
+  reasoningDurationMs: integer('reasoning_duration_ms'),
   // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
   // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
   // messages interleave with agent_thread_context_events rows on the merged
@@ -2060,6 +2073,17 @@ export const agentKindSettings = sqliteTable('agent_kind_settings', {
   providerProfileId: text('provider_profile_id'),
   modelName: text('model_name'),
   defaultProfileId: text('default_profile_id'),
+  // AP-20: the kind's default for the NEW-session auto-compact toggle —
+  // NULL = on (auto-compact was the pre-AP-20 effective behavior, so an
+  // absent setting must not change it). Read at creation time by the two
+  // new-session paths (adapter resolves the kind, reads this default, and
+  // writes it onto the thread's auto_compact); the per-thread toggle is
+  // authoritative afterwards — changing this column later never rewrites
+  // existing threads. Stored 0/1 like threads.auto_compact; the store
+  // resolves NULL → on at read (the legacy ui_settings pair fallback is
+  // provider/model only — auto-compact never lived there, so every no-row
+  // read is on alike).
+  autoCompactDefault: integer('auto_compact_default'),
   updatedAt: text('updated_at').notNull(),
 });
 

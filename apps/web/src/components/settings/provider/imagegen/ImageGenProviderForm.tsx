@@ -167,7 +167,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
             data-testid="image-gen-profile-name-input"
           />
           {duplicateNameWarning && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+            <div className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]">
                 <Icons.Alert />
               </span>
@@ -243,7 +243,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
           stored={form.hasStoredApiKey}
         />
         {keyOptional && (
-          <div data-testid="image-gen-key-optional-hint" className="mt-1 font-ui text-[11px] text-t3">
+          <div data-testid="image-gen-key-optional-hint" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("image_gen_key_optional_hint")}
           </div>
         )}
@@ -269,7 +269,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
               type="button"
               data-testid="image-gen-test-connection-btn"
               className={cn(
-                "min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5",
+                "min-h-11 rounded-md border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium transition-colors sm:min-h-0 sm:py-1.5",
                 testOk === true
                   ? "border-success/30 bg-success/10 text-success"
                   : testOk === false

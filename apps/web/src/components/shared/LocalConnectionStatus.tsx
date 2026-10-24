@@ -52,7 +52,7 @@ export function LocalConnectionStatusChip({
     <div
       data-testid={testId}
       className={cn(
-        "flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px]",
+        "flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)]",
         style.className,
         className,
       )}
@@ -68,13 +68,13 @@ export function LocalConnectionStatusChip({
             type="button"
             onClick={() => onRefresh()}
             disabled={refreshing}
-            className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
+            className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
           >
             {refreshing ? t("testing") : refreshLabel}
           </button>
         )}
       </div>
-      {detail && <div className="font-ui text-[11px] text-t3">{detail}</div>}
+      {detail && <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{detail}</div>}
     </div>
   );
 }

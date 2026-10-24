@@ -109,7 +109,7 @@ export function SaveButton({ dirty, saveState, onClick, label, disabled = false,
     : size === "compact"
     ? "min-h-7 min-w-[108px] px-3.5 text-[calc(var(--ui-fs)-3px)]"
     : size === "touch"
-      ? "min-h-10 min-w-[124px] px-4 text-sm"
+      ? "min-h-10 min-w-[124px] px-4 text-[var(--ui-fs)] leading-5"
       : "min-h-[37px] min-w-[124px] px-[21px] text-[calc(var(--ui-fs)-2px)]";
 
   return (

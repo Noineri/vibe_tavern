@@ -59,7 +59,7 @@ export function ManagementMobileRow({
     <>
       <div className="flex w-full items-center gap-1.5">
         <TextInput
-          className="min-w-0 flex-1 !text-[15px] font-semibold"
+          className="min-w-0 flex-1 !text-[calc(var(--ui-fs)+1px)] font-semibold"
           type="text"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}

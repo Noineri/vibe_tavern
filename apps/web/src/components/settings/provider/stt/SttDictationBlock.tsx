@@ -67,7 +67,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
       <div className="flex shrink-0 items-center gap-2 max-md:w-full">
         <label
           className={cn(
-            "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
+            "shrink-0 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-opacity",
             noProfiles && "opacity-40",
           )}
         >
@@ -112,7 +112,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         // (user data) may still ellipsize — the full name is in the list.
         side="top"
         className="max-md:flex-1 max-md:max-w-none"
-        triggerClassName="w-auto min-w-0 max-w-[240px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
+        triggerClassName="w-auto min-w-0 max-w-[240px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[calc(var(--ui-fs)-2px)] text-t1 hover:border-accent"
       />
       <DropdownSelect
         searchable={false}
@@ -128,7 +128,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         onChange={(value) => setMode(value as DictationMode)}
         disabled={!enabled || noProfiles}
         side="top"
-        triggerClassName="w-auto min-w-0 max-w-[200px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
+        triggerClassName="w-auto min-w-0 max-w-[200px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[calc(var(--ui-fs)-2px)] text-t1 hover:border-accent"
       />
     </div>
   );

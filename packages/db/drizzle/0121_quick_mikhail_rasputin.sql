@@ -1,0 +1,1 @@
+ALTER TABLE `agent_kind_settings` ADD `auto_compact_default` integer;

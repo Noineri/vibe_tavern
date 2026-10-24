@@ -69,7 +69,7 @@ export function MessageAiEditorSourceList({
   const { tDynamic } = useT();
   if (rows.length === 0) {
     return (
-      <div className="rounded-md border border-border bg-bg p-3 font-ui text-[12px] text-t3">
+      <div className="rounded-md border border-border bg-bg p-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
         {tDynamic("message_ai_editor_sources_empty")}
       </div>
     );
@@ -92,7 +92,7 @@ export function MessageAiEditorSourceList({
               className="rounded-md border border-border bg-bg px-3 py-2 !items-start"
               label={
                 <div className="min-w-0 flex-1">
-                  <div className="font-ui text-[11px] uppercase tracking-[0.04em] text-t3">
+                  <div className="font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.04em] text-t3">
                     #{row.displayIndex}
                     {starredVariantIds.has(row.variantId) && (
                       <span
@@ -105,7 +105,7 @@ export function MessageAiEditorSourceList({
                     )}
                     {row.modelLabel ? ` · ${row.modelLabel}` : ""}
                   </div>
-                  <div className="truncate font-mono text-[11px] text-t2">{row.preview}</div>
+                  <div className="truncate font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{row.preview}</div>
                 </div>
               }
             />
@@ -116,11 +116,11 @@ export function MessageAiEditorSourceList({
             className="flex items-start gap-2 rounded-md border border-border bg-bg px-3 py-2"
           >
             <div className="min-w-0 flex-1">
-              <div className="font-ui text-[11px] uppercase tracking-[0.04em] text-t3">
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.04em] text-t3">
                 #{row.displayIndex}
                 {row.modelLabel ? ` · ${row.modelLabel}` : ""}
               </div>
-              <div className="truncate font-mono text-[11px] text-t2">{row.preview}</div>
+              <div className="truncate font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{row.preview}</div>
             </div>
           </li>
         ),

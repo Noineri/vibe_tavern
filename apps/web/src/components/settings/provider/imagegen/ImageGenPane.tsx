@@ -490,7 +490,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
               autoFocus
             />
             {morphShowConflict && (
-              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+              <div className="mt-0.5 flex items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-warning">
                 <span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
                 {t("sampler_set_name_exists")}
               </div>
@@ -533,7 +533,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
             defaultOption={t("sampler_set_none")}
             placeholder={t("sampler_set_placeholder")}
             onChange={handleSelectSet}
-            triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+            triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[calc(var(--ui-fs)-2px)] hover:border-accent"
             triggerDetail={false}
             contentWidth={260}
             triggerLeading={
@@ -1110,12 +1110,12 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           return (
             <>
               {entry?.isFree && (
-                <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
+                <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-t4">free</span>
               )}
               {entry?.family && (
                 <span
                   data-testid="image-gen-model-family"
-                  className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4"
+                  className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-t4"
                 >
                   {entry.family}
                 </span>
@@ -1139,7 +1139,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
             {selectedModel?.template && (
               <div
                 data-testid="image-gen-model-detected"
-                className="mt-2 font-ui text-[12px] font-medium text-accent"
+                className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent"
               >
                 {t("image_gen_detected_template", {
                   template: templateDisplayLabel(selectedModel.template, t),
@@ -1191,7 +1191,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           data-testid="image-gen-sizes-header"
           onClick={() => setSizesOpen((prev) => !prev)}
           className={cn(
-            "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3.5 py-3 font-ui text-[14px] font-semibold text-t1 transition-colors hover:bg-[var(--border)]",
+            "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3.5 py-3 font-ui text-[var(--ui-fs)] font-semibold text-t1 transition-colors hover:bg-[var(--border)]",
             sizesOpen && "!rounded-b-none",
           )}
         >
@@ -1219,7 +1219,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               setModeSize(mode, { width: preset?.width ?? displayWidth, height });
             return (
               <div key={mode} className="flex flex-wrap items-center gap-2" data-testid={`image-gen-mode-row-${mode}`}>
-                <div className="w-[180px] shrink-0 font-ui text-[13px] text-t2">{t(MODE_LABEL_KEYS[mode])}</div>
+                <div className="w-[180px] shrink-0 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t(MODE_LABEL_KEYS[mode])}</div>
                 {caps.sizeSupport.kind === "vendor-set" ? (
                   <DropdownSelect
                     value={presetKey}
@@ -1260,7 +1260,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         onChange={editWidth}
                       />
                     </div>
-                    <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                    <span className="select-none font-ui text-[calc(var(--ui-fs)-1px)] text-t3" aria-hidden="true">×</span>
                     <div className="w-[110px] shrink-0" data-testid={`image-gen-mode-height-${mode}`}>
                       <NumberInput
                         value={displayHeight}
@@ -1328,7 +1328,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               className="mt-1 flex flex-col gap-2 rounded-lg border border-border2 bg-s2 p-3"
               data-testid="image-gen-user-sizes"
             >
-              <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_user_sizes_title")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_user_sizes_title")}</div>
               <div className="text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                 {t("image_gen_user_sizes_hint")}
               </div>
@@ -1340,7 +1340,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       className="flex items-center gap-2"
                       data-testid="image-gen-user-size-row"
                     >
-                      <span className="font-ui text-[13px] text-t2">
+                      <span className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
                         {entry.width}×{entry.height}
                         {entry.ratio !== undefined ? ` · ${entry.ratio}` : ""}
                       </span>
@@ -1368,7 +1368,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     onChange={setDraftWidth}
                   />
                 </div>
-                <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                <span className="select-none font-ui text-[calc(var(--ui-fs)-1px)] text-t3" aria-hidden="true">×</span>
                 <div className="w-[110px] shrink-0" data-testid="image-gen-user-size-height">
                   <NumberInput
                     value={draftHeight}
@@ -1401,7 +1401,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         : undefined
                   }
                   onClick={addUserSize}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
                 >
                   {t("image_gen_user_size_add")}
                 </button>
@@ -1414,7 +1414,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
 
       {/* ── Parameters: bind toggle + sampler + advanced expand ── */}
       <section className="rounded-lg border border-border bg-surface p-3.5" data-testid="image-gen-params-section">
-        <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_params_section_title")}</div>
+        <div className="mb-3 font-ui text-[var(--ui-fs)] font-semibold text-t1">{t("image_gen_params_section_title")}</div>
 
         {form.modelId !== null && (
           <div className="mb-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
@@ -1435,7 +1435,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 aria-label={t("image_gen_bind_per_model")}
               />
               <div className="min-w-0">
-                <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
+                <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
                 <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                   {t("image_gen_bind_per_model_hint", { model: form.modelId })}
                 </div>
@@ -1444,7 +1444,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </div>
         )}
         {bound && (
-          <div className="mb-3 font-ui text-[12px] text-t3" data-testid="image-gen-overlay-inherit-hint">
+          <div className="mb-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3" data-testid="image-gen-overlay-inherit-hint">
             {t("image_gen_overlay_inherit_hint")}
           </div>
         )}
@@ -1457,7 +1457,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           <div
             data-testid="image-gen-advanced-header"
             className={cn(
-              "flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between",
+              "flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between",
               advancedOpen && "!rounded-b-none",
             )}
           >

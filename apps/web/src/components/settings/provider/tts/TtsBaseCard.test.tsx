@@ -20,7 +20,7 @@ const { render, screen } = await import("@testing-library/react");
 const { TtsBaseCard, emotionTagsHintKey } = await import("./TtsBaseCard.js");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 const { TTS_BACKEND } = await import("@vibe-tavern/domain");
-import type { TtsProfileForm } from "./use-tts-profiles.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 
 function makeForm(backend: string, config: Record<string, unknown>): TtsProfileForm {
   return {

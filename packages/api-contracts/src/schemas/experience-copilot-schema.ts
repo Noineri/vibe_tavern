@@ -431,6 +431,12 @@ export const experienceCopilotMessageSchema = z.object({
   content: z.string(),
   toolCallsJson: z.string().nullable(),
   toolCallId: z.string().nullable(),
+  // AP-28 (AGENT_SHELL_POLISH): the turn's reasoning + its summed per-burst
+  // duration, persisted onto the FIRST assistant row of the turn; null on
+  // every other row, on turns without reasoning, and on rows written before
+  // the column existed. Display-only — never sent back to the model.
+  reasoning: z.string().nullable(),
+  reasoningDurationMs: z.number().nullable(),
   createdAt: z.string(),
 });
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;

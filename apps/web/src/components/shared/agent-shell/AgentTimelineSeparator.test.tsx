@@ -30,10 +30,11 @@ mock.module("../../../components/shared/Tooltip.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentMessageList: typeof import("./AgentMessageList.js").AgentMessageList;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   // Real RU resources (bundled — synchronously available after init).
   const { initI18n } = await import("../../../i18n/i18n.js");
   initI18n("ru");
@@ -63,6 +64,8 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };
@@ -172,7 +175,7 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
     ]);
   });
 
-  it("the three content kinds expand to the frozen content; branch_forked has no toggle", () => {
+  it("the three content kinds expand to the frozen content; branch_forked has no toggle", async () => {
     const { container, getByText, queryByText } = renderRu(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -225,9 +228,11 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
       expect(body.className).toContain("overflow-y-auto");
     }
 
-    // A second click collapses again.
+    // A second click collapses again — the exit animation keeps the body
+    // in the DOM a moment (AP-29 AnimatedDisclosure), so the test WAITS
+    // for its removal (never weakened, never keepMounted).
     fireEvent.click(toggles[0]!);
-    expect(queryByText("frozen one")).toBeNull();
+    await waitFor(() => expect(queryByText("frozen one")).toBeNull());
   });
 
   it("the rp_sync label pluralizes 1 / 3 / 5 in RU", () => {

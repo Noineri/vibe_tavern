@@ -121,9 +121,9 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
         style={isMobile ? undefined : { maxHeight: popoverMaxHeight("singleLine") }}
       >
         {candidates.length === 0 ? (
-          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("lore_char_filter_empty")}</div>
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[var(--ui-fs)]" : "text-[calc(var(--ui-fs)-2px)]")}>{t("lore_char_filter_empty")}</div>
         ) : visibleCandidates.length === 0 ? (
-          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("link_binding_no_results")}</div>
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[var(--ui-fs)]" : "text-[calc(var(--ui-fs)-2px)]")}>{t("link_binding_no_results")}</div>
         ) : (
           visibleCandidates.map((c) => {
             const url = resolveTargetAvatarUrl(c);
@@ -133,7 +133,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                 key={c.id}
                 className={cn(
                   "flex w-full cursor-pointer items-center text-left text-t1 hover:bg-s2",
-                  isMobile ? "min-h-[44px] gap-3 px-4 py-2 text-[15px]" : "gap-2 px-3 py-1.5 text-[13px]",
+                  isMobile ? "min-h-[44px] gap-3 px-4 py-2 text-[calc(var(--ui-fs)+1px)]" : "gap-2 px-3 py-1.5 text-[calc(var(--ui-fs)-1px)]",
                 )}
                 onClick={() => pick(c.id, c.name)}
               >
@@ -141,7 +141,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                   {url ? (
                     <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   ) : (
-                    <span className={cn("flex h-full w-full items-center justify-center font-bold text-t3", isMobile ? "text-[11px]" : "text-[10px]")}>
+                    <span className={cn("flex h-full w-full items-center justify-center font-bold text-t3", isMobile ? "text-[calc(var(--ui-fs)-3px)]" : "text-[calc(var(--ui-fs)-4px)]")}>
                       {c.name.charAt(0).toUpperCase()}
                     </span>
                   )}
@@ -184,7 +184,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                 <span
                   key={`${f.id ?? "ghost"}-${idx}`}
                   className={cn(
-                    "flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-all",
+                    "flex items-center gap-1 rounded px-1.5 py-0.5 text-[calc(var(--ui-fs)-2px)] transition-all",
                     isGhost
                       ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
                       : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
@@ -196,7 +196,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                     {avatarUrl ? (
                       <img src={avatarUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                     ) : (
-                      <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
+                      <span className="flex h-full w-full items-center justify-center text-[calc(var(--ui-fs)-6px)] font-bold text-t3">
                         {f.name.charAt(0).toUpperCase()}
                       </span>
                     )}
@@ -223,7 +223,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
             })}
             <button
               type="button"
-              className="cursor-pointer rounded px-2 py-0.5 text-[12px] text-t3 transition-all hover:bg-s3 hover:text-t1"
+              className="cursor-pointer rounded px-2 py-0.5 text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s3 hover:text-t1"
               onClick={() => setCharFilterPicker("add")}
             >
               + {t("lore_char_filter_placeholder")}

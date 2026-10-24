@@ -103,6 +103,12 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.stores.coauthorModules.delete(id);
 	};
 
+	reorderCoauthorModules = async (updates: Array<{ id: string; sortOrder: number }>): Promise<CoauthorModule[]> => {
+		const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
+		const userModules = await this.stores.coauthorModules.reorder(updates);
+		return getCoauthorModules(userModules);
+	};
+
 	// ─── Branches ───────────────────────────────────────────────────────
 
 	branchChat = (chatId: string, messageId: string) =>

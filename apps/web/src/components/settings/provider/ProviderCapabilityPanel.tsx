@@ -40,7 +40,7 @@ export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPane
   return (
     <div className="my-6 rounded-lg border border-border2 bg-s2 p-4">
       <div
-        className="font-ui text-[12px] font-medium uppercase tracking-wider text-t3 mb-3"
+        className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-wider text-t3 mb-3"
       >
         {t("capabilities")}
       </div>
@@ -49,7 +49,7 @@ export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPane
           <span
             key={it.label}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-ui text-[11px] font-medium',
+              'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium',
               it.on
                 ? 'border-success/20 bg-success/10 text-success'
                 : 'border-danger/20 bg-danger/10 text-danger'

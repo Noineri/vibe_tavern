@@ -1,11 +1,13 @@
+// forks: 1 — AgentProfileModal (apps/web/src/components/shared/agent-shell/AgentProfileModal.tsx)
+// is fork #1 (the profile modal frame-clones this module modal; AP-24).
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { EmptyState } from "../shared/empty-state.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { Icons } from "../shared/icons.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../lib/field-tokens.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -326,8 +328,6 @@ export function CoauthorModuleModal() {
 						t={t}
 						onSelect={(id) => handleSelect(id, openDetail)}
 						onAdd={() => handleNew(openDetail)}
-						onEdit={(m) => handleEdit(m, openDetail)}
-						onDelete={(id) => setConfirmDeleteId(id)}
 					/>
 				)}
 				detailContent={({ closeDetail }) =>
@@ -344,55 +344,93 @@ export function CoauthorModuleModal() {
 						<ModuleView
 							module={selected}
 							t={t}
-							isSelectedActive={isSelectedActive}
-							onEdit={() => handleEdit(selected)}
-							onDuplicate={() => handleDuplicate(selected)}
-							onDelete={() => setConfirmDeleteId(selected.id)}
 							closeDetail={closeDetail}
 						/>
 					) : (
-						<div className="font-ui text-[13px] text-t3">{t("coauthor.module.empty")}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.module.empty")}</div>
 					)
 				}
 				footer={
-					<div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
-						{isEditing ? (
-							<>
-								<button
-									type="button"
-									data-testid="module-cancel-btn"
-									className="cursor-pointer rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1"
-									onClick={() => { setDetailMode("view"); setDirty(false); }}
-								>
-									{t("coauthor.module.cancel")}
-								</button>
-								<button
-									type="button"
-									data-testid="module-save-btn"
-									className="cursor-pointer rounded-md bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
-									onClick={() => { void handleSave(); }}
-								>
-									{t("coauthor.module.save")}
-								</button>
-							</>
-						) : (
-							<button
-								type="button"
-								data-testid="module-activate-btn"
-								disabled={!selected || isSelectedActive}
-								className={cn(
-									"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
-									isSelectedActive
-										? "cursor-default bg-success text-on-accent"
-										: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
-								)}
-								onClick={() => { void handleActivate(); }}
-							>
-								{isSelectedActive && <Icons.Check className="h-3.5 w-3.5" />}
-								{isSelectedActive ? t("coauthor.module.active") : t("coauthor.module.activate")}
-							</button>
-						)}
-					</div>
+					isEditing ? (
+						// Edit mode: right side Cancel / Save only (the AP-24 profile-modal recipe).
+						<MasterDetailFooter
+							right={
+								<>
+									<button
+										type="button"
+										data-testid="module-cancel-btn"
+										className="h-[37px] cursor-pointer rounded-md bg-transparent py-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+										onClick={() => { setDetailMode("view"); setDirty(false); }}
+									>
+										{t("coauthor.module.cancel")}
+									</button>
+									<button
+										type="button"
+										data-testid="module-save-btn"
+										className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
+										onClick={() => { void handleSave(); }}
+									>
+										{t("coauthor.module.save")}
+									</button>
+								</>
+							}
+						/>
+					) : (
+						// View mode: item actions left, Close + primary / quiet state right.
+						// The action SET is unchanged (built-in → Duplicate only; user →
+						// Edit + Delete) — only the placement moved out of the detail body.
+						<MasterDetailFooter
+							actions={
+								selected
+									? selected.isBuiltIn
+										? [
+													{
+														icon: <Icons.Copy className="h-3.5 w-3.5" />,
+														label: t("coauthor.module.duplicate"),
+														onClick: () => handleDuplicate(selected),
+													},
+												]
+										: [
+													{
+														icon: <Icons.Edit className="h-3.5 w-3.5" />,
+														label: t("coauthor.module.edit"),
+														onClick: () => handleEdit(selected),
+													},
+													{
+														icon: <Icons.Trash className="h-3.5 w-3.5" />,
+														label: t("coauthor.module.delete"),
+														onClick: () => setConfirmDeleteId(selected.id),
+														destructive: true,
+													},
+												]
+									: []
+							}
+							onClose={close}
+							right={
+								isSelectedActive ? (
+									// The running module: a quiet state label, not a second
+									// primary action (the AP-24 quiet-state rule).
+									<span
+										data-testid="module-in-use-state"
+										className="flex cursor-default items-center gap-1.5 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3"
+									>
+										<Icons.Check className="h-3.5 w-3.5" />
+										{t("copilot_profile_in_use_label")}
+									</span>
+								) : (
+									<button
+										type="button"
+										data-testid="module-activate-btn"
+										disabled={!selected}
+										className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+										onClick={() => { void handleActivate(); }}
+									>
+										{t("coauthor.module.activate")}
+									</button>
+								)
+							}
+						/>
+					)
 				}
 			/>
 		</>
@@ -410,23 +448,23 @@ interface ModuleListProps {
 	t: TFunc;
 	onSelect: (id: string) => void;
 	onAdd: () => void;
-	onEdit: (m: CoauthorModule) => void;
-	onDelete: (id: string) => void;
 }
 
 /**
  * Master list — mirrors the canonical layout of `ProviderProfileList` /
  * `PresetList`: a full-height flex column with a section label, a scrollable
  * row list, and a dashed "+ New" affordance docked at the bottom. Rows carry
- * the active-module dot + selected-row highlight + mobile drill-down chevron.
+ * the name (SC-16d: wraps, never cut) + one active marker + 11 px tags — no
+ * id line, no hover edit/delete icons (Dup/Edit/Delete live in the
+ * `MasterDetailFooter`, one set for the selection).
  */
-function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onAdd, onEdit, onDelete }: ModuleListProps) {
+function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onAdd }: ModuleListProps) {
 	if (isLoading) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("coauthor.module.loading")}</div>;
+		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.module.loading")}</div>;
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
 				{t("coauthor.module.list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -445,53 +483,37 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 						return (
 							<div
 								key={m.id}
+								data-testid={`module-row-${m.id}`}
 								onPointerDown={() => onSelect(m.id)}
 								className={cn(
-									"group flex cursor-pointer items-center gap-3 border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
+									"cursor-pointer border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
 									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
 								)}
 							>
-								<span
-									className={cn(
-										"h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors",
-										isActive ? "bg-accent" : "bg-transparent",
-									)}
-								/>
-								<div className="min-w-0 flex-1 py-2">
+								<div className="min-w-0 py-2">
 									<div className="flex min-w-0 items-center gap-1.5">
-										<span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}>
-											{isActive ? "★ " : ""}{m.name}
+										<span
+											data-testid={`module-row-name-${m.id}`}
+											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
+										>
+											{m.name}
 										</span>
-										{m.isBuiltIn && (
-											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+									</div>
+									{m.isBuiltIn && (
+										<div data-testid={`module-row-pills-${m.id}`} className="mt-1 flex flex-wrap gap-1">
+											<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 												{t("coauthor.module.built_in")}
 											</span>
-										)}
-									</div>
-									<div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-t4">{m.description}</div>
-								</div>
-								{!m.isBuiltIn && (
-									<div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-										<button
-											type="button"
-											data-testid={`module-edit-btn-${m.id}`}
-											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1 md:opacity-0 md:group-hover:opacity-100"
-											title={t("coauthor.module.edit")}
-											onClick={() => onEdit(m)}
-										>
-											<Icons.Edit className="h-3 w-3" />
-										</button>
-										<button
-											type="button"
-											data-testid={`module-delete-btn-${m.id}`}
-											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-											title={t("coauthor.module.delete")}
-											onClick={() => onDelete(m.id)}
-										>
-											<Icons.Trash className="h-3 w-3" />
-										</button>
 										</div>
 									)}
+									<div className={cn(rowSecondCls, "mt-0.5 line-clamp-2 leading-snug text-t4")}>{m.description}</div>
+									{isActive && (
+										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
+											<Icons.Check className="h-3 w-3 shrink-0" />
+											{t("copilot_profile_in_use")}
+										</div>
+									)}
+								</div>
 								<MasterDetailMobileDrillDown onSelect={() => onSelect(m.id)} className="py-3" />
 							</div>
 						);
@@ -517,88 +539,76 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 interface ModuleViewProps {
 	module: CoauthorModule;
 	t: TFunc;
-	isSelectedActive: boolean;
-	onEdit: () => void;
-	onDuplicate: () => void;
-	onDelete: () => void;
 	closeDetail?: () => void;
 }
 
-function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProps) {
+/** Bodies longer than this get the clamped preview + toggle (the AP-23
+ *  skill-library precedent: `BODY_CLAMP_AT` there; the profile modal's
+ *  `PROMPT_CLAMP_AT` here) — a character count stands in for the rendered
+ *  8-line clamp, deterministic and test-pinnable. */
+const PROMPT_CLAMP_AT = 500;
+
+function ModuleView({ module, t }: ModuleViewProps) {
 	const enabledTools = COAUTHOR_TOOL_KEYS.filter((key) => module.toolSet[key] === true);
+	const [promptExpanded, setPromptExpanded] = useState(false);
+	useEffect(() => {
+		setPromptExpanded(false);
+	}, [module.id]);
+	const isLongPrompt = module.basePrompt.length > PROMPT_CLAMP_AT;
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<div className="flex items-center gap-2">
-					<h3 className="font-body text-[17px] font-semibold text-t1">{module.name}</h3>
-					{module.isBuiltIn ? (
-						<span className="rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("coauthor.module.built_in")}</span>
-					) : (
-						<span className="rounded-full border border-border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("coauthor.module.user")}</span>
-					)}
+				<div className="flex flex-wrap items-center gap-2">
+					<h3 data-testid="module-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{module.name}</h3>
+					<span data-testid="module-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+						{module.isBuiltIn ? t("coauthor.module.built_in") : t("copilot_profile_custom_tag")}
+					</span>
 				</div>
-				<p className="mt-1 font-ui text-[13px] leading-relaxed text-t2">{module.description}</p>
+				<p className="mt-1 font-ui text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">{module.description}</p>
 			</div>
-
-			{module.isBuiltIn ? (
-				<div className="flex gap-2">
-					<button
-						type="button"
-						data-testid="module-view-duplicate-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={onDuplicate}
-					>
-						<Icons.Copy className="h-3 w-3" />
-						{t("coauthor.module.duplicate")}
-					</button>
-				</div>
-			) : (
-				<div className="flex gap-2">
-					<button
-						type="button"
-						data-testid="module-view-edit-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={onEdit}
-					>
-						<Icons.Edit className="h-3 w-3" />
-						{t("coauthor.module.edit")}
-					</button>
-					<button
-						type="button"
-						data-testid="module-view-delete-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t3 transition-colors hover:border-danger hover:text-danger-text"
-						onClick={onDelete}
-					>
-						<Icons.Trash className="h-3 w-3" />
-						{t("coauthor.module.delete")}
-					</button>
-				</div>
-			)}
 
 			<dl className="flex flex-col gap-3">
 				<PreviewRow label={t("coauthor.module.base_prompt")}>
-					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</pre>
+					<pre
+						data-testid="module-prompt-preview"
+						className={cn(
+							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2",
+							!promptExpanded && isLongPrompt && "line-clamp-8",
+						)}
+					>
+						{module.basePrompt}
+					</pre>
+					{isLongPrompt && (
+						<button
+							type="button"
+							data-testid="module-prompt-toggle"
+							className="mt-1.5 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent transition-colors hover:text-accent-t"
+							onClick={() => setPromptExpanded((v) => !v)}
+						>
+							{promptExpanded ? t("copilot_skill_collapse") : t("copilot_skill_show_full")}
+						</button>
+					)}
 				</PreviewRow>
 
 				{module.openingMessage && (
 					<PreviewRow label={t("coauthor.module.opening_message_label")}>
-						<p className="font-ui text-[12px] leading-relaxed text-t2">{module.openingMessage}</p>
+						<p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{module.openingMessage}</p>
 					</PreviewRow>
 				)}
 
 				<PreviewRow label={t("coauthor.module.max_steps")}>
-					<span className="font-mono text-[13px] text-t1">{module.maxSteps}</span>
+					<span className="font-mono text-[calc(var(--ui-fs)-1px)] text-t1">{module.maxSteps}</span>
 				</PreviewRow>
 
 				<PreviewRow label={t("coauthor.module.skills")}>
 					{module.skillIds.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{module.skillIds.map((id) => (
-								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{id}</span>
+								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{id}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 					)}
 				</PreviewRow>
 
@@ -606,11 +616,11 @@ function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProp
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map((key) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{resolveCoauthorToolLabel(t, key)}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{resolveCoauthorToolLabel(t, key)}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 					)}
 				</PreviewRow>
 			</dl>
@@ -662,7 +672,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.base_prompt_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("coauthor.module.base_prompt_hint")}</p>
 			</div>
 
 			<div className="flex flex-col">
@@ -673,12 +683,12 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 					value={draft.openingMessage}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("openingMessage", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
 			</div>
 
 			<Field label={t("coauthor.module.skills")} hint={t("coauthor.module.skills_hint")}>
 				{skills.length === 0 && draft.skillIds.length === 0 ? (
-					<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+					<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 				) : (
 					<div className="flex flex-wrap gap-1.5">
 						{skills.map((skill) => {
@@ -689,7 +699,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 									type="button"
 									title={skill.description}
 									className={cn(
-										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 									)}
 									onClick={() => onToggleSkill(skill.id)}
@@ -709,7 +719,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 									type="button"
 									data-testid={`module-skill-orphan-${orphanId}`}
 									title={t("coauthor.module.skill_orphan_title")}
-									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[11px] text-danger-text line-through transition-colors hover:bg-danger-dim"
+									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text line-through transition-colors hover:bg-danger-dim"
 									onClick={() => onToggleSkill(orphanId)}
 								>
 									{orphanId}
@@ -728,7 +738,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 								key={key}
 								type="button"
 								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 								)}
 								onClick={() => onToggleTool(key)}
@@ -759,9 +769,9 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<label className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
+			<label className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
 			{children}
-			{hint && <p className="font-ui text-[10px] leading-relaxed text-t3">{hint}</p>}
+			{hint && <p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{hint}</p>}
 		</div>
 	);
 }
@@ -769,7 +779,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
+			<dt className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
 			<dd>{children}</dd>
 		</div>
 	);

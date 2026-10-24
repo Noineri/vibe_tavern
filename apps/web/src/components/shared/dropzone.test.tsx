@@ -121,7 +121,9 @@ describe("Dropzone", () => {
       />,
     );
     const subtitleEl = getByText("Поддерживаются PNG и JPEG");
-    expect(subtitleEl.className).toBe("font-ui text-xs text-t4");
+    // Behavior change (FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 3):
+    // was `text-xs` → now `text-[calc(var(--ui-fs)-2px)] leading-4` (ladder size + kept line height).
+    expect(subtitleEl.className).toBe("font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t4");
     // Under the generic mobile title, in order.
     expect(container.textContent).toBe("dropzone_select_fileПоддерживаются PNG и JPEG");
   });

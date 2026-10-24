@@ -532,6 +532,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       content: "Hello!",
       toolCallsJson: null,
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:00.000Z",
     };
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
@@ -545,7 +547,26 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       content: "",
       toolCallsJson: '[{"id":"call_1","name":"write_buffer"}]',
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:01.000Z",
+    };
+    expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
+  });
+
+  // AP-28: the reasoning pair round-trips on the wire — values on the row
+  // that carries them, nulls elsewhere (both shapes parse to themselves).
+  test("accepts a message carrying the reasoning pair (AP-28)", () => {
+    const payload = {
+      id: "msg_ap28",
+      threadId: "thread_001",
+      role: "assistant",
+      content: "answer",
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: "burst one\n\nburst two",
+      reasoningDurationMs: 4200,
+      createdAt: "2026-01-01T00:00:02.000Z",
     };
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
   });
@@ -559,6 +580,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
         content: "hi",
         toolCallsJson: null,
         toolCallId: null,
+        reasoning: null,
+        reasoningDurationMs: null,
         createdAt: 1735689600000,
       }),
     ).toThrow();
@@ -572,6 +595,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
         content: "hi",
         toolCallsJson: null,
         toolCallId: null,
+        reasoning: null,
+        reasoningDurationMs: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       }),
     ).toThrow();

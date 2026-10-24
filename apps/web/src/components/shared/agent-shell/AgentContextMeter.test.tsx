@@ -81,21 +81,28 @@ describe("ExperienceContextMeter", () => {
     expect(reserve.style.width).toBe("10%");
   });
 
-  it("shows the panel at once: legend rows with tokens, the reserve, the source, and the heading on request", () => {
+  it("shows the panel at once: legend rows with tokens, the reserve, zero parts muted, and the heading on request", () => {
     const plain = renderMeter();
     const legend = plain.getByTestId("copilot-context-legend");
     for (const text of ["copilot_context_segment_system", "copilot_context_segment_digest", "copilot_context_segment_history", "copilot_context_segment_reserve"]) {
       expect(legend.textContent).toContain(text);
     }
     for (const tokens of [2500, 1000, 500]) expect(legend.textContent).toContain(tokens.toLocaleString());
-    expect(plain.getByTestId("copilot-context-source").textContent).toBe("copilot_context_source_estimate");
+    // Behavior change (owner 2026-10-23): the separate source line is gone; an estimate marks the heading with "≈".
+    expect(plain.queryByTestId("copilot-context-source")).toBeNull();
     expect(plain.queryByTestId("copilot-context-heading")).toBeNull();
     plain.unmount();
 
-    const headed = renderMeter({ showHeading: true, metrics: metrics({ source: "provider" }) });
-    expect(headed.getByTestId("copilot-context-heading").textContent).toContain("40% · ");
-    expect(headed.getByTestId("copilot-context-source").textContent).toBe("copilot_context_source_provider");
-    headed.unmount();
+    const measured = renderMeter({ showHeading: true, metrics: metrics({ source: "provider" }) });
+    expect(measured.getByTestId("copilot-context-heading").textContent).toContain("40% · ");
+    expect(measured.getByTestId("copilot-context-heading").textContent).not.toContain("≈");
+    measured.unmount();
+
+    const estimated = renderMeter({ showHeading: true, metrics: metrics({ source: "estimate", digestTokens: 0 }) });
+    expect(estimated.getByTestId("copilot-context-heading").textContent).toContain("≈ 40% · ");
+    expect(estimated.getByTestId("copilot-context-segment-dot-digest").className.split(/\s+/)).toContain("opacity-40");
+    expect(estimated.getByTestId("copilot-context-segment-dot-system").className.split(/\s+/)).not.toContain("opacity-40");
+    estimated.unmount();
   });
 
   it("renders an unmetered label when budget is 0 (no misleading zero bar)", () => {
@@ -247,7 +254,8 @@ describe("AgentContextMeter five sidechat fills (SC-13b)", () => {
     discussion: "sidechat_meter_discussion",
   } as const;
   const sidechatKeys = ["context", "rp_summaries", "rp_messages", "digest", "discussion"] as const;
-  const expectedFills = ["bg-accent", "bg-accent-dim", "bg-s2", "bg-info", "bg-info-dim"];
+  // Behavior change (owner 2026-10-23, dots invisible on the phone): was bg-accent-dim / bg-s2 / bg-info-dim.
+  const expectedFills = ["bg-accent", "bg-accent/50", "bg-t3", "bg-info", "bg-info/50"];
 
   function fiveMetrics() {
     return metrics({
@@ -288,12 +296,13 @@ describe("AgentContextMeter five sidechat fills (SC-13b)", () => {
     });
   });
 
-  it("leaves the fixed three-segment meter byte-identical", () => {
+  it("gives the fixed three segments the first three visible fills", () => {
     const { getByTestId, queryByTestId } = renderMeter();
 
+    // Behavior change (owner 2026-10-23): digest / history were bg-accent-dim / bg-s2, invisible as dots.
     expect(getByTestId("copilot-context-segment-system").className.split(/\s+/)).toContain("bg-accent");
-    expect(getByTestId("copilot-context-segment-digest").className.split(/\s+/)).toContain("bg-accent-dim");
-    expect(getByTestId("copilot-context-segment-history").className.split(/\s+/)).toContain("bg-s2");
+    expect(getByTestId("copilot-context-segment-digest").className.split(/\s+/)).toContain("bg-accent/50");
+    expect(getByTestId("copilot-context-segment-history").className.split(/\s+/)).toContain("bg-t3");
     // Behavior change (AP-14 mockup): the fixed segments now get legend dots too (was: none).
     expect(getByTestId("copilot-context-segment-dot-system").className.split(/\s+/)).toContain("bg-accent");
     expect(queryByTestId("copilot-context-segment-dot-lore")).toBeNull();

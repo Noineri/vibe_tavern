@@ -89,11 +89,11 @@ export function CharacterListSection({
         availableTags={charTagPool}
       />
       {characterTabs.length === 0 ? (
-        <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
+        <div className="px-[14px] py-5 text-center text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
           {t("sidebar_no_characters")}
         </div>
       ) : visibleCharacterTabs.length === 0 ? (
-        <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
+        <div className="px-[14px] py-5 text-center text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
           {t("search_no_results")}
         </div>
       ) : (

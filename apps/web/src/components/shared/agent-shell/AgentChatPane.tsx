@@ -72,7 +72,7 @@ export interface AgentChatPaneProps {
   handleActivate: (targetThreadId: string) => Promise<void>;
   handleNewSession: () => Promise<void>;
   handleRenameSession: (targetThreadId: string, title: string) => Promise<void>;
-  setProfileModalOpen: Dispatch<SetStateAction<boolean>>;
+  setSettingsModalOpen: Dispatch<SetStateAction<boolean>>;
   copilotContext: CopilotContextController;
   ctrl: AgentController;
   sendWithOptions: (dispatch: (opts?: AgentSendOptions) => void) => void;
@@ -106,7 +106,7 @@ export function AgentChatPane({
   handleActivate,
   handleNewSession,
   handleRenameSession,
-  setProfileModalOpen,
+  setSettingsModalOpen,
   copilotContext,
   ctrl,
   sendWithOptions,
@@ -271,7 +271,7 @@ export function AgentChatPane({
             onActivate={handleActivate}
             onNew={handleNewSession}
             onRename={handleRenameSession}
-            onOpenProfile={() => setProfileModalOpen(true)}
+            onOpenSettings={() => setSettingsModalOpen(true)}
           />
           {/* TAG-8 (restored PM-7): the pinned session-checklist section sits
               DIRECTLY below the meter and DIRECTLY ABOVE the plan section
@@ -293,6 +293,14 @@ export function AgentChatPane({
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
             isSending={ctrl.isSending}
+            // AP-29 follow-up 2: a regenerate in flight hides the replaced
+            // turn (the server already deleted it) and streams the new turn
+            // as a fresh turn.
+            // AP-29 follow-up 3: the recorded ids keep it hidden past the
+            // settle until the refetch lands without them (no flash of the
+            // replaced turn).
+            isRegenerating={ctrl.isRegenerating}
+            hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
             pendingAskAnswer={ctrl.pendingAskAnswer}
             pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
             emptyTitle={t(host.i18n.emptyTitle)}

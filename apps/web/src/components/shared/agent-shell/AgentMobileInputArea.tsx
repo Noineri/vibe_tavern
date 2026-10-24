@@ -3,13 +3,10 @@ import { cn } from "../../../lib/cn.js";
 import { composerCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../icons.js";
 import { AutoTextarea } from "../auto-textarea.js";
-import { ToolbarSelect } from "../ToolbarSelect.js";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import { useProviderModels } from "../../../hooks/use-provider-models.js";
-import { useCopilotModelFavorites } from "../../../hooks/use-copilot-model-favorites.js";
 import { useT } from "../../../i18n/context.js";
 import { useAgentMention } from "./use-agent-mention.js";
 import { AgentContextPills } from "./AgentContextPills.js";
+import { AgentModelPills } from "./AgentModelPills.js";
 import type { AgentInputAreaProps } from "./AgentInputArea.js";
 
 /**
@@ -60,30 +57,6 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
 
   const { t } = useT();
 
-  const profiles = useProviderDataStore((s) => s.profiles);
-  const { models } = useProviderModels(providerProfileId);
-  const { favorites, isFavorite, toggleFavorite } = useCopilotModelFavorites(providerProfileId);
-
-  /** Inline star toggle — the mobile sheet's per-row trailing action. Tapping
-   * it toggles the copilot-scoped favorite without selecting the row. */
-  const favoriteStar = (modelId: string, label: string, contextLength: number | null, favored: boolean) => (
-    <button
-      type="button"
-      data-testid={`copilot-model-star-${modelId}`}
-      aria-label={favored ? t("copilot_model_unstar") : t("copilot_model_star")}
-      className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-t4 active:bg-s2",
-        favored && "text-warning-text",
-      )}
-      onClick={() => toggleFavorite({ id: modelId, label, contextLength })}
-    >
-      {favored ? <Icons.starFilled className="h-4 w-4" /> : <Icons.star className="h-4 w-4" />}
-    </button>
-  );
-
-  const activeProfile = profiles.find((p) => p.id === providerProfileId) ?? null;
-  const activeModelLabel = models.find((m) => m.id === model)?.label ?? model ?? "";
-
   const canSend = draft.trim().length > 0 && !isSending;
 
   const handleSend = () => {
@@ -96,72 +69,26 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
   // E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
   // enter key is the newline key; sending happens via the send button only.
   // The mention picker still intercepts its own keys (Enter/Tab/Arrows/Escape)
-  // before any fallback; desktop (ExperienceCopilotInputArea) keeps Enter-to-send.
+  // before any fallback; desktop (AgentInputArea) keeps Enter-to-send.
+
+  // AP-19: the ONE fallback keydown on mobile — Escape while the turn
+  // streams cancels it (the controller's quiet abort; no error card). Bare
+  // Enter stays the newline key (E4 above), and the picker's own Escape
+  // wins while its popover is open (the hook runs before this fallback).
+  const handleCancelKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape" && isSending) {
+      e.preventDefault();
+      onCancel();
+    }
+  };
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
       <div ref={cardRef} className={cn("flex flex-col gap-1.5 rounded-xl border bg-s2 p-1.5 transition-colors duration-150", answeringAsk ? "border-accent" : "border-transparent")}>
-        {/* Toolbar row: provider + model pills (mobile → BottomSheet via ToolbarSelect). */}
+        {/* Toolbar row: provider + model pills (AP-26b: the one pills
+            component's mobile variant — bottom sheets, same test ids). */}
         <div className="flex flex-wrap items-center gap-2">
-          <ToolbarSelect
-            mobile
-            title={t("agent_provider")}
-            items={profiles.map((p) => ({ value: p.id, label: p.name }))}
-            value={providerProfileId}
-            onSelect={(profileId) => onProviderChange(profileId)}
-            itemTestId={(v) => `copilot-provider-option-${v}`}
-            trigger={
-              <button
-                type="button"
-                data-testid="copilot-provider-pill"
-                className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
-              >
-                <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeProfile?.name ?? t("agent_provider")}</span>
-                <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
-              </button>
-            }
-          />
-
-          <ToolbarSelect
-            mobile
-            searchable
-            title={t("agent_model")}
-            emptyText={t("agent_no_models")}
-            value={model ?? null}
-            onSelect={(modelId) => {
-              if (providerProfileId) onProviderChange(providerProfileId, modelId);
-            }}
-            itemTestId={(v) => `copilot-model-option-${v}`}
-            items={[
-              ...favorites.map((f, i) => ({
-                value: f.modelId,
-                label: f.label || f.modelId,
-                ...(i === 0 ? { sectionLabel: t("copilot_model_favorites_section") } : {}),
-                leading: <Icons.starFilled className="h-3.5 w-3.5 shrink-0 text-warning-text" />,
-                trailing: favoriteStar(f.modelId, f.label || f.modelId, f.contextLength, true),
-              })),
-              ...models
-                .filter((m) => !isFavorite(m.id))
-                .map((m, i) => ({
-                  value: m.id,
-                  label: m.label,
-                  ...(favorites.length > 0 && i === 0 ? { sectionLabel: t("copilot_model_all_section") } : {}),
-                  trailing: favoriteStar(m.id, m.label, m.contextLength ?? null, false),
-                })),
-            ]}
-            trigger={
-              <button
-                type="button"
-                data-testid="copilot-model-pill"
-                className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
-              >
-                <Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeModelLabel || t("agent_model")}</span>
-                <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
-              </button>
-            }
-          />
+          <AgentModelPills mobile providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />
         </div>
 
         {/* CX-6: pinned-context pills between the toolbar row and the input. */}
@@ -182,7 +109,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             onSelect={mention.handleSelect}
             onClick={mention.handleClick}
             onBlur={mention.handleBlur}
-            onKeyDown={(e) => mention.handleKeyDown(e)}
+            onKeyDown={(e) => mention.handleKeyDown(e, handleCancelKeyDown)}
           />
           <div className="flex shrink-0 items-center">
             {isSending ? (
@@ -192,7 +119,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10"
                 onClick={onCancel}
               >
-                <span className="text-[11px] font-bold">✕</span>
+                <span className="text-[calc(var(--ui-fs)-3px)] font-bold">✕</span>
               </button>
             ) : (
               <button

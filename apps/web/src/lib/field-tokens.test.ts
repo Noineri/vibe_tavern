@@ -4,8 +4,11 @@ import {
 	composerCls,
 	inputCls,
 	lblCls,
+	listHeaderCls,
 	monoMod,
 	readonlyMod,
+	rowSecondCls,
+	rowTitleCls,
 	textareaCls,
 } from "./field-tokens.js";
 
@@ -46,7 +49,8 @@ describe("field-tokens canon", () => {
 		expect(composerCls).toContain("min-h-[44px]");
 		expect(composerCls).toContain("max-h-[40vh]");
 		expect(composerCls).toContain("font-body");
-		expect(composerCls).toContain("text-[15px]");
+		// behavior change: was `text-[15px]` → now `text-[calc(var(--ui-fs)+1px)]`, basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict (font audit step 9b; composer symmetry with the step-8 desktop composers)
+		expect(composerCls).toContain("text-[calc(var(--ui-fs)+1px)]");
 		expect(composerCls).toContain("border-0");
 		expect(composerCls).toContain("bg-transparent");
 		expect(composerCls).toContain("resize-none");
@@ -74,6 +78,29 @@ describe("field-tokens canon", () => {
 
 	test("readonlyMod — locked-field smear, unified", () => {
 		expect(readonlyMod).toBe("!cursor-not-allowed !opacity-60");
+	});
+
+	test("master-list row tokens — one row size for every master-detail list", () => {
+		// behavior change: row titles were `--ui-fs − 1px` in four lists → now `− 2px` everywhere; second lines and headers `− 3px`, basis: FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 7
+		expect(rowTitleCls).toContain("font-ui");
+		expect(rowTitleCls).toContain("text-[calc(var(--ui-fs)-2px)]");
+		expect(rowTitleCls).toContain("font-medium");
+		expect(rowSecondCls).toContain("font-ui");
+		expect(rowSecondCls).toContain("text-[calc(var(--ui-fs)-3px)]");
+		expect(rowSecondCls).not.toContain("font-medium");
+		expect(listHeaderCls).toContain("text-[calc(var(--ui-fs)-3px)]");
+		expect(listHeaderCls).toContain("font-medium");
+		expect(listHeaderCls).toContain("uppercase");
+		expect(listHeaderCls).toContain("tracking-[0.08em]");
+		expect(listHeaderCls).toContain("text-t3");
+		// ladder classes only — the fixed-size ban stays green; spacing
+		// lives at the call sites, never in these tokens
+		for (const token of [rowTitleCls, rowSecondCls, listHeaderCls]) {
+			expect(token).not.toMatch(/text-\[\d+px\]/);
+			expect(token).not.toContain("text-xs");
+			expect(token).not.toContain("mb-");
+			expect(token).not.toContain("px-");
+		}
 	});
 
 	test("lblCls — label with built-in 6px gap", () => {

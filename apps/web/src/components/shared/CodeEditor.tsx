@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef } from "react";
 const rpTheme = EditorView.theme(
   {
     "&": {
-      fontSize: "14px",
+      fontSize: "var(--ui-fs)",
       height: "100%",
       backgroundColor: "var(--syn-bg)",
       color: "var(--t1)",

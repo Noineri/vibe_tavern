@@ -37,7 +37,7 @@ export function AgentContextPills({ items, onUnpin }: AgentContextPillsProps) {
           key={`${item.targetType}:${item.targetId}`}
           role="listitem"
           data-testid={`copilot-context-pill-${item.targetType}-${item.targetId}`}
-          className="flex items-center gap-1 rounded-[5px] bg-s2 px-2 py-0.5 font-ui text-[11px] text-t2"
+          className="flex items-center gap-1 rounded-[5px] bg-s2 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2"
         >
           <span className="max-w-[160px] truncate">{item.label}</span>
           <button

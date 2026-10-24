@@ -38,7 +38,11 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "lore_entry" | "md_import" | "scene_schema" | "scene_rules";
+  // The union is LOCAL (deliberately not the backend `AiAssistantMode`): each
+  // member is a caller that passed its own review (lore_entry, md_import,
+  // scene_schema, scene_rules, skill for the AP-23d skill editor). The value
+  // flows straight into the request `mode`, so a member must exist server-side.
+  apiMode?: "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "skill";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
@@ -407,18 +411,18 @@ export function AiAssistantModal({
   const contentWidth = isMdImport ? "w-[620px]" : isFull ? "w-[560px]" : "w-[380px]";
 
   const footerButtons = !isFull ? (
-    <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
+    <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
       {t("done_btn")}
     </button>
   ) : isMdImport ? (
     <>
       {Object.keys(parsedFields).length > 0 && !streaming && (
-        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
       )}
       {streaming ? (
-        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
       ) : (
-        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
       )}
     </>
   ) : (
@@ -426,27 +430,27 @@ export function AiAssistantModal({
       {streamedOutput && !streaming && (
         existingContent ? (
           <>
-            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
           </>
         ) : (
           <>
-            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
           </>
         )
       )}
       {streaming ? (
-        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
       ) : (
-        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
       )}
     </>
   );
 
   const contentBody = (
     <AiAssistantShell
-      title={<span className="text-sm font-semibold text-t1">{title}</span>}
+      title={<span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">{title}</span>}
       onClose={onClose}
       streaming={streaming}
       providerCount={providerProfiles.length}
@@ -489,8 +493,8 @@ export function AiAssistantModal({
               )}
               {!isFull && showAppendToggle && (
                 <div className="flex items-center gap-2 mb-3">
-                  <button type="button" className={cn("flex-1 rounded-md border px-3 py-1.5 text-[12px] font-medium transition-all", !appendMode ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3")} onClick={() => setAppendMode(false)}>{t("script_ai_replace")}</button>
-                  <button type="button" className={cn("flex-1 rounded-md border px-3 py-1.5 text-[12px] font-medium transition-all", appendMode ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3")} onClick={() => setAppendMode(true)}>{t("ai_quickpill_append")}</button>
+                  <button type="button" className={cn("flex-1 rounded-md border px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] font-medium transition-all", !appendMode ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3")} onClick={() => setAppendMode(false)}>{t("script_ai_replace")}</button>
+                  <button type="button" className={cn("flex-1 rounded-md border px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] font-medium transition-all", appendMode ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3")} onClick={() => setAppendMode(true)}>{t("ai_quickpill_append")}</button>
                 </div>
               )}
               {!isFull && showMessageCount && (
@@ -563,22 +567,22 @@ export function AiAssistantModal({
                   {streaming && Object.keys(parsedFields).length === 0 && !streamedReasoning && (
                     <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-3" style={{ marginBottom: 16 }}>
                       <span className="animate-spin text-accent">⟳</span>
-                      <span className="font-ui text-[12px] text-t3">{t("import_md_parsing")}</span>
+                      <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("import_md_parsing")}</span>
                     </div>
                   )}
 
                   {/* Raw model output debug */}
                   {streamedOutput && (
                     <details className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 16 }} open={Object.keys(parsedFields).length === 0}>
-                      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("raw_model_output")}</summary>
-                      <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
+                      <summary className="cursor-pointer text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("raw_model_output")}</summary>
+                      <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
                     </details>
                   )}
 
                   {/* Parsed fields preview */}
                   {Object.keys(parsedFields).length > 0 && (
                     <div style={{ marginBottom: 16 }}>
-                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("import_md_parsed")}{streaming && <span className="ml-2 animate-pulse text-accent">●</span>}</div>
+                      <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("import_md_parsed")}{streaming && <span className="ml-2 animate-pulse text-accent">●</span>}</div>
                       <div className="flex flex-col gap-2">
                         {(Object.entries(parsedFields) as [string, unknown][]).flatMap(([key, value]) => {
                           if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return [];
@@ -599,8 +603,8 @@ export function AiAssistantModal({
                                       }}
                                     />
                                     <div className="min-w-0 flex-1">
-                                      <div className="text-[11px] uppercase text-t3">{fieldLabel} #{idx + 1}</div>
-                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                      <div className="text-[calc(var(--ui-fs)-3px)] uppercase text-t3">{fieldLabel} #{idx + 1}</div>
+                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">
                                         {item}
                                       </div>
                                     </div>
@@ -613,7 +617,7 @@ export function AiAssistantModal({
                                         }}
                                         searchable={false}
                                         placeholder={t("map_to_placeholder")}
-                                        className="h-8 px-3 py-0 text-[12px]"
+                                        className="h-8 px-3 py-0 text-[calc(var(--ui-fs)-2px)]"
                                       />
                                     </div>
                                   </div>
@@ -634,8 +638,8 @@ export function AiAssistantModal({
                                   }}
                                 />
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-[11px] uppercase text-t3">{getMdImportFieldLabel(sourceKey)}</div>
-                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                  <div className="text-[calc(var(--ui-fs)-3px)] uppercase text-t3">{getMdImportFieldLabel(sourceKey)}</div>
+                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">
                                     {preview}
                                   </div>
                                 </div>
@@ -648,7 +652,7 @@ export function AiAssistantModal({
                                     }}
                                     searchable={false}
                                     placeholder={t("map_to_placeholder")}
-                                    className="h-8 px-3 py-0 text-[12px]"
+                                    className="h-8 px-3 py-0 text-[calc(var(--ui-fs)-2px)]"
                                   />
                                 </div>
                               </div>
@@ -661,8 +665,8 @@ export function AiAssistantModal({
 
                   {error && (
                     <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
-                      <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
-                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{error}</pre>
+                      <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
+                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{error}</pre>
                     </div>
                   )}
                 </>
@@ -723,22 +727,22 @@ export function AiAssistantModal({
                       />
                       {aiDiffSummary.tooLarge && (
                         <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t(generatedKey)}</div>
-                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{cleanedOutput}</pre>
+                          <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t(generatedKey)}</div>
+                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">{cleanedOutput}</pre>
                         </div>
                       )}
                     </>
                   ) : (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t(generatedKey)}</div>
-                      <pre className="whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
+                      <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t(generatedKey)}</div>
+                      <pre className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
                     </div>
                   ))}
 
                   {error && (
                     <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
-                      <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
-                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{error}</pre>
+                      <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
+                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{error}</pre>
                     </div>
                   )}
                 </>

@@ -57,7 +57,7 @@ function makeTts(overrides: Record<string, unknown> = {}) {
     ...base,
     ...overrides,
     filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : base.profiles,
-  } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+  } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 }
 
 describe("TtsSection", () => {

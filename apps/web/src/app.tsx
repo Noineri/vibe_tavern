@@ -46,7 +46,7 @@ export function App() {
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
           <div className="flex flex-col items-center gap-6">
             <Logo animated className="h-[180px] w-[180px]" />
-            <div className="font-body text-[12.5px] italic text-t3">{t("loading_app")}</div>
+            <div className="font-body text-[calc(var(--ui-fs)-1px)] italic text-t3">{t("loading_app")}</div>
           </div>
         </main>
       </div>

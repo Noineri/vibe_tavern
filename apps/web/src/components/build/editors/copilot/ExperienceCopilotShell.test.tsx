@@ -101,6 +101,8 @@ function makeDigest(threadId: string): ExperienceCopilotMessageWire {
     content: "summary",
     toolCallsJson: null,
     toolCallId: "u1",
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
   };
 }
@@ -333,13 +335,14 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
-// The copilot profile modal (opened by the session-line gear) is tested in its
-// own suite — stub it here so the gear test only pins the gear → modal wiring
-// (click sets profileModalOpen → the modal mounts). SAFE: capture real first.
-const realCopilotProfileModal = await import("../../../shared/agent-shell/AgentProfileModal.js");
-mock.module("../../../shared/agent-shell/AgentProfileModal.js", () => ({
-  ...realCopilotProfileModal,
-  AgentProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="copilot-profile-modal-stub" /> : null),
+// The assistant settings summary (opened by the session-line gear) is tested
+// in its own suite — stub it here so the gear test only pins the gear →
+// modal wiring (click sets settingsModalOpen → the modal mounts). SAFE:
+// capture real first.
+const realAgentSettingsModal = await import("../../../shared/agent-shell/AgentSettingsModal.js");
+mock.module("../../../shared/agent-shell/AgentSettingsModal.js", () => ({
+  ...realAgentSettingsModal,
+  AgentSettingsModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="agent-settings-modal-stub" /> : null),
 }));
 
 // Radix Popover.Content never mounts under happy-dom (Popper anchors via a 0x0
@@ -411,6 +414,8 @@ function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilo
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };
@@ -1002,18 +1007,20 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   });
 });
 
-describe("ExperienceCopilotShell — copilot profile gear (CP-8)", () => {
-  it("opens the profile modal from the session-line gear button", async () => {
+describe("ExperienceCopilotShell — assistant settings gear (CP-8 / AP-27)", () => {
+  it("opens the settings summary from the session-line gear button", async () => {
+    // AP-27 was: the gear opened the profile modal directly; now (mockup
+    // §4): it opens the settings summary (the profile modal is its child).
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
     // The gear lives on the session line (rendered once a thread exists).
     expect(getByTestId("copilot-profile-gear-btn")).toBeDefined();
-    expect(queryByTestId("copilot-profile-modal-stub")).toBeNull();
+    expect(queryByTestId("agent-settings-modal-stub")).toBeNull();
 
     fireEvent.click(getByTestId("copilot-profile-gear-btn"));
 
-    expect(getByTestId("copilot-profile-modal-stub")).toBeDefined();
+    expect(getByTestId("agent-settings-modal-stub")).toBeDefined();
   });
 });
 
@@ -1262,6 +1269,7 @@ describe("ExperienceCopilotShell — provider binding persistence (SC-0e: per-ki
             defaultProfileId: null,
             updatedAt: "",
             servesChatModes: [],
+            autoCompactDefault: true,
           },
         },
       },

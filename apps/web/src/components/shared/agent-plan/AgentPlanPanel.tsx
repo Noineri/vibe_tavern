@@ -73,7 +73,7 @@ export function AgentPlanPanel({ plan, onOpenEditor, locked }: AgentPlanPanelPro
 
   if (!open) {
     return (
-      <div data-testid="agent-plan-panel" data-state="collapsed" className="flex w-full min-w-0 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1 text-[11px] font-medium text-t3">
+      <div data-testid="agent-plan-panel" data-state="collapsed" className="flex w-full min-w-0 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t3">
         <button
           type="button"
           data-testid="agent-plan-toggle"
@@ -95,7 +95,7 @@ export function AgentPlanPanel({ plan, onOpenEditor, locked }: AgentPlanPanelPro
     <div data-testid="agent-plan-panel" data-state="expanded" className="flex min-w-0 shrink-0 flex-col gap-1 border-b border-border bg-surface px-2 py-1.5">
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><Ic.target /></span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("agent_plan_title")}</span>
+        <span className="text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t("agent_plan_title")}</span>
         <span className="shrink-0 tabular-nums text-t4">{remaining} {t("agent_plan_remaining")}</span>
         {editorButton}
         <button type="button" onClick={() => setOpen(false)} aria-label={t("agent_plan_collapse")} className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5">
@@ -107,8 +107,8 @@ export function AgentPlanPanel({ plan, onOpenEditor, locked }: AgentPlanPanelPro
           <li key={task.id} data-testid={`agent-plan-task-${task.status}`} className="flex items-start gap-1.5 py-0.5">
             <span className="mt-[1px] flex shrink-0 items-center justify-center"><NodeGlyph status={task.status} /></span>
             <span className="min-w-0 flex-1">
-              <span className={cn("block truncate font-ui text-[11px]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
-              {task.status === "active" && task.body && <span className="mt-0.5 block whitespace-pre-wrap font-ui text-[11px] text-t4">{task.body}</span>}
+              <span className={cn("block truncate font-ui text-[calc(var(--ui-fs)-3px)]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
+              {task.status === "active" && task.body && <span className="mt-0.5 block whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{task.body}</span>}
             </span>
           </li>
         ))}

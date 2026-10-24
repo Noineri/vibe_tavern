@@ -6,7 +6,7 @@ useDomEnv();
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 // ── Mobile mock (mutable-flag convention, MasterDetailModal.test.tsx) ────
 // Registered BEFORE the footer module loads (dynamic import in beforeAll).

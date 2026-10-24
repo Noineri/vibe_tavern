@@ -46,19 +46,19 @@ export function QuotaSummaryRows({ snapshot, lastError, now }: QuotaSummaryRowsP
   return (
     <>
       {lastError && (
-        <div className="mb-1.5 text-xs text-danger-text">
+        <div className="mb-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-danger-text">
           {t(lastError === "auth" ? "quota_error_auth" : "quota_error_poll")}
         </div>
       )}
 
-      {!rows && <div className="py-1 text-xs text-t3">{t("quota_no_data")}</div>}
+      {!rows && <div className="py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("quota_no_data")}</div>}
 
       {rows?.windows.map((window) => {
         const state = quotaUsageState(window.usedPercent);
         const countdown = quotaCountdown(window.resetsAt, now);
         return (
           <div key={window.kind} className="mb-2 last:mb-0">
-            <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
+            <div className="mb-1 flex items-baseline justify-between gap-2 text-[calc(var(--ui-fs)-2px)] leading-4">
               <span className="truncate text-t2" title={window.label}>
                 {tDynamic(quotaWindowLabelKey(window.kind))}
               </span>
@@ -72,7 +72,7 @@ export function QuotaSummaryRows({ snapshot, lastError, now }: QuotaSummaryRowsP
                 style={{ width: `${Math.min(100, Math.max(0, window.usedPercent))}%` }}
               />
             </div>
-            <div className="mt-1 text-[10px] text-t4">
+            <div className="mt-1 text-[calc(var(--ui-fs)-4px)] text-t4">
               {countdown === null
                 ? t("quota_no_reset")
                 : countdown.due
@@ -91,7 +91,7 @@ export function QuotaSummaryRows({ snapshot, lastError, now }: QuotaSummaryRowsP
           {rows.balances.map((balance) => {
             const formatted = formatBalance(balance);
             return (
-              <div key={balance.kind} className="mb-1 flex justify-between gap-2 text-xs last:mb-0">
+              <div key={balance.kind} className="mb-1 flex justify-between gap-2 text-[calc(var(--ui-fs)-2px)] leading-4 last:mb-0">
                 <span className="truncate text-t2">{tDynamic(quotaBalanceLabelKey(balance.kind))}</span>
                 <span className={cn("shrink-0 tabular-nums", balance.primary ? "font-medium text-t1" : "text-t2")}>
                   {formatted.symbol

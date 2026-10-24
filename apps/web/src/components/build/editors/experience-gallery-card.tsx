@@ -99,7 +99,7 @@ export function ExperienceGalleryCard({
                 className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
               />
             </CustomTooltip>
-            <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[var(--ui-fs)] font-semibold leading-tight text-t1">{display.name}</span>
           </div>
           <div
             data-testid="card-description"

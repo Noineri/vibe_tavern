@@ -88,13 +88,13 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
         {/* Body: 3-column thumbnail grid / empty state. */}
         <div className="flex-1 overflow-y-auto p-2">
           {loading && list.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-t3">{t("loading") || "…"}</div>
+            <div className="flex h-full items-center justify-center text-[var(--ui-fs)] leading-5 text-t3">{t("loading") || "…"}</div>
           ) : list.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <div className="text-sm text-t3">{t("media_empty")}</div>
+              <div className="text-[var(--ui-fs)] leading-5 text-t3">{t("media_empty")}</div>
               <button
                 type="button"
-                className="cursor-pointer rounded-full bg-accent-dim px-4 py-2 text-sm font-medium text-accent-t transition-colors hover:bg-accent-hover"
+                className="cursor-pointer rounded-full bg-accent-dim px-4 py-2 text-[var(--ui-fs)] leading-5 font-medium text-accent-t transition-colors hover:bg-accent-hover"
                 onClick={() => { onClose(); setMode("build"); }}
               >
                 {t("media_open_build")}
@@ -122,7 +122,7 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
                       disabled={isSending}
                       aria-label={t("media_send_to_chat")}
                     >
-                      {isSending ? <span className="text-xs">…</span> : <Icons.send className="h-4 w-4" />}
+                      {isSending ? <span className="text-[calc(var(--ui-fs)-2px)] leading-4">…</span> : <Icons.send className="h-4 w-4" />}
                     </button>
                   </div>
                 );

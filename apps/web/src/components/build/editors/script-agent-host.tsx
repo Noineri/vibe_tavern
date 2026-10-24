@@ -556,7 +556,7 @@ function ScriptAgentEditorPane({
       data-testid="copilot-review-bar"
       className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-1.5"
     >
-      <span data-testid="copilot-review-count" className="font-ui text-xs text-t2">
+      <span data-testid="copilot-review-count" className="font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
         {t("copilot_review_hunks_count", { n: review.pendingCount })}
       </span>
       <div className="ml-auto flex items-center gap-1.5">
@@ -564,7 +564,7 @@ function ScriptAgentEditorPane({
           type="button"
           data-testid="copilot-accept-all"
           onClick={acceptAll}
-          className="min-h-9 cursor-pointer rounded-[5px] bg-accent px-3 font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+          className="min-h-9 cursor-pointer rounded-[5px] bg-accent px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all duration-100 hover:brightness-110"
         >
           {t("copilot_review_accept_all")}
         </button>
@@ -572,7 +572,7 @@ function ScriptAgentEditorPane({
           type="button"
           data-testid="copilot-dismiss-pending"
           onClick={dismissPending}
-          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-colors duration-100 hover:text-t1"
         >
           {t("copilot_review_dismiss_pending")}
         </button>
@@ -580,7 +580,7 @@ function ScriptAgentEditorPane({
           type="button"
           data-testid="copilot-cancel-all"
           onClick={cancelRound}
-          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+          className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-colors duration-100 hover:text-t1"
         >
           {t("copilot_review_cancel_all")}
         </button>

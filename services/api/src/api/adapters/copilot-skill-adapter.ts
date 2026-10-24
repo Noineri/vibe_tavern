@@ -1,6 +1,6 @@
 import type { CoauthorSkillsRuntimeApi, CopilotSkillsByKindRuntimeApi, SkillCatalogEntryDto } from "../contract/runtime-api.js";
 import type { SkillCatalogEntry } from "../../domain/coauthor/skills/skill-scanner.js";
-import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
+import type { SkillLibraryService, SkillSaveInput } from "../../domain/coauthor/skills/skill-library.js";
 import { validation } from "../../shared/errors.js";
 import { getAgentKind, UnknownAgentKindError } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
@@ -32,6 +32,12 @@ export class CopilotSkillAdapter implements CoauthorSkillsRuntimeApi {
 
 	deleteSkill = (id: string) => this.skillLibrary.deleteSkill(id);
 
+	/** The save seam (AP-23a) — mirrors {@link CoauthorSkillAdapter}: the
+	 *  service owns the whole operation; the adapter only maps the returned
+	 *  entry to the wire DTO (stripping absolute paths). */
+	saveSkill = async (input: SkillSaveInput): Promise<SkillCatalogEntryDto> =>
+		toDto(await this.skillLibrary.saveSkill(input));
+
 	listSkills = async () => {
 		const { entries, errors } = await this.skillLibrary.listCatalog();
 		return {
@@ -48,6 +54,8 @@ export class CopilotSkillAdapter implements CoauthorSkillsRuntimeApi {
 		const entry = await this.skillLibrary.readCatalogEntry(id);
 		return entry ? toDto(entry) : null;
 	};
+
+	readSkillContent = (id: string) => this.skillLibrary.readSkillContent(id);
 }
 
 /**

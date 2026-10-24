@@ -241,7 +241,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       // Has characters/chats but none active — chat was just deleted, or user has not selected one yet.
       shellSurface = (
         <div className="flex h-full w-full items-center justify-center p-6">
-          <p className="max-w-[420px] text-center font-ui text-[0.95rem] leading-relaxed text-t2">
+          <p className="max-w-[420px] text-center font-ui text-[calc(var(--ui-fs)+1px)] leading-relaxed text-t2">
             {t('placeholder_select_character_chat')}
           </p>
         </div>
@@ -252,30 +252,30 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         <div className="flex max-w-[480px] flex-col items-center text-center">
           {/* Decorative icon */}
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/20 bg-accent-dim text-accent">
-            <span className="text-[1.6rem]"><Icons.Sparkles /></span>
+            <span className="text-[calc(var(--ui-fs)+11px)]"><Icons.Sparkles /></span>
           </div>
 
           {/* Welcome text */}
-          <h1 className="mb-2 font-body text-[1.5rem] font-medium tracking-tight text-t1">{t('placeholder_welcome')}</h1>
-          <p className="mb-8 font-ui text-[0.95rem] leading-relaxed text-t2">{t('placeholder_hint')}</p>
+          <h1 className="mb-2 font-body text-[calc(var(--ui-fs)+10px)] font-medium tracking-tight text-t1">{t('placeholder_welcome')}</h1>
+          <p className="mb-8 font-ui text-[calc(var(--ui-fs)+1px)] leading-relaxed text-t2">{t('placeholder_hint')}</p>
 
           {/* Primary action */}
           <button
             type="button"
-            className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3.5 font-ui text-[1rem] font-bold text-on-accent shadow-lg shadow-accent/10 transition-all hover:brightness-110 active:scale-[0.98]"
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3.5 font-ui text-[calc(var(--ui-fs)+2px)] font-bold text-on-accent shadow-lg shadow-accent/10 transition-all hover:brightness-110 active:scale-[0.98]"
             onClick={() => setCreateCharacterModalOpen(true)}
           >
-            <span className="text-[0.95rem]"><Icons.Plus /></span>
+            <span className="text-[calc(var(--ui-fs)+1px)]"><Icons.Plus /></span>
             {t('placeholder_create_character')}
           </button>
 
           {/* Secondary action */}
           <button
             type="button"
-            className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border border-border2 bg-s2 px-6 py-3 font-ui text-[0.95rem] font-semibold text-t1 transition-all hover:border-accent/50 hover:bg-surface"
+            className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border border-border2 bg-s2 px-6 py-3 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 transition-all hover:border-accent/50 hover:bg-surface"
             onClick={() => fileInputRef.current?.click()}
           >
-            <span className="text-[0.9rem]"><Icons.Import /></span>
+            <span className="text-[var(--ui-fs)]"><Icons.Import /></span>
             {t('placeholder_import_character')}
           </button>
           <input ref={fileInputRef} type="file" accept=".png,.json,.md,.markdown,.vtmd" className="hidden" onChange={handleImportFile} />
@@ -284,18 +284,18 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           <div className="grid w-full grid-cols-2 gap-3 border-t border-border/50 pt-5">
             <button
               type="button"
-              className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-ui text-[0.85rem] text-t2 transition-colors hover:bg-accent-dim/30 hover:text-accent-t"
+              className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-ui text-[var(--ui-fs)] text-t2 transition-colors hover:bg-accent-dim/30 hover:text-accent-t"
               onClick={() => { location.reload(); }}
             >
-              <span className="text-[0.85rem]"><Icons.Settings /></span>
+              <span className="text-[var(--ui-fs)]"><Icons.Settings /></span>
               {t('placeholder_setup_wizard')}
             </button>
             <button
               type="button"
-              className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-ui text-[0.85rem] text-t2 transition-colors hover:bg-accent-dim/30 hover:text-accent-t"
+              className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-ui text-[var(--ui-fs)] text-t2 transition-colors hover:bg-accent-dim/30 hover:text-accent-t"
               onClick={() => setIsProviderModalOpen(true)}
             >
-              <span className="text-[0.85rem]"><Icons.Wrench /></span>
+              <span className="text-[var(--ui-fs)]"><Icons.Wrench /></span>
               {t('placeholder_setup_provider')}
             </button>
           </div>

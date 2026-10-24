@@ -1,27 +1,69 @@
-import { useEffect, useRef, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../MasterDetailModal.js";
-import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
-import { EmptyState } from "../empty-state.js";
-import { Icons } from "../icons.js";
+import { useCallback } from "react";
+import { SkillLibraryModal } from "../skill-library/skill-library-modal.js";
+import type { SkillLibraryAdapter } from "../skill-library/skill-library-adapter.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
-import { useT, type TFunc } from "../../../i18n/context.js";
-import { toast } from "sonner";
-import { cn } from "../../../lib/cn.js";
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import { readCopilotSkillContent } from "../../../api/copilot-skill-api.js";
+import type { MasterDetailParentBack } from "../MasterDetailModal.js";
+import type { SkillCatalogEntryDto, SkillSaveDto } from "@vibe-tavern/api-contracts";
 import type { AgentKind } from "../../../lib/agent-host-registry.js";
 
 /** Empty library fallback (module const — a `?? []` inline would return a new
  * array per selector call and re-render forever under zustand's Object.is). */
 const EMPTY_SKILL_ENTRIES: SkillCatalogEntryDto[] = [];
 
+/** The agent wrapper's i18n keys (flat `copilot_skill_*` namespace). */
+const LABELS: SkillLibraryAdapter["labels"] = {
+	title: "copilot_skill_title",
+	subtitle: "copilot_skill_subtitle",
+	importCta: "copilot_skill_import_cta",
+	importing: "copilot_skill_importing",
+	importSuccess: "copilot_skill_import_success",
+	importFailed: "copilot_skill_import_failed",
+	listLabel: "copilot_skill_list_label",
+	loading: "copilot_skill_loading",
+	emptyTitle: "copilot_skill_empty_title",
+	emptyBody: "copilot_skill_empty_body",
+	emptyDetail: "copilot_skill_empty_detail",
+	delete: "copilot_skill_delete",
+	deleted: "copilot_skill_deleted",
+	deleteFailed: "copilot_skill_delete_failed",
+	deleteConfirmTitle: "copilot_skill_delete_confirm_title",
+	deleteConfirmBody: "copilot_skill_delete_confirm_body",
+	user: "copilot_skill_user",
+	builtIn: "copilot_skill_built_in",
+	shadow: "copilot_skill_shadow",
+	shadowTitle: "copilot_skill_shadow_title",
+	idLabel: "copilot_skill_id_label",
+	manifestLabel: "copilot_skill_manifest_label",
+	sourceLabel: "copilot_skill_source_label",
+	bodyLabel: "copilot_skill_body_label",
+	showFull: "copilot_skill_show_full",
+	collapse: "copilot_skill_collapse",
+	contentLoading: "copilot_skill_content_loading",
+	techDetails: "copilot_skill_tech_details",
+	techDetailsHint: "copilot_skill_tech_details_hint",
+	filesLabel: "copilot_skill_files_label",
+	newSkill: "copilot_skill_new_skill",
+	edit: "copilot_skill_edit",
+	duplicate: "copilot_skill_duplicate",
+	cancel: "copilot_skill_cancel",
+	save: "copilot_skill_save",
+	saved: "copilot_skill_saved",
+	saveFailed: "copilot_skill_save_failed",
+	nameLabel: "copilot_skill_name_label",
+	whenLabel: "copilot_skill_when_label",
+	whenHint: "copilot_skill_when_hint",
+	copyName: "copilot_skill_copy_name",
+};
+
 /**
  * Agent skill library manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 /
- * CP-10, per-kind libraries AS-8d2). Shows ONE agent kind's library: lists
- * that kind's merged metadata-only catalog (built-in + user, user shadows
- * builtin), imports a skill tree via a folder upload, inspects metadata, and
- * deletes user skills. Built-in skills are read-only (their delete is
- * rejected by the server). Owner ruling 2026-10-17: one library per agent
- * kind — the script editor used to show the mini-app library.
+ * CP-10, per-kind libraries AS-8d2) — thin wrapper (AP-22): binds the shared
+ * `SkillLibraryModal` to the copilot skill store for ONE agent kind. Owner
+ * ruling 2026-10-17: one library per agent kind — the script editor used to
+ * show the mini-app library. No reference guard — agent copilot skills have
+ * no module bindings to consult, so every delete goes straight to a plain
+ * confirm.
  *
  * CONTROLLED — unlike `CoauthorSkillModal` (which keys off the global
  * `modal-store`), this modal is owned by `AgentProfileModal` (opened from its
@@ -33,293 +75,54 @@ export interface AgentSkillModalProps {
   /** The agent kind whose library this instance manages (AS-8d2) — every
    *  catalog read and mutation runs under this kind only. */
   agentKind: AgentKind;
+  /** Optional drill-down parent (AP-3): absent = no back link. */
+  parentBack?: MasterDetailParentBack;
 }
 
-export function AgentSkillModal({ isOpen, onClose, agentKind }: AgentSkillModalProps) {
-	const { t } = useT();
-
+export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: AgentSkillModalProps) {
 	const entries = useCopilotSkillStore((s) => s.catalogs[agentKind]?.entries ?? EMPTY_SKILL_ENTRIES);
 	const isLoading = useCopilotSkillStore((s) => s.isLoading);
 	const hasLoaded = useCopilotSkillStore((s) => s.catalogs[agentKind]?.hasLoaded ?? false);
 	const load = useCopilotSkillStore((s) => s.load);
 	const importTree = useCopilotSkillStore((s) => s.importTree);
 	const remove = useCopilotSkillStore((s) => s.remove);
+	const saveNew = useCopilotSkillStore((s) => s.saveNew);
+	const saveExisting = useCopilotSkillStore((s) => s.saveExisting);
 
-	const [selectedId, setSelectedId] = useState<string | null>(null);
-	const [isImporting, setIsImporting] = useState(false);
-	const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-	const fileInputRef = useRef<HTMLInputElement>(null);
-	/** Merged ref: keep the element for `.click()`/reset AND set the non-standard
-	 *  `webkitdirectory` attribute (absent from lib.dom TS types → imperative). */
-	const setFolderInput = (el: HTMLInputElement | null) => {
-		fileInputRef.current = el;
-		if (el) el.setAttribute("webkitdirectory", "");
+	// Bound for the kind and stable across renders — the shared modal's open
+	// + content effects key on `adapter.load` / `adapter.readContent` (see
+	// the adapter's stability contracts).
+	const loadThisKind = useCallback(() => load(agentKind), [load, agentKind]);
+	const readContentThisKind = useCallback((id: string) => readCopilotSkillContent(agentKind, id), [agentKind]);
+	// The editor's save: null id creates, a set id updates (the ONE adapter
+	// seam — the modal never touches the clients directly).
+	const saveThisKind = useCallback((id: string | null, input: SkillSaveDto) =>
+		id ? saveExisting(agentKind, id, input) : saveNew(agentKind, input), [saveExisting, saveNew, agentKind]);
+
+	const adapter: SkillLibraryAdapter = {
+		labels: LABELS,
+		testids: {
+			folderInput: "copilot-skill-folder-input",
+			importBtn: "copilot-skill-import-btn",
+			row: (skillId) => `copilot-skill-row-${skillId}`,
+			previewToggle: "copilot-skill-preview-toggle",
+			techDetailsToggle: "copilot-skill-tech-details-toggle",
+			contentBody: "copilot-skill-content-body",
+			newSkillBtn: "copilot-skill-new-btn",
+			editorName: "copilot-skill-editor-name",
+			editorWhen: "copilot-skill-editor-when",
+			editorBody: "copilot-skill-editor-body",
+			aiAssistBtn: "copilot-skill-ai-assist-btn",
+		},
+		entries,
+		isLoading,
+		hasLoaded,
+		load: loadThisKind,
+		importTree: (files) => importTree(agentKind, files),
+		remove: (skillId) => remove(agentKind, skillId),
+		readContent: readContentThisKind,
+		save: saveThisKind,
 	};
 
-	useEffect(() => {
-		if (isOpen) void load(agentKind);
-		if (!isOpen) {
-			setSelectedId(null);
-			setPendingDelete(null);
-			setIsImporting(false);
-		}
-	}, [isOpen, load, agentKind]);
-
-	const selected = entries.find((e) => e.id === selectedId) ?? null;
-
-	const handleSelect = (id: string, openDetail?: () => void) => {
-		setSelectedId(id);
-		openDetail?.();
-	};
-
-	const handleImportClick = () => {
-		fileInputRef.current?.click();
-	};
-
-	const handleFilesPicked = async (files: FileList | null) => {
-		if (!files || files.length === 0) return;
-		setIsImporting(true);
-		try {
-			const ids = await importTree(agentKind, Array.from(files));
-			toast.success(t("copilot_skill_import_success", { n: ids.length, ids: ids.join(", ") }));
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : t("copilot_skill_import_failed"));
-		} finally {
-			setIsImporting(false);
-			if (fileInputRef.current) fileInputRef.current.value = "";
-		}
-	};
-
-	const handleConfirmDelete = async () => {
-		const id = pendingDelete;
-		setPendingDelete(null);
-		if (!id) return;
-		try {
-			await remove(agentKind, id);
-			if (selectedId === id) setSelectedId(null);
-			toast.success(t("copilot_skill_deleted"));
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : t("copilot_skill_delete_failed"));
-		}
-	};
-
-	return (
-		<>
-			<input
-				ref={setFolderInput}
-				type="file"
-				multiple
-				className="hidden"
-				data-testid="copilot-skill-folder-input"
-				onChange={(e) => { void handleFilesPicked(e.target.files); }}
-			/>
-			{pendingDelete && (
-				<DestructiveConfirmModal
-					title={t("copilot_skill_delete_confirm_title")}
-					body={<>{t("copilot_skill_delete_confirm_body")}</>}
-					confirmLabel={t("copilot_skill_delete")}
-					onConfirm={() => { void handleConfirmDelete(); }}
-					onCancel={() => setPendingDelete(null)}
-				/>
-			)}
-			<MasterDetailModal
-				isOpen={isOpen}
-				onClose={onClose}
-				title={t("copilot_skill_title")}
-				subtitle={t("copilot_skill_subtitle")}
-				headerActions={
-					<button
-						type="button"
-						data-testid="copilot-skill-import-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1 disabled:opacity-40 disabled:cursor-not-allowed"
-						disabled={isImporting}
-						onClick={handleImportClick}
-					>
-						<Icons.Import className="h-3.5 w-3.5" />
-						{isImporting ? t("copilot_skill_importing") : t("copilot_skill_import")}
-					</button>
-				}
-				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
-				masterContent={({ openDetail }) => (
-					<SkillList
-						entries={entries}
-						isLoading={isLoading}
-						hasLoaded={hasLoaded}
-						selectedId={selectedId}
-						t={t}
-						onSelect={(id) => handleSelect(id, openDetail)}
-						onDelete={(id) => setPendingDelete(id)}
-					/>
-				)}
-				detailContent={() =>
-					selected ? (
-						<SkillDetail skill={selected} t={t} onDelete={() => setPendingDelete(selected.id)} />
-					) : (
-						<div className="font-ui text-[13px] text-t3">{t("copilot_skill_empty_detail")}</div>
-					)
-				}
-				footer={
-					<div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
-						<button
-							type="button"
-							className="cursor-pointer rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1"
-							onClick={onClose}
-						>
-							{t("copilot_skill_close")}
-						</button>
-					</div>
-				}
-			/>
-		</>
-	);
-}
-
-// ─── Master list ────────────────────────────────────────────────────────
-
-interface SkillListProps {
-	entries: SkillCatalogEntryDto[];
-	isLoading: boolean;
-	hasLoaded: boolean;
-	selectedId: string | null;
-	t: TFunc;
-	onSelect: (id: string) => void;
-	onDelete: (id: string) => void;
-}
-
-function SkillList({ entries, isLoading, hasLoaded, selectedId, t, onSelect, onDelete }: SkillListProps) {
-	if (isLoading && !hasLoaded) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("copilot_skill_loading")}</div>;
-	}
-	return (
-		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
-				{t("copilot_skill_list_label")}
-			</div>
-			<div className="flex-1 overflow-y-auto">
-				{entries.length === 0 ? (
-					<div className="flex h-full items-center justify-center px-2">
-						<EmptyState
-							icon={<Icons.Book />}
-							title={t("copilot_skill_empty")}
-							sub={t("copilot_skill_empty_sub")}
-						/>
-					</div>
-				) : (
-					entries.map((skill) => {
-						const isSelected = skill.id === selectedId;
-						const isUser = skill.source === "user";
-						return (
-							<div
-								key={`${skill.source}:${skill.id}`}
-								data-testid={`copilot-skill-row-${skill.id}`}
-								onPointerDown={() => onSelect(skill.id)}
-								className={cn(
-									"group flex cursor-pointer items-center gap-3 border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
-									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-								)}
-							>
-								<Icons.Book className="h-3.5 w-3.5 shrink-0 text-t3" />
-								<div className="min-w-0 flex-1 py-2">
-									<div className="flex min-w-0 items-center gap-1.5">
-										<span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}>
-											{skill.name}
-										</span>
-										{skill.shadowsBuiltin && (
-											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3" title={t("copilot_skill_shadow_title")}>
-												{t("copilot_skill_shadow")}
-											</span>
-										)}
-									</div>
-									<div className="mt-0.5 truncate font-mono text-[10px] text-t4">{skill.id}</div>
-								</div>
-								{isUser && (
-									<div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-										<button
-											type="button"
-											data-testid={`copilot-skill-delete-btn-${skill.id}`}
-											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-											title={t("copilot_skill_delete")}
-											onClick={() => onDelete(skill.id)}
-										>
-											<Icons.Trash className="h-3 w-3" />
-										</button>
-									</div>
-								)}
-								<MasterDetailMobileDrillDown onSelect={() => onSelect(skill.id)} className="py-3" />
-							</div>
-						);
-					})
-				)}
-			</div>
-		</div>
-	);
-}
-
-// ─── Detail (metadata inspector) ────────────────────────────────────────
-
-interface SkillDetailProps {
-	skill: SkillCatalogEntryDto;
-	t: TFunc;
-	onDelete: () => void;
-}
-
-function SkillDetail({ skill, t, onDelete }: SkillDetailProps) {
-	return (
-		<div className="flex flex-col gap-5">
-			<div>
-				<div className="flex flex-wrap items-center gap-2">
-					<h3 className="font-body text-[17px] font-semibold text-t1">{skill.name}</h3>
-					{skill.source === "user" ? (
-						<span className="rounded-full border border-border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("copilot_skill_user")}</span>
-					) : (
-						<span className="rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("copilot_skill_built_in")}</span>
-					)}
-					{skill.shadowsBuiltin && (
-						<span className="rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3" title={t("copilot_skill_shadow_title")}>{t("copilot_skill_shadow")}</span>
-					)}
-				</div>
-				<p className="mt-1 font-ui text-[13px] leading-relaxed text-t2">{skill.description}</p>
-			</div>
-
-			{skill.source === "user" && (
-				<button
-					type="button"
-					data-testid="copilot-skill-detail-delete-btn"
-					className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t3 transition-colors hover:border-danger hover:text-danger-text"
-					onClick={onDelete}
-				>
-					<Icons.Trash className="h-3 w-3" />
-					{t("copilot_skill_delete")}
-				</button>
-			)}
-
-			<dl className="flex flex-col gap-3">
-				<PreviewRow label={t("copilot_skill_id_label")}>
-					<span className="font-mono text-[12px] text-t1">{skill.id}</span>
-				</PreviewRow>
-				<PreviewRow label={t("copilot_skill_manifest_label")}>
-					<span className="font-mono text-[11px] break-all text-t2">{skill.manifestPath}</span>
-				</PreviewRow>
-				<PreviewRow label={t("copilot_skill_source_label")}>
-					<span className="font-ui text-[12px] text-t2">
-						{skill.source === "user" ? t("copilot_skill_user") : t("copilot_skill_built_in")}
-						{skill.shadowsBuiltin && ` · ${t("copilot_skill_shadow")}`}
-					</span>
-				</PreviewRow>
-			</dl>
-
-			<p className="font-ui text-[11px] leading-relaxed text-t3">{t("copilot_skill_inspect_hint")}</p>
-		</div>
-	);
-}
-
-// ─── Shared field primitives ─────────────────────────────────────────────
-
-function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
-			<dd>{children}</dd>
-		</div>
-	);
+	return <SkillLibraryModal isOpen={isOpen} onClose={onClose} adapter={adapter} parentBack={parentBack} />;
 }

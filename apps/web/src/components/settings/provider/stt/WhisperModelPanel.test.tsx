@@ -40,10 +40,10 @@ import {
   __setWhisperModelDepsForTests,
   type WhisperModelClient,
   type WhisperModelDeps,
-} from "./use-whisper-model.js";
+} from "../../../../hooks/use-whisper-model.js";
 import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS } from "@vibe-tavern/domain";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { WhisperModelPanel } = await import("./WhisperModelPanel.js");

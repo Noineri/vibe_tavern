@@ -341,9 +341,9 @@ export function LorebookAccordion({
             onClick={onToggle}
           >
             {expanded ? (
-              <span className="text-[10px]">{"\u25BC"}</span>
+              <span className="text-[calc(var(--ui-fs)-4px)]">{"\u25BC"}</span>
             ) : (
-              <span className="text-[10px]">{"\u25B6"}</span>
+              <span className="text-[calc(var(--ui-fs)-4px)]">{"\u25B6"}</span>
             )}
           </div>
         )}
@@ -418,7 +418,7 @@ export function LorebookAccordion({
               );
             })()}
             <span
-              className="flex-1 cursor-pointer truncate text-[13px] font-medium text-t1"
+              className="flex-1 cursor-pointer truncate text-[calc(var(--ui-fs)-1px)] font-medium text-t1"
               onClick={onToggle}
             >
               {lorebook.name}
@@ -453,7 +453,7 @@ export function LorebookAccordion({
 
             {/* Entry counter + token estimate */}
             <span
-              className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3 tabular-nums"
+              className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums"
               title={`${entries.length} · ${totalTokens.toLocaleString()} ${t("tokens_label")}`}
             >
               {entries.length}
@@ -474,7 +474,7 @@ export function LorebookAccordion({
               <>
                 <button
                   type="button"
-                  className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
+                  className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-[calc(var(--ui-fs)+6px)] leading-none transition-all hover:bg-s2 select-none"
                   onClick={(e) => {
                     e.stopPropagation();
                     onToggleActionMenu();
@@ -517,7 +517,7 @@ export function LorebookAccordion({
                       onDuplicate();
                     }}
                   >
-                    <span className="text-[11px]">⧉</span>
+                    <span className="text-[calc(var(--ui-fs)-3px)]">⧉</span>
                   </div>
                 </CustomTooltip>
                 <CustomTooltip content={t("lore_export_st")}>
@@ -609,7 +609,7 @@ export function LorebookAccordion({
                       onClick={() => onUpdateMeta({
                         tokenBudgetPercent: lorebook.tokenBudgetPercent == null ? 25 : null,
                       })}
-                      className="flex h-8 !min-h-8 shrink-0 cursor-pointer items-center rounded-md border border-border bg-s3 px-3 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-t3 hover:text-t1"
+                      className="flex h-8 !min-h-8 shrink-0 cursor-pointer items-center rounded-md border border-border bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-t3 hover:text-t1"
                       title={lorebook.tokenBudgetPercent == null ? t("lore_token_budget_switch_to_percent") : t("lore_token_budget_switch_to_fixed")}
                     >
                       {lorebook.tokenBudgetPercent == null ? t("lore_token_budget_mode_fixed") : t("lore_token_budget_mode_percent")}
@@ -699,10 +699,10 @@ export function LorebookAccordion({
             {/* fork #1 of the LoreEntryEditor advanced toggle — collapsed by
                 default, local state, same ▲/▼ text-link shape (resweep step 6). */}
             <button type="button"
-              className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+              className="flex items-center gap-1.5 self-start text-[calc(var(--ui-fs)-1px)] font-medium text-accent-t transition-all hover:text-accent"
               onClick={toggleAdvanced}
             >
-              <span className="text-[10px]">{advancedOpen ? "▲" : "▼"}</span>
+              <span className="text-[calc(var(--ui-fs)-4px)]">{advancedOpen ? "▲" : "▼"}</span>
               {advancedOpen
                 ? t("lore_advanced_collapse")
                 : t("lore_advanced_settings")}
@@ -805,10 +805,10 @@ export function LorebookAccordion({
               default, same ▲/▼ text-link shape; the ·N suffix surfaces active
               filters while collapsed (owner request 2026-09-29). */}
           <button type="button"
-            className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+            className="flex items-center gap-1.5 self-start text-[calc(var(--ui-fs)-1px)] font-medium text-accent-t transition-all hover:text-accent"
             onClick={() => setSearchOpen((v) => !v)}
           >
-            <span className="text-[10px]">{searchOpen ? "▲" : "▼"}</span>
+            <span className="text-[calc(var(--ui-fs)-4px)]">{searchOpen ? "▲" : "▼"}</span>
             {searchOpen ? t("lore_search_collapse") : t("lore_search_toggle")}
             {activeFilterCount > 0 && (
               <span className="text-t3">· {activeFilterCount}</span>

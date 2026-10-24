@@ -103,13 +103,13 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
     <div className="mt-4 overflow-hidden rounded-lg border border-border2">
       <div
         className={cn(
-          "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)]",
+          "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)]",
           open && "!rounded-b-none",
         )}
       >
         <button
           type="button"
-          className="flex cursor-pointer items-center gap-2 font-ui text-[13px] font-medium text-t1"
+          className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1"
           onClick={() => {
             setOpen(!open);
             if (!open) setOpenedAt(Date.now());
@@ -150,7 +150,7 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                   aria-label={t("quota_low_notify")}
                 />
                 <div>
-                  <div className="font-ui text-[13px] font-medium text-t1">{t("quota_low_notify")}</div>
+                  <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("quota_low_notify")}</div>
                   <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                     {t("quota_low_notify_hint")}
                   </div>
@@ -179,7 +179,7 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                   aria-label={t("quota_reset_notify")}
                 />
                 <div>
-                  <div className="font-ui text-[13px] font-medium text-t1">{t("quota_reset_notify")}</div>
+                  <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("quota_reset_notify")}</div>
                   <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                     {t("quota_reset_notify_hint")}
                   </div>
@@ -210,7 +210,7 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
         </div>
 
         {saveError && (
-          <div className="mt-3 flex items-center gap-1.5 text-[12px] text-danger">
+          <div className="mt-3 flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-danger">
             <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
             {saveError}
           </div>

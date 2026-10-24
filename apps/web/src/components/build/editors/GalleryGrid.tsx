@@ -192,7 +192,7 @@ function GalleryTile({
         {/* Status badges (top-right): described + included-in-prompt. */}
         <div className="pointer-events-none absolute right-1.5 top-1.5 flex gap-1">
           {hasDescription && !isDescribing && (
-            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold uppercase text-on-accent shadow-sm">
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[calc(var(--ui-fs)-5px)] font-bold uppercase text-on-accent shadow-sm">
               {t("gallery_described_badge")}
             </span>
           )}
@@ -267,7 +267,7 @@ function GalleryTile({
                     {t("gallery_include_in_prompt")}
                   </span>
                   {includeWarns && (
-                    <span className="text-xs text-amber-500">{t("gallery_include_no_desc_warning")}</span>
+                    <span className="text-[calc(var(--ui-fs)-2px)] leading-4 text-amber-500">{t("gallery_include_no_desc_warning")}</span>
                   )}
                 </div>
                 <Toggle
@@ -311,8 +311,8 @@ function GalleryTile({
                     placeholder={t("caption_placeholder")} autoFocus
                   />
                   <div className="mt-2 flex justify-end gap-2">
-                    <button type="button" className="cursor-pointer rounded bg-s2 px-3 py-1.5 text-sm text-t2 hover:bg-s3" onClick={() => { setEditingCaption(false); }}>{t("cancel")}</button>
-                    <button type="button" className="cursor-pointer rounded bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent/80" onClick={() => { void saveCaption(); }}>{t("save")}</button>
+                    <button type="button" className="cursor-pointer rounded bg-s2 px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-t2 hover:bg-s3" onClick={() => { setEditingCaption(false); }}>{t("cancel")}</button>
+                    <button type="button" className="cursor-pointer rounded bg-accent px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-on-accent hover:bg-accent/80" onClick={() => { void saveCaption(); }}>{t("save")}</button>
                   </div>
                 </div>
               )}
@@ -365,7 +365,7 @@ function GalleryTile({
                 <CustomTooltip content={includeWarns ? t("gallery_include_no_desc_warning") : t("gallery_include_in_prompt_hint")}>
                   <label
                     className={cn(
-                      "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm text-t2 hover:bg-s2",
+                      "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-[var(--ui-fs)] leading-5 text-t2 hover:bg-s2",
                       includeWarns && "bg-amber-500/10",
                     )}
                     onPointerDown={(e) => e.stopPropagation()}
@@ -384,14 +384,14 @@ function GalleryTile({
                 </CustomTooltip>
                 {isDescribing ? (
                   <button type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-fs)] leading-5 text-danger transition-colors hover:bg-danger/10"
                     onClick={(e) => { e.stopPropagation(); setMenuOpen(false); cancelDescribe(characterId); }}
                   >
                     <Icons.close className="h-3.5 w-3.5" />{t("gallery_describe_cancel")}
                   </button>
                 ) : (
                   <button type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-fs)] leading-5 text-t2 transition-colors hover:bg-s2"
                     onClick={(e) => { e.stopPropagation(); setMenuOpen(false); void describe(characterId, [id]); }}
                   >
                     <Icons.eye className="h-3.5 w-3.5" />{hasDescription ? t("gallery_regenerate") : t("gallery_describe")}
@@ -399,7 +399,7 @@ function GalleryTile({
                 )}
                 {!editingCaption ? (
                   <button type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-fs)] leading-5 text-t2 transition-colors hover:bg-s2"
                     onClick={(e) => { e.stopPropagation(); startEditCaption(); }}
                   >
                     <Icons.edit className="h-3.5 w-3.5" />{asset.caption ? t("edit_caption") : t("add_caption")}
@@ -414,21 +414,21 @@ function GalleryTile({
                       placeholder={t("caption_placeholder")} autoFocus
                     />
                     <div className="mt-1.5 flex justify-end gap-1.5">
-                      <button type="button" className="cursor-pointer rounded bg-s2 px-2.5 py-1 text-xs text-t2 hover:bg-s3" onClick={(e) => { e.stopPropagation(); setEditingCaption(false); }}>{t("cancel")}</button>
-                      <button type="button" className="cursor-pointer rounded bg-accent px-2.5 py-1 text-xs text-on-accent hover:bg-accent/80" onClick={(e) => { e.stopPropagation(); void saveCaption(); }}>{t("save")}</button>
+                      <button type="button" className="cursor-pointer rounded bg-s2 px-2.5 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 hover:bg-s3" onClick={(e) => { e.stopPropagation(); setEditingCaption(false); }}>{t("cancel")}</button>
+                      <button type="button" className="cursor-pointer rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-on-accent hover:bg-accent/80" onClick={(e) => { e.stopPropagation(); void saveCaption(); }}>{t("save")}</button>
                     </div>
                   </div>
                 )}
                 <div className="my-1 border-t border-border/60" />
                 <button type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-fs)] leading-5 text-t2 transition-colors hover:bg-s2"
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSetAsAvatar(); }}
                 >
                   <Icons.user className="h-3.5 w-3.5" />{t("gallery_set_avatar")}
                 </button>
                 <div className="my-1 border-t border-border/60" />
                 <button type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--ui-fs)] leading-5 text-danger transition-colors hover:bg-danger/10"
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setPendingDelete(true); }}
                 >
                   <Icons.del className="h-3.5 w-3.5" />{t("delete")}
@@ -444,7 +444,7 @@ function GalleryTile({
           tile's bottom edge from reading as a broken layout. Truncated to a
           single line. */}
       <div className={cn(
-        "w-full truncate px-2 py-1 text-[11px]",
+        "w-full truncate px-2 py-1 text-[calc(var(--ui-fs)-3px)]",
         footerIsEmpty
           ? "italic text-t3/40"
           : footerIsFallback

@@ -1,15 +1,22 @@
 /**
- * Filesystem skill library — mutating operations (import / delete).
- * COAUTHOR_TOOLSET_EXPANSION_PLAN, Wave 1 (CTX-S2).
+ * Filesystem skill library — mutating operations (import / delete / save).
+ * COAUTHOR_TOOLSET_EXPANSION_PLAN, Wave 1 (CTX-S2); save is AGENT_SHELL_POLISH,
+ * Wave 5 (AP-23a).
  *
  * The read-only discovery lives in `skill-scanner.ts`; this module owns the
- * two operations that change the user skill root (`<dataDir>/coauthor/skills`):
+ * three operations that change the user skill root (`<dataDir>/coauthor/skills`):
  *
  *  - {@link importSkillTree}: validate a complete set of ordinary files (each
  *    with its relative path) IN MEMORY, then recreate the directory tree
  *    atomically under the user root. A failed validation writes nothing.
  *  - {@link deleteUserSkill}: remove one top-level user skill directory.
  *    Built-in skill ids are rejected (built-in immutability).
+ *  - {@link saveUserSkill}: the ONE save operation behind `POST .../skills`
+ *    (create) and `PUT .../skills/:id` (update) — create derives the folder id
+ *    from the name and reuses {@link importSkillTree} to write it; update
+ *    rewrites ONLY the user copy's `SKILL.md` (frontmatter rebuilt from the
+ *    existing block, every key kept) through an atomic staged rename. Both
+ *    paths gate on `parseSkillManifest` BEFORE any write.
  *
  * The service is input-agnostic: it takes `{ relativePath, bytes }` records,
  * not Hono `File` objects, so it is exercised directly by tests and could be
@@ -26,9 +33,11 @@
 import { lstat, mkdir, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
+import { parseSkillManifest, buildSkillCatalog, skillManifestBody, locateFrontmatter } from "./skill-scanner.js";
 import type { SkillCatalog, SkillCatalogEntry, ScanRoot } from "./skill-scanner.js";
-import type { SkillImportResult } from "@vibe-tavern/api-contracts";
+import { readSkillFile, SkillReadError } from "./skill-read-tool.js";
+import { conflict, internal, notFound, validation } from "../../../shared/errors.js";
+import type { SkillImportResult, SkillContentDto } from "@vibe-tavern/api-contracts";
 // Re-export so callers importing from this module keep resolving; the
 // canonical wire type lives in api-contracts (single source of truth).
 export type { SkillImportResult };
@@ -269,19 +278,9 @@ export async function deleteUserSkill(
   userRoot: string,
   builtinSkillIds: readonly string[] = [],
 ): Promise<{ id: string }> {
-  if (typeof id !== "string" || id.length === 0) {
-    throw new SkillImportError("skill id is empty");
-  }
-  if (id === "." || id === ".." || id.includes("/") || id.includes("\\") || id.includes("\0")) {
-    throw new SkillImportError(`refusing unsafe skill id: ${id}`);
-  }
-
   const root = resolve(userRoot);
+  assertSafeSkillId(id, root);
   const target = resolve(root, id);
-  const rel = relative(root, target);
-  if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
-    throw new SkillImportError(`skill id escapes the skill root: ${id}`);
-  }
 
   const stat = await lstat(target).catch(() => null);
   if (stat?.isSymbolicLink()) {
@@ -303,6 +302,27 @@ export async function deleteUserSkill(
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Reject skill ids that could escape or confuse the user root — the SAME rules
+ * for every mutating operation (delete, save-update): empty input, traversal
+ * (`.`/`..`), separators, NUL bytes, and any id that resolves outside the root
+ * (defense in depth beyond the character check). Throws
+ * {@link SkillImportError} (a 400-class client error at the route layer).
+ */
+function assertSafeSkillId(id: string, root: string): void {
+  if (typeof id !== "string" || id.length === 0) {
+    throw new SkillImportError("skill id is empty");
+  }
+  if (id === "." || id === ".." || id.includes("/") || id.includes("\\") || id.includes("\0")) {
+    throw new SkillImportError(`refusing unsafe skill id: ${id}`);
+  }
+  const target = resolve(root, id);
+  const rel = relative(root, target);
+  if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
+    throw new SkillImportError(`skill id escapes the skill root: ${id}`);
+  }
+}
 
 async function pathExists(p: string): Promise<boolean> {
   try {
@@ -336,7 +356,266 @@ export async function listTopLevelDirs(rootDir: string): Promise<string[]> {
   }
 }
 
+/**
+ * List the ordinary files inside ONE skill folder (AP-21): POSIX-style paths
+ * relative to the skill directory, sorted, with `SKILL.md` EXCLUDED (the
+ * manifest is surfaced separately as the content view's `content`/`body`, so
+ * listing it again would be redundant). Symlinks are skipped and never
+ * followed — the same sandbox convention as the scanner's `listSkillDirs` and
+ * `readSkillFile`, so the listing can never escape the skill folder. A
+ * missing/unreadable folder reads as an empty list (the same tolerant
+ * convention as {@link listTopLevelDirs}); the caller then shows the skill as
+ * manifest-only.
+ */
+export async function listSkillFolderFiles(skillDir: string): Promise<string[]> {
+  const files: string[] = [];
+
+  try {
+    for await (const entry of new Bun.Glob("**/*").scan({
+      cwd: skillDir,
+      dot: true,
+      followSymlinks: false,
+      onlyFiles: true,
+    })) {
+      const stat = await lstat(join(skillDir, entry));
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      const posixPath = entry.replace(/\\/g, "/");
+      if (posixPath === MANIFEST_NAME) continue;
+      files.push(posixPath);
+    }
+
+    return files.sort();
+  } catch {
+    return [];
+  }
+}
+
 // ─── Service (owns roots, caches built-in ids) ───────────────────────────────
+
+// ─── Id derivation (create path) ─────────────────────────────────────────────
+
+/**
+ * Latin replacements for the 32 lowercase Cyrillic letters, indexed by their
+ * code-point offset from U+0430 (the contiguous Cyrillic block U+0430..U+044F
+ * runs a..ya with no gaps). Pure DATA for the save operation's folder-id
+ * derivation (AP-23a): spelled as code-point offsets instead of Cyrillic
+ * literals because the code repo is Cyrillic-free (owner ruling 2026-09-19;
+ * vt-guard enforces it on staged added-lines). The uppercase counterparts
+ * (U+0410..U+042F) reuse this table with the replacement title-cased; yo
+ * (U+0451/U+0401) sits outside the block and maps to e/E. Transliteration
+ * scheme: the common BGN/PCGN-style letter map (kh for KHA, shch for SHCHA,
+ * hard/soft signs dropped) — chosen for familiarity; ids are one-way slugs,
+ * so no round-trip property is needed.
+ */
+const CYRILLIC_TO_LATIN: readonly string[] = [
+  "a", "b", "v", "g", "d", "e", // U+0430..U+0435
+  "zh", "z", "i", "y", // U+0436..U+0439
+  "k", "l", "m", "n", "o", "p", // U+043A..U+043F
+  "r", "s", "t", "u", "f", // U+0440..U+0444
+  "kh", "ts", "ch", "sh", "shch", // U+0445..U+0449
+  "", "y", "", "e", // U+044A..U+044D: hard sign dropped, y, soft sign dropped, e
+  "yu", "ya", // U+044E..U+044F
+];
+
+/** One-way Cyrillic → latin transliteration for folder-id derivation. */
+function transliterateCyrillic(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const cp = ch.charCodeAt(0);
+    if (cp >= 0x0430 && cp <= 0x044f) {
+      out += CYRILLIC_TO_LATIN[cp - 0x0430];
+    } else if (cp >= 0x0410 && cp <= 0x042f) {
+      const replacement = CYRILLIC_TO_LATIN[cp - 0x0410];
+      out += replacement.length === 0 ? "" : replacement[0].toUpperCase() + replacement.slice(1);
+    } else if (cp === 0x0451) {
+      out += "e";
+    } else if (cp === 0x0401) {
+      out += "E";
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+/**
+ * Derive a new skill folder id from a display name: transliterate Cyrillic to
+ * latin (the table above — NEW derivation, deliberately not the import-export
+ * package's `slugify`, which strips every non-ASCII character and would fold
+ * ALL non-latin names into one fallback id), lowercase, collapse every
+ * non-[a-z0-9] run into a single hyphen, trim edge hyphens. A name with no
+ * transliteratable characters (another script, punctuation-only) falls back to
+ * `skill`; de-duplication then suffixes it like any other id.
+ */
+export function skillIdFromName(name: string): string {
+  const slug = transliterateCyrillic(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : "skill";
+}
+
+// ─── Save (create / update) ────────────────────────────────────────────────────────────────────────────────────────
+
+/** One skill save request (AP-23a): manifest `name`/`description` + skill `body`. */
+export interface SkillSaveInput {
+  /** Existing skill id to overwrite (update); omit to create a new skill. */
+  readonly id?: string;
+  readonly name: string;
+  readonly description: string;
+  readonly body: string;
+}
+
+/**
+ * Assemble a manifest document from a frontmatter mapping and the skill body:
+ * the YAML fences plus `Bun.YAML.stringify(mapping)` and the body verbatim.
+ * The stringified mapping is a single line (stringify quotes any value that
+ * could break the fence scan), so the closing fence is always line 2 and the
+ * scanner's fence parser reads it back deterministically.
+ */
+function buildManifestText(mapping: Record<string, unknown>, body: string): string {
+  return `---\n${Bun.YAML.stringify(mapping)}\n---\n\n${body}`;
+}
+
+/**
+ * The write gate (parse-before-write): the assembled manifest must parse as a
+ * valid skill manifest BEFORE any filesystem write, so an invalid save (e.g. a
+ * whitespace-only name, which YAML would happily carry but the scanner would
+ * reject) leaves the user root untouched — no partial folder, no empty file.
+ * Throws a 400-class validation DomainError on failure.
+ */
+function assertManifestParses(manifestText: string): void {
+  const parsed = parseSkillManifest(manifestText);
+  if ("error" in parsed) {
+    throw validation(`refusing to write an invalid skill manifest: ${parsed.error}`);
+  }
+}
+
+/**
+ * The ONE save operation (AGENT_SHELL_POLISH, AP-23a) behind `POST .../skills`
+ * (create) and `PUT .../skills/:id` (update) on BOTH route families (copilot
+ * per-kind and Co-Author — they differ only in roots, never in save logic).
+ *
+ * CREATE (`id` absent): the folder id is derived from the name via
+ * {@link skillIdFromName} and de-duplicated against BOTH roots — every
+ * top-level user directory (any directory physically occupies the name) and
+ * every built-in skill id (a create must never shadow a built-in: the
+ * user-wins precedence is reserved for imports, and a save under a shadowed
+ * id hits the read-only 409 below) — with `-2`, `-3`, ... suffixes. The
+ * manifest starts from a MINIMAL mapping (`name` + `description` only —
+ * exactly what `parseSkillManifest` requires of discovery metadata); the
+ * write itself reuses {@link importSkillTree}, the SAME atomic
+ * stage-and-rename mechanism the import uses (one write mechanism, no second
+ * one).
+ *
+ * UPDATE (`id` present): rewrites ONLY `<userRoot>/<id>/SKILL.md`. The
+ * manifest is rebuilt from the EXISTING frontmatter — every key kept, only
+ * `name`/`description` replaced — and the file is swapped atomically: staged
+ * into the same hidden staging sibling the import uses, then renamed over the
+ * target on the same volume. Every OTHER file of the skill folder
+ * (`references/`, `assets/`, ...) is untouched. Built-in ids are read-only: an
+ * update under a built-in id — a pure built-in or a user shadow — is a 409
+ * Conflict (duplicating into a new id is the user's path).
+ *
+ * Both paths run {@link assertManifestParses} before any write; a failure
+ * writes nothing. Errors: {@link SkillImportError} for an unsafe id (the same
+ * vocabulary as delete, a 400 at the route); DomainError `validation` (400)
+ * for an invalid manifest or an unparseable target; DomainError `notFound`
+ * (404) for an update of a missing id; DomainError `conflict` (409) for a
+ * built-in id.
+ */
+export async function saveUserSkill(
+  input: SkillSaveInput,
+  userRoot: string,
+  builtinSkillIds: readonly string[] = [],
+): Promise<{ id: string }> {
+  const root = resolve(userRoot);
+
+  if (typeof input.name !== "string" || input.name.trim().length === 0) {
+    throw validation("skill name must be a non-empty string");
+  }
+
+  if (input.id === undefined) {
+    // ── Create: derive + de-dupe the folder id, then write via the import.
+    const taken = new Set<string>([...(await listTopLevelDirs(root)), ...builtinSkillIds]);
+    const base = skillIdFromName(input.name);
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+
+    const manifestText = buildManifestText({ name: input.name, description: input.description }, input.body);
+    assertManifestParses(manifestText);
+
+    await importSkillTree(
+      [{ relativePath: `${id}/${MANIFEST_NAME}`, bytes: new TextEncoder().encode(manifestText) }],
+      root,
+    );
+    return { id };
+  }
+
+  // ── Update: rewrite only the user copy's SKILL.md, atomically.
+  assertSafeSkillId(input.id, root);
+  if (builtinSkillIds.includes(input.id)) {
+    throw conflict(
+      `cannot update built-in skill '${input.id}' (built-in skills are read-only; save it under a new name instead)`,
+    );
+  }
+
+  const skillDir = join(root, input.id);
+  const dirStat = await lstat(skillDir).catch(() => null);
+  if (dirStat === null) {
+    throw notFound("skill", `skill '${input.id}' does not exist`);
+  }
+  if (dirStat.isSymbolicLink()) {
+    throw validation(`refusing to write through a symlinked skill directory '${input.id}'`);
+  }
+
+  const manifestPath = join(skillDir, MANIFEST_NAME);
+  const manifestStat = await lstat(manifestPath).catch(() => null);
+  if (manifestStat === null) {
+    throw notFound("skill", `skill '${input.id}' has no ${MANIFEST_NAME} manifest`);
+  }
+  if (manifestStat.isSymbolicLink()) {
+    throw validation(`refusing to overwrite a symlinked ${MANIFEST_NAME} at '${input.id}'`);
+  }
+
+  // Rebuild the frontmatter from the existing manifest: EVERY key kept, only
+  // name/description replaced; the body below the fence is replaced wholesale
+  // (the editor's new text).
+  const existing = await Bun.file(manifestPath).text();
+  const split = locateFrontmatter(existing);
+  if (split === null) {
+    throw validation(`skill '${input.id}' has no YAML frontmatter block to rebuild`);
+  }
+  let doc: unknown;
+  try {
+    doc = Bun.YAML.parse(split.frontmatter);
+  } catch (e) {
+    throw validation(`skill '${input.id}' has unreadable frontmatter: ${(e as Error).message}`);
+  }
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+    throw validation(`skill '${input.id}' frontmatter is not a YAML mapping`);
+  }
+  const mapping: Record<string, unknown> = { ...(doc as Record<string, unknown>) };
+  mapping.name = input.name;
+  mapping.description = input.description;
+
+  const manifestText = buildManifestText(mapping, input.body);
+  assertManifestParses(manifestText);
+
+  // Atomic single-file swap: stage into the same hidden staging sibling the
+  // import uses (same volume), then rename over the target. The skill
+  // directory and every other file in it stay in place.
+  const staging = join(dirname(root), `${STAGING_PREFIX}${randomUUID()}`);
+  try {
+    const staged = join(staging, input.id, MANIFEST_NAME);
+    await mkdir(dirname(staged), { recursive: true });
+    await Bun.write(staged, new TextEncoder().encode(manifestText));
+    await rename(staged, manifestPath);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+  return { id: input.id };
+}
 
 /**
  * Domain service that owns the resolved skill roots and exposes the mutating
@@ -362,6 +641,26 @@ export class SkillLibraryService {
     return deleteUserSkill(id, this.userRoot, builtinIds);
   };
 
+  /**
+   * The ONE save operation (AP-23a) both skill route families call: create
+   * (`id` absent — folder id derived from the name, de-duped against both
+   * roots) or update (`id` present — rewrite only the user copy's SKILL.md;
+   * built-in ids are 409-conflict). Returns the FRESH catalog entry of the
+   * saved skill — the adapters derive the wire DTO from it with the same
+   * `toDto` every other read path uses (one derivation).
+   */
+  saveSkill = async (input: SkillSaveInput): Promise<SkillCatalogEntry> => {
+    const builtinIds = await this.getBuiltinSkillIds();
+    const { id } = await saveUserSkill(input, this.userRoot, builtinIds);
+    const entry = await this.readCatalogEntry(id);
+    if (entry === null) {
+      // Unreachable unless the write silently failed: the manifest was
+      // parse-validated before the atomic write.
+      throw internal(`saved skill '${id}' is not discoverable after the write`);
+    }
+    return entry;
+  };
+
   /** Read-only merged catalog (built-in + user, user precedence on id collision). */
   listCatalog = async (): Promise<SkillCatalog> =>
     buildSkillCatalog(this.scanRoots());
@@ -370,6 +669,36 @@ export class SkillLibraryService {
   readCatalogEntry = async (id: string): Promise<SkillCatalogEntry | null> => {
     const { entries } = await this.listCatalog();
     return entries.find((e) => e.id === id) ?? null;
+  };
+
+  /**
+   * Full content view of one skill (AGENT_SHELL_POLISH, AP-21) — the ONE
+   * derivation both skill route families (Co-Author and per-kind copilot) call:
+   * the manifest read goes through the SAME sandboxed {@link readSkillFile} the
+   * model tool uses, with the user root first so a user shadow of a built-in
+   * wins (matching the catalog precedence); `body` is the manifest text with
+   * its frontmatter block stripped (the skill editor's text view, derived by
+   * the scanner's single fence parser); `files` lists the WINNING folder's
+   * relative file paths with the manifest excluded. Returns `null` when the id
+   * is not in the catalog or the manifest is unreadable through the sandboxed
+   * reader — an unreadable manifest reads as not-found, the metadata routes'
+   * 404 convention.
+   */
+  readSkillContent = async (id: string): Promise<SkillContentDto | null> => {
+    const entry = await this.readCatalogEntry(id);
+    if (entry === null) return null;
+
+    try {
+      // User root first — the same root order the catalog merge uses, so the
+      // manifest read and the folder listing always describe the same winner.
+      const manifest = await readSkillFile(`${id}/${MANIFEST_NAME}`, [this.userRoot, this.builtinRoot]);
+      const body = skillManifestBody(manifest.content) ?? manifest.content;
+      const files = await listSkillFolderFiles(entry.skillDir);
+      return { id, path: manifest.path, content: manifest.content, body, files };
+    } catch (err) {
+      if (err instanceof SkillReadError) return null;
+      throw err;
+    }
   };
 
   /** The resolved roots this service reads from / writes to. */

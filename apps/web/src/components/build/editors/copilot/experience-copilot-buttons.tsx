@@ -22,7 +22,7 @@ export function ToolbarButton({ label, icon, onClick, testId }: ToolbarButtonPro
       type="button"
       onClick={onClick}
       data-testid={testId}
-      className="flex items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+      className="flex items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
     >
       {icon}
       <span>{label}</span>

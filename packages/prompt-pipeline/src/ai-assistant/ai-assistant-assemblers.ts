@@ -16,6 +16,9 @@ export const AI_ASSISTANT_ASSEMBLERS = {
   // Regex-rule authoring (REGEX_AI_ASSISTANT_PLAN): background-LLM route,
   // no chat context — the default assembler fits.
   regex: DefaultAiAssistantAssembler,
+  // Skill-body drafting (AGENT_SHELL_POLISH AP-23c): editor-style mode —
+  // instruction + existing skill-body draft, no chat context.
+  skill: DefaultAiAssistantAssembler,
   message_edit: MessageAiAssistantAssembler,
   message_merge: MessageAiAssistantAssembler,
   // TPE-2 (AN-1): same assembler as edit/merge — it feeds the selected

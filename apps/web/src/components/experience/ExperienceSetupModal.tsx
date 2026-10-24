@@ -1020,9 +1020,9 @@ export function ExperienceSetupModal({
   // ── Body content per state ───────────────────────────────────────────────
   let body: ReactNode;
   if (configLoading) {
-    body = <p className="font-ui text-[12px] text-t4">{t("experience_setup_loading_config")}</p>;
+    body = <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("experience_setup_loading_config")}</p>;
   } else if (noScript) {
-    body = <p className="font-ui text-[12px] leading-relaxed text-t4">{t("experience_setup_no_script")}</p>;
+    body = <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4">{t("experience_setup_no_script")}</p>;
   } else if (scriptRecordLoadError !== null) {
     // SS-7B3: the record itself failed to load — fail closed (no request) and
     // surface the failure on the modal's existing inline error shape.
@@ -1039,7 +1039,7 @@ export function ExperienceSetupModal({
       </p>
     );
   } else if (discovering || !scriptRecordReady) {
-    body = <p className="font-ui text-[12px] text-t4">{t("experience_setup_discovering")}</p>;
+    body = <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("experience_setup_discovering")}</p>;
   } else if (discovery.status === "error") {
     body = <ErrorBox title={t("experience_setup_discovery_error")} detail={discovery.message} />;
   } else if (discovery.status === "ok") {
@@ -1050,7 +1050,7 @@ export function ExperienceSetupModal({
             {/* Package-declared settings */}
             <Section label={t("experience_setup_settings_label")}>
               {setupFields.length === 0 ? (
-                <p className="font-ui text-[12px] leading-relaxed text-t4">{t("experience_setup_no_settings")}</p>
+                <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4">{t("experience_setup_no_settings")}</p>
               ) : (
                 <div className="flex flex-col gap-2.5">
                   {setupFields.map((field) => (
@@ -1083,12 +1083,12 @@ export function ExperienceSetupModal({
                     />
                   ))}
                   {roster.length >= INTERACTIVE_SCHEMA_MAX_PARTICIPANTS ? (
-                    <p className="font-ui text-[11px] text-t4">{t("experience_setup_roster_full")}</p>
+                    <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("experience_setup_roster_full")}</p>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2 self-start">
                       <button
                         type="button"
-                        className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[12px] text-t3 hover:border-accent hover:text-accent"
+                        className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:border-accent hover:text-accent"
                         onClick={addSeat}
                         data-testid="experience-setup-add-seat"
                       >
@@ -1098,7 +1098,7 @@ export function ExperienceSetupModal({
                       {modelGranted && (
                         <button
                           type="button"
-                          className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[12px] text-t3 hover:border-accent hover:text-accent"
+                          className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:border-accent hover:text-accent"
                           onClick={openAddCharacter}
                           data-testid="experience-setup-add-character"
                         >
@@ -1111,7 +1111,7 @@ export function ExperienceSetupModal({
                   {addCharOpen && (
                     <div className="flex flex-col gap-2 rounded-md border border-border bg-s2 px-2.5 py-2">
                       <div className="flex items-center justify-between">
-                        <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">
+                        <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">
                           {t("experience_setup_add_character_picker_title")}
                         </span>
                         <button
@@ -1124,7 +1124,7 @@ export function ExperienceSetupModal({
                         </button>
                       </div>
                       {sortedAllCharacters.length === 0 ? (
-                        <p className="font-ui text-[12px] text-t4">{t("experience_setup_add_character_empty")}</p>
+                        <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("experience_setup_add_character_empty")}</p>
                       ) : (
                         <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
                           {sortedAllCharacters.map((c) => (
@@ -1140,7 +1140,7 @@ export function ExperienceSetupModal({
                       <div className="flex items-center justify-end">
                         <button
                           type="button"
-                          className="rounded-md border border-accent px-2.5 py-1 font-ui text-[12px] text-accent hover:bg-accent/10 disabled:pointer-events-none disabled:opacity-40"
+                          className="rounded-md border border-accent px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-accent hover:bg-accent/10 disabled:pointer-events-none disabled:opacity-40"
                           onClick={confirmAddCharacters}
                           disabled={pendingCharIds.size === 0}
                           data-testid="experience-setup-add-character-confirm"
@@ -1209,11 +1209,11 @@ export function ExperienceSetupModal({
                       />
                     </div>
                   </div>
-                  <p className="text-xs text-text-secondary" data-testid="experience-setup-source-preview">
+                  <p className="text-[calc(var(--ui-fs)-2px)] leading-4 text-text-secondary" data-testid="experience-setup-source-preview">
                     {sourcePreviewText}
                   </p>
                   {sourcePersonaPreviewText !== null && (
-                    <p className="text-xs text-text-secondary" data-testid="experience-setup-source-persona-preview">
+                    <p className="text-[calc(var(--ui-fs)-2px)] leading-4 text-text-secondary" data-testid="experience-setup-source-persona-preview">
                       {sourcePersonaPreviewText}
                     </p>
                   )}
@@ -1279,7 +1279,7 @@ export function ExperienceSetupModal({
       >
         {/* Header */}
         <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <h2 className="min-w-0 flex-1 truncate font-ui text-sm font-semibold text-t1">
+          <h2 className="min-w-0 flex-1 truncate font-ui text-[var(--ui-fs)] leading-5 font-semibold text-t1">
             {t("experience_setup_title")}
           </h2>
           <button
@@ -1300,7 +1300,7 @@ export function ExperienceSetupModal({
         <footer className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
           <button
             type="button"
-            className="rounded px-3 py-1.5 font-ui text-[12px] text-t3 hover:bg-s3 hover:text-t1"
+            className="rounded px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:bg-s3 hover:text-t1"
             onClick={handleClose}
             data-testid="experience-setup-cancel"
           >
@@ -1309,7 +1309,7 @@ export function ExperienceSetupModal({
           {phase === "config" && discovery.status === "ok" && (
             <button
               type="button"
-              className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+              className="rounded bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
               onClick={() => void handleStart()}
               disabled={startDisabled}
               data-testid="experience-setup-start"
@@ -1324,7 +1324,7 @@ export function ExperienceSetupModal({
           {phase === "generating-summary" && (
             <button
               type="button"
-              className="rounded px-3 py-1.5 font-ui text-[12px] text-t3 hover:bg-s3 hover:text-t1"
+              className="rounded px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:bg-s3 hover:text-t1"
               onClick={() => { abortRef.current?.abort(); setPendingCapture(false); setPhase("awaiting-summary"); }}
               data-testid="experience-setup-cancel-generate"
             >
@@ -1334,7 +1334,7 @@ export function ExperienceSetupModal({
           {ready && (
             <button
               type="button"
-              className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+              className="rounded bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
               onClick={() => void handleContinue()}
               disabled={pendingSave}
               data-testid="experience-setup-continue"
@@ -1355,7 +1355,7 @@ export function ExperienceSetupModal({
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{label}</span>
+      <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">{label}</span>
       {children}
     </section>
   );
@@ -1364,8 +1364,8 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 function ErrorBox({ title, detail }: { title: string; detail?: string | null }) {
   return (
     <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-2">
-      <div className="font-ui text-[11px] font-semibold uppercase text-danger-text">{title}</div>
-      {detail && <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{detail}</pre>}
+      <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase text-danger-text">{title}</div>
+      {detail && <pre className="mt-1 whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text">{detail}</pre>}
     </div>
   );
 }
@@ -1405,7 +1405,7 @@ function RosterRow({
         />
         {seat.characterId !== undefined && (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3"
+            className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
             title={t("experience_setup_seat_character_badge")}
             data-testid="experience-setup-seat-character"
           >
@@ -1508,14 +1508,14 @@ function PreparationBody(props: PreparationBodyProps) {
               {pendingCapture ? (
                 <>
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_capturing")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("experience_setup_capturing")}</span>
                 </>
               ) : (
                 <>
-                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_context_ready")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("experience_setup_context_ready")}</span>
                   <button
                     type="button"
-                    className="rounded px-2 py-0.5 font-ui text-[11px] text-accent hover:bg-s3"
+                    className="rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent hover:bg-s3"
                     onClick={onRetryCapture}
                     data-testid="experience-setup-retry-capture"
                   >
@@ -1528,7 +1528,7 @@ function PreparationBody(props: PreparationBodyProps) {
 
           {phase === "awaiting-summary" && (
             <div className="flex flex-col gap-2">
-              <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
+              <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
               <div className="flex flex-col gap-1.5 sm:flex-row">
                 <div className="flex-1">
                   <DropdownSelect
@@ -1550,7 +1550,7 @@ function PreparationBody(props: PreparationBodyProps) {
               </div>
               <button
                 type="button"
-                className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+                className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
                 onClick={onGenerate}
                 disabled={pendingCapture}
                 data-testid="experience-setup-generate-summary"
@@ -1563,7 +1563,7 @@ function PreparationBody(props: PreparationBodyProps) {
           {phase === "generating-summary" && (
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-              <span className="font-ui text-[12px] text-t3">{t("experience_setup_generating")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("experience_setup_generating")}</span>
             </div>
           )}
 
@@ -1574,16 +1574,16 @@ function PreparationBody(props: PreparationBodyProps) {
       {/* Ready note lives OUTSIDE the gated context section so the ready screen
           keeps content even for scripts without the rp_context grant. */}
       {phase === "ready" && (
-        <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
+        <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
       )}
 
       {/* Model-only prompt overrides (capability gate, post-start) */}
       {modelGranted && (
         <Section label={t("experience_setup_overrides_label")}>
-          <p className="font-ui text-[11px] leading-relaxed text-t4">{t("experience_setup_overrides_hint")}</p>
+          <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t4">{t("experience_setup_overrides_hint")}</p>
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-1">
-              <label className="font-ui text-[11px] font-medium text-t2">{t("experience_setup_overrides_global")}</label>
+              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{t("experience_setup_overrides_global")}</label>
               <AutoTextarea
                 value={overrideDrafts.global}
                 onChange={(e) => onGlobalOverride(e.target.value)}
@@ -1594,7 +1594,7 @@ function PreparationBody(props: PreparationBodyProps) {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="font-ui text-[11px] font-medium text-t2">{t("experience_setup_overrides_character")}</label>
+              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{t("experience_setup_overrides_character")}</label>
               <AutoTextarea
                 value={overrideDrafts.character}
                 onChange={(e) => onCharacterOverride(e.target.value)}
@@ -1609,7 +1609,7 @@ function PreparationBody(props: PreparationBodyProps) {
           {/* overrides === null means the load is still pending or failed; the
               section still renders so a failed load is visible, not hidden. */}
           {overrides === null && !saveError && (
-            <p className="font-ui text-[11px] text-t4">{t("experience_setup_overrides_loading")}</p>
+            <p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("experience_setup_overrides_loading")}</p>
           )}
         </Section>
       )}

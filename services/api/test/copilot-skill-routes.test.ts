@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { HTTPException } from "hono/http-exception";
 import { join } from "node:path";
 import { createCopilotSkillRoutes } from "../src/api/routes/copilot-skill.js";
 import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "../src/api/adapters/copilot-skill-adapter.js";
@@ -55,9 +56,17 @@ function makeApp() {
   // Mount the production DomainError → status mapping (shared helpers, not
   // duplicated logic) so the unknown-kind 400 boundary is observable — the
   // same pattern as copilot-profile-kind.test.ts.
+  // Mount the production DomainError → status mapping (shared helpers, not
+  // duplicated logic) so the unknown-kind 400 boundary is observable — the
+  // same pattern as copilot-profile-kind.test.ts. HTTPException carries its
+  // own status (the json validator's malformed-JSON 400), the same branch
+  // app-factory's onError has.
   app.onError((err, c) => {
     if (isDomainError(err)) {
       return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 404 | 409 | 422 | 500);
+    }
+    if (err instanceof HTTPException) {
+      return err.getResponse();
     }
     return c.json({ error: { kind: "Internal", message: err instanceof Error ? err.message : "error" } }, 500);
   });
@@ -145,6 +154,177 @@ describe("GET /api/copilot/skills — catalog", () => {
     expect(overview.manifestPath).toBe("profile-overview/SKILL.md");
     expect(JSON.stringify(body)).not.toContain(builtinRoot.replace(/\\/g, "/"));
     expect(JSON.stringify(body)).not.toContain(userRoot.replace(/\\/g, "/"));
+  });
+});
+
+describe("GET /api/copilot/skills/:id/content — skill content (AP-21)", () => {
+  test("built-in skill → 200: raw manifest, frontmatter-stripped body, folder files without the manifest", async () => {
+    await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
+    await mkdir(join(builtinRoot, "profile-overview", "references"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "references", "rules.md"), "# Rules\n");
+    await Bun.write(join(builtinRoot, "profile-overview", "assets", "template.md"), "# Template\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills/profile-overview/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe("profile-overview");
+    expect(body.path).toBe("profile-overview/SKILL.md");
+    // content = the RAW manifest (frontmatter included).
+    expect(body.content).toBe(manifest("profile-overview", "built-in"));
+    // body = content WITHOUT the frontmatter block — the editor's skill text.
+    expect(body.body).toBe("# profile-overview\n");
+    expect(body.body).not.toContain("---");
+    expect(body.body).not.toContain("name: profile-overview");
+    // files = relative POSIX paths inside the skill folder, manifest excluded, sorted.
+    expect(body.files).toEqual(["assets/template.md", "references/rules.md"]);
+    // No absolute filesystem path crosses the wire.
+    expect(JSON.stringify(body)).not.toContain(builtinRoot.replace(/\\/g, "/"));
+  });
+
+  test("user skill → 200 from the user root", async () => {
+    await mkdir(join(userRoot, "my-skill"), { recursive: true });
+    await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
+    await Bun.write(join(userRoot, "my-skill", "notes.md"), "notes\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills/my-skill/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("description: mine");
+    expect(body.files).toEqual(["notes.md"]);
+  });
+
+  test("shadowed skill → the USER copy wins for content AND files (readSkillFile precedence)", async () => {
+    await mkdir(join(builtinRoot, "shared"), { recursive: true });
+    await Bun.write(join(builtinRoot, "shared", "SKILL.md"), manifest("shared", "built-in version"));
+    await Bun.write(join(builtinRoot, "shared", "builtin-only.md"), "builtin only\n");
+    await mkdir(join(userRoot, "shared"), { recursive: true });
+    await Bun.write(join(userRoot, "shared", "SKILL.md"), manifest("shared", "user-customized version"));
+    await Bun.write(join(userRoot, "shared", "user-only.md"), "user only\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills/shared/content");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain("user-customized version");
+    expect(body.content).not.toContain("built-in version");
+    // The file list mirrors the WINNING folder — the user's — not a merge.
+    expect(body.files).toEqual(["user-only.md"]);
+  });
+
+  test("missing skill → 404", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills/no-such-skill/content");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(/does not exist/);
+  });
+
+  test("?kind=script reads the script roots — no cross-kind content leak", async () => {
+    await mkdir(join(scriptBuiltinRoot, "dice-helper"), { recursive: true });
+    await Bun.write(join(scriptBuiltinRoot, "dice-helper", "SKILL.md"), manifest("dice-helper", "Notation recipes."));
+    await mkdir(join(userRoot, "dice-helper"), { recursive: true });
+    await Bun.write(join(userRoot, "dice-helper", "SKILL.md"), manifest("dice-helper", "Experience side."));
+
+    const app = makeApp();
+    const scriptRes = await app.request("/api/copilot/skills/dice-helper/content?kind=script");
+    expect(scriptRes.status).toBe(200);
+    expect((await scriptRes.json()).content).toContain("Notation recipes.");
+
+    // The default kind (experience) sees its OWN user copy instead.
+    const defRes = await app.request("/api/copilot/skills/dice-helper/content");
+    expect((await defRes.json()).content).toContain("Experience side.");
+
+    const missing = await app.request("/api/copilot/skills/dice-helper/content?kind=sidechat-ooc");
+    expect(missing.status).toBe(404);
+  });
+});
+
+describe("POST /api/copilot/skills + PUT /api/copilot/skills/:id — save (AP-23a)", () => {
+  test("create → 201 with the fresh entry DTO written under the kind's user root", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Plot Talk", description: "Talk plots.", body: "# Body\n" }),
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({
+      id: "plot-talk",
+      source: "user",
+      name: "Plot Talk",
+      description: "Talk plots.",
+      manifestPath: "plot-talk/SKILL.md",
+      shadowsBuiltin: false,
+    });
+    expect(await Bun.file(join(userRoot, "plot-talk", "SKILL.md")).text()).toContain("Talk plots.");
+  });
+
+  test("create with ?kind=script lands in the SCRIPT user root — not the experience one", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills?kind=script", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Dice Notation", description: "d.", body: "b" }),
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).id).toBe("dice-notation");
+    expect(await Bun.file(join(scriptUserRoot, "dice-notation", "SKILL.md")).text()).toContain("description: d");
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("update → 200 with the fresh DTO; other files of the skill folder kept", async () => {
+    await mkdir(join(userRoot, "my-skill", "references"), { recursive: true });
+    await Bun.write(
+      join(userRoot, "my-skill", "SKILL.md"),
+      "---\nname: my-skill\ndescription: old\nlicense: MIT\n---\n\n# old\n",
+    );
+    await Bun.write(join(userRoot, "my-skill", "references", "rules.md"), "# Rules\n");
+
+    const app = makeApp();
+    const res = await app.request("/api/copilot/skills/my-skill", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Renamed", description: "new", body: "# New\n" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBe("Renamed");
+    expect(body.description).toBe("new");
+
+    const onDisk = await Bun.file(join(userRoot, "my-skill", "SKILL.md")).text();
+    expect(onDisk).toContain("license: MIT");
+    expect(await Bun.file(join(userRoot, "my-skill", "references", "rules.md")).text()).toBe("# Rules\n");
+  });
+
+  test("built-in id → 409 Conflict; malformed JSON → 400; missing id → 404", async () => {
+    await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
+
+    const app = makeApp();
+    const conflict = await app.request("/api/copilot/skills/profile-overview", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "X", description: "d", body: "b" }),
+    });
+    expect(conflict.status).toBe(409);
+    expect((await conflict.json()).error.kind).toBe("Conflict");
+    expect(await Bun.file(join(builtinRoot, "profile-overview", "SKILL.md")).text()).toContain("built-in");
+
+    const malformed = await app.request("/api/copilot/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+
+    const missing = await app.request("/api/copilot/skills/nope", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "X", description: "d", body: "b" }),
+    });
+    expect(missing.status).toBe(404);
   });
 });
 

@@ -285,7 +285,7 @@ export function InsightsPanel() {
             <span className="max-sm:w-full">
               <button
                 type="button"
-                className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-s3 disabled:hover:text-t2 max-sm:w-full max-sm:justify-center"
+                className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-s3 disabled:hover:text-t2 max-sm:w-full max-sm:justify-center"
                 disabled={characterTrackerTemplate === null}
                 onClick={() => setTemplateConfirm("apply")}
               >
@@ -296,7 +296,7 @@ export function InsightsPanel() {
           </CustomTooltip>
           <button
             type="button"
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 max-sm:w-full max-sm:justify-center"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 max-sm:w-full max-sm:justify-center"
             onClick={openSaveTrackerTemplate}
           >
             <Ic.floppy />
@@ -364,7 +364,7 @@ export function InsightsPanel() {
         />
       )}
       {!objectiveEnabled && !trackerEnabled && !diceEnabled && !experienceEnabled && (
-        <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">
+        <p className="px-1 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t4">
           {t("insights_coming_soon_hint")}
         </p>
       )}
@@ -413,8 +413,8 @@ function FeatureToggleRow({ icon, title, desc, checked, disabled, onChange }: {
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="font-ui text-[13px] font-semibold text-t1">{title}</div>
-        <div className="mt-0.5 font-ui text-[12px] leading-relaxed text-t3">{desc}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{title}</div>
+        <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{desc}</div>
       </div>
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <Toggle checked={checked} onChange={onChange} disabled={disabled} />

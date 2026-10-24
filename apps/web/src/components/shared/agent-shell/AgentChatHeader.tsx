@@ -31,7 +31,7 @@ export function AgentChatHeader({
   onActivate,
   onNew,
   onRename,
-  onOpenProfile,
+  onOpenSettings,
 }: {
   leading?: ReactNode;
   contextRing?: ReactNode;
@@ -41,7 +41,7 @@ export function AgentChatHeader({
   onActivate: (threadId: string) => void;
   onNew: () => void;
   onRename: (threadId: string, title: string) => void;
-  onOpenProfile: () => void;
+  onOpenSettings: () => void;
 }) {
   const { t } = useT();
   return (
@@ -59,10 +59,10 @@ export function AgentChatHeader({
       <button
         type="button"
         data-testid="copilot-profile-gear-btn"
-        aria-label={t("copilot_profile_title")}
-        title={t("copilot_profile_title")}
+        aria-label={t("agent_settings_title")}
+        title={t("agent_settings_title")}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1"
-        onClick={onOpenProfile}
+        onClick={onOpenSettings}
       >
         <Icons.Settings className="h-3.5 w-3.5" />
       </button>

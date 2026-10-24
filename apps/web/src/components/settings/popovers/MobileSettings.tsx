@@ -53,7 +53,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 					<div className="overflow-hidden rounded-lg border border-border2 bg-surface">
 						<div className="px-3 pt-3 pb-1">
 							<div className="mb-1.5 flex items-center gap-2">
-								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent font-body text-[9px] font-semibold text-on-accent">S</div>
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent font-body text-[calc(var(--ui-fs)-5px)] font-semibold text-on-accent">S</div>
 								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">Silvius</span>
 								<span className="ml-auto font-ui text-[calc(var(--ui-fs)-5px)] text-t3">12:45</span>
 							</div>
@@ -67,7 +67,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						</div>
 						<div className="px-3 pt-2 pb-3">
 							<div className="mb-1.5 flex items-center gap-2">
-								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">U</div>
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)-5px)] italic text-t3">U</div>
 								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">You</span>
 							</div>
 							<div className="my-0.5 rounded-md bg-user-bg px-3 py-2.5">
@@ -113,7 +113,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							</div>
 							<span className="font-body text-[length:var(--ui-fs)] text-t1">{settings.showRail ? t("hide_rail") : t("show_rail")}</span>
 						</div>
-						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[18px]" />
+						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[calc(var(--ui-fs)+4px)]" />
 					</div>
 				</div>
 
@@ -121,7 +121,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				<div className="px-5 py-2.5">
 					<div className="flex items-center gap-3 mb-2">
 						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-							<span className="font-body text-[16px] font-bold">A</span>
+							<span className="font-body text-[calc(var(--ui-fs)+2px)] font-bold">A</span>
 						</div>
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
 					</div>
@@ -216,7 +216,7 @@ function ScriptWarningsRow() {
 					checked={scriptWarnings.checked}
 					onChange={scriptWarnings.onChange}
 					aria-label={t("tweaks_script_warnings")}
-					className="text-[18px]"
+					className="text-[calc(var(--ui-fs)+4px)]"
 				/>
 			</div>
 		</div>

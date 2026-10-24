@@ -139,6 +139,17 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     jsonSchemaHint:
       '{ "name": "...", "findRegex": "/pattern/flags", "replaceString": "...", "trimStrings": ["..."], "applyTarget": "persist|display|prompt|display_prompt", "depthMode": "all|recent|older|range", "depthValue": 4, "explanation": "..." }',
   },
+  // Skill-body drafting for the skill library (AGENT_SHELL_POLISH AP-23c).
+  // The modal edits the skill's markdown body — text output, reasoning kept
+  // in the stream like the other editor modes (lore_entry's config shape).
+  skill: {
+    mode: "skill",
+    presetKey: "skill",
+    defaultPromptFile: "skill-ai-prompt.md",
+    stripReasoning: false,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
 };
 
 /** Resolve the default prompt FILE NAME for a mode, honoring a format-aware

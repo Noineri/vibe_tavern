@@ -1,5 +1,6 @@
 import { type SetStateAction } from "react";
 import { create } from "zustand";
+import { PROVIDER_PROFILE_GENERATION_DEFAULTS as D } from "@vibe-tavern/domain";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 
 export interface ProviderState {
@@ -27,21 +28,21 @@ export const useProviderStore = create<ProviderStore>()((set) => ({
     models: [],
     providerType: "",
     providerPreset: "",
-    temperature: 1.0,
-    topP: 1.0,
-    minP: 0,
-    topK: 0,
-    topA: 0,
-    frequencyPenalty: 0.0,
-    presencePenalty: 0.0,
-    repetitionPenalty: 1.0,
-    maxTokens: 2000,
-    stopSequences: [],
-    seed: null,
-    reasoningEffort: "auto",
-    showReasoning: false,
-    streamResponse: true,
-    customSamplers: false,
+    temperature: D.temperature,
+    topP: D.topP,
+    minP: D.minP,
+    topK: D.topK,
+    topA: D.topA,
+    frequencyPenalty: D.frequencyPenalty,
+    presencePenalty: D.presencePenalty,
+    repetitionPenalty: D.repetitionPenalty,
+    maxTokens: D.maxTokens,
+    stopSequences: [...D.stopSequences],
+    seed: D.seed,
+    reasoningEffort: D.reasoningEffort,
+    showReasoning: D.showReasoning,
+    streamResponse: D.streamResponse,
+    customSamplers: D.customSamplers,
   },
 
   setConnection: (action) => set((state) => ({

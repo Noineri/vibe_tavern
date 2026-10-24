@@ -185,8 +185,13 @@ describe("ImageGenSection", () => {
     });
     useImageGenChatStore.setState({ activeImageGenProfileId: "session" });
     const view = renderSection(imageGen);
-    await waitFor(() => expect(view.getByText("★ Session choice")).toBeTruthy());
-    expect(view.queryByText("★ Saved default")).toBeNull();
+    // Behavior change (was: `★ Session choice` as one title text node; now:
+    // the ★ lives in the status slot per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    await waitFor(() => expect(view.getByText("Session choice")).toBeTruthy());
+    const sessionRow = view.getByText("Session choice").closest('[data-profile-id="session"]');
+    expect(sessionRow?.textContent).toContain("★");
+    const defaultRow = view.getByText("Saved default").closest('[data-profile-id="default"]');
+    expect(defaultRow?.textContent).not.toContain("★");
   });
 
   it("passes hook-owned search to the unified list and disables its drag handles while active", async () => {

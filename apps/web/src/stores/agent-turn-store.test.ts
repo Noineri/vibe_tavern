@@ -311,6 +311,8 @@ function wire(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilotMes
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };

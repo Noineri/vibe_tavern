@@ -163,7 +163,7 @@ export function AiAssistantConnectionFields({
   if (!useChatModel) return fieldsGrid;
   return (
     <div>
-      <label className={useChatModel.className ?? "mb-2 mt-1.5 flex items-center gap-2 font-ui text-[12px] text-t2"}>
+      <label className={useChatModel.className ?? "mb-2 mt-1.5 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2"}>
         <Toggle checked={useChatModel.checked} onChange={useChatModel.onChange} disabled={useChatModel.disabled} />
         {useChatModel.label}
       </label>

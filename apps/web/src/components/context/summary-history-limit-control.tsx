@@ -29,7 +29,7 @@ export function SummaryHistoryLimitControl(input: {
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5" title={input.autoHint}>
 				<Toggle checked={input.latched} onChange={input.onAutoChange} aria-label={input.autoLabel} />
-				<span className="font-ui text-[11px] text-t3">{input.autoLabel}</span>
+				<span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{input.autoLabel}</span>
 			</div>
 		</div>
 	);

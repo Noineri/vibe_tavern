@@ -104,10 +104,11 @@ export interface AgentController extends AgentTurnActions {
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
   /** Live model reasoning accumulated from reasoning-deltas this turn,
-   *  rendered with the co-author's MessageReasoning "minimal" pattern (UX
-   *  2026-08-16 remark 4). Cleared on settle alongside pendingText — the
-   *  copilot's persisted turns do not carry reasoning (server-side TurnSegment
-   *  has no reasoning kind), so the block is live-only for now. */
+   *  rendered with the co-author's MessageReasoning `inline` preset on the
+   *  live caption line (AP-29). Cleared on settle alongside pendingText —
+   *  the settle+refetch handover replaces it with the persisted caption
+   *  toggle (the clear precedes the async refetch, so the handover shows
+   *  no gap and no duplicate: production never renders both at once). */
   pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates — the persisted user row only appears after the turn settles
@@ -677,5 +678,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

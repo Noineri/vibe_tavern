@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import { experienceCopilotThreads } from "../src/db-schema.js";
 import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
+import { deriveThreadTitleFromFirstMessage } from "../src/stores/experience-copilot-auto-title.js";
 import type { CopilotContextMetrics } from "../src/stores/experience-copilot-row-parse.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -157,6 +158,37 @@ describe("ExperienceCopilotStore", () => {
     const after = await store.getById(thread.id);
     // updated_at strictly advanced (advancing clock → later ISO timestamp).
     expect(after!.updatedAt >= before!.updatedAt).toBe(true);
+  });
+
+  // AP-28: the reasoning pair round-trips through appendMessage/listMessages —
+  // values when written, nulls when omitted (rows written before the columns
+  // existed read the same nulls: the migration is additive with no backfill).
+  test("appendMessage round-trips the reasoning pair (AP-28)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap28", "T");
+
+    const withReasoning = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "answer",
+      reasoning: "first burst\n\nsecond burst",
+      reasoningDurationMs: 4200,
+    });
+    expect(withReasoning.reasoning).toBe("first burst\n\nsecond burst");
+    expect(withReasoning.reasoningDurationMs).toBe(4200);
+
+    const withoutReasoning = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "plain answer",
+    });
+    expect(withoutReasoning.reasoning).toBeNull();
+    expect(withoutReasoning.reasoningDurationMs).toBeNull();
+
+    // listMessages (the loop's history load) reads the same pair back.
+    const listed = await store.listMessages(thread.id);
+    expect(listed.map((m) => [m.role, m.reasoning, m.reasoningDurationMs])).toEqual([
+      ["assistant", "first burst\n\nsecond burst", 4200],
+      ["assistant", null, null],
+    ]);
   });
 
   test("appendMessage + listSessions ordering: most recently touched session first", async () => {
@@ -318,6 +350,25 @@ describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
     await store.setAutoCompact(thread.id, false);
     expect(await store.getAutoCompact(thread.id)).toBe(false);
     expect((await store.getById(thread.id))?.autoCompact).toBe(false);
+  });
+
+  test("startNewSession seeds autoCompact from the kind default param (AP-20): absent keeps the column default (on), false is honored, and the value is frozen at creation", async () => {
+    const { store } = await setup();
+    // Absent param — the pre-AP-20 call shape: the column default (on).
+    const defaulted = await store.startNewSession("script_ap20_default", "T");
+    expect(defaulted.autoCompact).toBe(true);
+    // Explicit on is byte-identical to the default.
+    const explicitOn = await store.startNewSession("script_ap20_on", "T", true);
+    expect(explicitOn.autoCompact).toBe(true);
+    // The kind's default off seeds the new row's toggle off.
+    const off = await store.startNewSession("script_ap20_off", "T", false);
+    expect(off.autoCompact).toBe(false);
+    expect(await store.getAutoCompact(off.id)).toBe(false);
+    // The value is read at CREATION only — a later default change is the
+    // adapter's concern; the store never rewrites an existing row on its own.
+    const offReloaded = await store.startNewSession("script_ap20_off", "T2", true);
+    expect(offReloaded.autoCompact).toBe(true);
+    expect((await store.getById(off.id))?.autoCompact).toBe(false);
   });
 
   test("legacy metrics JSON without attachedTokens parses with attachedTokens 0 (CX-1)", async () => {
@@ -578,5 +629,73 @@ describe("ExperienceCopilotStore — setToolResultOutput (TAG-5)", () => {
     expect(
       await store.setToolResultOutput(thread.id, "tc_other_thread", { toolName: "ask_user", output: {} }),
     ).toBeNull();
+  });
+});
+
+// ─── AP-19: auto-title from the first user message ──────────────────────────
+
+describe("deriveThreadTitleFromFirstMessage (AP-19 — the ONE derivation)", () => {
+  test("first line only — everything after the first newline drops", () => {
+    expect(deriveThreadTitleFromFirstMessage("Fix the rules\nsecond line\nthird")).toBe("Fix the rules");
+  });
+
+  test("runs of whitespace collapse to single spaces; edges trim", () => {
+    expect(deriveThreadTitleFromFirstMessage("  make   it \t darker  ")).toBe("make it darker");
+  });
+
+  test("hard cap 120 chars on the collapsed first line", () => {
+    expect(deriveThreadTitleFromFirstMessage("x".repeat(200))).toHaveLength(120);
+  });
+});
+
+describe("ExperienceCopilotStore — auto-title from the first user message (AP-19)", () => {
+  test("empty title: the first user message titles the thread (first line, collapsed)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_set");
+
+    await store.appendMessage(thread.id, { role: "user", content: "  Polish the  rules\nplease\nand thank you" });
+
+    expect((await store.getById(thread.id))!.title).toBe("Polish the rules");
+  });
+
+  test("a >120-char first line titles with exactly its first 120 chars", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_cap");
+
+    await store.appendMessage(thread.id, { role: "user", content: "y".repeat(300) });
+
+    expect((await store.getById(thread.id))!.title).toBe("y".repeat(120));
+  });
+
+  test("rename wins: a thread titled before its first message is never auto-titled", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_rename", "Owner name");
+
+    await store.appendMessage(thread.id, { role: "user", content: "first message line" });
+
+    expect((await store.getById(thread.id))!.title).toBe("Owner name");
+  });
+
+  test("only the FIRST user message titles — a later user row leaves even an empty title empty", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_later");
+
+    await store.appendMessage(thread.id, { role: "user", content: "original opener" });
+    // The user clears the title back to "" (the client numbered-fallback
+    // state); the NEXT user message must not re-derive it.
+    await store.renameSession(thread.id, "");
+    await store.appendMessage(thread.id, { role: "user", content: "second message" });
+
+    expect((await store.getById(thread.id))!.title).toBe("");
+  });
+
+  test("non-user rows never title the thread", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap19_roles");
+
+    await store.appendMessage(thread.id, { role: "assistant", content: "assistant opener" });
+    await store.appendMessage(thread.id, { role: "tool", content: "{}", toolCallId: "tc_ap19" });
+
+    expect((await store.getById(thread.id))!.title).toBe("");
   });
 });

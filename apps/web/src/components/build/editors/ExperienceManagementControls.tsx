@@ -101,7 +101,7 @@ export function ExperienceManagementControls({
   return (
     <>
       <TextInput
-        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
+        className="min-w-0 max-md:w-auto flex-1 !text-[calc(var(--ui-fs)+1px)] font-semibold"
         type="text"
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
@@ -118,7 +118,7 @@ export function ExperienceManagementControls({
         <CustomTooltip content={t("experience_editor_trust_hint")}>
           <span
             className={cn(
-              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
+              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase",
               scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
             )}
           >
@@ -141,7 +141,7 @@ export function ExperienceManagementControls({
         {/* Save-state text is desktop-only: on mobile the state is conveyed by
             the SaveButton's visual state + the Edit-tab dirty badge (E6). */}
         <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
+          className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
           title={saveError ?? undefined}
         >
           {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}

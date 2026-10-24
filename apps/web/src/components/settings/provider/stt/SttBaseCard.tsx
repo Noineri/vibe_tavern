@@ -6,7 +6,7 @@ import { useT } from "../../../../i18n/context.js";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { configString } from "./stt-form-helpers.js";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 interface SttBaseCardProps {
   /** Current form (clean, collapsed state — label/status derivation). */
@@ -57,11 +57,11 @@ export function SttBaseCard({ form, isDefault, onEdit, onSetDefault }: SttBaseCa
     <div className="mb-6" data-testid="stt-base-card">
       <div className="rounded-lg border border-border2 bg-s2 p-3 sm:p-4">
         <div className="min-w-0">
-          <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1" data-testid="stt-base-card-name">
+          <div className="mb-1 truncate font-ui text-[calc(var(--ui-fs)+2px)] font-semibold text-t1" data-testid="stt-base-card-name">
             {form.name}
           </div>
           <div
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[13px] text-t3 sm:flex-nowrap"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 sm:flex-nowrap"
             data-testid="stt-base-card-status"
           >
             <span>{backendLabel}</span>
@@ -87,7 +87,7 @@ export function SttBaseCard({ form, isDefault, onEdit, onSetDefault }: SttBaseCa
             type="button"
             onClick={onEdit}
             data-testid="stt-base-card-edit-btn"
-            className="flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent"
+            className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:text-accent"
           >
             <Icons.Edit /> {t("edit_settings_btn")}
           </button>
@@ -95,7 +95,7 @@ export function SttBaseCard({ form, isDefault, onEdit, onSetDefault }: SttBaseCa
             type="button"
             onClick={onSetDefault}
             data-testid="stt-base-card-default-btn"
-            className="min-h-9 rounded-md border border-accent bg-accent-dim px-3 font-ui text-[12px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-9 rounded-md border border-accent bg-accent-dim px-3 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isDefault}
           >
             {isDefault ? t("stt_is_default") : t("stt_make_default")}

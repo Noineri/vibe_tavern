@@ -119,6 +119,31 @@ function findLastUserMessageId(messages: readonly ExperienceCopilotMessageWire[]
   return null;
 }
 
+/**
+ * AP-29 follow-up 3: the ids of the persisted rows a regenerate replaces —
+ * every ASSISTANT row after the last user row of the `threadMessages` the
+ * regenerate started from (with no user row the whole feed is one turn, so
+ * every assistant row). Recorded at regenerate start; tool-role rows need
+ * no entries (they render anchored to a flow message inside the hidden
+ * fragment, or as the trailing group hidden while the set is non-empty).
+ */
+function findReplacedAssistantIds(messages: readonly ExperienceCopilotMessageWire[] | undefined): string[] {
+  if (messages === undefined) return [];
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  const ids: string[] = [];
+  for (let i = lastUserIndex + 1; i < messages.length; i++) {
+    const row = messages[i];
+    if (row?.role === "assistant") ids.push(row.id);
+  }
+  return ids;
+}
+
 /** The controller-owned turn state the actions drive (refs + writers). */
 export interface AgentTurnStateControls {
   isSendingRef: { current: boolean };
@@ -305,6 +330,24 @@ export interface AgentTurnActions {
   confirmDeleteTurn: () => Promise<void>;
   /** AP-11: drop the staged delete without touching the API. */
   cancelDeleteTurn: () => void;
+  /** AP-29 follow-up 2: a regenerate is in flight — the replaced turn
+   *  (every row after the last user row) is already gone server-side, so
+   *  the feed hides it until the settle refetch lands the stored truth.
+   *  True from the regenerate's turn-start reset to its settle (success,
+   *  failure, or cancel); sends and ask-answer continuations never set it.
+   *  AP-29 follow-up 3: on SUCCESS the replaced rows stay hidden past the
+   *  settle through `hiddenRegeneratedIds` below (this flag still drops at
+   *  the settle, as today) — the flag covers the flight, the set covers
+   *  the settle → refetch window. */
+  isRegenerating: boolean;
+  /** AP-29 follow-up 3: the replaced rows' ids (see `findReplacedAssistantIds`),
+   *  recorded at regenerate start. On success the set is KEPT past the settle
+   *  until a `threadMessages` array arrives without them (the server deleted
+   *  them, so the refetch landing the new turn is the natural end); on
+   *  refusal / failure / cancel it drops at once with the flag, so the
+   *  refetch shows the stored old turn with the error card. Null = no hide
+   *  (sends and ask-answer continuations never set it). */
+  hiddenRegeneratedIds: readonly string[] | null;
 }
 
 export function useAgentTurnActions(
@@ -356,6 +399,20 @@ export function useAgentTurnActions(
         toast.error(getT()("message_unavailable_no_provider"));
         return;
       }
+
+      // AP-29 follow-up 2: the replaced turn is already gone server-side
+      // once this stream opens (the regenerate mode deletes it before the
+      // history load), so the feed hides it from HERE to the settle — the
+      // new turn streams as a fresh turn, never joined to the replaced one.
+      // A refusal/failure clears it below, and the settle refetch shows the
+      // stored truth (the old turn) again, not a blank.
+      // AP-29 follow-up 3: record the replaced rows' ids alongside the flag
+      // (a later regenerate overwrites them with a fresh set) — the flag
+      // drops at the settle below, but the SET survives a success until the
+      // refetch lands (see the threadMessages effect next to the flag state).
+      setIsRegenerating(true);
+      const replacedIds = findReplacedAssistantIds(threadMessages);
+      setHiddenRegeneratedIds(replacedIds.length > 0 ? replacedIds : null);
 
       // Same turn-start reset as a send: the replaced turn's live activities
       // drop (the SSE below rebuilds them), and any stale ask/permission
@@ -420,6 +477,11 @@ export function useAgentTurnActions(
         isSendingRef.current = false;
         // AP-13: the retry answered — the card clears with the failure.
         setTurnFailure(null);
+        // AP-29 follow-up 3: the flag drops, the hide SET stays — the
+        // replaced rows hide until the settle refetch lands without them
+        // (no settle → refetch contract change: the effect below drops the
+        // set when `threadMessages` no longer contains them).
+        setIsRegenerating(false);
         onTurnSettled?.(true);
       } catch (error) {
         if (controller.signal.aborted) {
@@ -433,12 +495,17 @@ export function useAgentTurnActions(
         setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
+        // AP-29 follow-up 3: refusal / failure / cancel drops the hide at
+        // once with the flag (as the flag did alone before) — the settle
+        // refetch shows the stored old turn with the error card.
+        setIsRegenerating(false);
+        setHiddenRegeneratedIds(null);
         onTurnSettled?.(false);
       } finally {
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure],
   );
 
   const handleEditLast = useCallback(
@@ -484,8 +551,29 @@ export function useAgentTurnActions(
   // thread — the controller resets its ask/permission overrides the same way).
   const [pendingDelete, setPendingDelete] = useState<AgentPendingDelete | null>(null);
 
+  // AP-29 follow-up 2: the regenerate flight flag (see handleRegenerate).
+  // A thread switch drops it like the staged delete (never hide against
+  // the wrong thread — a switch mid-stream is disabled shell-side, so this
+  // is unreachable in production, the same guard shape as below).
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  // AP-29 follow-up 3: the replaced rows' hide set (see handleRegenerate).
+  // Dropped at once on refusal / failure / cancel above, on thread switch
+  // below, and — after a success — by the effect below once a `threadMessages`
+  // array arrives without them (the server deleted them, so the refetch that
+  // lands the new turn is the natural end; no settle → refetch change).
+  const [hiddenRegeneratedIds, setHiddenRegeneratedIds] = useState<readonly string[] | null>(null);
+
+  useEffect(() => {
+    if (hiddenRegeneratedIds === null || threadMessages === undefined) return;
+    const anyStillPresent = hiddenRegeneratedIds.some((id) => threadMessages.some((row) => row.id === id));
+    if (!anyStillPresent) setHiddenRegeneratedIds(null);
+  }, [threadMessages, hiddenRegeneratedIds]);
+
   useEffect(() => {
     setPendingDelete(null);
+    setIsRegenerating(false);
+    setHiddenRegeneratedIds(null);
   }, [threadId]);
 
   const requestDeleteTurn = useCallback(
@@ -510,5 +598,5 @@ export function useAgentTurnActions(
     [pendingDelete, handleDeleteTurn],
   );
 
-  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn };
+  return { handleRegenerate, handleDeleteTurn, handleEditLast, pendingDelete, requestDeleteTurn, confirmDeleteTurn, cancelDeleteTurn, isRegenerating, hiddenRegeneratedIds };
 }

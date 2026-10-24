@@ -47,7 +47,7 @@ mock.module("../../../../i18n/context.js", () => ({
 }));
 
 const { TtsLocalConnectionChip } = await import("./TtsLocalConnectionChip.js");
-import type { TtsProfileForm } from "./use-tts-profiles.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 
 function localForm(endpoint: string): TtsProfileForm {
   return {

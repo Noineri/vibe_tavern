@@ -202,19 +202,19 @@ export function LinkBindingPopover({
   );
 
   const pillCls = isMobile
-    ? "h-7 text-[12px]"
-    : "h-[22px] text-[11px]";
+    ? "h-7 text-[calc(var(--ui-fs)-2px)]"
+    : "h-[22px] text-[calc(var(--ui-fs)-3px)]";
   const pillAvatarSize = isMobile ? 22 : 18;
   // Picker body sizing: the mobile sheet gets thumb-sized chips (~34px tall,
   // 8px gaps -> ~40px effective target, 14px text); desktop is unchanged.
   const chipCls = isMobile
-    ? "h-[34px] gap-2 pl-1 pr-3 text-[14px]"
-    : "gap-1.5 pl-[3px] pr-2 py-[2px] text-[12px]";
+    ? "h-[34px] gap-2 pl-1 pr-3 text-[var(--ui-fs)]"
+    : "gap-1.5 pl-[3px] pr-2 py-[2px] text-[calc(var(--ui-fs)-2px)]";
   const chipAvatarSize = isMobile ? 22 : 18;
   const chipNameCls = isMobile ? "max-w-[160px]" : "max-w-[120px]";
-  const moreCls = isMobile ? "h-[34px] px-3 text-[14px]" : "px-2.5 py-[2px] text-[12px]";
-  const sectionHeadCls = isMobile ? "mb-2.5 text-[11px]" : "mb-2 text-[10px]";
-  const messageCls = isMobile ? "text-[14px]" : "text-[12px]";
+  const moreCls = isMobile ? "h-[34px] px-3 text-[var(--ui-fs)]" : "px-2.5 py-[2px] text-[calc(var(--ui-fs)-2px)]";
+  const sectionHeadCls = isMobile ? "mb-2.5 text-[calc(var(--ui-fs)-3px)]" : "mb-2 text-[calc(var(--ui-fs)-4px)]";
+  const messageCls = isMobile ? "text-[var(--ui-fs)]" : "text-[calc(var(--ui-fs)-2px)]";
   const addLabel = tooltipLabel || t("lore_link_targets");
 
   const sectionLabel = (key: LinkBindingTargetType): string => {
@@ -395,7 +395,7 @@ export function LinkBindingPopover({
               aria-label={addLabel}
               disabled={disabled}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border border-dashed border-border2 px-2.5 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-accent-t",
+                "flex items-center gap-1.5 rounded-md border border-dashed border-border2 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:border-accent hover:text-accent-t",
                 disabled && "pointer-events-none opacity-40",
               )}
             >
@@ -419,7 +419,7 @@ export function LinkBindingPopover({
                 <span
                   className={cn(
                     "flex items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors hover:border-accent hover:text-accent-t",
-                    isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
+                    isMobile ? "h-7 w-7 text-[calc(var(--ui-fs)-2px)]" : "h-[22px] w-[22px] text-[calc(var(--ui-fs)-2px)]",
                   )}
                 >
                   +

@@ -168,7 +168,7 @@ export function VoiceMessageButton(props: VoiceMessageButtonProps) {
         {recording ? (
           <>
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-danger" aria-hidden />
-            <span className="font-ui text-[11px] tabular-nums text-danger">{formatSeconds(elapsedMs)}</span>
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-danger">{formatSeconds(elapsedMs)}</span>
             <Icons.square />
           </>
         ) : (

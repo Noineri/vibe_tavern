@@ -53,8 +53,8 @@ export function PersonaListRow({
         <div className="relative self-center">
           <div
             className={cn(
-              "flex items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
-              isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
+              "flex items-center justify-center overflow-hidden rounded-full text-[calc(var(--ui-fs)+2px)] leading-6 shadow-inner ring-1 ring-white/5",
+              isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-[calc(var(--ui-fs)+4px)] leading-7",
               avatar
                 ? "bg-s3"
                 : isActive
@@ -86,7 +86,7 @@ export function PersonaListRow({
           </CustomTooltip>
         </div>
         {isMobile && persona.defaultForNewChats && (
-          <span className="self-center font-ui text-[10px] text-t3">{t("persona_default_label")}</span>
+          <span className="self-center font-ui text-[calc(var(--ui-fs)-4px)] text-t3">{t("persona_default_label")}</span>
         )}
         {/* Explicit activation — ProviderViewHeader make-active pattern:
             accent border + accent-dim fill, hover fills solid; the active
@@ -104,7 +104,7 @@ export function PersonaListRow({
           disabled={isActive}
           className={cn(
             "w-full shrink-0 cursor-pointer rounded-md border border-accent bg-accent-dim px-1 py-1 text-center font-ui font-medium leading-tight text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50",
-            isMobile ? "text-[10px]" : "text-[11px]",
+            isMobile ? "text-[calc(var(--ui-fs)-4px)]" : "text-[calc(var(--ui-fs)-3px)]",
           )}
         >
           {isActive ? t("persona_chat_active") : t("persona_use_for_chat")}
@@ -120,18 +120,18 @@ export function PersonaListRow({
           content at clamp-5 → ~10px margins). */}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-1 py-0.5", !isMobile && "self-stretch justify-center")}>
         <div className="flex items-baseline gap-2">
-          <div className="min-w-0 truncate font-ui text-[15px] font-semibold tracking-tight text-t1" title={persona.name}>{persona.name}</div>
-          <TokenCounter text={persona.description} className="ml-auto shrink-0 font-ui text-[11px] tabular-nums text-t3" />
+          <div className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)+1px)] font-semibold tracking-tight text-t1" title={persona.name}>{persona.name}</div>
+          <TokenCounter text={persona.description} className="ml-auto shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3" />
           {(() => {
             // For the 'custom' discriminator, show a compact subjective/objective
             // label derived from the structured forms (e.g. "ze/zir") instead of
             // the literal word "custom".
             if (persona.pronouns === "custom" && persona.pronounForms) {
               const f = persona.pronounForms;
-              return <div className="shrink-0 font-ui text-[13px] text-t3">{f.subjective}/{f.objective}</div>;
+              return <div className="shrink-0 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{f.subjective}/{f.objective}</div>;
             }
             if (persona.pronouns && persona.pronouns !== "custom") {
-              return <div className="shrink-0 font-ui text-[13px] text-t3">{persona.pronouns}</div>;
+              return <div className="shrink-0 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{persona.pronouns}</div>;
             }
             return null;
           })()}
@@ -140,7 +140,7 @@ export function PersonaListRow({
             the left column provides; D-7: clamp-5 desktop, vertically
             centered by the column's justify-center (≈195 chars at 39/line,
             +21% vs the old full-width clamp-3) / clamp-4 mobile. */}
-        <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-4" : "line-clamp-5")}>{persona.description}</div>
+        <div className={cn("font-ui text-[calc(var(--ui-fs)-1px)] leading-snug text-t3", isMobile ? "line-clamp-4" : "line-clamp-5")}>{persona.description}</div>
       </div>
     </div>
   );

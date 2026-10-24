@@ -102,6 +102,8 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };
@@ -130,8 +132,15 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByText("Here are the rules")).toBeDefined();
   });
 
-  it("shows the live reasoning block in the co-author pattern when pendingReasoning is non-empty (UX 2026-08-16 remark 4)", () => {
-    const { getByTestId, queryByTestId, rerender } = render(
+  // ── AP-29: the live block is the inline preset on the live caption line ─
+  // WAS (characterized pre-change, UX 2026-08-16 remark 4): a separate
+  // `copilot-pending-reasoning-row` (avatar + the co-author's minimal block)
+  // rendered above the pending text. NOW (plan §AP-29): the live block uses
+  // the SAME inline preset in the SAME place as the persisted one — the
+  // toggle sits on the live caption row; at settle it hands over to the
+  // persisted caption toggle with no gap and no duplicate.
+  it("shows the live reasoning toggle on the live caption row (AP-29 inline preset)", () => {
+    const { container, getByText, getByTestId, queryByText, queryByTestId, rerender } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
@@ -141,7 +150,7 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByTestId("copilot-host-caption")).toBeNull();
 
     rerender(
       <AgentMessageList
@@ -153,12 +162,23 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    // The row exists and carries the co-author MessageReasoning minimal body.
-    // Body starts collapsed (defaultOpen=false) — expand via the header click.
-    const row = getByTestId("copilot-pending-reasoning-row");
-    expect(row.getAttribute("data-role")).toBe("assistant");
-    fireEvent.click(row.querySelector("button")!);
-    expect(row.textContent).toContain("thinking about the rules");
+    // The toggle lives ON the caption row (title + reasoning part only),
+    // collapsed by default — the old separate pending row is gone.
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("✦ agent_title");
+    expect(caption.textContent).toContain("reasoning");
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByText("thinking about the rules")).toBeNull();
+    // The live turn streams no duration (pendingReasoning is text-only).
+    expect(caption.textContent).not.toContain("(4.2s)");
+
+    // Expanding puts the mono body on its own full-width line under the
+    // row, above the turn's text.
+    fireEvent.click(getByText("reasoning"));
+    const body = getByText("thinking about the rules");
+    expect(caption.contains(body)).toBe(true);
+    expect(body.closest(".basis-full")).not.toBeNull();
+    expect(container.querySelector(".basis-full")!.textContent).toContain("thinking about the rules");
   });
 
   it("shows the live pendingText assistant bubble when non-empty", () => {
@@ -1270,8 +1290,12 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     expect(captions[1]!.nextElementSibling!.textContent).toContain("third reply");
   });
 
-  it("a turn starting with hidden tool calls shows the caption above its first rendered text", () => {
-    const { getAllByTestId } = render(
+  it("a tool-first turn shows the caption above its tool accordion, not between accordion and text", () => {
+    // WAS (AP-4): the caption sat above the turn's first visible text, i.e.
+    // BELOW the turn's tool accordion — it jumped at settle (the live
+    // caption streams above the accordion). NOW (AP-29 follow-up): one
+    // caption at the top of the turn, the same place live and persisted.
+    const { getByTestId, getByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[
@@ -1286,9 +1310,30 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
       />,
     );
 
-    const captions = getAllByTestId("copilot-host-caption");
-    expect(captions).toHaveLength(1);
-    expect(captions[0]!.nextElementSibling!.textContent).toContain("visible reply");
+    const caption = getByTestId("copilot-host-caption");
+    const accordion = getByTestId("copilot-tool-accordion");
+    expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(accordion.compareDocumentPosition(getByText("visible reply")) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+  });
+
+  it("a turn with neither text nor reasoning shows no caption", () => {
+    // The empty carrier renders nothing and earns nothing — the rule for
+    // tool-only turns without reasoning, extended to a bare carrier.
+    const { queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "c1", role: "assistant", content: "" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryByTestId("copilot-host-caption")).toBeNull();
   });
 
   it("an assistant turn with no visible text shows no caption", () => {
@@ -1372,6 +1417,322 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     const captions = getAllByTestId("copilot-host-caption");
     expect(captions).toHaveLength(1);
     expect(captions[0]!.nextElementSibling!.textContent).toContain("Step one");
+  });
+});
+
+// ─── AP-29: kept reasoning in the co-author's block (inline preset) ───────
+// A persisted assistant turn that carries reasoning shows the SHARED
+// MessageReasoning (never a new component) ON the caption line: collapsed,
+// the row reads «✦ title · label (4.2s) caret»; expanded, the minimal mono
+// body opens full-width under that row, above the turn's text and tool
+// rows. WAS (characterized at AP-28): wire fields persisted + served, but
+// NOTHING rendered them. NOW: the inline preset below.
+describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
+  it("a persisted turn with reasoning shows the toggle on the caption row, collapsed by default", () => {
+    const { getByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("✦ agent_title");
+    expect(caption.textContent).toContain("reasoning");
+    expect(caption.textContent).toContain("(4.2s)");
+    // Collapsed: the body is absent; the turn text still follows the row.
+    expect(queryByText("kept thought")).toBeNull();
+    expect(caption.nextElementSibling!.textContent).toContain("visible reply");
+  });
+
+  it("expanding puts the body on its own full-width line under the caption row", () => {
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    fireEvent.click(getByText("reasoning"));
+    const caption = getByTestId("copilot-host-caption");
+    const body = getByText("kept thought");
+    // The body stays INSIDE the caption row (its own full-width flex line)
+    // and the turn's text still follows the row — never pushed elsewhere.
+    expect(caption.contains(body)).toBe(true);
+    expect(body.closest(".basis-full")).not.toBeNull();
+    expect(body.className).toContain("font-mono");
+    expect(caption.nextElementSibling!.textContent).toContain("visible reply");
+  });
+
+  it("a turn whose first row is a tool carrier shows the carrier's reasoning on the caption", () => {
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "", reasoning: "carrier thought", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          captionToolRow("t1", "c1"),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // AP-28 attaches the pair to the FIRST assistant row (text OR carrier),
+    // so the caption above the turn's first visible text carries it.
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(1.2s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(getByText("carrier thought")).toBeDefined();
+  });
+
+  it("null reasoning renders no block — the caption stays the bare title", () => {
+    const { getByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toBe("✦ agent_title");
+    expect(queryByText("reasoning")).toBeNull();
+  });
+
+  it("copy forwards the turn text WITHOUT the kept reasoning", () => {
+    const turnRow = turnRowCallbacks();
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnRow={turnRow}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-copy"));
+    expect(turnRow.onCopy.mock.calls[0]).toEqual(["visible reply"]);
+  });
+
+  it("a finished live turn shows exactly ONE block (the persisted toggle)", () => {
+    // Post-settle props: the controller cleared pendingReasoning, the
+    // reloaded turn carries its reasoning — one toggle, no live remnant.
+    const { queryAllByText, queryByTestId, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    expect(queryByText("kept thought")).toBeNull();
+  });
+
+  it("a live continuation joins the turn's caption block — no second caption, no pending row", () => {
+    // WAS: the answer-continuation path (no optimistic user row) kept the
+    // live toggle in its own `copilot-pending-reasoning-row` until the
+    // settle+refetch handover (two toggles mid-turn). NOW (AP-29
+    // follow-up): the live reasoning joins the caption block it streams
+    // into (the same blank-line join) — one toggle, and the block holds
+    // the same text when the turn lands.
+    const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "earlier reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText=""
+        pendingReasoning="continuation thought"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(4.2s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(caption.querySelector("pre")!.textContent).toBe("kept thought\n\ncontinuation thought");
+  });
+
+  it("live reasoning joins a bare caption — the toggle appears on the turn it continues", () => {
+    // The turn shows persisted text but carries no kept reasoning yet (bare
+    // title); the streaming delta still joins that caption's block instead
+    // of opening its own row.
+    const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "earlier reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning="live thought"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+    fireEvent.click(getByText("reasoning"));
+    expect(getByTestId("copilot-host-caption").querySelector("pre")!.textContent).toBe("live thought");
+  });
+
+  it("a turn with two reasoning-carrying rows shows ONE toggle with both texts joined and durations summed", () => {
+    // An ask answer starts a new request WITHOUT a user row, so one visible
+    // turn holds two reasoning-carrying rows — the caption carries ALL of
+    // the turn's reasoning in order, not just the first row's.
+    const { getByTestId, getByText, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "first reply", reasoning: "first thought", reasoningDurationMs: 3000 }),
+          askCarrier("ac1"),
+          askToolRow({ status: "answered", answer: "Rules" }),
+          message({ id: "a2", role: "assistant", content: "second reply", reasoning: "second thought", reasoningDurationMs: 4000 }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    const caption = getByTestId("copilot-host-caption");
+    expect(caption.textContent).toContain("(7.0s)");
+    fireEvent.click(getByText("reasoning"));
+    expect(caption.querySelector("pre")!.textContent).toBe("first thought\n\nsecond thought");
+  });
+
+  it("a tools-only turn with reasoning keeps its caption and toggle above its tool accordion", () => {
+    // WAS: a turn with reasoning but no text showed its reasoning only
+    // while streaming (the hoisted live caption) and lost it once the turn
+    // landed. NOW: the turn earns the caption through its kept reasoning,
+    // so the toggle survives the landing, above the turn's tools.
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "",
+            reasoning: "carrier thought", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          captionToolRow("t1", "c1"),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    const caption = getByTestId("copilot-host-caption");
+    const accordion = getByTestId("copilot-tool-accordion");
+    expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+    fireEvent.click(getByText("reasoning"));
+    expect(getByText("carrier thought")).toBeDefined();
+  });
+
+  it("a live tool-first turn shows the caption in the same position as after it lands", () => {
+    // The live caption sits above the live tool accordion; once the turn
+    // lands, the persisted caption sits above the same accordion — nothing
+    // moves at settle.
+    useAgentTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [{ toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" }],
+      },
+      feedByThread: {
+        "thread-1": [{ kind: "activity", id: "t1" }],
+      },
+    });
+    const { getByTestId, rerender } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText=""
+        pendingReasoning="thinking"
+        pendingUserContent=""
+      />,
+    );
+
+    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+      "copilot-tool-accordion",
+    );
+    // Land the turn: the persisted caption takes the same site.
+    useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    rerender(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({
+            id: "c1", role: "assistant", content: "",
+            reasoning: "thinking", reasoningDurationMs: 1200,
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "t1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          message({
+            id: "t1row", role: "tool", toolCallId: "t1",
+            content: JSON.stringify({
+              toolName: "write_buffer",
+              output: { target: "rules", proposed: "# R1", summary: "wrote" },
+            }),
+          }),
+          message({ id: "a1", role: "assistant", content: "visible reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+      "copilot-tool-accordion",
+    );
   });
 });
 
@@ -1860,5 +2221,291 @@ describe("ExperienceCopilotMessageList — starter prompts (AP-18)", () => {
 
     expect(getByText("agent_title")).toBeDefined();
     expect(queryByTestId("agent-starter-0")).toBeNull();
+  });
+});
+
+// ─── AP-29 follow-up 2: regenerate shows only the new turn; no avatar ───
+// WAS (characterized at fb55c477a): a regenerate in flight kept the replaced
+// turn visible until the settle refetch — and the live part counted as a
+// continuation of that old turn, so the new reasoning streamed appended to
+// the OLD turn's caption block with the new text under the old turn. NOW:
+// the replaced turn hides the moment the regenerate starts and the new turn
+// streams as a fresh turn with its own caption and only its own reasoning.
+// A refused/failed regenerate shows the stored truth again (the old turn +
+// the error card) once the flag clears. The ask-answer continuation path is
+// unchanged (it still joins its turn's caption). The fallback row (no host
+// title) keeps the live toggle but loses the avatar circle (AP-4).
+describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up 2)", () => {
+  function oldTurnThread() {
+    return [
+      message({ id: "u0", role: "user", content: "earlier question" }),
+      message({ id: "a0", role: "assistant", content: "earlier answer" }),
+      message({ id: "u1", role: "user", content: "go" }),
+      message({
+        id: "c1", role: "assistant", content: "", reasoning: "old thought", reasoningDurationMs: 1200,
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+        ]),
+      }),
+      captionToolRow("t1", "c1"),
+      message({ id: "a1", role: "assistant", content: "old reply" }),
+    ];
+  }
+
+  it("hides the replaced turn and streams the new turn as a fresh caption with only the live reasoning", () => {
+    const { getByText, queryByText, queryByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={oldTurnThread()}
+        pendingText="new reply"
+        pendingReasoning="new thought"
+        pendingUserContent=""
+        isSending
+        isRegenerating
+      />,
+    );
+
+    // The regenerated turn's user row stays; everything after it hides —
+    // the old text, its tool accordion, and its caption with old reasoning.
+    expect(getByText("go")).toBeDefined();
+    expect(getByText("earlier question")).toBeDefined();
+    expect(getByText("earlier answer")).toBeDefined();
+    expect(queryByText("old reply")).toBeNull();
+    expect(queryByTestId("copilot-tool-accordion")).toBeNull();
+    // Two captions: the earlier turn's own plus the new turn's fresh one —
+    // the fresh caption sits directly above the streaming reply.
+    const captions = getAllByTestId("copilot-host-caption");
+    expect(captions).toHaveLength(2);
+    expect(captions[0]!.nextElementSibling!.textContent).toContain("earlier answer");
+    expect(captions[1]!.nextElementSibling!.textContent).toContain("new reply");
+    // The fresh caption carries ONLY the live reasoning — never joined to
+    // the replaced turn's block.
+    fireEvent.click(captions[1]!.querySelector("button")!);
+    expect(captions[1]!.querySelector("pre")!.textContent).toBe("new thought");
+    expect(queryByText("old thought")).toBeNull();
+  });
+
+  it("keeps the digest card and everything before the replaced turn", () => {
+    const { container, getByText, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "u2", role: "user", content: "second question" }),
+          message({ id: "a2", role: "assistant", content: "second answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+        ]}
+        pendingText="new reply"
+        pendingReasoning="new thought"
+        pendingUserContent=""
+        isSending
+        isRegenerating
+      />,
+    );
+
+    // The digest moves before its anchor (u2) and stays; the replaced
+    // assistant row hides while its user row stays.
+    expect(getByText("second question")).toBeDefined();
+    expect(getByText("old question")).toBeDefined();
+    expect(queryByText("second answer")).toBeNull();
+    expect(container.querySelectorAll('[data-role="digest"]')).toHaveLength(1);
+  });
+
+  it("a refused/failed regenerate shows the stored truth again: the old turn plus the error card", () => {
+    // Post-settle props: the flag cleared, the refetch returned the old
+    // turn (the server never replaced it), the failure owns the card.
+    const onRetryTurn = mock(() => {});
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        turnFailure={{ category: "rate_limit" }}
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    expect(getByText("first answer")).toBeDefined();
+    expect(getByText("second answer")).toBeDefined();
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+  });
+
+  it("without the flag a continuation still joins its turn's caption (unchanged)", () => {
+    // The same props as the fresh-turn test but WITHOUT isRegenerating —
+    // the ask-answer shape: the old turn stays and the live reasoning
+    // folds into its caption block (the fb55c477a behavior, unchanged).
+    const { getByTestId, getByText, queryAllByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a1", role: "assistant", content: "old reply", reasoning: "old thought", reasoningDurationMs: 4200 }),
+        ]}
+        pendingText="more"
+        pendingReasoning="new thought"
+        pendingUserContent=""
+        isSending
+      />,
+    );
+
+    expect(getByText("old reply")).toBeDefined();
+    expect(queryAllByText("reasoning")).toHaveLength(1);
+    fireEvent.click(getByText("reasoning"));
+    expect(getByTestId("copilot-host-caption").querySelector("pre")!.textContent).toBe(
+      "old thought\n\nnew thought",
+    );
+  });
+
+  it("the fallback row (no host title) renders the live toggle with no avatar", () => {
+    const { getByTestId, getByText, queryByText } = render(
+      <AgentMessageList
+        kind="unknown-kind" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "go" })]}
+        pendingText=""
+        pendingReasoning="live thought"
+        pendingUserContent=""
+        isSending
+      />,
+    );
+
+    // The fallback keeps the live reasoning toggle (collapsed by default)
+    // but carries no avatar circle anywhere in the row.
+    const row = getByTestId("copilot-pending-reasoning-row");
+    expect(row.querySelector(".rounded-full")).toBeNull();
+    expect(queryByText("live thought")).toBeNull();
+    fireEvent.click(getByText("reasoning"));
+    expect(getByText("live thought")).toBeDefined();
+  });
+});
+
+// ─── AP-29 follow-up 3: no flash of the replaced turn after a successful regenerate ───
+// WAS (characterized at 216edbcda): `isRegenerating` dropped at the settle on
+// success while `messages` still held the pre-regenerate rows — the replaced
+// turn rendered again until the settle refetch landed. NOW: the controller
+// records the replaced rows' ids at regenerate start (`hiddenRegeneratedIds`)
+// and the list hides exactly those ids past the settle; the set empties when a
+// `messages` array arrives without them (the refetch landing the new turn).
+// Refusal / failure / cancel drop the set at once, so the old turn renders
+// right after the settle with the error card. The in-flight flag path above
+// is unchanged (positional hide while the stream runs).
+describe("ExperienceCopilotMessageList — replaced turn stays hidden past the settle (AP-29 follow-up 3)", () => {
+  function oldTurnThread() {
+    return [
+      message({ id: "u0", role: "user", content: "earlier question" }),
+      message({ id: "a0", role: "assistant", content: "earlier answer" }),
+      message({ id: "u1", role: "user", content: "go" }),
+      message({
+        id: "c1", role: "assistant", content: "", reasoning: "old thought", reasoningDurationMs: 1200,
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+        ]),
+      }),
+      captionToolRow("t1", "c1"),
+      message({ id: "a1", role: "assistant", content: "old reply" }),
+    ];
+  }
+
+  it("after the settle and before the refetch the replaced turn is not rendered", () => {
+    // Post-settle props on success: the flag cleared, the live text cleared
+    // exactly as for a normal send, the id set holds the replaced rows, and
+    // `messages` still holds the pre-regenerate rows (the refetch is in flight).
+    const { getByText, queryByText, queryByTestId, getAllByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={oldTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["c1", "a1"]}
+      />,
+    );
+
+    // The replaced turn's rows hide whole — text, tool accordion, caption —
+    // while the last user row and everything before it stay visible.
+    expect(getByText("go")).toBeDefined();
+    expect(getByText("earlier question")).toBeDefined();
+    expect(getByText("earlier answer")).toBeDefined();
+    expect(queryByText("old reply")).toBeNull();
+    expect(queryByTestId("copilot-tool-accordion")).toBeNull();
+    expect(queryByText("old thought")).toBeNull();
+    // Only the earlier turn's caption remains (the replaced turn's own hid
+    // with its rows; no live content earns a fresh one here).
+    expect(getAllByTestId("copilot-host-caption")).toHaveLength(1);
+  });
+
+  it("after the refetch (rows gone) a stale set hides nothing — the new turn shows on that render", () => {
+    // The same render that lands the refetch: the new rows' ids were never
+    // recorded, so intersecting the stale set with the current rows empties
+    // it — no one-frame blank of the new turn while the hook's effect drops
+    // the stored set on the next pass.
+    const { getByText, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u0", role: "user", content: "earlier question" }),
+          message({ id: "a0", role: "assistant", content: "earlier answer" }),
+          message({ id: "u1", role: "user", content: "go" }),
+          message({ id: "a9", role: "assistant", content: "new reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["c1", "a1"]}
+      />,
+    );
+
+    expect(getByText("new reply")).toBeDefined();
+    expect(queryByText("old reply")).toBeNull();
+  });
+
+  it("failure: with no hide set the old turn renders right after the settle, with the error card", () => {
+    // Post-settle props on failure: the set dropped at once (as the flag did
+    // before), the refetch returns the stored old turn, the failure owns the
+    // card — the feed shows the old turn plus the card, never a blank.
+    const onRetryTurn = mock(() => {});
+    const { getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={twoTurnThread()}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={null}
+        turnFailure={{ category: "rate_limit" }}
+        onRetryTurn={onRetryTurn}
+      />,
+    );
+
+    expect(getByText("first answer")).toBeDefined();
+    expect(getByText("second answer")).toBeDefined();
+    expect(getByTestId("copilot-error-card").getAttribute("data-variant")).toBe("failed");
+  });
+
+  it("the id hide never touches other turns, user rows, or digest cards", () => {
+    const { container, getByText, queryByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "old question" }),
+          message({ id: "a1", role: "assistant", content: "old answer" }),
+          message({ id: "u2", role: "user", content: "second question" }),
+          message({ id: "a2", role: "assistant", content: "second answer" }),
+          message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        hiddenRegeneratedIds={["a2"]}
+      />,
+    );
+
+    expect(getByText("old question")).toBeDefined();
+    expect(getByText("old answer")).toBeDefined();
+    expect(getByText("second question")).toBeDefined();
+    expect(queryByText("second answer")).toBeNull();
+    expect(container.querySelectorAll('[data-role="digest"]')).toHaveLength(1);
   });
 });

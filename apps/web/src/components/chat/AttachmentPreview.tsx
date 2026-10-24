@@ -88,7 +88,7 @@ export function AttachmentPreview({ attachments, onRemove }: {
             <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1" title={att.name}>
               {att.name}
             </span>
-            <span className="font-ui text-[10px] uppercase tracking-wider text-t3">
+            <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wider text-t3">
               {att.type === "audio" && att.durationMs !== undefined
                 ? formatDuration(att.durationMs)
                 : formatBytes(att.sizeBytes)}

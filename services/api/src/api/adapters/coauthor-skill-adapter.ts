@@ -1,6 +1,6 @@
 import type { CoauthorSkillsRuntimeApi, SkillCatalogEntryDto } from "../contract/runtime-api.js";
 import type { SkillCatalogEntry } from "../../domain/coauthor/skills/skill-scanner.js";
-import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
+import type { SkillLibraryService, SkillSaveInput } from "../../domain/coauthor/skills/skill-library.js";
 
 /**
  * Thin adapter between the `CoauthorSkillsRuntimeApi` contract and the
@@ -29,6 +29,12 @@ export class CoauthorSkillAdapter implements CoauthorSkillsRuntimeApi {
 
 	deleteSkill = (id: string) => this.skillLibrary.deleteSkill(id);
 
+	/** The save seam (AP-23a): the service owns id derivation, manifest
+	 *  rebuild, parse-before-write, and the atomic swap; the adapter only maps
+	 *  the returned entry to the wire DTO (stripping absolute paths). */
+	saveSkill = async (input: SkillSaveInput): Promise<SkillCatalogEntryDto> =>
+		toDto(await this.skillLibrary.saveSkill(input));
+
 	listSkills = async () => {
 		const { entries, errors } = await this.skillLibrary.listCatalog();
 		return {
@@ -47,4 +53,6 @@ export class CoauthorSkillAdapter implements CoauthorSkillsRuntimeApi {
 		const entry = await this.skillLibrary.readCatalogEntry(id);
 		return entry ? toDto(entry) : null;
 	};
+
+	readSkillContent = (id: string) => this.skillLibrary.readSkillContent(id);
 }

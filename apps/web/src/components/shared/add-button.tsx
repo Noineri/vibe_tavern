@@ -2,7 +2,7 @@ import type { MouseEventHandler, ReactNode } from "react";
 import { cn } from "../../lib/cn.js";
 
 const ADD_BUTTON_CLASS =
-  "flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent";
+  "flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:border-accent hover:text-accent";
 
 interface AddButtonProps {
   onClick: MouseEventHandler<HTMLButtonElement>;

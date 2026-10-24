@@ -38,6 +38,8 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };

@@ -20,6 +20,12 @@ export interface AgentKindSettings {
   providerProfileId: string | null;
   modelName: string | null;
   defaultProfileId: string | null;
+  /** The kind's default for the auto-compact toggle on NEW sessions (AP-20):
+   *  the stored 0/1 column with NULL resolved to ON — auto-compact was the
+   *  pre-AP-20 effective behavior, so an absent setting must not change it.
+   *  NOT part of the legacy ui_settings pair (that fallback is provider/model
+   *  only), so every no-row read is ON alike. */
+  autoCompactDefault: boolean;
   /** The row's `updated_at`, or the legacy ui_settings row's when the legacy
    *  fallback applied — `null` when there is neither a row nor a fallback
    *  (a kind that does not inherit and has nothing stored; the SC-0f
@@ -41,6 +47,10 @@ export interface AgentKindSettingsUpdate {
   providerProfileId?: string | null;
   modelName?: string | null;
   defaultProfileId?: string | null;
+  /** Present → writes 0/1; absent keeps the stored value. No `null` form —
+   *  "clear to unset" is indistinguishable from ON (NULL = on), so the
+   *  boolean is the whole patch vocabulary (AP-20). */
+  autoCompactDefault?: boolean;
 }
 
 /**
@@ -106,6 +116,7 @@ export class AgentKindSettingsStore {
         providerProfileId: null,
         modelName: null,
         defaultProfileId: null,
+        autoCompactDefault: true,
         updatedAt: null,
       };
     }
@@ -115,6 +126,9 @@ export class AgentKindSettingsStore {
       providerProfileId: legacy.copilotProviderId,
       modelName: legacy.copilotModelName,
       defaultProfileId: null,
+      // The legacy pair never carried an auto-compact default either — a
+      // kind without a row reads ON regardless of inheritance (AP-20).
+      autoCompactDefault: true,
       updatedAt: legacy.updatedAt,
     };
   }
@@ -157,6 +171,12 @@ export class AgentKindSettingsStore {
       insert.defaultProfileId = update.defaultProfileId;
       conflictSet.defaultProfileId = update.defaultProfileId;
     }
+    // AP-20: the auto-compact default is NOT part of the legacy pair — an
+    // absent field inserts NULL (reads back ON), never a legacy seed.
+    if (update.autoCompactDefault !== undefined) {
+      insert.autoCompactDefault = update.autoCompactDefault ? 1 : 0;
+      conflictSet.autoCompactDefault = update.autoCompactDefault ? 1 : 0;
+    }
     const [row] = await this.db
       .insert(agentKindSettings)
       .values({ agentKind: kind, ...insert })
@@ -173,6 +193,9 @@ export class AgentKindSettingsStore {
       providerProfileId: row.providerProfileId ?? null,
       modelName: row.modelName ?? null,
       defaultProfileId: row.defaultProfileId ?? null,
+      // NULL = on (AP-20): a row written before the column existed — or a
+      // partial patch that never named it — reads ON, the pre-AP-20 behavior.
+      autoCompactDefault: (row.autoCompactDefault ?? 1) === 1,
       updatedAt: row.updatedAt,
     };
   }

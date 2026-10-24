@@ -30,7 +30,7 @@ export function TraceJsonDownloads({
 }: TraceJsonDownloadsProps) {
   const { t } = useT();
   const buttonClass = cn(
-    "cursor-pointer rounded-md bg-s3 px-4 py-2 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1",
+    "cursor-pointer rounded-md bg-s3 px-4 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1",
     mobile && "h-9 w-full active:bg-border2",
   );
 

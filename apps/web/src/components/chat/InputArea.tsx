@@ -79,7 +79,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               <CustomTooltip content={t("generate_more_tooltip")}>
                 <button type="button"
                   onClick={handleGenerateMore}
-                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[12px] font-medium text-t2 transition-colors duration-150 hover:bg-s3 hover:text-t1"
+                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors duration-150 hover:bg-s3 hover:text-t1"
                 >
                   <Icons.Plus />
                   <span>{t("generate_more_label")}</span>
@@ -89,7 +89,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
           )}
           {isDragOver && (
             <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
-              <span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">
+              <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)+1px)] font-medium text-accent">
                 <Icons.target /> {t("drop_image_here")}
               </span>
             </div>
@@ -101,7 +101,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
 
           <AutoTextarea
             bare
-            className={cn(composerCls, "w-full !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
+            className={cn(composerCls, "w-full !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
             maxRows={12}
             minRows={3}
             placeholder={t("placeholder")}
@@ -171,7 +171,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                   data-testid="per-send-prefill-chip"
                 >
                   <Icons.user />
-                  <span className="font-ui text-[12px]">{t("per_send_prefill_chip_label")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)]">{t("per_send_prefill_chip_label")}</span>
                   {prefillArmed && <span aria-hidden className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent" />}
                 </button>
               </CustomTooltip>
@@ -247,7 +247,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 />
               {isSending ? (
                 <button type="button"
-                  className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+                  className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                   onClick={chat.handleCancelGeneration}
                 >
                   {t("cancel")}

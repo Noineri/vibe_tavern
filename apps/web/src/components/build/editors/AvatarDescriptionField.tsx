@@ -114,7 +114,7 @@ export function AvatarDescriptionField({
 			<div className="mb-2.5 flex items-center justify-between gap-2">
 				<label className={cn(lblCls, "!mb-0")}>{t("avatar_description_label")}</label>
 				<div className="flex items-center gap-2">
-					<span className="font-ui text-[12px] text-t3">{t("avatar_include_in_prompt")}</span>
+					<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("avatar_include_in_prompt")}</span>
 					<Toggle
 						checked={includeAvatarInPrompt}
 						onChange={(next) => onPatch({ includeAvatarInPrompt: next })}
@@ -173,7 +173,7 @@ export function AvatarDescriptionField({
 			</GenerationSurface>
 
 			{!hasAvatar && (
-				<p className="mt-2 font-ui text-[11px] text-t4">
+				<p className="mt-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 					{kind === "character"
 						? t("avatar_description_no_avatar_char")
 						: t("avatar_description_no_avatar_persona")}

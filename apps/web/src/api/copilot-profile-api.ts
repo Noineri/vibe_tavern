@@ -1,7 +1,7 @@
 /**
  * Typed RPC client for the copilot profile endpoints
  * (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). Mirrors the co-author module
- * client (`chat-api.ts` listCoauthorModules/…) but against
+ * client (`coauthor-module-api.ts` listCoauthorModules/…) but against
  * `client.api.copilot.profiles…`. Assignment (which profile an experience uses)
  * rides the existing script-update path: `scripts.copilot_profile_id` is a
  * soft link, and `null` = "use the built-in seed" (the resolver's fallback).

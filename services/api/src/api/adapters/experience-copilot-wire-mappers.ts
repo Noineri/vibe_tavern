@@ -56,15 +56,20 @@ export function toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMes
     content: m.content,
     toolCallsJson: m.toolCallsJson,
     toolCallId: m.toolCallId,
+    reasoning: m.reasoning,
+    reasoningDurationMs: m.reasoningDurationMs,
     createdAt: m.createdAt,
   };
 }
 
 /** Map the db store's kind-settings row into the api-contracts type —
  *  field-for-field so the nullability contract is explicit (nullable fields
- *  stay `null`). The one NON-row field is SC-7b's `servedChatModes`: chat
- *  modes are registry/descriptor facts, never stored, so the caller passes
- *  the kind's `servesChatModes` (the one source) beside the row. */
+ *  stay `null`). The NON-row fields are `servedChatModes` (SC-7b) and
+ *  `autoCompactDefault` (AP-20): chat modes are registry/descriptor facts,
+ *  never stored, so the caller passes the kind's `servesChatModes` (the one
+ *  source) beside the row; the auto-compact default IS stored (0/1/NULL) —
+ *  the db store already resolved NULL → `true` at read, so this mapper only
+ *  forwards the resolved boolean. */
 export function toKindSettingsWire(
   s: AgentKindSettings,
   servesChatModes: readonly ChatMode[],
@@ -76,6 +81,7 @@ export function toKindSettingsWire(
     defaultProfileId: s.defaultProfileId,
     updatedAt: s.updatedAt,
     servesChatModes: [...servesChatModes],
+    autoCompactDefault: s.autoCompactDefault,
   };
 }
 

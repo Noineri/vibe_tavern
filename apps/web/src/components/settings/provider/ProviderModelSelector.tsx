@@ -147,19 +147,19 @@ export function ProviderModelSelector({
 
   return (
     <div className="my-4">
-      <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{label || t("model_label")}</div>
+      <div className="mb-3 border-b border-border2 pb-2 font-ui text-[var(--ui-fs)] font-semibold text-t1">{label || t("model_label")}</div>
       {options.length > 0 && (freeOnly || groupByOwner) && (
         <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
           {freeOnly && (
             <div className="flex items-center gap-2">
               <Toggle checked={freeOnly.checked} onChange={freeOnly.onChange} className="!mb-0 !inline-flex" />
-              <span className="font-ui text-[12px] text-t2">{t("filter_free_only")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("filter_free_only")}</span>
             </div>
           )}
           {groupByOwner && (
             <div className="flex items-center gap-2">
               <Toggle checked={groupByOwner.checked} onChange={groupByOwner.onChange} className="!mb-0 !inline-flex" />
-              <span className="font-ui text-[12px] text-t2">{t("filter_group_by_owner")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("filter_group_by_owner")}</span>
             </div>
           )}
         </div>
@@ -179,7 +179,7 @@ export function ProviderModelSelector({
             height (owner 2026-09-22; same fix in the STT/TTS/image-gen model
             pickers). */}
         <div className="flex items-end gap-3">
-        {showsDropdown ? <div className="relative min-w-0 flex-1"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" data-testid={triggerTestId} className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{fetching && options.length === 0 && emptyOptionsLabel ? emptyOptionsLabel : selectedModel?.label || value || placeholder || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} selectedId={value} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} groupByOwner={groupByOwner?.checked} showContextLength={showContextLength} renderRowBadges={renderRowBadges} renderRowDescription={renderRowDescription} showPricing={showPricing} optionTestId={optionTestId} favoriteTestId={favoriteTestId} /></Command></Popover.Content></Popover.Portal></Popover.Root></div> : <div className="min-w-0 flex-1"><TextInput value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("custom_model_id_placeholder")} /></div>}
+        {showsDropdown ? <div className="relative min-w-0 flex-1"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" data-testid={triggerTestId} className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{fetching && options.length === 0 && emptyOptionsLabel ? emptyOptionsLabel : selectedModel?.label || value || placeholder || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} selectedId={value} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} groupByOwner={groupByOwner?.checked} showContextLength={showContextLength} renderRowBadges={renderRowBadges} renderRowDescription={renderRowDescription} showPricing={showPricing} optionTestId={optionTestId} favoriteTestId={favoriteTestId} /></Command></Popover.Content></Popover.Portal></Popover.Root></div> : <div className="min-w-0 flex-1"><TextInput value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("custom_model_id_placeholder")} /></div>}
         {showRefreshButton && onRefreshOptions && <button type="button" data-testid={refreshTestId ?? "provider-models-refresh"} onClick={refreshOptions} disabled={fetching} className={cn(
         "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
         // Mobile stays the icon-only 34px shape but must match the closed
@@ -187,14 +187,14 @@ export function ProviderModelSelector({
         // (Tailwind preflight html line-height) = 33.5px. The row is
         // items-end, so a shorter button would leave the row top edges
         // misaligned (MOBILE_UI_DEFECTS_REPORT step 5).
-        isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2"
+        isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2"
       )} title={t("refresh_models")}>{fetching ? <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle"><span className="h-1 w-1 rounded-full bg-accent animate-genp" /><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" /><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" /></span> : <Icons.Regen />}{!isMobile && <> {t("refresh_models")}</>}</button>}
         </div>
-        {showsDropdown && !selectedModel && value && <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>}
+        {showsDropdown && !selectedModel && value && <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent">{t("custom_model", { name: value })}</div>}
         {renderFieldHints}
       </div>
-      {fetchError && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close />{fetchError}</span></div>}
-      {!fetchError && requiresAuthForModels && options.length === 0 && !fetching && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close />{t("enter_api_key_for_models")}</span></div>}
+      {fetchError && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger"><Icons.Close />{fetchError}</span></div>}
+      {!fetchError && requiresAuthForModels && options.length === 0 && !fetching && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger"><Icons.Close />{t("enter_api_key_for_models")}</span></div>}
     </div>
   );
 }

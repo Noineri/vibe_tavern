@@ -4,11 +4,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	ARCH_GATE_MAX_LINES,
+	collectBannedFixedFontSizes,
+	collectFixedFontSizes,
+	collectFractionalLadderOffsets,
 	collectLayerImports,
 	collectOversizedFiles,
+	emptyFixedFontSizeCounts,
 	evaluateArchGate,
 	formatArchGateReport,
 	toLayerKey,
+	type FixedFontSizeCounts,
 } from "./arch-gate.js";
 
 function writeFixture(root: string, relativePath: string, content: string): void {
@@ -128,5 +133,135 @@ describe("architecture ratchet gate", () => {
 			{ file: "services/deleted.ts", baseline: ARCH_GATE_MAX_LINES + 1 },
 		]);
 		expect(formatArchGateReport(report)).toContain("bun scripts/arch-gate.ts --update-baseline");
+	});
+});
+
+describe("fixed font-size ratchet", () => {
+	function baseline(overrides: Partial<FixedFontSizeCounts> = {}): FixedFontSizeCounts {
+		return { ...emptyFixedFontSizeCounts(), ...overrides };
+	}
+
+	test("counts each fixed-size pattern and excludes tests, dev and the tweaks default", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(root, "apps/web/src/components/shared/A.tsx", '<a className="text-[11px]">1</a>\n<a className="text-[12px]">2</a>\n');
+			writeFixture(root, "apps/web/src/components/shared/Rem.tsx", '<a className="text-[0.8rem]">r</a>\n<b className="text-[1.6rem]">R</b>\n');
+			writeFixture(root, "apps/web/src/components/shared/B.tsx", '<b className="text-xs sm:text-sm text-red-500">x</b>\n');
+			writeFixture(root, "apps/web/src/components/build/C.tsx", '<c style={{ fontSize: 18 }}>y</c>\n<c style={{ fontSize: "12px" }}>z</c>\n');
+			writeFixture(root, "apps/web/src/styles.css", ".tag{font-size:11px}\n.note{font-size: 12.5px}\n");
+			writeFixture(root, "apps/web/src/lib/local-storage.ts", "export const DEFAULT_TWEAKS = { fontSize: 17, uiFontSize: 17 };\n");
+			writeFixture(root, "apps/web/src/components/shared/D.test.tsx", '<d className="text-[10px]">t</d>\n');
+			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<e className="text-[9px]">dev</e>\n');
+			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size:12px}\n");
+
+			expect(collectFixedFontSizes(root)).toEqual(
+				baseline({ pixelClasses: 2, remClasses: 2, tailwindSizeClasses: 2, inlineFontSizes: 2, cssFontSizes: 2 }),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("red: a probe text-[13px] fails the gate with the ladder message", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Probe.tsx",
+				'<a className="text-[13px]">x</a>\n<b className="text-xs">y</b>\n',
+			);
+			writeFixture(root, "apps/web/src/styles.css", ".tag{font-size:11px}\n");
+			writeFixture(root, "apps/web/src/components/shared/Skip.test.tsx", '<d className="text-[10px]">t</d>\n');
+			const banned = collectBannedFixedFontSizes(root);
+			expect(banned).toEqual([
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 1, column: 15, text: "text-[13px]", pattern: "pixelClasses" },
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 2, column: 15, text: "text-xs", pattern: "tailwindSizeClasses" },
+				{ file: "apps/web/src/styles.css", line: 1, column: 6, text: "font-size:11px", pattern: "cssFontSizes" },
+			]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], banned);
+			expect(report.bannedFixedFontSizes).toHaveLength(3);
+			const output = formatArchGateReport(report);
+			expect(output).toContain("Architecture gate: FAIL — 3 new architecture violation(s) detected.");
+			expect(output).toContain("[fixed-font-size] apps/web/src/components/shared/Probe.tsx:1:15");
+			expect(output).toContain("text-[13px]");
+			expect(output).toContain("[fixed-font-size] apps/web/src/components/shared/Probe.tsx:2:15");
+			expect(output).toContain("[fixed-font-size] apps/web/src/styles.css:1:6");
+			expect(output).toContain("text-[11px] → text-[calc(var(--ui-fs)-3px)]");
+			expect(output).toContain("text-xs → text-[calc(var(--ui-fs)-2px)] leading-4");
+			expect(output).toContain("font-size: 12px → font-size: calc(var(--ui-fs)-2px)");
+			expect(output).toContain("fixed font sizes 0 (plain ban: any occurrence fails)");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("green: zero fixed sizes pass with a block-less baseline", () => {
+		const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], []);
+		expect(report.bannedFixedFontSizes).toEqual([]);
+		const output = formatArchGateReport(report);
+		expect(output).toContain("Architecture gate: OK — all current violations are within baseline.");
+		expect(output).toContain("fixed font sizes 0 (plain ban: any occurrence fails)");
+	});
+});
+
+describe("fractional ladder offset ban", () => {
+	test("red: a fractional --ui-fs/--mfs offset fails the gate naming the rounding rule", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Probe.tsx",
+				'<a className="text-[calc(var(--ui-fs)-1.5px)]">x</a>\n<b className="text-[calc(var(--mfs)+1.5px)]">y</b>\n',
+			);
+			const offsets = collectFractionalLadderOffsets(root);
+			expect(offsets).toEqual([
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 1, column: 26, text: "var(--ui-fs)-1.5px" },
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 2, column: 26, text: "var(--mfs)+1.5px" },
+			]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), offsets);
+			expect(report.fractionalLadderOffsets).toHaveLength(2);
+			const output = formatArchGateReport(report);
+			expect(output).toContain("Architecture gate: FAIL — 2 new architecture violation(s) detected.");
+			expect(output).toContain("[fractional-ladder-offset] apps/web/src/components/shared/Probe.tsx:1:26");
+			expect(output).toContain("var(--ui-fs)-1.5px");
+			expect(output).toContain("round toward the base — the absolute value of the offset rounds down (-1.5px → -1px, -3.5px → -3px, +1.5px → +1px)");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("green: whole-pixel offsets and non-font fractional values are not the rule's business", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			// tracking/leading/padding fractional utilities, gap-1.5, rounded-[2.5px],
+			// a spaced css calc and the underscore tailwind form must all be judged
+			// only when the ladder variable itself carries the fractional offset.
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Whole.tsx",
+				[
+				'<a className="text-[calc(var(--ui-fs)-1px)] tracking-[0.06em] leading-[1.4] gap-1.5 p-2.5 rounded-[2.5px]">x</a>',
+				'<b style={{ fontSize: "calc(var(--ui-fs)+2px)" }}>y</b>',
+			].join("\n") + "\n",
+			);
+			writeFixture(root, "apps/web/src/styles.css", ".ok{font-size: calc(var(--ui-fs) - 1px)}\n");
+			expect(collectFractionalLadderOffsets(root)).toEqual([]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), []);
+			expect(formatArchGateReport(report)).toContain("Architecture gate: OK — all current violations are within baseline.");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("same scope and exclusions as the fixed-font rule: tests and components/dev ignored", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(root, "apps/web/src/components/shared/Skip.test.tsx", '<a className="text-[calc(var(--ui-fs)-1.5px)]">t</a>\n');
+			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<a className="text-[calc(var(--ui-fs)-1.5px)]">dev</a>\n');
+			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size: calc(var(--ui-fs) - 1.5px)}\n");
+			expect(collectFractionalLadderOffsets(root)).toEqual([]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

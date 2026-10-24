@@ -501,7 +501,7 @@ export function LorebookEditor({
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent-dim text-accent-t">
             <Ic.book />
           </div>
-          <div className="font-ui text-[15px] font-semibold text-t1">
+          <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">
             {t("lorebooks_card_title")}
           </div>
           <div className="mt-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
@@ -527,7 +527,7 @@ export function LorebookEditor({
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent-dim text-accent-t">
             <Ic.terminal />
           </div>
-          <div className="font-ui text-[15px] font-semibold text-t1">
+          <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">
             {t("scripts_card_title")}
           </div>
           <div className="mt-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
@@ -547,14 +547,14 @@ export function LorebookEditor({
         // the Toggle track IS its button (h-[20px] root, absolute inset-0
         // track), so a blanket min-h stretched it into a 44px orange blob.
         isMobile &&
-          "[&_button:not([role=switch])]:min-h-[44px] [&_input]:text-base [&_textarea]:text-base [&_select]:text-base"
+          "[&_button:not([role=switch])]:min-h-[44px] [&_input]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_textarea]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_select]:text-[calc(var(--ui-fs)+2px)] leading-6"
       )}
       style={{ padding: isMobile ? "12px" : "20px 24px" }}
     >
       {/* Empty state */}
       {visibleLorebooks.length === 0 && (
         <div className="py-10 text-center">
-          <div className="mb-2 text-[13px] text-t3">
+          <div className="mb-2 text-[calc(var(--ui-fs)-1px)] text-t3">
             {t("lore_no_entries")}
           </div>
           <div className="mx-auto flex max-md:flex-col max-md:items-stretch justify-center gap-2">
@@ -695,7 +695,7 @@ export function LorebookEditor({
       >
         {Ic.caret("l")}
       </div>
-      <span className="flex-1 truncate font-ui text-[14px] font-semibold text-t1">
+      <span className="flex-1 truncate font-ui text-[var(--ui-fs)] font-semibold text-t1">
         {tab === "lorebooks" ? activeEntry?.title || "" : ""}
       </span>
       {/* Autosave indicator — passive (mirrors ProviderModal): no manual
@@ -706,7 +706,7 @@ export function LorebookEditor({
         data-testid="autosave-indicator"
         data-state={autosaveStatus}
         className={cn(
-          "flex items-center gap-1.5 font-ui text-[12px] transition-opacity duration-300",
+          "flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-opacity duration-300",
           autosaveStatus === "idle"
             ? "opacity-0"
             : autosaveStatus === "saved"
@@ -744,7 +744,7 @@ export function LorebookEditor({
           className="flex items-center justify-between border-b border-border"
           style={{ padding: "16px 20px" }}
         >
-          <span className="text-sm font-semibold text-t1">
+          <span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">
             {t("delete_lorebook_confirm")}
           </span>
           <div
@@ -754,7 +754,7 @@ export function LorebookEditor({
             <Ic.close />
           </div>
         </div>
-        <div className="p-5 text-[13px] text-t2">
+        <div className="p-5 text-[calc(var(--ui-fs)-1px)] text-t2">
           {t("delete_lorebook_msg")}
         </div>
         <div
@@ -762,13 +762,13 @@ export function LorebookEditor({
           style={{ padding: "12px 20px" }}
         >
           <button type="button"
-            className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+            className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
             onClick={() => setConfirmDeleteLorebook(null)}
           >
             {t("lore_cancel_edit")}
           </button>
           <button type="button"
-            className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
+            className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-danger transition-all"
             onClick={() => handleDeleteLb(confirmDeleteLorebook)}
           >
             {t("delete_lorebook_confirm")}

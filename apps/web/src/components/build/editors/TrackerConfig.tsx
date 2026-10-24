@@ -248,7 +248,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             type="button"
             onClick={() => setSchemaReferenceOpen((open) => !open)}
             className={cn(
-              "ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1",
+              "ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1",
               schemaReferenceOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2",
             )}
           >
@@ -258,7 +258,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <button
             type="button"
             onClick={() => setSchemaAiOpen(true)}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
           >
             <Ic.brain />
             {t("scn_ai_generate")}
@@ -268,12 +268,12 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             summary (ⓘ); expanding reveals the full grammar + a copyable worked
             example. Sits right under the header, above the editor. */}
         <details className="group mt-1">
-          <summary className="flex w-full cursor-pointer select-none items-start gap-1.5 font-ui text-[10px] leading-relaxed text-t4 hover:text-t3">
+          <summary className="flex w-full cursor-pointer select-none items-start gap-1.5 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4 hover:text-t3">
             <span className="mt-px shrink-0"><Ic.help /></span>
             <span>{t("scn_schema_hint")}</span>
           </summary>
           <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 p-2.5">
-            <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
+            <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
               <pre className={cn(codeQuoteCls, "max-h-56 overflow-auto pr-9")}>{SCENE_DSL_EXAMPLE}</pre>
               <CustomTooltip content={t("copy")}>
@@ -299,11 +299,11 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             value={schemaText}
             onChange={onSchemaChange}
             minHeight="160px"
-            className="font-mono text-[12px]"
+            className="font-mono text-[calc(var(--ui-fs)-2px)]"
           />
         </div>
         {effectiveSchemaError && (
-          <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
+          <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
         )}
       </div>
 
@@ -317,7 +317,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               type="button"
               onClick={() => update("autoMode", mode)}
               className={cn(
-                "flex-1 rounded-md border px-3 py-1.5 font-ui text-[12px] transition-colors",
+                "flex-1 rounded-md border px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
                 draft.autoMode === mode
                   ? "border-accent bg-accent-dim text-accent"
                   : "border-border2 bg-s2 text-t3 hover:border-accent",
@@ -350,7 +350,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         <button
           type="button"
           onClick={() => setAdvancedOpen((v) => !v)}
-          className="flex w-full items-center gap-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3 hover:text-t2"
+          className="flex w-full items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3 hover:text-t2"
         >
           {Ic.caret(advancedOpen ? "d" : "r")}
           {t("scn_advanced_label")}
@@ -395,7 +395,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
                 <button
                   type="button"
                   onClick={() => setRulesAiOpen(true)}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
                 >
                   <Ic.brain />
                   {t("scn_pull_rules_button")}
@@ -413,7 +413,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           onClick={() => void save()}
           disabled={!canSave}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[12px] font-medium transition-opacity disabled:opacity-40",
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-opacity disabled:opacity-40",
             dirty ? "bg-accent text-on-accent hover:opacity-90" : "border border-border2 bg-s2 text-t3",
           )}
         >
@@ -426,7 +426,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           type="button"
           onClick={() => previewSample()}
           disabled={!canPreview}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
         >
           <Ic.eye />
           {t("scn_preview_button")}
@@ -438,13 +438,13 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             type="button"
             onClick={() => (testing ? stopTest() : void testGeneration())}
             disabled={effectiveSchemaError !== null && !testing}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
           >
             {testing ? spinner : <Ic.regen />}
             {t(testing ? "scn_preview_stop_button" : "scn_test_generation_button")}
           </button>
         </CustomTooltip>
-        {dirty && <span className="font-ui text-[11px] text-accent">{t("scn_dirty_hint")}</span>}
+        {dirty && <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-accent">{t("scn_dirty_hint")}</span>}
         {/* Render variant — shared with the chat header (Scene zone expanded).
             Always visible so it can be set before running Preview; selecting it
             here also re-renders the header. Raw JSON stays a Preview-only
@@ -467,7 +467,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           shared variant (same as the header); Raw JSON is a collapsed disclosure. */}
       {previewState !== null && (
         <div className="rounded-md border border-border bg-s2 p-3">
-          <div className="mb-2 flex items-center gap-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3">
+          <div className="mb-2 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
             <Ic.eye />
             {t("scn_preview_title")}
           </div>
@@ -475,14 +475,14 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             <SceneStateView schema={draft.schema} data={previewState} variant={renderVariant} className="gap-1" />
           </div>
           <details className="mt-2">
-            <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
+            <summary className="cursor-pointer select-none font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
             <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
               {JSON.stringify(previewState, null, 2)}
             </pre>
           </details>
           {draft.promptFormat === SCENE_PROMPT_FORMAT.xml && (
             <details className="mt-2">
-              <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
+              <summary className="cursor-pointer select-none font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
               <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
                 {formatSceneHistory([previewState], "xml")}
               </pre>
@@ -494,7 +494,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       {/* History backfill (SCN-15) — Build → Insights → Scene → History */}
       <div className="border-t border-border pt-3">
         <label className={lblCls}>{t("scn_history_label")}</label>
-        <p className="mb-2 mt-0.5 font-ui text-[10px] leading-relaxed text-t4">{t("scn_history_hint")}</p>
+        <p className="mb-2 mt-0.5 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{t("scn_history_hint")}</p>
         <SceneHistoryBackfill chatId={chatId} />
       </div>
 
@@ -546,7 +546,7 @@ function ScalarField({ label, hint, children }: { label: string; hint: string; c
     <div>
       <label className={lblCls}>{label}</label>
       <div className="mt-1.5">{children}</div>
-      <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{hint}</p>
+      <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{hint}</p>
     </div>
   );
 }

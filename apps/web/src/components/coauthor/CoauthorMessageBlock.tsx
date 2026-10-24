@@ -75,7 +75,7 @@ export const CoauthorMessageBlock = memo(function CoauthorMessageBlock(props: Me
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-s3 text-[10px] font-medium text-t3">
+                  <div className="flex h-full w-full items-center justify-center bg-s3 text-[calc(var(--ui-fs)-4px)] font-medium text-t3">
                     {authorInfo.character.name.charAt(0).toUpperCase()}
                   </div>
                 )}

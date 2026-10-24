@@ -7,6 +7,8 @@ import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink,
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
+import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
+import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -18,6 +20,11 @@ export interface AppendMessageInput {
   toolCallsJson?: string | null;
   /** Correlated tool-call id for tool-result messages (nullable). */
   toolCallId?: string | null;
+  /** AP-28: the turn's reasoning — pinned by the stream loop on the FIRST
+   *  assistant row of a turn; omitted/null on every other row. */
+  reasoning?: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms (rides with `reasoning`). */
+  reasoningDurationMs?: number | null;
 }
 
 // ─── Return types ─────────────────────────────────────────────────────────────
@@ -76,6 +83,13 @@ export interface ExperienceCopilotMessage {
   content: string;
   toolCallsJson: string | null;
   toolCallId: string | null;
+  /** AP-28: the turn's reasoning (first assistant row of the turn only);
+   *  null on every other row, on turns without reasoning, and on rows
+   *  written before the column existed (additive migration, no backfill). */
+  reasoning: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms; null whenever `reasoning`
+   *  is null. */
+  reasoningDurationMs: number | null;
   /** Frozen-context seq (SC-1): allocated from the thread's next_seq on
    *  chat-owned threads (interleaving with context events); NULL on
    *  script/draft threads and on rows written before SC-1. */
@@ -220,101 +234,33 @@ export class ExperienceCopilotStore {
 
   /**
    * "New session": archive the current active thread for this script (if any)
-   * and create+return a fresh active one. The archive-then-insert runs inside a
-   * single synchronous transaction so two actives can never coexist (the app-
-   * level half of the at-most-one-active invariant; the partial unique index is
-   * the DB half).
+   * and create+return a fresh active one — thin seam over
+   * `experience-copilot-session-start.ts` (extracted at the arch-gate size
+   * cap); the creation contract is documented there. AP-20: `autoCompact`
+   * seeds the new row's toggle from the script's agent-kind default (the
+   * adapter resolves the kind and reads it); undefined keeps the column
+   * default (on).
    */
-  async startNewSession(scriptId: string, title?: string): Promise<ExperienceCopilotThread> {
-    const now = this.clock.now();
-    const id = this.idGen.next('expcop_thread');
-    this.db.transaction((tx) => {
-      tx
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: now, updatedAt: now })
-        .where(and(eq(experienceCopilotThreads.scriptId, scriptId), isNull(experienceCopilotThreads.archivedAt)))
-        .run();
-      tx
-        .insert(experienceCopilotThreads)
-        .values({
-          id,
-          scriptId,
-          draftSessionId: null,
-          title: title ?? '',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-    });
-    const row = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(eq(experienceCopilotThreads.id, id))
-      .get();
-    return mapThread(row!);
+  async startNewSession(scriptId: string, title?: string, autoCompact?: boolean): Promise<ExperienceCopilotThread> {
+    return startNewSession({ db: this.db, clock: this.clock, idGen: this.idGen }, scriptId, title, autoCompact);
   }
 
   /**
    * "New session" for a chat owner (SC-0a): archive the current active sibling
-   * thread of the SAME (chat, branch, kind) triple (if any) and create+return a
-   * fresh active one — the chat-owner twin of {@link startNewSession}. The kind
-   * is required here (store-level enforcement of "agent_kind required when
-   * chat_id is set": chat rows are only ever born through this method). Sibling
-   * archiving is scoped to the exact triple — other kinds on the same branch,
-   * other branches, and script-owned threads are never touched. The
-   * archive-then-insert runs inside a single synchronous transaction so two
-   * actives can never coexist (the app-level half of the at-most-one-active
-   * invariant; the partial unique index on the triple is the DB half).
+   * thread of the SAME (chat, branch, kind) triple (if any) and create+return
+   * a fresh active one — the chat-owner twin of {@link startNewSession};
+   * thin seam over `experience-copilot-session-start.ts`, where the creation
+   * contract is documented. AP-20: `autoCompact` seeds the new row's toggle
+   * from this kind's default (the adapter reads it before calling).
    */
   async startNewChatSession(
     chatId: string,
     branchId: string,
     kind: string,
     title?: string,
+    autoCompact?: boolean,
   ): Promise<ExperienceCopilotThread> {
-    if (!kind) {
-      // Store-level guard: chat-owned rows must never exist with a NULL
-      // agent_kind (the partial unique index has no NULL hole to fill).
-      throw new Error(`[experience-copilot-store] startNewChatSession requires a non-empty agent kind (chat '${chatId}')`);
-    }
-    const now = this.clock.now();
-    const id = this.idGen.next('expcop_thread');
-    this.db.transaction((tx) => {
-      tx
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(experienceCopilotThreads.chatId, chatId),
-            eq(experienceCopilotThreads.branchId, branchId),
-            eq(experienceCopilotThreads.agentKind, kind),
-            isNull(experienceCopilotThreads.archivedAt),
-          ),
-        )
-        .run();
-      tx
-        .insert(experienceCopilotThreads)
-        .values({
-          id,
-          scriptId: null,
-          draftSessionId: null,
-          chatId,
-          branchId,
-          agentKind: kind,
-          title: title ?? '',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-    });
-    const row = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(eq(experienceCopilotThreads.id, id))
-      .get();
-    return mapThread(row!);
+    return startNewChatSession({ db: this.db, clock: this.clock, idGen: this.idGen }, chatId, branchId, kind, title, autoCompact);
   }
 
   /**
@@ -418,7 +364,8 @@ export class ExperienceCopilotStore {
 
   /**
    * Append a message to a thread and bump the thread's updated_at so it surfaces
-   * as the most recently touched session. Returns the inserted message. Both
+   * as the most recently touched session. Returns the inserted message (a
+   * user row on an UNTITLED thread also auto-titles it — AP-19). Both
    * writes run in a synchronous transaction so updated_at always reflects the
    * last appended message (a failure on either rolls both back). SC-1: on a
    * CHAT-OWNED thread the same transaction also allocates the next gapless
@@ -430,6 +377,7 @@ export class ExperienceCopilotStore {
     const now = this.clock.now();
     const id = this.idGen.next('expcop_msg');
     this.db.transaction((tx) => {
+      if (input.role === 'user') applyFirstMessageAutoTitle(tx, threadId, input.content ?? '');
       const seq = this.allocateSeqAndTouchThread(tx, threadId, now);
       tx
         .insert(experienceCopilotMessages)
@@ -440,6 +388,8 @@ export class ExperienceCopilotStore {
           content: input.content ?? '',
           toolCallsJson: input.toolCallsJson ?? null,
           toolCallId: input.toolCallId ?? null,
+          reasoning: input.reasoning ?? null,
+          reasoningDurationMs: input.reasoningDurationMs ?? null,
           seq,
           createdAt: now,
         })

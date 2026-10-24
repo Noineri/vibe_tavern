@@ -4,8 +4,8 @@
 // contracts.ts; runtime-api.ts re-exports everything so existing import paths
 // keep resolving).
 
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
-import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
+import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
+import type { SkillImportFile, SkillImportResult, SkillSaveInput } from "../../domain/coauthor/skills/skill-library.js";
 
 // ─── Co-Author Skills (filesystem skill libraries) ──────────────────
 // CTX-S2: import (multipart files → validated atomic tree under
@@ -28,6 +28,19 @@ export interface CoauthorSkillsRuntimeApi {
 	listSkills: () => Promise<{ entries: SkillCatalogEntryDto[]; errors: { source: "builtin" | "user"; id: string; reason: string }[] }>;
 	/** One catalog entry by id, or `null` if no such skill exists in either root. */
 	readSkill: (id: string) => Promise<SkillCatalogEntryDto | null>;
+	/** Full content view of one skill (AP-21): raw manifest (`content`),
+	 *  frontmatter-stripped text (`body`), and the folder's relative file paths
+	 *  (`files`, manifest excluded) — read through the sandboxed `readSkillFile`
+	 *  (user shadow first). `null` when the skill does not exist (404). */
+	readSkillContent: (id: string) => Promise<SkillContentDto | null>;
+	/** Save one user skill (AP-23a) — the ONE operation behind `POST .../skills`
+	 *  (create: `id` absent, folder id derived from the name and de-duplicated
+	 *  against both roots) and `PUT .../skills/:id` (update: rewrite ONLY the
+	 *  user copy's SKILL.md, frontmatter rebuilt with every existing key kept).
+	 *  An invalid manifest is rejected before any write (400); a built-in id on
+	 *  update is a 409 conflict (built-ins are read-only). Returns the FRESH
+	 *  catalog entry DTO of the saved skill. */
+	saveSkill: (input: SkillSaveInput) => Promise<SkillCatalogEntryDto>;
 }
 
 /** Copilot skills keyed by agent kind (AS-8d1): the copilot-skill routes

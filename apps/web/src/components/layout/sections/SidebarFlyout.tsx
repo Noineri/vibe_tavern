@@ -141,7 +141,7 @@ export function SidebarFlyout({
               style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
             />
             <div className="relative flex items-center gap-1 px-2 py-2">
-              <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
+              <div className="min-w-0 flex-1 truncate px-1 font-ui text-[var(--ui-fs)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
               <CustomTooltip content={t("new_chat")}>
                 <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { if (flyoutCharId) void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
               </CustomTooltip>
@@ -239,7 +239,7 @@ export function SidebarFlyout({
                         className="mt-1 flex cursor-default flex-col border-t border-dashed border-border2 px-2 pt-1.5"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
+                        <div className="mb-1 pl-1 text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.05em] text-t3">
                           {t("sidebar_timeline_branches")}
                         </div>
                         <div className="ml-2 flex flex-col border-l-2 border-border pl-3">

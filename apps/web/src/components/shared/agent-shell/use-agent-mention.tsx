@@ -161,9 +161,12 @@ export function useAgentMention(config: UseAgentMentionConfig): {
   );
 
   const handleKeyDown = useCallback(
-    // The fallback is optional (E4, MOBILE_DEFECTS_ROUND_2): mobile input areas
-    // pass none — bare Enter there must insert a newline, not send (the on-screen
-    // enter key IS the newline key). Desktop keeps its Enter-to-send fallback.
+    // The fallback is optional (E4, MOBILE_DEFECTS_ROUND_2): bare Enter must
+    // stay the newline key on mobile (the on-screen enter key IS the newline
+    // key), so the mobile input areas pass an Escape-only fallback (AP-19:
+    // Escape cancels a streaming turn) and the desktop keeps its
+    // Enter-to-send fallback. The picker's own keys (arrows/Enter/Tab/Escape)
+    // always win while the popover is open.
     (e: React.KeyboardEvent<HTMLTextAreaElement>, fallback?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void) => {
       if (!open) {
         fallback?.(e);

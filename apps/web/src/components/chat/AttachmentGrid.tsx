@@ -38,7 +38,7 @@ function VoiceBubble({ att }: { att: Attachment }) {
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-s3 text-t2"><Icons.audioLines /></span>
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{att.name}</span>
-          <span className="font-ui text-[10px] uppercase tracking-wider text-t3">
+          <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wider text-t3">
             {att.durationMs !== undefined ? formatAudioDuration(att.durationMs) : t("voice_message_audio")}
           </span>
         </div>
@@ -185,11 +185,11 @@ export function AttachmentGrid({
             ) : (
               <div className="flex h-full w-24 flex-col items-center justify-center gap-1 text-t3 group-hover:text-t1">
                 <Icons.plug />
-                <span className="max-w-[80%] truncate text-[10px] uppercase">{att.type}</span>
+                <span className="max-w-[80%] truncate text-[calc(var(--ui-fs)-4px)] uppercase">{att.type}</span>
               </div>
             )}
             {att.description && (
-              <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1.5 py-0.5 text-[9px] text-white/80 truncate">
+              <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1.5 py-0.5 text-[calc(var(--ui-fs)-5px)] text-white/80 truncate">
                 {att.description}
               </div>
             )}
@@ -430,17 +430,17 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
 
         {/* Description area */}
         {regenerating && (
-          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/50">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-[var(--ui-fs)] leading-5 text-white/50">
             {t("regenerating_description")}
           </div>
         )}
         {currentDescription && !editing && !regenerating && (
-          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm leading-relaxed text-white/80">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-[var(--ui-fs)] leading-relaxed text-white/80">
             {currentDescription}
           </div>
         )}
         {!currentDescription && !editing && !regenerating && messageId && att.id && (
-          <div className="w-full text-center text-xs text-white/30">
+          <div className="w-full text-center text-[calc(var(--ui-fs)-2px)] leading-4 text-white/30">
             {t("no_attachment_description_hint")}
           </div>
         )}
@@ -465,13 +465,13 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
             </MobileExpandTextarea>
             <div className="flex justify-end gap-2">
               <button
-                className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/20"
+                className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-white/70 transition-colors hover:bg-white/20"
                 onClick={() => setEditing(false)}
               >
                 {t("cancel")}
               </button>
               <button
-                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"
+                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"
                 onClick={saveDescription}
                 disabled={saving}
               >
@@ -483,7 +483,7 @@ function Lightbox({ attachments, messageAttachments, messageId, initialIndex, on
 
         {/* Filename */}
         {att.name && (
-          <span className="text-xs text-white/40">{att.name}</span>
+          <span className="text-[calc(var(--ui-fs)-2px)] leading-4 text-white/40">{att.name}</span>
         )}
       </div>
 

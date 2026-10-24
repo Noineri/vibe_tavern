@@ -1,51 +1,28 @@
+// fork #1 of CoauthorModuleModal (apps/web/src/components/coauthor/CoauthorModuleModal.tsx):
+// the profile modal frame-clones the module modal (MasterDetail shell, row /
+// detail rules, MasterDetailFooter matrix) while its data flow stays
+// profile-specific (name + basePrompt + toolSet, no description / skills /
+// max steps). Frame correspondence: list rows (name line 1 + tags + one
+// active marker, no id line, no hover icons) → detail (title + tag, clamped
+// prompt preview + toggle, labelled tool chips) → footer (left actions,
+// right Close + primary / quiet state, edit Cancel + Save).
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import { EmptyState } from "../empty-state.js";
 import { AutoTextarea } from "../auto-textarea.js";
 import { Icons } from "../icons.js";
 import { TextInput } from "../text-input.js";
-import { lblCls } from "../../../lib/field-tokens.js";
+import { lblCls, listHeaderCls, rowTitleCls } from "../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
-import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
-import { getAgentChatSettings, patchAgentChatSettings } from "../../../api/agent-chat-settings-api.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
 import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
-import { AgentSkillModal } from "./AgentSkillModal.js";
-
-/** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
-const BUILTIN_PROFILE_ID = "builtin";
-
-/**
- * The effective profile id for a chat-target modal (SC-0k) — the modal-side
- * mirror of `CopilotProfileResolver.resolveForChat` (same hop order): the
- * chat's own choice when it resolves (the built-in sentinel always resolves;
- * a stored custom id resolves when its row is in the loaded list) → the
- * kind default when it resolves (a built-in default reads as null) → the
- * built-in seed. Dangling ids fall through, never mark a missing row.
- */
-function resolveChatEffectiveProfileId(
-	chatProfileId: string | null,
-	kindDefaultProfileId: string | null,
-	loadedProfileIds: ReadonlySet<string>,
-): string {
-	if (chatProfileId !== null && (chatProfileId === BUILTIN_PROFILE_ID || loadedProfileIds.has(chatProfileId))) {
-		return chatProfileId;
-	}
-	if (
-		kindDefaultProfileId !== null &&
-		kindDefaultProfileId !== BUILTIN_PROFILE_ID &&
-		loadedProfileIds.has(kindDefaultProfileId)
-	) {
-		return kindDefaultProfileId;
-	}
-	return BUILTIN_PROFILE_ID;
-}
+import { resolveAgentProfileToolLabel } from "./agent-tool-labels.js";
+import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
 
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
@@ -83,16 +60,19 @@ function draftToCreateInput(d: ProfileDraft, agentKind: string): CopilotProfileC
 type DetailMode = "view" | "edit" | "create";
 
 /**
- * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9).
- * Mirrors `CoauthorModuleModal` MINUS description/openingMessage/skills: profile
- * list (built-in seed shown read-only, user profiles), name + inline system
- * prompt (AutoTextarea), tool toggles (the keys come from the agent host descriptor).
- * Skills are UNGATED (PM-8, owner ruling 2026-10-12): the model sees every
- * scanned skill regardless of profile, so there are no per-profile skill
- * toggles — the "Manage skills" header button opens `CopilotSkillModal` for the
- * import/delete library instead. "Duplicate built-in" pre-fills a new user
- * profile. Assignment writes `scripts.copilotProfileId` via `setCopilotProfile`
- * (built-in → null = unassign).
+ * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9;
+ * frame-polished in AP-24): profile list (built-in seed shown read-only,
+ * user profiles), name + clamped system prompt preview + labelled tool chips
+ * in the read-only view, the editor form for create / edit. Skills are
+ * UNGATED (PM-8, owner ruling 2026-10-12): the model sees every scanned
+ * skill regardless of profile, so there are no per-profile skill toggles —
+ * AP-27 moved the import/delete library to the settings summary
+ * (`AgentSettingsModal` opens `AgentSkillModal` from its skills row), so
+ * this modal keeps no skill surface. "Duplicate" pre-fills a new user profile.
+ * Assignment writes `scripts.copilotProfileId` via `setCopilotProfile`
+ * (built-in → null = unassign) for script-target hosts; chat-target hosts
+ * write the (chat, kind) row + the kind default through
+ * `use-agent-profile-assignment.ts` (AP-27 reuses that hook).
  *
  * CONTROLLED — open/close are props (owned by `ExperienceCopilotShell`), not
  * the global `modal-store` (which is co-author-specific).
@@ -115,25 +95,18 @@ export interface AgentProfileModalProps {
 	assignedProfileId: string | null;
 	isOpen: boolean;
 	onClose: () => void;
+	/** Optional drill-down parent (AP-27): the settings summary passes its
+	 *  own title here — absent = standalone, no back link. */
+	parentBack?: MasterDetailParentBack;
 }
 
-export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
+export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose, parentBack }: AgentProfileModalProps) {
 	const { t } = useT();
 	const host = getAgentHost(agentKind);
 	const toolKeys = host.toolKeys;
 	// SC-0g: the modal renders its single-action (script) or dual-action
 	// (chat) variant purely from the host descriptor — no kind literal here.
 	const isChatTarget = host.profileAssignment.target === "chat";
-
-	// Mirror the resolver's null→builtin fallback so the active row is highlighted
-	// even when nothing has been explicitly assigned yet.
-	const activeProfileId = assignedProfileId ?? BUILTIN_PROFILE_ID;
-
-	// SC-0g (chat-target hosts only): the chat row's own choice, read via the
-	// SC-0f client on open (null = no override — the kind default applies).
-	// The kind-wide default comes from the bootstrap kind-settings map (SC-0e).
-	const [chatProfileId, setChatProfileId] = useState<string | null>(null);
-	const kindDefaultProfileId = useBootstrapStore((s) => s.data?.agentKindSettings?.[agentKind]?.defaultProfileId) ?? null;
 
 	const profiles = useCopilotProfileStore((s) => s.profiles);
 	const isLoading = useCopilotProfileStore((s) => s.isLoading);
@@ -148,41 +121,36 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	const [dirty, setDirty] = useState(false);
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
-	const [skillManagerOpen, setSkillManagerOpen] = useState(false);
+
+	const selected = profiles.find((p) => p.id === selectedId) ?? null;
+
+	// AP-24: the assignment logic (which target, default-vs-thread
+	// resolution) lives in `use-agent-profile-assignment.ts` — AP-27 reuses
+	// it. Behavior is unchanged; only the location moved.
+	const assignment = useAgentProfileAssignment({
+		agentKind,
+		isChatTarget,
+		scriptId,
+		chatId,
+		assignedProfileId,
+		selected,
+		profiles,
+		isOpen,
+		t,
+		onAssigned: onClose,
+	});
 
 	useEffect(() => {
 		if (isOpen) {
 			void loadProfiles(agentKind);
-			// SC-0g: a chat-target host reads the chat row's own choice on open
-			// (a missing row resolves to null — no override). A failed read
-			// keeps null (the kind default applies); writes still surface errors.
-			if (isChatTarget && chatId !== undefined) {
-				void getAgentChatSettings(chatId, agentKind).then(
-					(w) => setChatProfileId(w.profileId),
-					() => setChatProfileId(null),
-				);
-			}
 		}
 		if (!isOpen) {
 			setDetailMode("view");
 			setDirty(false);
 			setConfirmDeleteId(null);
 			setConfirmDiscardOpen(false);
-			setSkillManagerOpen(false);
-			setChatProfileId(null);
 		}
-	}, [isOpen, loadProfiles, isChatTarget, chatId, agentKind]);
-
-	const selected = profiles.find((p) => p.id === selectedId) ?? null;
-	const isSelectedActive = selected !== null && selected.id === activeProfileId;
-	// SC-0k: chat-target hosts mark the EFFECTIVE profile (the one the server
-	// chain resolves for this chat) — not the raw chat-row choice. Script
-	// hosts keep the assignment mirror above.
-	const chatEffectiveProfileId = resolveChatEffectiveProfileId(
-		chatProfileId,
-		kindDefaultProfileId,
-		new Set(profiles.map((p) => p.id)),
-	);
+	}, [isOpen, loadProfiles, agentKind]);
 
 	const handleSelect = (id: string, openDetail?: () => void) => {
 		if (dirty) {
@@ -255,6 +223,8 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 		}
 		const input = draftToCreateInput(draft, agentKind);
 		try {
+			// The store actions wrap the profile API (create/update) and
+			// refresh the list — the modal only drives draft → save → view.
 			if (detailMode === "create") {
 				const created = await createProfile(input);
 				setSelectedId(created.id);
@@ -280,60 +250,6 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 			}
 		} catch {
 			toast.error(t("copilot_profile_delete_failed"));
-		}
-	};
-
-	const handleAssign = async () => {
-		if (!selected || isSelectedActive || scriptId === undefined) return;
-		try {
-			// Built-in = unassign (null); a user profile = its id.
-			await setCopilotProfile(scriptId, selected.id === BUILTIN_PROFILE_ID ? null : selected.id);
-			onClose();
-		} catch {
-			toast.error(t("copilot_profile_assign_failed"));
-		}
-	};
-
-	// SC-0g/SC-0k (chat-target hosts only): the two writes — the (chat, kind)
-	// row ("use here") and the kind default ("use by default"). SC-0k: "use
-	// here" on the built-in pins the literal sentinel (the chat runs the seed
-	// even under a custom default); null keeps meaning "no own choice —
-	// follow the default". "Use by default" on the built-in still clears
-	// the default (null — a built-in default reads the same). The script
-	// path's unassign (built-in → null) is unchanged. Failures reuse the
-	// assignment error copy.
-	const isSelectedHere = selected !== null && selected.id === chatProfileId;
-	const isSelectedDefault = selected !== null && (selected.id === BUILTIN_PROFILE_ID
-		? kindDefaultProfileId === null || kindDefaultProfileId === BUILTIN_PROFILE_ID
-		: selected.id === kindDefaultProfileId);
-
-	const handleAssignHere = async () => {
-		if (!selected || isSelectedHere || chatId === undefined) return;
-		try {
-			// SC-0k: the selected id is written verbatim — the built-in row's
-			// id IS the sentinel, so pinning it stores "builtin" (null
-			// keeps meaning "no own choice").
-			const updated = await patchAgentChatSettings(chatId, agentKind, {
-				profileId: selected.id,
-			});
-			setChatProfileId(updated.profileId);
-			onClose();
-		} catch {
-			toast.error(t("copilot_profile_assign_failed"));
-		}
-	};
-
-	const handleAssignDefault = async () => {
-		if (!selected || isSelectedDefault) return;
-		try {
-			// The action merges the returned row into the bootstrap
-			// kind-settings map, so sibling subscribers update immediately.
-			await patchAgentKindSettingsAction(agentKind, {
-				defaultProfileId: selected.id === BUILTIN_PROFILE_ID ? null : selected.id,
-			});
-			onClose();
-		} catch {
-			toast.error(t("copilot_profile_assign_failed"));
 		}
 	};
 
@@ -371,42 +287,29 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 					onCancel={() => setConfirmDeleteId(null)}
 				/>
 			)}
-			<AgentSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} agentKind={agentKind} />
 			<MasterDetailModal
 				isOpen={isOpen}
 				onClose={close}
 				title={t("copilot_profile_title")}
 				subtitle={t("copilot_profile_subtitle")}
 				dirty={dirty}
-				headerActions={
-					<button
-						type="button"
-						data-testid="copilot-profile-manage-skills-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={() => setSkillManagerOpen(true)}
-					>
-						<Icons.Book className="h-3.5 w-3.5" />
-						{t("copilot_profile_manage_skills")}
-					</button>
-				}
+				parentBack={parentBack}
 				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
 				masterContent={({ openDetail }) => (
 					<ProfileList
 						profiles={profiles}
 						isLoading={isLoading}
 						selectedId={selectedId}
-						activeProfileId={isChatTarget ? chatEffectiveProfileId : activeProfileId}
-						// SC-0g: script hosts leave this undefined (no extra badge);
-						// a chat-target host marks the kind-default row. The null→builtin
-						// mirror matches the script assignment's (no default row =
-						// the built-in seed is the default).
-						defaultProfileId={isChatTarget ? kindDefaultProfileId : undefined}
+						activeProfileId={isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId}
+						// SC-0g: chat-target hosts mark the kind-default row (a
+						// second authored pill, same canon shape as built-in).
+						// Script hosts leave defaultProfileId undefined —
+						// no badge, rows byte-identical to before.
+						defaultProfileId={assignment.defaultProfileId}
 						detailMode={detailMode}
 						t={t}
 						onSelect={(id) => handleSelect(id, openDetail)}
 						onAdd={() => handleNew(openDetail)}
-						onEdit={(p) => handleEdit(p, openDetail)}
-						onDelete={(id) => setConfirmDeleteId(id)}
 					/>
 				)}
 				detailContent={({ closeDetail }) =>
@@ -414,6 +317,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 						<ProfileEditor
 							draft={draft}
 							t={t}
+							agentKind={agentKind}
 							toolKeys={toolKeys}
 							onUpdate={updateDraft}
 							onToggleTool={toggleTool}
@@ -421,71 +325,107 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 					) : selected ? (
 						<ProfileView
 							profile={selected}
-							toolKeys={toolKeys}
 							t={t}
-							isSelectedActive={isSelectedActive}
-							onEdit={() => handleEdit(selected)}
-							onDuplicate={() => handleDuplicate(selected)}
-							onDelete={() => setConfirmDeleteId(selected.id)}
 							closeDetail={closeDetail}
 						/>
 					) : (
-						<div className="font-ui text-[13px] text-t3">{t("copilot_profile_empty")}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_empty")}</div>
 					)
 				}
 				footer={
-					<div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
-						{/* SC-0g: flex-wrap budgets the longer RU action pair (AD-022)
-						on narrow mobile sheets — desktop renders the same single row. */}
-						{isEditing ? (
-							<>
-								<button
-									type="button"
-									data-testid="copilot-profile-cancel-btn"
-									className="cursor-pointer rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1"
-									onClick={() => { setDetailMode("view"); setDirty(false); }}
-								>
-									{t("copilot_profile_cancel")}
-								</button>
-								<button
-									type="button"
-									data-testid="copilot-profile-save-btn"
-									className="cursor-pointer rounded-md bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
-									onClick={() => { void handleSave(); }}
-								>
-									{t("copilot_profile_save")}
-								</button>
-							</>
-						) : isChatTarget ? (
-							// SC-0k: one primary action — the chat-target footer lives in
-							// `agent-profile-chat-footer.tsx` (extracted when this file
-							// hit the 800-line cap): secondary first, primary last.
-							<AgentChatProfileFooter
-								hasSelection={selected !== null}
-								isSelectedHere={isSelectedHere}
-								isSelectedDefault={isSelectedDefault}
-								t={t}
-								onAssignHere={() => { void handleAssignHere(); }}
-								onAssignDefault={() => { void handleAssignDefault(); }}
-							/>
-						) : (
-							<button
-								type="button"
-								data-testid="copilot-profile-assign-btn"
-								disabled={!selected || isSelectedActive}
-								className={cn(
-									"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
-									isSelectedActive
-										? "cursor-default bg-success text-on-accent"
-										: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
-								)}
-								onClick={() => { void handleAssign(); }}
-							>
-								{isSelectedActive && <Icons.Check className="h-3.5 w-3.5" />}
-								{isSelectedActive ? t("copilot_profile_active") : t("copilot_profile_assign")}
-							</button>
-						)}
-					</div>
+					isEditing ? (
+						// Edit mode: right side «Отмена» / «Сохранить» only.
+						<MasterDetailFooter
+							right={
+								<>
+									<button
+										type="button"
+										data-testid="copilot-profile-cancel-btn"
+										className="h-[37px] cursor-pointer rounded-md bg-transparent py-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+										onClick={() => { setDetailMode("view"); setDirty(false); }}
+									>
+										{t("copilot_profile_cancel")}
+									</button>
+									<button
+										type="button"
+										data-testid="copilot-profile-save-btn"
+										className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
+										onClick={() => { void handleSave(); }}
+									>
+										{t("copilot_profile_save")}
+									</button>
+								</>
+							}
+						/>
+					) : (
+						<MasterDetailFooter
+							actions={
+								selected
+									? selected.isBuiltIn
+										? [
+											{
+												icon: <Icons.Copy className="h-3.5 w-3.5" />,
+												label: t("copilot_profile_duplicate"),
+												onClick: () => handleDuplicate(selected),
+											},
+										]
+										: [
+											{
+												icon: <Icons.Copy className="h-3.5 w-3.5" />,
+												label: t("copilot_profile_duplicate"),
+												onClick: () => handleDuplicate(selected),
+											},
+											{
+												icon: <Icons.Edit className="h-3.5 w-3.5" />,
+												label: t("copilot_profile_edit"),
+												onClick: () => handleEdit(selected),
+											},
+											{
+												icon: <Icons.Trash className="h-3.5 w-3.5" />,
+												label: t("copilot_profile_delete"),
+												onClick: () => setConfirmDeleteId(selected.id),
+												destructive: true,
+											},
+										]
+									: []
+							}
+							onClose={close}
+							right={
+								isChatTarget ? (
+									// SC-0k: secondary default first, primary here
+									// last (the edit footer's Cancel → Save order).
+									<AgentChatProfileFooter
+										hasSelection={selected !== null}
+										isSelectedHere={assignment.isSelectedHere}
+										isSelectedDefault={assignment.isSelectedDefault}
+										t={t}
+										onAssignHere={assignment.assignHere}
+										onAssignDefault={assignment.assignDefault}
+									/>
+								) : selected && assignment.isSelectedActive ? (
+									// The running profile: a quiet state label,
+									// not a second primary action.
+									<span
+										data-testid="copilot-profile-in-use-state"
+										className="flex cursor-default items-center gap-1.5 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3"
+									>
+										<Icons.Check className="h-3.5 w-3.5" />
+										{t("copilot_profile_in_use_label")}
+									</span>
+								) : (
+									<button
+										type="button"
+										data-testid="copilot-profile-assign-btn"
+										disabled={!selected}
+										className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+										onClick={assignment.assign}
+									>
+										{t("copilot_profile_assign")}
+									</button>
+								)
+							}
+						/>
+					)
 				}
 			/>
 		</>
@@ -511,17 +451,15 @@ interface ProfileListProps {
 	t: TFunc;
 	onSelect: (id: string) => void;
 	onAdd: () => void;
-	onEdit: (p: CopilotProfile) => void;
-	onDelete: (id: string) => void;
 }
 
-function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, onSelect, onAdd, onEdit, onDelete }: ProfileListProps) {
+function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, onSelect, onAdd }: ProfileListProps) {
 	if (isLoading) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("copilot_profile_loading")}</div>;
+		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_loading")}</div>;
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
 				{t("copilot_profile_list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -537,76 +475,53 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 					profiles.map((p) => {
 						const isActive = p.id === activeProfileId;
 						const isSelected = (p.id === selectedId && detailMode === "view") || (detailMode === "edit" && p.id === selectedId);
+						// The kind-default pill (chat-target hosts only): the
+						// null default reads as the built-in seed, mirroring
+						// the script null→builtin fallback.
+						const showDefaultPill = defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID);
 						return (
 							<div
 								key={p.id}
 								data-testid={`copilot-profile-row-${p.id}`}
 								onPointerDown={() => onSelect(p.id)}
 								className={cn(
-									"group flex cursor-pointer items-center gap-3 border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
+									"cursor-pointer border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
 									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
 								)}
 							>
-								<span
-									className={cn(
-										"h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors",
-										isActive ? "bg-accent" : "bg-transparent",
-									)}
-								/>
-								<div className="min-w-0 flex-1 py-2">
-									{/* SC-16d: the name owns line 1 alone (wraps, never
-									// cuts); the pills own line 2 (only when present); the
-									// machine id stays a single-line truncate on line 3. */}
+								<div className="min-w-0 py-2">
+									{/* SC-16d: the name owns line 1 alone (wraps,
+									// never cut); the marker + pills own the lines
+									// below (only when present); no id line. */}
 									<div className="flex min-w-0 items-center gap-1.5">
 										<span
 											data-testid={`copilot-profile-row-name-${p.id}`}
-											className={cn("whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}
+											className={cn(rowTitleCls, "whitespace-normal break-words", isSelected ? "text-accent-t" : "text-t2")}
 										>
-											{isActive ? "★ " : ""}{p.name}
+											{p.name}
 										</span>
 									</div>
-									{/* SC-0g: chat-target hosts mark the kind-default row (a
-									// second authored pill, same canon shape as built-in).
-									// Script hosts leave defaultProfileId undefined —
-									// no badge, rows byte-identical to before. */}
-									{(p.isBuiltIn || (defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID))) && (
+									{(p.isBuiltIn || showDefaultPill) && (
 										<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
 											{p.isBuiltIn && (
-												<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+												<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 													{t("copilot_profile_built_in")}
 												</span>
 											)}
-											{defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID) && (
-												<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+											{showDefaultPill && (
+												<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 													{t("copilot_profile_default")}
 												</span>
 											)}
 										</div>
 									)}
-									<div data-testid={`copilot-profile-row-id-${p.id}`} className="mt-0.5 truncate font-mono text-[10px] text-t4">{p.id}</div>
+									{isActive && (
+										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
+											<Icons.Check className="h-3 w-3 shrink-0" />
+											{t("copilot_profile_in_use")}
+										</div>
+									)}
 								</div>
-								{!p.isBuiltIn && (
-									<div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-										<button
-											type="button"
-											data-testid={`copilot-profile-edit-btn-${p.id}`}
-											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1 md:opacity-0 md:group-hover:opacity-100"
-											title={t("copilot_profile_edit")}
-											onClick={() => onEdit(p)}
-										>
-											<Icons.Edit className="h-3 w-3" />
-										</button>
-										<button
-											type="button"
-											data-testid={`copilot-profile-delete-btn-${p.id}`}
-											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-											title={t("copilot_profile_delete")}
-											onClick={() => onDelete(p.id)}
-										>
-											<Icons.Trash className="h-3 w-3" />
-										</button>
-									</div>
-								)}
 								<MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-3" />
 							</div>
 						);
@@ -631,84 +546,71 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 
 interface ProfileViewProps {
 	profile: CopilotProfile;
-	/** The host-owned toggleable tool keys of the modal's agent kind. */
-	toolKeys: readonly string[];
 	t: TFunc;
-	isSelectedActive: boolean;
-	onEdit: () => void;
-	onDuplicate: () => void;
-	onDelete: () => void;
 	closeDetail?: () => void;
 }
 
-function ProfileView({ profile, toolKeys, t, onEdit, onDuplicate, onDelete }: ProfileViewProps) {
+/** Bodies longer than this get the clamped preview + toggle (the AP-23
+ *  skill-library precedent: `BODY_CLAMP_AT` there); shorter bodies render
+ *  whole with no toggle. A character count stands in for the rendered
+ *  8-line clamp — deterministic and test-pinnable. */
+const PROMPT_CLAMP_AT = 500;
+
+function ProfileView({ profile, t }: ProfileViewProps) {
 	// AS-7/AS-8b: the wire tool set is a per-kind union; the read widens to a
-	// boolean record and projects through the host's keys for this kind (the
-	// script kind's toggles differ from the experience ones).
+	// boolean record and projects through the host's keys for the profile's
+	// own kind (the script kind's toggles differ from the experience ones).
+	// Labels come from the per-kind exhaustive map (`agent-tool-labels.ts`).
 	const toolSetRecord = profile.toolSet as Record<string, boolean | undefined>;
-	const enabledTools = toolKeys.filter((key) => toolSetRecord[key] === true);
+	const enabledTools = Object.keys(toolSetRecord).filter((key) => toolSetRecord[key] === true);
+	const [promptExpanded, setPromptExpanded] = useState(false);
+	useEffect(() => {
+		setPromptExpanded(false);
+	}, [profile.id]);
+	const isLongPrompt = profile.basePrompt.length > PROMPT_CLAMP_AT;
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<div className="flex items-center gap-2">
-					<h3 className="font-body text-[17px] font-semibold text-t1">{profile.name}</h3>
-					{profile.isBuiltIn ? (
-						<span className="rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("copilot_profile_built_in")}</span>
-					) : (
-						<span className="rounded-full border border-border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">{t("copilot_profile_user")}</span>
-					)}
+				<div className="flex flex-wrap items-center gap-2">
+					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{profile.name}</h3>
+					<span data-testid="copilot-profile-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+						{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
+					</span>
 				</div>
 			</div>
 
-			{profile.isBuiltIn ? (
-				<div className="flex gap-2">
-					<button
-						type="button"
-						data-testid="copilot-profile-view-duplicate-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={onDuplicate}
-					>
-						<Icons.Copy className="h-3 w-3" />
-						{t("copilot_profile_duplicate")}
-					</button>
-				</div>
-			) : (
-				<div className="flex gap-2">
-					<button
-						type="button"
-						data-testid="copilot-profile-view-edit-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
-						onClick={onEdit}
-					>
-						<Icons.Edit className="h-3 w-3" />
-						{t("copilot_profile_edit")}
-					</button>
-					<button
-						type="button"
-						data-testid="copilot-profile-view-delete-btn"
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t3 transition-colors hover:border-danger hover:text-danger-text"
-						onClick={onDelete}
-					>
-						<Icons.Trash className="h-3 w-3" />
-						{t("copilot_profile_delete")}
-					</button>
-				</div>
-			)}
-
 			<dl className="flex flex-col gap-3">
 				<PreviewRow label={t("copilot_profile_base_prompt")}>
-					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{profile.basePrompt}</pre>
+					<pre
+						data-testid="copilot-profile-prompt-preview"
+						className={cn(
+							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2",
+							!promptExpanded && isLongPrompt && "line-clamp-8",
+						)}
+					>
+						{profile.basePrompt}
+					</pre>
+					{isLongPrompt && (
+						<button
+							type="button"
+							data-testid="copilot-profile-prompt-toggle"
+							className="mt-1.5 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent transition-colors hover:text-accent-t"
+							onClick={() => setPromptExpanded((v) => !v)}
+						>
+							{promptExpanded ? t("copilot_skill_collapse") : t("copilot_skill_show_full")}
+						</button>
+					)}
 				</PreviewRow>
 
 				<PreviewRow label={t("copilot_profile_tools")}>
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map((key) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{key}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{resolveAgentProfileToolLabel(t, profile.agentKind, key)}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("copilot_profile_no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("copilot_profile_no_skills")}</span>
 					)}
 				</PreviewRow>
 			</dl>
@@ -721,13 +623,15 @@ function ProfileView({ profile, toolKeys, t, onEdit, onDuplicate, onDelete }: Pr
 interface ProfileEditorProps {
 	draft: ProfileDraft;
 	t: TFunc;
+	/** The kind under edit — selects the per-kind tool-label map (AS-8b). */
+	agentKind: string;
 	/** The kind's toggleable-tool keys (AS-8b — kind-aware). */
 	toolKeys: readonly string[];
 	onUpdate: <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => void;
 	onToggleTool: (key: string) => void;
 }
 
-function ProfileEditor({ draft, t, toolKeys, onUpdate, onToggleTool }: ProfileEditorProps) {
+function ProfileEditor({ draft, t, agentKind, toolKeys, onUpdate, onToggleTool }: ProfileEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="copilot-profile-editor">
 			<div className="flex flex-col">
@@ -748,7 +652,7 @@ function ProfileEditor({ draft, t, toolKeys, onUpdate, onToggleTool }: ProfileEd
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("copilot_profile_base_prompt_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("copilot_profile_base_prompt_hint")}</p>
 			</div>
 
 			<Field label={t("copilot_profile_tools")}>
@@ -760,12 +664,12 @@ function ProfileEditor({ draft, t, toolKeys, onUpdate, onToggleTool }: ProfileEd
 								key={key}
 								type="button"
 								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 								)}
 								onClick={() => onToggleTool(key)}
 							>
-								{key}
+								{resolveAgentProfileToolLabel(t, agentKind, key)}
 							</button>
 						);
 					})}
@@ -780,9 +684,9 @@ function ProfileEditor({ draft, t, toolKeys, onUpdate, onToggleTool }: ProfileEd
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<label className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
+			<label className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
 			{children}
-			{hint && <p className="font-ui text-[10px] leading-relaxed text-t3">{hint}</p>}
+			{hint && <p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{hint}</p>}
 		</div>
 	);
 }
@@ -790,7 +694,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
+			<dt className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
 			<dd>{children}</dd>
 		</div>
 	);

@@ -81,7 +81,7 @@ export function ProviderModelList({
         data-testid={optionTestId}
         onSelect={() => onSelect(model)}
         className={cn(
-          "flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+          "flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
           model.id === selectedId
             ? "bg-accent-dim font-medium text-accent-t"
             : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
@@ -109,11 +109,11 @@ export function ProviderModelList({
             {model.capabilities?.premium && <CustomTooltip content={t("cap_premium")}><span className="shrink-0 text-t3"><Icons.Crown /></span></CustomTooltip>}
             {model.capabilities?.reasoning && <CustomTooltip content={t("cap_reasoning")}><span className="shrink-0 text-t3"><Icons.Brain /></span></CustomTooltip>}
             {model.capabilities?.tools && <CustomTooltip content={t("cap_tools")}><span className="shrink-0 text-t3"><Icons.Wrench /></span></CustomTooltip>}
-            {showContextLength && formatContext(model.contextLength) && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">{formatContext(model.contextLength)}</span>}
+            {showContextLength && formatContext(model.contextLength) && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-t2">{formatContext(model.contextLength)}</span>}
             {renderRowBadges?.(model)}
           </div>
           {((model.label && model.label !== model.id) || (showPricing && formatPrice(model.pricing))) && (
-            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[calc(var(--ui-fs)-4px)] text-t4">
               {model.label && model.label !== model.id && <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{model.id}</span>}
               {showPricing && formatPrice(model.pricing) && <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">{formatPrice(model.pricing)}</span>}
             </div>
@@ -146,18 +146,18 @@ export function ProviderModelList({
         ? groups.map(([owner, items]) => (
             <Command.Group
               key={owner}
-              heading={<div className="px-2.5 pb-1 pt-1.5 font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{owner}</div>}
+              heading={<div className="px-2.5 pb-1 pt-1.5 font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{owner}</div>}
             >
               {items.map(renderRow)}
             </Command.Group>
           ))
         : visible.map(renderRow)}
       {customSlug && !hasExactMatch && (
-        <Command.Item data-testid="use-custom-model" value={`use-${customSlug}`} onSelect={() => onUseCustomSlug(customSlug)} className="cursor-pointer rounded px-2.5 py-1.5 font-ui text-[12px] text-accent-t data-[selected=true]:bg-s2">
+        <Command.Item data-testid="use-custom-model" value={`use-${customSlug}`} onSelect={() => onUseCustomSlug(customSlug)} className="cursor-pointer rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t data-[selected=true]:bg-s2">
           {t("use_custom_model_id", { id: customSlug })}
         </Command.Item>
       )}
-      {visible.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">{t("no_models_found")}</div>}
+      {visible.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("no_models_found")}</div>}
     </Command.List>
   );
 }

@@ -11,7 +11,8 @@
  *   - `id` associates the control with a `<label htmlFor>` (used by every
  *     call site that wraps Toggle in a text label, e.g. ContextMemoryModal)
  *   - `className` applies to the control's container (call sites pass sizing
- *     overrides like `!inline-flex` and `text-[18px]`)
+ *     overrides like `!inline-flex`; `text-[18px]` was such an override
+ *     before the font audit — audit steps 3 and 6 retired the last ones)
  *
  * What is deliberately NOT pinned: the DOM tag (`label`+`input` today,
  * `button` under Radix Switch) and the exact role (`checkbox` today,

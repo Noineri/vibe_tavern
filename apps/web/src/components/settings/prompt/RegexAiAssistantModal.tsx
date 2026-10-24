@@ -297,7 +297,7 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 			<span className="shrink-0 text-accent">
 				<Icons.sparkles />
 			</span>
-			<span className="truncate text-sm font-semibold text-t1">{t("regexAssistant.title")}</span>
+			<span className="truncate text-[var(--ui-fs)] leading-5 font-semibold text-t1">{t("regexAssistant.title")}</span>
 		</div>
 	);
 

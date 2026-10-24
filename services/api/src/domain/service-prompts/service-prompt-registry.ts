@@ -27,6 +27,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   message_tts_annotate: "message-tts-annotate-ai-prompt.md",
   tracker_template: "tracker-template.md",
   regex: "regex-ai-prompt.md",
+  skill: "skill-ai-prompt.md",
   // summary (1)
   summary: "summary-ai-prompt.md",
   // insights (4)

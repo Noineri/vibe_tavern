@@ -125,6 +125,7 @@
 
 @layer base {
   html, body { font-family: var(--font-ui); }
+  body { font-size: var(--ui-fs); }
   /* Font smoothing — crisper/thinner text rendering (macOS only; other platforms ignore it). */
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -202,7 +203,7 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-content.md-agent-plain strong em,.md-content.md-agent-plain em strong{color:inherit;font-size:inherit;font-style:italic}
 .scene-meta{font-size:.85em;color:var(--t3);font-family:var(--font-ui);margin-top:.4em;white-space:pre-line}
 .system-banner{display:inline-block;padding:2px 8px;margin:2px 0;border-radius:6px;background:var(--accent-dim);border:1px solid color-mix(in srgb, var(--accent) 35%, transparent);color:var(--t1);font-family:var(--font-ui);font-size:.85em;line-height:1.4}
-.scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
+.scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size: calc(var(--mfs)-4px);color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
 /* ── Markdown formatting ── */
 .md-h1{font-size:1.75em;font-weight:700;margin:1.2em 0 .5em;line-height:1.2;color:var(--t1)}
@@ -273,16 +274,16 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 
 /* ── Build mode fields (LorebookEditor, BuildMode) ── */
 .build-field{margin-bottom:20px}
-.build-field label{display:block;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.build-field label{display:block;font-size: calc(var(--ui-fs)-3px);font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
 .build-field textarea,.build-field input,.build-field select{
   width:100%;background:var(--s2);border:1px solid var(--border);border-radius:6px;
-  padding:10px 12px;font-family:var(--font-body);font-size:14px;line-height:1.7;
+  padding:10px 12px;font-family:var(--font-body);font-size: var(--ui-fs);line-height:1.7;
   color:var(--t1);outline:none;resize:vertical;transition:border-color .15s
 }
 .build-field textarea:focus,.build-field input:focus,.build-field select:focus{border-color:var(--accent)}
 .build-field textarea{min-height:120px}
 .build-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
+.build-tag{font-size: calc(var(--ui-fs)-3px);background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
 .build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
 
@@ -347,26 +348,26 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
   .canvas-disclosure-btn{flex-wrap:wrap;row-gap:0.25rem}
 }
 
-.build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
-.build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
+.build-section-title{font-family:var(--font-body);font-size: calc(var(--ui-fs)+8px);font-weight:500;color:var(--t1);margin-bottom:6px}
+.build-section-sub{font-size: calc(var(--ui-fs)-1px);color:var(--t2);margin-bottom:28px;line-height:1.55}
 
 /* ── Shared buttons (BuildMode, ProviderModal, save-btn) ── */
-.api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size:12px;font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
+.api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size: calc(var(--ui-fs)-2px);font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
 .api-test-btn.idle{background:var(--s3);color:var(--t2)}
 .api-test-btn.idle:hover{background:var(--border2);color:var(--t1)}
 .api-test-btn.ok{background:oklch(0.28 0.06 145);color:oklch(0.78 0.14 145)}
 .api-test-btn.err{background:oklch(0.22 0.06 25);color:oklch(0.72 0.18 25)}
-.api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size:12.5px;font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
+.api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size: calc(var(--ui-fs)-1px);font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
 .api-save-btn:hover{filter:brightness(1.1)}
-.api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
+.api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size: calc(var(--ui-fs)-1px);font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
 
 /* ── Empty states ── */
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 24px;text-align:center;min-height:220px;user-select:none}
 .empty-icon{width:48px;height:48px;border-radius:12px;background:var(--s2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--t3);flex-shrink:0}
-.empty-title{font-size:14px;font-weight:500;color:var(--t2)}
-.empty-sub{font-size:12px;color:var(--t3);line-height:1.55;max-width:280px}
-.empty-cta{margin-top:4px;font-size:12px;color:var(--accent-t);background:var(--accent-dim);border-radius:6px;padding:6px 16px;cursor:pointer;transition:background .15s}
+.empty-title{font-size: var(--ui-fs);font-weight:500;color:var(--t2)}
+.empty-sub{font-size: calc(var(--ui-fs)-2px);color:var(--t3);line-height:1.55;max-width:280px}
+.empty-cta{margin-top:4px;font-size: calc(var(--ui-fs)-2px);color:var(--accent-t);background:var(--accent-dim);border-radius:6px;padding:6px 16px;cursor:pointer;transition:background .15s}
 .empty-cta:hover{background:var(--accent)}
 
 /* ── Keyframes ── */

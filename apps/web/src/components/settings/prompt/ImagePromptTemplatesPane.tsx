@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type {
   ImagePromptFamiliesValue,
@@ -25,7 +25,7 @@ import {
 import { listImagePromptFamilies } from "../../../api/image-gen-api.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls, lblCls } from "../../../lib/field-tokens.js";
+import { codeQuoteCls, lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -38,7 +38,10 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { TextInput } from "../../shared/text-input.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
-import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
+import { MasterList } from "../../shared/master-list/master-list.js";
+import { MasterListRow } from "../../shared/master-list/master-list-row.js";
+import { MasterListPhoneRow, SortableMasterListPhoneRow } from "../../shared/master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../../shared/master-list/master-list-overlay-row.js";
 import { ASSIST_CORE_KEY, ImagePromptAssistRow, savedAssistEntry } from "./image-prompt-assist-row.js";
 import {
   normalizeDraftCell,
@@ -47,9 +50,7 @@ import {
   type DraftCell,
   type DraftOverrides,
 } from "./image-prompt-draft.js";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { arrayMove } from "@dnd-kit/sortable";
 
 /**
  * The Images tab of the prompt manager, rebuilt on separately-living image
@@ -61,10 +62,17 @@ import { CSS } from "@dnd-kit/utilities";
  * (decision-6: a per-mode family dropdown, e.g. scene generation → Pony —
  * see reports/IMAGE_PROMPT_TEMPLATES_RESEARCH.md) and opens the
  * template editor + quality layer inside an AnimatedDisclosure. The assist
- * row (ImagePromptAssistRow, fork #1 of the row chrome below) edits the
- * extraction core (`assist|prose`, one per profile) and the selected
+ * row (ImagePromptAssistRow, fork #1 of the detail row chrome below) edits
+ * the extraction core (`assist|prose`, one per profile) and the selected
  * family's addendum (`assist|<family>`) through the same whole-profile
  * save; Default stays a read-only canon view.
+ *
+ * ML-3: the master PROFILE list no longer forks anything — rows render
+ * through `shared/master-list` (pinned Default, sortable phone rows, the
+ * rename slot, the primitive overlay), like the fork source. What still
+ * forks `ServicePromptsPane` is the detail side (mode rows × family
+ * dropdown, quality layer, assist row) and the profile flow (select +
+ * make-live, duplicate/delete footers, discard guard).
  */
 
 export interface ImagePromptTemplatesPaneSlots {
@@ -121,91 +129,13 @@ function rowIdFor(row: SelectedRow): ImagePromptTemplatesPaneRowId {
 }
 
 
-const SortableProfileRow = React.memo(
-  ({
-    profile,
-    isActive,
-    isSelected,
-    onSelect,
-    isMobile,
-    onRenameStart,
-    renderDrillDown,
-  }: {
-    profile: ImagePromptProfileValue;
-    isActive: boolean;
-    isSelected: boolean;
-    onSelect: (id: string) => void;
-    isMobile: boolean;
-    onRenameStart: (id: string, name: string) => void;
-    renderDrillDown?: (id: string, selectRow: () => void) => ReactNode;
-  }) => {
-    const { t } = useT();
-    const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-      id: profile.id,
-    });
-    const style: CSSProperties = {
-      transform: CSS.Translate.toString(transform),
-      transition,
-      ...(isDragging ? { opacity: 0 } : {}),
-    };
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        onClick={() => onSelect(profile.id)}
-        data-testid={`image-prompt-profile-row-${profile.id}`}
-        className={cn(
-          "group flex cursor-pointer items-center gap-2 border-l-2 min-h-[48px] px-3 sm:transition-colors touch-manipulation",
-          isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-        )}
-      >
-        <button
-          type="button"
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label="drag"
-          onClick={(e) => e.stopPropagation()}
-          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
-        >
-          <span className="text-base leading-none">≡</span>
-        </button>
-        <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isActive ? "bg-accent" : "bg-transparent")} />
-        <CustomTooltip content={profile.name}>
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate font-ui text-[13px] font-medium",
-              isSelected ? "text-accent-t" : "text-t2",
-            )}
-          >
-            {profile.name}
-          </span>
-        </CustomTooltip>
-        <button
-          type="button"
-          aria-label={t("edit")}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRenameStart(profile.id, profile.name);
-          }}
-          className={cn(
-            "shrink-0 rounded p-1 transition-colors",
-            isMobile ? "text-t4" : "opacity-0 group-hover:opacity-100 text-t4 hover:bg-s3 hover:text-t1",
-            isMobile && "ml-1",
-          )}
-        >
-          <Icons.Edit />
-        </button>
-        {!isMobile && (
-          <div className="ml-auto hidden md:flex">
-            {renderDrillDown?.(profile.id, () => onSelect(profile.id))}
-          </div>
-        )}
-        {isMobile && renderDrillDown?.(profile.id, () => onSelect(profile.id))}
-      </div>
-    );
-  },
-);
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, rename slot, overlay, phone drill-down row). This pane supplies data
+// + slots: the Default profile renders as a pinned handle-less row (lock in
+// the status slot, LIVE badge in the title), every other profile as a
+// sortable phone row (the rename editor in the `rename` slot, the hover/
+// mobile edit button + the drill-down seam in trailing, ★ for the live
+// profile in the status slot per the row rules).
 
 export function ImagePromptTemplatesPane({
   active,
@@ -275,32 +205,13 @@ export function ImagePromptTemplatesPane({
   const defaultProfile = useMemo(() => profiles.find((p) => p.isDefault) ?? null, [profiles]);
   const nonDefaultProfiles = useMemo(() => profiles.filter((p) => !p.isDefault), [profiles]);
 
-  const {
-    displayItems: displayNonDefault,
-    sensors,
-    activeDragItem,
-    handleDragStart,
-    handleDragEnd,
-    handleDragCancel,
-  } = useReorderableList<ImagePromptProfileValue>({
-    items: nonDefaultProfiles,
-    getId: (p) => p.id,
-    onReorder: (activeId, overId, currentItems) => {
-      const fromIdx = currentItems.findIndex((p) => p.id === activeId);
-      const toIdx = currentItems.findIndex((p) => p.id === overId);
-      if (fromIdx === -1 || toIdx === -1) {
-        return { optimisticItems: currentItems, persist: () => {} };
-      }
-      const reordered = arrayMove(currentItems, fromIdx, toIdx);
-      return {
-        optimisticItems: reordered,
-        persist: () => api.reorder(reordered.map((p, i) => ({ id: p.id, sortOrder: i }))).then((res) => {
-          setProfiles(res.profiles);
-          setActiveProfileId(res.activeProfileId);
-        }),
-      };
-    },
-  });
+  // The Default profile has no stored record to order, so it stays pinned
+  // at the top of the list (a handle-less row, never in the sortable set).
+  // Drag mechanics live in the primitive's hook; only the payload math
+  // (`arrayMove` + the default guard) stays here.
+  const orderedProfiles = useMemo(() => {
+    return defaultProfile ? [defaultProfile, ...nonDefaultProfiles] : [...nonDefaultProfiles];
+  }, [defaultProfile, nonDefaultProfiles]);
 
   const refreshList = useCallback(async () => {
     setLoadState("loading");
@@ -573,180 +484,191 @@ export function ImagePromptTemplatesPane({
 
   // ─── Master: the profile list (ServicePromptsPane fork) ───────────────────
 
-  const master = (
-    <div className="flex flex-1 flex-col min-h-0 py-2.5">
-      <div className="shrink-0 px-[13px]">
-        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pb-[5px] pt-1">
-          {t("imagePromptTemplates.profile.masterTitle")}
-        </div>
+  const masterHeader = (
+    <div className="shrink-0 px-[13px]">
+      <div className={cn(listHeaderCls, "pb-[5px] pt-1")}>
+        {t("imagePromptTemplates.profile.masterTitle")}
       </div>
+    </div>
+  );
+
+  const renderMasterRow = (p: ImagePromptProfileValue): ReactNode => {
+    const isSelected = selectedId === p.id;
+    const isActive = p.isDefault ? activeProfileId === null : activeProfileId === p.id;
+    const isRenaming = renamingId === p.id;
+    if (isRenaming) {
+      return (
+        <MasterListRow
+          rowTestId={`image-prompt-profile-row-${p.id}`}
+          rename={
+            <InlineRenameInput
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleRenameSave();
+                if (e.key === "Escape") setRenamingId(null);
+              }}
+              onBlur={() => void handleRenameSave()}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+        />
+      );
+    }
+    const trailing = (
+      <>
+        <button
+          type="button"
+          aria-label={t("edit")}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRenameStart(p.id, p.name);
+          }}
+          className={cn(
+            "shrink-0 rounded p-1 transition-colors",
+            isMobile ? "text-t4" : "opacity-0 group-hover:opacity-100 text-t4 hover:bg-s3 hover:text-t1",
+            isMobile && "ml-1",
+          )}
+        >
+          <Icons.Edit />
+        </button>
+        {renderRowDrillDown?.(p.id, () => handleSelectRow(p.id))}
+      </>
+    );
+    if (p.isDefault) {
+      return (
+        <MasterListPhoneRow
+          rowTestId={`image-prompt-profile-row-${p.id}`}
+          selected={isSelected}
+          active={isActive}
+          status={
+            <CustomTooltip content={t("promptManager.servicePrompts.liveTooltip")}>
+              <span className="flex shrink-0 text-t3">
+                <Icons.Lock />
+              </span>
+            </CustomTooltip>
+          }
+          title={
+            <>
+              {p.name}
+              <span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-success">
+                {t("promptManager.servicePrompts.liveBadge")}
+              </span>
+            </>
+          }
+          onSelect={() => handleSelectRow(p.id)}
+          trailing={trailing}
+        />
+      );
+    }
+    return (
+      <SortableMasterListPhoneRow
+        sortableId={p.id}
+        rowTestId={`image-prompt-profile-row-${p.id}`}
+        selected={isSelected}
+        active={isActive}
+        title={p.name}
+        onSelect={() => handleSelectRow(p.id)}
+        trailing={trailing}
+      />
+    );
+  };
+
+  const master = (
+    <>
+      {loadState !== "ready" ? (
+        <div className="flex flex-1 flex-col min-h-0 py-2.5">
+          {masterHeader}
       {loadState === "loading" && (
-        <div className="px-4 py-6 font-ui text-[13px] text-t3">{t("loading")}</div>
+        <div className="px-4 py-6 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("loading")}</div>
       )}
       {loadState === "error" && (
         <div className="px-4 py-4">
-          <div className="font-ui text-[13px] text-danger">{t("imagePromptTemplates.loadError")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-danger">{t("imagePromptTemplates.loadError")}</div>
           <button
             type="button"
             onClick={() => void refreshList()}
-            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] text-t2 hover:bg-s3"
+            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s3"
           >
             {t("retry")}
           </button>
         </div>
       )}
-      {loadState === "ready" && (
-        <div className="flex-1 overflow-y-auto">
-          {defaultProfile && (() => {
-            const p = defaultProfile;
-            const isSelected = selectedId === p.id;
-            const isActive = activeProfileId === null;
-            const isRenaming = renamingId === p.id;
-            return (
-              <div
-                key={p.id}
-                data-testid={`image-prompt-profile-row-${p.id}`}
-                onClick={() => handleSelectRow(p.id)}
-                className={cn(
-                  "group flex cursor-pointer items-center gap-2 border-l-2 min-h-[48px] px-3 sm:transition-colors",
-                  isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-                )}
-              >
-                <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isActive ? "bg-accent" : "bg-transparent")} />
-                <CustomTooltip content={t("promptManager.servicePrompts.liveTooltip")}>
-                  <span className="flex shrink-0 text-t3">
-                    <Icons.Lock />
-                  </span>
-                </CustomTooltip>
-                {isRenaming ? (
-                  <InlineRenameInput
-                    ref={renameInputRef}
-                    className="min-w-0 flex-1"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleRenameSave();
-                      if (e.key === "Escape") setRenamingId(null);
-                    }}
-                    onBlur={() => void handleRenameSave()}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <CustomTooltip content={p.name}>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate font-ui text-[13px] font-medium",
-                        isSelected ? "text-accent-t" : "text-t2",
-                      )}
-                    >
-                      {p.name}
-                      <span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[10px] text-success">
-                        {t("promptManager.servicePrompts.liveBadge")}
-                      </span>
-                    </span>
-                  </CustomTooltip>
-                )}
-                {!isRenaming && (
-                  <button
-                    type="button"
-                    aria-label={t("edit")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRenameStart(p.id, p.name);
-                    }}
-                    className={cn(
-                      "shrink-0 rounded p-1 transition-colors",
-                      isMobile ? "text-t4" : "opacity-0 group-hover:opacity-100 text-t4 hover:bg-s3 hover:text-t1",
-                    )}
-                  >
-                    <Icons.Edit />
-                  </button>
-                )}
-                {renderRowDrillDown?.(p.id, () => handleSelectRow(p.id))}
-              </div>
-            );
-          })()}
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
-            <SortableContext items={displayNonDefault.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-              {displayNonDefault.map((p) => {
-                const isSelected = selectedId === p.id;
-                const isActive = activeProfileId === p.id;
-                const isRenaming = renamingId === p.id;
-                if (isRenaming) {
-                  return (
-                    <div key={p.id} className="border-l-2 border-transparent px-3 py-2">
-                      <InlineRenameInput
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void handleRenameSave();
-                          if (e.key === "Escape") setRenamingId(null);
-                        }}
-                        onBlur={() => void handleRenameSave()}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <SortableProfileRow
-                    key={p.id}
-                    profile={p}
-                    isActive={isActive}
-                    isSelected={isSelected}
-                    onSelect={handleSelectRow}
-                    isMobile={isMobile}
-                    onRenameStart={handleRenameStart}
-                    renderDrillDown={renderRowDrillDown}
-                  />
-                );
-              })}
-            </SortableContext>
-            <DragOverlay dropAnimation={null}>
-              {activeDragItem ? (
-                <div className={cn("flex items-center gap-2 border-l-2 min-h-[48px] px-3", activeDragItem.id === selectedId ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2")}>
-                  <span className="text-base leading-none text-t4">≡</span>
-                  <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", activeDragItem.id === activeProfileId ? "bg-accent" : "bg-transparent")} />
-                  <span className="truncate font-ui text-[13px] font-medium text-t1">{activeDragItem.name}</span>
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-          {isCreating && (
-            <div className="border-l-2 border-transparent px-3 py-2">
-              <InlineRenameInput
-                ref={newInputRef}
-                placeholder={t("imagePromptTemplates.profile.newNamePlaceholder")}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleCreateNew();
-                  if (e.key === "Escape") {
-                    setIsCreating(false);
-                    setNewName("");
-                  }
-                }}
-                onBlur={() => {
-                  if (!newName.trim()) setIsCreating(false);
-                  else void handleCreateNew();
-                }}
-              />
-            </div>
+        </div>
+      ) : (
+        <MasterList<ImagePromptProfileValue>
+          items={orderedProfiles}
+          getId={(p) => p.id}
+          // The pinned Default row is never sortable, and the row under
+          // inline rename renders an input instead of a sortable (ML-2 pattern).
+          sortableIds={orderedProfiles.filter((p) => !p.isDefault && p.id !== renamingId).map((p) => p.id)}
+          onReorderItems={(activeId, overId, currentItems) => {
+            // The Default row has no stored record: dragging onto it is a noop.
+            if (defaultProfile && (activeId === defaultProfile.id || overId === defaultProfile.id)) {
+              return { optimisticItems: currentItems, persist: () => {} };
+            }
+            const fromIdx = currentItems.findIndex((p) => p.id === activeId);
+            const toIdx = currentItems.findIndex((p) => p.id === overId);
+            if (fromIdx === -1 || toIdx === -1) {
+              return { optimisticItems: currentItems, persist: () => {} };
+            }
+            const reordered = arrayMove(currentItems, fromIdx, toIdx);
+            return {
+              optimisticItems: reordered,
+              persist: () => api.reorder(
+                reordered.filter((p) => !p.isDefault).map((p, i) => ({ id: p.id, sortOrder: i })),
+              ).then((res) => {
+                setProfiles(res.profiles);
+                setActiveProfileId(res.activeProfileId);
+              }),
+            };
+          }}
+          header={masterHeader}
+          renderRow={renderMasterRow}
+          renderOverlayRow={(item) => (
+            <MasterListDragOverlayRow
+              active={item.isDefault ? activeProfileId === null : activeProfileId === item.id}
+              title={item.name}
+            />
           )}
-        </div>
-      )}
-      {loadState === "ready" && (
-        <div className="shrink-0 border-t border-border px-3 pt-3">
-          <button
-            type="button"
-            onClick={() => setIsCreating(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[12px] text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-          >
-            <Icons.Plus />
-            {t("promptManager.servicePrompts.newProfile")}
-          </button>
-        </div>
+          footer={
+            <div className="shrink-0 border-t border-border px-3 pt-3">
+              {/* NAMED POSITIONAL CHANGE (ML-2 regex precedent): the inline
+              creation input lived at the list scroll-end; it now docks in the
+              pinned footer above the "+ New" button (same bottom position,
+              no longer scrolls away). */}
+              {isCreating ? (
+                <InlineRenameInput
+                  ref={newInputRef}
+                  placeholder={t("imagePromptTemplates.profile.newNamePlaceholder")}
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCreateNew();
+                    if (e.key === "Escape") {
+                      setIsCreating(false);
+                      setNewName("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!newName.trim()) setIsCreating(false);
+                    else void handleCreateNew();
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+                >
+                  <Icons.Plus />
+                  {t("promptManager.servicePrompts.newProfile")}
+                </button>
+              )}
+            </div>
+          }
+        />
       )}
       {confirmDeleteId && (
         <DestructiveConfirmModal
@@ -766,7 +688,7 @@ export function ImagePromptTemplatesPane({
           onCancel={() => setPendingSelectId(null)}
         />
       )}
-    </div>
+    </>
   );
 
   // ─── Detail: mode rows × family dropdown + editor (IPT side, kept) ───────
@@ -913,14 +835,14 @@ export function ImagePromptTemplatesPane({
 
   const detailNode = (
     <div className="flex flex-col gap-4">
-      {detailState === "loading" && <div className="font-ui text-[13px] text-t3">{t("loading")}</div>}
+      {detailState === "loading" && <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("loading")}</div>}
       {detailState === "error" && (
         <div>
-          <div className="font-ui text-[13px] text-danger">{tDynamic(detailErrorKey ?? "imagePromptTemplates.loadError")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-danger">{tDynamic(detailErrorKey ?? "imagePromptTemplates.loadError")}</div>
           <button
             type="button"
             onClick={() => setDetailNonce((n) => n + 1)}
-            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] text-t2 hover:bg-s3"
+            className="mt-2 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s3"
           >
             {t("retry")}
           </button>
@@ -940,7 +862,7 @@ export function ImagePromptTemplatesPane({
             </label>
           )}
           {isDefaultSelected && (
-            <div className="rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t2">
+            <div className="rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
               <span className="font-medium text-t1">{detail.profile.name}</span>
               <span className="ml-2 text-t3">{t("imagePromptTemplates.profile.defaultReadOnlyHint")}</span>
             </div>

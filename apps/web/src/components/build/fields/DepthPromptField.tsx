@@ -55,7 +55,7 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
             />
           </div>
           <div className="flex min-h-8 items-center justify-between gap-2 sm:justify-start">
-            <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+            <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
             <NumberInput
               className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
               min={0}

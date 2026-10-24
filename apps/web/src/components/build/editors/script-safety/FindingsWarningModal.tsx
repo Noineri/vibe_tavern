@@ -100,7 +100,7 @@ export function FindingsWarningModal({
               >
                 <span
                   className={cn(
-                    "shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] font-medium uppercase tracking-wide",
+                    "shrink-0 rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-wide",
                     SEVERITY_BADGE_CLS[finding.severity === "critical" ? "critical" : "warning"],
                   )}
                 >

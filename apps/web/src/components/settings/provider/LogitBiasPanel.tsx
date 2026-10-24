@@ -66,12 +66,12 @@ function BiasRow({
       {/* Token text / ID */}
       <div className="flex shrink-0 items-center gap-1.5">
         {entry.text ? (
-          <span className="inline-block max-w-[120px] truncate rounded bg-s3 px-1.5 py-0.5 font-mono text-[11px] text-t1">
+          <span className="inline-block max-w-[120px] truncate rounded bg-s3 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t1">
             "{entry.text}"
           </span>
         ) : null}
-        <span className="font-mono text-[10px] text-t3">#{entry.tokenId}</span>
-        {stale && <span className="rounded bg-warning/10 px-1 py-0.5 font-ui text-[9px] uppercase tracking-wide text-warning">{t("stale_badge")}</span>}
+        <span className="font-mono text-[calc(var(--ui-fs)-4px)] text-t3">#{entry.tokenId}</span>
+        {stale && <span className="rounded bg-warning/10 px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-5px)] uppercase tracking-wide text-warning">{t("stale_badge")}</span>}
       </div>
 
       {/* Bias slider */}
@@ -80,7 +80,7 @@ function BiasRow({
           type="button"
           disabled={disabled || stale}
           onClick={() => onUpdate({ ...entry, bias: Math.max(-100, entry.bias - 10) })}
-          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
+          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
           −
         </button>
@@ -101,7 +101,7 @@ function BiasRow({
           type="button"
           disabled={disabled || stale}
           onClick={() => onUpdate({ ...entry, bias: Math.min(100, entry.bias + 10) })}
-          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
+          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
           +
         </button>
@@ -114,7 +114,7 @@ function BiasRow({
             type="button"
             disabled={disabled || stale}
             onClick={() => onUpdate({ ...entry, bias: -100 })}
-            className="shrink-0 rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/20 disabled:pointer-events-none"
+            className="shrink-0 rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-danger transition-colors hover:bg-danger/20 disabled:pointer-events-none"
           >
             🚫
           </button>
@@ -214,11 +214,11 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
             {t("logit_bias_label")}
           </label>
           <CustomTooltip content={t("logit_bias_tooltip")} side="right">
-            <span className="cursor-help font-ui text-[10px] text-t3/60">?</span>
+            <span className="cursor-help font-ui text-[calc(var(--ui-fs)-4px)] text-t3/60">?</span>
           </CustomTooltip>
         </div>
         <div className="rounded-lg border border-border bg-s2 px-3 py-4 text-center">
-          <div className="font-ui text-[12px] text-t3">
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             {t("logit_bias_unsupported")}
           </div>
         </div>
@@ -233,7 +233,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
           {t("logit_bias_label")}
         </label>
         <CustomTooltip content={t("logit_bias_tooltip")} side="right">
-          <span className="cursor-help font-ui text-[10px] text-t3/60">?</span>
+          <span className="cursor-help font-ui text-[calc(var(--ui-fs)-4px)] text-t3/60">?</span>
         </CustomTooltip>
       </div>
 
@@ -252,7 +252,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
           onClick={() => void handleTokenize()}
           disabled={disabled || loading || !textInput.trim()}
           className={cn(
-            "h-[38px] shrink-0 rounded-md border px-3 font-ui text-[12px] font-medium transition-colors",
+            "h-[38px] shrink-0 rounded-md border px-3 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors",
             loading || !textInput.trim()
               ? "border-border bg-s3 text-t3 cursor-not-allowed"
               : "border-accent bg-accent/10 text-accent-t hover:bg-accent/20",
@@ -279,7 +279,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
           onClick={handleManualAdd}
           disabled={disabled || !manualId.trim()}
           className={cn(
-            "h-[30px] shrink-0 rounded-md border border-border px-2 font-ui text-[11px] text-t3 transition-colors",
+            "h-[30px] shrink-0 rounded-md border border-border px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors",
             !manualId.trim() ? "cursor-not-allowed" : "hover:border-accent hover:text-accent-t",
           )}
         >
@@ -307,7 +307,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
       )}
 
       {entries.length === 0 && (
-        <div className="mt-2 font-ui text-[11px] text-t3/60">
+        <div className="mt-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3/60">
           {t("logit_bias_empty_hint")}
         </div>
       )}

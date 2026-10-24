@@ -81,7 +81,7 @@ export function ExperienceEffectDiagnostics(props: ExperienceEffectDiagnosticsPr
       {retryable.map((effect) => (
         <div
           key={effect.id}
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[11px]"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)]"
           data-testid={`experience-effect-row-${effect.id}`}
         >
           <span
@@ -98,7 +98,7 @@ export function ExperienceEffectDiagnostics(props: ExperienceEffectDiagnosticsPr
           )}
           <button
             type="button"
-            className="ml-auto shrink-0 cursor-pointer rounded border border-border bg-bg px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 max-md:min-h-9"
+            className="ml-auto shrink-0 cursor-pointer rounded border border-border bg-bg px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 max-md:min-h-9"
             disabled={retryingId !== null}
             onClick={() => void handleRetry(effect.id)}
             data-testid={`experience-effect-retry-${effect.id}`}

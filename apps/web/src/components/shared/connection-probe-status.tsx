@@ -27,7 +27,7 @@ export function ConnectionProbeStatus({
   if (ok) {
     return (
       <div className="mt-3" data-testid={successTestId}>
-        <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
+        <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-success">
           <Icons.Check />
           {successText}
         </span>
@@ -36,7 +36,7 @@ export function ConnectionProbeStatus({
   }
   return (
     <div className="mt-3" data-testid={failureTestId}>
-      <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
+      <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
         <Icons.Close />
         {failureText}
       </span>

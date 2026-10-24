@@ -18,7 +18,7 @@ import { SaveButton } from "../../../shared/SaveBar.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
 import { Icons } from "../../../shared/icons.js";
 import { SttDictationBlock } from "./SttDictationBlock.js";
-import type { useSttProfiles } from "./use-stt-profiles.js";
+import type { useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

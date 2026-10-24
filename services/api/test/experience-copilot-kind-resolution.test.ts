@@ -167,6 +167,82 @@ describe("ExperienceCopilotAdapter.experienceCopilotAssertStreamKind (AS-2c)", (
   });
 });
 
+// ─── Adapter-level: the NEW-session kind resolution + auto-compact default ────
+
+describe("ExperienceCopilotAdapter.experienceCopilotStartNewSession auto-compact default (AP-20)", () => {
+  /** The AP-20 harness: a recording startNewSession fake, the script row the
+   *  kind resolution reads, and a per-kind auto-compact-default map — the two
+   *  collaborators the create path consults before delegating. */
+  function makeCreateAdapter(
+    script: ScriptRow | null,
+    defaults: Record<string, boolean>,
+  ) {
+    const created: Array<{ scriptId: string; title?: string; autoCompact?: boolean }> = [];
+    const kindReads: string[] = [];
+    const store = {
+      async startNewSession(scriptId: string, title?: string, autoCompact?: boolean) {
+        created.push({ scriptId, title, autoCompact });
+        return makeThread(scriptId);
+      },
+    } as unknown as ExperienceCopilotStore;
+    const scripts = {
+      async getById(scriptId: string) {
+        return script && script.id === scriptId ? script : null;
+      },
+    };
+    const agentKindSettings = {
+      async get(kind: string) {
+        kindReads.push(kind);
+        return {
+          agentKind: kind,
+          providerProfileId: null,
+          modelName: null,
+          defaultProfileId: null,
+          autoCompactDefault: defaults[kind] ?? true,
+          updatedAt: null,
+        };
+      },
+    };
+    const adapter = new ExperienceCopilotAdapter({ experienceCopilot: store, scripts, agentKindSettings } as unknown as StoreContainer);
+    return { adapter, created, kindReads };
+  }
+
+  test("an interactive script reads the experience kind's default and seeds the new thread with it", async () => {
+    const { adapter, created, kindReads } = makeCreateAdapter(makeScriptRow("interactive"), {
+      experience: false,
+    });
+
+    await adapter.experienceCopilotStartNewSession("script_kr_1", "T");
+
+    // The kind chain: script row → registry kind (`experience` serves
+    // interactive) → that kind's settings row → the default lands on the
+    // thread row. Never a hardcoded kind or a hardcoded default.
+    expect(kindReads).toEqual(["experience"]);
+    expect(created).toEqual([{ scriptId: "script_kr_1", title: "T", autoCompact: false }]);
+  });
+
+  test("a prompt/dice script reads the script kind's OWN default — the resolution is per-kind", async () => {
+    const { adapter, created, kindReads } = makeCreateAdapter(makeScriptRow("prompt"), {
+      experience: false,
+      script: true,
+    });
+
+    await adapter.experienceCopilotStartNewSession("script_kr_1", "T");
+
+    expect(kindReads).toEqual(["script"]);
+    expect(created).toEqual([{ scriptId: "script_kr_1", title: "T", autoCompact: true }]);
+  });
+
+  test("a missing script row resolves to the draft kind (experience) — the dangling-script twin of the thread path", async () => {
+    const { adapter, created, kindReads } = makeCreateAdapter(null, { experience: false });
+
+    await adapter.experienceCopilotStartNewSession("script_kr_1", "T");
+
+    expect(kindReads).toEqual(["experience"]);
+    expect(created).toEqual([{ scriptId: "script_kr_1", title: "T", autoCompact: false }]);
+  });
+});
+
 // ─── Route-level: the 400 mapping at the stream-turn start ───────────────────
 
 function makeRouteApp(throwFromAssert: Error | null) {

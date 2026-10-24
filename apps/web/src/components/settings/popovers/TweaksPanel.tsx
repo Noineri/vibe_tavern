@@ -48,15 +48,15 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, prox
   });
 
   const fontSizeOptions = [
-    { value: '17', label: <span className="font-body text-[11px] font-semibold">Aa</span> },
-    { value: '18', label: <span className="font-body text-[13px] font-semibold">Aa</span> },
-    { value: '19', label: <span className="font-body text-[15px] font-semibold">Aa</span> },
+    { value: '17', label: <span className="font-body text-[calc(var(--ui-fs)-3px)] font-semibold">Aa</span> },
+    { value: '18', label: <span className="font-body text-[calc(var(--ui-fs)-1px)] font-semibold">Aa</span> },
+    { value: '19', label: <span className="font-body text-[calc(var(--ui-fs)+1px)] font-semibold">Aa</span> },
   ];
 
   const uiFontSizeOptions = [
-    { value: '15', label: <span className="font-body text-[10px] font-semibold">Aa</span> },
-    { value: '17', label: <span className="font-body text-[13px] font-semibold">Aa</span> },
-    { value: '19', label: <span className="font-body text-[16px] font-semibold">Aa</span> },
+    { value: '15', label: <span className="font-body text-[calc(var(--ui-fs)-4px)] font-semibold">Aa</span> },
+    { value: '17', label: <span className="font-body text-[calc(var(--ui-fs)-1px)] font-semibold">Aa</span> },
+    { value: '19', label: <span className="font-body text-[calc(var(--ui-fs)+2px)] font-semibold">Aa</span> },
   ];
 
   const widthOptions = [
@@ -166,7 +166,7 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, prox
         <div className="flex items-center justify-between gap-3 py-2">
           <div className="min-w-0">
             <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2"><Icons.Globe />{t("proxies")}</span>
-            <span className="block truncate pl-[19px] font-ui text-[11px] text-t4">{defaultProxyName ? t("proxy_status_default", { name: defaultProxyName }) : t("proxy_status_configured", { count: proxyCount })}</span>
+            <span className="block truncate pl-[19px] font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{defaultProxyName ? t("proxy_status_default", { name: defaultProxyName }) : t("proxy_status_configured", { count: proxyCount })}</span>
           </div>
           <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={onOpenProxyManager}>{t("manage")}</button>
         </div>

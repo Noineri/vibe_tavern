@@ -237,6 +237,37 @@ Nineteen of the 336 web files still mount a tree that fires an unmocked request 
 
 ---
 
+## Test databases
+
+Build every test database through `createDb` or the helpers that wrap it (`createStoreContainer`, `createRuntimeStore`, the per-file `setup()`/`makeApp()` factories).
+Never open a raw `bun:sqlite` handle and replay the migrations yourself.
+
+**Fresh databases are cheap in tests.**
+A real `createDb` replays all drizzle migrations (122 as of 2026-10), which costs ~260 ms per call; with a fresh database per test that was almost the whole `db` suite and most of the `api` suite (measured in TS-1: full run 452–532 s before, ~87 s after).
+Both suites' preloads (`packages/db/test/store-cleanup.ts`, `services/api/test/store-cleanup.ts`) call `enableTestDbTemplate()` ([`packages/db/src/db-template.ts`](../../packages/db/src/db-template.ts)).
+With it on, the first eligible `createDb` in the process runs the real migrations into memory and keeps the result as a template; every later eligible call gets a byte copy in under a millisecond, with the same pragmas a real database gets (`journal_mode = WAL`, `busy_timeout`, `foreign_keys = ON`).
+The template is rebuilt from the current migrations on every run, so a new migration is picked up immediately — there is no snapshot to regenerate.
+Production never calls the switch; without it `createDb` takes the full migration path.
+
+So prefer a fresh database per test over sharing one across tests: isolation costs almost nothing now.
+
+**Which calls use the template.**
+A call is served from the template when it passes no `migrationsFolderOverride`, no `{ realMigrations: true }`, and the target is `":memory:"` or a file that does not exist yet.
+Everything else runs the real migration path unchanged:
+
+- a migrations-folder override (`createDb(path, folder)`) — the usual shape of a migration test;
+- a database file that already exists — the shape of an upgrade test (seed a legacy file, then open it);
+- the explicit opt-out `createDb(path, undefined, { realMigrations: true })` — for a test whose subject is the migration replay itself on a brand-new database (journal stamping, healing, repair passes, boot data passes).
+
+If you write a test that checks what migrations do, make sure it is on one of those three paths; otherwise it is testing the template, not the migrations.
+The canary [`packages/db/test/db-template.test.ts`](../../packages/db/test/db-template.test.ts) pins that a template copy is identical to a fresh migration (schema, `__drizzle_migrations`, pragmas, foreign-key enforcement) and that the three real paths stay real.
+
+**Keep per-test setup cheap in general.**
+The `api` and `db` suites run their files one after another in a single process, and the full suite is the gate for every change, so a slow `beforeEach` is paid by every contributor on every run.
+Heavy per-test work — builds, image encoding, large filesystem trees, a real migration replay — belongs in `beforeAll` or behind a cheaper seam, as long as no mutable state leaks between tests.
+
+---
+
 ## Test factories
 
 Factories are **inline per file** — there are no shared fixtures. Each test file defines its own small builders next to the tests that use them:

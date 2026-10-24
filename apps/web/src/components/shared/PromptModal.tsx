@@ -51,7 +51,7 @@ export function PromptModal(input: PromptModalProps) {
   return (
     <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]" hideOverlay title={input.title}>
       <div className="w-[380px] rounded-lg border border-border bg-surface p-7 shadow-xl">
-        <div className="mb-4 text-base font-medium text-t1">
+        <div className="mb-4 text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">
           {input.title}
         </div>
         <label className={lblCls}>{input.label}</label>
@@ -69,13 +69,13 @@ export function PromptModal(input: PromptModalProps) {
         />
         <div className="mt-6 flex justify-end gap-2.5">
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
+            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={input.onCancel}
           >
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={submit}
             disabled={!trimmed}
           >

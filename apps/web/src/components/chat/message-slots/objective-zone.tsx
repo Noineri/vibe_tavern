@@ -182,7 +182,7 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
           aria-label={t("obj_zone_expand")}
           className={cn(
             "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
-            "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+            "text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-t2",
           )}
         >
           <NodeGlyph status={summaryStatus} />
@@ -203,7 +203,7 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><Ic.target /></span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t(mode === "goals" ? "obj_zone_goals" : "obj_zone_route")}</span>
+        <span className="text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t(mode === "goals" ? "obj_zone_goals" : "obj_zone_route")}</span>
         <span className="shrink-0 tabular-nums text-t4">{progress}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <CustomTooltip content={t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_zone_regenerate_goals" : "obj_zone_regenerate")}>
@@ -310,7 +310,7 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
           }}
           className={cn(
             "min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5",
-            "font-ui text-[11px] text-t2 outline-none focus:border-accent",
+            "font-ui text-[calc(var(--ui-fs)-3px)] text-t2 outline-none focus:border-accent",
           )}
         />
       ) : (
@@ -319,7 +319,7 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
             type="button"
             onClick={() => setEditing(true)}
             className={cn(
-              "min-w-0 flex-1 truncate text-left font-ui text-[11px] transition-colors hover:text-t2",
+              "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-3px)] transition-colors hover:text-t2",
               task.status === "completed" && "text-success-text line-through",
               task.status === "abandoned" && "text-t4 line-through",
             (task.status === "pending" || task.status === "active") && (task.status === "active" ? "text-t2" : "text-t3"),
@@ -371,17 +371,17 @@ function LongTermZoneRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveLong
           {goal.status === "abandoned" && <Ic.close />}
         </button>
       </CustomTooltip>
-      <span className="shrink-0 font-ui text-[10px] font-semibold text-accent">{t("obj_zone_long_term")}:</span>
+      <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] font-semibold text-accent">{t("obj_zone_long_term")}:</span>
       {editing ? (
         <input
           autoFocus
           defaultValue={goal.description}
           onBlur={(e) => void commitRename(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
-          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[11px] text-t2 outline-none focus:border-accent"
+          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 outline-none focus:border-accent"
         />
       ) : (
-        <button type="button" onClick={() => setEditing(true)} className="min-w-0 flex-1 truncate text-left font-ui text-[11px] text-t2 hover:text-accent">
+        <button type="button" onClick={() => setEditing(true)} className="min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t2 hover:text-accent">
           {goal.description}
         </button>
       )}
@@ -437,14 +437,14 @@ function ShortTermZoneRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTas
           defaultValue={task.description}
           onBlur={(e) => void commitRename(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
-          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[11px] text-t2 outline-none focus:border-accent"
+          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 outline-none focus:border-accent"
         />
       ) : (
         <button
           type="button"
           onClick={() => setEditing(true)}
           className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[11px] transition-colors hover:text-t2",
+            "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-3px)] transition-colors hover:text-t2",
             task.status === "completed" && "text-success-text line-through",
             task.status === "abandoned" && "text-t4 line-through",
             (task.status === "pending" || task.status === "active") && (task.status === "active" ? "text-t2" : "text-t3"),

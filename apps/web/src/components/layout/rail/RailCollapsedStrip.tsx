@@ -94,7 +94,7 @@ export function RailCollapsedStrip({
           {avatarSrc(c) ? (
             <img className="h-full w-full object-cover" src={avatarSrc(c)!} alt={c.name} />
           ) : (
-            <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-sm", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
+            <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-[var(--ui-fs)] leading-5", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
           )}
         </div>
       ))}

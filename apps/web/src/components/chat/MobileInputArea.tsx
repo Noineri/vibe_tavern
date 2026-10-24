@@ -176,7 +176,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
               <button type="button"
                 onClick={handleGenerateMore}
                 title={t("generate_more_tooltip")}
-                className="flex h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-border2 bg-s3 px-2.5 font-ui text-[12px] font-medium text-t2 active:bg-s2"
+                className="flex h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-border2 bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 active:bg-s2"
               >
                 <Icons.Plus />
                 <span>{t("generate_more_label")}</span>
@@ -195,7 +195,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             </div>
             {slot === "cancel" && (
               <button type="button" aria-label={t("cancel")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
-                <span className="text-[11px] font-bold">✕</span>
+                <span className="text-[calc(var(--ui-fs)-3px)] font-bold">✕</span>
               </button>
             )}
             {slot === "send" && sendButton}

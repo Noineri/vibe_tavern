@@ -1,12 +1,10 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { isRecordProposal, type AgentProposal, type AgentThreadEventWire, type ExperienceCopilotMessageWire, type RecordProposal } from "@vibe-tavern/api-contracts";
+import { type AgentThreadEventWire, type ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
   useAgentTurnStore,
-  type AgentAskState,
   type AgentFeedEntry,
-  type AgentPermissionState,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
@@ -14,15 +12,23 @@ import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js"
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
-import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup, type RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
-import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
+import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
-import { AgentAskCard } from "./AgentAskCard.js";
-import { AgentPermissionCard } from "./AgentPermissionCard.js";
+import { syntheticAgentMessage } from "./agent-synthetic-message.js";
+import {
+  AgentAnchorItems,
+  recordProposalOf,
+  renderAskActivity,
+  renderPermissionActivity,
+  renderProposalActivity,
+  type AgentAnchorContext,
+  type CopilotTurnAnchorItem,
+} from "./agent-anchor-items.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
 import { AgentTurnErrorSlot } from "./AgentTurnErrorSlot.js";
-import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
+import { AgentHostCaption } from "./AgentHostCaption.js";
+import { buildTurnCaptions, withLiveReasoning } from "./agent-turn-captions.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { Icons } from "../icons.js";
 import { AgentEmptyState } from "./AgentEmptyState.js";
@@ -32,48 +38,11 @@ const EMPTY: AgentToolActivity[] = [];
 const EMPTY_FEED: AgentFeedEntry[] = [];
 const EMPTY_EVENTS: AgentThreadEventWire[] = [];
 
-/** One ordered render item pinned between two flow messages (TA-1, owner
- *  ruling 2026-10-12: ONE accordion per assistant turn hides ALL of that
- *  turn's tool calls). `"accordion"` is the turn's single tool group —
- *  placed at the turn's FIRST non-ask non-proposal tool activity's slot,
- *  collecting every non-ask non-proposal activity of the turn (interleaved
- *  text does not split it); `"ask"` is an `ask_user` card and `"proposal"`
- *  a record-proposal card, both kept OUTSIDE the accordion, rendered in
- *  place (TAG-9: the ask stays interactive; SC-13a: a settled turn collapses
- *  its tools into the tools accordion, which would hide the proposal's
- *  accept/reject behind a closed list). Items within one anchor list keep
- *  their chronological slot order. */
-type CopilotTurnAnchorItem =
-  | { kind: "accordion"; activities: AgentToolActivity[] }
-  | { kind: "ask"; activity: AgentToolActivity }
-  | { kind: "permission"; activity: AgentToolActivity }
-  | { kind: "proposal"; activity: AgentToolActivity; proposal: RecordProposal };
 const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
 
-/** SC-13a: narrow a tool activity to the record proposal its output carries
- *  (parsed through the shared `parseAgentToolOutput`, narrowed by the
- *  contract's `isRecordProposal`) — undefined for every other tool (asks,
- *  buffer writes, test digests). Pure. */
-function recordProposalOf(activity: AgentToolActivity): RecordProposal | undefined {
-  const parsed: unknown = parseAgentToolOutput(activity);
-  if (parsed === undefined) return undefined;
-  const candidate = parsed as AgentProposal;
-  if (isRecordProposal(candidate)) return candidate;
-  return undefined;
-}
-
-/** AP-4: the flat assistant feed's per-turn caption («✦ {host title}»,
- *  mockup §1) — a quiet secondary small `font-ui` line, NOT a heading, with
- *  mockup spacing above the turn's first visible text segment. Rendered by
- *  the list (the block stays caption-agnostic); the title is the host
- *  descriptor's existing title, resolved through `useT` — no new i18n key. */
-function AgentHostCaption({ title }: { title: string }) {
-  return (
-    <div className="mb-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3" data-testid="copilot-host-caption">
-      ✦ {title}
-    </div>
-  );
-}
+// AP-29 follow-up 3: the stable empty hide set (no id hide — failure /
+// cancel / thread switch / landed refetch all converge here).
+const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
@@ -97,15 +66,36 @@ export interface AgentMessageListProps {
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
   pendingText: string;
-  /** Live model reasoning for the pending turn — rendered above the pending
-   *  bubble with the co-author's MessageReasoning "minimal" pattern (UX
-   *  2026-08-16 remark 4). Live-only: cleared on settle, not persisted. */
+  /** Live model reasoning for the pending turn — rendered with the
+   *  co-author's MessageReasoning `inline` preset on the live caption line
+   *  (AP-29 — the same preset, same place as the persisted toggle). Live-only
+   *  state: cleared on settle, when the reloaded turn carries the persisted
+   *  pair (the handover shows no gap and no duplicate — the clear precedes
+   *  the async refetch, so production never renders both at once). */
   pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
   /** TAG-9: disables ask-card interactivity while a stream runs. */
   isSending?: boolean;
+  /** AP-29 follow-up 2: a regenerate is in flight — the replaced turn
+   *  (every assistant row after the last user row, with its tool accordion,
+   *  its ask / permission / proposal cards, and its caption) hides until
+   *  the settle refetch lands the stored truth. The last user row, the
+   *  digest card, and everything before the replaced turn stay visible;
+   *  the live part streams as a FRESH turn (its own hoisted caption with
+   *  only the live reasoning, never joined to the replaced turn). Omitted
+   *  / false = the fb55c477a behavior (a continuation still joins). */
+  isRegenerating?: boolean;
+  /** AP-29 follow-up 3: the replaced rows' ids recorded at regenerate start
+   *  (the controller's `hiddenRegeneratedIds` — every assistant row after
+   *  the last user row then). Hides EXACTLY these ids past the settle until
+   *  the refetch lands without them, so the replaced turn never reappears
+   *  for one frame; the flag above still covers the flight itself. Intersected
+   *  with the current messages every render (a landed refetch carries none
+   *  of them, so the new turn shows on that same render — never a blank).
+   *  Omitted / null = no id hide (failure / cancel / thread switch drop it). */
+  hiddenRegeneratedIds?: readonly string[] | null;
   /** TAG-9: answer handler for the live awaiting ask card — bound by the
    *  shell with the current draft buffers (mirrors the input area's onSend).
    *  SC-23f: also carries the permission card's decision (just another
@@ -163,6 +153,8 @@ export function AgentMessageList({
   pendingReasoning,
   pendingUserContent,
   isSending = false,
+  isRegenerating = false,
+  hiddenRegeneratedIds = null,
   onAnswer,
   pendingAskAnswer = null,
   pendingPermissionAnswer = null,
@@ -309,102 +301,20 @@ export function AgentMessageList({
     [feed, activities, messages, pendingAskAnswer, isSending],
   );
 
-  // SC-23f: `read_message_prompt` remains its own interactive card,
-  // rendered IN PLACE at its chronological slot — never inside a turn's
-  // tool accordion (the ask-card precedent: TA-1 collects only non-ask
-  // non-permission activities). The optimistic override resolves the card
-  // immediately; the RESOLVED states read the rewritten row (granted →
-  // allowed, denied → denied), never local state alone.
-  const renderPermissionActivity = (activity: AgentToolActivity) => {
-    const permission = activity.permission!;
-    const resolved: AgentPermissionState =
-      pendingPermissionAnswer && pendingPermissionAnswer.toolCallId === activity.toolCallId
-        ? {
-            ...permission,
-            status: pendingPermissionAnswer.decision === "allow" ? "granted" : "denied",
-          }
-        : permission;
-    return (
-      <AgentPermissionCard
-        key={activity.toolCallId}
-        permission={resolved}
-        interactive={
-          resolved.status === "awaiting_permission" &&
-          activity.toolCallId === lastActivityId &&
-          !isSending &&
-          onAnswer !== undefined
-        }
-        onDecision={onAnswer ? (decision) => onAnswer(activity.toolCallId, { decision }) : undefined}
-      />
-    );
+  // TA-1/TAG-9/SC-13a/SC-23f: the in-place card cluster (accordion +
+  // ask / permission / proposal cards) lives in `agent-anchor-items.tsx`
+  // (extracted under the file-size ratchet); history, trailing, and live
+  // call sites share it through one explicit context.
+  const anchorCtx: AgentAnchorContext = {
+    kind,
+    threadId,
+    liveAsk,
+    lastActivityId,
+    isSending,
+    onAnswer,
+    pendingAskAnswer,
+    pendingPermissionAnswer,
   };
-
-  // TAG-9: `ask_user` remains its own interactive card, rendered IN PLACE at
-  // its chronological slot — never inside a turn's tool accordion (TA-1
-  // collects only non-ask activities). AP-5: the interactive rule reads the
-  // live-ask selector — awaiting + THE live ask + answerable (the selector
-  // folds the old `lastActivityId` + `!isSending` conjuncts).
-  const renderAskActivity = (activity: AgentToolActivity) => {
-    const ask = activity.ask!;
-    const resolved: AgentAskState =
-      pendingAskAnswer && pendingAskAnswer.toolCallId === activity.toolCallId
-        ? {
-            ...ask,
-            status: pendingAskAnswer.status,
-            ...(pendingAskAnswer.answer !== undefined ? { answer: pendingAskAnswer.answer } : {}),
-          }
-        : ask;
-    return (
-      <AgentAskCard
-        key={activity.toolCallId}
-        ask={resolved}
-        interactive={
-          resolved.status === "awaiting_answer" &&
-          liveAsk !== null &&
-          liveAsk.toolCallId === activity.toolCallId &&
-          onAnswer !== undefined
-        }
-        onSubmit={onAnswer ? (a) => onAnswer(activity.toolCallId, a) : undefined}
-      />
-    );
-  };
-
-  // SC-13a: a record proposal renders through the host's per-recordType
-  // renderer (`host.recordProposalRenderers[proposal.recordType]`), falling
-  // back to the neutral `RecordProposalFallbackCard` for an unknown type
-  // (or an unknown host) — an unrendered op never crashes the feed. The
-  // thread id rides the props (the SC-13c card resolves against its thread).
-  const renderProposalActivity = (activity: AgentToolActivity, proposal: RecordProposal) => {
-    let Renderer: ComponentType<RecordProposalCardProps>;
-    try {
-      Renderer = getAgentHost(kind).recordProposalRenderers[proposal.recordType] ?? RecordProposalFallbackCard;
-    } catch {
-      Renderer = RecordProposalFallbackCard;
-    }
-    return <Renderer key={activity.toolCallId} proposal={proposal} threadId={threadId} />;
-  };
-
-  // TA-1: history renders each turn as ONE accordion (at the first tool
-  // activity's slot) plus in-place ask, permission and proposal cards, in
-  // the items' slot order. Only the live feed receives `isSending`:
-  // historical groups stay collapsed even while a newer turn is in flight.
-  const renderAnchorItems = (items: readonly CopilotTurnAnchorItem[]) =>
-    items.map((item) =>
-      item.kind === "accordion" ? (
-        <AgentToolAccordion
-          key={item.activities[0]!.toolCallId}
-          activities={item.activities}
-          kind={kind}
-          isSending={false}
-        />
-      ) : item.kind === "ask" ? (
-        renderAskActivity(item.activity)
-      ) : item.kind === "permission" ? (
-        renderPermissionActivity(item.activity)
-      ) : (
-        renderProposalActivity(item.activity, item.proposal)
-      ),
-    );
 
   // SC-16: the host's message actions for persisted assistant bubbles —
   // resolved once per kind (unknown kind = no row, never a throw). Pending
@@ -466,47 +376,104 @@ export function AgentMessageList({
     });
     return { lastUserVisibleIndex: userIdx, lastDigestVisibleIndex: digestIdx };
   }, [visibleMessages]);
+  // AP-29 follow-up 2: the replaced turn's cut — every ASSISTANT row after
+  // the last user row (the exact span the server's regenerate mode deletes:
+  // the last user row stays as the rerun's input, digest rows are the floor
+  // and stay, user rows are never hidden). With no user row the whole feed
+  // is one turn, so every assistant row hides. Tool-role rows never sit in
+  // this flow (they render through the anchor maps below); the trailing
+  // tool group and the trailing caption belong to the last turn, so the
+  // render below hides them with the same flag.
+  // AP-29 follow-up 3: the recorded id set hides EXACTLY its rows past the
+  // settle (the flag above drops there) — intersected with the CURRENT
+  // visible rows, so a landed refetch (which carries none of them) shows
+  // the new turn on that same render; anchored accordion/cards/captions
+  // ride their anchor's fragment, the trailing group rides `hideActive`.
+  const activeHiddenIds = useMemo(() => {
+    if (hiddenRegeneratedIds === null || hiddenRegeneratedIds.length === 0) return EMPTY_HIDDEN_IDS;
+    const visibleIds = new Set(visibleMessages.map((entry) => entry.message.id));
+    const active = new Set<string>();
+    for (const id of hiddenRegeneratedIds) if (visibleIds.has(id)) active.add(id);
+    return active;
+  }, [visibleMessages, hiddenRegeneratedIds]);
+  const hideActive = isRegenerating || activeHiddenIds.size > 0;
+  const isHiddenReplacedRow = (role: string, visibleIndex: number, messageId: string): boolean =>
+    (isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex) ||
+    activeHiddenIds.has(messageId);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
+  // AP-29: live reasoning streams as text-only (no duration lands until the
+  // turn persists) — the duration slot stays null like the minimal row did.
+  const hasLiveReasoning = pendingReasoning.trim().length > 0;
 
-  // AP-4: one caption per assistant turn, above the turn's first VISIBLE text
-  // segment (a turn that starts with hidden tool calls shows it above its
-  // first rendered text; a turn with no visible text shows none). Turns are
-  // delimited by user rows — the same boundary the TA-1 anchor pass above
-  // uses. Digest rows never touch the flag (the anchor pass does not flush
-  // on them either); only user rows reset it, only non-empty assistant rows
-  // set it. Tool rows are absent here by construction
-  // (`orderMessagesWithDigests` keeps user/assistant/digest only).
-  const captionMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    let turnHasVisibleText = false;
-    for (const entry of visibleMessages) {
-      const m = entry.message;
-      if (m.role === "user") {
-        turnHasVisibleText = false;
-        continue;
-      }
-      if (m.role === "assistant" && m.content.trim().length > 0 && !turnHasVisibleText) {
-        ids.add(m.id);
-        turnHasVisibleText = true;
-      }
-    }
-    return ids;
-  }, [visibleMessages]);
+  // AP-4 (AP-29 follow-up): one caption per assistant turn, at the TOP of
+  // the turn — above its tool accordion, an ask / permission / proposal
+  // card, or its first text, whichever comes first (extracted under the
+  // file-size ratchet; see `agent-turn-captions.ts`). The live turn uses
+  // the same rule, so nothing moves when it lands.
+  const turnCaptions = useMemo(() => {
+    const anchoredIds = new Set<string>();
+    for (const [id, items] of anchorItems) if (items.length > 0) anchoredIds.add(id);
+    return buildTurnCaptions({
+      visibleMessages,
+      anchoredIds,
+      hasTrailingAnchors: trailingItems.length > 0,
+    });
+  }, [visibleMessages, anchorItems, trailingItems]);
 
   // AP-4: the live feed and pending text continue the current turn — they
   // earn the caption only when the turn has shown no visible persisted text
   // yet (the same first-visible-segment rule). An optimistic pending user
   // row opens a fresh turn, so a reply streaming after it is trivially first.
+  // AP-29 follow-up 2: a regenerate hides the replaced turn (see
+  // `isHiddenReplacedRow`), so the scan skips it — the new turn streams as
+  // a fresh turn with its own hoisted caption below.
   const liveTurnHasVisibleText = useMemo(() => {
     if (hasPendingUserContent) return false;
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
       const m = visibleMessages[i]!.message;
+      if (isHiddenReplacedRow(m.role, i, m.id)) continue;
       if (m.role === "user") return false;
       if (m.role === "assistant" && m.content.trim().length > 0) return true;
     }
     return false;
-  }, [visibleMessages, hasPendingUserContent]);
+  }, [visibleMessages, hasPendingUserContent, isRegenerating, lastUserVisibleIndex, activeHiddenIds]);
+
+  // AP-29 follow-up: the live part continues the last persisted turn (no
+  // optimistic user row opens a fresh one) — when that turn already earns
+  // a caption, the live stream joins it instead of hoisting a second one:
+  // reasoning folds into the caption's block, text and tools render bare.
+  // Fresh turns (empty thread / optimistic user row) keep the hoisted live
+  // caption below. Unknown kinds keep the fallback pending row (no title).
+  // AP-29 follow-up 2: a regenerate NEVER joins — the replaced turn hides
+  // (see `isHiddenReplacedRow`), so the new turn streams as a fresh turn
+  // with its own caption carrying only the live reasoning.
+  // AP-29 follow-up 3: a still-hidden post-settle turn never joins either
+  // (the flag dropped but the set holds) — joining a hidden caption would
+  // swallow the live reasoning, so the fresh caption below owns it instead.
+  const liveContinuesLastTurn = !hasPendingUserContent && visibleMessages.length > 0;
+  const liveJoinsLastTurn =
+    !isRegenerating && activeHiddenIds.size === 0 && hostTitle !== null && liveContinuesLastTurn && turnCaptions.lastTurnEarnsCaption;
+  const { captionBefore, trailingCaption } = useMemo(() => {
+    if (!liveJoinsLastTurn || !hasLiveReasoning || turnCaptions.lastTurnSlotId === null) {
+      return { captionBefore: turnCaptions.captionBefore, trailingCaption: turnCaptions.trailingCaption };
+    }
+    if (turnCaptions.lastTurnSlotId === "trailing") {
+      return {
+        captionBefore: turnCaptions.captionBefore,
+        trailingCaption: withLiveReasoning(
+          turnCaptions.trailingCaption ?? undefined,
+          pendingReasoning,
+        ),
+      };
+    }
+    const next = new Map(turnCaptions.captionBefore);
+    next.set(
+      turnCaptions.lastTurnSlotId,
+      withLiveReasoning(next.get(turnCaptions.lastTurnSlotId), pendingReasoning),
+    );
+    return { captionBefore: next, trailingCaption: turnCaptions.trailingCaption };
+  }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, pendingReasoning]);
 
   // SC-19b: frozen events interleave as separators BEFORE their anchor
   // message; a null anchor — or an anchor naming no visible row — trails at
@@ -576,6 +543,14 @@ export function AgentMessageList({
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry, visibleIndex) => {
+            // AP-29 follow-up 2: the replaced turn hides whole — its
+            // bubbles, its anchored accordion/cards, its caption, and its
+            // event separators all render inside this fragment, so the one
+            // cut covers them (the last user row, digests, and earlier
+            // turns never match `isHiddenReplacedRow`).
+            // AP-29 follow-up 3: the id cut covers the same fragment past
+            // the settle (the flag dropped, the set holds).
+            if (isHiddenReplacedRow(entry.message.role, visibleIndex, entry.message.id)) return null;
             // AP-11: one bubble's row — the turn callbacks merged with the
             // list's own boundaries (last turn, digest cover, streaming).
             // Without callbacks the block gets exactly what it got before
@@ -591,13 +566,29 @@ export function AgentMessageList({
                 callbacks: turnRow,
               })
               : { hostActions: messageActions, turnActions: undefined };
+            // The caption sits above the turn's FIRST rendered item at this
+            // slot: standalone above the anchored accordion/cards, or tight
+            // above its text (the AP-4 look) when the slot carries none.
+            const anchors = anchorItems.get(entry.message.id) ?? EMPTY_ITEMS;
+            const caption = hostTitle !== null ? captionBefore.get(entry.message.id) : undefined;
             return (
               <Fragment key={entry.message.id}>
                 {renderEventSeparators(eventAnchors.get(entry.message.id))}
-                {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
-                {captionMessageIds.has(entry.message.id) && hostTitle !== null ? (
+                {caption !== undefined && anchors.length > 0 ? (
+                  <AgentHostCaption
+                    title={hostTitle!}
+                    reasoning={caption.reasoning}
+                    reasoningDurationMs={caption.reasoningDurationMs}
+                  />
+                ) : null}
+                {<AgentAnchorItems items={anchors} ctx={anchorCtx} />}
+                {caption !== undefined && anchors.length === 0 ? (
                   <div className="flex min-w-0 flex-col">
-                    <AgentHostCaption title={hostTitle} />
+                    <AgentHostCaption
+                      title={hostTitle!}
+                      reasoning={caption.reasoning}
+                      reasoningDurationMs={caption.reasoningDurationMs}
+                    />
                     <AgentMessageBlock
                       message={entry.message}
                       messageMarkup={messageMarkup}
@@ -625,63 +616,82 @@ export function AgentMessageList({
             );
           })}
 
-          {renderAnchorItems(trailingItems)}
+          {/* AP-29 follow-up 2: the trailing tool group belongs to the last
+              turn — it hides with the replaced turn (see
+              `isHiddenReplacedRow`); the live feed below carries the new
+              turn's tools.
+              AP-29 follow-up 3: the id set hides it past the settle too
+              (`hideActive`); the intersection inside `activeHiddenIds` empties
+              on the landed refetch, so the new turn's group shows on that
+              same render. */}
+          {!hideActive && trailingCaption !== null && hostTitle !== null ? (
+            <AgentHostCaption
+              title={hostTitle}
+              reasoning={trailingCaption.reasoning}
+              reasoningDurationMs={trailingCaption.reasoningDurationMs}
+            />
+          ) : null}
+          {!hideActive && <AgentAnchorItems items={trailingItems} ctx={anchorCtx} />}
 
           {renderEventSeparators(trailingEvents)}
 
           {hasPendingUserContent && (
             <AgentMessageBlock
               messageMarkup={messageMarkup}
-              message={{
+              message={syntheticAgentMessage({
                 id: "__pending-user",
                 threadId,
                 role: "user",
                 content: pendingUserContent,
-                toolCallsJson: null,
-                toolCallId: null,
-                createdAt: "",
-              }}
+              })}
             />
           )}
 
-          {pendingReasoning && (
-            <div className="flex gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-s3">
-                <Icons.Sparkles className="h-4 w-4 text-accent-t" />
-              </div>
-              <div className="min-w-0 max-w-[80%]">
-                <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="minimal" />
-              </div>
+          {/* AP-29: the live turn's caption — the inline reasoning toggle on
+              the caption line (the same preset, same place as the persisted
+              one, so the settle handover swaps data, not chrome). Hoisted
+              above ALL live content: one site, never duplicated. A live
+              continuation of a captioned turn joins that caption's block
+              instead (no second caption — see `liveJoinsLastTurn` above).
+              Unknown kinds keep the fallback pending row (no title). */}
+          {!liveTurnHasVisibleText &&
+            hostTitle !== null &&
+            (hasPendingText || hasLiveReasoning) &&
+            !liveJoinsLastTurn && (
+              <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? pendingReasoning : null} />
+            )}
+          {/* AP-29 follow-up 2: the fallback live row (no host title) is
+              the bare reasoning toggle — no avatar anywhere in the feed
+              (AP-4). */}
+          {hasLiveReasoning && hostTitle === null && (
+            <div className="flex flex-wrap items-center gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
+              <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="inline" />
             </div>
           )}
 
           {(() => {
             const rendered = [];
             let accordionPlaced = false;
-            // AP-4: the feed is the current turn — its first VISIBLE text
-            // segment carries the turn caption when the turn has shown no
-            // persisted text yet (the same list rule as the persisted pass).
-            let liveCaptionTitle: string | null = liveTurnHasVisibleText ? null : hostTitle;
             for (const entry of feed) {
               if (entry.kind === "activity") {
                 const activity = activityById.get(entry.id);
                 if (!activity) continue;
                 if (activity.ask) {
-                  rendered.push(renderAskActivity(activity));
+                  rendered.push(renderAskActivity(activity, anchorCtx));
                   continue;
                 }
                 // SC-23f: a live permission request renders in place
                 // outside the turn's single accordion (the ask-card
                 // precedent).
                 if (activity.permission) {
-                  rendered.push(renderPermissionActivity(activity));
+                  rendered.push(renderPermissionActivity(activity, anchorCtx));
                   continue;
                 }
                 // SC-13a: a live record proposal renders in place outside
                 // the turn's single accordion (the ask-card precedent).
                 const liveProposal = recordProposalOf(activity);
                 if (liveProposal !== undefined) {
-                  rendered.push(renderProposalActivity(activity, liveProposal));
+                  rendered.push(renderProposalActivity(activity, liveProposal, anchorCtx));
                   continue;
                 }
                 // TA-1: the turn's FIRST non-ask non-permission tool
@@ -703,34 +713,22 @@ export function AgentMessageList({
               }
               // Post-settle: the controller clears `pendingText`, so feed text
               // is suppressed while refetched history owns the persisted rows.
+              // AP-29: live text never carries its own caption — the hoisted
+              // live caption above (fresh turn) or the joined turn caption
+              // (continuation) owns it (one site, never duplicated).
               if (!hasPendingText) continue;
-              const showLiveCaption = liveCaptionTitle !== null && entry.text.trim().length > 0;
-              const liveTitle = liveCaptionTitle;
-              if (showLiveCaption) liveCaptionTitle = null;
               const segment = (
                 <AgentMessageBlock
                   messageMarkup={messageMarkup}
-                  message={{
+                  message={syntheticAgentMessage({
                     id: entry.id,
                     threadId,
                     role: "assistant",
                     content: entry.text,
-                    toolCallsJson: null,
-                    toolCallId: null,
-                    createdAt: "",
-                  }}
+                  })}
                 />
               );
-              if (showLiveCaption && liveTitle !== null) {
-                rendered.push(
-                  <div key={entry.id} className="flex min-w-0 flex-col">
-                    <AgentHostCaption title={liveTitle} />
-                    {segment}
-                  </div>,
-                );
-              } else {
-                rendered.push(<Fragment key={entry.id}>{segment}</Fragment>);
-              }
+              rendered.push(<Fragment key={entry.id}>{segment}</Fragment>);
             }
             return rendered;
           })()}
@@ -739,29 +737,17 @@ export function AgentMessageList({
             const pendingBlock = (
               <AgentMessageBlock
                 messageMarkup={messageMarkup}
-                message={{
+                message={syntheticAgentMessage({
                   id: "__pending-assistant",
                   threadId,
                   role: "assistant",
                   content: pendingText,
-                  toolCallsJson: null,
-                  toolCallId: null,
-                  createdAt: "",
-                }}
+                })}
               />
             );
-            // AP-4: the pending reply is its turn's first visible text when
-            // the turn has shown no persisted text yet (same list rule) — it
-            // earns the caption; otherwise it streams bare under the
-            // captioned turn.
-            if (!liveTurnHasVisibleText && hostTitle !== null) {
-              return (
-                <div className="flex min-w-0 flex-col">
-                  <AgentHostCaption title={hostTitle} />
-                  {pendingBlock}
-                </div>
-              );
-            }
+            // AP-29: the pending reply always streams bare — the hoisted
+            // live caption above (fresh turn) or the joined turn caption
+            // (continuation) owns the caption (one site).
             return pendingBlock;
           })()}
 

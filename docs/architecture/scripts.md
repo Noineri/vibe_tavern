@@ -291,6 +291,12 @@ Nine shipped templates, each a standalone `.js` file imported as text in `script
 
 Every template is covered by `services/api/test/script-templates.test.ts`, which loads the bodies via `Bun.file()` and runs them through the real sandbox. This is the regression net for the engine invariants (the HP and dice tests are explicitly tagged REGRESSION).
 
+### Built-in assistant skills (`assets/agent-script/skills`)
+
+The script assistant ships with built-in skills: one folder per skill under `services/api/assets/agent-script/skills/`, each a `SKILL.md` manifest (`name` = the folder id, `description` = the catalog line the model picks by) with English prose and fenced examples tagged ```js prompt or ```js dice — the kind tag is mandatory because the two sandboxes have different APIs.
+Achievability is enforced by a test, not by review: `services/api/test/builtin-skill-achievability.test.ts` runs every tagged example in its real sandbox (`executeScripts` for prompt examples; `discoverDiceChecks` plus one `executeDiceRoll` sample roll per registered check for dice examples) and rejects `context` members that do not exist for the example's kind, tools the kind does not serve, planned surfaces (`context.host` / `context.net` / `context.memory`), and bad manifests — each rule proven by a failing fixture on a temp root.
+A skill text the guard rejects is fixed in the skill, never by loosening the guard.
+
 ---
 
 ## Lineage: Janitor AI, not SillyTavern

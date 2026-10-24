@@ -171,12 +171,12 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
     <div className="mb-5 overflow-hidden rounded-lg border border-border bg-s2">
       <button
         type="button"
-        className="flex w-full cursor-pointer items-center justify-between bg-surface px-4 py-3 font-body text-[15px] font-medium text-t1 transition-colors hover:bg-s2"
+        className="flex w-full cursor-pointer items-center justify-between bg-surface px-4 py-3 font-body text-[calc(var(--ui-fs)+1px)] font-medium text-t1 transition-colors hover:bg-s2"
         onClick={handleToggleOpen}
       >
         <div className="flex items-center gap-2">
           <span>{t("gallery_title")}</span>
-          <span className="rounded-full bg-accent-dim px-2 py-0.5 font-ui text-[10px] text-accent-t">
+          <span className="rounded-full bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent-t">
             {assets.length}
           </span>
         </div>
@@ -185,7 +185,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
 
       <AnimatedDisclosure open={isOpen} className="flex flex-col border-t border-border bg-input-bg p-4">
           {error && (
-            <div className="mb-4 rounded-md border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
+            <div className="mb-4 rounded-md border border-danger/50 bg-danger/10 px-3 py-2 text-[var(--ui-fs)] leading-5 text-danger">
               {error}
             </div>
           )}
@@ -218,7 +218,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className="cursor-pointer rounded bg-accent px-3 py-1.5 font-ui text-sm text-on-accent transition-colors hover:bg-accent/90"
+                className="cursor-pointer rounded bg-accent px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-on-accent transition-colors hover:bg-accent/90"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {t("gallery_import")}
@@ -235,7 +235,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               {selectedIds.size > 0 && (
                 <button
                   type="button"
-                  className="cursor-pointer rounded bg-danger/10 px-3 py-1.5 font-ui text-sm text-danger transition-colors hover:bg-danger/20"
+                  className="cursor-pointer rounded bg-danger/10 px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-danger transition-colors hover:bg-danger/20"
                   onClick={() => { void handleDeleteSelected(); }}
                 >
                   {t("delete")} ({selectedIds.size})
@@ -244,7 +244,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
 
               <button
                 type="button"
-                className="cursor-pointer rounded border border-border bg-s2 px-3 py-1.5 font-ui text-sm text-t2 transition-colors hover:bg-s3 disabled:opacity-50"
+                className="cursor-pointer rounded border border-border bg-s2 px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-t2 transition-colors hover:bg-s3 disabled:opacity-50"
                 onClick={() => { void handleDescribeAll(); }}
                 disabled={assets.every((a) => a.description)}
               >
@@ -254,7 +254,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               {isDescribing && (
                 <button
                   type="button"
-                  className="cursor-pointer rounded bg-danger/10 px-3 py-1.5 font-ui text-sm text-danger transition-colors hover:bg-danger/20"
+                  className="cursor-pointer rounded bg-danger/10 px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-danger transition-colors hover:bg-danger/20"
                   onClick={() => cancelDescribe(characterId)}
                 >
                   {t("gallery_describe_cancel")}
@@ -264,7 +264,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               {includedAssets.length > 0 && (
                 <button
                   type="button"
-                  className="cursor-pointer rounded border border-border bg-s2 px-3 py-1.5 font-ui text-sm text-t2 transition-colors hover:bg-s3"
+                  className="cursor-pointer rounded border border-border bg-s2 px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-t2 transition-colors hover:bg-s3"
                   onClick={() => { void handleDisableAll(); }}
                 >
                   {t("gallery_disable_all")}
@@ -280,7 +280,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
                 && assets.some((a) => a.description && !a.includeInPrompt) && (
                 <button
                   type="button"
-                  className="cursor-pointer rounded border border-accent/40 bg-accent/10 px-3 py-1.5 font-ui text-sm text-accent-t transition-colors hover:bg-accent/20"
+                  className="cursor-pointer rounded border border-accent/40 bg-accent/10 px-3 py-1.5 font-ui text-[var(--ui-fs)] leading-5 text-accent-t transition-colors hover:bg-accent/20"
                   onClick={() => { void handleIncludeAll(); }}
                 >
                   {t("gallery_include_all")}
@@ -291,7 +291,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
             {/* Token badge — the de-facto "gallery is active" indicator. With
                 the master toggle gone, this counts exactly the rows that will
                 reach the model (description && includeInPrompt). */}
-            <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
+            <span className="flex justify-end font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">
               {includedAssets.length} · {tokenCount.toLocaleString()} {t("tokens_label")}
             </span>
           </div>

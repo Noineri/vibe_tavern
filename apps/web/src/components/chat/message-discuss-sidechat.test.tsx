@@ -204,6 +204,7 @@ function servedSettings(): Record<string, AgentKindSettingsWire> {
       defaultProfileId: null,
       updatedAt: "",
       servesChatModes: [CHAT_MODE.rp],
+      autoCompactDefault: true,
     },
   };
 }
