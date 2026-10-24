@@ -89,7 +89,6 @@ export async function createTtsProfile(body: {
   narratorVoiceId?: string | null;
   lang?: string;
   sortOrder?: number;
-  isDefault?: boolean;
 }): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles.$post({ json: body as never });
   return unwrapRpc(response);
@@ -109,7 +108,6 @@ export async function updateTtsProfile(
     narratorVoiceId: string | null;
     lang: string;
     sortOrder: number;
-    isDefault: boolean;
   }>,
 ): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles[":id"].$patch({ param: { id }, json: body as never });
@@ -131,12 +129,6 @@ export async function reorderTtsProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<TtsProfileRecord[]> {
   const response = await client.api.tts.profiles.reorder.$patch({ json: { updates } as never });
-  return unwrapRpc(response);
-}
-
-export async function getDefaultTtsProfile(): Promise<TtsProfileRecord | null> {
-  const response = await client.api.tts.profiles.default.$get();
-  if (response.status === 404) return null;
   return unwrapRpc(response);
 }
 

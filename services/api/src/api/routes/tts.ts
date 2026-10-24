@@ -24,6 +24,14 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
     .patch("/api/tts/profiles/reorder", zValidator("json", schemas.reorderTtsProfilesSchema), async (c) => {
       return c.json(await runtime.reorderTtsProfiles(c.req.valid("json").updates));
     })
+    // Literal routes register BEFORE /:id (Hono matches by registration
+    // order — a GET /default registered after /:id was shadowed into the
+    // :id handler with id="default" → 404 "profile not found").
+    .get("/api/tts/profiles/default", async (c) => {
+      const profile = await runtime.getDefaultTtsProfile();
+      if (!profile) return c.json({ error: "No default TTS profile" }, 404);
+      return c.json(profile);
+    })
     .get("/api/tts/profiles/:id", async (c) => {
       const profile = await runtime.getTtsProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "TTS profile not found" }, 404);
@@ -47,11 +55,6 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
       const updated = await runtime.setTtsDefault(c.req.param("id"));
       if (!updated) return c.json({ error: "TTS profile not found" }, 404);
       return c.json(updated);
-    })
-    .get("/api/tts/profiles/default", async (c) => {
-      const profile = await runtime.getDefaultTtsProfile();
-      if (!profile) return c.json({ error: "No default TTS profile" }, 404);
-      return c.json(profile);
     })
     // ── Links (voice map) ────────────────────────────────────────────────
     .get("/api/tts/profiles/:id/links", async (c) => {

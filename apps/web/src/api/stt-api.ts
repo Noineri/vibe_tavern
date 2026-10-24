@@ -62,7 +62,6 @@ export async function createSttProfile(body: {
    *  returned by a read. */
   apiKey?: string;
   emotionAnnotation?: boolean;
-  isDefault?: boolean;
 }): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles.$post({ json: body as never });
   return unwrapRpc(response);
@@ -78,7 +77,6 @@ export async function updateSttProfile(
      *  non-empty = set. */
     apiKey: string;
     emotionAnnotation: boolean;
-    isDefault: boolean;
   }>,
 ): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles[":id"].$patch({ param: { id }, json: body as never });
@@ -100,12 +98,6 @@ export async function reorderSttProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<SttProfileRecord[]> {
   const response = await client.api.stt.profiles.reorder.$patch({ json: { updates } as never });
-  return unwrapRpc(response);
-}
-
-export async function getDefaultSttProfile(): Promise<SttProfileRecord | null> {
-  const response = await client.api.stt.profiles.default.$get();
-  if (response.status === 404) return null;
   return unwrapRpc(response);
 }
 

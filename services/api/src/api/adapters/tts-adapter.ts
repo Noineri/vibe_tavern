@@ -283,8 +283,10 @@ export class TtsAdapter implements TtsRuntimeApi {
   };
 
   createTtsProfile: TtsRuntimeApi["createTtsProfile"] = async (body) => {
-    // Zod-inferred input and the store input are structurally the same shape;
-    // fields are mapped explicitly (no casts — house rule). The secret rides
+    // Zod-inferred input and the store input are structurally the same
+    // shape except the named deviation: `isDefault` is wire-read-only
+    // (MR-12 single-writer rule — the dedicated default route is the only
+    // writer), so the row is always born non-default here. The secret rides
     // the top-level write-only field (TE2-16), never the config bag.
     const input: CreateTtsProfileData = {
       name: body.name,
@@ -296,7 +298,7 @@ export class TtsAdapter implements TtsRuntimeApi {
       narratorVoiceId: body.narratorVoiceId ?? null,
       lang: body.lang,
       sortOrder: body.sortOrder,
-      isDefault: body.isDefault,
+      isDefault: false,
     };
     const created = await this.stores.tts.create(input);
     return (await this.decorateAutoKey([toClientTtsProfile(created)]))[0];

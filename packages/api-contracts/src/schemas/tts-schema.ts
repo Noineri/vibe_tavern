@@ -54,6 +54,9 @@ export const ttsProfileSchema = z.object({
   narratorVoiceId: z.string().nullable(),
   lang: z.string(),
   sortOrder: z.number(),
+  /** The [Default Voice] pointer — at most one row. Read-only on this
+   *  surface: create/PATCH never accept it (the dedicated default route is
+   *  the only writer — the MR-12 single-writer rule). */
   isDefault: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -86,8 +89,6 @@ export const createTtsProfileSchema = z.object({
   lang: z.string().optional().default("en"),
   /** Deterministic order in the profile list. */
   sortOrder: z.number().optional().default(0),
-  /** Claim the voice map's [Default Voice] pointer (store clears others). */
-  isDefault: z.boolean().optional().default(false),
 });
 export type CreateTtsProfileInput = z.infer<typeof createTtsProfileSchema>;
 
@@ -105,9 +106,6 @@ export const updateTtsProfileSchema = z.object({
   narratorVoiceId: z.string().nullable().optional(),
   lang: z.string().optional(),
   sortOrder: z.number().optional(),
-  /** `true` moves the [Default Voice] pointer (store clears others); `false`
-   *  just unsets this row without auto-promoting another. */
-  isDefault: z.boolean().optional(),
 });
 export type UpdateTtsProfileInput = z.infer<typeof updateTtsProfileSchema>;
 

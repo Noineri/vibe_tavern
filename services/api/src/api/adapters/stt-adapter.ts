@@ -340,7 +340,9 @@ export class SttAdapter implements SttRuntimeApi {
       config: body.config,
       apiKey: body.apiKey && body.apiKey !== "" ? body.apiKey : undefined,
       emotionAnnotation: emotionCapable && (body.emotionAnnotation ?? false),
-      isDefault: body.isDefault ?? false,
+      // MR-12 single-writer rule: wire-read-only — the row is always born
+      // non-default; the dedicated default route is the only writer.
+      isDefault: false,
     };
     const created = await this.stores.stt.create(input);
     return (await this.decorateAutoKey([toClientSttProfile(created)]))[0];

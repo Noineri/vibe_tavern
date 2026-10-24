@@ -243,15 +243,23 @@ describe("STT routes — CRUD", () => {
     expect(delBody.ok).toBe(true);
   });
 
-  test("PUT default → pointer moves", async () => {
+  // MR-12 mirror (single-writer default contract): PUT :id/default is the
+  // ONLY writer — create/PATCH bodies carrying isDefault are stripped by
+  // the schema. The GET /default literal must be registered BEFORE the :id
+  // route: Hono matches by registration order, and the shadowed order sent
+  // GET /profiles/default into the :id handler with id="default" → the
+  // wrong 404 ("profile not found" instead of "no default set").
+  test("default pointer: GET /default resolves before :id; create/PATCH isDefault stripped; PUT moves it", async () => {
     const { app } = await makeApp();
 
+    // Born non-default — the create body's isDefault is dead (schema strips).
     const aRes = await app.request("/api/stt/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "A", backend: "whisper-browser", config: { model: "m" }, isDefault: true }),
     });
-    const a = (await aRes.json()) as { id: string };
+    const a = (await aRes.json()) as { id: string; isDefault: boolean };
+    expect(a.isDefault).toBe(false);
     const bRes = await app.request("/api/stt/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -259,13 +267,35 @@ describe("STT routes — CRUD", () => {
     });
     const b = (await bRes.json()) as { id: string };
 
+    // No default set yet: the clean no-default 404, not the :id miss.
+    const noneRes = await app.request("/api/stt/profiles/default");
+    expect(noneRes.status).toBe(404);
+    expect(((await noneRes.json()) as { error: string }).error).toBe("No default STT profile");
+
     const putRes = await app.request(`/api/stt/profiles/${b.id}/default`, { method: "PUT" });
     expect(putRes.status).toBe(200);
+
+    // The route-order pin: GET /default returns the pointed row (the
+    // shadowed registration answered this with the :id 404).
+    const defRes = await app.request("/api/stt/profiles/default");
+    expect(defRes.status).toBe(200);
+    expect(((await defRes.json()) as { id: string }).id).toBe(b.id);
 
     const getA = (await (await app.request(`/api/stt/profiles/${a.id}`)).json()) as { isDefault: boolean };
     const getB = (await (await app.request(`/api/stt/profiles/${b.id}`)).json()) as { isDefault: boolean };
     expect(getA.isDefault).toBe(false);
     expect(getB.isDefault).toBe(true);
+
+    // The CRUD surface cannot race the exclusivity invariant: PATCH bodies
+    // carrying isDefault are stripped by the schema (single mutation path).
+    const patchRes = await app.request(`/api/stt/profiles/${a.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patchedA = (await (await app.request(`/api/stt/profiles/${a.id}`)).json()) as { isDefault: boolean };
+    expect(patchedA.isDefault).toBe(false);
 
     // Unknown id → 404 (the imagegen-routes PUT-default contract).
     const missingRes = await app.request("/api/stt/profiles/missing/default", { method: "PUT" });

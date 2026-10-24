@@ -115,7 +115,9 @@ export const sttProfileSchema = z.object({
    *  into the transcript (v1 pure-ASR backends force it off). */
   emotionAnnotation: z.boolean(),
   /** The fallback pointer (mirrors tts_profiles.isDefault) — at most one
-   *  profile, store-maintained. */
+   *  profile, store-maintained. Read-only on this surface: create/PATCH
+   *  never accept it (the dedicated default route is the only writer — the
+   *  MR-12 single-writer rule). */
   isDefault: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -138,8 +140,6 @@ export const createSttProfileSchema = z.object({
   apiKey: z.string().optional(),
   /** ST-7 capability seam toggle (`emotionAnnotation`). */
   emotionAnnotation: z.boolean().optional().default(false),
-  /** Claim the fallback pointer (store clears others). */
-  isDefault: z.boolean().optional().default(false),
 });
 export type CreateSttProfileInput = z.infer<typeof createSttProfileSchema>;
 
@@ -151,9 +151,6 @@ export const updateSttProfileSchema = z.object({
    *  `""` = clear it, non-empty = replace it. */
   apiKey: z.string().optional(),
   emotionAnnotation: z.boolean().optional(),
-  /** `true` moves the fallback pointer (store clears others); `false` just
-   *  unsets this row without auto-promoting another. */
-  isDefault: z.boolean().optional(),
 });
 export type UpdateSttProfileInput = z.infer<typeof updateSttProfileSchema>;
 
