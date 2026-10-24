@@ -7,6 +7,7 @@
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type { Attachment } from "@vibe-tavern/domain";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -58,6 +59,10 @@ export interface AgentThreadProposalResolveWire {
 }
 
 export interface ExperienceCopilotRuntimeApi {
+	experienceCopilotSummarizeAttachment: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<Attachment>;
+	experienceCopilotClearAttachmentSummary: (threadId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
+	experienceCopilotSetAttachmentIncluded: (threadId: string, messageId: string, attachmentId: string, included: boolean) => Promise<{ ok: true }>;
+	experienceCopilotDeleteAttachment: (threadId: string, messageId: string, attachmentId: string) => Promise<{ ok: true }>;
 	/** Resolve the agent kind serving a stream turn's script — the AS-2c
 	 *  kind-resolution seam. Loads the thread (404 when missing), then the
 	 *  script row, and resolves `script.scriptKind` through the agent-kind

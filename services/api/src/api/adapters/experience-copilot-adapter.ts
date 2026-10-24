@@ -9,6 +9,8 @@ import {
   toChatSettingsWire,
 } from "./experience-copilot-wire-mappers.js";
 import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
+import { createAgentAttachmentActions, type AttachmentAssetCleanup } from "./experience-copilot-attachment-actions.js";
+import type { AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { notFound } from "../../shared/errors.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
@@ -97,6 +99,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    * only make available there). */
   private readonly deleteTurnForRegenerate: AgentTurnDeleteTurn;
   private readonly providerDeps: ReturnType<typeof buildAgentProviderDeps>;
+  private readonly attachmentActions: ReturnType<typeof createAgentAttachmentActions>;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -123,8 +126,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     private readonly sidechatSkillService?: SkillLibraryService,
     /** Shared text-asset read for RP attachment rendering (CA-1f). */
     private readonly attachmentAssetLoader?: AttachmentAssetLoader,
+    private readonly attachmentAssetCleanup?: AttachmentAssetCleanup,
+    attachmentSummaryExecutor?: AttachmentSummaryExecutor,
   ) {
     this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
+    this.attachmentActions = createAgentAttachmentActions({ store: stores.experienceCopilot, providers: providerProfileService, assetLoader: attachmentAssetLoader, cleanup: attachmentAssetCleanup, execute: attachmentSummaryExecutor });
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
@@ -734,6 +740,18 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     });
     return { digest: toMessageWire(digest), metrics: toMetricsWire(metrics) };
   };
+
+  experienceCopilotSummarizeAttachment: ExperienceCopilotRuntimeApi['experienceCopilotSummarizeAttachment'] =
+    (...args) => this.attachmentActions.summarizeAttachment(...args);
+
+  experienceCopilotClearAttachmentSummary: ExperienceCopilotRuntimeApi['experienceCopilotClearAttachmentSummary'] =
+    (...args) => this.attachmentActions.clearAttachmentSummary(...args);
+
+  experienceCopilotSetAttachmentIncluded: ExperienceCopilotRuntimeApi['experienceCopilotSetAttachmentIncluded'] =
+    (...args) => this.attachmentActions.setIncluded(...args);
+
+  experienceCopilotDeleteAttachment: ExperienceCopilotRuntimeApi['experienceCopilotDeleteAttachment'] =
+    (...args) => this.attachmentActions.deleteAttachment(...args);
 
   /** AP-8: delete one turn — thin wiring over adapters/experience-copilot-
    *  turn-delete.ts (the store sibling call + the error mapping live there;

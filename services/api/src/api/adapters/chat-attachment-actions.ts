@@ -1,3 +1,4 @@
+// forks: 1 — experience-copilot-attachment-actions.ts (agent ownership/profile ladder).
 import type { MessageStore } from "@vibe-tavern/db";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";

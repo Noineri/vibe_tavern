@@ -9,7 +9,7 @@ import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, ty
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
-import { findMessageAttachment, updateMessageAttachment, removeMessageAttachment } from './experience-copilot-attachments.js';
+import { findMessageAttachment, updateMessageAttachment, removeMessageAttachment, hasMessageAttachmentAssetReference } from './experience-copilot-attachments.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -421,6 +421,10 @@ export class ExperienceCopilotStore {
 
   async removeMessageAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
     return removeMessageAttachment(this.db, messageId, attachmentId);
+  }
+
+  async hasMessageAttachmentAssetReference(assetId: string): Promise<boolean> {
+    return hasMessageAttachmentAssetReference(this.db, assetId);
   }
 
   // ─── Frozen context events / timeline / frontier (SIDECHAT_PLAN SC-1/SC-2c) ──

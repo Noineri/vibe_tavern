@@ -202,6 +202,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			scriptSkillService,
 			sidechatSkillService,
 			attachmentAssetLoader,
+			(assetId) => assetService.cleanup(assetId),
 		);
 		// SC-11: the thread-proposal apply/reject slice, wired with the REUSED
 		// insights seams — the insights runtime's add-task member (route mode;

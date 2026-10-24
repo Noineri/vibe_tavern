@@ -247,6 +247,24 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       },
     )
     .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/summarize",
+      zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() }).optional()),
+      async (c) => c.json(await runtime.experienceCopilotSummarizeAttachment(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json") ?? {}, c.req.raw.signal,
+      )),
+    )
+    .post("/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) =>
+      c.json(await runtime.experienceCopilotClearAttachmentSummary(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/include-in-prompt",
+      zValidator("json", z.object({ includeInPrompt: z.boolean() })),
+      async (c) => c.json(await runtime.experienceCopilotSetAttachmentIncluded(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json").includeInPrompt,
+      )),
+    )
+    .delete("/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId", async (c) =>
+      c.json(await runtime.experienceCopilotDeleteAttachment(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .post(
       "/api/experience-copilot/:threadId/turns/delete",
       zValidator("json", z.object({ messageId: z.string(), includeUserMessage: z.boolean() })),
       async (c) => {

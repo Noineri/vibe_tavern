@@ -1,7 +1,7 @@
 // Single-attachment edits for the agent message store (CA-4a2).
 // The read and set rewrite share a synchronous transaction: no await can
 // interleave a sibling edit between them. Assets belong to the API layer.
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { applyAttachmentPatch, parseStoredAttachments, type Attachment, type AttachmentPatch } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { experienceCopilotMessages } from '../db-schema.js';
@@ -43,4 +43,14 @@ export async function updateMessageAttachment(db: AppDb, messageId: string, atta
 
 export async function removeMessageAttachment(db: AppDb, messageId: string, attachmentId: string): Promise<Attachment | null> {
   return editMessageAttachment(db, messageId, attachmentId, () => null);
+}
+
+/** Fork copies share asset ids. Check every row, including archived threads
+ * and prompt-excluded attachments, before deleting a physical asset. */
+export async function hasMessageAttachmentAssetReference(db: AppDb, assetId: string): Promise<boolean> {
+  return db.select({ id: experienceCopilotMessages.id }).from(experienceCopilotMessages)
+    .where(sql`exists (
+      select 1 from json_each(case when json_valid(${experienceCopilotMessages.attachmentsJson}) then ${experienceCopilotMessages.attachmentsJson} else '[]' end) as attachment
+      where case when attachment.type = 'object' then json_extract(attachment.value, '$.assetId') end = ${assetId}
+    )`).limit(1).get() !== undefined;
 }
