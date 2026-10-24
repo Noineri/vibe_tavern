@@ -7,21 +7,16 @@ useDomEnv();
 const { act, fireEvent, render, within } = await import("@testing-library/react");
 const realI18n = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
-const realSortable = await import("@dnd-kit/sortable");
+// Co-load contract (master-list.test.tsx registers the SAME mock for
+// @dnd-kit/core; Bun's mock.module is process-global, last-write-wins — the
+// two factories must stay shape-identical so either registration order is
+// safe). @dnd-kit/sortable is NOT mocked anymore: ML-1 moved the sortable
+// wiring into the primitive, so this suite renders the real useSortable
+// (handle attributes, activator listeners) through SortableMasterListPhoneRow.
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
-
-const useSortable = mock(() => ({
-  attributes: {},
-  listeners: {},
-  setNodeRef: mock(),
-  setActivatorNodeRef: mock(),
-  transform: null,
-  transition: undefined,
-  isDragging: false,
-}));
 
 mock.module("../../../i18n/context.js", () => ({
   ...realI18n,
@@ -36,11 +31,7 @@ mock.module("../../../i18n/context.js", () => ({
 mock.module("../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetailModal,
   useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
-  MasterDetailMobileDrillDown: ({ onSelect, className }: { onSelect?: () => void; className?: string }) => (
-    <button type="button" className={className} onClick={onSelect}>drill</button>
-  ),
 }));
-mock.module("@dnd-kit/sortable", () => ({ ...realSortable, useSortable }));
 mock.module("@dnd-kit/core", () => ({
   ...realDndKit,
   // Preserve dnd-kit's provider while exposing the exact drag-end boundary
@@ -190,7 +181,11 @@ describe("ProviderProfileList", () => {
     expect(within(voiceOneRow).getByText("backend:local")).toBeTruthy();
     fireEvent.pointerDown(voiceOneRow);
     expect(onSelectProfile).toHaveBeenCalledWith("media-1");
-    fireEvent.click(within(voiceOneRow).getByText("drill"));
+    // Behavior change (was: a stubbed `drill` button asserted via getByText;
+    // now: the REAL MasterDetailMobileDrillDown caret, basis: ML-1 rework —
+    // the stub diverged from master-list.test.tsx's MasterDetailModal mock
+    // and poisoned its co-load run; same click→select boundary either way).
+    fireEvent.click(within(voiceOneRow).getByLabelText("master_detail_open"));
     expect(onSelectProfile).toHaveBeenCalledTimes(2);
   });
 
