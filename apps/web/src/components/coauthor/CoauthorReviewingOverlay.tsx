@@ -95,10 +95,11 @@ export function CoauthorReviewingOverlay({
         </div>
       </div>
       {/* Body diff (profile/greeting) — shown iff proposed. Each section takes
-          flex-1 so a mixed turn (diff + lore) splits the space 50/50 and each
-          scrolls internally; a single-section turn fills the whole area. */}
+          flex-1 so a mixed turn (diff + tracker + lore) shares the column
+          evenly and each scrolls internally; a single-section turn fills the
+          whole area. */}
       {diff && (
-        <div className={"flex flex-col px-1 py-2 " + (hasDiffContent ? "min-h-0 flex-1 " : "shrink-0 ")}>
+        <div data-testid="coauthor-diff-section" className={"flex flex-col px-1 py-2 " + (hasDiffContent ? "min-h-0 flex-1 " : "shrink-0 ")}>
           <HunkSelectionDiff
             diff={diff}
             hunks={hunks}
@@ -119,22 +120,30 @@ export function CoauthorReviewingOverlay({
           />
         </div>
       )}
-      {/* CT-7b: one tracker-template proposal, selected wholesale for Apply. */}
+      {/* CT-7b: one tracker-template proposal, selected wholesale for Apply.
+          Bounded like its siblings: the outer wrapper takes its flex-1 share
+          of the column (min-h-0 so it can shrink under long content) and the
+          inner div owns the scroll, so a long template never pushes the
+          footer off-screen. The review card itself is unchanged. */}
       {trackerTemplate && (
-        <CoauthorTrackerTemplateReview
-          template={trackerTemplate}
-          summary={trackerTemplateSummary ?? summary}
-          currentTemplate={currentTrackerTemplate}
-          selected={trackerTemplateSelected}
-          applying={applying}
-          onToggle={onToggleTrackerTemplate}
-          labels={trackerTemplateLabels}
-          t={t}
-        />
+        <div data-testid="coauthor-tracker-section" className="flex min-h-0 flex-1 flex-col py-2">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <CoauthorTrackerTemplateReview
+              template={trackerTemplate}
+              summary={trackerTemplateSummary ?? summary}
+              currentTemplate={currentTrackerTemplate}
+              selected={trackerTemplateSelected}
+              applying={applying}
+              onToggle={onToggleTrackerTemplate}
+              labels={trackerTemplateLabels}
+              t={t}
+            />
+          </div>
+        </div>
       )}
       {/* CTX-L3: structured lore review (lorebooks + entries). Shown iff proposed. */}
       {loreBundle && (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div data-testid="coauthor-lore-section" className="flex min-h-0 flex-1 flex-col">
           <CoauthorLoreReview
             bundle={loreBundle}
             selectedLorebookIds={selectedLorebookIds}
@@ -146,7 +155,7 @@ export function CoauthorReviewingOverlay({
           />
         </div>
       )}
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
+      <div data-testid="coauthor-review-footer" className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
         <button
           type="button"
           className="rounded-md border border-border bg-bg px-3.5 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t2 transition-all hover:bg-s2 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
