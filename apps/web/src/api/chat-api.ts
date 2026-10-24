@@ -1,5 +1,5 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
-import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest, CoauthorCorrection, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, errorFromBody, type RpcErrorBody, type RpcResponse } from "./unwrap.js";
@@ -84,27 +84,6 @@ export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): P
 export async function setCoauthorContextLinks(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["coauthor-context-links"].$patch({ param: { chatId }, json: { links } });
   return unwrapRpc(response);
-}
-
-export async function listCoauthorModules(): Promise<CoauthorModule[]> {
-  const response = await client.api.coauthor.modules.$get();
-  const data = await unwrapRpc(response);
-  return data.modules;
-}
-
-export async function createCoauthorModule(input: CoauthorModuleCreate): Promise<CoauthorModule> {
-  const response = await client.api.coauthor.modules.$post({ json: input });
-  return unwrapRpc(response);
-}
-
-export async function updateCoauthorModule(moduleId: string, input: CoauthorModuleUpdate): Promise<CoauthorModule> {
-  const response = await client.api.coauthor.modules[":moduleId"].$patch({ param: { moduleId }, json: input });
-  return unwrapRpc(response);
-}
-
-export async function deleteCoauthorModule(moduleId: string): Promise<void> {
-  const response = await client.api.coauthor.modules[":moduleId"].$delete({ param: { moduleId } });
-  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<AppSnapshot> {

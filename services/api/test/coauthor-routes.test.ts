@@ -78,3 +78,70 @@ describe("CS-12 Coauthor module routes", () => {
 		expect(updatedModuleId).toBe(null);
 	});
 });
+
+describe("ML-5 coauthor module reorder route", () => {
+	test("PATCH /api/coauthor/modules/reorder passes parsed updates through and returns the merged list envelope", async () => {
+		let captured: Array<{ id: string; sortOrder: number }> | null = null;
+		let updateCoauthorModuleCalled = false;
+		const runtime = mockChat({
+			reorderCoauthorModules: async (updates) => {
+				captured = updates;
+				return [{
+					id: "test",
+					name: "Test Module",
+					description: "",
+					basePrompt: "You are a test module.",
+					openingMessage: "",
+					skillIds: [],
+					toolSet: {},
+					maxSteps: 5,
+					isBuiltIn: false,
+				}];
+			},
+			updateCoauthorModule: async () => {
+				updateCoauthorModuleCalled = true;
+				throw new Error("must not be reached: reorder is not a :moduleId PATCH");
+			},
+		});
+		const app = createChatRoutes(runtime);
+		const res = await app.request("/api/coauthor/modules/reorder", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ updates: [{ id: "m2", sortOrder: 0 }, { id: "m1", sortOrder: 1 }] }),
+		});
+		expect(res.status).toBe(200);
+		expect(captured).toEqual([{ id: "m2", sortOrder: 0 }, { id: "m1", sortOrder: 1 }]);
+		expect(updateCoauthorModuleCalled).toBe(false);
+		expect(await res.json()).toEqual({
+			modules: [{
+				id: "test",
+				name: "Test Module",
+				description: "",
+				basePrompt: "You are a test module.",
+				openingMessage: "",
+				skillIds: [],
+				toolSet: {},
+				maxSteps: 5,
+				isBuiltIn: false,
+			}],
+		});
+	});
+
+	test("rejects a body without the updates array (zValidator 400)", async () => {
+		let called = false;
+		const runtime = mockChat({
+			reorderCoauthorModules: async () => {
+				called = true;
+				return [];
+			},
+		});
+		const app = createChatRoutes(runtime);
+		const res = await app.request("/api/coauthor/modules/reorder", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(res.status).toBe(400);
+		expect(called).toBe(false);
+	});
+});

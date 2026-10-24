@@ -425,9 +425,16 @@ describe("review outcome: mounted client bodies → real routes → provider pro
   });
 
   for (const fixture of fixtures) {
+    // Explicit timeout (the store-cleanup.ts afterAll precedent): the replay
+    // runs every fixture request SEQUENTIALLY through the real Hono app +
+    // orchestrator — the 6-request fixtures legitimately take 5-7s under
+    // full-suite load (2-3-request siblings already sit at 2-3.5s), crossing
+    // bun's generic 5s test default. A budget fires only when exceeded; it
+    // never adds delay. Wall-clock budget, not a race — per-file runs are
+    // green without it.
     test(`${fixture.surface}: ${fixture.name} — ${fixture.scenario}`, async () => {
       if (fixture.surface === "coauthor") await replayCoauthor(fixture);
       else await replayCopilot(fixture);
-    });
+    }, { timeout: 30_000 });
   }
 });

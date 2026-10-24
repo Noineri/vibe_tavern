@@ -273,6 +273,7 @@ export {
   setCoauthorModuleSchema,
   coauthorModuleCreateSchema,
   coauthorModuleUpdateSchema,
+  reorderCoauthorModulesSchema,
   COAUTHOR_TOOL_KEYS,
   COAUTHOR_MAX_STEPS_MIN,
   COAUTHOR_MAX_STEPS_MAX,

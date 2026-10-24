@@ -862,6 +862,13 @@
       "when": 1792774815641,
       "tag": "0122_gigantic_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "6",
+      "when": 1792854955854,
+      "tag": "0123_noisy_blade",
+      "breakpoints": true
     }
   ]
 }

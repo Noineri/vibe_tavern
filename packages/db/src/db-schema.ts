@@ -218,6 +218,10 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
   maxSteps: integer('max_steps').notNull().default(5),
+  // Manual list order (drag-to-reorder, ML-5). New modules append at the end;
+  // the migration backfills existing rows to created_at ASC. Same shape as
+  // proxy_profiles / stt_profiles sort_order.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

@@ -107,6 +107,13 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .post("/api/coauthor/modules", zValidator("json", schemas.coauthorModuleCreateSchema), async (c) => {
       return c.json(await runtime.createCoauthorModule(c.req.valid("json")));
     })
+    // Registered BEFORE the :moduleId PATCH so the literal "reorder" segment
+    // is matched here, not swallowed as a module id (the proxies/reorder
+    // pattern; Hono matches registration order).
+    .patch("/api/coauthor/modules/reorder", zValidator("json", schemas.reorderCoauthorModulesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json({ modules: await runtime.reorderCoauthorModules(body.updates) });
+    })
     .patch("/api/coauthor/modules/:moduleId", zValidator("json", schemas.coauthorModuleUpdateSchema), async (c) => {
       return c.json(await runtime.updateCoauthorModule(c.req.param("moduleId"), c.req.valid("json")));
     })

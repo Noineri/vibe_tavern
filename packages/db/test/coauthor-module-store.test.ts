@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createDb } from "../src/db-connection.js";
+import { coauthorModules } from "../src/db-schema.js";
 import { CoauthorModuleStore } from "../src/stores/coauthor-module-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -160,5 +161,89 @@ describe("CoauthorModuleStore (CS-24)", () => {
   test("getById returns null for a missing id", async () => {
     const store = await mkStore();
     expect(await store.getById("cmod_missing")).toBeNull();
+  });
+});
+
+describe("CoauthorModuleStore — stored order (ML-5)", () => {
+  test("create appends at the end; list returns creation order", async () => {
+    const store = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    expect(a.sortOrder).toBe(0);
+    expect(b.sortOrder).toBe(1);
+    expect(c.sortOrder).toBe(2);
+    expect((await store.list()).map((m) => m.name)).toEqual(["A", "B", "C"]);
+  });
+
+  test("reorder rewrites sort_order; list follows the stored order", async () => {
+    const store = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    const list = await store.reorder([
+      { id: c.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+      { id: b.id, sortOrder: 2 },
+    ]);
+    expect(list.map((m) => m.name)).toEqual(["C", "A", "B"]);
+    expect((await store.list()).map((m) => m.name)).toEqual(["C", "A", "B"]);
+  });
+
+  test("create after a reorder appends at the END (max+1, not old position)", async () => {
+    const store = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    await store.reorder([
+      { id: b.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+    ]);
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    expect(c.sortOrder).toBe(2);
+    expect((await store.list()).map((m) => m.name)).toEqual(["B", "A", "C"]);
+  });
+
+  test("equal sort_order falls back to createdAt ASC, then id ASC (total order)", async () => {
+    // Rows the order does not know (or rows tied by a bulk backfill) must not
+    // shuffle nondeterministically: the store's list ordering stays total via
+    // created_at → id fallbacks. Flattening sort_order back to the migration
+    // default simulates such rows (the fixed testClock pins createdAt equal,
+    // so the id tiebreak is exercised too).
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    const store = new CoauthorModuleStore(db, { clock: testClock, idGenerator: testIdGen });
+    await store.create({ ...PAYLOAD, name: "A" });
+    await store.create({ ...PAYLOAD, name: "B" });
+    await store.create({ ...PAYLOAD, name: "C" });
+    await db
+      .update(coauthorModules)
+      .set({ sortOrder: 0 })
+      .run();
+    const all = await store.list();
+    expect(all.every((m) => m.sortOrder === 0)).toBe(true);
+    expect(all.map((m) => m.name)).toEqual(["A", "B", "C"]); // same clock ⇒ id ASC
+  });
+
+  test("createdAt breaks a sort_order tie before id is consulted", async () => {
+    // Distinct createdAt values (a stepped clock) decide the order when
+    // sort_order ties, matching the backfill's ORDER BY created_at ASC, id ASC.
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    let tick = 0;
+    const steppedClock: StoreClock = {
+      now() {
+        tick += 1;
+        return `2026-06-06T00:00:${String(tick).padStart(2, "0")}.000Z`;
+      },
+    };
+    const store = new CoauthorModuleStore(db, { clock: steppedClock, idGenerator: testIdGen });
+    await store.create({ ...PAYLOAD, name: "first-created" });
+    await store.create({ ...PAYLOAD, name: "second-created" });
+    await db
+      .update(coauthorModules)
+      .set({ sortOrder: 0 })
+      .run();
+    const all = await store.list();
+    expect(all.map((m) => m.name)).toEqual(["first-created", "second-created"]);
   });
 });
