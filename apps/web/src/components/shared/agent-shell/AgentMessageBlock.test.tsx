@@ -75,40 +75,74 @@ function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): Experience
   };
 }
 
-describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
-  it("renders a collapsed digest card by default (summary hidden)", () => {
+describe("ExperienceCopilotMessageBlock — digest separator (AP-34)", () => {
+  // WAS (characterized pre-change, basis: the CM-9 card above): the digest
+  // rendered as a dark bordered card — `copilot-digest-card` with a title +
+  // caption + relative-time header, sync expand/collapse, the covered count
+  // on `data-covered-count`. NOW (AP-34): the digest renders through the
+  // SHARED `TimelineSeparatorFrame` the RP event separators use — one
+  // centered muted line «── … ──» with a caret, expanding through the
+  // shared `AnimatedDisclosure` to the full summary text. Every fact the old
+  // pins held that survives — collapsed default, expansion, count, full
+  // text — is still pinned below, against the new chrome.
+  it("renders a collapsed digest separator by default (summary hidden, no card)", () => {
     const { getByTestId, queryByTestId, getByText } = render(
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
 
-    expect(getByTestId("copilot-digest-card")).toBeDefined();
-    expect(getByText("copilot_context_digest_title")).toBeDefined();
+    expect(queryByTestId("copilot-digest-card")).toBeNull();
+    expect(getByTestId("timeline-separator")).toBeDefined();
+    expect(getByTestId("timeline-separator").getAttribute("data-kind")).toBe("digest");
+    expect(getByTestId("timeline-separator").getAttribute("data-role")).toBe("digest");
+    // Identity i18n: the label composes the title + caption keys with the
+    // separator's `──` runs (the real 1/3/5 declension is pinned under real
+    // RU in the separator suite + i18n.test.ts).
+    expect(getByText("── copilot_context_digest_title: copilot_context_digest_caption ──")).toBeDefined();
     // Collapsed → summary body absent.
-    expect(queryByTestId("copilot-digest-card-body")).toBeNull();
+    expect(queryByTestId("timeline-separator-body")).toBeNull();
   });
 
-  it("expands on click to reveal the summary text and collapses again", () => {
+  it("expands on click to reveal the summary text and collapses again", async () => {
     const { getByTestId, queryByTestId } = render(
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
 
-    fireEvent.click(getByTestId("copilot-digest-card-toggle"));
-    expect(queryByTestId("copilot-digest-card-body")).not.toBeNull();
-    expect(getByTestId("copilot-digest-card-body").textContent).toContain("rules buffer");
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    expect(queryByTestId("timeline-separator-body")).not.toBeNull();
+    expect(getByTestId("timeline-separator-body").textContent).toContain("rules buffer");
 
-    fireEvent.click(getByTestId("copilot-digest-card-toggle"));
-    expect(queryByTestId("copilot-digest-card-body")).toBeNull();
+    // BEHAVIOR CHANGE was → now, basis AP-34: the shared AnimatedDisclosure
+    // exits through AnimatePresence (~250ms), so the collapse is async —
+    // the test WAITS for the removal (the separator suite's own precedent),
+    // never weakened to keepMounted.
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    await waitFor(() => expect(queryByTestId("timeline-separator-body")).toBeNull());
   });
 
-  it("carries the covered count on the card for the caption", () => {
-    const { getByTestId } = render(
+  it("carries the covered count in the label (no card, no data-covered-count)", () => {
+    const { getByTestId, queryByText } = render(
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={12} />,
     );
 
-    expect(getByTestId("copilot-digest-card-toggle").getAttribute("data-covered-count")).toBe("12");
+    // WAS `data-covered-count="12"` on the card toggle → NOW the count
+    // rides the label copy (identity: the caption key; the real number lands
+    // under real i18n, pinned in the separator suite + i18n.test.ts).
+    expect(getByTestId("timeline-separator-toggle").getAttribute("data-covered-count")).toBeNull();
+    expect(queryByText("── copilot_context_digest_title: copilot_context_digest_caption ──")).not.toBeNull();
   });
 
-  it("renders an assistant bubble for a normal assistant message (no digest chrome)", () => {
+  it("the expanded body scrolls internally (long summaries never stretch the feed)", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    const body = getByTestId("timeline-separator-body");
+    expect(body.className).toContain("max-h-64");
+    expect(body.className).toContain("overflow-y-auto");
+  });
+
+  it("renders an assistant bubble for a normal assistant message (no separator)", () => {
     const { queryByTestId, getByText } = render(
       <AgentMessageBlock
         messageMarkup="plain"
@@ -116,7 +150,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
       />,
     );
 
-    expect(queryByTestId("copilot-digest-card")).toBeNull();
+    expect(queryByTestId("timeline-separator")).toBeNull();
     expect(getByText("Earlier context was compacted: the rules buffer gained a `score` action.")).toBeDefined();
   });
 
@@ -681,16 +715,23 @@ describe("ExperienceCopilotMessageBlock — page translation (follow-up 2026-10-
     expect(getByText("What should I say?").parentElement!.getAttribute("translate")).toBe("yes");
   });
 
-  it("expanded digest body carries translate=yes (the summary is model text)", () => {
+  it("expanded digest body carries translate=yes on the summary (model text)", () => {
     const { getByTestId } = render(
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
 
-    fireEvent.click(getByTestId("copilot-digest-card-toggle"));
-    expect(getByTestId("copilot-digest-card-body").getAttribute("translate")).toBe("yes");
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    // The shared frame's body is chrome-neutral like the event separators':
+    // only the model text opts in — the summary div carries it, the body
+    // container and the toggle stay out.
+    const body = getByTestId("timeline-separator-body");
+    expect(body.getAttribute("translate")).toBeNull();
+    const summary = body.querySelector('[translate="yes"]');
+    expect(summary).not.toBeNull();
+    expect(summary!.textContent).toContain("rules buffer");
   });
 
-  it("chrome carries no opt-in: action button and digest header stay untranslated", () => {
+  it("chrome carries no opt-in: action button and digest toggle stay untranslated", () => {
     const { getByTestId } = render(
       <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
     );
@@ -699,7 +740,7 @@ describe("ExperienceCopilotMessageBlock — page translation (follow-up 2026-10-
     const digest = render(
       <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
     );
-    expect(digest.getByTestId("copilot-digest-card-toggle").getAttribute("translate")).toBeNull();
+    expect(digest.getByTestId("timeline-separator-toggle").getAttribute("translate")).toBeNull();
   });
 });
 

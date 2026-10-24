@@ -606,6 +606,40 @@ describe("ExperienceCopilotMessageList", () => {
       "digest",
     ]);
   });
+
+  it("a digest renders as a timeline separator (no card left)", () => {
+    // AP-34: the digest row is the shared separator frame (centered muted
+    // line, caret, animated body) — `copilot-digest-card` is gone from the
+    // whole feed. The chronological place and the covered count still come
+    // from the ordering layer (untouched — the AP-33 fixture shape).
+    const { container, getByTestId, getByText } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "First question" }),
+          message({ id: "a1", role: "assistant", content: "First answer" }),
+          message({ id: "u2", role: "user", content: "Second question" }),
+          message({ id: "a2", role: "assistant", content: "Second answer" }),
+          message({ id: "d1", role: "digest", content: "summarized", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="copilot-digest-card"]')).toBeNull();
+    const frame = getByTestId("timeline-separator");
+    expect(frame.getAttribute("data-kind")).toBe("digest");
+    expect(frame.getAttribute("data-role")).toBe("digest");
+    // Identity i18n: the label composes the title + caption keys (the real
+    // 1/3/5 declension is pinned under real RU in the separator suite).
+    // coveredCount here is 2 (u2..a2 between the u2 anchor and the start).
+    expect(getByText("── copilot_context_digest_title: copilot_context_digest_caption ──")).toBeDefined();
+    // Expands to the full digest text.
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    expect(getByTestId("timeline-separator-body").textContent).toContain("summarized");
+  });
 });
 
 // ─── TAG-9: the ask_user card in the feed ───────────────────────────────────

@@ -32,17 +32,25 @@ let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentMessageList: typeof import("./AgentMessageList.js").AgentMessageList;
+let AgentDigestSeparator: typeof import("./AgentTimelineSeparator.js").AgentDigestSeparator;
 
 beforeAll(async () => {
   ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   // Real RU resources (bundled — synchronously available after init).
-  const { initI18n } = await import("../../../i18n/i18n.js");
+  // `initI18n` is first-wins process-wide: a co-loaded file that already
+  // initialized the global instance (i18n.test.ts pins the production
+  // options with `initI18n("en")`) would lock EN and turn this call into a
+  // no-op. The explicit change makes this suite order-independent — it owns
+  // RU for its duration (the afterAll below restores EN, the R13 contract).
+  const { initI18n, i18next: i18nInstance } = await import("../../../i18n/i18n.js");
   initI18n("ru");
+  await i18nInstance.changeLanguage("ru");
   // All three built-in hosts: only the sidechat wires `listEvents`.
   await import("../../build/editors/copilot/experience-agent-host.js");
   await import("../../build/editors/script-agent-host.js");
   await import("../../chat/sidechat/sidechat-host.js");
   ({ AgentMessageList } = await import("./AgentMessageList.js"));
+  ({ AgentDigestSeparator } = await import("./AgentTimelineSeparator.js"));
 });
 
 afterAll(async () => {
@@ -314,5 +322,104 @@ describe("AgentTimelineSeparator — page translation (follow-up 2026-10-24)", (
     // Chrome: the separator labels and the toggle itself stay untranslated.
     expect(getByText("── РП продвинулся на 1 сообщение ──").getAttribute("translate")).toBeNull();
     expect(toggles[0]!.getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── AP-34: the compaction digest as a timeline separator ─────────────────
+// WAS (CM-9, basis: the block suite's old card pins): a dark bordered card at
+// 85% width with a title + caption + relative-time header. NOW: the same
+// shared frame as the event separators above (centered muted line, caret,
+// shared AnimatedDisclosure body) — «── Контекст сжат: N сообщений ──»,
+// expanding to the full summary text.
+describe("AgentDigestSeparator (AP-34)", () => {
+  function digestMessage(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+    return message({
+      id: "d1",
+      role: "digest",
+      content: "the compacted summary",
+      toolCallId: "u1",
+      ...over,
+    });
+  }
+
+  it("labels 1 covered message in RU (one)", () => {
+    const { getByText, queryByTestId } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={1} />,
+    );
+
+    expect(getByText("── Контекст сжат: 1 сообщение ──")).toBeDefined();
+    // Collapsed by default — the summary body is absent.
+    expect(queryByTestId("timeline-separator-body")).toBeNull();
+  });
+
+  it("labels 3 covered messages in RU (few)", () => {
+    const { getByText } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={3} />,
+    );
+
+    expect(getByText("── Контекст сжат: 3 сообщения ──")).toBeDefined();
+  });
+
+  it("labels 5 covered messages in RU (many)", () => {
+    const { getByText } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={5} />,
+    );
+
+    expect(getByText("── Контекст сжат: 5 сообщений ──")).toBeDefined();
+  });
+
+  it("a digest without a count labels the bare title", () => {
+    const { getByText } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={null} />,
+    );
+
+    expect(getByText("── Контекст сжат ──")).toBeDefined();
+  });
+
+  it("expands on click to the full summary and collapses again", async () => {
+    const { getByTestId, queryByTestId, getByText } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    expect(getByText("the compacted summary")).toBeDefined();
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    await waitFor(() => expect(queryByTestId("timeline-separator-body")).toBeNull());
+  });
+
+  it("the relative time is the body's first line, never a label suffix", async () => {
+    const { formatRelativeTime } = await import("../../layout/sidebar-utils.js");
+    const createdAt = new Date(Date.now() - 7 * 60 * 1000).toISOString();
+    const { getByTestId, getByText } = renderRu(
+      <AgentDigestSeparator message={digestMessage({ createdAt })} coveredCount={3} />,
+    );
+
+    // The toggle reads exactly the label — no quiet suffix beside it.
+    expect(getByTestId("timeline-separator-toggle").textContent).toBe("── Контекст сжат: 3 сообщения ──");
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    const body = getByTestId("timeline-separator-body");
+    // First line: the relative time (Intl-formatted chrome, untranslated).
+    expect(body.firstElementChild!.textContent).toBe(formatRelativeTime(createdAt));
+    expect(body.firstElementChild!.getAttribute("translate")).toBeNull();
+    // Then the summary (model text, opted into page translation).
+    expect(getByText("the compacted summary").getAttribute("translate")).toBe("yes");
+  });
+
+  it("the expanded body scrolls internally and carries the feed's digest markers", () => {
+    const { container, getByTestId } = renderRu(
+      <AgentDigestSeparator message={digestMessage()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    const body = getByTestId("timeline-separator-body");
+    expect(body.className).toContain("max-h-64");
+    expect(body.className).toContain("overflow-y-auto");
+    // The feed's digest-row pins (order, regenerate keep) read these — and
+    // no card chrome is left anywhere in the render.
+    const frame = getByTestId("timeline-separator");
+    expect(frame.getAttribute("data-kind")).toBe("digest");
+    expect(frame.getAttribute("data-role")).toBe("digest");
+    expect(container.querySelector('[data-testid="copilot-digest-card"]')).toBeNull();
   });
 });

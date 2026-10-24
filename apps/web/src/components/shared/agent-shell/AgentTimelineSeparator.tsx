@@ -1,8 +1,10 @@
 import { useState } from "react";
-import type { AgentThreadEventWire } from "@vibe-tavern/api-contracts";
+import type { ReactNode } from "react";
+import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { useT } from "../../../i18n/context.js";
+import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 
 /**
  * One frozen-context timeline separator (SIDECHAT_PLAN Wave 5 / SC-19b) — the
@@ -14,11 +16,14 @@ import { useT } from "../../../i18n/context.js";
  * content-carrying kinds (`rp_sync`, `variants_attached`, `selection_changed`)
  * expand on click to the frozen content the assistant saw; `branch_forked`
  * carries nothing to show and never expands. The expanded body scrolls
- * internally (`max-h-64`, the digest card's precedent in
- * `AgentMessageBlock.tsx`) and never stretches the feed. The body opens
+ * internally (`max-h-64`) and never stretches the feed. The body opens
  * through the shared `AnimatedDisclosure` (AP-29 — the height+opacity motion
  * the lorebook accordion uses); its own sizing/scroll/chrome classes stay on
  * the inner element, never on the animated wrapper.
+ *
+ * AP-34: the row + animated body below live in the shared
+ * `TimelineSeparatorFrame` — the compaction digest (`AgentDigestSeparator`)
+ * renders through the same frame, never a second copy of the markup.
  */
 export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire }) {
   const { t } = useT();
@@ -60,12 +65,54 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
   }
 
   return (
-    <div data-testid="timeline-separator" data-kind={event.kind} className="mx-auto w-full max-w-[85%]">
+    <TimelineSeparatorFrame
+      kind={event.kind}
+      label={label}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+    >
+      <SeparatorBody event={event} />
+    </TimelineSeparatorFrame>
+  );
+}
+
+/**
+ * AP-34: the shared separator row + animated body — the event separators
+ * above and the compaction digest below render through this one frame, never
+ * a second copy of the markup. The centered muted line, the caret and the
+ * shared `AnimatedDisclosure` body (with the separator body's own classes on
+ * the inner element) are byte-identical for both; only the label and the
+ * body content differ per consumer.
+ */
+function TimelineSeparatorFrame({
+  kind,
+  label,
+  expanded,
+  onToggle,
+  children,
+  dataRole,
+}: {
+  kind: string;
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  /** The digest keeps `data-role="digest"` — the feed's digest-row pins
+   *  (order, regenerate keep) read it; event separators carry none. */
+  dataRole?: string;
+}) {
+  return (
+    <div
+      data-testid="timeline-separator"
+      data-kind={kind}
+      {...(dataRole !== undefined ? { "data-role": dataRole } : {})}
+      className="mx-auto w-full max-w-[85%]"
+    >
       <button
         type="button"
         data-testid="timeline-separator-toggle"
         aria-expanded={expanded}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         className="flex w-full cursor-pointer items-center justify-center gap-1.5 px-3 py-1 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4 transition-colors hover:text-t2"
       >
         <span className="min-w-0">{label}</span>
@@ -76,10 +123,63 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
           data-testid="timeline-separator-body"
           className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1"
         >
-          <SeparatorBody event={event} />
+          {children}
         </div>
       </AnimatedDisclosure>
     </div>
+  );
+}
+
+/**
+ * AP-34: a compaction digest as a timeline separator — the label reads the
+ * digest title + the declined count caption between the separator's `──`
+ * runs (the plan's verbatim label example), and expands to the full summary
+ * text with an inner scroll for long summaries.
+ *
+ * The relative time is NOT a label suffix: at the sidechat's narrowest
+ * width (320 px pane → ~203 px for the label at the default size; the
+ * shortest RU label already takes ~217 px, a 3-digit count ~230 px —
+ * AD-022, RU worst case) even the bare label wraps, so a suffix never fits
+ * one line. It renders as the expanded body's first line instead, on every
+ * host, desktop and phone.
+ */
+export function AgentDigestSeparator({
+  message,
+  coveredCount,
+}: {
+  message: ExperienceCopilotMessageWire;
+  coveredCount: number | null;
+}) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const count = coveredCount ?? 0;
+  const caption = count > 0
+    ? `: ${t("copilot_context_digest_caption", { n: count, count })}`
+    : "";
+  const label = `── ${t("copilot_context_digest_title")}${caption} ──`;
+  const relative = formatRelativeTime(message.createdAt);
+
+  return (
+    <TimelineSeparatorFrame
+      kind="digest"
+      dataRole="digest"
+      label={label}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+    >
+      {relative !== "" && (
+        <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4 tabular-nums">
+          {relative}
+        </div>
+      )}
+      {/* The summary is model text — it opts back into page translation
+          (the `translate="no"` page opts out; the old card's body carried
+          the same opt-in). The relative line above is Intl-formatted chrome
+          and stays out, like the separator labels. */}
+      <div translate="yes" className="whitespace-pre-wrap">
+        {message.content}
+      </div>
+    </TimelineSeparatorFrame>
   );
 }
 

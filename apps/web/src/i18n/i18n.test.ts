@@ -130,4 +130,16 @@ describe("i18n count pluralization", () => {
 		expect(String(ruInst.t("agent_settings_skills_custom", { n: 3, count: 3 }))).toBe("3 своих");
 		expect(String(ruInst.t("agent_settings_skills_custom", { n: 5, count: 5 }))).toBe("5 своих");
 	});
+
+	it("digest caption declines (AP-34: the separator label's count phrase)", async () => {
+		const enInst = await makeInstance("en");
+		expect(String(enInst.t("copilot_context_digest_caption", { n: 1, count: 1 }))).toBe("1 message");
+		expect(String(enInst.t("copilot_context_digest_caption", { n: 5, count: 5 }))).toBe("5 messages");
+
+		const ruInst = await makeInstance("ru");
+		expect(String(ruInst.t("copilot_context_digest_caption", { n: 1, count: 1 }))).toBe("1 сообщение");
+		expect(String(ruInst.t("copilot_context_digest_caption", { n: 3, count: 3 }))).toBe("3 сообщения");
+		expect(String(ruInst.t("copilot_context_digest_caption", { n: 5, count: 5 }))).toBe("5 сообщений");
+		expect(String(ruInst.t("copilot_context_digest_caption", { n: 21, count: 21 }))).toBe("21 сообщение");
+	});
 });
