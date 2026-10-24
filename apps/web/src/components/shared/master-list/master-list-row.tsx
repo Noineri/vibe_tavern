@@ -18,6 +18,10 @@ export interface MasterListRowHandle {
 }
 
 export interface MasterListRowProps {
+  /** Row title. WRAPS onto a second line when long — never ellipsized
+   *  (authored names are UI copy; UI copy is never truncated). Optional:
+   *  the inline-rename editor slot replaces title + second line while active. */
+  title?: ReactNode;
   /** Selected row (open in the detail pane): accent left border + tint. */
   selected?: boolean;
   /** «In use» marker (the active profile / preset): a ★ in the status
@@ -25,9 +29,6 @@ export interface MasterListRowProps {
   active?: boolean;
   /** Status-marker slot (connection dot, built-in/user badge, …). */
   status?: ReactNode;
-  /** Row title. WRAPS onto a second line when long — never ellipsized
-   *  (authored names are UI copy; UI copy is never truncated). */
-  title: ReactNode;
   /** Optional second line under the title (provider label, backend, …). */
   secondLine?: ReactNode;
   /** Inline-rename editor slot: when present it replaces title + second line. */
@@ -71,7 +72,9 @@ export function MasterListRow({
       data-testid={rowTestId}
       {...dataAttrs}
       className={cn(
-        "flex min-h-[56px] cursor-pointer touch-manipulation items-center border-l-[3px] pr-2 pl-4 transition-colors active:bg-s2",
+        // `group` enables consumer trailing actions that reveal on row hover
+        // (e.g. a preset list's desktop rename button) — inert otherwise.
+        "group flex min-h-[56px] cursor-pointer touch-manipulation items-center border-l-[3px] pr-2 pl-4 transition-colors active:bg-s2",
         selected
           ? "border-l-accent bg-accent-dim text-accent-t"
           : "border-l-transparent text-t2 hover:bg-s2",

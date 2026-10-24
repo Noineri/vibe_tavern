@@ -111,7 +111,11 @@ mock.module("../shared/Tooltip.js", () => ({
 mock.module("../shared/MasterDetailModal.js", () => {
   return {
     ...realMasterDetail,
-    MasterDetailMobileDrillDown: (props: { onSelect: () => void }) => <button onClick={() => props.onSelect()}>drill</button>,
+    // Co-load contract (master-list.test.tsx + the prompt-list suites render
+    // the REAL drill-down with aria-label `master_detail_open`; a label-less
+    // stub poisons their shared-process runs — last-write-wins. The `drill`
+    // text stays: this suite asserts on it below).
+    MasterDetailMobileDrillDown: (props: { onSelect: () => void }) => <button aria-label="master_detail_open" onClick={() => props.onSelect()}>drill</button>,
   };
 });
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));

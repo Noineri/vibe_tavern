@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   useReorderableList,
@@ -20,6 +26,23 @@ export interface MasterListProps<T> {
   onReorderItems: (activeId: string, overId: string, displayItems: T[]) => ReorderResult<T>;
   /** Disables every handle (e.g. while searching); rows stay selectable. */
   dragDisabled?: boolean;
+  /** SortableContext registration override (default: the rendered ids).
+   *  A list excludes transiently non-sortable rows here (e.g. the row under
+   *  inline rename, which renders an input instead of a sortable). */
+  sortableIds?: string[];
+  /** Extra consumer hook into drag start (runs before the default reorder
+   *  start — e.g. a profile list collapsing the dragged profile). */
+  onDragStartExtra?: (event: DragStartEvent) => void;
+  /** DndContext.onDragOver passthrough (e.g. a standalone-drop slot
+   *  tracking the pointer to highlight its target). */
+  onDragOver?: (event: DragOverEvent) => void;
+  /** Extra consumer hook into drag cancel (runs after the default cancel). */
+  onDragCancelExtra?: () => void;
+  /** Flow slot rendered first inside the scroll container (inside
+   *  DndContext, so it may host a droppable). Receives the active drag
+   *  item — e.g. a standalone-drop target visible only while a member
+   *  row is dragged. Null/absent renders nothing. */
+  renderDragSlot?: (activeItem: T | null) => ReactNode;
   /** Rendered subset while filtering (e.g. search results); defaults to the
    *  hook's display items (which reflect optimistic reorder). */
   visibleItems?: T[];
@@ -44,6 +67,11 @@ export function MasterList<T>({
   getId,
   onReorderItems,
   dragDisabled = false,
+  sortableIds,
+  onDragStartExtra,
+  onDragOver,
+  onDragCancelExtra,
+  renderDragSlot,
   visibleItems,
   header,
   search,
@@ -74,12 +102,20 @@ export function MasterList<T>({
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
+        onDragStart={(event) => {
+          onDragStartExtra?.(event);
+          handleDragStart(event);
+        }}
+        onDragOver={onDragOver}
         onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
+        onDragCancel={() => {
+          handleDragCancel();
+          onDragCancelExtra?.();
+        }}
       >
-        <SortableContext items={rendered.map((item) => getId(item))} strategy={verticalListSortingStrategy}>
+        <SortableContext items={sortableIds ?? rendered.map((item) => getId(item))} strategy={verticalListSortingStrategy}>
           <div className="flex-1 overflow-y-auto">
+            {renderDragSlot ? renderDragSlot(activeDragItem) : null}
             {rendered.length === 0 && emptyState
               ? emptyState
               : rendered.map((item) => <div key={getId(item)}>{renderRow(item)}</div>)}

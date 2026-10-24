@@ -236,6 +236,47 @@ describe("master-list primitive", () => {
     expect(view.getAllByText("Alpha")).toHaveLength(1);
   });
 
+  it("supports a sortable-id override, drag extras, and a drag flow slot", () => {
+    // ML-2 slots: `sortableIds` (transiently non-sortable rows), the
+    // drag-start/over/cancel extras, and `renderDragSlot` (a droppable flow
+    // slot inside the scroll container, e.g. a standalone-drop target).
+    const seen: Array<string> = [];
+    const { props } = listProps({
+      sortableIds: ["a", "b", "slot"],
+      onDragStartExtra: () => { seen.push("start"); },
+      onDragOver: () => { seen.push("over"); },
+      onDragCancelExtra: () => { seen.push("cancel"); },
+      renderDragSlot: (active: { id: string; name: string } | null) => active ? <div data-testid="flow-slot">slot:{active.id}</div> : null,
+    });
+    const view = render(<MasterList {...props} />);
+    expect(view.queryByTestId("flow-slot")).toBeNull();
+    expect(dndHandlers).toBeTruthy();
+    const startEvent = { active: { id: "b" } } as unknown as Parameters<
+      NonNullable<RealDndContextProps["onDragStart"]>
+    >[0];
+    act(() => { dndHandlers!.onDragStart!(startEvent); });
+    expect(seen).toEqual(["start"]);
+    const slot = view.getByTestId("flow-slot");
+    expect(slot.textContent).toBe("slot:b");
+    // The slot lives in the same scroll container, before the rows.
+    const row = view.getByText("Alpha").closest("div.group") as HTMLElement;
+    const scroll = row.parentElement?.parentElement;
+    expect(scroll).toBeTruthy();
+    expect(slot.parentElement).toBe(scroll!);
+    expect(slot.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const overEvent = { active: { id: "b" }, over: null } as unknown as Parameters<
+      NonNullable<RealDndContextProps["onDragOver"]>
+    >[0];
+    act(() => { dndHandlers!.onDragOver!(overEvent); });
+    expect(seen).toEqual(["start", "over"]);
+    const cancelEvent = {} as unknown as Parameters<
+      NonNullable<RealDndContextProps["onDragCancel"]>
+    >[0];
+    act(() => { dndHandlers!.onDragCancel!(cancelEvent); });
+    expect(seen).toEqual(["start", "over", "cancel"]);
+    expect(view.queryByTestId("flow-slot")).toBeNull();
+  });
+
   it("renders no drag overlay while dragging when renderOverlayRow is absent", () => {
     const { props } = listProps({ renderOverlayRow: undefined });
     const view = render(<MasterList {...props} />);

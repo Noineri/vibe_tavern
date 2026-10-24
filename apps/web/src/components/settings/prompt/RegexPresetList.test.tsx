@@ -10,21 +10,18 @@ const { default: userEvent } = await import("@testing-library/user-event");
 const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realTooltip = await import("../../shared/Tooltip.js");
-const realSortable = await import("@dnd-kit/sortable");
+// Co-load contract (master-list.test.tsx + ProviderProfileList.test.tsx +
+// PresetList.test.tsx register the SAME mock for @dnd-kit/core; Bun's
+// mock.module is process-global, last-write-wins — the factories must stay
+// shape-identical so either registration order is safe). @dnd-kit/sortable
+// is NOT mocked: ML-2 moved the sortable wiring into the primitive, so this
+// suite renders the real useSortable through SortableMasterListPhoneRow
+// (only `arrayMove` is consumed here, for the reorder payload math).
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
-
-const useSortable = mock(() => ({
-  attributes: {},
-  listeners: {},
-  setNodeRef: mock(),
-  setActivatorNodeRef: mock(),
-  transform: null,
-  transition: undefined,
-  isDragging: false,
-}));
 
 mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -39,23 +36,31 @@ mock.module("../../../i18n/context.js", () => ({
     ready: true,
   }),
 }));
+// The rows render the REAL MasterDetailMobileDrillDown (ML-1 precedent: a
+// label-less `drill` stub diverged from master-list.test.tsx's mock and
+// poisoned its co-load run). Shape-identical with master-list.test.tsx
+// (co-load contract: last-write-wins).
 mock.module("../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetailModal,
-  MasterDetailMobileDrillDown: ({ onSelect, className }: { onSelect: () => void; className?: string }) => (
-    <button type="button" onClick={onSelect} className={className}>drill</button>
-  ),
+  useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-mock.module("@dnd-kit/sortable", () => ({ ...realSortable, useSortable }));
 mock.module("@dnd-kit/core", () => ({
   ...realDndKit,
+  // Preserve dnd-kit's provider while exposing the exact drag-end boundary
+  // without fragile pointer simulation in happy-dom.
   DndContext: (props: RealDndContextProps) => {
     dndHandlers = props;
     return <RealDndContext {...props} />;
   },
+  // DragOverlay mounts children only while dnd-kit's INTERNAL active state
+  // is set; the captured-handler pattern drives the hook state, never the
+  // internal one — so the preview renders inline here. Shape-identical with
+  // master-list.test.tsx (co-load contract: last-write-wins).
+  DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 let RegexPresetList: typeof import("./RegexPresetList.js").RegexPresetList;
@@ -145,21 +150,47 @@ describe("RegexPresetList", () => {
     expect((collapsed as HTMLElement).style.gridTemplateRows).toBe("0fr");
     // All six rows' handles stay mounted (3 top-level + 3 hidden members);
     // expanding must NOT duplicate them.
-    expect(view.getAllByLabelText("promptManager.regex.dragAria")).toHaveLength(6);
+    // (Behavior change: the handle is the primitive's ≡, aria "drag" — not
+    // the old translated grip label — per MASTER_LIST_PRIMITIVE_PLAN row rules.)
+    expect(view.getAllByLabelText("drag")).toHaveLength(6);
     await user.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]!);
     const open = view.getByTestId("regex-members-p1");
     expect(open.getAttribute("aria-hidden")).toBe("false");
     expect((open as HTMLElement).style.gridTemplateRows).toBe("1fr");
     expect(view.getByText("Member needle")).toBeTruthy();
-    expect(view.getAllByLabelText("promptManager.regex.dragAria")).toHaveLength(6);
+    expect(view.getAllByLabelText("drag")).toHaveLength(6);
   });
 
-  it("uses the shared grip icon in a 44px mobile target", () => {
+  it("uses the primitive handle (≡, drag-only) on every row", () => {
+    // Behavior change (was: a translated-label grip icon in a 44px mobile
+    // target; now: the primitive's ≡ handle per MASTER_LIST_PRIMITIVE_PLAN
+    // row rules — reorder works with the handle only, tapping selects).
     const view = render(<RegexPresetList {...baseProps()} />);
-    const handle = view.getAllByLabelText("promptManager.regex.dragAria")[0]!;
-    expect(handle.className).toContain("h-11");
-    expect(handle.className).toContain("w-11");
-    expect(handle.querySelector("svg")).toBeTruthy();
+    const handles = view.getAllByLabelText("drag");
+    expect(handles).toHaveLength(3);
+    for (const handle of handles) expect(handle.textContent).toBe("≡");
+  });
+
+  it("wraps rule titles instead of truncating them", () => {
+    // Behavior change (was: `truncate` title in a tooltip; now: `break-words`
+    // wrap per MASTER_LIST_PRIMITIVE_PLAN row rules — authored names are UI
+    // copy, and UI copy is never truncated).
+    const view = render(<RegexPresetList {...baseProps()} />);
+    const title = view.getByText("Alpha");
+    expect(title.classList.contains("truncate")).toBe(false);
+    expect(title.classList.contains("break-words")).toBe(true);
+  });
+
+  it("renders the drag preview through the primitive overlay", () => {
+    const view = render(<RegexPresetList {...baseProps()} />);
+    expect(view.getAllByText("Alpha")).toHaveLength(1);
+    const start = { active: { id: "rule:r1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    const end = { active: { id: "rule:r1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragStart!(start); });
+    // Row + inline overlay preview (the DragOverlay mock renders inline —
+    // the ML-1 rework-2 lesson: the preview must exist during a drag).
+    expect(view.getAllByText("Alpha")).toHaveLength(2);
+    act(() => { dndHandlers!.onDragEnd!(end); });
   });
 
   it("reveals a matching member with its parent while hiding non-matching members", async () => {
@@ -211,7 +242,7 @@ describe("RegexPresetList", () => {
     const user = userEvent.setup();
     const view = render(<RegexPresetList {...baseProps({ onReorder })} />);
     await user.type(view.getByPlaceholderText("promptManager.regex.searchPlaceholder"), "Beta");
-    expect(view.queryByLabelText("promptManager.regex.dragAria")).toBeNull();
+    expect(view.queryByLabelText("drag")).toBeNull();
     expect(onReorder).not.toHaveBeenCalled();
   });
 
@@ -333,16 +364,22 @@ describe("RegexPresetList", () => {
   });
 
   it("places the standalone drop flow slot in the same scroll container before list rows", () => {
+    // Behavior change (was: rows and the slot were direct siblings in the
+    // scroll container; now: the primitive wraps each row in a key div and
+    // owns the droppable wrapper — the slot content keeps its look/testid).
     const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
     const start = { active: { id: "rule:r2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
     act(() => { dndHandlers!.onDragStart!(start); });
 
     const target = view.getByTestId("regex-standalone-drop");
     const profileRow = view.getByText("First profile").closest("div.group") as HTMLElement;
-    expect(target.parentElement).toBe(profileRow.parentElement);
+    const scroll = target.parentElement;
+    expect(scroll?.contains(profileRow)).toBe(true);
     expect(target.compareDocumentPosition(profileRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(target.className).not.toContain("absolute");
-    expect(target.className).not.toContain("fixed");
+    const content = target.firstElementChild as HTMLElement;
+    expect(content.className).toContain("border border-dashed border-border2");
+    expect(content.className).not.toContain("absolute");
+    expect(content.className).not.toContain("fixed");
   });
 
   it("detaches a member through the standalone target with no standalone Rules", () => {
@@ -360,10 +397,13 @@ describe("RegexPresetList", () => {
 
     act(() => { dndHandlers!.onDragStart!(start); });
     const target = view.getByTestId("regex-standalone-drop");
-    expect(target.className).toContain("border border-dashed border-border2");
+    // The testid sits on the primitive's droppable wrapper; the dashed look
+    // lives on the consumer's content (props carry data, never classes).
+    const content = target.firstElementChild as HTMLElement;
+    expect(content.className).toContain("border border-dashed border-border2");
     act(() => { dndHandlers!.onDragOver!(over); });
-    expect(target.className).toContain("border-accent");
-    expect(target.className).toContain("bg-accent-dim");
+    expect(content.className).toContain("border-accent");
+    expect(content.className).toContain("bg-accent-dim");
     act(() => { dndHandlers!.onDragEnd!(end); });
     expect(onDetach).toHaveBeenCalledWith("r1");
     expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
