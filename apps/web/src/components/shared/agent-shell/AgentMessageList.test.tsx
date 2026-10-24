@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
 import type { ExperienceCopilotMessageWire, RecordProposal } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 
@@ -8,10 +9,24 @@ useDomEnv();
 
 // CustomTooltip (Radix) never anchors under happy-dom — the ask card's
 // recommended chip is wrapped in it. Render children inline; this test pins
-// the feed wiring, not tooltip internals (same mock as the card/panel tests).
-mock.module("../../../components/shared/Tooltip.js", () => ({
+// the feed wiring, not tooltip internals (same mock as the card/panel tests;
+// `...real` spread keeps the module's other exports alive for later files in
+// a hand-bundled co-load — the mandatory R4 shape AgentMessageBlock uses too).
+const realTooltip = await import("../Tooltip.js");
+mock.module("../Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
+
+// CO-LOAD CONTRACT (react-markdown-seam discipline): this file and
+// AgentMessageBlock.test.tsx register the SAME shared markdown seam — the AP-2
+// pair below pins the REAL variant classes (`.md-agent`/`.md-agent-plain`),
+// which the block suite's former file-private stub stripped from this file's
+// renders in a hand-bundled co-load (mock.module is process-global,
+// last-write-wins; the pair failed exactly those 2 tests while each file was
+// green alone). The seam's div carries the class from the real
+// VARIANT_DEFAULT_CLASS, so the chain below stays pinned end-to-end.
+installAgentMessageMarkdownSeam();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
@@ -1190,9 +1205,11 @@ describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
 
 // ─── AP-2: per-host message markup pass-through ─────────────────────────────
 // The list resolves the host's `messageMarkup` and the block renders the
-// matching REAL Markdown variant (`md-agent-plain` vs `md-agent`) — this
-// file uses no Markdown mock, so the variant class pins the whole chain
-// (descriptor → list → block → Markdown). The experience host's `plain`
+// matching Markdown variant class (`md-agent-plain` vs `md-agent`). This file
+// registers the shared agent-message markdown seam (the co-load contract —
+// see the header wiring above): the seam derives the class from the REAL
+// markdown.tsx VARIANT_DEFAULT_CLASS, so the class still pins the whole chain
+// (descriptor → list → block → variant class). The experience host's `plain`
 // value is pinned here end-to-end; the sidechat/script values by their own
 // registration tests.
 

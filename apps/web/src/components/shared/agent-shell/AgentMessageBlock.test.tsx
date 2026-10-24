@@ -7,6 +7,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
 
@@ -16,13 +17,14 @@ useDomEnv();
 // summary text (not through Markdown), but the block still imports it — stub it
 // so the digest path has a deterministic DOM. The stub surfaces the variant
 // prop as `data-variant` so the AP-2 markup tests pin the block→variant map.
-const realMarkdown = await import("../../../lib/markdown.js");
-mock.module("../../../lib/markdown.js", () => ({
-  ...realMarkdown,
-  Markdown: ({ text, variant }: { text: string; variant?: string }) => (
-    <div data-variant={variant}>{text}</div>
-  ),
-}));
+// CO-LOAD CONTRACT (react-markdown-seam discipline): this file and
+// AgentMessageList.test.tsx register the SAME shared seam factory — the list
+// suite's AP-2 pair pins the REAL variant classes (`.md-agent`/`.md-agent-plain`),
+// which a file-private stub would strip from its renders in a hand-bundled
+// co-load (mock.module is process-global, last-write-wins). The seam derives
+// the class from the real VARIANT_DEFAULT_CLASS, so both halves stay green in
+// any order.
+installAgentMessageMarkdownSeam();
 
 // Mutable viewport override (the SC-16 row branches on it) — same pattern as
 // sidechat-host.test.tsx so both halves agree.

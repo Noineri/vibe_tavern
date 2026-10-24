@@ -646,7 +646,11 @@ const AGENT_COMPONENTS: Record<string, React.ComponentType<MarkdownComponentProp
   p: AgentParagraph,
 };
 
-const VARIANT_DEFAULT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
+// Exported for the shared apps/web test seam (test/agent-message-markdown-seam.tsx):
+// the seam stubs the renderer DOM but derives the variant class from THIS map,
+// so the agent-shell suites' `.md-agent`/`.md-agent-plain` pins stay end-to-end
+// real (descriptor → list → block → variant class) under a co-loaded run.
+export const VARIANT_DEFAULT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
   chat: "md-content",
   plain: "md-content",
   "agent-rp": "md-content md-agent",
