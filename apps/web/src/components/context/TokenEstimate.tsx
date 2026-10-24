@@ -49,7 +49,7 @@ export function TokenEstimate({ estimate }: { estimate: TokenEstimateShape }) {
   const { t } = useT();
   return (
     <section className="mt-3 rounded-lg border border-border bg-input-bg p-4">
-      <div className="mb-2 font-ui text-[12px] text-t3">
+      <div className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
         {t("summary_token_line", {
           summary: estimate.summaryTokens,
           history: estimate.historyTokens,
@@ -59,7 +59,7 @@ export function TokenEstimate({ estimate }: { estimate: TokenEstimateShape }) {
       <div className="h-1.5 overflow-hidden rounded-full bg-s3">
         <div className="h-full bg-accent transition-all" style={{ width: `${estimate.total > 0 ? Math.min(100, Math.round((estimate.summaryTokens / estimate.total) * 100)) : 0}%` }} />
       </div>
-      <div className="mt-2 flex items-center justify-between font-ui text-[11px] text-t4">
+      <div className="mt-2 flex items-center justify-between font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
         <span>{t("summary_without_line", { tokens: estimate.selectedRawTokens })}</span>
         <span className="text-success-text">{t("summary_saved_line", { tokens: estimate.saved, pct: estimate.pct })}</span>
       </div>

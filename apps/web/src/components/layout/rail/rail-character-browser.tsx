@@ -186,7 +186,7 @@ function CharactersScreen({
 						<Ic.filter />
 					</button>
 					{filters.tagCount > 0 && (
-						<span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-ui text-[9px] font-bold text-on-accent">
+						<span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-ui text-[calc(var(--ui-fs)-5px)] font-bold leading-none text-on-accent">
 							{filters.tagCount}
 						</span>
 					)}
@@ -269,7 +269,7 @@ function CharacterScreen({
 				<span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center overflow-hidden rounded-md bg-s3 font-ui text-[calc(var(--ui-fs)-4px)] text-t2">
 					{avatarSrc ? <img className="h-full w-full object-cover" src={avatarSrc} alt={screenCharacter.name} /> : initials(screenCharacter.name)}
 				</span>
-				<Drawer.Title className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)+0px)] font-semibold tracking-tight text-t1" title={screenCharacter.name}>
+				<Drawer.Title className="min-w-0 flex-1 truncate font-ui text-[var(--ui-fs)] font-semibold tracking-tight text-t1" title={screenCharacter.name}>
 					{screenCharacter.name}
 				</Drawer.Title>
 				<div className="flex shrink-0 gap-1.5">

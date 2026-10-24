@@ -84,7 +84,7 @@ export function ExperiencePreview(props: ExperiencePreviewProps) {
             aria-selected={p === phase}
             onClick={() => setPhase(p)}
             className={cn(
-              "rounded px-2 py-1 text-xs",
+              "rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4",
               p === phase
                 ? "bg-neutral-200 text-neutral-900"
                 : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700",
@@ -107,7 +107,7 @@ export function ExperiencePreview(props: ExperiencePreviewProps) {
         />
       </div>
       {/* The disconnected action log — proof preview clicks go nowhere else. */}
-      <p className="text-xs text-neutral-500" data-testid="experience-preview-log">
+      <p className="text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-500" data-testid="experience-preview-log">
         {lastAction
           ? `${t("experience_preview_last_action")}: ${lastAction}`
           : t("experience_preview_disconnected")}

@@ -249,8 +249,8 @@ function ProviderStep({
       <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
         <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0">
-            <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1">{form.name}</div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[13px] text-t3 sm:flex-nowrap">
+            <div className="mb-1 truncate font-ui text-[calc(var(--ui-fs)+2px)] font-semibold text-t1">{form.name}</div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 sm:flex-nowrap">
               {presetLabel && <span>{presetLabel}</span>}
               {presetLabel && <span className="h-1 w-1 rounded-full bg-t4" />}
               <span className="flex items-center gap-1.5 text-success">
@@ -258,12 +258,12 @@ function ProviderStep({
                 {t("api_key_saved")}
               </span>
             </div>
-            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setTestOk(null); setCollapsed(false); }}>
-              <span className="text-[11px]"><Icons.Edit /></span>
+            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setTestOk(null); setCollapsed(false); }}>
+              <span className="text-[calc(var(--ui-fs)-3px)]"><Icons.Edit /></span>
               {t("wizard_edit_provider")}
             </button>
           </div>
-          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
+          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
             ✓ {t("provider_active")}
           </button>
         </div>
@@ -275,9 +275,9 @@ function ProviderStep({
               testing={testingChat}
               result={chatResult}
               onTest={() => void handleTestChat()}
-              buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-              replyRenderer={(reply) => <div className="mt-3 rounded-md bg-s2 p-3 font-ui text-[12px] leading-relaxed text-t2">{reply}</div>}
-              errorRenderer={(error) => <div className="mt-3 rounded-md bg-danger-dim p-3 font-ui text-[12px] leading-relaxed text-danger-text">{error}</div>}
+              buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+              replyRenderer={(reply) => <div className="mt-3 rounded-md bg-s2 p-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{reply}</div>}
+              errorRenderer={(error) => <div className="mt-3 rounded-md bg-danger-dim p-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-danger-text">{error}</div>}
             />
           </div>
         </div>
@@ -332,11 +332,11 @@ function ProviderStep({
       />
       {testOk === true && !showEdit && (
         <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-          <span className="inline-flex items-center gap-1.5 font-ui text-[12px] text-success">
+          <span className="inline-flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-success">
             <Icons.Check />
             {t("connection_successful")}
           </span>
-          <button type="button" className="ml-auto font-ui text-[11px] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
+          <button type="button" className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
             {t("wizard_edit_provider")}
           </button>
         </div>
@@ -802,17 +802,17 @@ function CharacterStep({
             {cardPreview.avatarUrl ? (
               <img src={cardPreview.avatarUrl} className="h-16 w-16 shrink-0 rounded-lg bg-s3 object-cover object-top" alt="" />
             ) : (
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-s3 font-body text-2xl italic text-t3">{wizardInitial(cardPreview.name)}</div>
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-s3 font-body text-[calc(var(--ui-fs)+10px)] leading-8 italic text-t3">{wizardInitial(cardPreview.name)}</div>
             )}
             <div className="min-w-0 flex-1 font-ui">
-              <div className="mb-1 text-base font-medium text-t1">{cardPreview.name}</div>
-              <div className="line-clamp-3 mb-2.5 text-xs leading-relaxed text-t3">{cardPreview.description || t("no_description")}</div>
+              <div className="mb-1 text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">{cardPreview.name}</div>
+              <div className="line-clamp-3 mb-2.5 text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{cardPreview.description || t("no_description")}</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {cardPreview.tags.slice(0, 6).map((tag) => <span key={tag} className="rounded bg-s3 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{tag}</span>)}
               </div>
             </div>
           </div>
-          <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import", { name: cardPreview.file.name })}</div>
+          <div className="mt-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("ready_to_import", { name: cardPreview.file.name })}</div>
         </div>
       )}
 
@@ -901,7 +901,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
             else setPath("choose");
           }}
         >
-          <span className="text-[13px]">{Ic.caret('l')}</span>
+          <span className="text-[calc(var(--ui-fs)-1px)]">{Ic.caret('l')}</span>
         </button>
       )}
     </div>

@@ -66,8 +66,8 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
   macroAutocomplete?: boolean;
   /** Mono variant for opaque technical content (regex patterns, DSL,
    *  template sequences) — composes the canon base with `monoMod`. The mono
-   *  style NEVER carries its own size (the retired build tokens' mono was
-   *  `text-xs` — dead now; see lib/field-tokens.ts). */
+   *  style NEVER carries its own size (the retired build tokens' mono used a
+   *  fixed Tailwind size — dead now; see lib/field-tokens.ts). */
   mono?: boolean;
 }
 

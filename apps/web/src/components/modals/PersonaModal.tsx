@@ -512,8 +512,8 @@ export function PersonaModal(input: PersonaModalProps) {
               {input.personas.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="mb-3 text-t4"><Icons.User /></div>
-                  <div className="font-ui text-[14px] font-medium text-t2">{t("no_personas")}</div>
-                  <div className="font-ui text-[12px] text-t3 mt-1">{t("create_first_persona")}</div>
+                  <div className="font-ui text-[var(--ui-fs)] font-medium text-t2">{t("no_personas")}</div>
+                  <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3 mt-1">{t("create_first_persona")}</div>
                 </div>
               )}
               <div className="flex flex-col">
@@ -556,8 +556,8 @@ export function PersonaModal(input: PersonaModalProps) {
         ) : input.personas.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center py-12 text-center">
             <div className="mb-3 text-t4"><Icons.User /></div>
-            <div className="font-ui text-[14px] font-medium text-t2">{t("no_personas")}</div>
-            <div className="font-ui text-[12px] text-t3 mt-1">{t("create_first_persona")}</div>
+            <div className="font-ui text-[var(--ui-fs)] font-medium text-t2">{t("no_personas")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3 mt-1">{t("create_first_persona")}</div>
           </div>
         ) : null}
         footer={

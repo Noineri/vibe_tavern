@@ -63,12 +63,5 @@
     "services/api/src/runtime/session/session-runtime.ts": 910,
     "services/api/src/server/updater.ts": 1101,
     "services/api/src/shared/st-directory-scanner.ts": 1441
-  },
-  "fixedFontSizes": {
-    "pixelClasses": 138,
-    "remClasses": 1,
-    "tailwindSizeClasses": 77,
-    "inlineFontSizes": 0,
-    "cssFontSizes": 12
   }
 }

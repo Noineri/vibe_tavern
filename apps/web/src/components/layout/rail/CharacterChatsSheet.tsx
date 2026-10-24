@@ -79,9 +79,9 @@ export function CharacterChatsSheet({
 					<div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-s3 text-t2">
 						{characterAvatarSrc
 							? <img src={characterAvatarSrc} alt={characterName} className="h-full w-full object-cover" />
-							: <span className="font-ui text-sm">{initials(characterName)}</span>}
+							: <span className="font-ui text-[var(--ui-fs)] leading-5">{initials(characterName)}</span>}
 					</div>
-					<span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)+0px)] font-semibold text-t1">{characterName}</span>
+					<span className="min-w-0 flex-1 truncate font-ui text-[var(--ui-fs)] font-semibold text-t1">{characterName}</span>
 					<button type="button" className="iBtn size-8 shrink-0" aria-label={t("new_chat")} onClick={onCreateChat}><Ic.plus /></button>
 					<button type="button" className="iBtn size-8 shrink-0" aria-label={t("close")} onClick={onClose}><Ic.close /></button>
 				</div>

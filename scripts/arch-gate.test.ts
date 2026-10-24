@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	ARCH_GATE_MAX_LINES,
+	collectBannedFixedFontSizes,
 	collectFixedFontSizes,
 	collectFractionalLadderOffsets,
 	collectLayerImports,
@@ -161,49 +162,45 @@ describe("fixed font-size ratchet", () => {
 		}
 	});
 
-	test("fails on growth with a message naming the ladder replacement", () => {
-		const current = baseline({ pixelClasses: 2, remClasses: 1, tailwindSizeClasses: 1, inlineFontSizes: 1 });
-		const report = evaluateArchGate(
-			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 1 }) },
-			[],
-			{},
-			current,
-		);
-		expect(report.growingFixedFontSizes).toEqual([
-			{ pattern: "pixelClasses", baseline: 1, current: 2 },
-			{ pattern: "remClasses", baseline: 0, current: 1 },
-			{ pattern: "tailwindSizeClasses", baseline: 0, current: 1 },
-			{ pattern: "inlineFontSizes", baseline: 0, current: 1 },
-		]);
-		const output = formatArchGateReport(report);
-		expect(output).toContain("Architecture gate: FAIL — 4 new architecture violation(s) detected.");
-		expect(output).toContain("[fixed-font-size] pixelClasses: 2 > baseline 1");
-		expect(output).toContain("[fixed-font-size] remClasses: 1 > baseline 0");
-		expect(output).toContain("text-[11px] → text-[calc(var(--ui-fs)-3px)]");
-		expect(output).toContain("text-[0.8rem] → text-[calc(var(--ui-fs)-1px)]");
-		expect(output).toContain("text-xs → text-[calc(var(--ui-fs)-2px)] leading-4");
-		expect(output).toContain('fontSize: 18 → fontSize: "calc(var(--ui-fs)+4px)"');
-		expect(output).toContain("bun scripts/font-size-codemod.ts --dry-run apps/web/src");
-		expect(output).toContain("fixed font sizes 5/1");
+	test("red: a probe text-[13px] fails the gate with the ladder message", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
+		try {
+			writeFixture(
+				root,
+				"apps/web/src/components/shared/Probe.tsx",
+				'<a className="text-[13px]">x</a>\n<b className="text-xs">y</b>\n',
+			);
+			writeFixture(root, "apps/web/src/styles.css", ".tag{font-size:11px}\n");
+			writeFixture(root, "apps/web/src/components/shared/Skip.test.tsx", '<d className="text-[10px]">t</d>\n');
+			const banned = collectBannedFixedFontSizes(root);
+			expect(banned).toEqual([
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 1, column: 15, text: "text-[13px]", pattern: "pixelClasses" },
+				{ file: "apps/web/src/components/shared/Probe.tsx", line: 2, column: 15, text: "text-xs", pattern: "tailwindSizeClasses" },
+				{ file: "apps/web/src/styles.css", line: 1, column: 6, text: "font-size:11px", pattern: "cssFontSizes" },
+			]);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], banned);
+			expect(report.bannedFixedFontSizes).toHaveLength(3);
+			const output = formatArchGateReport(report);
+			expect(output).toContain("Architecture gate: FAIL — 3 new architecture violation(s) detected.");
+			expect(output).toContain("[fixed-font-size] apps/web/src/components/shared/Probe.tsx:1:15");
+			expect(output).toContain("text-[13px]");
+			expect(output).toContain("[fixed-font-size] apps/web/src/components/shared/Probe.tsx:2:15");
+			expect(output).toContain("[fixed-font-size] apps/web/src/styles.css:1:6");
+			expect(output).toContain("text-[11px] → text-[calc(var(--ui-fs)-3px)]");
+			expect(output).toContain("text-xs → text-[calc(var(--ui-fs)-2px)] leading-4");
+			expect(output).toContain("font-size: 12px → font-size: calc(var(--ui-fs)-2px)");
+			expect(output).toContain("fixed font sizes 0 (plain ban: any occurrence fails)");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
-	test("reports shrunk font-size debt so --update-baseline can lower it", () => {
-		const report = evaluateArchGate(
-			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 5, remClasses: 3, cssFontSizes: 3 }) },
-			[],
-			{},
-			baseline({ pixelClasses: 4, remClasses: 0, cssFontSizes: 3 }),
-		);
-		expect(report.shrunkFixedFontSizes).toEqual([
-			{ pattern: "pixelClasses", baseline: 5, current: 4 },
-			{ pattern: "remClasses", baseline: 3, current: 0 },
-		]);
-		expect(report.growingFixedFontSizes).toEqual([]);
+	test("green: zero fixed sizes pass with a block-less baseline", () => {
+		const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), [], []);
+		expect(report.bannedFixedFontSizes).toEqual([]);
 		const output = formatArchGateReport(report);
 		expect(output).toContain("Architecture gate: OK — all current violations are within baseline.");
-		expect(output).toContain("[fixed-font-size] pixelClasses: 4 (was 5)");
-		expect(output).toContain("[fixed-font-size] remClasses: 0 (was 3)");
-		expect(output).toContain("bun scripts/arch-gate.ts --update-baseline");
+		expect(output).toContain("fixed font sizes 0 (plain ban: any occurrence fails)");
 	});
 });
 
@@ -221,13 +218,7 @@ describe("fractional ladder offset ban", () => {
 				{ file: "apps/web/src/components/shared/Probe.tsx", line: 1, column: 26, text: "var(--ui-fs)-1.5px" },
 				{ file: "apps/web/src/components/shared/Probe.tsx", line: 2, column: 26, text: "var(--mfs)+1.5px" },
 			]);
-			const report = evaluateArchGate(
-				{ layerImports: [], oversizedFiles: {}, fixedFontSizes: emptyFixedFontSizeCounts() },
-				[],
-				{},
-				emptyFixedFontSizeCounts(),
-				offsets,
-			);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), offsets);
 			expect(report.fractionalLadderOffsets).toHaveLength(2);
 			const output = formatArchGateReport(report);
 			expect(output).toContain("Architecture gate: FAIL — 2 new architecture violation(s) detected.");
@@ -255,13 +246,7 @@ describe("fractional ladder offset ban", () => {
 			);
 			writeFixture(root, "apps/web/src/styles.css", ".ok{font-size: calc(var(--ui-fs) - 1px)}\n");
 			expect(collectFractionalLadderOffsets(root)).toEqual([]);
-			const report = evaluateArchGate(
-				{ layerImports: [], oversizedFiles: {}, fixedFontSizes: emptyFixedFontSizeCounts() },
-				[],
-				{},
-				emptyFixedFontSizeCounts(),
-				[],
-			);
+			const report = evaluateArchGate({ layerImports: [], oversizedFiles: {} }, [], {}, emptyFixedFontSizeCounts(), []);
 			expect(formatArchGateReport(report)).toContain("Architecture gate: OK — all current violations are within baseline.");
 		} finally {
 			rmSync(root, { recursive: true, force: true });

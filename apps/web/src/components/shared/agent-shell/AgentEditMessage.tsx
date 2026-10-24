@@ -26,7 +26,7 @@ import { useT } from "../../../i18n/context.js";
 //   blank-disable needs is carried on both buttons (the RP pair omits it);
 //   (3) the button text follows the shell ui-fs ladder
 //   (`text-[calc(var(--ui-fs)-3px)]`) instead of the RP pair's fixed size
-//   (was `text-xs` before the font audit, step 8; the frontend skill bans
+//   (was a fixed Tailwind size before the font audit, step 8; the frontend skill bans
 //   raw Tailwind size classes in new chrome).
 // - the RP draft lives in `useChatStore` (`setEditingDraft`) → NAMED
 //   deviation: LOCAL `useState` draft here (the agent shell has no chat store

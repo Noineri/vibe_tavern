@@ -51,21 +51,21 @@ export function StarPromptModal() {
     <Modal open={open} onClose={onLater} compact title={t("star_prompt_title")} description={t("star_prompt_body")}>
       <div className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl">
         <Logo className="mx-auto mb-3.5 h-[38px] w-[62px]" />
-        <div className="mb-[7px] text-base font-medium text-t1">{t("star_prompt_title")}</div>
-        <div className="mb-5 text-[13px] leading-[1.55] text-t3">{t("star_prompt_body")}</div>
+        <div className="mb-[7px] text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">{t("star_prompt_title")}</div>
+        <div className="mb-5 text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t3">{t("star_prompt_body")}</div>
         {/* flex-wrap, not a fixed width: Russian runs 20-30% longer and must be
             allowed to break to a second row instead of overflowing. */}
         <div className="flex flex-wrap justify-center gap-2.5">
           <button
             type="button"
-            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
+            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={onLater}
           >
             {t("star_prompt_later")}
           </button>
           <button
             type="button"
-            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110"
+            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110"
             onClick={onStar}
           >
             <Icons.star />
@@ -74,7 +74,7 @@ export function StarPromptModal() {
         </div>
         <button
           type="button"
-          className="mt-4 cursor-pointer border-0 bg-transparent font-ui text-[12px] text-t3 underline underline-offset-[3px] transition-colors hover:text-t2"
+          className="mt-4 cursor-pointer border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 underline underline-offset-[3px] transition-colors hover:text-t2"
           onClick={onNever}
         >
           {t("star_prompt_never")}

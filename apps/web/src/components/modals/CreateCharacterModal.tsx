@@ -194,7 +194,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 autoFocus
               />
               {errors.name && (
-                <div className="text-[11px] text-danger-text mt-0.5">{errors.name.message}</div>
+                <div className="text-[calc(var(--ui-fs)-3px)] text-danger-text mt-0.5">{errors.name.message}</div>
               )}
             </div>
           </div>
@@ -230,13 +230,13 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 <span
                   key={idx}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-0.5 font-ui text-xs text-t2 cursor-pointer transition-all",
+                    "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 cursor-pointer transition-all",
                     idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t"
                   )}
                   onClick={() => setAltGreetIdx(idx)}
                 >
                   Alt {idx + 1}
-                  <span className="ml-0.5 cursor-pointer text-[10px]" onClick={e => {
+                  <span className="ml-0.5 cursor-pointer text-[calc(var(--ui-fs)-4px)]" onClick={e => {
                     e.stopPropagation();
                     const next = [...alternateGreetings];
                     next.splice(idx, 1);
@@ -246,7 +246,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 </span>
               ))}
               <span
-                className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-0.5 font-ui text-xs text-t3 cursor-pointer"
+                className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3 cursor-pointer"
                 onClick={() => {
                   const next = [...alternateGreetings, ''];
                   setValue('alternateGreetings', next, { shouldDirty: true });

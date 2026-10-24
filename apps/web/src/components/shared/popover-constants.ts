@@ -39,7 +39,7 @@ export const ROW_HEIGHT = {
 	 *  persona — all single-line rows). */
 	singleLine: 33,
 	/** VibeMdView co-author chat row: `py-2` (16px) + title `text-[var(--ui-fs)]`
-	 *  (~25px incl. line-height at the 17px default — was `text-[0.85rem]` /
+	 *  (~25px incl. line-height at the 17px default — was a fixed rem size /
 	 *  ~20px before the font audit, step 9a, so rows grew) + subtitle
 	 *  `text-[calc(var(--ui-fs)-3px)]` (~16px) + `gap-0.5` (2px) ≈ 59px: the
 	 *  336px cap (6 × 56, budgeted from the pre-audit ≈54px row) now fits ~5

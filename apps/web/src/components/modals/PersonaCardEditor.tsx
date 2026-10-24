@@ -134,7 +134,7 @@ export function PersonaCardEditor({
             ) : (
               <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover/ava:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
+                <span className="font-ui text-[calc(var(--ui-fs)-4px)] tracking-wide">{t("upload_avatar")}</span>
               </div>
             )}
           </div>
@@ -206,7 +206,7 @@ export function PersonaCardEditor({
           />
         </MobileExpandTextarea>
         <div className="absolute bottom-2 right-2">
-          <TokenCounter text={editDescription} className="font-ui text-[11px] tabular-nums text-t3" />
+          <TokenCounter text={editDescription} className="font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3" />
         </div>
       </div>
       {/* Avatar-in-prompt — describe via vision + toggle + description.

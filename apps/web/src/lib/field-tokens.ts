@@ -10,8 +10,8 @@
  *
  * Structure: BASES (full standalone classes) + MODIFIERS (partial classes
  * composed onto a base with `cn()`). Never fork a base into a parallel full
- * class — that is how the previous system drifted (`monoCls` grew a
- * `text-xs` that no mono field ever needed).
+ * class — that is how the previous system drifted (`monoCls` grew a fixed
+ * size that no mono field ever needed).
  *
  * Enforcement lives in the primitives, not in call-site discipline:
  * `TextInput` (single line) and `AutoTextarea` (auto-grow) bake these in as
@@ -36,7 +36,7 @@ export const textareaCls =
  *  carries the chrome), prose font (chat is reading, not UI), own growth
  *  limits. Desktop composers extend locally (padding, row caps). */
 export const composerCls =
-	"max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto";
+	"max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[calc(var(--ui-fs)+1px)] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto";
 
 /** Display canon for command/code quotes in help content (curl examples,
  *  DSL snippets, disabled default texts). Owner 2026-09-10: let's make
@@ -48,7 +48,7 @@ export const codeQuoteCls =
 
 /** Mono modifier for opaque technical content (keys, voice IDs, regex
  *  patterns, template sequences). NEVER carries its own size — the base sets
- *  the size from the `ui-fs` ladder; `text-xs` in mono fields is dead. */
+ *  the size from the `ui-fs` ladder; fixed sizes in mono fields are dead. */
 export const monoMod = "font-mono tracking-[0.05em]";
 
 /** Read-only modifier for locked/disabled fields (disabled endpoint showing

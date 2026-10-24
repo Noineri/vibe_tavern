@@ -81,14 +81,14 @@ const SortableSummaryRow = memo(function SortableSummaryRow({
         onClick={(e) => e.stopPropagation()}
         className="flex h-8 w-5 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing"
       >
-        <span className="text-base leading-none">≡</span>
+        <span className="text-[calc(var(--ui-fs)+2px)] leading-none">≡</span>
       </button>
       <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
         <Toggle checked={s.includeInContext} onChange={() => onToggleInclude(s)} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-ui text-[12px] text-t1">{labelFor(s)}</div>
-        <div className="mt-0.5 font-ui text-[10px] text-t4">{sourceLabel(s)}</div>
+        <div className="truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{labelFor(s)}</div>
+        <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{sourceLabel(s)}</div>
       </div>
       <MasterDetailMobileDrillDown onSelect={() => onSelect(s)} />
       <button type="button"
@@ -615,8 +615,8 @@ export function useSummaryTab({
     >
       <SortableContext items={sortableSummaryIds} strategy={verticalListSortingStrategy}>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading && <div className="px-4 py-3 font-ui text-xs text-t3">{t("loading_models")}</div>}
-          {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-xs text-t4">{t("no_saved_summaries")}</div>}
+          {loading && <div className="px-4 py-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("loading_models")}</div>}
+          {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t4">{t("no_saved_summaries")}</div>}
           {displayItems.map((s) => (
             <SortableSummaryRow
               key={s.id}
@@ -636,10 +636,10 @@ export function useSummaryTab({
       <DragOverlay>
         {activeDragSummary !== null ? (
           <div className="flex cursor-grabbing items-center gap-2 border-l-2 border-l-accent bg-s3 px-3 min-h-[56px] shadow-lg">
-            <span className="text-base leading-none text-t4">≡</span>
+            <span className="text-[calc(var(--ui-fs)+2px)] leading-none text-t4">≡</span>
             <div className="min-w-0 flex-1">
-              <div className="truncate font-ui text-[12px] text-t1">{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
-              <div className="mt-0.5 font-ui text-[10px] text-t4">{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
+              <div className="truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
+              <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
             </div>
           </div>
         ) : null}
@@ -650,11 +650,11 @@ export function useSummaryTab({
   /* ─── master pane content (archive label + list + new button) ─── */
   const masterContent = (
     <div className="flex flex-col min-h-0 h-full">
-      <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
+      <div className="px-4 py-4 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
       {archiveList}
       <div className="border-t border-border p-3 mt-auto">
         <button type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3 hover:border-border hover:bg-s2 hover:text-t1"
           onClick={() => void createNewSummary()}
           disabled={!activeChatId || saving}
         >
@@ -679,18 +679,18 @@ export function useSummaryTab({
       </section>
 
       {/* ── Exclude toggle ── */}
-      <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+      <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
         <Toggle checked={excludeSummarized} onChange={(v) => { setExcludeSummarized(v); setDirty(true); }} />
         {t("summary_exclude_toggle")}
       </label>
 
       {/* ── Prior-summaries context (ranged generate) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
-      <label className="mt-2 flex items-center gap-2 font-ui text-[13px] text-t2">
+      <label className="mt-2 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
         <Toggle checked={rangedIncludePrior} onChange={setRangedIncludePrior} disabled={generating} />
         {t("summary_prior_toggle")}
       </label>
       {rangedIncludePrior && (
-        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <span>{t("summary_prior_max")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
@@ -733,7 +733,7 @@ export function useSummaryTab({
               </button>
             )}
             <button type="button"
-              className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
+              className="h-7 rounded-md bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
               disabled={!dirty || saving}
               onClick={() => void handleSave()}
             >
@@ -757,7 +757,7 @@ export function useSummaryTab({
             placeholder={t("summary_placeholder_short")}
           />
         </MobileExpandTextarea>
-        <div className="mt-1 text-right font-ui text-[11px] text-t4">{tokenEstimate.summaryTokens}t</div>
+        <div className="mt-1 text-right font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{tokenEstimate.summaryTokens}t</div>
       </section>
 
       {/* ── Token estimate ── */}
@@ -795,7 +795,7 @@ export function useSummaryTab({
             checked: useChatModel,
             onChange: setUseChatModel,
             label: t("summary_use_chat_model"),
-            className: "mb-3 flex items-center gap-2 font-ui text-[13px] text-t2",
+            className: "mb-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2",
             visibleModel: "provided",
           }}
           modelPin={{
@@ -828,14 +828,14 @@ export function useSummaryTab({
         />
         {generating ? (
           <button type="button"
-            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-on-danger transition-all hover:brightness-110"
+            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-danger transition-all hover:brightness-110"
             onClick={() => abortRef.current?.abort()}
           >
             {t("summary_stop_btn")}
           </button>
         ) : (
           <button type="button"
-            className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
+            className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
             disabled={!activeChatId || !effectiveProviderId || !effectiveModel}
             onClick={() => void handleGenerate()}
           >
@@ -846,14 +846,14 @@ export function useSummaryTab({
 
       {/* ── Auto-summary ── */}
       <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
-        <label className="flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.enabled}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, enabled: v } })}
           />
           {t("summary_auto_toggle")}
         </label>
-        <div className="mt-3 flex items-center gap-2 font-ui text-[12px] text-t3">
+        <div className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <span>{t("summary_auto_every")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
@@ -870,7 +870,7 @@ export function useSummaryTab({
           />
           <span>{t("summary_auto_messages")}</span>
         </div>
-        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.excludeSummarized}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, excludeSummarized: v } })}
@@ -878,7 +878,7 @@ export function useSummaryTab({
           {t("summary_auto_exclude_toggle")}
         </label>
         {/* ── Prior-summaries context (auto) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
-        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.includePriorSummaries}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, includePriorSummaries: v } })}
@@ -886,7 +886,7 @@ export function useSummaryTab({
           {t("summary_prior_toggle")}
         </label>
         {autoConfig.includePriorSummaries && (
-          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             <span>{t("summary_prior_max")}</span>
             <NumberInput
               className="w-[80px] shrink-0"
@@ -922,7 +922,7 @@ export function useSummaryTab({
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-s3">
           <div className="h-full bg-accent transition-all" style={{ width: `${contextPct}%` }} />
         </div>
-        <div className="shrink-0 font-ui text-[11px] text-t3 tabular-nums">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
+        <div className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
       </div>
       {/* Row 2: messages-in-prompt slider (desktop only) */}
       {!isMobile && (

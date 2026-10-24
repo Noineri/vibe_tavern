@@ -52,7 +52,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   if (!activePersona) {
     return (
-      <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t">
+      <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-accent-t">
         <span>{t("no_persona")}</span>
       </div>
     );
@@ -87,7 +87,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
       trigger={
         <button
           type="button"
-          className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
+          className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-accent-t"
         >
           <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: activePersona.id, avatarExt: activePersona.avatarExt, avatarAssetId: activePersona.avatarAssetId, updatedAt: activePersona.updatedAt })} size={18} />
           <span>{activePersona.name.split(' ')[0]}</span>

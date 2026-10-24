@@ -46,7 +46,8 @@ describe("field-tokens canon", () => {
 		expect(composerCls).toContain("min-h-[44px]");
 		expect(composerCls).toContain("max-h-[40vh]");
 		expect(composerCls).toContain("font-body");
-		expect(composerCls).toContain("text-[15px]");
+		// behavior change: was `text-[15px]` → now `text-[calc(var(--ui-fs)+1px)]`, basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict (font audit step 9b; composer symmetry with the step-8 desktop composers)
+		expect(composerCls).toContain("text-[calc(var(--ui-fs)+1px)]");
 		expect(composerCls).toContain("border-0");
 		expect(composerCls).toContain("bg-transparent");
 		expect(composerCls).toContain("resize-none");

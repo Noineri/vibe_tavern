@@ -73,7 +73,7 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
   const { openDetail } = useMasterDetail();
   return (
     <div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-      <div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("proxy_profiles_label")}</div>
+      <div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">{t("proxy_profiles_label")}</div>
       <div className="flex-1 overflow-y-auto">
         {proxies.map((proxy) => {
           const selected = proxy.id === editingId;
@@ -85,8 +85,8 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
             >
               <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
               <div className="min-w-0 flex-1 py-2">
-                <div className="truncate text-[13px] font-medium">{proxy.name}</div>
-                <div className={cn("mt-0.5 truncate text-[11px]", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
+                <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium">{proxy.name}</div>
+                <div className={cn("mt-0.5 truncate text-[calc(var(--ui-fs)-3px)]", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
               </div>
               <MasterDetailMobileDrillDown onSelect={() => onSelect(proxy)} className="py-3" />
             </div>
@@ -236,7 +236,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             <div>
               <label className={lblCls}>{t("proxy_url")}</label>
               <TextInput value={draft.url} onChange={(event) => updateDraft("url", event.target.value)} placeholder="http://proxy.example:8080" />
-              <p className="mt-1 font-ui text-[11px] text-t3">{t("proxy_url_hint")}</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("proxy_url_hint")}</p>
             </div>
             <div>
               <label className={lblCls}>{t("proxy_username")}</label>
@@ -245,26 +245,26 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             <div>
               <div className="flex items-center justify-between gap-3">
                 <label className={lblCls}>{t("proxy_password")}</label>
-                {draft.hasStoredPassword && !draft.clearStoredPassword && <span className="font-ui text-[11px] text-t3">{t("proxy_password_stored")}</span>}
+                {draft.hasStoredPassword && !draft.clearStoredPassword && <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("proxy_password_stored")}</span>}
               </div>
               <TextInput mono type="password" value={draft.password} onChange={(event) => { updateDraft("password", event.target.value); if (event.target.value) updateDraft("clearStoredPassword", false); }} autoComplete="new-password" placeholder={draft.hasStoredPassword && !draft.clearStoredPassword ? t("proxy_password_preserve") : undefined} />
               {draft.hasStoredPassword && (
-                <button type="button" className="mt-2 font-ui text-[12px] text-danger/80 transition-colors hover:text-danger" onClick={toggleClearPassword}>
+                <button type="button" className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger/80 transition-colors hover:text-danger" onClick={toggleClearPassword}>
                   {draft.clearStoredPassword ? t("cancel") : t("proxy_password_clear")}
                 </button>
               )}
-              <p className="mt-1 font-ui text-[11px] text-t3">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
+              <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
             </div>
-            {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">{error}</div>}
+            {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">{error}</div>}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">{t("proxy_select_or_create")}</div>
+          <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("proxy_select_or_create")}</div>
         )}
         footer={
           <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-5 pt-3 pb-3 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-            {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
+            {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-1px)] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
             <div className="ml-auto flex items-center gap-2">
-              <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[13px] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
+              <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
               <SaveButton
                 dirty={dirty}
                 saveState={saveState}

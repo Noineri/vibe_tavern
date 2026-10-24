@@ -202,7 +202,7 @@ export function RichChatRow({
 
       {branchPopOpen && isActive && (
         <div className="mt-1.5 flex cursor-default flex-col border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
-          <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
+          <div className="mb-1 pl-1 text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.05em] text-t3">
             {t("sidebar_timeline_branches")}
           </div>
           <div className="ml-2 flex flex-col border-l-2 border-border pl-3">

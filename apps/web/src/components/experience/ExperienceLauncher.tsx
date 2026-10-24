@@ -567,15 +567,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   const body = (
     <div className="flex flex-col gap-2 p-2">
       <div className="flex flex-col gap-0.5">
-        <span className="font-ui text-[12px] font-medium text-t1">{title || t("experience_launcher_title")}</span>
-        {statusLine && <span className="font-ui text-[11px] text-t4">{statusLine}</span>}
+        <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{title || t("experience_launcher_title")}</span>
+        {statusLine && <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{statusLine}</span>}
       </div>
       {terminal && !incompatible ? (
         // Endgame (B3): the primary action is replaced by the restart pair.
         <div className="flex flex-col gap-2">
           <button
             type="button"
-            className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
+            className="rounded bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent hover:opacity-90"
             onClick={() => void handlePlayAgain()}
             data-testid="experience-restart-again"
           >
@@ -583,7 +583,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           </button>
           <button
             type="button"
-            className="rounded bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 hover:bg-s3"
+            className="rounded bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 hover:bg-s3"
             onClick={handleRestartChangeSettings}
             data-testid="experience-restart-settings"
           >
@@ -593,7 +593,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       ) : !incompatible && (
         <button
           type="button"
-          className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
+          className="rounded bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent hover:opacity-90"
           onClick={hasSession ? handleResume : handleStart}
           data-testid="experience-launcher-primary"
         >
@@ -614,7 +614,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
         />
       )}
       {popupError && (
-        <p className="font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+        <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text" role="alert">
           {t("experience_popup_blocked")}
         </p>
       )}
@@ -748,7 +748,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       )}
       {popupError && modalOpen && (
         <p
-          className="pointer-events-none fixed bottom-4 left-1/2 z-[300] -translate-x-1/2 rounded bg-danger px-3 py-1.5 font-ui text-[12px] text-white shadow-lg"
+          className="pointer-events-none fixed bottom-4 left-1/2 z-[300] -translate-x-1/2 rounded bg-danger px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-white shadow-lg"
           role="alert"
           data-testid="experience-popup-error"
         >
