@@ -164,6 +164,17 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       const scriptId = c.req.param("scriptId");
       return c.json(await runtime.experienceCopilotGetActive(scriptId));
     })
+    // CA-4e1: registered before the `:threadId`-shaped GETs; a single-segment
+    // literal cannot collide with them (they all carry a second segment), but
+    // keep the literal first so the match never even consults them.
+    .get(
+      "/api/experience-copilot/image-route",
+      zValidator("query", z.object({ providerProfileId: z.string(), model: z.string().optional() })),
+      async (c) => {
+        const query = c.req.valid("query");
+        return c.json(await runtime.experienceCopilotGetImageRoute(query.providerProfileId, query.model));
+      },
+    )
     .get("/api/experience-copilot/:threadId/messages", async (c) => {
       const threadId = c.req.param("threadId");
       return c.json(await runtime.experienceCopilotListMessages(threadId));
@@ -266,7 +277,7 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       c.json(await runtime.experienceCopilotDeleteAttachment(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
     .post(
       "/api/experience-copilot/:threadId/turns/delete",
-      zValidator("json", z.object({ messageId: z.string(), includeUserMessage: z.boolean() })),
+      zValidator("json", z.object({ messageId: z.string(), includeUserMessage: z.boolean(), keepAttachmentFiles: z.boolean().optional() })),
       async (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");

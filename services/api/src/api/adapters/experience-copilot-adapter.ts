@@ -12,6 +12,7 @@ import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
 import { createAgentAttachmentActions, type AttachmentAssetCleanup } from "./experience-copilot-attachment-actions.js";
 import type { AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { notFound } from "../../shared/errors.js";
+import { resolveProfileImageRoute } from "./chat-image-route.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
@@ -752,6 +753,15 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
 
   experienceCopilotDeleteAttachment: ExperienceCopilotRuntimeApi['experienceCopilotDeleteAttachment'] =
     (...args) => this.attachmentActions.deleteAttachment(...args);
+
+  /** CA-4e1: thin delegate — the profile lookup + the ONE image-route rule
+   *  live in adapters/chat-image-route.ts (`resolveProfileImageRoute`). */
+  experienceCopilotGetImageRoute: ExperienceCopilotRuntimeApi['experienceCopilotGetImageRoute'] =
+    (providerProfileId, model) => {
+      const providers = this.providerProfileService;
+      if (!providers) throw notFound("ProviderProfile", "Provider profile service is unavailable.");
+      return resolveProfileImageRoute(this.stores, providers, providerProfileId, model);
+    };
 
   /** AP-8: delete one turn — thin wiring over adapters/experience-copilot-
    *  turn-delete.ts (the store sibling call + the error mapping live there;

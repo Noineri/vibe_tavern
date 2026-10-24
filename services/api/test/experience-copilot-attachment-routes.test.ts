@@ -277,4 +277,48 @@ describe('agent turn attachment cleanup (CA-4d2)', () => {
     expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
     expect(h.cleanup).not.toHaveBeenCalled();
   });
+  test('keepAttachmentFiles (CA-4e1) deletes the rows and keeps the files', async () => {
+    const h = await setup();
+    const file = await h.file();
+    const user = await h.seed([file]);
+    const assistant = await h.stores.experienceCopilot.appendMessage(h.thread.id, { role: 'assistant', content: 'Answer' });
+    const response = await h.app.request(`http://localhost/api/experience-copilot/${h.thread.id}/turns/delete`,
+      h.json({ messageId: assistant.id, includeUserMessage: true, keepAttachmentFiles: true }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deletedMessageIds: [user.id, assistant.id], deletedUserMessageId: user.id });
+    expect(await h.stores.experienceCopilot.listMessages(h.thread.id)).toEqual([]);
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(await h.assets.loadBuffer(file.assetId)).not.toBeNull();
+  });
+});
+
+describe('shell profile image route (CA-4e1)', () => {
+  function imageRoute(h: Awaited<ReturnType<typeof setup>>, query: string) {
+    return h.app.request(`http://localhost/api/experience-copilot/image-route${query}`);
+  }
+  test('a vision model answers native', async () => {
+    const h = await setup();
+    await h.stores.providers.saveCachedModels(h.profile.id, [{ modelSlug: 'model', modelName: 'Model', contextLength: null, capabilities: { vision: true } }]);
+    const response = await imageRoute(h, `?providerProfileId=${h.profile.id}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ route: 'native' });
+  });
+  test('a non-vision model with a fallback answers describe, without one none', async () => {
+    const h = await setup();
+    await h.stores.providers.saveCachedModels(h.profile.id, [{ modelSlug: 'model', modelName: 'Model', contextLength: null, capabilities: { vision: false } }]);
+    expect(await (await imageRoute(h, `?providerProfileId=${h.profile.id}`)).json()).toEqual({ route: 'none' });
+    await h.providers.saveProviderProfile({ ...h.profile, visionModel: 'fallback' });
+    expect(await (await imageRoute(h, `?providerProfileId=${h.profile.id}&model=model`)).json()).toEqual({ route: 'describe' });
+  });
+  test('an unknown profile is the shared not-found family', async () => {
+    const h = await setup();
+    const response = await imageRoute(h, '?providerProfileId=missing');
+    expect(response.status).toBe(404);
+  });
+  test('no model in the query and none in the profile is a validation error', async () => {
+    const h = await setup();
+    const bare = await h.providers.saveProviderProfile({ name: 'Bare', providerPreset: 'openai_compat', defaultModel: null });
+    const response = await imageRoute(h, `?providerProfileId=${bare.id}`);
+    expect(response.status).toBe(400);
+  });
 });

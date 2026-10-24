@@ -34,12 +34,15 @@ export async function deleteCopilotTurnWire(
 ): Promise<ExperienceCopilotTurnDeleteResult> {
   // Capture before deletion, but only successful deleted ids are eligible for
   // cleanup. Refused deletes never reach cleanup; forks retain shared assets.
-  const priorMessages = attachments?.cleanup && body.includeUserMessage
+  // CA-4e1 `keepAttachmentFiles` (edit-last's delete-before-resend) skips the
+  // asset cleanup entirely — the rows still go.
+  const skipCleanup = body.keepAttachmentFiles === true;
+  const priorMessages = attachments?.cleanup && body.includeUserMessage && !skipCleanup
     ? await attachments.store.listMessages(threadId) : [];
   const result = await deleteCopilotTurn({ db }, threadId, body.messageId, body.includeUserMessage);
   switch (result.status) {
     case "deleted": {
-      if (attachments?.cleanup) {
+      if (attachments?.cleanup && !skipCleanup) {
         const deletedIds = new Set<string>(result.deletedMessageIds);
         const assetIds = priorMessages.filter((message) => deletedIds.has(message.id))
           .flatMap((message) => message.attachments?.map((attachment) => attachment.assetId) ?? []);
