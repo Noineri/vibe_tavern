@@ -16,7 +16,7 @@ import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult 
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
-import { syntheticAgentMessage } from "./agent-synthetic-message.js";
+import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
 import {
   AgentAnchorItems,
   recordProposalOf,
@@ -645,7 +645,7 @@ export function AgentMessageList({
             <AgentMessageBlock
               messageMarkup={messageMarkup}
               message={syntheticAgentMessage({
-                id: "__pending-user",
+                id: PENDING_USER_MESSAGE_ID,
                 threadId,
                 role: "user",
                 content: pendingUserContent,

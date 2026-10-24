@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { isTextMime, splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
@@ -81,6 +81,7 @@ export function AttachmentGrid({
   attachments,
   messageId,
   variantIndex,
+  renderFile,
 }: {
   attachments?: Attachment[];
   messageId?: string;
@@ -91,6 +92,12 @@ export function AttachmentGrid({
    *  Absent on surfaces with no variant machinery (user messages, pending
    *  bubbles) — the row renders plain, byte-identical to before. */
   variantIndex?: number;
+  /** CA-4f: the surface's own mount for a SENT text file (the agent shell's
+   *  AgentFileAttachment over the agent routes). When given, EVERY text file
+   *  renders through it — whether or not `messageId` is passed — replacing
+   *  the chat mount / the plain chip. Absent → byte-identical to before (the
+   *  RP mounts stay unchanged). */
+  renderFile?: (attachment: Attachment) => ReactNode;
 }) {
   const { t } = useT();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -162,7 +169,8 @@ export function AttachmentGrid({
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
           ) : att.imageGen !== undefined ? null : isTextMime(att.mimeType) ? (
-            messageId && att.type === "file" ? <ChatFileAttachment key={att.id || att.assetId} attachment={att} messageId={messageId} />
+            renderFile !== undefined ? renderFile(att)
+              : messageId && att.type === "file" ? <ChatFileAttachment key={att.id || att.assetId} attachment={att} messageId={messageId} />
               : <FileAttachmentChip key={att.id || att.assetId} attachment={att} />
           ) : (
           <button

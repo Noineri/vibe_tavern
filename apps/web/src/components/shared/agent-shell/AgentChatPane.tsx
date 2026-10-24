@@ -29,6 +29,7 @@ import { AgentInputArea } from "./AgentInputArea.js";
 import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
 import { AgentPendingStrip } from "./AgentPendingStrip.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
+import { AgentAttachmentActionsContext } from "./agent-attachment-actions-context.js";
 
 /**
  * AgentChatPane (AGENT_SHELL_POLISH AP-3b) — the agent shell's chat pane,
@@ -90,6 +91,10 @@ export interface AgentChatPaneProps {
   /** AP-18: starter-prompt pick from the empty session — the shell turns the
    *  text into a composer prefill (never sent); the pane focuses the composer. */
   onStarterPick?: (text: string) => void;
+  /** CA-4f: the shell's ONE settle refresh (`AgentShell.handleTurnSettled`'s
+   *  message/events reload). Sent-attachment actions refetch through it —
+   *  the same path a turn delete uses, never a second one. */
+  refreshMessages: () => void;
 }
 
 export function AgentChatPane({
@@ -122,6 +127,7 @@ export function AgentChatPane({
   handleUnpinContext,
   composerTopSlot,
   onStarterPick,
+  refreshMessages,
 }: AgentChatPaneProps) {
   const { t } = useT();
 
@@ -225,7 +231,16 @@ export function AgentChatPane({
     });
   };
 
+  // CA-4f: one provider above the whole thread branch — the sent-attachment
+  // mounts (file chips now, the lightbox actions in CA-4g2) read the thread,
+  // the picker's CURRENT profile + model, and the settle refresh from here,
+  // so neither the message list nor the block takes new props.
+  const attachmentActions = threadId !== null
+    ? { threadId, providerProfileId, ...(model !== undefined ? { model } : {}), refreshMessages }
+    : null;
+
   return (
+    <AgentAttachmentActionsContext.Provider value={attachmentActions}>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       {sessionLoading ? (
         <div className="flex flex-1 items-center justify-center">
@@ -393,5 +408,6 @@ export function AgentChatPane({
         </div>
       )}
     </div>
+    </AgentAttachmentActionsContext.Provider>
   );
 }

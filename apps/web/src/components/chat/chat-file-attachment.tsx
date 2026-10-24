@@ -4,6 +4,7 @@ import { deleteAttachment, updateAttachmentIncludeInPrompt } from "../../api/cha
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { SentFileAttachment } from "./sent-file-attachment.js";
 
+// forks: 1 — agent-shell twin `agent-file-attachment.tsx` (CA-4f).
 /** RP mount: all completion writes use the current canonical set, never the
  * render's pre-await attachment list (other chips can finish in parallel). */
 export function ChatFileAttachment({ attachment, messageId }: { attachment: Attachment; messageId: string }) {

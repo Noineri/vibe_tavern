@@ -13,6 +13,11 @@
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { Attachment } from "@vibe-tavern/domain";
 
+/** The optimistic pending user row's id (CA-4f: exported so the block can
+ *  render that row's chips WITHOUT the action menu — exactly like today's
+ *  pending surfaces — while persisted rows get the «⋯» mount). */
+export const PENDING_USER_MESSAGE_ID = "__pending-user";
+
 export function syntheticAgentMessage(input: {
   id: string;
   threadId: string;

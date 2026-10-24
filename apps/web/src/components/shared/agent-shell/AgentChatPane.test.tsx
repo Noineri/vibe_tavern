@@ -276,6 +276,7 @@ function renderPane(over: {
         handleUnpinContext={() => {}}
         composerTopSlot={null}
         onStarterPick={over.onStarterPick}
+        refreshMessages={() => {}}
       />
     </I18nextProvider>,
   );

@@ -9,6 +9,9 @@ import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { AgentMessageAction, AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
+import { AttachmentGrid } from "../../chat/AttachmentGrid.js";
+import { PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
+import { AgentFileAttachment } from "./agent-file-attachment.js";
 
 /**
  * One experience-copilot message bubble (ER-11c). Props-driven presentation:
@@ -83,11 +86,29 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   }
 
   const isUser = message.role === "user";
+  const attachments = message.attachments;
+  const hasAttachments = attachments !== undefined && attachments.length > 0;
 
   // Tool-call carrier assistant turns have empty `content`; their activity is
   // surfaced inline by the message list (`CopilotActivityCard`), so render
-  // nothing here (a zero-height bubble would be visually orphaned).
-  if (message.content.trim().length === 0) return null;
+  // nothing here (a zero-height bubble would be visually orphaned). CA-4f: a
+  // message WITH attachments is never hidden — an attachment-only user row
+  // still renders its chips.
+  if (message.content.trim().length === 0 && !hasAttachments) return null;
+
+  // CA-4f: the sent-attachment grid under the text. The grid gets NO
+  // `messageId` — that prop turns on the RP lightbox's chat-route controls;
+  // the message id reaches the file mount through the `renderFile` closure
+  // instead. The PENDING row renders the menu-less chips, exactly like the
+  // other pending surfaces.
+  const attachmentGrid = hasAttachments ? (
+    <AttachmentGrid
+      attachments={attachments}
+      renderFile={message.id === PENDING_USER_MESSAGE_ID
+        ? undefined
+        : (att) => <AgentFileAttachment attachment={att} messageId={message.id} />}
+    />
+  ) : undefined;
 
   // SC-16: host actions stay assistant-only — user messages never carry them.
   // AP-11: turn actions ride either role; on assistant bubbles they merge
@@ -133,6 +154,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           )}
         >
           {body}
+          {attachmentGrid}
         </div>
       </div>
     );
@@ -165,6 +187,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           onSubmit={(content) => { setEditing(false); onEditLast(content); }}
           onCancel={() => setEditing(false)}
         />
+        {attachmentGrid}
       </div>
     );
   }
@@ -182,6 +205,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           )}
         >
           {body}
+          {attachmentGrid}
         </div>
         <MessageActionRow actions={userRowActions} text={message.content} />
       </div>

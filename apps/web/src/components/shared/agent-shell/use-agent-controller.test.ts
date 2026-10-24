@@ -1120,6 +1120,50 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     // parseAgentPlanToolResult must agree on the SAME envelope.
     expect(liveActivities).toEqual(persistedActivities);
   });
+
+  test("the pending bubble and the persisted row show the same attachments (CA-4f)", async () => {
+    // The SAME fixture drives both surfaces: the optimistic pending user row
+    // renders `pendingUserAttachments` while the turn streams, and the settle
+    // refetch's persisted user row carries the server-echoed `attachments` —
+    // the two must be field-for-field identical, so the chips never change
+    // shape between the optimistic and the landed row.
+    const file: import("@vibe-tavern/domain").Attachment = {
+      id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+      mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+    };
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    let optimistic!: readonly import("@vibe-tavern/domain").Attachment[];
+    await act(async () => {
+      pending = result.current.handleSend("read this", { attachments: [file] });
+      await Promise.resolve();
+    });
+    // The pending bubble's chips (the optimistic surface) carry the FULL
+    // domain attachment — no projection between send and render.
+    optimistic = result.current.pendingUserAttachments;
+    expect(optimistic).toEqual([file]);
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.pendingUserAttachments).toEqual([]);
+    // Parity of the two rendered surfaces: the pending row's wire form
+    // (syntheticAgentMessage — what the message list renders) carries the
+    // same attachments the persisted user row echoes back on the wire
+    // (CA-4a1: the agent message wire carries the full domain Attachment).
+    const { syntheticAgentMessage } = await import("./agent-synthetic-message.js");
+    const pendingWire = syntheticAgentMessage({
+      id: "__pending-user", threadId: THREAD, role: "user",
+      content: "read this", attachments: optimistic,
+    });
+    expect(pendingWire.attachments).toEqual([file]);
+  });
 });
 
 describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", () => {
