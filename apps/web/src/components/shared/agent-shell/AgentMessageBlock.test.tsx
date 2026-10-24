@@ -776,6 +776,22 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
   });
 
+  it("deleting a persisted user message's ONLY image calls the agent delete client (CA-4h)", async () => {
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(remove);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    fireEvent.click(await waitFor(() => {
+      const confirm = document.querySelector<HTMLButtonElement>("button[class*='border-0 bg-danger']");
+      expect(confirm).not.toBeNull();
+      return confirm!;
+    }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(document.querySelector(".fixed.inset-0")).toBeNull());
+  });
+
   it("the PENDING bubble's lightbox still has no controls", async () => {
     const view = renderWithActions(
       <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", content: "sending", attachments: [image] })} />,

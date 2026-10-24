@@ -352,11 +352,15 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
     const remaining = messageAttachments.filter((a) => a.id !== att.id);
     actions.applyLocal(remaining);
     // If we just removed the last one, close the lightbox (the grid hides itself).
-    if (remaining.length === 0) { onClose(); return; }
-    // Otherwise clamp the index if we deleted the tail item.
-    const remainingMedia = attachments.filter((a) => a.id !== att.id);
-    if (remainingMedia.length === 0) onClose();
-    else if (index > remainingMedia.length - 1) setIndex(remainingMedia.length - 1);
+    // CA-4h: no early return — the server call below must still run, or the
+    // row and the physical file survive and the image returns on reload.
+    if (remaining.length === 0) onClose();
+    else {
+      // Otherwise clamp the index if we deleted the tail item.
+      const remainingMedia = attachments.filter((a) => a.id !== att.id);
+      if (remainingMedia.length === 0) onClose();
+      else if (index > remainingMedia.length - 1) setIndex(remainingMedia.length - 1);
+    }
     try {
       await actions.remove(att);
       toast.success(t("attachment_deleted"));

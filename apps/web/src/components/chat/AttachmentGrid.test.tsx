@@ -270,3 +270,21 @@ describe("lightbox actions seam (CA-4g2)", () => {
     expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
   });
 });
+
+// ─── CA-4h: deleting the message's LAST image reaches the server ────────────
+
+describe("last-attachment delete (CA-4h)", () => {
+  test("deleting the message's only image still calls the chat delete and empties the row", async () => {
+    const remove = spyOn(chatApi, "deleteAttachment").mockResolvedValue({ ok: true });
+    const update = spyOn(useSnapshotStore.getState(), "updateMessage");
+    actionSpies.push(remove, update);
+    const view = render(<AttachmentGrid attachments={[image]} messageId="message_1" />);
+    fireEvent.click(view.getByAltText(image.name));
+    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("_", "message_1", image.id));
+    expect(update).toHaveBeenCalledWith("message_1", { attachments: [] });
+    // The lightbox closed (the grid hides itself with the last attachment gone).
+    await waitFor(() => expect(document.querySelector(".fixed.inset-0")).toBeNull());
+  });
+});
