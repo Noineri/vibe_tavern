@@ -25,8 +25,9 @@ import { useT } from "../../../i18n/context.js";
 //   silently no-ops would lie); the `disabled:opacity-50` affordance the
 //   blank-disable needs is carried on both buttons (the RP pair omits it);
 //   (3) the button text follows the shell ui-fs ladder
-//   (`text-[calc(var(--ui-fs)-3px)]`) instead of the RP fixed `text-xs`
-//   (the frontend skill bans raw text-xs in new chrome).
+//   (`text-[calc(var(--ui-fs)-3px)]`) instead of the RP pair's fixed size
+//   (was `text-xs` before the font audit, step 8; the frontend skill bans
+//   raw Tailwind size classes in new chrome).
 // - the RP draft lives in `useChatStore` (`setEditingDraft`) → NAMED
 //   deviation: LOCAL `useState` draft here (the agent shell has no chat store
 //   seam; at most one editor exists at a time — the last user row only).

@@ -13,8 +13,8 @@ export type TextInputProps = Omit<React.ComponentProps<"input">, "className"> & 
   className?: string;
   /** Mono variant for opaque technical content (API keys, voice IDs, regex
    *  patterns, template sequences). Composes `monoMod` onto the base; mono
-   *  never carries its own size (the `text-xs` mono of the retired build
-   *  tokens is dead — see lib/field-tokens.ts). */
+   *  never carries its own size (the retired build tokens' mono was `text-xs`
+   *  — dead now; see lib/field-tokens.ts). */
   mono?: boolean;
   /** react-hook-form register() result — for uncontrolled fields; spread
    *  after the passthrough props so RHF handlers win when both are present. */

@@ -4,7 +4,8 @@
  * This freezes existing architecture debt at its current level: domain code may
  * not acquire new dependencies on the API/runtime layers, oversized source
  * files may not grow, and `apps/web/src` may not gain fixed font sizes (pixel
- * classes, Tailwind size classes, inline `fontSize`, `styles.css` px rules).
+ * classes, rem classes, Tailwind size classes, inline `fontSize`, `styles.css`
+ * px rules).
  * Fractional `--ui-fs`/`--mfs` ladder offsets are a plain ban with no baseline
  * (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6). Baselines only shrink through
  * --update-baseline.
@@ -21,6 +22,7 @@ import {
 	FONT_SIZE_ROOT,
 	inlineFontSizeFor,
 	pixelClassFor,
+	remClassFor,
 	tailwindClassFor,
 	type FontSizeKind,
 } from "./font-size-codemod.js";
@@ -39,6 +41,7 @@ const FRACTIONAL_LADDER_OFFSET_HINT =
 	"ladder offsets are whole pixels only: --ui-fs/--mfs are whole numbers, so a fractional offset always renders between pixels and smears glyph edges; round toward the base — the absolute value of the offset rounds down (-1.5px → -1px, -3.5px → -3px, +1.5px → +1px) (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6)";
 const FIXED_FONT_SIZE_HINTS: Record<keyof FixedFontSizeCounts, string> = {
 	pixelClasses: `size chrome text from the --ui-fs ladder instead: text-[11px] → ${pixelClassFor(11)} (text-[Npx] → text-[calc(var(--ui-fs)-Kpx)], K = 14 - N; N = 14 → text-[var(--ui-fs)])`,
+	remClasses: `size chrome text from the --ui-fs ladder instead: text-[0.8rem] → ${remClassFor(0.8)} (rem classes track the 16px browser root, not --ui-fs: map Nrem × 16px onto the ladder, whole-pixel offsets)`,
 	tailwindSizeClasses: `map the class by its px at the 16px root and keep its line height: text-xs → ${tailwindClassFor("xs")}, text-sm → ${tailwindClassFor("sm")}, text-lg → ${tailwindClassFor("lg")}`,
 	inlineFontSizes: `use the ladder value string instead: fontSize: 18 → ${inlineFontSizeFor(18)}`,
 	cssFontSizes: `use the ladder value instead: font-size: 12px → ${cssFontSizeFor(12)} (styles.css only; message rules follow --mfs per FIXED_FONT_SIZE_AUDIT_REPORT)`,
@@ -67,6 +70,7 @@ export interface ArchGateBaseline {
 /** Fixed font sizes per pattern kind — the counters the baseline freezes. */
 export interface FixedFontSizeCounts {
 	pixelClasses: number;
+	remClasses: number;
 	tailwindSizeClasses: number;
 	inlineFontSizes: number;
 	cssFontSizes: number;
@@ -120,12 +124,13 @@ export interface ArchGateReport {
 
 const FIXED_FONT_SIZE_KIND_KEYS = {
 	"pixel-class": "pixelClasses",
+	"rem-class": "remClasses",
 	"tailwind-size-class": "tailwindSizeClasses",
 	"inline-font-size": "inlineFontSizes",
 	"css-font-size": "cssFontSizes",
 } as const satisfies Record<FontSizeKind, keyof FixedFontSizeCounts>;
 
-const FIXED_FONT_SIZE_PATTERNS = ["pixelClasses", "tailwindSizeClasses", "inlineFontSizes", "cssFontSizes"] as const;
+const FIXED_FONT_SIZE_PATTERNS = ["pixelClasses", "remClasses", "tailwindSizeClasses", "inlineFontSizes", "cssFontSizes"] as const;
 
 /** `var(--ui-fs)`/`var(--mfs)` followed by a fractional ±N.Mpx offset — the
  *  separators cover the codemod's compact form, Tailwind's `_` escapes and
@@ -252,11 +257,11 @@ export function collectOversizedFiles(root: string = ROOT, trackedFiles: readonl
 }
 
 export function emptyFixedFontSizeCounts(): FixedFontSizeCounts {
-	return { pixelClasses: 0, tailwindSizeClasses: 0, inlineFontSizes: 0, cssFontSizes: 0 };
+	return { pixelClasses: 0, remClasses: 0, tailwindSizeClasses: 0, inlineFontSizes: 0, cssFontSizes: 0 };
 }
 
 export function totalFixedFontSizes(counts: Readonly<FixedFontSizeCounts>): number {
-	return counts.pixelClasses + counts.tailwindSizeClasses + counts.inlineFontSizes + counts.cssFontSizes;
+	return counts.pixelClasses + counts.remClasses + counts.tailwindSizeClasses + counts.inlineFontSizes + counts.cssFontSizes;
 }
 
 /** Current fixed font sizes under `apps/web/src` (walked on disk, so a new
@@ -437,7 +442,7 @@ function parseBaseline(value: unknown): ArchGateBaseline {
 		oversizedFiles[file] = lines;
 	}
 	if (!isRecord(value.fixedFontSizes)) {
-		throw new Error("baseline must contain fixedFontSizes{} (pixelClasses, tailwindSizeClasses, inlineFontSizes, cssFontSizes)");
+		throw new Error("baseline must contain fixedFontSizes{} (pixelClasses, remClasses, tailwindSizeClasses, inlineFontSizes, cssFontSizes)");
 	}
 	const fixedFontSizes = emptyFixedFontSizeCounts();
 	for (const pattern of FIXED_FONT_SIZE_PATTERNS) {

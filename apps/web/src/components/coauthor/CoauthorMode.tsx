@@ -189,7 +189,7 @@ function TabButton({ label, active, onClick, pulse, badge }: TabButtonProps) {
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
+        "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[var(--ui-fs)] font-medium transition-colors",
         active ? "border-b-2 border-accent text-t1" : "border-b-2 border-transparent text-t3",
         pulse && "coauthor-tab-pulse",
       )}

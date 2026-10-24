@@ -14,7 +14,7 @@ import { getAgentHost, type AgentI18nKey, type AgentKind } from "../../../lib/ag
  *  footer pair), `px-3 py-2` (a readable row height instead of the footer's
  *  fixed `h-8` / `px-3.5`), `text-t2` at rest (readable before hover;
  *  `hover:bg-s2` + `hover:text-t1` lifts it). Text sizes follow the ui-fs
- *  ladder (never raw `text-xs`). Composed string carries the same utilities
+ *  ladder (never raw Tailwind size classes). Composed string carries the same utilities
  *  as the pre-rework literal (CF13: verified joined, not the fragment). */
 const STARTER_BTN_CLS = cn(
   SECONDARY_OUTLINE_CORE,

@@ -38,10 +38,13 @@ export const ROW_HEIGHT = {
 	 *  visible row count (covers co-author module/favorites, RP favorites, RP
 	 *  persona — all single-line rows). */
 	singleLine: 33,
-	/** VibeMdView co-author chat row: `py-2` (16px) + title `text-[0.85rem]`
-	 *  (~20px) + subtitle `text-[calc(var(--ui-fs)-3px)]` (~16px) + `gap-0.5` (2px) ≈ 54px,
-	 *  rounded UP to 56 (6 × 56 = 336). Fixes the silent regression where the
-	 *  old `max-h-[280px]` only fit ~5 two-line rows. */
+	/** VibeMdView co-author chat row: `py-2` (16px) + title `text-[var(--ui-fs)]`
+	 *  (~25px incl. line-height at the 17px default — was `text-[0.85rem]` /
+	 *  ~20px before the font audit, step 9a, so rows grew) + subtitle
+	 *  `text-[calc(var(--ui-fs)-3px)]` (~16px) + `gap-0.5` (2px) ≈ 59px: the
+	 *  336px cap (6 × 56, budgeted from the pre-audit ≈54px row) now fits ~5
+	 *  two-line rows, not 6. The 336 replaced a `max-h-[280px]` that fit ~5
+	 *  rows — the audit's taller rows give back one visible row of that fix. */
 	twoLine: 56,
 	/** AI-editor instruction-template row (ai-instruction-templates-button):
 	 *  `min-h-11` (44px) — the touch-floor row shape shared verbatim by the

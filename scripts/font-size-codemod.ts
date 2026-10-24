@@ -12,6 +12,12 @@
  *                                  |K| rounds DOWN — ladder offsets are whole
  *                                  pixels only: 12.5px → `-1px`, 10.5px →
  *                                  `-3px`, 15.5px → `+1px`)
+ * - `text-[Nrem]`               → the same ladder via Nrem × 16px — rem tracks
+ *                                  the 16px browser root (the app never moves
+ *                                  the root; `body` carries `--ui-fs`), so a
+ *                                  rem class is a fixed size deaf to the
+ *                                  setting: 0.8rem = 12.8px → `-1px`, 0.9rem
+ *                                  = 14.4px → the bare variable (step 9a)
  * - `text-xs|sm|base|lg|xl|2xl` → the calc class for the class's px at the
  *                                  16px root PLUS its Tailwind line height
  *                                  (`leading-4/5/6/7/7/8`) — an arbitrary value
@@ -32,8 +38,11 @@
  * Flag, don't silently convert: text inside a fixed-size box (`h-4` / `h-5` /
  * `w-4` / `w-5` / `size-*`) can overflow once it grows — such matches are
  * converted AND listed for the worker to check the box. A Tailwind size class
- * converted on a line that already carries an explicit `leading-*` keeps that
- * line height (no companion added) and is listed too.
+ * converted on a line that already carries ANY `leading-*` — numeric, named
+ * (`leading-none` / `leading-snug` / …) or arbitrary (`leading-[1.4]`) — keeps
+ * that line height (no companion added) and is listed too (font audit step
+ * 9a: steps 3–8 caught false numeric companions beside authored named
+ * leadings by manual sweep; the pattern now sees them mechanically).
  *
  * Scope: `*.ts` / `*.tsx` under `apps/web/src` (test files and
  * `components/dev/` excluded) plus `apps/web/src/styles.css`. Theme css and
@@ -53,7 +62,7 @@ export const MFS_REFERENCE_PX = 17;
 export const UI_FS_LADDER: LadderOptions = {};
 export const MFS_LADDER: LadderOptions = { variable: MFS_VARIABLE, referencePx: MFS_REFERENCE_PX };
 
-export type FontSizeKind = "pixel-class" | "tailwind-size-class" | "inline-font-size" | "css-font-size";
+export type FontSizeKind = "pixel-class" | "rem-class" | "tailwind-size-class" | "inline-font-size" | "css-font-size";
 
 export interface FontSizeMatch {
 	readonly kind: FontSizeKind;
@@ -78,11 +87,20 @@ export const TAILWIND_SIZE_LADDER = {
 export type TailwindSizeClass = keyof typeof TAILWIND_SIZE_LADDER;
 
 export const PIXEL_CLASS_PATTERN = /(?<![\w-])text-\[(\d+(?:\.\d+)?)px\]/g;
+/** Rem classes track the 16px browser root (the app never moves the root;
+ *  `body` carries `--ui-fs`), so `text-[Nrem]` is a fixed size just like
+ *  `text-[Npx]` — mapped at Nrem × 16px onto the ladder (font audit step 9a). */
+export const REM_ROOT_PX = 16;
+export const REM_CLASS_PATTERN = /(?<![\w-])text-\[(\d+(?:\.\d+)?)rem\]/g;
 export const TAILWIND_SIZE_CLASS_PATTERN = /(?<![\w-])text-(xs|sm|base|lg|xl|2xl)(?![\w-])/g;
 export const INLINE_FONT_SIZE_PATTERN = /(?<![\w.])fontSize:\s*(?:"(\d+(?:\.\d+)?)px"|(\d+(?:\.\d+)?))/g;
 export const CSS_FONT_SIZE_PATTERN = /(?<![\w-])font-size:\s*(\d+(?:\.\d+)?)px/g;
 export const FIXED_SIZE_BOX_PATTERN = /(?<![\w-])(?:h-4|h-5|w-4|w-5|size-(?:\d+(?:\.\d+)?|\[[^\]\s]*\]))(?![\w-])/;
-export const LEADING_CLASS_PATTERN = /(?<![\w-])leading-\d+(?:\.\d+)?(?![\w-])/;
+/** ANY `leading-*` utility — numeric (`leading-5`), named (`leading-none`,
+ *  `leading-snug`, `leading-relaxed`, …) or arbitrary (`leading-[1.4]`). A
+ *  converted Tailwind size class never adds its numeric companion beside an
+ *  existing one (font audit step 9a). */
+export const LEADING_CLASS_PATTERN = /(?<![\w-])leading-(?:\d+(?:\.\d+)?|none|tight|snug|normal|relaxed|loose|\[[^\]\s]*\])(?![\w-])/;
 
 export const FONT_SIZE_ROOT = "apps/web/src";
 export const FONT_SIZE_CSS_TARGET = `${FONT_SIZE_ROOT}/styles.css`;
@@ -135,6 +153,11 @@ export function ladderValue(sizePx: number, options: LadderOptions = {}): string
 
 export function pixelClassFor(sizePx: number, options: LadderOptions = {}): string {
 	return `text-[${ladderValue(sizePx, options)}]`;
+}
+
+/** The ladder class for a rem size — rem × 16px onto the same ladder. */
+export function remClassFor(sizeRem: number, options: LadderOptions = {}): string {
+	return `text-[${ladderValue(sizeRem * REM_ROOT_PX, options)}]`;
 }
 
 /** The arbitrary class plus the line-height companion the size class carried. */
@@ -221,6 +244,10 @@ export function collectFixedFontSizeMatches(file: string, source: string): FontS
 		if (match.index === undefined || match[1] === undefined) continue;
 		push("pixel-class", match[0], Number.parseFloat(match[1]), match.index);
 	}
+	for (const match of source.matchAll(REM_CLASS_PATTERN)) {
+		if (match.index === undefined || match[1] === undefined) continue;
+		push("rem-class", match[0], Number.parseFloat(match[1]) * REM_ROOT_PX, match.index);
+	}
 	for (const match of source.matchAll(TAILWIND_SIZE_CLASS_PATTERN)) {
 		const sizeClass = match[1] as TailwindSizeClass | undefined;
 		if (match.index === undefined || sizeClass === undefined) continue;
@@ -293,18 +320,22 @@ function spliceReplacements(source: string, replacements: readonly FontSizeRepla
 
 /** Convert one source file onto the ladder. Pure: (file, source, options) → conversion.
  *  `var: "ui"` forces the `--ui-fs` ladder even for chat message files (the
- *  area step's per-occurrence chrome decision); `var: "mfs"` equals `mfs: true`. */
+ *  area step's per-occurrence chrome decision); `var: "mfs"` equals `mfs: true`.
+ *  `only` restricts the conversion to the listed match kinds (font audit step
+ *  9a: `--only rem` converts a file's rem classes without touching the pixel /
+ *  Tailwind residue a later area step owns). */
 export function convertSourceFontSizes(
 	file: string,
 	source: string,
-	options: { readonly mfs?: boolean; readonly var?: "ui" | "mfs" } = {},
+	options: { readonly mfs?: boolean; readonly var?: "ui" | "mfs"; readonly only?: readonly FontSizeKind[] } = {},
 ): FontSizeConversion {
 	const normalized = normalizeRelativePath(file);
 	const mfsMode = options.var === "mfs" || (options.var === undefined && options.mfs === true);
 	const forceUi = options.var === "ui";
 	const chatMessage = isChatMessageFile(normalized);
 	const ladder = mfsMode ? MFS_LADDER : UI_FS_LADDER;
-	const matches = collectFixedFontSizeMatches(normalized, source);
+	const collected = collectFixedFontSizeMatches(normalized, source);
+	const matches = options.only === undefined ? collected : collected.filter((match) => options.only?.includes(match.kind));
 	const base = { file: normalized, mode: mfsMode ? ("mfs" as const) : ("ui-fs" as const), matches };
 
 	if (mfsMode && !chatMessage) {
@@ -340,7 +371,7 @@ export function convertSourceFontSizes(
 		const line = lineTextAt(source, lineStarts, match.offset);
 		if (FIXED_SIZE_BOX_PATTERN.test(line)) flaggedFixedSizeBox.push(match);
 		let replacement: string;
-		if (match.kind === "pixel-class") {
+		if (match.kind === "pixel-class" || match.kind === "rem-class") {
 			replacement = pixelClassFor(match.sizePx, ladder);
 		} else if (match.kind === "tailwind-size-class") {
 			const sizeClass = match.text.slice("text-".length) as TailwindSizeClass;
@@ -400,6 +431,7 @@ export interface FontSizeRunOptions {
 	readonly dryRun?: boolean;
 	readonly mfs?: boolean;
 	readonly var?: "ui" | "mfs";
+	readonly only?: readonly FontSizeKind[];
 	readonly root?: string;
 }
 
@@ -460,13 +492,14 @@ export function formatFontSizeRunReport(
 	for (const conversion of withMatches) {
 		const counts = {
 			"pixel-class": 0,
+			"rem-class": 0,
 			"tailwind-size-class": 0,
 			"inline-font-size": 0,
 			"css-font-size": 0,
 		} as Record<FontSizeKind, number>;
 		for (const match of conversion.matches) counts[match.kind] += 1;
 		lines.push(
-			`  ${conversion.file}  ${conversion.matches.length} (pixel ${counts["pixel-class"]}, tailwind ${counts["tailwind-size-class"]}, inline ${counts["inline-font-size"]}, css ${counts["css-font-size"]})${
+			`  ${conversion.file}  ${conversion.matches.length} (pixel ${counts["pixel-class"]}, rem ${counts["rem-class"]}, tailwind ${counts["tailwind-size-class"]}, inline ${counts["inline-font-size"]}, css ${counts["css-font-size"]})${
 				conversion.converted ? "" : conversion.skippedNotChatMessage ? "  [not converted: not message content]" : "  [not converted: --mfs decision]"
 			}`,
 		);
@@ -484,10 +517,10 @@ export function formatFontSizeRunReport(
 	}
 
 	lines.push(
-		`totals: ${totalMatches} occurrence(s) in ${withMatches.length} file(s) — pixel ${countKind(conversions, "pixel-class")}, tailwind ${countKind(
+		`totals: ${totalMatches} occurrence(s) in ${withMatches.length} file(s) — pixel ${countKind(conversions, "pixel-class")}, rem ${countKind(
 			conversions,
-			"tailwind-size-class",
-		)}, inline ${countKind(conversions, "inline-font-size")}, css ${countKind(conversions, "css-font-size")}`,
+			"rem-class",
+		)}, tailwind ${countKind(conversions, "tailwind-size-class")}, inline ${countKind(conversions, "inline-font-size")}, css ${countKind(conversions, "css-font-size")}`,
 	);
 	lines.push(info.dryRun ? "dry run — no files written" : `written: ${info.written} file(s)`);
 	return lines.join("\n");
@@ -500,7 +533,7 @@ export async function runFontSizeCodemod(target: string, options: FontSizeRunOpt
 	const changedFiles: string[] = [];
 	for (const file of files) {
 		const source = readFileSync(path.resolve(root, file), "utf8");
-		const conversion = convertSourceFontSizes(file, source, { mfs: options.mfs, var: options.var });
+		const conversion = convertSourceFontSizes(file, source, { mfs: options.mfs, var: options.var, only: options.only });
 		conversions.push(conversion);
 		if (options.dryRun !== true && conversion.converted && conversion.output !== source) {
 			await Bun.write(path.resolve(root, file), conversion.output);
@@ -513,13 +546,36 @@ export async function runFontSizeCodemod(target: string, options: FontSizeRunOpt
 
 function usage(): string {
 	return [
-		"usage: bun scripts/font-size-codemod.ts [--dry-run] [--mfs] [--var ui|mfs] <path>",
+		"usage: bun scripts/font-size-codemod.ts [--dry-run] [--mfs] [--var ui|mfs] [--only kinds] <path>",
 		"  <path>     file or directory (directory walks recursively; scope: apps/web/src ts/tsx + styles.css)",
 		"  --dry-run  print per-area/per-file counts and the flagged lists without writing",
 		"  --mfs      convert chat message files onto the --mfs ladder (17px reference); non-message files are listed, not converted",
 		"  --var ui|mfs  explicit ladder variable: ui forces the --ui-fs ladder even for chat message",
 		"               files decided to be chrome (font audit step 8); mfs equals --mfs; conflicts with --mfs when set to ui",
+		"  --only kinds  convert ONLY the listed match kinds, comma-separated from:",
+		"               pixel, rem, tailwind, inline, css (font audit step 9a: --only rem",
+		"               converts a file's rem classes and leaves the residue a later",
+		"               area step owns untouched)",
 	].join("\n");
+}
+
+const ONLY_KIND_FLAGS = {
+	pixel: "pixel-class",
+	rem: "rem-class",
+	tailwind: "tailwind-size-class",
+	inline: "inline-font-size",
+	css: "css-font-size",
+} as const;
+
+function parseOnlyFlag(value: string): FontSizeKind[] {
+	const kinds: FontSizeKind[] = [];
+	for (const name of value.split(",")) {
+		const kind = (ONLY_KIND_FLAGS as Record<string, FontSizeKind | undefined>)[name.trim()];
+		if (kind === undefined) throw new Error(`--only must be a comma list of: ${Object.keys(ONLY_KIND_FLAGS).join(", ")} (got "${name.trim()}")`);
+		if (!kinds.includes(kind)) kinds.push(kind);
+	}
+	if (kinds.length === 0) throw new Error("--only must name at least one kind");
+	return kinds;
 }
 
 async function main(): Promise<number> {
@@ -527,7 +583,7 @@ async function main(): Promise<number> {
 	try {
 		parsed = parseArgs({
 			args: process.argv.slice(2),
-			options: { "dry-run": { type: "boolean" }, mfs: { type: "boolean" }, var: { type: "string" } },
+			options: { "dry-run": { type: "boolean" }, mfs: { type: "boolean" }, var: { type: "string" }, only: { type: "string" } },
 			strict: true,
 			allowPositionals: true,
 		});
@@ -553,11 +609,22 @@ async function main(): Promise<number> {
 		console.error(usage());
 		return 2;
 	}
+	let only: FontSizeKind[] | undefined;
+	if (parsed.values.only !== undefined) {
+		try {
+			only = parseOnlyFlag(parsed.values.only);
+		} catch (error) {
+			console.error(`font-size-codemod: ${error instanceof Error ? error.message : String(error)}`);
+			console.error(usage());
+			return 2;
+		}
+	}
 	try {
 		const outcome = await runFontSizeCodemod(parsed.positionals[0] ?? "", {
 			dryRun: parsed.values["dry-run"] === true,
 			mfs: parsed.values.mfs === true,
 			var: varFlag === "ui" || varFlag === "mfs" ? varFlag : undefined,
+			only,
 		});
 		console.log(outcome.report);
 		return 0;

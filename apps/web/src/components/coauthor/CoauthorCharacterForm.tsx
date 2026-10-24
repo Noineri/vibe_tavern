@@ -105,7 +105,7 @@ export function CoauthorCharacterForm() {
   if (!character) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="max-w-[280px] font-ui text-[0.9rem] leading-relaxed text-t2">
+        <p className="max-w-[280px] font-ui text-[var(--ui-fs)] leading-relaxed text-t2">
           {t("coauthor.diff.placeholder")}
         </p>
       </div>

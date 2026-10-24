@@ -144,6 +144,7 @@ describe("fixed font-size ratchet", () => {
 		const root = mkdtempSync(join(tmpdir(), "vt-arch-gate-"));
 		try {
 			writeFixture(root, "apps/web/src/components/shared/A.tsx", '<a className="text-[11px]">1</a>\n<a className="text-[12px]">2</a>\n');
+			writeFixture(root, "apps/web/src/components/shared/Rem.tsx", '<a className="text-[0.8rem]">r</a>\n<b className="text-[1.6rem]">R</b>\n');
 			writeFixture(root, "apps/web/src/components/shared/B.tsx", '<b className="text-xs sm:text-sm text-red-500">x</b>\n');
 			writeFixture(root, "apps/web/src/components/build/C.tsx", '<c style={{ fontSize: 18 }}>y</c>\n<c style={{ fontSize: "12px" }}>z</c>\n');
 			writeFixture(root, "apps/web/src/styles.css", ".tag{font-size:11px}\n.note{font-size: 12.5px}\n");
@@ -152,42 +153,56 @@ describe("fixed font-size ratchet", () => {
 			writeFixture(root, "apps/web/src/components/dev/ThemeTuner.tsx", '<e className="text-[9px]">dev</e>\n');
 			writeFixture(root, "apps/web/src/themes/coffee.css", ".themed{font-size:12px}\n");
 
-			expect(collectFixedFontSizes(root)).toEqual(baseline({ pixelClasses: 2, tailwindSizeClasses: 2, inlineFontSizes: 2, cssFontSizes: 2 }));
+			expect(collectFixedFontSizes(root)).toEqual(
+				baseline({ pixelClasses: 2, remClasses: 2, tailwindSizeClasses: 2, inlineFontSizes: 2, cssFontSizes: 2 }),
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
 	test("fails on growth with a message naming the ladder replacement", () => {
-		const current = baseline({ pixelClasses: 2, tailwindSizeClasses: 1, inlineFontSizes: 1 });
-		const report = evaluateArchGate({ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 1 }) }, [], {}, current);
+		const current = baseline({ pixelClasses: 2, remClasses: 1, tailwindSizeClasses: 1, inlineFontSizes: 1 });
+		const report = evaluateArchGate(
+			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 1 }) },
+			[],
+			{},
+			current,
+		);
 		expect(report.growingFixedFontSizes).toEqual([
 			{ pattern: "pixelClasses", baseline: 1, current: 2 },
+			{ pattern: "remClasses", baseline: 0, current: 1 },
 			{ pattern: "tailwindSizeClasses", baseline: 0, current: 1 },
 			{ pattern: "inlineFontSizes", baseline: 0, current: 1 },
 		]);
 		const output = formatArchGateReport(report);
-		expect(output).toContain("Architecture gate: FAIL — 3 new architecture violation(s) detected.");
+		expect(output).toContain("Architecture gate: FAIL — 4 new architecture violation(s) detected.");
 		expect(output).toContain("[fixed-font-size] pixelClasses: 2 > baseline 1");
+		expect(output).toContain("[fixed-font-size] remClasses: 1 > baseline 0");
 		expect(output).toContain("text-[11px] → text-[calc(var(--ui-fs)-3px)]");
+		expect(output).toContain("text-[0.8rem] → text-[calc(var(--ui-fs)-1px)]");
 		expect(output).toContain("text-xs → text-[calc(var(--ui-fs)-2px)] leading-4");
 		expect(output).toContain('fontSize: 18 → fontSize: "calc(var(--ui-fs)+4px)"');
 		expect(output).toContain("bun scripts/font-size-codemod.ts --dry-run apps/web/src");
-		expect(output).toContain("fixed font sizes 4/1");
+		expect(output).toContain("fixed font sizes 5/1");
 	});
 
 	test("reports shrunk font-size debt so --update-baseline can lower it", () => {
 		const report = evaluateArchGate(
-			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 5, cssFontSizes: 3 }) },
+			{ layerImports: [], oversizedFiles: {}, fixedFontSizes: baseline({ pixelClasses: 5, remClasses: 3, cssFontSizes: 3 }) },
 			[],
 			{},
-			baseline({ pixelClasses: 4, cssFontSizes: 3 }),
+			baseline({ pixelClasses: 4, remClasses: 0, cssFontSizes: 3 }),
 		);
-		expect(report.shrunkFixedFontSizes).toEqual([{ pattern: "pixelClasses", baseline: 5, current: 4 }]);
+		expect(report.shrunkFixedFontSizes).toEqual([
+			{ pattern: "pixelClasses", baseline: 5, current: 4 },
+			{ pattern: "remClasses", baseline: 3, current: 0 },
+		]);
 		expect(report.growingFixedFontSizes).toEqual([]);
 		const output = formatArchGateReport(report);
 		expect(output).toContain("Architecture gate: OK — all current violations are within baseline.");
 		expect(output).toContain("[fixed-font-size] pixelClasses: 4 (was 5)");
+		expect(output).toContain("[fixed-font-size] remClasses: 0 (was 3)");
 		expect(output).toContain("bun scripts/arch-gate.ts --update-baseline");
 	});
 });

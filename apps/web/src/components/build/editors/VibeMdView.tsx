@@ -336,10 +336,10 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           <Popover.Trigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-s2 px-3 py-2 font-ui text-[0.85rem] font-medium text-t2 transition-colors hover:border-accent/50 hover:text-t1 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-s2 px-3 py-2 font-ui text-[var(--ui-fs)] font-medium text-t2 transition-colors hover:border-accent/50 hover:text-t1 disabled:opacity-50"
               disabled={coauthorBusy}
             >
-              <span className="text-[0.85rem]"><Icons.Sparkles /></span>
+              <span className="text-[var(--ui-fs)]"><Icons.Sparkles /></span>
               {t("coauthor.entry.list")}
             </button>
           </Popover.Trigger>
@@ -353,7 +353,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
               >
                 <div className="border-b border-border/50 px-3 py-2 font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
                 {coauthorChats.length === 0 ? (
-                  <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
+                  <div className="px-3 py-3 font-ui text-[var(--ui-fs)] text-t3">{t("coauthor.list_empty")}</div>
                 ) : (
                   <ul className="overflow-y-auto py-1" style={{ maxHeight: popoverMaxHeight("twoLine") }}>
                     {coauthorChats.map((chat) => (
@@ -386,7 +386,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                               onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
                               disabled={coauthorBusy}
                             >
-                              <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
+                              <span className="font-ui text-[var(--ui-fs)] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
                               <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
                             </button>
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -424,11 +424,11 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
         </Popover.Root>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 font-ui text-[0.85rem] font-bold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 font-ui text-[var(--ui-fs)] font-bold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
           onClick={() => { void handleNewCoauthorChat(); }}
           disabled={coauthorBusy}
         >
-          <span className="text-[0.85rem]"><Icons.Plus /></span>
+          <span className="text-[var(--ui-fs)]"><Icons.Plus /></span>
           {t("coauthor.entry.new")}
         </button>
       </div>

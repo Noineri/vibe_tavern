@@ -182,7 +182,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
             data-testid="objective-proposal-accept"
             disabled={busy || trackerOff}
             onClick={() => void runResolve("apply")}
-            className="rounded-md border-0 bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
+            className="rounded-md border-0 bg-accent px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
           >
             {t("agent.record_proposal.accept")}
           </button>
@@ -191,7 +191,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
             data-testid="objective-proposal-reject"
             disabled={busy}
             onClick={() => void runResolve("reject")}
-            className="rounded-md border border-border bg-bg px-3.5 py-1.5 font-ui text-[0.8rem] font-semibold text-t2 transition-all hover:bg-s2 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
+            className="rounded-md border border-border bg-bg px-3.5 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t2 transition-all hover:bg-s2 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
           >
             {t("coauthor.review.reject")}
           </button>

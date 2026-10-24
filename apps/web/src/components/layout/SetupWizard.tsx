@@ -57,18 +57,18 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
     <>
     <div className={cn("flex flex-col gap-3", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
       <button type="button" className={cardBase} onClick={() => onSelect("a")}>
-        <div className="text-[1.4rem] text-accent"><Icons.Edit /></div>
-        <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_a_title")}</div>
-        <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_a_sub")}</div>
+        <div className="text-[calc(var(--ui-fs)+8px)] text-accent"><Icons.Edit /></div>
+        <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold">{t("wizard_path_a_title")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t("wizard_path_a_sub")}</div>
       </button>
       {!isMobile && (
         <button type="button" className={cardBase} onClick={() => onSelect("b")}>
-          <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
-          <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
-          <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
+          <div className="text-[calc(var(--ui-fs)+8px)] text-accent"><Icons.Import /></div>
+          <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold">{t("wizard_path_b_title")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t("wizard_path_b_sub")}</div>
         </button>
       )}
-      <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[0.85rem] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
+      <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[var(--ui-fs)] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
         {t("wizard_skip_all")}
       </button>
     </div>
@@ -82,12 +82,12 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
         isMobile ? "px-4" : "px-7",
       )}>
         <span className="shrink-0 text-accent-t"><Icons.star /></span>
-        <span className="min-w-0 flex-1 font-ui text-[0.78rem] leading-snug text-t1">
+        <span className="min-w-0 flex-1 font-ui text-[calc(var(--ui-fs)-1px)] leading-snug text-t1">
           {t("star_prompt_welcome_line")}
         </span>
         <button
           type="button"
-          className="shrink-0 cursor-pointer rounded-lg border-0 bg-accent px-3 py-1.5 font-ui text-[0.75rem] font-semibold text-on-accent transition-[filter] hover:brightness-110"
+          className="shrink-0 cursor-pointer rounded-lg border-0 bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
           onClick={onStar}
         >
           {t("star_prompt_cta")}
@@ -299,7 +299,7 @@ function ProviderStep({
         <div className="flex items-center justify-end pt-2">
           <button
             type="button"
-            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all"
+            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all"
             onClick={onComplete}
           >
             {t("next")}
@@ -345,7 +345,7 @@ function ProviderStep({
         <button
           type="button"
           className={cn(
-            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[0.88rem] font-semibold transition-all",
+            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[var(--ui-fs)] font-semibold transition-all",
             testing
               ? "cursor-default border-border bg-s2 text-t3"
               : "border-border bg-s2 text-t2 hover:border-accent hover:text-t1",
@@ -372,14 +372,14 @@ function ProviderStep({
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={showEdit ? () => { setCollapsed(true); setShowEdit(false); } : onSkip}
         >
           {showEdit ? t("back") : t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!canContinue || saving}
           onClick={() => void handleSave()}
         >
@@ -471,7 +471,7 @@ function PersonaStep({
 
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_persona_hint")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_persona_hint")}</div>
 
       {/* Avatar */}
       <div className="flex items-center gap-4">
@@ -494,7 +494,7 @@ function PersonaStep({
             <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
           )}
         </div>
-        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
       {pendingAvatar && (
         <AvatarCropModal
@@ -564,14 +564,14 @@ function PersonaStep({
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={onSkip}
         >
           {t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!name.trim() || saving}
           onClick={() => void handleSave()}
         >
@@ -691,8 +691,8 @@ function CharacterStep({
 
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_character_hint")}</div>
-      <div className="font-ui text-[0.75rem] text-t3">{t("wizard_character_simplified")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_character_hint")}</div>
+      <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("wizard_character_simplified")}</div>
 
       {/* Avatar */}
       <div className="flex items-center gap-4">
@@ -715,7 +715,7 @@ function CharacterStep({
             <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
           )}
         </div>
-        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
       {charAvatarPending && (
         <AvatarCropModal
@@ -772,7 +772,7 @@ function CharacterStep({
       {/* Import card */}
       <button
         type="button"
-        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[0.85rem] text-t3 transition-all hover:border-accent hover:text-accent disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[var(--ui-fs)] text-t3 transition-all hover:border-accent hover:text-accent disabled:opacity-50"
         disabled={parsingCard || busy}
         onClick={() => fileRef.current?.click()}
       >
@@ -791,7 +791,7 @@ function CharacterStep({
       />
 
       {parsingCard && (
-        <div className="rounded-lg border border-border bg-s2 px-4 py-3 font-ui text-[0.85rem] text-t2">
+        <div className="rounded-lg border border-border bg-s2 px-4 py-3 font-ui text-[var(--ui-fs)] text-t2">
           {t("analyzing_metadata")}
         </div>
       )}
@@ -819,14 +819,14 @@ function CharacterStep({
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={onSkip}
         >
           {t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={cardPreview ? busy : (!name.trim() || busy)}
           onClick={() => cardPreview ? void handleImportPreview() : void handleCreate()}
         >
@@ -844,7 +844,7 @@ function StMigrationStep({ onImported }: { onImported: () => void }) {
 
   return (
     <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_st_hint")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_st_hint")}</div>
       <StFolderImport onImported={onImported} />
     </div>
   );
@@ -888,8 +888,8 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
 
   const header = (
     <div className={cn("relative shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-6")}>
-      <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{title}</div>
-      {sub && <div className="mb-5 font-ui text-[0.88rem] text-t2">{sub}</div>}
+      <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)+7px)] font-bold text-t1">{title}</div>
+      {sub && <div className="mb-5 font-ui text-[var(--ui-fs)] text-t2">{sub}</div>}
       {path === "a" && <div className="mb-3"><StepIndicator step={stepA} total={3} /></div>}
       {path !== "choose" && (
         <button
