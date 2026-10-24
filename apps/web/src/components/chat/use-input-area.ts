@@ -17,6 +17,8 @@ import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useAttachmentDraft, VALID_AUDIO_TYPES } from "../../hooks/use-attachment-draft.js";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
+import { fetchChatImageRoute } from "../../api/image-route-api.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -107,6 +109,9 @@ export function useInputArea() {
     allowedKinds: ["image", "audio", "file"],
     getAttachments: () => useChatStore.getState().draftAttachments,
   });
+  const imageRouteKey = JSON.stringify([activeChatId, provider.activeProviderProfile?.id, activeModelId, effectiveProfile?.visionModel]);
+  const attachmentVisionWarning = useImageRouteWarning(draftAttachments, imageRouteKey, () =>
+    activeChatId ? fetchChatImageRoute(activeChatId) : Promise.reject(new Error("No active chat")));
 
   /** Voice-record button landing (STT_PLAN ST-6): upload the recorded clip
    *  and add it as a voice-purpose audio draft attachment. Returns false on a
@@ -208,7 +213,7 @@ export function useInputArea() {
     personas, activePersonaId, promptPresets, activePromptPresetId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     ...attachmentDraft, draftAttachments, handleVoiceRecorded,
-    canSend, buckets, inputTokens, permanent, availableBudget, tokenState, attachmentOverflow,
+    canSend, buckets, inputTokens, permanent, availableBudget, tokenState, attachmentOverflow, attachmentVisionWarning,
     showGenerateMore, handleGenerateMore,
     // LS-4b/LS-8: the per-send prefill entry point renders only when BOTH
     // gates pass — the shared fail-closed capability resolution in

@@ -1,3 +1,4 @@
+// forks: 1 — AttachmentVisionWarning (attachment-vision-warning.tsx).
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 

@@ -205,6 +205,7 @@ export default interface Resources {
     "attachment_summarized": "Summary · ~{tokens} tok",
     "attachment_summarizing": "Summarizing…",
     "attachment_tokens": "~{tokens} tok",
+    "attachment_vision_warning": "This model can't see images and no vision fallback model is set, so the image can't be sent. Pick another model or set a fallback in the provider settings. If the model does see images, refresh the model list.",
     "attachments_overflow_warning": "Attachments ≈ {attached} tok — more than the free space in the model's context (≈ {free}). You can still send, but the provider may return an error; after sending you can summarize or exclude the file.",
     "authors_note_label": "Author's Note",
     "authors_note_placeholder": "Instructions injected near the end of context...",

@@ -22,6 +22,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import type { Attachment } from "@vibe-tavern/domain";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -90,6 +91,7 @@ function makeFakeData() {
     draftAttachments: [] as Attachment[],
     remove: mock(),
     attachmentOverflow: estimateAttachmentOverflow({ totalUsed: 0, availableBudget: 7168, attachments: [] }),
+    attachmentVisionWarning: false,
     onFileInputChange: () => {},
     handlePaste: () => {},
     canSend: false,
@@ -197,5 +199,34 @@ describe("InputArea — per-send prefill chip + bubble (LS-8)", () => {
     const q = within(view.baseElement);
     expect(q.queryByTestId("per-send-prefill-chip")).toBeNull();
     expect(q.queryByTestId("per-send-prefill-bubble")).toBeNull();
+  });
+});
+
+describe('desktop image warning (CA-1h2)', () => {
+  it('route none renders before overflow with wrapping chrome and does not disable Send', async () => {
+    fakeData.draft = 'Hello';
+    fakeData.canSend = true;
+    fakeData.draftAttachments = [
+      { id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 },
+      { id: 'file', assetId: 'file', type: 'file', name: 'a.md', mimeType: 'text/markdown', sizeBytes: 12, tokenCount: 101 },
+    ];
+    fakeData.attachmentOverflow = estimateAttachmentOverflow({ totalUsed: 900, availableBudget: 1000, attachments: fakeData.draftAttachments });
+    const fetchRoute = mock(async () => 'none' as const);
+    function Harness() {
+      fakeData.attachmentVisionWarning = useImageRouteWarning(fakeData.draftAttachments, 'rp-key', fetchRoute);
+      return <InputArea />;
+    }
+    const view = render(<Harness />);
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => expect(view.getAllByRole('status')).toHaveLength(2));
+    const warnings = view.getAllByRole('status');
+    expect(warnings[0]?.textContent).toBe('attachment_vision_warning');
+    expect(warnings[0]?.className).toBe(warnings[1]?.className ?? 'missing overflow warning');
+    expect(warnings[0]?.querySelector('.truncate')).toBeNull();
+    expect(warnings[0]?.querySelector('.whitespace-normal')).not.toBeNull();
+    const send = view.getByRole('button', { name: 'send_unavailable' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(fakeData.chat.handleSend).toHaveBeenCalledTimes(1);
   });
 });

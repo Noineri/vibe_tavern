@@ -3,6 +3,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import type { InputAreaData } from "./use-input-area.js";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
 import type { Attachment } from "@vibe-tavern/domain";
 
 useDomEnv();
@@ -173,5 +174,31 @@ describe("MobileInputArea context breakdown (via the model sheet)", () => {
     ] as const) {
       expect(text).toContain(`${label}${value}`);
     }
+  });
+});
+
+describe('mobile image warning (CA-1h2)', () => {
+  it('route none renders before overflow and never disables Send', async () => {
+    const attachments: Attachment[] = [
+      { id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 },
+      { id: 'file', assetId: 'file', type: 'file', name: 'a.md', mimeType: 'text/markdown', sizeBytes: 12, tokenCount: 101 },
+    ];
+    const fetchRoute = mock(async () => 'none' as const);
+    const handleSend = mock();
+    function Harness() {
+      const warning = useImageRouteWarning(attachments, 'rp-key', fetchRoute);
+      return <TooltipProvider><MobileInputArea data={makeData({
+        draftAttachments: attachments, remove: mock(), attachmentVisionWarning: warning,
+        chat: { handleSend, handleCancelGeneration: mock() },
+        attachmentOverflow: estimateAttachmentOverflow({ totalUsed: 900, availableBudget: 1000, attachments }),
+      })} /></TooltipProvider>;
+    }
+    const view = render(<Harness />);
+    await waitFor(() => expect(view.getAllByRole('status')).toHaveLength(2));
+    expect(view.getAllByRole('status')[0]?.textContent).toBe('attachment_vision_warning');
+    const send = view.getByRole('button', { name: 'send' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(handleSend).toHaveBeenCalledTimes(1);
   });
 });
