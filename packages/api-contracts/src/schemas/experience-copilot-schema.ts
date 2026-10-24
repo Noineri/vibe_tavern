@@ -442,6 +442,24 @@ export const experienceCopilotMessageSchema = z.object({
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;
 
 /**
+ * Body for `PATCH /api/experience-copilot/:threadId/messages/:messageId`
+ * (AP-30): the replacement text for ONE assistant text row — an in-place
+ * rewrite of the stored `content`, nothing regenerated (no model call, no
+ * row replaced). `content` mirrors the stream request's content field
+ * (min 1, max 50 000); blank-only text is refused by the store seam with the
+ * typed 400 `empty_content`. Everything else about the row (id, createdAt,
+ * seq, the reasoning pair) is preserved server-side; the eligibility
+ * refusals (wrong role, tool-call carrier, digest-folded row, empty text)
+ * are THREAD STATE — enforced by the store seam, not this schema.
+ */
+export const experienceCopilotMessageEditSchema = z
+  .object({
+    content: z.string().min(1).max(50_000),
+  })
+  .strict();
+export type ExperienceCopilotMessageEditRequest = z.infer<typeof experienceCopilotMessageEditSchema>;
+
+/**
  * Wire shape of a visual that is bound to the experience being authored and so
  * shown to the copilot as available context (ER-7). Mirrors the element shape of
  * `CopilotContext.boundVisuals`

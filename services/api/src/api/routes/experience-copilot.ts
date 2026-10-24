@@ -257,5 +257,19 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         // compact endpoint's error family), so no local catch here.
         return c.json(await runtime.experienceCopilotDeleteTurn(threadId, body));
       },
+    )
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId",
+      zValidator("json", schemas.experienceCopilotMessageEditSchema),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const messageId = c.req.param("messageId");
+        // AP-30: same convention as /turns/delete — the adapter maps the
+        // store's refusal families (typed 400 reason codes / 404s) onto the
+        // shared DomainError vocabulary, which the global handler serializes.
+        return c.json(
+          await runtime.experienceCopilotEditMessage(threadId, messageId, c.req.valid("json").content),
+        );
+      },
     );
 }

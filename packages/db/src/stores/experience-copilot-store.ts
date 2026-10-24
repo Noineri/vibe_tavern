@@ -7,6 +7,7 @@ import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink,
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
+import { updateAssistantMessageContent, type CopilotMessageEditResult } from './experience-copilot-message-edit.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
 
@@ -710,6 +711,23 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotThreads.id, threadId))
       .run();
     return mapMessage(row);
+  }
+
+  /**
+   * AP-30: replace ONE assistant text row's `content` in place — thin seam
+   * over `experience-copilot-message-edit.ts` (the turn-delete sibling
+   * pattern: the eligibility checks, the digest-anchor fold boundary, and
+   * the single-row update live there; the store family owns the columns).
+   * Returns the updated row, or the typed refusal (not an assistant text
+   * row / a tool-call carrier / an empty replacement or row / folded into
+   * the last digest / missing thread or message).
+   */
+  updateAssistantContent(
+    threadId: string,
+    messageId: string,
+    content: string,
+  ): Promise<CopilotMessageEditResult> {
+    return updateAssistantMessageContent({ db: this.db, clock: this.clock }, threadId, messageId, content);
   }
 
   // ─── Seq allocation (SC-1, internal) ────────────────────────────────

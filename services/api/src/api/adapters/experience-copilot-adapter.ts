@@ -38,6 +38,7 @@ import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js"
 import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
 import { readContextLinks, replaceContextLinks } from "./experience-copilot-context-links.js";
 import { deleteCopilotTurnWire, makeRegenerateDeleteTurn } from "./experience-copilot-turn-delete.js";
+import { editCopilotMessageWire } from "./experience-copilot-message-edit.js";
 import { resolveScriptAgentContextCards } from "./experience-copilot-script-cards.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
@@ -781,5 +782,15 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     body: ExperienceCopilotTurnDeleteRequest,
   ): Promise<ExperienceCopilotTurnDeleteResult> =>
     deleteCopilotTurnWire(this.stores.db, threadId, body);
+
+  /** AP-30: edit one assistant text row in place — thin wiring over
+   *  adapters/experience-copilot-message-edit.ts (the turn-delete sibling
+   *  pattern; this file sits at its size cap). */
+  experienceCopilotEditMessage = (
+    threadId: string,
+    messageId: string,
+    content: string,
+  ): Promise<ExperienceCopilotMessageWire> =>
+    editCopilotMessageWire(this.stores.experienceCopilot, threadId, messageId, content);
 
 }

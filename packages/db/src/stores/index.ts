@@ -203,6 +203,11 @@ export type {
   CopilotTurnDeleteResult,
   TurnDeleteDeps,
 } from './experience-copilot-turn-delete.js';
+export { updateAssistantMessageContent } from './experience-copilot-message-edit.js';
+export type {
+  CopilotMessageEditResult,
+  MessageEditDeps,
+} from './experience-copilot-message-edit.js';
 export type {
   CopilotContextMetrics,
   CopilotContextLink,

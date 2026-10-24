@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
-import { experienceCopilotThreads } from "../src/db-schema.js";
+import { experienceCopilotThreads, characters, chats, chatBranches } from "../src/db-schema.js";
 import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
 import { deriveThreadTitleFromFirstMessage } from "../src/stores/experience-copilot-auto-title.js";
 import type { CopilotContextMetrics } from "../src/stores/experience-copilot-row-parse.js";
@@ -697,5 +697,149 @@ describe("ExperienceCopilotStore — auto-title from the first user message (AP-
     await store.appendMessage(thread.id, { role: "tool", content: "{}", toolCallId: "tc_ap19" });
 
     expect((await store.getById(thread.id))!.title).toBe("");
+  });
+});
+
+// ─── updateAssistantContent (AP-30) ──────────────────────────────────────────
+//
+// The store half of "edit an assistant message": the class method is a thin
+// seam over experience-copilot-message-edit.ts (the turn-delete sibling
+// pattern). Pins the IN-PLACE contract (id, createdAt, seq, the AP-28
+// reasoning pair, every other row, the order — only `content` changes), the
+// eligibility refusal statuses, and the digest-anchor fold boundary. The
+// HTTP mapping of the same statuses is pinned by the route test in
+// services/api/test/experience-copilot-message-edit.test.ts.
+
+describe("updateAssistantContent (AP-30)", () => {
+  /** character → chat → branch (real FKs) so the chat-owned thread
+   *  allocates SC-1 seqs — the shape that makes "keeps seq" non-vacuous. */
+  function bootstrapChatOwned(db: Awaited<ReturnType<typeof createDb>>, chatId: string, branchId: string) {
+    db.insert(characters).values({
+      id: "char_ap30", name: "AP-30 fixture", description: "",
+      alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
+      status: "active", createdAt: "2026-06-15T00:00:00.000Z", updatedAt: "2026-06-15T00:00:00.000Z",
+    }).run();
+    db.insert(chats).values({
+      id: chatId, characterId: "char_ap30", personaId: null,
+      activeBranchId: branchId, promptPresetId: null,
+      title: "AP-30", summary: "", messageHistoryLimit: 0,
+      status: "active", createdAt: "2026-06-15T00:00:00.000Z", updatedAt: "2026-06-15T00:00:00.000Z",
+    }).run();
+    db.insert(chatBranches).values({
+      id: branchId, chatId, parentBranchId: null,
+      forkedFromMessageId: null, label: "main", createdAt: "2026-06-15T00:00:00.000Z",
+    }).run();
+  }
+
+  test("chat-owned thread: the edit rewrites `content` only — id, createdAt, seq, and the reasoning pair stay; events and order stay", async () => {
+    const { db, store } = await setup();
+    bootstrapChatOwned(db, "chat_ap30", "brnch_ap30");
+    const thread = await store.startNewChatSession("chat_ap30", "brnch_ap30", "sidechat-ooc");
+    const u1 = await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const a1 = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "answer one",
+      reasoning: "thinking",
+      reasoningDurationMs: 2_500,
+    });
+    const event = await store.appendContextEvent(thread.id, "rp_sync", { note: "frozen" });
+    const u2 = await store.appendMessage(thread.id, { role: "user", content: "two" });
+    const before = (await store.getById(thread.id))!.updatedAt;
+
+    const result = await store.updateAssistantContent(thread.id, a1.id, "answer one (edited)");
+
+    expect(result.status).toBe("edited");
+    if (result.status !== "edited") return;
+    expect(result.message).toMatchObject({
+      id: a1.id,
+      threadId: thread.id,
+      role: "assistant",
+      content: "answer one (edited)",
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: "thinking",
+      reasoningDurationMs: 2_500,
+      seq: a1.seq,
+      createdAt: a1.createdAt,
+    });
+    // The timeline is byte-identical apart from the one content — same rows,
+    // same order, the frozen event untouched between them.
+    const rows = await store.listMessages(thread.id);
+    expect(rows.map((m) => m.id)).toEqual([u1.id, a1.id, u2.id]);
+    expect(rows.find((m) => m.id === u1.id)!.content).toBe("one");
+    const timeline = await store.listTimeline(thread.id);
+    expect(timeline.filter((e) => e.rowType === "event").map((e) => e.id)).toEqual([event.id]);
+    // The thread surfaces as touched (the family's every-write convention).
+    expect((await store.getById(thread.id))!.updatedAt > before).toBe(true);
+  });
+
+  test("eligibility: only an assistant text row edits — the refusal statuses name the reason", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap30_seam", "T");
+    const u1 = await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const a1 = await store.appendMessage(thread.id, { role: "assistant", content: "answer one" });
+    const carrier = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "",
+      toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId: "tc_1", toolName: "todo", input: {} }]),
+    });
+    const toolRow = await store.appendMessage(thread.id, {
+      role: "tool",
+      content: JSON.stringify({ toolName: "todo", output: {} }),
+      toolCallId: "tc_1",
+    });
+    const blank = await store.appendMessage(thread.id, { role: "assistant", content: "" });
+    const seed = (await store.listMessages(thread.id)).map((m) => m.id);
+
+    expect(await store.updateAssistantContent(thread.id, u1.id, "x")).toEqual({ status: "refused-not-assistant", role: "user" });
+    expect(await store.updateAssistantContent(thread.id, toolRow.id, "x")).toEqual({ status: "refused-not-assistant", role: "tool" });
+    expect(await store.updateAssistantContent(thread.id, carrier.id, "x")).toEqual({ status: "refused-tool-call-row" });
+    expect(await store.updateAssistantContent(thread.id, blank.id, "x")).toEqual({ status: "refused-empty-row" });
+    // Empty/blank replacements are refused before any I/O — even for a
+    // missing thread.
+    expect(await store.updateAssistantContent(thread.id, a1.id, "")).toEqual({ status: "refused-empty-content" });
+    expect(await store.updateAssistantContent(thread.id, a1.id, "  ")).toEqual({ status: "refused-empty-content" });
+    expect(await store.updateAssistantContent("thr_missing_ap30", a1.id, "")).toEqual({ status: "refused-empty-content" });
+    // The missing families.
+    expect(await store.updateAssistantContent("thr_missing_ap30", a1.id, "x")).toEqual({ status: "missing-thread" });
+    expect(await store.updateAssistantContent(thread.id, "msg_missing_ap30", "x")).toEqual({ status: "missing-message" });
+    // A message of another thread is missing-message, never a cross-thread write.
+    const other = await store.startNewSession("script_ap30_other", "T");
+    expect(await store.updateAssistantContent(other.id, a1.id, "x")).toEqual({ status: "missing-message" });
+
+    // Every refusal wrote nothing.
+    expect((await store.listMessages(thread.id)).map((m) => m.id)).toEqual(seed);
+    expect((await store.listMessages(thread.id)).find((m) => m.id === a1.id)!.content).toBe("answer one");
+  });
+
+  test("fold boundary: the covered prefix is refused, kept rows edit — read from the digest's anchor, not its own position", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ap30_fold", "T");
+    const u1 = await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const a1 = await store.appendMessage(thread.id, { role: "assistant", content: "covered answer" });
+    const u2 = await store.appendMessage(thread.id, { role: "user", content: "two" });
+    const a2 = await store.appendMessage(thread.id, { role: "assistant", content: "kept answer" });
+    // The digest as the compaction service persists it: the anchor (first
+    // KEPT message, u2) rides in toolCallId; the digest row's own position
+    // is AFTER a2 (appended when compaction ran).
+    const digest = await store.appendMessage(thread.id, {
+      role: "digest",
+      content: "Summary of the early turns.",
+      toolCallId: u2.id,
+    });
+    const a3 = await store.appendMessage(thread.id, { role: "assistant", content: "post-digest answer" });
+
+    // a2 sits before the digest row's position but at/after the anchor —
+    // editable; a3 (after the digest row) too.
+    expect((await store.updateAssistantContent(thread.id, a2.id, "kept answer (edited)")).status).toBe("edited");
+    expect((await store.updateAssistantContent(thread.id, a3.id, "post-digest answer (edited)")).status).toBe("edited");
+    // The covered prefix is folded.
+    expect(await store.updateAssistantContent(thread.id, a1.id, "x")).toEqual({ status: "refused-folded" });
+    // The digest row itself fails the role check before the boundary.
+    expect(await store.updateAssistantContent(thread.id, digest.id, "x")).toEqual({ status: "refused-not-assistant", role: "digest" });
+
+    const rows = await store.listMessages(thread.id);
+    expect(rows.find((m) => m.id === a1.id)!.content).toBe("covered answer");
+    expect(rows.find((m) => m.id === digest.id)!.content).toBe("Summary of the early turns.");
   });
 });

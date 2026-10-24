@@ -140,6 +140,25 @@ export interface ExperienceCopilotRuntimeApi {
 		body: ExperienceCopilotTurnDeleteRequest,
 	) => Promise<ExperienceCopilotTurnDeleteResult>;
 
+	/** Edit ONE assistant text row in place (AP-30): replace the addressed
+	 *  message's stored `content` with the new text and return the updated
+	 *  message wire — the row's id, createdAt, seq, and reasoning pair stay,
+	 *  every other row and the message order stay, nothing regenerates. The
+	 *  address must be an assistant TEXT row of this thread (role "assistant",
+	 *  non-empty content, no tool calls) that is not folded into the last
+	 *  digest (at or after the digest's anchor — the first kept message); a
+	 *  user / tool / digest row, a tool-call carrier, an empty row, or an
+	 *  empty replacement is a typed 400 with a `details.reason` code
+	 *  (not_assistant_row / tool_call_row / empty_content / empty_row /
+	 *  folded_row); a missing thread or a message of another thread is a
+	 *  404. Every agent kind calls the same route — there is no kind
+	 *  dispatch. */
+	experienceCopilotEditMessage: (
+		threadId: string,
+		messageId: string,
+		content: string,
+	) => Promise<ExperienceCopilotMessageWire>;
+
 	// ─── Chat-owner lifecycle (SIDECHAT_PLAN SC-0b) ─────────────────────────────
 	//
 	// The chat-branch-owner twins of the script lifecycle above: a
