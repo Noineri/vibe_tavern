@@ -25,6 +25,9 @@
  * there is a per-occurrence decision for the area step; `--mfs` converts
  * exactly those files onto the `--mfs` ladder (point it at the decided
  * files/folders; non-message files are listed, not converted, in that mode).
+ * `--var ui` overrides the listing for message files the area step decided
+ * are chrome, not message content: it converts exactly those files onto the
+ * `--ui-fs` ladder with the unchanged mapping table (font audit step 8).
  *
  * Flag, don't silently convert: text inside a fixed-size box (`h-4` / `h-5` /
  * `w-4` / `w-5` / `size-*`) can overflow once it grows — such matches are
@@ -288,14 +291,17 @@ function spliceReplacements(source: string, replacements: readonly FontSizeRepla
 	return output + source.slice(cursor);
 }
 
-/** Convert one source file onto the ladder. Pure: (file, source, options) → conversion. */
+/** Convert one source file onto the ladder. Pure: (file, source, options) → conversion.
+ *  `var: "ui"` forces the `--ui-fs` ladder even for chat message files (the
+ *  area step's per-occurrence chrome decision); `var: "mfs"` equals `mfs: true`. */
 export function convertSourceFontSizes(
 	file: string,
 	source: string,
-	options: { readonly mfs?: boolean } = {},
+	options: { readonly mfs?: boolean; readonly var?: "ui" | "mfs" } = {},
 ): FontSizeConversion {
 	const normalized = normalizeRelativePath(file);
-	const mfsMode = options.mfs === true;
+	const mfsMode = options.var === "mfs" || (options.var === undefined && options.mfs === true);
+	const forceUi = options.var === "ui";
 	const chatMessage = isChatMessageFile(normalized);
 	const ladder = mfsMode ? MFS_LADDER : UI_FS_LADDER;
 	const matches = collectFixedFontSizeMatches(normalized, source);
@@ -313,7 +319,7 @@ export function convertSourceFontSizes(
 			skippedNotChatMessage: true,
 		};
 	}
-	if (!mfsMode && chatMessage) {
+	if (!mfsMode && chatMessage && !forceUi) {
 		return {
 			...base,
 			converted: false,
@@ -393,6 +399,7 @@ export function collectFontSizeTargetFiles(target: string, root: string = proces
 export interface FontSizeRunOptions {
 	readonly dryRun?: boolean;
 	readonly mfs?: boolean;
+	readonly var?: "ui" | "mfs";
 	readonly root?: string;
 }
 
@@ -493,23 +500,25 @@ export async function runFontSizeCodemod(target: string, options: FontSizeRunOpt
 	const changedFiles: string[] = [];
 	for (const file of files) {
 		const source = readFileSync(path.resolve(root, file), "utf8");
-		const conversion = convertSourceFontSizes(file, source, { mfs: options.mfs });
+		const conversion = convertSourceFontSizes(file, source, { mfs: options.mfs, var: options.var });
 		conversions.push(conversion);
 		if (options.dryRun !== true && conversion.converted && conversion.output !== source) {
 			await Bun.write(path.resolve(root, file), conversion.output);
 			changedFiles.push(file);
 		}
 	}
-	const report = formatFontSizeRunReport(conversions, { target, mfs: options.mfs === true, dryRun: options.dryRun === true, written: changedFiles.length });
+	const report = formatFontSizeRunReport(conversions, { target, mfs: options.var === "mfs" || (options.var === undefined && options.mfs === true), dryRun: options.dryRun === true, written: changedFiles.length });
 	return { report, changedFiles, scopedFiles: files };
 }
 
 function usage(): string {
 	return [
-		"usage: bun scripts/font-size-codemod.ts [--dry-run] [--mfs] <path>",
+		"usage: bun scripts/font-size-codemod.ts [--dry-run] [--mfs] [--var ui|mfs] <path>",
 		"  <path>     file or directory (directory walks recursively; scope: apps/web/src ts/tsx + styles.css)",
 		"  --dry-run  print per-area/per-file counts and the flagged lists without writing",
 		"  --mfs      convert chat message files onto the --mfs ladder (17px reference); non-message files are listed, not converted",
+		"  --var ui|mfs  explicit ladder variable: ui forces the --ui-fs ladder even for chat message",
+		"               files decided to be chrome (font audit step 8); mfs equals --mfs; conflicts with --mfs when set to ui",
 	].join("\n");
 }
 
@@ -518,7 +527,7 @@ async function main(): Promise<number> {
 	try {
 		parsed = parseArgs({
 			args: process.argv.slice(2),
-			options: { "dry-run": { type: "boolean" }, mfs: { type: "boolean" } },
+			options: { "dry-run": { type: "boolean" }, mfs: { type: "boolean" }, var: { type: "string" } },
 			strict: true,
 			allowPositionals: true,
 		});
@@ -533,10 +542,22 @@ async function main(): Promise<number> {
 		console.error(usage());
 		return 2;
 	}
+	const varFlag = parsed.values.var;
+	if (varFlag !== undefined && varFlag !== "ui" && varFlag !== "mfs") {
+		console.error(`font-size-codemod: --var must be ui or mfs, got "${varFlag}"`);
+		console.error(usage());
+		return 2;
+	}
+	if (varFlag === "ui" && parsed.values.mfs === true) {
+		console.error("font-size-codemod: --var ui conflicts with --mfs (use one ladder)");
+		console.error(usage());
+		return 2;
+	}
 	try {
 		const outcome = await runFontSizeCodemod(parsed.positionals[0] ?? "", {
 			dryRun: parsed.values["dry-run"] === true,
 			mfs: parsed.values.mfs === true,
+			var: varFlag === "ui" || varFlag === "mfs" ? varFlag : undefined,
 		});
 		console.log(outcome.report);
 		return 0;

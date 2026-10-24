@@ -130,13 +130,13 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
             className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {loading && list.length === 0 ? (
-              <div className="flex h-20 w-[360px] items-center justify-center text-xs text-t3">…</div>
+              <div className="flex h-20 w-[360px] items-center justify-center text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">…</div>
             ) : list.length === 0 ? (
               <div className="flex w-[220px] flex-col items-center gap-2 px-3 py-4 text-center">
-                <div className="text-xs text-t3">{t("media_empty")}</div>
+                <div className="text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("media_empty")}</div>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-xs font-medium text-accent-t transition-colors hover:bg-accent-hover"
+                  className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-accent-t transition-colors hover:bg-accent-hover"
                   onClick={() => { setOpen(false); setMode("build"); }}
                 >
                   {t("media_open_build")}
@@ -169,7 +169,7 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                         title={t("media_send_to_chat")}
                         aria-label={t("media_send_to_chat")}
                       >
-                        {isSending ? <span className="text-[10px]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
+                        {isSending ? <span className="text-[calc(var(--ui-fs)-4px)]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
                       </button>
                     </div>
                   );

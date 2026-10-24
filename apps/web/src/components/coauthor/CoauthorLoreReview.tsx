@@ -152,39 +152,39 @@ function LoreEntryReviewCard({
         <Checkbox checked={selected} disabled={disabled} onChange={() => onToggle(e.id)} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-ui text-[12px] font-medium text-t1">
+            <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
               {e.title || labels.lorebook}
             </span>
             {e.constant && (
-              <span className="rounded-full border border-accent/50 bg-accent/10 px-1.5 py-px font-ui text-[9px] font-semibold uppercase tracking-wide text-accent">
+              <span className="rounded-full border border-accent/50 bg-accent/10 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-5px)] font-semibold uppercase tracking-wide text-accent">
                 {labels.constant}
               </span>
             )}
             {e.mode === "edit" && (
-              <span className="rounded-full border border-t2/40 bg-t2/10 px-1.5 py-px font-ui text-[9px] font-semibold uppercase tracking-wide text-t2">
+              <span className="rounded-full border border-t2/40 bg-t2/10 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-5px)] font-semibold uppercase tracking-wide text-t2">
                 {labels.editing}
               </span>
             )}
           </div>
           {e.content ? (
-            <pre className="mt-1 whitespace-pre-wrap break-words font-body text-[11.5px] leading-relaxed text-t2">
+            <pre className="mt-1 whitespace-pre-wrap break-words font-body text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">
               {e.content}
             </pre>
           ) : (
-            <p className="mt-1 font-ui text-[11px] italic text-t4">{labels.noContent}</p>
+            <p className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t4">{labels.noContent}</p>
           )}
           {(e.keys.length > 0 || e.secondaryKeys.length > 0) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {e.keys.map((k, i) => (
-                <span key={`k${i}`} className="rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent">
+                <span key={`k${i}`} className="rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent">
                   {k}
                 </span>
               ))}
               {e.secondaryKeys.length > 0 && (
                 <Fragment>
-                  <span className="font-ui text-[9px] uppercase tracking-wide text-t4">{labels.secondaryKeys}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-5px)] uppercase tracking-wide text-t4">{labels.secondaryKeys}</span>
                   {e.secondaryKeys.map((k, i) => (
-                    <span key={`s${i}`} className="rounded-full bg-s3 px-1.5 py-px font-ui text-[10px] text-t3">
+                    <span key={`s${i}`} className="rounded-full bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-t3">
                       {k}
                     </span>
                   ))}
@@ -236,7 +236,7 @@ export function CoauthorLoreReview({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2">
-        <div className="font-ui text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
           {labels.title}
         </div>
         {bundle.lorebooks.map((lb) => {
@@ -259,20 +259,20 @@ export function CoauthorLoreReview({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate font-body text-[13px] font-medium text-t1">
+                    <span className="truncate font-body text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
                       {lb.name || labels.lorebook}
                     </span>
-                    <span className="shrink-0 rounded-full border border-border/70 bg-surface px-1.5 py-px font-ui text-[9px] uppercase tracking-wide text-t3">
+                    <span className="shrink-0 rounded-full border border-border/70 bg-surface px-1.5 py-px font-ui text-[calc(var(--ui-fs)-5px)] uppercase tracking-wide text-t3">
                       {labels[SCOPE_LABEL[lb.scopeType] ?? "scopeGlobal"]}
                     </span>
                     {lb.mode === "edit" && (
-                      <span className="shrink-0 rounded-full border border-t2/40 bg-t2/10 px-1.5 py-px font-ui text-[9px] font-semibold uppercase tracking-wide text-t2">
+                      <span className="shrink-0 rounded-full border border-t2/40 bg-t2/10 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-5px)] font-semibold uppercase tracking-wide text-t2">
                         {labels.editing}
                       </span>
                     )}
                   </div>
                   {lb.description && (
-                    <p className="truncate font-ui text-[11px] text-t3">{lb.description}</p>
+                    <p className="truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{lb.description}</p>
                   )}
                   <ChangedSettings
                     changes={lb.settingChanges}
@@ -280,7 +280,7 @@ export function CoauthorLoreReview({
                     labels={labels}
                   />
                 </div>
-                <span className="shrink-0 font-ui text-[10px] text-t4">
+                <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
                   {entries.length} {entriesLabel(entries.length, labels)}
                 </span>
               </div>
@@ -315,16 +315,16 @@ export function CoauthorLoreReview({
             <div className="flex items-center gap-2 px-2.5 py-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-body text-[13px] font-medium text-t1">{labels.existingLorebook}</span>
+                  <span className="font-body text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{labels.existingLorebook}</span>
                   <span
-                    className="max-w-[16rem] truncate rounded-full border border-border/70 bg-surface px-1.5 py-px font-mono text-[9px] text-t4"
+                    className="max-w-[16rem] truncate rounded-full border border-border/70 bg-surface px-1.5 py-px font-mono text-[calc(var(--ui-fs)-5px)] text-t4"
                     title={lorebookId}
                   >
                     {lorebookId}
                   </span>
                 </div>
               </div>
-              <span className="shrink-0 font-ui text-[10px] text-t4">
+              <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
                 {entries.length} {entriesLabel(entries.length, labels)}
               </span>
             </div>

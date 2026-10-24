@@ -243,7 +243,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
             aria-label={t("scn_zone_expand")}
             className={cn(
               "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
-              "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+              "text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-t2",
             )}
           >
             <SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} />
@@ -261,7 +261,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} /></span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("scn_zone_title")}</span>
+        <span className="text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t("scn_zone_title")}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* LLM Generate (no record) / Update (record) — only the latest assistant
               target is eligible; older persisted records are view/edit/delete only,
@@ -330,7 +330,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
       </div>
 
       {generating && (
-        <div className="flex items-center gap-1.5 text-[11px] text-t4">
+        <div className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t4">
           <ActionSpinner />
           <span>{t("scn_zone_generating")}</span>
         </div>
@@ -342,7 +342,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
         <SceneStateView schema={renderSchema} data={sceneState} variant={renderVariant} stale={!fresh} />
       )}
       {!hasRecord && !generating && (
-        <p className="text-[11px] text-t4">{t("scn_zone_no_record")}</p>
+        <p className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("scn_zone_no_record")}</p>
       )}
 
       {editing && (
@@ -415,10 +415,10 @@ function ConfirmDelete({ open, isMobile, onCancel, onConfirm, t }: {
 }) {
   const body = (
     <div className="flex flex-col gap-3 p-4">
-      <p className="text-sm text-t2">{t("scn_zone_delete_confirm")}</p>
+      <p className="text-[var(--ui-fs)] leading-5 text-t2">{t("scn_zone_delete_confirm")}</p>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1">{t("scn_zone_delete_cancel")}</button>
-        <button type="button" onClick={onConfirm} className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110">{t("scn_zone_delete")}</button>
+        <button type="button" onClick={onCancel} className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 transition-colors duration-150 hover:text-t1">{t("scn_zone_delete_cancel")}</button>
+        <button type="button" onClick={onConfirm} className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110">{t("scn_zone_delete")}</button>
       </div>
     </div>
   );

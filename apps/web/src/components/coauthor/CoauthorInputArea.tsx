@@ -71,7 +71,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 				<AutoTextarea
 					bare
 					data-testid="coauthor-input-textarea"
-					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
+					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
 					maxRows={12}
 					minRows={3}
 					placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
@@ -115,7 +115,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 							<button
 								type="button"
 								data-testid="coauthor-module-switch"
-								className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
+								className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:bg-s3"
 							>
 								<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
 								<span className="min-w-0 truncate">{moduleSwitch.activeLabel}</span>
@@ -170,7 +170,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						{isSending ? (
 							<button
 								type="button"
-								className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+								className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
 								onClick={chat.handleCancelGeneration}
 							>
 								{t("cancel")}

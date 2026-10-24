@@ -576,7 +576,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
       {selectedModelEntry?.template && (
         <div
           data-testid="image-gen-ft-model-detected"
-          className="mt-2 font-ui text-[12px] font-medium text-accent"
+          className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent"
         >
           {t("image_gen_detected_template", {
             template: templateDisplayLabel(selectedModelEntry.template, t),

@@ -149,7 +149,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
         <span className="mt-px shrink-0 leading-[1.45] text-t3"><Icons.target /></span>
         <span
           data-testid="objective-proposal-status"
-          className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent"
+          className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"
         >
           {status === "pending"
             ? t("agent.record_proposal.status_pending")
@@ -161,7 +161,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
 
       <div
         data-testid="objective-proposal-description"
-        className="min-w-0 whitespace-normal break-words font-ui text-[12px] font-medium leading-snug text-t2"
+        className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium leading-snug text-t2"
       >
         {description}
       </div>

@@ -466,12 +466,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       </MobileExpandTextarea>
       <div className="mt-1.5 flex gap-1.5">
         <button type="button"
-          className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+          className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all duration-100 hover:brightness-110"
           disabled={isBusy}
           onClick={() => void chat.handleSaveMessageEdit(msg.id)}
         >{t("save_edit")}</button>
         <button type="button"
-          className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
+          className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all duration-100 hover:bg-s3"
           disabled={isBusy}
           onClick={chat.handleCancelEdit}
         >{t("cancel_edit")}</button>

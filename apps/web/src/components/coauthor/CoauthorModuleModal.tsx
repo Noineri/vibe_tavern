@@ -347,7 +347,7 @@ export function CoauthorModuleModal() {
 							closeDetail={closeDetail}
 						/>
 					) : (
-						<div className="font-ui text-[13px] text-t3">{t("coauthor.module.empty")}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.module.empty")}</div>
 					)
 				}
 				footer={
@@ -460,11 +460,11 @@ interface ModuleListProps {
  */
 function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onAdd }: ModuleListProps) {
 	if (isLoading) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("coauthor.module.loading")}</div>;
+		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.module.loading")}</div>;
 	}
 	return (
 		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
-			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+			<div className="mb-1.5 px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium uppercase tracking-[0.05em] text-t3">
 				{t("coauthor.module.list_label")}
 			</div>
 			<div className="flex-1 overflow-y-auto">
@@ -506,7 +506,7 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 											</span>
 										</div>
 									)}
-									<div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-t4">{m.description}</div>
+									<div className="mt-0.5 line-clamp-2 text-[calc(var(--ui-fs)-3px)] leading-snug text-t4">{m.description}</div>
 									{isActive && (
 										<div className="mt-0.5 flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 											<Icons.Check className="h-3 w-3 shrink-0" />
@@ -559,12 +559,12 @@ function ModuleView({ module, t }: ModuleViewProps) {
 		<div className="flex flex-col gap-5">
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
-					<h3 data-testid="module-detail-name" className="font-body text-[17px] font-semibold text-t1">{module.name}</h3>
+					<h3 data-testid="module-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{module.name}</h3>
 					<span data-testid="module-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
 						{module.isBuiltIn ? t("coauthor.module.built_in") : t("copilot_profile_custom_tag")}
 					</span>
 				</div>
-				<p className="mt-1 font-ui text-[13px] leading-relaxed text-t2">{module.description}</p>
+				<p className="mt-1 font-ui text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">{module.description}</p>
 			</div>
 
 			<dl className="flex flex-col gap-3">
@@ -572,7 +572,7 @@ function ModuleView({ module, t }: ModuleViewProps) {
 					<pre
 						data-testid="module-prompt-preview"
 						className={cn(
-							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2",
+							"whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2",
 							!promptExpanded && isLongPrompt && "line-clamp-8",
 						)}
 					>
@@ -592,23 +592,23 @@ function ModuleView({ module, t }: ModuleViewProps) {
 
 				{module.openingMessage && (
 					<PreviewRow label={t("coauthor.module.opening_message_label")}>
-						<p className="font-ui text-[12px] leading-relaxed text-t2">{module.openingMessage}</p>
+						<p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{module.openingMessage}</p>
 					</PreviewRow>
 				)}
 
 				<PreviewRow label={t("coauthor.module.max_steps")}>
-					<span className="font-mono text-[13px] text-t1">{module.maxSteps}</span>
+					<span className="font-mono text-[calc(var(--ui-fs)-1px)] text-t1">{module.maxSteps}</span>
 				</PreviewRow>
 
 				<PreviewRow label={t("coauthor.module.skills")}>
 					{module.skillIds.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{module.skillIds.map((id) => (
-								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{id}</span>
+								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{id}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 					)}
 				</PreviewRow>
 
@@ -616,11 +616,11 @@ function ModuleView({ module, t }: ModuleViewProps) {
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map((key) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{resolveCoauthorToolLabel(t, key)}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t2">{resolveCoauthorToolLabel(t, key)}</span>
 							))}
 						</div>
 					) : (
-						<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+						<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 					)}
 				</PreviewRow>
 			</dl>
@@ -672,7 +672,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.base_prompt_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("coauthor.module.base_prompt_hint")}</p>
 			</div>
 
 			<div className="flex flex-col">
@@ -683,12 +683,12 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 					value={draft.openingMessage}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("openingMessage", e.target.value)}
 				/>
-				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
+				<p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
 			</div>
 
 			<Field label={t("coauthor.module.skills")} hint={t("coauthor.module.skills_hint")}>
 				{skills.length === 0 && draft.skillIds.length === 0 ? (
-					<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+					<span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("coauthor.module.no_skills")}</span>
 				) : (
 					<div className="flex flex-wrap gap-1.5">
 						{skills.map((skill) => {
@@ -699,7 +699,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 									type="button"
 									title={skill.description}
 									className={cn(
-										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 									)}
 									onClick={() => onToggleSkill(skill.id)}
@@ -719,7 +719,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 									type="button"
 									data-testid={`module-skill-orphan-${orphanId}`}
 									title={t("coauthor.module.skill_orphan_title")}
-									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[11px] text-danger-text line-through transition-colors hover:bg-danger-dim"
+									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text line-through transition-colors hover:bg-danger-dim"
 									onClick={() => onToggleSkill(orphanId)}
 								>
 									{orphanId}
@@ -738,7 +738,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 								key={key}
 								type="button"
 								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
 								)}
 								onClick={() => onToggleTool(key)}
@@ -769,9 +769,9 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<label className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
+			<label className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</label>
 			{children}
-			{hint && <p className="font-ui text-[10px] leading-relaxed text-t3">{hint}</p>}
+			{hint && <p className="font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{hint}</p>}
 		</div>
 	);
 }
@@ -779,7 +779,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex flex-col gap-1">
-			<dt className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
+			<dt className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t3">{label}</dt>
 			<dd>{children}</dd>
 		</div>
 	);

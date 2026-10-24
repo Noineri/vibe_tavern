@@ -289,7 +289,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
             as the count changes; ml-auto docks it at the right. */}
           <span
             data-testid="playlist-header-count"
-            className="ml-auto shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[10px] font-medium text-t2 tabular-nums"
+            className="ml-auto shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-t2 tabular-nums"
           >
             {t("narration_playlist_count", { count: rows.length })}
           </span>

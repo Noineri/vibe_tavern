@@ -39,7 +39,7 @@ import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
 
 /** The compact label-row action canon (the AI-generate button family). */
 const triggerBtnCls =
-  "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1";
+  "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1";
 
 /** The trigger's dropdown caret — same icon and size the other dropdown-style
  *  triggers use (ExperienceCopilotInputArea, ExperienceSessionSwitcher). */
@@ -250,7 +250,7 @@ function TemplateMenuBody(props: TemplateMenuBodyProps) {
       )}
       <button
         type="button"
-        className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={props.onSaveCurrent}
         disabled={!props.canSaveCurrent}
       >

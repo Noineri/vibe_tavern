@@ -38,7 +38,7 @@ export function SidechatVariantChips({ chatId, branchId }: {
             key={`${chip.messageId}:${chip.variantId}`}
             role="listitem"
             data-testid={`sidechat-variant-chip-${chip.messageId}-${chip.variantId}`}
-            className="flex items-center gap-1 rounded-[5px] bg-s2 px-2 py-0.5 font-ui text-[11px] text-t2"
+            className="flex items-center gap-1 rounded-[5px] bg-s2 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2"
           >
             <span className="max-w-[160px] truncate">{label}</span>
             <button

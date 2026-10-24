@@ -209,6 +209,15 @@ describe("font-size codemod conversion", () => {
 		expect(result.listedMfsDecision).toEqual([]);
 	});
 
+	test("converts chat message files onto --ui-fs with explicit --var ui (per-occurrence chrome decision, font audit step 8)", () => {
+		const source = '<span className="text-[13px]">chrome</span>';
+		const result = convertSourceFontSizes("apps/web/src/components/chat/MessageBlock.tsx", source, { var: "ui" });
+		expect(result.converted).toBe(true);
+		expect(result.mode).toBe("ui-fs");
+		expect(result.output).toBe('<span className="text-[calc(var(--ui-fs)-1px)]">chrome</span>');
+		expect(result.listedMfsDecision).toEqual([]);
+	});
+
 	test("refuses non-chat files in mfs mode instead of converting them onto --mfs", () => {
 		const source = '<span className="text-[13px]">chrome</span>';
 		const result = convertSourceFontSizes("apps/web/src/components/shared/Sample.tsx", source, { mfs: true });

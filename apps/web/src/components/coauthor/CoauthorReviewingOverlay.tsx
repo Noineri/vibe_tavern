@@ -91,7 +91,7 @@ export function CoauthorReviewingOverlay({
           reads against the page background, not the editor. */}
       <div className="shrink-0 px-3 pt-3">
         <div className="glass-blur rounded-md border border-border/70 bg-glass-bg px-3 py-2">
-          <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{summary}</div>
         </div>
       </div>
       {/* Body diff (profile/greeting) — shown iff proposed. Each section takes
