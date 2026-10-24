@@ -149,6 +149,10 @@ function makeApi(options: { profiles?: ImagePromptProfileValue[]; activeProfileI
   };
 }
 
+// Row selection rides the primitive's pointer-down (a tap selects; drag starts
+// from the handle only) — fireEvent.click never fires pointerdown, so profile
+// row taps below use pointerDown. Clicks on buttons and detail disclosures
+// keep fireEvent.click: those are real click handlers.
 function Harness({
   api,
   active = true,
@@ -218,6 +222,22 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     expect(renderDrillDown).toHaveBeenCalled();
   });
 
+  test("live profile row carries the status-slot star; titles wrap instead of truncating", async () => {
+    // Behavior change (was: an active-only 6px dot + `truncate` title in a
+    // tooltip; now: ★ lives in the primitive's status slot and the title
+    // wraps (`break-words`) per MASTER_LIST_PRIMITIVE_PLAN row rules).
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-profile-row-p1")).toBeTruthy());
+    const row = getByTestId("image-prompt-profile-row-p1");
+    expect(row.textContent).toContain("★");
+    expect(row.querySelector(".truncate")).toBeNull();
+    expect(row.querySelector(".break-words")).toBeTruthy();
+    // Every profile row (pinned Default included) keeps its drag handle.
+    expect(row.querySelector('[aria-label="drag"]')).toBeTruthy();
+    expect(getByTestId("image-prompt-profile-row-default").querySelector('[aria-label="drag"]')).toBeNull();
+  });
+
   test("detail renders the exact row inventory (8 modes + negative + assist) with per-row family dropdowns", async () => {
     const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
     const { getByTestId } = render(<Harness api={api} />);
@@ -252,7 +272,7 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     // Initial selection follows the live pointer.
     await waitFor(() => expect(api.getProfile).toHaveBeenCalledWith("p2"));
     await act(async () => {
-      fireEvent.click(getByTestId("image-prompt-profile-row-default"));
+      fireEvent.pointerDown(getByTestId("image-prompt-profile-row-default"));
     });
     await waitFor(() => expect(api.setActive).toHaveBeenCalledWith(null));
   });
@@ -368,7 +388,7 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
       fireEvent.change(editor, { target: { value: "unsaved edit" } });
     });
     await act(async () => {
-      fireEvent.click(getByTestId("image-prompt-profile-row-p2"));
+      fireEvent.pointerDown(getByTestId("image-prompt-profile-row-p2"));
     });
     await waitFor(() => expect(queryByText("Discard changes?")).toBeTruthy());
     // Cancel keeps the dirty draft; confirm applies the switch.
@@ -474,7 +494,7 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     const { getByTestId, queryByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-profile-row-default")).toBeTruthy());
     await act(async () => {
-      fireEvent.click(getByTestId("image-prompt-profile-row-default"));
+      fireEvent.pointerDown(getByTestId("image-prompt-profile-row-default"));
     });
     await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
     await openRow(getByTestId, "assist");

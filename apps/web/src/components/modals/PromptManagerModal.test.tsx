@@ -2078,7 +2078,10 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     // Click Alpha row to load its detail
     await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
     const alphaEl = within(view.baseElement).getByText("Alpha");
-    await act(async () => { fireEvent.click(alphaEl); });
+    // Behavior change (was: row selected on click; now: the master-list
+    // primitive selects on pointer-down per MASTER_LIST_PRIMITIVE_PLAN row
+    // rules — drag starts from the handle only, a tap selects).
+    await act(async () => { fireEvent.pointerDown(alphaEl); });
     await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
     // Detail shows the service editor: family accordion headings render
     // collapsed by default; opening them reveals the field textareas.
