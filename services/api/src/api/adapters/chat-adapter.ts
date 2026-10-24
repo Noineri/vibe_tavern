@@ -18,6 +18,7 @@ import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate
 import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, CoauthorModule } from "@vibe-tavern/api-contracts";
 import { isTextMime } from "@vibe-tavern/domain";
 import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
+import { resolveChatImageRoute } from "./chat-image-route.js";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -127,6 +128,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 		this.sessionRuntime.chatRuntime.renameBranch(brandId<ChatId>(chatId), branchId, label);
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
+
+	getImageRoute = (chatId: string) =>
+		resolveChatImageRoute(this.stores, chatId, (id) => this.resolveEffectiveProfileOrThrow({ chatId: id }));
 
 	/** STT_PLAN ST-6: resolve the voice-message transcription seam. Pointer in
 	 *  ui_settings wins; the isDefault STT profile is the fallback (the ST-1

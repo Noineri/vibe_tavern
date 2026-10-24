@@ -94,6 +94,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
+    .get("/api/chats/:chatId/image-route", async (c) => {
+      return c.json(await runtime.getImageRoute(c.req.param("chatId")));
+    })
     .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.createChatForCharacter(body.characterId, body.mode));

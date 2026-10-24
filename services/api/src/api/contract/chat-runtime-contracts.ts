@@ -1,5 +1,5 @@
 import type { CoauthorEditorState, RegenerateOverride } from "@vibe-tavern/api-contracts";
-import type { Attachment } from "@vibe-tavern/domain";
+import type { Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { MessageResponse, VariantResponse } from "./session-types.js";
 
 /** Validated HTTP send body retained by both live-send adapter methods. */
@@ -14,6 +14,7 @@ export interface ChatSendBody {
 
 /** Message mutation segment of the route/runtime contract. */
 export interface ChatMessageRuntimeApi {
+  getImageRoute: (chatId: string) => Promise<{ route: ImageRoute }>;
   sendMessage: (chatId: string, body: ChatSendBody, signal?: AbortSignal) => Promise<MessageResponse>;
   sendMessageStream: (chatId: string, body: ChatSendBody, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;

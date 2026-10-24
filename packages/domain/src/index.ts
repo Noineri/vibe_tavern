@@ -2,6 +2,7 @@ export * from "./agent-plan.js";
 export * from "./agent-thread.js";
 export * from "./api-types.js";
 export * from "./attachment.js";
+export * from "./image-route.js";
 // builtin-experiences.js is deliberately NOT re-exported from this barrel: its
 // source strings are fat HTML/JS blobs (Conversation/Catch visuals) that would
 // land in every consumer of the barrel — most critically the generated
