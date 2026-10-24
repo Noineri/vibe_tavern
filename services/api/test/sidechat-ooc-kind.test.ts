@@ -24,9 +24,9 @@
  * rejected.
  *
  * 5. The skill roots (SC-5): the built-in root resolves through the asset
- *    ladder to the shipped `agent-sidechat/skills` directory and scans EMPTY
- *    (no skill is authored — SC-5 ships the root, not content), and the user
- *    root derives as `<dataDir>/agent-sidechat/skills`.
+ *    ladder to the shipped `agent-sidechat/skills` directory and scans the
+ *    three built-in skills BS-3 authored (SC-5 shipped the root empty), and
+ *    the user root derives as `<dataDir>/agent-sidechat/skills`.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -236,17 +236,19 @@ describe("the sidechat_ooc_base asset — SC-4a pin", () => {
 // ─── The skill roots (SC-5) ──────────────────────────────────────────────
 
 describe("the sidechat skill roots (SC-5)", () => {
-  test("the built-in root resolves through the asset ladder and scans EMPTY — no skill is authored", async () => {
+  test("the built-in root resolves through the asset ladder and scans the BS-3 built-in skills", async () => {
     const root = await resolveSidechatSkillsRoot();
     // The root is the shipped assets directory (the locator-README climb the
     // script kind's root established), not a data dir and not another kind's
     // root.
     expect(root.replace(/\\/g, "/")).toMatch(/assets\/agent-sidechat\/skills$/);
-    // SC-5 ships the ROOT, not content: the catalog scans empty. The moment
-    // someone authors `<skill-id>/SKILL.md` here it appears — until then a
-    // pinned skill simply does not resolve (never fatal).
+    // Behavior change: was an EMPTY scan (SC-5 shipped the root, not
+    // content) → now the three skills BS-3 authored, basis:
+    // BUILTIN_AGENT_SKILLS_PLAN BS-3. Each `<skill-id>/SKILL.md` here appears
+    // as a built-in entry; a manifest error would land in `errors`.
     const { entries, errors } = await buildSkillCatalog([{ path: root, source: "builtin" }]);
-    expect(entries).toEqual([]);
+    expect(entries.map((e) => e.id).sort()).toEqual(["character-analysis", "continuity-check", "language-study"]);
+    expect(entries.every((e) => e.source === "builtin")).toBe(true);
     expect(errors).toEqual([]);
   });
 
