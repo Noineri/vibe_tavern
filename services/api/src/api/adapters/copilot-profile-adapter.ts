@@ -35,6 +35,21 @@ export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 		return [builtin, ...userRows.map(copilotProfileRowToWire)];
 	};
 
+	/** Rewrite one kind's user profiles' manual list order (ML-6) and serve
+	 *  the refreshed merged list — the same envelope `listCopilotProfiles`
+	 *  returns (seed first, then user rows in the new stored order). */
+	reorderCopilotProfiles = async (
+		kind: string,
+		updates: Array<{ id: string; sortOrder: number }>,
+	): Promise<CopilotProfile[]> => {
+		const descriptor = this.requireKind(kind);
+		const [builtin, userRows] = await Promise.all([
+			resolveBuiltinCopilotProfile(descriptor.id),
+			this.stores.copilotProfiles.reorder(descriptor.id, updates),
+		]);
+		return [builtin, ...userRows.map(copilotProfileRowToWire)];
+	};
+
 	createCopilotProfile = async (input: CopilotProfileCreate): Promise<CopilotProfile> => {
 		// The create schema defaults a missing kind to 'experience' (the current
 		// web client sends none), so `agentKind` is always a concrete string here.

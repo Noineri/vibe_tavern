@@ -15,6 +15,7 @@ import {
   copilotToolSetSchema,
   copilotProfileSchema,
   copilotProfileCreateSchema,
+  reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
   sidechatOocToolSetSchema,
   SIDECHAT_OOC_TOOL_KEYS,
@@ -825,6 +826,25 @@ describe("copilotProfileSchema (CP-1)", () => {
       agentKind: "experience",
     };
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
+  });
+});
+
+describe("reorderCopilotProfilesSchema (ML-6)", () => {
+  test("accepts an id + sortOrder update list", () => {
+    const payload = { updates: [{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }] };
+    expect(reorderCopilotProfilesSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts an empty updates array (no-op reorder)", () => {
+    expect(reorderCopilotProfilesSchema.parse({ updates: [] })).toEqual({ updates: [] });
+  });
+
+  test("rejects a body without the updates array", () => {
+    expect(() => reorderCopilotProfilesSchema.parse({})).toThrow();
+  });
+
+  test("rejects an update entry missing sortOrder", () => {
+    expect(() => reorderCopilotProfilesSchema.parse({ updates: [{ id: "p1" }] })).toThrow();
   });
 });
 

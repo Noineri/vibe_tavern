@@ -191,3 +191,124 @@ describe("CopilotProfileStore agent_kind (AS-3)", () => {
     expect(raw?.agentKind).toBe("fake-kind");
   });
 });
+
+// ─── ML-6: stored order (within one agent kind's list) ───────────────────
+
+// The ML-6 order lives WITHIN one kind's list (the master list is per
+// kind — the plan's row): append, reorder and the total-order fallbacks are
+// the ML-5 CoauthorModuleStore rules, scoped by the kind dimension.
+
+describe("CopilotProfileStore — stored order (ML-6)", () => {
+  test("create appends at the end of the kind's list; list returns creation order", async () => {
+    const { store } = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    expect(a.sortOrder).toBe(0);
+    expect(b.sortOrder).toBe(1);
+    expect(c.sortOrder).toBe(2);
+    expect((await store.list("experience")).map((p) => p.name)).toEqual(["A", "B", "C"]);
+  });
+
+  test("reorder rewrites sort_order; the kind's list follows the stored order", async () => {
+    const { store } = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    const list = await store.reorder("experience", [
+      { id: c.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+      { id: b.id, sortOrder: 2 },
+    ]);
+    expect(list.map((p) => p.name)).toEqual(["C", "A", "B"]);
+    expect((await store.list("experience")).map((p) => p.name)).toEqual(["C", "A", "B"]);
+  });
+
+  test("create after a reorder appends at the END (max+1, not old position)", async () => {
+    const { store } = await mkStore();
+    const a = await store.create({ ...PAYLOAD, name: "A" });
+    const b = await store.create({ ...PAYLOAD, name: "B" });
+    await store.reorder("experience", [
+      { id: b.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+    ]);
+    const c = await store.create({ ...PAYLOAD, name: "C" });
+    expect(c.sortOrder).toBe(2);
+    expect((await store.list("experience")).map((p) => p.name)).toEqual(["B", "A", "C"]);
+  });
+
+  test("equal sort_order falls back to createdAt ASC, then id ASC (total order)", async () => {
+    // Rows the order does not know (or rows tied by a bulk backfill) must not
+    // shuffle nondeterministically: the store's list ordering stays total via
+    // created_at → id fallbacks. Flattening sort_order back to the migration
+    // default simulates such rows (the fixed testClock pins createdAt equal,
+    // so the id tiebreak is exercised too).
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    const store = new CopilotProfileStore(db, { clock: testClock, idGenerator: testIdGen });
+    await store.create({ ...PAYLOAD, name: "A" });
+    await store.create({ ...PAYLOAD, name: "B" });
+    await store.create({ ...PAYLOAD, name: "C" });
+    await db
+      .update(copilotProfiles)
+      .set({ sortOrder: 0 })
+      .run();
+    const all = await store.list("experience");
+    expect(all.every((p) => p.sortOrder === 0)).toBe(true);
+    expect(all.map((p) => p.name)).toEqual(["A", "B", "C"]); // same clock ⇒ id ASC
+  });
+
+  test("createdAt breaks a sort_order tie before id is consulted", async () => {
+    // Distinct createdAt values (a stepped clock) decide the order when
+    // sort_order ties, matching the backfill's ORDER BY created_at ASC, id ASC.
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    let tick = 0;
+    const steppedClock: StoreClock = {
+      now() {
+        tick += 1;
+        return `2026-06-06T00:00:${String(tick).padStart(2, "0")}.000Z`;
+      },
+    };
+    const store = new CopilotProfileStore(db, { clock: steppedClock, idGenerator: testIdGen });
+    await store.create({ ...PAYLOAD, name: "first-created" });
+    await store.create({ ...PAYLOAD, name: "second-created" });
+    await db
+      .update(copilotProfiles)
+      .set({ sortOrder: 0 })
+      .run();
+    const all = await store.list("experience");
+    expect(all.map((p) => p.name)).toEqual(["first-created", "second-created"]);
+  });
+
+  test("append max+1 is scoped per kind: another kind's first profile starts at 0", async () => {
+    // The order lives within one kind's list — a script profile appended
+    // after two experience profiles takes the SCRIPT list's next slot (0),
+    // not the global max+1, and the experience order is untouched.
+    const { store } = await mkStore();
+    await store.create({ ...PAYLOAD, name: "Exp A" });
+    await store.create({ ...PAYLOAD, name: "Exp B" });
+    const script = await store.create({ ...PAYLOAD, name: "Script A", agentKind: "script" });
+    expect(script.sortOrder).toBe(0);
+    expect((await store.list("experience")).map((p) => p.name)).toEqual(["Exp A", "Exp B"]);
+    expect((await store.list("script")).map((p) => p.name)).toEqual(["Script A"]);
+  });
+
+  test("reorder(kind) ignores another kind's ids (no cross-kind position writes)", async () => {
+    // The update's WHERE pins BOTH id and agent_kind: an update entry naming
+    // another kind's row is a no-op — an id list can never rewrite another
+    // kind's positions — and the returned list is the requested kind's only.
+    const { store } = await mkStore();
+    const expA = await store.create({ ...PAYLOAD, name: "Exp A" });
+    await store.create({ ...PAYLOAD, name: "Exp B" });
+    const script = await store.create({ ...PAYLOAD, name: "Script A", agentKind: "script" });
+    const list = await store.reorder("experience", [
+      { id: expA.id, sortOrder: 5 }, // out-of-band position is fine (total order still holds)
+      { id: script.id, sortOrder: 0 }, // foreign kind — must be ignored
+    ]);
+    expect(list.map((p) => p.name)).toEqual(["Exp B", "Exp A"]); // experience rows only
+    expect(list.every((p) => p.agentKind === "experience")).toBe(true);
+    const scriptAfter = await store.getById(script.id);
+    expect(scriptAfter?.sortOrder).toBe(0); // untouched
+  });
+});

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { CopilotProfileRuntimeApi } from "../contract/runtime-api.js";
 
@@ -14,6 +15,11 @@ import type { CopilotProfileRuntimeApi } from "../contract/runtime-api.js";
  *    stored). `?kind=` selects the kind (default `'experience'`); an unknown
  *    kind is a 400 carrying `UNKNOWN_AGENT_KIND`.
  *  - `POST   /api/copilot/profiles`              — create a user profile.
+ *  - `PATCH  /api/copilot/profiles/reorder`      — rewrite ONE kind's user
+ *    profiles' manual list order (ML-6); `?kind=` selects the kind (default
+ *    `'experience'`, like the GET). Registered BEFORE the `:profileId` PATCH
+ *    so the literal "reorder" segment is matched here, not swallowed as a
+ *    profile id (Hono matches registration order).
  *  - `PATCH  /api/copilot/profiles/:profileId`   — partial update; the built-in
  *    seed (id "builtin") is rejected as read-only (400).
  *  - `DELETE /api/copilot/profiles/:profileId`   — delete a user profile; the
@@ -29,6 +35,14 @@ export function createCopilotProfileRoutes(runtime: CopilotProfileRuntimeApi) {
 		.post("/api/copilot/profiles", zValidator("json", schemas.copilotProfileCreateSchema), async (c) => {
 			return c.json(await runtime.createCopilotProfile(c.req.valid("json")));
 		})
+		.patch(
+			"/api/copilot/profiles/reorder",
+			zValidator("query", z.object({ kind: z.string().min(1).default("experience") })),
+			zValidator("json", schemas.reorderCopilotProfilesSchema),
+			async (c) => {
+				return c.json({ profiles: await runtime.reorderCopilotProfiles(c.req.valid("query").kind, c.req.valid("json").updates) });
+			},
+		)
 		.patch(
 			"/api/copilot/profiles/:profileId",
 			zValidator("json", schemas.copilotProfileUpdateSchema),

@@ -665,3 +665,14 @@ export type CopilotProfileCreate = z.input<typeof copilotProfileCreateSchema>;
 export const copilotProfileUpdateSchema = copilotProfileCreateSchema.omit({ agentKind: true }).partial();
 
 export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;
+
+/** Manual list order rewrite (ML-6): one update per user-profile row, applied
+ *  in a single transaction. The kind rides the route's `?kind=` param (like
+ *  the GET — the order lives within one kind's list). Same shape as
+ *  `reorderCoauthorModulesSchema`. */
+export const reorderCopilotProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

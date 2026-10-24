@@ -42,6 +42,20 @@ export async function updateCopilotProfile(
   return unwrapRpc(response);
 }
 
+/** `PATCH /api/copilot/profiles/reorder?kind=` — rewrite ONE kind's user
+ *  profiles' manual list order (ML-6). Mirrors `reorderCoauthorModules'`
+ *  payload ({ updates: [{ id, sortOrder }] } via PATCH) with the kind riding
+ *  the query param, like `listCopilotProfiles`; the response is the refreshed
+ *  merged list — the same envelope `listCopilotProfiles` unwraps. */
+export async function reorderCopilotProfiles(
+  kind: string,
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<CopilotProfile[]> {
+  const response = await client.api.copilot.profiles.reorder.$patch({ query: { kind }, json: { updates } });
+  const data = await unwrapRpc(response);
+  return data.profiles;
+}
+
 /** `DELETE /api/copilot/profiles/:profileId` — delete a user profile (built-in id → 400). */
 export async function deleteCopilotProfile(profileId: string): Promise<void> {
   const response = await client.api.copilot.profiles[":profileId"].$delete({

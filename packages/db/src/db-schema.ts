@@ -249,6 +249,12 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
+  // Manual list order (drag-to-reorder, ML-6), WITHIN one agent kind (the
+  // master list is per kind — the plan's ML-6 row). New profiles append at
+  // the end of their kind's list; the migration backfills existing rows to
+  // created_at ASC per kind. Same shape as proxy_profiles /
+  // coauthor_modules sort_order.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

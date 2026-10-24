@@ -335,6 +335,7 @@ export {
   copilotProfileListSchema,
   copilotProfileCreateSchema,
   copilotProfileUpdateSchema,
+  reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
   SCRIPT_AGENT_TOOL_KEYS,
   SIDECHAT_OOC_TOOL_KEYS,
