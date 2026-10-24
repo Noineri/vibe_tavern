@@ -70,6 +70,7 @@ export function CoauthorSkillModal() {
 	const remove = useCoauthorSkillStore((s) => s.remove);
 	const saveNew = useCoauthorSkillStore((s) => s.saveNew);
 	const saveExisting = useCoauthorSkillStore((s) => s.saveExisting);
+	const reorder = useCoauthorSkillStore((s) => s.reorder);
 
 	const adapter: SkillLibraryAdapter = {
 		labels: LABELS,
@@ -98,6 +99,9 @@ export function CoauthorSkillModal() {
 		// The editor's save: null id creates, a set id updates (the ONE
 		// adapter seam — the modal never touches the clients directly).
 		save: (id, input) => (id ? saveExisting(id, input) : saveNew(input)),
+		// The list's drag persist (ML-9): the store adopts the refreshed
+		// catalog — the modal never touches the clients directly.
+		reorder,
 		referenceGuard: {
 			findReferencingModules: async (skillId) => {
 				const modules = await listCoauthorModulesAction();

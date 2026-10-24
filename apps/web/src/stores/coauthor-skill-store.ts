@@ -20,6 +20,7 @@ import {
   deleteCoauthorSkill,
   createCoauthorSkill,
   updateCoauthorSkill,
+  reorderCoauthorSkills,
 } from "../api/skill-api.js";
 
 export interface CoauthorSkillState {
@@ -48,6 +49,11 @@ export interface CoauthorSkillActions {
    *  `updateCoauthorSkill` (rewrites only that skill's SKILL.md) and
    *  refreshes the catalog. Returns the FRESH entry. */
   saveExisting: (id: string, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+  /** Rewrite the catalog's manual list order (ML-9) and adopt the reorder
+   *  response (the server returns the refreshed merged catalog — the
+   *  copilot-profile-store pattern, no second fetch). Built-in and user
+   *  skills order together in the one list this store holds. */
+  reorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 }
 
 export type CoauthorSkillStore = CoauthorSkillState & CoauthorSkillActions;
@@ -91,6 +97,11 @@ export const useCoauthorSkillStore = create<CoauthorSkillStore>()((set, get) => 
     const saved = await updateCoauthorSkill(id, input);
     await get().load();
     return saved;
+  },
+
+  reorder: async (updates) => {
+    const { entries, errors } = await reorderCoauthorSkills(updates);
+    set({ entries, errors });
   },
 }));
 

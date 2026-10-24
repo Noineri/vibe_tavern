@@ -17,6 +17,7 @@ import {
   deleteCopilotSkill,
   createCopilotSkill,
   updateCopilotSkill,
+  reorderCopilotSkills,
 } from "../api/copilot-skill-api.js";
 
 /** One kind's cached skills library. */
@@ -54,6 +55,11 @@ export interface CopilotSkillActions {
    *  to `updateCopilotSkill` and refreshes that kind's catalog. Returns the
    *  FRESH entry. */
   saveExisting: (kind: AgentKind, id: string, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+  /** Rewrite ONE kind's catalog manual list order (ML-9) and adopt the
+   *  reorder response (the server returns the refreshed merged catalog —
+   *  the copilot-profile-store pattern, no second fetch). Built-in and user
+   *  skills order together in the one list this kind's catalog holds. */
+  reorder: (kind: AgentKind, updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 }
 
 export type CopilotSkillStore = CopilotSkillState & CopilotSkillActions;
@@ -104,6 +110,13 @@ export const useCopilotSkillStore = create<CopilotSkillStore>()((set, get) => ({
     const saved = await updateCopilotSkill(kind, id, input);
     await get().load(kind);
     return saved;
+  },
+
+  reorder: async (kind, updates) => {
+    const { entries, errors } = await reorderCopilotSkills(kind, updates);
+    set((s) => ({
+      catalogs: { ...s.catalogs, [kind]: { entries, errors, hasLoaded: true } },
+    }));
   },
 }));
 

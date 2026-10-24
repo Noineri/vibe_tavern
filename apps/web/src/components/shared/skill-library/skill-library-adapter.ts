@@ -165,6 +165,8 @@ export interface SkillLibraryAdapter {
 	 * kind-scoped store actions; both refresh the catalog before resolving.
 	 */
 	save: (id: string | null, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+	// ML-9 drag persist seam: FULL new order, the store adopts the refreshed catalog.
+	reorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 	/** Optional delete reference guard — absent means every delete goes
 	 *  straight to a plain confirm (the agent copilot libraries have no
 	 *  module bindings to consult). */

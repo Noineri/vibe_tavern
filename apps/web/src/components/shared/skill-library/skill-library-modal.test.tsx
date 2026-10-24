@@ -36,7 +36,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillLibraryAdapter, SkillLibraryTestids } from "./skill-library-adapter.js";
 
@@ -47,6 +47,8 @@ const realConfirmCloseModal = await import("../confirm-close-modal.js");
 const realAnimatedDisclosure = await import("../AnimatedDisclosure.js");
 const realAiAssistantModal = await import("../AiAssistantModal.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
+const realDndKit = await import("@dnd-kit/core");
+import type { ComponentProps } from "react";
 
 mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
@@ -57,9 +59,26 @@ mock.module("../../../hooks/use-mobile.js", () => ({
 	...realUseMobile,
 	useIsMobile: () => false,
 }));
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
+mock.module("@dnd-kit/core", () => ({
+	...realDndKit,
+	DndContext: (props: RealDndContextProps) => {
+		dndHandlers = props;
+		return <RealDndContext {...props} />;
+	},
+	DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
+}));
 
 // MasterDetailModal passthrough (children rendered flat, props captured so
 // the suite can pin the header/footer wiring + parentBack forwarding).
+// Co-load contract (ML-1 rework, ML-8 rework): the ...real spread supplies
+// the REAL MasterDetailMobileDrillDown (with its master_detail_open aria),
+// an aria-less stub poisons master-list.test.tsx caret pins (mock.module is
+// process-global, last-write-wins). useMasterDetail stays shape-identical
+// with master-list.test.tsx (isDetailOpen: false).
 type ModalProps = {
 	isOpen: boolean;
 	onClose: () => void;
@@ -86,8 +105,7 @@ mock.module("../MasterDetailModal.js", () => ({
 			</div>
 		);
 	},
-	MasterDetailMobileDrillDown: () => null,
-	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
+	useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
 // ConfirmCloseModal passthrough (pins the dirty-guard wiring: the guard
@@ -246,11 +264,22 @@ const importTreeMock = mock();
 const removeMock = mock();
 const readContentMock = mock();
 const findReferencingModulesMock = mock();
+const reorderMock = mock();
 // The create/update seam (AP-23d): null id creates (mirroring the
 // server-side id derivation with a fixed fresh id), a set id updates in
 // place — the in-place catalog refresh the stores perform on save.
 const saveMock = mock();
 const fakeEntries: SkillCatalogEntryDto[] = [];
+let serverEntries: SkillCatalogEntryDto[] = [];
+function syncFakeFromServer() {
+	fakeEntries.length = 0;
+	fakeEntries.push(...serverEntries);
+}
+function applyServerReorder(updates: Array<{ id: string; sortOrder: number }>) {
+	const rank = new Map(updates.map((u) => [u.id, u.sortOrder]));
+	serverEntries = [...serverEntries].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+	syncFakeFromServer();
+}
 
 function makeAdapter(overrides?: Partial<SkillLibraryAdapter>): SkillLibraryAdapter {
 	return {
@@ -264,6 +293,7 @@ function makeAdapter(overrides?: Partial<SkillLibraryAdapter>): SkillLibraryAdap
 		remove: removeMock,
 		readContent: readContentMock,
 		save: saveMock,
+		reorder: reorderMock,
 		...overrides,
 	};
 }
@@ -273,10 +303,13 @@ function renderModal(adapter?: SkillLibraryAdapter, parentBack?: { label: string
 }
 
 beforeEach(() => {
-	fakeEntries.length = 0;
-	fakeEntries.push(BUILTIN_ENTRY, USER_ENTRY);
+	dndHandlers = null;
+	serverEntries = [BUILTIN_ENTRY, USER_ENTRY];
+	syncFakeFromServer();
 	loadMock.mockReset();
-	loadMock.mockResolvedValue(undefined);
+	loadMock.mockImplementation(async () => { syncFakeFromServer(); });
+	reorderMock.mockReset();
+	reorderMock.mockImplementation(async (updates: Array<{ id: string; sortOrder: number }>) => { applyServerReorder(updates); });
 	importTreeMock.mockReset();
 	importTreeMock.mockResolvedValue(["my-style"]);
 	removeMock.mockReset();
@@ -296,9 +329,10 @@ beforeEach(() => {
 			manifestPath: `${savedId}/SKILL.md`,
 			shadowsBuiltin: false,
 		};
-		const ix = fakeEntries.findIndex((e) => e.id === savedId);
-		if (ix >= 0) fakeEntries[ix] = saved;
-		else fakeEntries.push(saved);
+		const ix = serverEntries.findIndex((e) => e.id === savedId);
+		if (ix >= 0) serverEntries[ix] = saved;
+		else serverEntries.push(saved);
+		syncFakeFromServer();
 		return saved;
 	});
 	lastModalProps = null;
@@ -332,8 +366,9 @@ describe("skill-library-modal — detail (mockup §6)", () => {
 		await waitFor(() => expect(getByText("My Style")).toBeDefined());
 		fireEvent.pointerDown(getByTestId("test-row-my-style"));
 
-		// Tag + description.
-		expect(getByText("OWN")).toBeDefined();
+		// Tag + description (scoped to the detail: the ML-9 row badge shows
+		// the same source word in the master list now — was: bare getByText).
+		expect(within(getByTestId("md-detail")).getByText("OWN")).toBeDefined();
 		// Lazy content: one read for the opened detail.
 		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("my-style"));
 		expect(readContentMock).toHaveBeenCalledTimes(1);
@@ -354,7 +389,7 @@ describe("skill-library-modal — detail (mockup §6)", () => {
 		await waitFor(() => expect(getByText("Grill Me")).toBeDefined());
 		fireEvent.pointerDown(getByTestId("test-row-grill-me"));
 		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("grill-me"));
-		expect(getByText("BUILT_IN")).toBeDefined();
+		expect(within(getByTestId("md-detail")).getByText("BUILT_IN")).toBeDefined();
 		expect(queryByText("DELETE")).toBeNull();
 		// The shared footer still renders Close (scoped: the modal mock
 		// itself also renders a close button outside the footer).
@@ -659,6 +694,99 @@ describe("skill-library-modal — dirty guard (AP-23d)", () => {
 		await waitFor(() => expect(getByTestId("confirm-close")).toBeDefined());
 		fireEvent.click(getByTestId("confirm-close-ok"));
 		await waitFor(() => expect(queryByTestId("test-editor-name")).toBeNull());
-		expect(getByText("BUILT_IN")).toBeDefined();
+		expect(within(getByTestId("md-detail")).getByText("BUILT_IN")).toBeDefined();
+	});
+});
+
+describe("skill-library-modal — drag reorder (ML-9)", () => {
+	// The ProxyManagerModal.reorder.test.tsx pattern: the captured-handler
+	// drag-end boundary, the arrayMove payload asserted, the optimistic DOM,
+	// the reload proof (unmount + fresh mount reads the server order), and
+	// the rejected-persist rollback. Built-in and user skills order together
+	// in the one list; no pinned rows (every stored skill keeps a position).
+	function rowOrder(view: ReturnType<typeof render>): string[] {
+		return Array.from(view.baseElement.querySelectorAll('[data-testid^="test-row-"]'))
+			.map((el) => el.getAttribute("data-testid")!);
+	}
+
+	function dragEnd(activeId: string, overId: string): void {
+		expect(dndHandlers).toBeTruthy();
+		const endEvent = { active: { id: activeId }, over: { id: overId } } as unknown as Parameters<
+			NonNullable<RealDndContextProps["onDragEnd"]>
+		>[0];
+		act(() => {
+			dndHandlers!.onDragEnd!(endEvent);
+		});
+	}
+
+	async function openAndFlushRows() {
+		const view = renderModal();
+		await waitFor(() => expect(view.getByTestId("test-row-my-style")).toBeDefined());
+		return view;
+	}
+
+	it("built-in and user skills share one list with a handle per row, wrap titles, and status-slot badges", async () => {
+		const view = await openAndFlushRows();
+		// One list in stored order: built-in first, user second.
+		expect(rowOrder(view)).toEqual(["test-row-grill-me", "test-row-my-style"]);
+		// A handle per row — no pinned rows here (nothing is pinned by design).
+		expect(view.getAllByLabelText("drag")).toHaveLength(2);
+		// Per-row badges in the status slot (was: no badge in the rows — the
+		// source tag lived in the detail only).
+		expect(within(view.getByTestId("test-row-grill-me")).getByText("BUILT_IN")).toBeDefined();
+		expect(within(view.getByTestId("test-row-my-style")).getByText("OWN")).toBeDefined();
+		// Titles wrap (was: truncate): no ellipsis anywhere up the row chain.
+		for (const [rowId, name] of [["test-row-grill-me", "Grill Me"], ["test-row-my-style", "My Style"]] as const) {
+			const title = within(view.getByTestId(rowId)).getByText(name);
+			expect(title.classList.contains("truncate")).toBe(false);
+			expect(title.classList.contains("break-words")).toBe(true);
+		}
+		// Selecting marks the row by background + accent border (was:
+		// border-l-2 without the accent text).
+		fireEvent.pointerDown(view.getByTestId("test-row-my-style"));
+		await waitFor(() => expect(view.getByTestId("test-row-my-style").classList.contains("bg-accent-dim")).toBe(true));
+		expect(view.getByTestId("test-row-my-style").classList.contains("border-l-accent")).toBe(true);
+		expect(view.getByTestId("test-row-my-style").classList.contains("text-accent-t")).toBe(true);
+		view.unmount();
+	});
+
+	it("dragging a skill persists the arrayMove payload and the order survives a remount", async () => {
+		const view = await openAndFlushRows();
+		expect(rowOrder(view)).toEqual(["test-row-grill-me", "test-row-my-style"]);
+
+		dragEnd("grill-me", "my-style");
+		await act(async () => {});
+		expect(reorderMock).toHaveBeenCalledTimes(1);
+		expect(reorderMock.mock.calls[0]?.[0]).toEqual([
+			{ id: "my-style", sortOrder: 0 },
+			{ id: "grill-me", sortOrder: 1 },
+		]);
+		// Optimistic order shows immediately (the fake reorder re-syncs the
+		// entries the modal reads — the store-adopts-response pattern).
+		expect(rowOrder(view)).toEqual(["test-row-my-style", "test-row-grill-me"]);
+		view.unmount();
+
+		// Reload: a fresh mount lists the server-persisted order.
+		const reloaded = await openAndFlushRows();
+		expect(rowOrder(reloaded)).toEqual(["test-row-my-style", "test-row-grill-me"]);
+		reloaded.unmount();
+	});
+
+	it("a rejected persist rolls back to the committed order", async () => {
+		reorderMock.mockImplementationOnce(async () => { throw new Error("nope"); });
+		const view = await openAndFlushRows();
+
+		dragEnd("grill-me", "my-style");
+		await waitFor(() => expect(reorderMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(rowOrder(view)).toEqual(["test-row-grill-me", "test-row-my-style"]));
+		view.unmount();
+	});
+
+	it("tapping a row selects it and opens the detail (drag starts from the handle only)", async () => {
+		const view = await openAndFlushRows();
+		fireEvent.pointerDown(view.getByTestId("test-row-my-style"));
+		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("my-style"));
+		expect(within(view.getByTestId("md-detail")).getByText("OWN")).toBeDefined();
+		view.unmount();
 	});
 });

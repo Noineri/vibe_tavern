@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
 	MasterDetailModal,
 	MasterDetailFooter,
-	MasterDetailMobileDrillDown,
 	type MasterDetailParentBack,
 } from "../MasterDetailModal.js";
+import { MasterList } from "../master-list/master-list.js";
+import { SortableMasterListPhoneRow } from "../master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../master-list/master-list-overlay-row.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { ConfirmCloseModal } from "../confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
@@ -14,7 +17,7 @@ import { useT } from "../../../i18n/context.js";
 import type { TDynamic } from "../../../i18n/locale-helpers.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
-import { lblCls, listHeaderCls, rowSecondCls, rowTitleCls } from "../../../lib/field-tokens.js";
+import { lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillLibraryAdapter, SkillLibraryLabels, SkillLibraryTestids } from "./skill-library-adapter.js";
 import { BLANK_SKILL_DRAFT, SkillEditor, type SkillDraft } from "./skill-editor.js";
@@ -356,6 +359,7 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 				masterContent={({ openDetail }) => (
 					<SkillList
 						entries={adapter.entries}
+						reorder={adapter.reorder}
 						isLoading={adapter.isLoading}
 						hasLoaded={adapter.hasLoaded}
 						selectedId={selectedId}
@@ -455,6 +459,7 @@ export function SkillLibraryModal({ isOpen, onClose, adapter, parentBack }: {
 
 interface SkillListProps {
 	entries: SkillCatalogEntryDto[];
+	reorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 	isLoading: boolean;
 	hasLoaded: boolean;
 	selectedId: string | null;
@@ -467,21 +472,39 @@ interface SkillListProps {
 	isImporting: boolean;
 }
 
-function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids, t, onSelect, onNew, onImport, isImporting }: SkillListProps) {
+function SkillList({ entries, reorder, isLoading, hasLoaded, selectedId, labels, testids, t, onSelect, onNew, onImport, isImporting }: SkillListProps) {
 	if (isLoading && !hasLoaded) {
 		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t(labels.loading)}</div>;
 	}
-	// Mockup §6: rows are name + one-line description (no id, no actions).
-	// «+ New skill» docks above the import at the list bottom (mockup §8); the
-	// empty library (mockup §7) shows the explanation + import CTA instead of
-	// the list.
+	// Row anatomy lives in shared/master-list: handle, status slot, wrapping
+	// title, overlay, phone drill-down row. This list supplies data + slots.
+	// Title = the name (wraps, never cut); second line = the description;
+	// status = the built-in/user badge (the row rules); persist = arrayMove
+	// + adapter.reorder (the ML-7 backend, adopted by the store). Built-in
+	// and user skills order together in the one list; no pinned rows.
 	return (
-		<div className="flex min-h-0 flex-1 flex-col pt-5 pb-2.5">
-			<div className={cn(listHeaderCls, "mb-1.5 shrink-0 px-4")}>
-				{t(labels.listLabel)}
-			</div>
-			{entries.length === 0 ? (
-				<div className="flex flex-1 items-center justify-center px-2">
+		<MasterList<SkillCatalogEntryDto>
+			items={entries}
+			getId={(skill) => skill.id}
+			onReorderItems={(activeId, overId, currentItems) => {
+				const fromIdx = currentItems.findIndex((skill) => skill.id === activeId);
+				const toIdx = currentItems.findIndex((skill) => skill.id === overId);
+				if (fromIdx === -1 || toIdx === -1) {
+					return { optimisticItems: currentItems, persist: () => {} };
+				}
+				const reordered = arrayMove(currentItems, fromIdx, toIdx);
+				return {
+					optimisticItems: reordered,
+					persist: () => reorder(reordered.map((skill, i) => ({ id: skill.id, sortOrder: i }))),
+				};
+			}}
+			header={(
+				<div className={cn(listHeaderCls, "mb-1.5 shrink-0 px-4")}>
+					{t(labels.listLabel)}
+				</div>
+			)}
+			emptyState={entries.length === 0 ? (
+				<div className="flex h-full items-center justify-center px-2">
 					<EmptyState
 						icon={<Icons.Book />}
 						title={t(labels.emptyTitle)}
@@ -490,33 +513,30 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 						onCta={onImport}
 					/>
 				</div>
-			) : (
+			) : undefined}
+			renderRow={(skill) => {
+				const isSelected = skill.id === selectedId;
+				return (
+					<SortableMasterListPhoneRow
+						sortableId={skill.id}
+						rowTestId={testids.row?.(skill.id)}
+						selected={isSelected}
+						status={(
+							<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+								{skill.source === "user" ? t(labels.user) : t(labels.builtIn)}
+							</span>
+						)}
+						title={skill.name}
+						secondLine={skill.description ? <span className="line-clamp-2 leading-snug">{skill.description}</span> : undefined}
+						onSelect={() => onSelect(skill.id)}
+					/>
+				);
+			}}
+			renderOverlayRow={(skill) => (
+				<MasterListDragOverlayRow title={skill.name} />
+			)}
+			footer={entries.length === 0 ? undefined : (
 				<>
-					<div className="min-h-0 flex-1 overflow-y-auto">
-						{entries.map((skill) => {
-							const isSelected = skill.id === selectedId;
-							const rowTestId = testids.row?.(skill.id);
-							return (
-								<div
-									key={`${skill.source}:${skill.id}`}
-									{...(rowTestId ? { "data-testid": rowTestId } : {})}
-									onPointerDown={() => onSelect(skill.id)}
-									className={cn(
-										"group flex cursor-pointer items-center gap-2 border-l-2 py-2 pr-1 pl-4 touch-manipulation sm:transition-colors",
-										isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-									)}
-								>
-									<div className="min-w-0 flex-1">
-										<div className={cn(rowTitleCls, "truncate", isSelected ? "text-accent-t" : "text-t2")}>
-											{skill.name}
-										</div>
-										<div className={cn(rowSecondCls, "mt-0.5 truncate text-t4")}>{skill.description}</div>
-									</div>
-									<MasterDetailMobileDrillDown onSelect={() => onSelect(skill.id)} />
-								</div>
-							);
-						})}
-					</div>
 					<button
 						type="button"
 						data-testid={testids.newSkillBtn}
@@ -538,7 +558,7 @@ function SkillList({ entries, isLoading, hasLoaded, selectedId, labels, testids,
 					</button>
 				</>
 			)}
-		</div>
+		/>
 	);
 }
 

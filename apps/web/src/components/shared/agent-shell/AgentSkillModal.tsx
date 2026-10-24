@@ -88,6 +88,7 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 	const remove = useCopilotSkillStore((s) => s.remove);
 	const saveNew = useCopilotSkillStore((s) => s.saveNew);
 	const saveExisting = useCopilotSkillStore((s) => s.saveExisting);
+	const reorder = useCopilotSkillStore((s) => s.reorder);
 
 	// Bound for the kind and stable across renders — the shared modal's open
 	// + content effects key on `adapter.load` / `adapter.readContent` (see
@@ -98,6 +99,10 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 	// seam — the modal never touches the clients directly).
 	const saveThisKind = useCallback((id: string | null, input: SkillSaveDto) =>
 		id ? saveExisting(agentKind, id, input) : saveNew(agentKind, input), [saveExisting, saveNew, agentKind]);
+	// The list's drag persist (ML-9): the kind rides along (ML-7: order is
+	// stored per library) and the store adopts the refreshed catalog.
+	const reorderThisKind = useCallback((updates: Array<{ id: string; sortOrder: number }>) =>
+		reorder(agentKind, updates), [reorder, agentKind]);
 
 	const adapter: SkillLibraryAdapter = {
 		labels: LABELS,
@@ -122,6 +127,7 @@ export function AgentSkillModal({ isOpen, onClose, agentKind, parentBack }: Agen
 		remove: (skillId) => remove(agentKind, skillId),
 		readContent: readContentThisKind,
 		save: saveThisKind,
+		reorder: reorderThisKind,
 	};
 
 	return <SkillLibraryModal isOpen={isOpen} onClose={onClose} adapter={adapter} parentBack={parentBack} />;
