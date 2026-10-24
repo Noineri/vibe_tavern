@@ -1,16 +1,10 @@
-import { isTextMime, type Attachment } from "@vibe-tavern/domain";
+import { isTextMime, type Attachment, type AttachmentPatch } from "@vibe-tavern/domain";
 import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { countTokensDefault } from "../../infrastructure/ai/tokenizer-service.js";
 import { DomainError, notFound, validation } from "../../shared/errors.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 
-/** Only action-owned fields: omitted means unchanged; a null summary count
- * asks the storage port to REMOVE the field, not persist a null count. */
-export interface AttachmentPatch {
-  description?: string | null;
-  summaryTokenCount?: number | null;
-  includeInPrompt?: boolean;
-}
+export type { AttachmentPatch } from "@vibe-tavern/domain";
 
 /** Each surface resolves its own message/variant ownership and persists only
  * the patch. The service neither imports a store nor replaces an attachment set. */

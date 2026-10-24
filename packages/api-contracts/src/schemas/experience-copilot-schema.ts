@@ -22,7 +22,9 @@
  */
 
 import { z } from "zod";
+import type { Attachment } from "@vibe-tavern/domain";
 import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
+import { attachmentSchema } from "./chat-schema.js";
 import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
 /**
@@ -158,8 +160,9 @@ export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLau
  * a typed digest, because the digest shapes live in the backend domain
  * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
  *
- * TAG-5 split-turn (style B): `content` and `answer` are exactly-one-of. A
- * normal turn sends `content`; answering a pending wait-tool request sends
+ * TAG-5 split-turn (style B): content mode and `answer` are exactly-one-of.
+ * A normal turn sends `content` or non-empty `attachments` (CA-4a1);
+ * answering a pending wait-tool request sends
  * `answer` instead (no new user row — the answer replaces the awaiting marker
  * of the referenced tool-result and the turn resumes as a continuation:
  * an `ask_user` answer since TAG-5, a permission decision since SC-23e).
@@ -174,6 +177,7 @@ export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLau
 export const experienceCopilotStreamRequestSchema = z
   .object({
     content: z.string().min(1).max(50_000).optional(),
+    attachments: z.array(attachmentSchema).max(5).optional(),
     providerProfileId: z.string().min(1),
     model: z.string().min(1).optional(),
     step: experienceCopilotStepSchema.optional(),
@@ -221,12 +225,14 @@ export const experienceCopilotStreamRequestSchema = z
     visualSaved: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
-    // AP-9: THREE exclusive modes — content (a new message), answer
+    // AP-9: THREE exclusive modes — content (text and/or attachments), answer
     // (answering the pending question), regenerate (rerunning the last
     // turn). Exactly one must be present; `regenerate: false` counts as
     // absent (an explicit false never turns a content turn into a pair).
     const present: string[] = [];
-    if (val.content !== undefined) present.push("`content`");
+    if (val.content !== undefined || val.attachments?.length) {
+      present.push(val.content !== undefined ? "`content`" : "`attachments`");
+    }
     if (val.answer !== undefined) present.push("`answer`");
     if (val.regenerate === true) present.push("`regenerate`");
     if (present.length > 1) {
@@ -437,6 +443,9 @@ export const experienceCopilotMessageSchema = z.object({
   // the column existed. Display-only — never sent back to the model.
   reasoning: z.string().nullable(),
   reasoningDurationMs: z.number().nullable(),
+  /** Server-owned stored shape, not send-input validation: preserve summaries,
+   * visibility and provenance without a second attachment field list. */
+  attachments: z.array(z.custom<Attachment>()).optional(),
   createdAt: z.string(),
 });
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;

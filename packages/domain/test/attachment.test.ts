@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  applyAttachmentPatch,
   attachmentPromptTokens,
   classifyAttachment,
   filterPromptVisibleAttachments,
@@ -16,6 +17,58 @@ import {
   withImageGenPromptFallback,
   type Attachment,
 } from '../src/attachment.js';
+
+describe('shared attachment action patch (CA-4a1)', () => {
+  const file: Attachment = {
+    id: 'file_1', assetId: 'asset_file_1', type: 'file', name: 'notes.md',
+    mimeType: 'text/markdown', sizeBytes: 10, tokenCount: 1200,
+    description: 'Summary', summaryTokenCount: 20, includeInPrompt: false,
+  };
+
+  test('omitted and explicitly undefined fields leave stored values unchanged', () => {
+    expect(applyAttachmentPatch(file, {})).toEqual(file);
+    expect(applyAttachmentPatch(file, {
+      description: undefined, summaryTokenCount: undefined, includeInPrompt: undefined,
+    })).toEqual(file);
+  });
+
+  test('description accepts a string, empty string and null exactly as given', () => {
+    for (const description of ['Updated summary', '', null]) {
+      expect(applyAttachmentPatch(file, { description })).toEqual({ ...file, description });
+    }
+  });
+
+  test('includeInPrompt writes either boolean without changing other fields', () => {
+    for (const includeInPrompt of [true, false]) {
+      expect(applyAttachmentPatch(file, { includeInPrompt })).toEqual({ ...file, includeInPrompt });
+    }
+  });
+
+  test('summaryTokenCount sets a number including zero', () => {
+    for (const summaryTokenCount of [90, 0]) {
+      expect(applyAttachmentPatch(file, { summaryTokenCount })).toEqual({ ...file, summaryTokenCount });
+    }
+  });
+
+  test('a null summaryTokenCount removes the own key instead of storing null', () => {
+    const { summaryTokenCount: _removed, ...rest } = file;
+    const result = applyAttachmentPatch(file, { summaryTokenCount: null });
+    expect(result).toEqual(rest);
+    expect(Object.hasOwn(result, 'summaryTokenCount')).toBe(false);
+    expect(applyAttachmentPatch(rest, { summaryTokenCount: null })).toEqual(rest);
+  });
+
+  test('returns a new object, leaving a frozen input untouched for combined and empty patches', () => {
+    const input = Object.freeze({ ...file });
+    const result = applyAttachmentPatch(input, { description: null, summaryTokenCount: null, includeInPrompt: true });
+    expect(result).not.toBe(input);
+    expect(applyAttachmentPatch(input, {})).not.toBe(input);
+    expect(result.description).toBeNull();
+    expect(result.includeInPrompt).toBe(true);
+    expect(Object.hasOwn(result, 'summaryTokenCount')).toBe(false);
+    expect(input).toEqual(file);
+  });
+});
 
 // STT_PLAN ST-1: audio attachments. `classifyAttachment` is the MIME → type
 // gate the pipeline consumes; `parseStoredAttachments` is the stored-JSON

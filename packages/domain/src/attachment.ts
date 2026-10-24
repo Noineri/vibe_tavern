@@ -67,6 +67,24 @@ export interface Attachment {
   imageGen?: ImageGenSlotProvenance;
 }
 
+/** Only action-owned fields: omitted means unchanged; a null summary count
+ * asks the storage port to REMOVE the field, not persist a null count. */
+export interface AttachmentPatch {
+  description?: string | null;
+  summaryTokenCount?: number | null;
+  includeInPrompt?: boolean;
+}
+
+/** Apply the shared action patch without mutating the stored attachment. */
+export function applyAttachmentPatch(attachment: Attachment, patch: AttachmentPatch): Attachment {
+  const updated = { ...attachment };
+  if (patch.description !== undefined) updated.description = patch.description;
+  if (patch.includeInPrompt !== undefined) updated.includeInPrompt = patch.includeInPrompt;
+  if (patch.summaryTokenCount === null) delete updated.summaryTokenCount;
+  else if (patch.summaryTokenCount !== undefined) updated.summaryTokenCount = patch.summaryTokenCount;
+  return updated;
+}
+
 /** Provenance stamped on every attachment of an image-gen slot message
  *  (IG-14). `params` = the effective values actually SENT to the backend
  *  (request overrides > per-mode size preset > profile default params; only
