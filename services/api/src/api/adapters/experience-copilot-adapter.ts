@@ -128,13 +128,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
-      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.scriptCompaction = providerProfileService
-      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.sidechatCompaction = providerProfileService
-      ? new SidechatOocCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new SidechatOocCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.streamKinds = new Map<AgentKindId, KindStream>([
       ["experience", (threadId, body, signal) => this.streamExperienceThread(threadId, body, signal)],

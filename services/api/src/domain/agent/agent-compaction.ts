@@ -40,6 +40,7 @@ import {
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { CopilotContextMetrics } from "@vibe-tavern/db";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
+import { renderAttachmentsAsText, type AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import { notFound, validation, conflict } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -120,6 +121,7 @@ export interface AgentCompactionStore<M extends DigestBoundaryMessage> {
  *  that cannot live in the kind-agnostic core without dragging kind knowledge
  *  (or an import of the kind's subsystem) into `domain/agent/`. */
 export interface AgentCompactionSeams<M extends DigestBoundaryMessage> {
+  readonly attachmentAssetLoader?: AttachmentAssetLoader;
   /** Stored messages → history flow, the SAME conversion the kind's stream
    *  uses (the summarizer transcript and the model window must agree). */
   readonly storeMessagesToFlow: (messages: readonly M[]) => AgentHistoryMessage[];
@@ -339,7 +341,7 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
           { keepUserTurns: 0 },
         );
     const systemPrompt = await this.seams.resolveSystemPrompt();
-    const prompt = buildCompactionPrompt(systemPrompt, priorDigestText, toSummarizeFlow);
+    const prompt = await buildCompactionPrompt(systemPrompt, priorDigestText, toSummarizeFlow, this.seams.attachmentAssetLoader);
     const generation = await this.execute({
       profile: effectiveProfile,
       model,
@@ -417,19 +419,23 @@ export class AgentCompactionService<M extends DigestBoundaryMessage> {
  *  any) and the messages being replaced, rendered as a readable transcript.
  *  Takes the FLOW history (store messages converted via the kind's
  *  `storeMessagesToFlow` seam and echo-stubbed — see compactInternal). */
-function buildCompactionPrompt(
+async function buildCompactionPrompt(
   systemPrompt: string,
   priorDigestText: string | null,
   toSummarize: readonly AgentFlowMessage[],
-): AssemblePromptResponse {
-  const transcript = toSummarize
-    .map((m) => {
+  attachmentAssetLoader?: AttachmentAssetLoader,
+): Promise<AssemblePromptResponse> {
+  const transcript = (await Promise.all(toSummarize
+    .map(async (m) => {
       if (m.role === "tool") {
         return `[tool-result] ${JSON.stringify(m.content)}`;
       }
       const toolPart = m.toolCalls ? `\n[tool-calls] ${JSON.stringify(m.toolCalls)}` : "";
-      return `${m.role.toUpperCase()}: ${m.content}${toolPart}`;
-    })
+      const blocks = m.role === "user" && m.attachments?.length
+        ? await renderAttachmentsAsText(m.attachments, attachmentAssetLoader) : [];
+      const attachmentPart = blocks.length ? `\n\n${blocks.join("\n\n")}` : "";
+      return `${m.role.toUpperCase()}: ${m.content}${toolPart}${attachmentPart}`;
+    })))
     .join("\n\n");
 
   const userContent = priorDigestText

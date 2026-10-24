@@ -15,7 +15,7 @@
 
 import { estimateTokens } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
-import type { Attachment } from "@vibe-tavern/domain";
+import { attachmentPromptTokens, type Attachment } from "@vibe-tavern/domain";
 
 // ─── History message shape (mirrors AI SDK v5/v6 message parts) ──────────────
 
@@ -259,5 +259,7 @@ function formatHistoryMessages(messages: ReadonlyArray<AgentFlowMessage>): strin
  *  formatter the assembler's budget trim uses. Exported (CM-5) so the
  *  compaction service estimates the post-compaction history segment identically. */
 export function estimateHistoryTokens(messages: ReadonlyArray<AgentFlowMessage>): number {
-  return estimateTokens(formatHistoryMessages(messages));
+  return estimateTokens(formatHistoryMessages(messages))
+    + messages.reduce((total, message) => total + (message.role === "user"
+      ? attachmentPromptTokens(message.attachments, estimateTokens) : 0), 0);
 }
