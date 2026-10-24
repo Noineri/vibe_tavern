@@ -5,7 +5,7 @@
 // functions; the store class stays the only reader/writer of the underlying
 // columns and calls these directly, so the branding edge does not move.
 
-import { brandId, log, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
+import { brandId, log, parseStoredAttachments, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import { parseContextMetrics, parseContextLinks, parseTodo } from './experience-copilot-row-parse.js';
 import type { AgentThreadContextEvent } from './agent-thread-context-events.js';
@@ -35,6 +35,7 @@ export function mapThread(row: typeof experienceCopilotThreads.$inferSelect): Ex
 }
 
 export function mapMessage(row: typeof experienceCopilotMessages.$inferSelect): ExperienceCopilotMessage {
+  const attachments = parseStoredAttachments(row.attachmentsJson);
   return {
     id: brandId<ExperienceCopilotMessageId>(row.id),
     threadId: brandId<ExperienceCopilotThreadId>(row.threadId),
@@ -46,6 +47,7 @@ export function mapMessage(row: typeof experienceCopilotMessages.$inferSelect): 
     reasoningDurationMs: row.reasoningDurationMs,
     seq: row.seq,
     createdAt: row.createdAt,
+    ...(attachments?.length ? { attachments } : {}),
   };
 }
 

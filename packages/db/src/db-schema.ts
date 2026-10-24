@@ -1988,6 +1988,9 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   // (`storeMessagesToHistory` reads neither column).
   reasoning: text('reasoning'),
   reasoningDurationMs: integer('reasoning_duration_ms'),
+  // CA-4a2: stored Attachment[] JSON (images/files), shared across agent kinds.
+  // NULL = no attachments; read through parseStoredAttachments, like RP rows.
+  attachmentsJson: text('attachments_json'),
   // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
   // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
   // messages interleave with agent_thread_context_events rows on the merged

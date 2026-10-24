@@ -2,18 +2,21 @@ import { and, eq, isNull, desc, asc } from 'drizzle-orm';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { brandId, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
+import { brandId, type Attachment, type AttachmentPatch, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
 import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
+import { findMessageAttachment, updateMessageAttachment, removeMessageAttachment } from './experience-copilot-attachments.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 export interface AppendMessageInput {
   role: string;
+  /** CA-4a2: absent or empty stores NULL, like RP message attachments. */
+  attachments?: Attachment[];
   /** Defaults to '' when omitted, mirroring the column default. */
   content?: string;
   /** Serialized tool-call payload (nullable). */
@@ -81,6 +84,8 @@ export interface ExperienceCopilotMessage {
   threadId: ExperienceCopilotThreadId;
   role: string;
   content: string;
+  /** Full stored set, including excluded items; absent when empty. */
+  attachments?: Attachment[];
   toolCallsJson: string | null;
   toolCallId: string | null;
   /** AP-28: the turn's reasoning (first assistant row of the turn only);
@@ -390,6 +395,7 @@ export class ExperienceCopilotStore {
           toolCallId: input.toolCallId ?? null,
           reasoning: input.reasoning ?? null,
           reasoningDurationMs: input.reasoningDurationMs ?? null,
+          attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
           seq,
           createdAt: now,
         })
@@ -401,6 +407,20 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotMessages.id, id))
       .get();
     return mapMessage(row!);
+  }
+
+  /** CA-4a2: single-attachment reads and transactional edits; the sibling owns
+   * the set rewrite, while the shared domain helper owns patch semantics. */
+  async findMessageAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    return findMessageAttachment(this.db, messageId, attachmentId);
+  }
+
+  async updateMessageAttachment(messageId: string, attachmentId: string, patch: AttachmentPatch): Promise<Attachment | null> {
+    return updateMessageAttachment(this.db, messageId, attachmentId, patch);
+  }
+
+  async removeMessageAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    return removeMessageAttachment(this.db, messageId, attachmentId);
   }
 
   // ─── Frozen context events / timeline / frontier (SIDECHAT_PLAN SC-1/SC-2c) ──
