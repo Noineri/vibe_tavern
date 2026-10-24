@@ -14,7 +14,11 @@ const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _
 const updateProviderProfileAction = mock(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never);
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
-const realI18n = await import("../../i18n/context.js");
+// i18n is NOT mocked: the modal renders providerless, so the real `useT`
+// returns the STABLE module-scope context default (identity `t`) — key-verbatim
+// assertions work with zero process-global registration. A `useT` override
+// here (a fresh literal per call, on top of that) poisoned real-LocaleProvider
+// consumers in co-loaded files (owner order 2026-10-24, co-load pair fixes).
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({ ...realBootstrapActions, patchUiSettingsAction }));
 mock.module("../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
@@ -22,10 +26,6 @@ mock.module("../../stores/api-actions/provider-actions.js", () => ({
   updateProviderProfileAction,
   loadCoauthorConnectionSettingsAction,
   upsertCoauthorConnectionSettingsAction,
-}));
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 const { useProviderDataStore } = await import("../../stores/provider-data-store.js");

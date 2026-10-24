@@ -31,8 +31,10 @@
  * handler → RPC wiring, validation gating, and mode transitions.
  *
  * Tool toggles render human-readable labels via `COAUTHOR_TOOL_LABEL_KEYS`
- * (exhaustive over `COAUTHOR_TOOL_KEYS`); the useT mock returns keys verbatim,
- * so label assertions read as the mapped i18n key, never the raw snake_case.
+ * (exhaustive over `COAUTHOR_TOOL_KEYS`); the providerless real `useT`
+ * returns keys verbatim (the STABLE module-scope context default in
+ * i18n/context.tsx), so label assertions read as the mapped i18n key, never
+ * the raw snake_case.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
@@ -47,34 +49,27 @@ import type { CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from 
 import { COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { TFunc } from "../../i18n/context.js";
 
-// Mock useT at the module boundary — returns keys verbatim so assertions match.
-// Use `...real` spread (AGENTS.md mock.module gotcha): the mock persists
-// process-globally, so every OTHER export of context.js must survive for
-// subsequent test files that import LocaleProvider etc.
-const realI18nContext = await import("../../i18n/context.js");
+// i18n is NOT mocked. The modal renders providerless, so the real `useT`
+// returns the STABLE module-scope context default (identity `t`) — key-verbatim
+// assertions work with zero process-global registration.
+// Co-load contract (owner order 2026-10-24, co-load pair fixes): an identity
+// `useT` mock.module is process-global and last-write-wins, so it would replace
+// the real hook for sibling files rendering under a real `LocaleProvider`
+// (ImagePromptTemplatesPane.test asserts real translations like «Duplicate» —
+// the pair-2 poisoning). The SummaryTab×Coauthor stability precedent is
+// subsumed: the context default is module-scope stable, so the fresh-literal
+// effect-ping-pong class cannot exist without a registration.
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realSkillApi = await import("../../api/skill-api.js");
 const realModuleApi = await import("../../api/coauthor-module-api.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
-const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
-// Co-load contract: `useT` must return a STABLE object. A fresh literal per
-// call hands every render a new `t`, and a subject with a `t`-dependent
-// callback in an effect (SummaryTab's loadSummaries: `useCallback(...,
-// [activeChatId, t])` + `useEffect(..., [isOpen, loadSummaries])`) re-fires
-// the effect every render and ping-pongs setState forever — the silent-hang
-// class (shared registry, last-write-wins: this file loads before
-// SummaryTab.master-list.test, so this stub serves its renders).
-const stableUseTValue = { t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true as const };
-mock.module("../../i18n/context.js", () => ({
-		...realI18nContext,
-		useT: () => stableUseTValue,
-}));
+// (The former fresh-literal `useT` stub lived here; see the i18n note above.)
 
 const SEED_MODULES: CoauthorModule[] = [
 	{
@@ -182,61 +177,41 @@ mock.module("../../api/skill-api.js", () => ({
 	deleteCoauthorSkill: mock(),
 }));
 
-// MasterDetailModal passthrough: render master + detail + footer + headerActions
-// flat. Supports both node and render-prop children.
-// Co-load contract (ML-1 rework, ML-8 rework): the `...real` spread supplies
-// the REAL MasterDetailMobileDrillDown (with its `master_detail_open` aria) —
-// an aria-less `() => null` stub poisons master-list.test.tsx's caret pin
-// (mock.module is process-global, last-write-wins). `useMasterDetail` stays
-// shape-identical with master-list.test.tsx (`isDetailOpen: false`).
+// MasterDetailModal: the canonical prior-unit registration (shape-identical
+// with master-list.test.tsx / ProviderProfileList.test.tsx / TtsSection.test
+// / RegexPresetList.test.tsx) — `...real` spread + ONLY the `useMasterDetail`
+// stub (`isDetailOpen: false`), so the REAL MasterDetailModal renders.
+// Was: a flat passthrough that dropped `title`/`tabs`/`dirty` and rendered
+// inline instead of through the Modal portal — not shape-identical with the
+// real component, so it poisoned every co-loaded real consumer
+// (ProxyManagerModal.behavior / CoauthorProviderModal / provider-modal:
+// missing tab radios, missing title, inline-vs-portal document order; owner
+// order 2026-10-24, co-load pair fixes). The `...real` spread also supplies
+// the REAL MasterDetailMobileDrillDown (with its `master_detail_open` aria).
 
 mock.module("../shared/MasterDetailModal.js", () => ({
-		...realMasterDetailModal,
-		MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
-		isOpen: boolean;
-		onClose: () => void;
-		masterContent: unknown;
-		detailContent: unknown;
-		footer: unknown;
-		headerActions: unknown;
-	}) => {
-		if (!isOpen) return null;
-		const resolve = (c: unknown) => (typeof c === "function" ? (c as (ctx: { openDetail: () => void; closeDetail: () => void }) => React.ReactNode)({ openDetail: () => {}, closeDetail: () => {} }) : c);
-		return (
-			<div data-testid="md-modal">
-				<div data-testid="md-header-actions">{headerActions as React.ReactNode}</div>
-				<div data-testid="md-master">{resolve(masterContent) as React.ReactNode}</div>
-				<div data-testid="md-detail">{resolve(detailContent) as React.ReactNode}</div>
-				<div data-testid="md-footer">{footer as React.ReactNode}</div>
-				<button type="button" onClick={onClose} data-testid="md-close">close</button>
-			</div>
-		);
-	},
+	...realMasterDetailModal,
 	useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
-// DestructiveConfirmModal passthrough (also uses `...real` spread).
-
-mock.module("../shared/destructive-confirm-modal.js", () => ({
-		...realDestructiveConfirmModal,
-		DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
-		title: string; body: React.ReactNode; confirmLabel: string;
-		onConfirm: () => void; onCancel: () => void;
-	}) => (
-		<div data-testid="confirm-modal">
-			<div>{title}</div>
-			<button type="button" data-testid="confirm-cancel" onClick={onCancel}>cancel</button>
-			<button type="button" data-testid="confirm-ok" onClick={onConfirm}>{confirmLabel}</button>
-		</div>
-	),
-}));
+// DestructiveConfirmModal is NOT mocked — the REAL component renders (Modal
+// portal + real Cancel/confirm buttons). Was: a flat passthrough whose inline
+// (non-portal) confirm rendered BEFORE the trigger in document order, so
+// ProxyManagerModal.behavior.test's `getAllByText("proxy_delete")[1]` clicked
+// the trigger instead of the confirm (pair 1).
 
 let CoauthorModuleModal: typeof import("./CoauthorModuleModal.js").CoauthorModuleModal;
 let COAUTHOR_TOOL_LABEL_KEYS: typeof import("./coauthor-tool-labels.js").COAUTHOR_TOOL_LABEL_KEYS;
 let resolveCoauthorToolLabel: typeof import("./coauthor-tool-labels.js").resolveCoauthorToolLabel;
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 beforeAll(async () => {
 	({ CoauthorModuleModal } = await import("./CoauthorModuleModal.js"));
 	({ COAUTHOR_TOOL_LABEL_KEYS, resolveCoauthorToolLabel } = await import("./coauthor-tool-labels.js"));
+	// The REAL MasterDetailModal (canonical registration above) renders its
+	// dirty-dot CustomTooltip — Radix Tooltip requires the app-level provider
+	// the app itself mounts (App.tsx). The ProxyManagerModal.behavior.test /
+	// provider-modal.test / CoauthorProviderModal.test harness precedent.
+	({ TooltipProvider } = await import("../shared/Tooltip.js"));
 });
 
 beforeEach(() => {
@@ -277,7 +252,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 	it("lists every module on open; built-ins carry a Built-in badge", async () => {
 		setActiveChat(null);
 		openModal();
-		const { getAllByText, getByText } = render(<CoauthorModuleModal />);
+		const { getAllByText, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getAllByText("Default Co-Author").length).toBeGreaterThan(0));
 		expect(getByText("Profile Editor")).toBeTruthy();
 		expect(getByText("My Custom Module")).toBeTruthy();
@@ -290,7 +265,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		// hover buttons, and the built-in footer's only action is Duplicate.
 		setActiveChat(null);
 		openModal();
-		const { getAllByText, getByText, queryByTestId, queryByText } = render(<CoauthorModuleModal />);
+		const { getAllByText, getByText, queryByTestId, queryByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getAllByText("Default Co-Author").length).toBeGreaterThan(0));
 		expect(queryByTestId("module-edit-btn-default")).toBeNull();
 		expect(queryByTestId("module-delete-btn-default")).toBeNull();
@@ -307,7 +282,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		// select the row, Edit + Delete render as footer actions.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText, queryByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, queryByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -320,7 +295,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		// select the row, then the footer Edit action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -333,7 +308,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -349,7 +324,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 	it("+ New module opens a blank editor; Save with empty name shows validation error (no RPC)", async () => {
 		setActiveChat(null);
 		openModal();
-		const { getByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-new-btn")).toBeTruthy());
 		fireEvent.click(getByTestId("module-new-btn"));
 		// Editor opens blank with a name input.
@@ -365,13 +340,23 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		// select the row, then the footer Delete action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, getAllByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.delete")).toBeTruthy());
 		fireEvent.click(getByText("coauthor.module.delete"));
-		await waitFor(() => expect(getByTestId("confirm-modal")).toBeTruthy());
-		fireEvent.click(getByTestId("confirm-ok"));
+		// Was: `confirm-modal`/`confirm-ok` testids from the flat passthrough
+		// mock (pinned mock shape, not product behavior). Now the REAL
+		// DestructiveConfirmModal renders in a portal; its confirm button is
+		// the only BUTTON carrying the footer action's label (the footer arm is
+		// an icon+label SPAN) — the ImagePromptTemplatesPane.test delete-flow
+		// pattern.
+		const confirmButton = await waitFor(() => {
+			const button = getAllByText("coauthor.module.delete").map((node) => node.closest("button")).find(Boolean);
+			if (!button) throw new Error("delete confirm not open yet");
+			return button as HTMLElement;
+		});
+		fireEvent.click(confirmButton);
 		await waitFor(() => expect(deleteCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		expect(deleteCoauthorModuleAction.mock.calls[0][0]).toBe("cmod_1");
 	});
@@ -379,7 +364,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 	it("activating a non-active module calls setCoauthorModuleAction(chatId, moduleId)", async () => {
 		setActiveChat(null);
 		openModal();
-		const { getByText } = render(<CoauthorModuleModal />);
+		const { getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByText("Profile Editor")).toBeTruthy());
 		// Rows select via onPointerDown (matches the canonical PresetList /
 		// ProviderProfileList pattern for touch-manipulation); pointerDown bubbles
@@ -395,7 +380,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -412,7 +397,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -432,7 +417,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -453,7 +438,7 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -472,7 +457,7 @@ describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -492,7 +477,7 @@ describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -515,7 +500,7 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		// owns the selection-scoped actions (built-in → Duplicate only).
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText, queryByTestId, queryByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, queryByTestId, queryByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByText("coauthor.module.duplicate")).toBeTruthy());
 		expect(queryByTestId("module-view-duplicate-btn")).toBeNull();
 		expect(queryByTestId("module-view-edit-btn")).toBeNull();
@@ -528,7 +513,7 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		// AP-25 was: the detail-body Duplicate button; now: footer action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByText("coauthor.module.duplicate")).toBeTruthy());
 		fireEvent.click(getByText("coauthor.module.duplicate"));
 		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
@@ -556,7 +541,7 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		// AP-25 was: the detail-body Duplicate button; now: footer action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByText("coauthor.module.duplicate")).toBeTruthy());
 		fireEvent.click(getByText("coauthor.module.duplicate"));
 		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
@@ -575,7 +560,7 @@ describe("CoauthorModuleModal — human-readable tool labels (HOTFIX-UI)", () =>
 		setActiveChat(null);
 		openModal();
 		// AP-25 was: the row hover Edit button; now: footer Edit action.
-		const { getByTestId, getByRole, getByText, queryByRole } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByRole, getByText, queryByRole } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByText("coauthor.module.edit")).toBeTruthy());
@@ -592,7 +577,7 @@ describe("CoauthorModuleModal — human-readable tool labels (HOTFIX-UI)", () =>
 		// same mapped labels as the editor pills.
 		setActiveChat(null);
 		openModal();
-		const { getAllByText, getByText, queryByText } = render(<CoauthorModuleModal />);
+		const { getAllByText, getByText, queryByText } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getAllByText("Default Co-Author").length).toBeGreaterThan(0));
 		expect(getByText("coauthor.module.tool.write_profile")).toBeTruthy();
 		expect(getByText("coauthor.module.tool.edit_personality")).toBeTruthy();
@@ -611,7 +596,7 @@ describe("CoauthorModuleModal — rows (AP-25, mockup §5)", () => {
 	async function openAndFlush() {
 		setActiveChat(null);
 		openModal();
-		const queries = render(<CoauthorModuleModal />);
+		const queries = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(queries.getByTestId("module-row-default")).toBeTruthy());
 		return queries;
 	}
@@ -641,7 +626,7 @@ describe("CoauthorModuleModal — rows (AP-25, mockup §5)", () => {
 		// ML-8 was: the in-use text line moved rows, then the ★; now: the dot does.
 		setActiveChat("cmod_1");
 		openModal();
-		const { getByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		expect(getByTestId("module-row-cmod_1").querySelector(".bg-success")).toBeTruthy();
 		expect(getByTestId("module-row-default").querySelector(".bg-success,.bg-danger")).toBeNull();
@@ -681,7 +666,7 @@ describe("CoauthorModuleModal — detail (AP-25, mockup §5)", () => {
 	it("shows name + tag (custom for a user module, built-in for the seed)", async () => {
 		setActiveChat(null);
 		openModal();
-		const { getByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByTestId("module-prompt-preview")).toBeTruthy());
@@ -710,7 +695,7 @@ describe("CoauthorModuleModal — detail (AP-25, mockup §5)", () => {
 		listCoauthorModulesAction.mockReturnValue(Promise.resolve([...ALL_MODULES, LONG_MOD]));
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText, queryByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, queryByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_long")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_long"));
 		await waitFor(() => expect(getByTestId("module-prompt-preview")).toBeTruthy());
@@ -737,19 +722,23 @@ describe("CoauthorModuleModal — footer (AP-25, mockup §5)", () => {
 		// label — no second primary action.
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, queryByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, queryByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-default")).toBeTruthy());
 		await waitFor(() => expect(getByTestId("module-in-use-state")).toBeDefined());
 		expect(getByTestId("module-in-use-state").textContent).toContain("copilot_profile_in_use_label");
 		expect(queryByTestId("module-activate-btn")).toBeNull();
 		// The footer still closes: Close + the duplicate action render.
-		expect(getByTestId("md-footer").textContent).toContain("close");
+		// Was: `md-footer` testid from the flat passthrough mock (pinned mock
+		// shape); now the real MasterDetailModal renders and its
+		// MasterDetailFooter Close button carries the `close` key verbatim
+		// (providerless identity t).
+		expect(getByText("close")).toBeTruthy();
 	});
 
 	it("selecting a non-active module swaps the quiet state for the Activate primary", async () => {
 		setActiveChat(null);
 		openModal();
-		const { getByTestId, getByText, queryByTestId } = render(<CoauthorModuleModal />);
+		const { getByTestId, getByText, queryByTestId } = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(getByTestId("module-row-cmod_1")).toBeTruthy());
 		fireEvent.pointerDown(getByTestId("module-row-cmod_1"));
 		await waitFor(() => expect(getByTestId("module-activate-btn")).toBeTruthy());
@@ -787,7 +776,7 @@ describe("CoauthorModuleModal — drag reorder (ML-8)", () => {
 	async function openAndFlushRows() {
 		setActiveChat(null);
 		openModal();
-		const view = render(<CoauthorModuleModal />);
+		const view = render(<TooltipProvider><CoauthorModuleModal /></TooltipProvider>);
 		await waitFor(() => expect(view.getByTestId("module-row-cmod_1")).toBeTruthy());
 		return view;
 	}

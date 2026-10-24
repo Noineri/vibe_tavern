@@ -27,7 +27,14 @@ import type {
 } from "../../api/types.js";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 
-const realI18n = await import("../../i18n/context.js");
+// i18n is NOT mocked: renders mount a real LocaleProvider, so the badge and
+// label assertions pin the REAL en.json translations + interpolation (the
+// ImagePromptTemplatesPane.test harness precedent). Was: an identity `useT`
+// stub (with a mock-shaped `${key} ${vars.model}` interpolation) whose
+// process-global registration poisoned real-LocaleProvider consumers in
+// co-loaded files (ImagePromptTemplatesPane.test expected «Duplicate», got
+// the key — the pair-2 class, owner order 2026-10-24).
+const { LocaleProvider } = await import("../../i18n/context.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
@@ -44,16 +51,6 @@ const getProviderModelSettingsAction = mock(async (profileId: string, modelId: s
 const loadFavoriteModelsAction = mock(async (_profileId: string): Promise<void> => {});
 const reorderProviderProfilesAction = mock(async (_ids: string[]): Promise<ProviderProfileRecord[]> => []);
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, vars?: Record<string, unknown>) => (vars && "model" in vars ? `${key} ${vars.model}` : key),
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
 mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
@@ -125,7 +122,9 @@ function makeProps(profile: ProviderProfileRecord, favorites: FavoriteProviderMo
 
 /** The temperature control's displayed value (its slider field renders the value once, on the right). */
 function temperatureFieldValue(view: ReturnType<typeof render>): string | null | undefined {
-  return view.getByLabelText("sampler_temperature").closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent;
+  // Behavior change: was the raw "sampler_temperature" key label (identity
+  // stub); the real LocaleProvider renders the real EN label.
+  return view.getByLabelText("Temperature").closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent;
 }
 
 describe("ProviderModal follow-the-active-model", () => {
@@ -139,7 +138,7 @@ describe("ProviderModal follow-the-active-model", () => {
     // The mine was a hook AFTER `if (!isOpen) return null;`: the closed modal
     // skipped it, the open render ran it -> #310 -> the settings pane died.
     const props = makeProps(makeProfile(), makeFavorites(["m-fav"]));
-    const view = render(<ProviderModal {...props} />);
+    const view = render(<LocaleProvider><ProviderModal {...props} /></LocaleProvider>);
     expect(view.container.textContent ?? "").not.toContain("Follow Test Profile");
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText` (the row title read "★ Follow
@@ -152,7 +151,7 @@ describe("ProviderModal follow-the-active-model", () => {
   test("favorited active model: overlay fetched, merged into the form, 'Editing' badge shown", async () => {
     overlayStore.set("prof1::m-fav", { temperature: 0.123, samplerSetId: "sset_x" });
     const props = makeProps(makeProfile(), makeFavorites(["m-fav"]));
-    const view = render(<ProviderModal {...props} />);
+    const view = render(<LocaleProvider><ProviderModal {...props} /></LocaleProvider>);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText`; now the bare name renders in
     // both the row title and the detail title (the unified dot now, ex-★, in the
@@ -164,19 +163,25 @@ describe("ProviderModal follow-the-active-model", () => {
     // field's own value text (a typed-precision value shows faithfully).
     await waitFor(() => expect(temperatureFieldValue(view)).toBe("0.123"));
     // Honest badge: "Editing: <model>".
-    expect(view.getByText(/editing_model_badge m-fav/)).toBeTruthy();
+    // Behavior change: was `getByText(/editing_model_badge m-fav/)` — the
+    // identity stub's mock-shaped `${key} ${vars.model}` suffix; now the real
+    // LocaleProvider renders the real en.json interpolation
+    // ("editing_model_badge": "Editing: {model}").
+    expect(view.getByText("Editing: m-fav")).toBeTruthy();
   });
 
   test("non-favorite active model: no overlay fetch, base values, base badge, no binding dropdown", async () => {
     const props = makeProps(makeProfile({ defaultModel: "m-plain" }), makeFavorites(["m-fav"]));
-    const view = render(<ProviderModal {...props} />);
+    const view = render(<LocaleProvider><ProviderModal {...props} /></LocaleProvider>);
     act(() => useModalStore.setState({ isProviderModalOpen: true }));
     // Behavior change: was a single `getByText`; now the bare name renders in
     // both the row title and the detail title (the unified dot now, ex-★, in the
     // status slot per the row rules).
     await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
     // Base badge appears; nothing was fetched for the non-favorite.
-    await waitFor(() => expect(view.getByText(/binding_base_badge/)).toBeTruthy());
+    // Behavior change: was `getByText(/binding_base_badge/)` (the raw key via
+    // the identity stub); now the real EN translation.
+    await waitFor(() => expect(view.getByText("Base settings (model not in favorites)")).toBeTruthy());
     expect(overlayFetchLog.some((e) => e.modelId === "m-plain")).toBe(false);
     // Base temperature (0.7) shows — the form hydrates from the base profile.
     await waitFor(() => expect(temperatureFieldValue(view)).toBe("0.70"));

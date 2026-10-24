@@ -34,22 +34,17 @@ describe("ProviderModal FormState ↔ canonical sampler set (ERA-1)", () => {
 
 // ── TS-7a: category tabs ───────────────────────────────────────────────────
 
-const realI18n = await import("../../i18n/context.js");
+// i18n is NOT mocked: the modal renders providerless, so the real `useT`
+// returns the STABLE module-scope context default (identity `t`) — key-verbatim
+// assertions work with zero process-global registration. A `useT` override
+// here poisoned real-LocaleProvider consumers in co-loaded files
+// (ImagePromptTemplatesPane.test expected «Duplicate», got the key — pair 2,
+// owner order 2026-10-24).
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 const realModalStore = await import("../../stores/modal-store.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realUseMobile,
   useIsMobile: () => false,
