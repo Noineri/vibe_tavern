@@ -352,7 +352,12 @@ export function filterPromptVisibleAttachments(attachments: Attachment[]): Attac
  * even when every attachment is excluded or the JSON cannot be parsed. */
 export function promptVisibleAttachmentsOf(raw: string | null | undefined): Attachment[] | undefined {
   if (!raw) return undefined;
-  return withImageGenPromptFallback(filterPromptVisibleAttachments(parseStoredAttachments(raw) ?? []));
+  return promptVisibleAttachments(parseStoredAttachments(raw) ?? []);
+}
+
+/** The same prompt projection for consumers that already hold parsed rows. */
+export function promptVisibleAttachments(attachments: Attachment[]): Attachment[] {
+  return withImageGenPromptFallback(filterPromptVisibleAttachments(attachments));
 }
 
 /** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN

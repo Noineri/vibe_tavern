@@ -13,6 +13,7 @@
  */
 
 import type { ToolCallPart } from "ai";
+import type { Attachment } from "@vibe-tavern/domain";
 import type { AgentPersistedToolCall, AgentPersistedToolResult } from "./agent-split-turn.js";
 
 // ─── The append seam ─────────────────────────────────────────────────────────
@@ -22,6 +23,7 @@ import type { AgentPersistedToolCall, AgentPersistedToolResult } from "./agent-s
  *  contract accepts this shape without adapters. */
 export interface AgentTurnAppendInput {
   role: string;
+  attachments?: Attachment[];
   content?: string;
   toolCallsJson?: string | null;
   toolCallId?: string | null;

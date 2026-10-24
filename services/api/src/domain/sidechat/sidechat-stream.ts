@@ -86,7 +86,7 @@ import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { validation } from "../../shared/errors.js";
 import {
-  streamAgentTurn,
+  streamAgentTurn, isAgentContentTurn,
   type AgentAssembledPrompt,
   type AgentPromptMessage,
   type AgentStreamDeps,
@@ -654,7 +654,7 @@ export async function* streamSidechatTurn(
         basePrompt: agentProfile.basePrompt,
         context,
         history,
-        hasUserPush: request.content !== undefined,
+        hasUserPush: isAgentContentTurn(request),
         attachedContextBlock,
         recencyAnchorText: getAgentKind("sidechat-ooc").recencyAnchorText,
         contextBudgetTokens: limits.contextBudgetTokens,
