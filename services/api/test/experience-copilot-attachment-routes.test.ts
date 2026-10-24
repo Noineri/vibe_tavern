@@ -91,13 +91,13 @@ describe('agent attachment routes (CA-4d1)', () => {
     expect((await h.request(message.id, file.id, 'summarize', h.json({ providerProfileId: h.profile.id }))).status).toBe(200);
     expect(h.execute.mock.calls[0]![0].model).toBe('model');
   });
-  test('without a resolvable profile the compaction validation error is unchanged', async () => {
+  test('without a resolvable profile the summarize validation error names summarizing', async () => {
     const h = await setup();
     const file = await h.file();
     const message = await h.seed([file]);
     const response = await h.request(message.id, file.id, 'summarize');
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: { kind: 'Validation', message: 'Provider profile is required for compaction (no prior turn to inherit).' } });
+    expect(await response.json()).toMatchObject({ error: { kind: 'Validation', message: 'Provider profile is required to summarize the attachment (no prior turn to inherit).' } });
     expect(h.execute).not.toHaveBeenCalled();
   });
   test('clear-summary removes both values and include false/true persists independently', async () => {

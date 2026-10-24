@@ -225,8 +225,8 @@ export async function resolveMultimodalContent(
   //    image first (executor runs describeAttachments before calling us). We
   //    send only the textual description — no pixels. A raw undescribed image
   //    reaching here means no fallback was configured (or the describe step
-   //    failed) → VisionNotSupportedError for the current turn (the default),
-   //    or one text note per image/video in an earlier message (CA-1g).
+    //    failed) → VisionNotSupportedError for the current turn (the default),
+    //    or one text note per image/video in an earlier message (CA-1g).
   //
   // Routing invariant: the DB persists `type: "image"` + `description`; only
   // the executor's in-memory copy flips `type` to `"file"`. So we route by

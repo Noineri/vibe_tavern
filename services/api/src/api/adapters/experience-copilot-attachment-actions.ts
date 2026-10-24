@@ -51,13 +51,15 @@ export function createAgentAttachmentActions(deps: {
   return {
     async summarizeAttachment(threadId: string, messageId: string, attachmentId: string, options: AgentAttachmentSummaryOptions, signal?: AbortSignal) {
       const thread = await requireMessage(threadId, messageId);
+      const providers = deps.providers;
+      if (!providers) throw notFound('ProviderProfile', `Provider profile service is unavailable.`);
       const providerProfileId = (options.providerProfileId ?? thread.lastProviderProfileId ?? '').trim();
-      if (!providerProfileId) throw validation('Provider profile is required for compaction (no prior turn to inherit).');
-      const profile = await deps.providers?.getProviderProfile(providerProfileId);
+      if (!providerProfileId) throw validation('Provider profile is required to summarize the attachment (no prior turn to inherit).');
+      const profile = await providers.getProviderProfile(providerProfileId);
       if (!profile) throw notFound('ProviderProfile', `Provider profile '${providerProfileId}' was not found.`);
       const model = (options.model ?? thread.lastModel ?? profile.defaultModel ?? '').trim();
-      if (!model) throw validation('Select a model for compaction.');
-      const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, deps.providers!);
+      if (!model) throw validation('Select a model to summarize the attachment.');
+      const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, providers);
       return summarize(port, {
         messageId, attachmentId, signal, assetLoader: deps.assetLoader ?? (async () => null),
         generate: async ({ systemPrompt, text, signal }) => (await execute({
