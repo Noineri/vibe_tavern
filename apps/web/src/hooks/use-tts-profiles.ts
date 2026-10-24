@@ -79,6 +79,12 @@ export function useTtsProfiles(): {
    *  included — the server decorates only saved records). Mirrors the
    *  server's autoMatchProviderKey; null when nothing matches. */
   draftAutoKeyProviderName: string | null;
+  /** The [Default Voice] profile's id — null when none is flagged (owner
+   *  2026-10-24 default-profile concept). The persisted anchor of the
+   *  ImageGen `effectiveActiveId` pattern: session-level pointers are the
+   *  consumer's concern, this field is the fallback the active-dot UI
+   *  derives from. */
+  defaultProfileId: string | null;
   /** Open the connection form screen (Edit settings / New profile). */
   startEdit(): void;
   /** Mark a saved profile as the default voice (first UI surface for
@@ -363,6 +369,11 @@ export function useTtsProfiles(): {
             autoKeyProviders,
           );
 
+  // The persisted default pointer, derived from the loaded list (the
+  //  ImageGenSection effective-pointer base — no extra fetch, it rides the
+  //  same `isDefault` flag the reload after setDefault refreshes).
+  const defaultProfileId = profiles.find((p) => p.isDefault)?.id ?? null;
+
   return {
     profiles,
     profileSearch,
@@ -375,6 +386,7 @@ export function useTtsProfiles(): {
     saving,
     headerMode,
     draftAutoKeyProviderName,
+    defaultProfileId,
     startEdit,
     setDefault,
     select,

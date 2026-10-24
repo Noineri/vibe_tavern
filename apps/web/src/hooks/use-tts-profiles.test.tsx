@@ -534,6 +534,26 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     cleanup();
   });
 
+  it("defaultProfileId tracks the persisted default: null when none, moves with setDefault", async () => {
+    store = [makeRecord({ id: "p1", isDefault: false }), makeRecord({ id: "p2", isDefault: false })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    // No flagged row → null (the ImageGen effectiveActiveId `?? null` arm).
+    expect(hook?.defaultProfileId).toBeNull();
+    await hook!.setDefault("p2");
+    await waitFor(() => expect(hook?.defaultProfileId).toBe("p2"));
+    // Moving the pointer leaves exactly one flagged row — the target.
+    await hook!.setDefault("p1");
+    await waitFor(() => expect(hook?.defaultProfileId).toBe("p1"));
+    expect(hook?.profiles.filter((p: TtsRecord) => p.isDefault).map((p: TtsRecord) => p.id)).toEqual(["p1"]);
+    cleanup();
+  });
+
   it("profile mutations (save/remove) invalidate the chat-side voice-map cache", async () => {
     store = [makeRecord({ id: "p1", isDefault: true, name: "Old" })];
     let hook: any = null;

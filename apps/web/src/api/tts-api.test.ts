@@ -85,6 +85,24 @@ describe("TTS profile reorder client", () => {
 	});
 });
 
+describe("TTS set-default client", () => {
+	it("PUTs the dedicated default route and unwraps the updated record", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = String(input);
+			capturedInit = init;
+			return new Response(JSON.stringify({ id: "voice-1", name: "A", isDefault: true }), { status: 200 });
+		});
+
+		const updated = await ttsApi.setTtsDefault("voice-1");
+
+		expect(capturedUrl.endsWith("/api/tts/profiles/voice-1/default")).toBe(true);
+		expect(capturedInit?.method).toBe("PUT");
+		expect(updated).toMatchObject({ id: "voice-1", isDefault: true });
+	});
+});
+
 // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c): the draft
 // listings carry the server's `source: "stored"` open-path marker — in the body
 // only when the caller asks, so the refresh path and the connection tests

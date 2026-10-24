@@ -135,6 +135,24 @@ describe("STT profile reorder client", () => {
 	});
 });
 
+describe("STT set-default client", () => {
+	it("PUTs the dedicated default route and unwraps the updated record", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = String(input);
+			capturedInit = init;
+			return new Response(JSON.stringify({ id: "stt-1", name: "W", isDefault: true }), { status: 200 });
+		});
+
+		const updated = await sttApi.setSttDefault("stt-1");
+
+		expect(capturedUrl.endsWith("/api/stt/profiles/stt-1/default")).toBe(true);
+		expect(capturedInit?.method).toBe("PUT");
+		expect(updated).toMatchObject({ id: "stt-1", isDefault: true });
+	});
+});
+
 // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c): the draft
 // model listing carries the server's `source: "stored"` open-path marker — in
 // the body only when the caller asks, so the refresh path, the Test button

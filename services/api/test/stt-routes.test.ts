@@ -266,6 +266,10 @@ describe("STT routes — CRUD", () => {
     const getB = (await (await app.request(`/api/stt/profiles/${b.id}`)).json()) as { isDefault: boolean };
     expect(getA.isDefault).toBe(false);
     expect(getB.isDefault).toBe(true);
+
+    // Unknown id → 404 (the imagegen-routes PUT-default contract).
+    const missingRes = await app.request("/api/stt/profiles/missing/default", { method: "PUT" });
+    expect(missingRes.status).toBe(404);
   });
 
   test("apiKey is write-only: create with key → hasStoredApiKey true, config never carries it", async () => {

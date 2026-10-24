@@ -125,6 +125,12 @@ export function useSttProfiles(): {
    *  mirror of the server hint rule (vendor match for gemini, endpoint
    *  match for openai-compat). Null when nothing matches. */
   draftAutoKeyProviderName: string | null;
+  /** The fallback profile pointer's id — null when none is flagged (owner
+   *  2026-10-24 default-profile concept). The persisted anchor of the
+   *  ImageGen `effectiveActiveId` pattern: the per-scenario pointers
+   *  (dictation / voice messages) are the consumer's concern, this field
+   *  is the fallback the active-dot UI derives from. */
+  defaultProfileId: string | null;
   /** Open the connection form screen (Edit settings / New profile). */
   startEdit(): void;
   /** Mark a saved profile as the default transcription profile. */
@@ -397,6 +403,11 @@ export function useSttProfiles(): {
             autoKeyTtsProfiles,
           );
 
+  // The persisted fallback pointer, derived from the loaded list (the
+  //  ImageGenSection effective-pointer base — no extra fetch, it rides the
+  //  same `isDefault` flag the reload after setDefault refreshes).
+  const defaultProfileId = profiles.find((p) => p.isDefault)?.id ?? null;
+
   return {
     profiles,
     profileSearch,
@@ -409,6 +420,7 @@ export function useSttProfiles(): {
     saving,
     headerMode,
     draftAutoKeyProviderName,
+    defaultProfileId,
     startEdit,
     setDefault,
     select,
