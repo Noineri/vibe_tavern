@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -48,7 +49,6 @@ const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../shared/Tooltip.js");
-const realFramerMotion = await import("framer-motion");
 const realRegexApi = await import("../../api/regex-api.js");
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
@@ -77,11 +77,11 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-mock.module("framer-motion", () => ({
-  ...realFramerMotion,
-  AnimatePresence: ({ children }: { children?: ReactNode }) => children,
-  motion: { ...realFramerMotion.motion, div: ({ children }: { children?: ReactNode }) => <div>{children}</div> },
-}));
+// House animation mock via the shared co-load seam (the AP-29 fix): the
+// seam's motion.div FORWARDS DOM props — the file-private children-only
+// copy this harness used to inline dropped className, which poisoned
+// AgentMessageList's caption pins in any hand-bundled run of the family.
+installFramerMotionSeam();
 
 // RX-13 seam under test: what the display hook resolves. Overridden per test.
 let mockResolvedPresets: Array<Record<string, unknown>> = [];

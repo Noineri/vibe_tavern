@@ -2,6 +2,7 @@ import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
 
 useDomEnv();
@@ -75,16 +76,6 @@ const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../shared/Tooltip.js");
-const realFramerMotion = await import("framer-motion");
-
-type MotionInitial = false | { x: number; opacity: number };
-const motionInitials: MotionInitial[] = [];
-
-function MotionDiv({ children, initial = false }: { children?: ReactNode; initial?: MotionInitial }) {
-  motionInitials.push(initial);
-  const initialValue = initial === false ? "false" : `${initial.x},${initial.opacity}`;
-  return <div data-motion-initial={initialValue}>{children}</div>;
-}
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -118,11 +109,13 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-mock.module("framer-motion", () => ({
-  ...realFramerMotion,
-  AnimatePresence: ({ children }: { children?: ReactNode }) => children,
-  motion: { ...realFramerMotion.motion, div: MotionDiv },
-}));
+// House animation mock via the shared co-load seam (the AP-29 fix): the
+// seam's motion.div keeps recording each mount's `initial` as
+// `data-motion-initial` (the variant-slide pins below read it) while
+// FORWARDING DOM props — the file-private copy above used to drop className,
+// which poisoned AgentMessageList's caption pins in any hand-bundled run of
+// the family.
+installFramerMotionSeam();
 
 // ---------------------------------------------------------------------------
 // Scoped happy-dom shims.
@@ -277,7 +270,6 @@ const CHAT = "chat-1";
 beforeEach(async () => {
   const { snapshotStore, chatStore } = await loadModules();
   snapshotStore.useSnapshotStore.getState().clear();
-  motionInitials.length = 0;
   // Reset chat-store to a clean baseline: no active chat, no generations.
   chatStore.useChatStore.setState({
     activeChatId: null, selectedCharacterId: null, draft: "", editingMessageId: null,
