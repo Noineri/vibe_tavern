@@ -19,6 +19,7 @@ import { beforeAll, describe, it, expect, mock } from "bun:test";
 import { useState, type ReactNode } from "react";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -27,20 +28,10 @@ const { render, within } = await import("@testing-library/react");
 // Identity i18n — assertion strings match keys verbatim. Covers useT in every
 // component in the module graph (PromptFields + TokenCounter + AutoTextarea +
 // MobileExpandTextarea + PrefillField + Tooltip + DropdownSelect).
-const realI18nContext = await import("../../../i18n/context.js");
 const realTokenizer = await import("../../../utils/tokenizer.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // countTokens loads a real tiktoken encoding (cl100k_base) — heavy and
 // irrelevant to chat-field behavior. Stub it to keep the test fast.

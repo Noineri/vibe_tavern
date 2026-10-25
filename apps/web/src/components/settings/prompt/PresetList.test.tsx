@@ -1,11 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { act, fireEvent, render, within } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 // Co-load contract (master-list.test.tsx + ProviderProfileList.test.tsx
@@ -22,16 +22,7 @@ const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 const mobileState = { isMobile: false };
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
   useIsMobile: () => mobileState.isMobile,
