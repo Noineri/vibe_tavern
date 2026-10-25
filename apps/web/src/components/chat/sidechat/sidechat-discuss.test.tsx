@@ -27,21 +27,17 @@ import type {
   AgentHostTransport,
 } from "../../../lib/agent-host-registry.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, params?: Record<string, string | number>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params === undefined ? key : `${key} ${JSON.stringify(params)}`,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // The controller's failure path toasts through the i18n singleton — echo it
 // (a spy, not a real init) and restore in afterAll (R13).

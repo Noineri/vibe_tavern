@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { DiceDefinitionsResponse, DiceLaneState, DiceRollSnapshot } from "../../api/types.js";
 
 useDomEnv();
@@ -32,7 +33,6 @@ const mocks = {
     chooseAttempt: mock(async () => undefined),
   },
 };
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realDiceStore = await import("../../stores/dice-store.js");
@@ -44,10 +44,9 @@ const realInputArea = await import("./InputArea.js");
 const realMessageList = await import("./MessageList.js");
 const realMessageAiEditorModal = await import("./MessageAiEditorModal.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, vars?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, vars?) => {
       if (vars?.count != null) return `${key}:${String(vars.count)}`;
       if (vars?.label != null && vars?.actor == null && vars?.total == null) return `${key}:${String(vars.label)}`;
       if (vars?.actor != null || vars?.label != null || vars?.total != null) {
@@ -55,12 +54,9 @@ mock.module("../../i18n/context.js", () => ({
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,

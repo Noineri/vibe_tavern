@@ -9,6 +9,7 @@ import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import React from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -35,20 +36,15 @@ mock.module("../../api/stt-api.js", () => ({
 }));
 
 // House i18n test pattern (SttSection.test.tsx): raw keys render as-is.
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && "mode" in params
         ? `${key}:${String(params.mode)}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 

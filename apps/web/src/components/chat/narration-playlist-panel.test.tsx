@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AppMessage } from "../../api/types.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "../../lib/tts/narration-player.js";
@@ -110,27 +111,22 @@ const mocks = {
 
 const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realChatSelectors = await import("../../stores/chat-selectors.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
 const realPlatform = await import("../../lib/platform.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, vars?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, vars?) => {
       // Same shape as the dice-panel test mock: key + colon-joined vars.
       if (!vars) return key;
       return `${key}:${Object.values(vars).map((value) => String(value)).join(":")}:`;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
