@@ -46,7 +46,7 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
   setCoauthorModuleAction,
 }));
 
-// useT must return a stable t(); the hook builds labels off it.
+// t echoes keys (the hook builds labels off it) — the shared co-load seam keeps it order-independent.
 installI18nContextSeam();
 
 // The favorites/tool-filter path goes through two hooks the data hook composes.

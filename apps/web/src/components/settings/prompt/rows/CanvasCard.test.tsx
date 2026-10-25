@@ -23,7 +23,7 @@ import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js
 
 useDomEnv();
 
-// Mock useT at the module boundary (same relative path the component uses).
+// Mock useT at the module boundary via the shared co-load seam (raw keys render as-is).
 installI18nContextSeam();
 
 const { render, fireEvent } = await import("@testing-library/react");

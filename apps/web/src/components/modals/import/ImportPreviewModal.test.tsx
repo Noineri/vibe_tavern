@@ -33,9 +33,9 @@ useDomEnv();
 
 const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
 
-// useT must return a stable t() — the modal builds labels off it. Mocking at
-// the module level keeps the test locale-independent and avoids pulling the
-// real i18next resource bundle.
+// t echoes keys — the modal builds labels off it. The shared co-load seam
+// keeps the test locale-independent (identity stub unless a provider mounts)
+// and never touches the mutable i18next instance.
 installI18nContextSeam();
 
 let ImportPreviewModal: typeof import("./ImportPreviewModal.js").ImportPreviewModal;

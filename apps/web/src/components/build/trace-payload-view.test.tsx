@@ -20,7 +20,7 @@ useDomEnv();
 
 const NOOP = () => {};
 
-// Mock useT at the module boundary (same relative path the component uses).
+// Mock useT at the module boundary via the shared co-load seam (raw keys render as-is).
 installI18nContextSeam();
 
 let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadForTrace;

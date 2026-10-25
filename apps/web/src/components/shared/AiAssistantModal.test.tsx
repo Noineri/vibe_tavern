@@ -63,7 +63,7 @@ mock.module("../../stores/api-actions/provider-actions.js", () => {
   };
 });
 
-// useT must return a stable identity t() — the modal builds labels off it.
+// t echoes keys (the modal builds labels off it) — the shared co-load seam keeps it order-independent.
 installI18nContextSeam();
 
 // Mobile flag as a mutable cell: the file's tests pin the desktop Modal path
