@@ -18,17 +18,14 @@ import type { ChatGenerationState } from "../../stores/chat-store.js";
 import type { AppMessage } from "../../api/types.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 let CoauthorToolActivitySlot: typeof import("./CoauthorToolActivitySlot.js").CoauthorToolActivitySlot;
 let ToolActivityCard: typeof import("./CoauthorToolActivitySlot.js").ToolActivityCard;

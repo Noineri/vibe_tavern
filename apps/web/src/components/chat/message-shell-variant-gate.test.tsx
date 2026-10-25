@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -60,17 +61,13 @@ const STABLE_CONTROLLER = {
 };
 
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam();
 
 // ImageBlock's image chrome rides CustomTooltip (needs the app-level
 // TooltipProvider) — same passthrough boundary as message-block-image-slot.

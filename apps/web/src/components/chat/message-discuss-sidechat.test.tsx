@@ -33,6 +33,7 @@ import {
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import { type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 
 // failOnNetwork: copied from message-ai-editor-controls.test.tsx — the bubble
@@ -65,7 +66,6 @@ const STABLE_CONTROLLER = {
 
 const useIsMobile = mock(() => false);
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
@@ -75,16 +75,7 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: NOOP,
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,

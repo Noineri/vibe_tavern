@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -30,15 +31,11 @@ const mocks = {
   fetchChatAction: mock(),
   toastError: mock(),
 };
-const realI18nContext = await import("../../../i18n/context.js");
 const realProposalsApi = await import("../../../api/agent-thread-proposals-api.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realSonner = await import("sonner");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("sonner", () => ({
   ...realSonner,

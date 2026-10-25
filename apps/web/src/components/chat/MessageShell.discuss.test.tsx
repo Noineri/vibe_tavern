@@ -16,21 +16,12 @@
 import { describe, expect, test, mock, beforeEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const useIsMobile = mock(() => false);
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const realMobile = await import("../../hooks/use-mobile.js");
 mock.module("../../hooks/use-mobile.js", () => ({

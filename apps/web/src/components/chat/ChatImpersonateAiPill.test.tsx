@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import React from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -18,7 +19,6 @@ const calls = {
 
 const realAiApi = await import("../../api/ai-assistant-api.js");
 const realSettingsApi = await import("../../api/settings-api.js");
-const realI18n = await import("../../i18n/context.js");
 
 mock.module("../../api/ai-assistant-api.js", () => ({
   ...realAiApi,
@@ -35,10 +35,7 @@ mock.module("../../api/settings-api.js", () => ({
     return input;
   }),
 }));
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../shared/AiQuickPill.js", () => ({
   AiQuickPill: (props: NonNullable<typeof calls.pill>) => {
     calls.pill = props;

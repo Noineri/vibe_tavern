@@ -30,6 +30,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
 
 useDomEnv();
@@ -50,7 +51,6 @@ const mocks = {
 const noop = mock();
 const noopAsync = mock(async () => undefined);
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
@@ -82,10 +82,7 @@ mock.module("sonner", () => ({
   toast: { warning: mocks.toastWarning, error: noop, success: noop, info: noop },
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const realImageGenApi = await import("../../api/image-gen-api.js");
-const realI18n = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 import type { GenerateImageGenInput, ImageGenProgressInfoValue } from "@vibe-tavern/api-contracts";
 
@@ -49,21 +49,7 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
 
 // Raw-key i18n stub (the SttLocalServerPanel.test harness): t returns the
 // key itself, so assertions address copy by stable identifiers.
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, values?: Record<string, number>) => {
-      if (key === "image_gen_horde_queue") {
-        return `In queue: position ${values?.position} · ~${values?.minutes}m`;
-      }
-      if (key === "image_gen_horde_drawing") return "Drawing…";
-      return key;
-    },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-  }),
-}));
+installI18nContextSeam({ interpolateKeys: ["image_gen_horde_queue", "image_gen_horde_drawing"] });
 
 const { render, cleanup, waitFor, fireEvent, act } = await import("@testing-library/react");
 const React = await import("react");

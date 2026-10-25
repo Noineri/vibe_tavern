@@ -29,6 +29,7 @@ import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 // failOnNetwork: this file used to fire GET /api/tts/{profiles/all,links} and
 // GET /api/regex/resolve-active at the live API port on every test, so the
@@ -61,7 +62,6 @@ const STABLE_CONTROLLER = {
 
 const useIsMobile = mock(() => false);
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
@@ -71,16 +71,7 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: NOOP,
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../hooks/use-mobile.js", () => ({
 	...realMobileHook,

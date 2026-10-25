@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach, afterAll, beforeEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
@@ -8,17 +9,7 @@ import type { AppMessage, ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const realImageGenApi = await import("../../api/image-gen-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");

@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import type { VoiceRecorder } from "../../lib/stt/voice-recorder.js";
 
@@ -20,17 +21,7 @@ mock.module("../../api/stt-api.js", () => ({
   listAllSttProfiles: async () => profiles,
 }));
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const { VoiceMessageButton } = await import("./VoiceMessageButton.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");

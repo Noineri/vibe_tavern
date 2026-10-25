@@ -13,22 +13,13 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 // ── Mock seams (tier T1, `...real` spread — the leak-safe pattern) ──────────
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const realGalleryViewer = await import("../build/editors/GalleryViewer.js");
 // The viewer is the gallery's tested surface; here we pin the SEAM — the
