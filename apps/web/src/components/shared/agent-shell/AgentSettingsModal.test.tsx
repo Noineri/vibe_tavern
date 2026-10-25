@@ -23,6 +23,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -33,26 +34,19 @@ import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
-const realI18nContext = await import("../../../i18n/context.js");
 const realProfileApi = await import("../../../api/copilot-profile-api.js");
 const realDropdownSelect = await import("../DropdownSelect.js");
 const realModelPills = await import("./AgentModelPills.js");
 const realProfileModal = await import("./AgentProfileModal.js");
 const realSkillModal = await import("./AgentSkillModal.js");
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		// Identity with the single `{n}` count echoed (the new per-part
-		// plural keys pass `{ n, count }`; the old combined key is gone).
-		t: (key: string, opts?: Record<string, unknown>) =>
+installI18nContextSeam({
+	custom: {
+		t: (key, opts?) =>
 			opts !== undefined ? `${key}:${String(opts.n)}` : key,
-		tDynamic: (key: string) => key,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+		tDynamic: (key) => key,
+	},
+});
 
 const BUILTIN: CopilotProfile = {
 	id: "builtin",
