@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
 import type { AppCharacterEntry, ChatListItem } from "../../api/types.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 
 useDomEnv({ failOnNetwork: true });
@@ -30,11 +31,7 @@ const { act, fireEvent, render, within } = await import("@testing-library/react"
 
 // ── Doubles ──────────────────────────────────────────────────────────────
 
-const realI18nContext = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../shared/Tooltip.js", () => ({

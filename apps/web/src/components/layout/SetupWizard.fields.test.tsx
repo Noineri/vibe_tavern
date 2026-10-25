@@ -11,6 +11,7 @@ import { beforeEach, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
 useDomEnv();
@@ -18,7 +19,6 @@ useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
 // TopBar.test.tsx safe pattern: capture real exports first, spread, override.
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 
@@ -30,7 +30,7 @@ let wizardProviderProfiles: unknown[] = [];
 const wizardTestDraft = mock(async () => ({ success: true }));
 const wizardSave = mock(async (_form: unknown) => ({ id: "saved-profile" }));
 
-mock.module("../../i18n/context.js", () => ({ ...realI18nContext, useT: () => ({ t: (key: string) => key }) }));
+installI18nContextSeam();
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobileViewport }));
 mock.module("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,

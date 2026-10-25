@@ -3,6 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { CHAT_MODE } from "@vibe-tavern/domain";
 import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
@@ -25,7 +26,6 @@ const mocks = {
   setTweaksOpen: mock(),
 };
 const realMobileHook = await import("../../hooks/use-mobile.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realPresetController = await import("../../hooks/use-preset-controller.js");
 const realChatSelectors = await import("../../stores/chat-selectors.js");
@@ -37,7 +37,7 @@ const realMediaMenu = await import("../chat/MediaMenu.js");
 const realUpdateBadge = await import("./UpdateBadge.js");
 
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => mobileOverride }));
-mock.module("../../i18n/context.js", () => ({ ...realI18nContext, useT: () => ({ t: (key: string) => key }) }));
+installI18nContextSeam();
 mock.module("../../hooks/use-provider-profiles.js", () => ({
   ...realProviderProfiles,
   useProviderProfiles: () => ({ activeProviderProfile: null }),

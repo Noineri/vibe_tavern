@@ -23,6 +23,7 @@ import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv({ failOnNetwork: true });
 
@@ -34,7 +35,6 @@ useDomEnv({ failOnNetwork: true });
 const { render, fireEvent, act, waitFor, within } = await import("@testing-library/react");
 
 // --- House mocks (RichChatRow.test.tsx pattern) -------------------------
-const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realChatController = await import("../../../hooks/use-chat-controller.js");
 const realCharacterController = await import("../../../hooks/use-character-controller.js");
@@ -42,10 +42,7 @@ const realCharacterController = await import("../../../hooks/use-character-contr
 const switchChatSpy = mock(async () => {});
 const createChatSpy = mock(async () => {});
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../shared/Tooltip.js", () => ({
 	...realTooltip,

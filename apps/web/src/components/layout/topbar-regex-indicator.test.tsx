@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -21,26 +22,12 @@ const { render } = await import("@testing-library/react");
 
 const NOOP = () => {};
 
-const realI18nContext = await import("../../i18n/context.js");
 const realRegexApi = await import("../../api/regex-api.js");
 const realUsePresetController = await import("../../hooks/use-preset-controller.js");
 const realUseProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realTooltip = await import("../shared/Tooltip.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string, opts?: Record<string, unknown>) => {
-    // Minimal interpolation so assertions can match rendered tooltip text.
-    const params = opts ?? {};
-    const raw = {
-      topbar_regex_active_one: "Regex active: {{name}}",
-      topbar_regex_active_many: "Regex active: {{n}}",
-    } as Record<string, string>;
-    let out = raw[key] ?? key;
-    for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{{${k}}}`, String(v));
-    return out;
-  }, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam({ interpolateKeys: ["topbar_regex_active_one", "topbar_regex_active_many"] });
 
 mock.module("../../hooks/use-preset-controller.js", () => ({
   ...realUsePresetController,
