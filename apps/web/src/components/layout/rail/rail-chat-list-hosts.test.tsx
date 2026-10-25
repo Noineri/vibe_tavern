@@ -26,6 +26,7 @@ import type { AppCharacterEntry, ChatListItem } from "../../../api/types.js";
 import type { CharacterImportMobileHandle } from "../../modals/import/CharacterImportMobile.js";
 import type { ChatImportMobileHandle } from "../../modals/import/ChatImportMobile.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { formatRelativeTime } from "../sidebar-utils.js";
 
@@ -35,17 +36,12 @@ const { act, fireEvent, render } = await import("@testing-library/react");
 
 // ── Doubles ──────────────────────────────────────────────────────────────
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (key: string, opts?: { count?: number }) => (typeof opts?.count === "number" ? `${key}#${opts.count}` : key),
-		tDynamic: (key: string) => key,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam({
+	custom: {
+		t: (key, opts?) => (typeof opts?.count === "number" ? `${key}#${opts.count}` : key),
+		tDynamic: (key) => key,
+	},
+});
 
 const realTooltip = await import("../../shared/Tooltip.js");
 mock.module("../../shared/Tooltip.js", () => ({
