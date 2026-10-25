@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { RegexProfileAvailability, RegexRuleAvailability } from "../../../lib/regex-availability.js";
 
 useDomEnv();
 const { render } = await import("@testing-library/react");
 const { TooltipProvider } = await import("../../shared/Tooltip.js");
-const realI18nContext = await import("../../../i18n/context.js");
 const { default: en } = await import("../../../i18n/locales/en.json");
 const { default: ru } = await import("../../../i18n/locales/ru.json");
 
@@ -21,10 +21,15 @@ function pluralKey(key: string, count: number | undefined): string {
   return `${key}_many`;
 }
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => {
+// Hand port onto the shared seam (mutable-locale family): the suite's own `t`
+// closes over `activeLocale` and the `en`/`ru` tables EXACTLY as the old
+// inline mock did — the closure is read per render, so switching locales
+// mid-suite keeps working. The old mock's `locale: activeLocale ?? "en"` field
+// is dropped as inert (the badge destructures only `t`; verified — nothing in
+// this graph reads `locale`). A mounted provider still delegates to real i18n.
+installI18nContextSeam({
+  custom: {
+    t: (key, opts?) => {
       const resolvedKey = pluralKey(key, typeof opts?.count === "number" ? opts.count : undefined);
       const text = activeLocale === "en"
         ? en[resolvedKey as keyof typeof en]
@@ -35,11 +40,8 @@ mock.module("../../../i18n/context.js", () => ({
       return opts?.count === undefined ? rendered : rendered.replace("{count}", String(opts.count));
     },
     tDynamic: (key: string) => key,
-    locale: activeLocale ?? "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+  },
+});
 
 let RegexAvailabilityBadge: typeof import("./RegexAvailabilityBadge.js").RegexAvailabilityBadge;
 beforeAll(async () => {

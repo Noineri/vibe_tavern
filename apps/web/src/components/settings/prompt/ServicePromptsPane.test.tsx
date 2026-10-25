@@ -1,4 +1,5 @@
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -7,7 +8,6 @@ import React from "react";
 import { SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
 import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
 
-const realI18n = await import("../../../i18n/context.js");
 const realApi = await import("../../../api/service-prompt-api.js");
 const stableT = (key: string, opts?: Record<string, unknown>) => {
 	if (opts && typeof opts.count === "number") return `${key} ${opts.count}`;
@@ -27,16 +27,12 @@ const deleteMock = mock(async (_id: string) => undefined);
 const setActiveMock = mock(async (_id: string | null) => undefined);
 const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }>) => ({ profiles: [] as ServicePromptProfile[], activeProfileId: null as string | null }));
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({
-		t: stableT,
-		tDynamic: stableTDynamic,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+// Hand port onto the shared seam: the suite's named `stableT`/`stableTDynamic`
+// run verbatim (the pane's callbacks depend on `t`/`tDynamic` identity — the
+// spec's functions are created once, at install time, so identity holds).
+installI18nContextSeam({
+	custom: { t: stableT, tDynamic: stableTDynamic },
+});
 
 mock.module("../../../api/service-prompt-api.js", () => ({
 	...realApi,

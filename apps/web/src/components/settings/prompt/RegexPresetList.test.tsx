@@ -1,13 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
 const { act, render, within } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 // Co-load contract (master-list.test.tsx + ProviderProfileList.test.tsx +
@@ -23,19 +23,15 @@ type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, options?: { count?: number }) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, options?) =>
       key === "promptManager.regex.availabilityActiveRules"
         ? `${key}:${options?.count ?? 0}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 // The rows render the REAL MasterDetailMobileDrillDown (ML-1 precedent: a
 // label-less `drill` stub diverged from master-list.test.tsx's mock and
 // poisoned its co-load run). Shape-identical with master-list.test.tsx
