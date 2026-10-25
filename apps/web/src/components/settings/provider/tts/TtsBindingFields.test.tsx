@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -14,17 +15,7 @@ let mockLinks: TtsLinkRecord[] = [];
 
 // ── module mocks (safe pattern: real import FIRST, spread, override only) ──
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // The hook itself runs REAL — driven through its deps seam. A mock.module of
 // "../../../../hooks/use-tts-links.js" here would poison the later use-tts-links.test.ts in

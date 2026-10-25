@@ -1,10 +1,10 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
 const realMasterDetail = await import("../../../shared/MasterDetailModal.js");
 // Co-load contract (master-list.test.tsx registers the SAME mocks;
 // mock.module is process-global, last-write-wins — the factories must stay
@@ -12,16 +12,7 @@ const realMasterDetail = await import("../../../shared/MasterDetailModal.js");
 // REAL MasterDetailMobileDrillDown with `isDetailOpen: false` (the ML-8
 // rework lesson: a null-drill-down stub poisons the primitive's co-load).
 
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetail,
