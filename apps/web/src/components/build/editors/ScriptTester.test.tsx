@@ -27,6 +27,7 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -40,7 +41,6 @@ const testScript = mock(() => Promise.resolve({
 	shared: {},
 	errors: [],
 }));
-const realI18nContext = await import("../../../i18n/context.js");
 const realScriptApi = await import("../../../api/script-api.js");
 const realSettingsApi = await import("../../../api/settings-api.js");
 const realAutoTextarea = await import("../../shared/auto-textarea.js");
@@ -48,16 +48,7 @@ const realAutoTextarea = await import("../../shared/auto-textarea.js");
 // ── Module-boundary mocks (hoisted above the ScriptTester import) ────────
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (k: string) => k,
-		tDynamic: (k: string) => k,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam();
 
 // testScript RPC — the single side effect of the panel.
 mock.module("../../../api/script-api.js", () => ({

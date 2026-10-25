@@ -22,18 +22,15 @@ import { EditorView } from "@codemirror/view";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
 // Mock useT at the module boundary — the editor imports i18n for labels.
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 // Mock useIsMobile so the desktop path renders deterministically.
 mock.module("../../../hooks/use-mobile.js", () => ({
 	...realMobileHook,

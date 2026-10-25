@@ -1,15 +1,12 @@
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const NOOP = () => {};
-const realI18nContext = await import("../../i18n/context.js");
 
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam();
 
 let TraceJsonDownloads: typeof import("./trace-json-downloads.js").TraceJsonDownloads;
 let render: typeof import("@testing-library/react").render;

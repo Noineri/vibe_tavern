@@ -14,6 +14,7 @@ import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ObjectiveState } from "../../../api/types.js";
 import type { SnapshotStore } from "../../../stores/snapshot-store.js";
 import type { ProviderDataActions, ProviderDataState } from "../../../stores/provider-data-store.js";
@@ -49,16 +50,12 @@ async function fetchProviderModelsAction() {
   };
 }
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realProviderDataStore = await import("../../../stores/provider-data-store.js");
 const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // Co-load safety (bun's mock.module is process-global; MessageReasoning
 // precedent): the mocked hook must delegate to the REAL store's state and

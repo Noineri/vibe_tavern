@@ -40,6 +40,7 @@ import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { getAgentHost } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
@@ -142,7 +143,6 @@ const testScript = mock((_id: string, _body: { code: string; warningAcknowledged
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
-const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realSettingsApi = await import("../../../api/settings-api.js");
@@ -189,16 +189,7 @@ mock.module("../../../api/experience-api.js", () => ({
   runExperienceTest,
 }));
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,

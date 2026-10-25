@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_CONTEXT_MODE } from "@vibe-tavern/domain";
 import type { ExperienceChatConfigRow } from "../../../api/types.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
@@ -89,7 +90,6 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> & { chatId: string })
   };
 }
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realDiceApi = await import("../../../api/dice-api.js");
@@ -104,17 +104,7 @@ const realUseMobile = await import("../../../hooks/use-mobile.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    // Return the key verbatim — assertions check for key strings.
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,

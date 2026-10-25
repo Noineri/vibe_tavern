@@ -10,21 +10,18 @@
  *
  * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave C.
  */
-import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { beforeAll, describe, it, expect } from "bun:test";
 import type { InjectEntry, PayloadMessage } from "./trace-payload-view.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const NOOP = () => {};
-const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary (same relative path the component uses).
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam();
 
 let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadForTrace;
 let TracePayloadView: typeof import("./trace-payload-view.js").TracePayloadView;

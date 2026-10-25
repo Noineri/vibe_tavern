@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { wireScript } from "../../../../../test/wire-fixtures.js";
 import type { ScriptRecord } from "../../../../api/types.js";
 import { useScriptSafetySettingsStore } from "../../../../stores/script-safety-settings-store.js";
@@ -10,7 +11,6 @@ useDomEnv();
 // The banner reads `useT` and the settings store (which calls the settings
 // API). Mock both seams; the real Zustand store stays — the test drives its
 // state directly, matching the editor suites' "real store, mocked API" split.
-const realI18n = await import("../../../../i18n/context.js");
 const realSettingsApi = await import("../../../../api/settings-api.js");
 const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
 const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
@@ -18,10 +18,7 @@ const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: 
   updatedAt: "",
 }));
 
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../../../../api/settings-api.js", () => ({
   ...realSettingsApi,
   getScriptSafetySettings,

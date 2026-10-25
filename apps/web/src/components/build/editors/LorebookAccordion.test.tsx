@@ -16,11 +16,11 @@ import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { LoreEntryRecord, LorebookLinkRecord, LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const listLoreEntries = mock((_lorebookId: string) => Promise.resolve<LoreEntryRecord[]>([]));
-const realI18nContext = await import("../../../i18n/context.js");
 const realLorebookApi = await import("../../../api/lorebook-api.js");
 const realLoreEntryList = await import("./LoreEntryList.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
@@ -28,16 +28,7 @@ const realTooltip = await import("../../shared/Tooltip.js");
 const realTokenizer = await import("../../../utils/tokenizer.js");
 
 // Identity i18n — assertion strings match keys verbatim.
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // lorebook-api — only listLoreEntries is called by the accordion; types are
 // erased at runtime.

@@ -39,6 +39,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { brandId, type ChatId, type ExperienceCapability } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
 useDomEnv();
@@ -56,22 +57,11 @@ const mocks = {
   onValidityChange: mock(),
 };
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    // Return the key verbatim — assertions check for key strings.
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../api/script-api.js", () => ({
   ...realScriptApi,

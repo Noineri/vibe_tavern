@@ -12,6 +12,7 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { useForm, FormProvider } from "react-hook-form";
 import { wireLoreEntry, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AiAssistantRequestBody, UiSettingsRecord } from "../../../api/types.js";
 import type { AiQuickSettings } from "../../shared/AiQuickPill.js";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
@@ -28,7 +29,6 @@ let savedRecord: UiSettingsRecord = wireUiSettings();
 
 const realAiApi = await import("../../../api/ai-assistant-api.js");
 const realSettingsApi = await import("../../../api/settings-api.js");
-const realI18n = await import("../../../i18n/context.js");
 
 mock.module("../../../api/ai-assistant-api.js", () => ({
   ...realAiApi,
@@ -45,10 +45,7 @@ mock.module("../../../api/settings-api.js", () => ({
     return savedRecord;
   }),
 }));
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../../shared/AiQuickPill.js", () => ({
   AiQuickPill: (props: NonNullable<typeof calls.pill>) => {
     calls.pill = props;

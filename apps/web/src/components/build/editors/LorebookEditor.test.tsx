@@ -29,6 +29,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
 import { mocked } from "../../../../test/mock-utils.js";
 import type { AppCharacterEntry, LoreEntryRecord, LorebookRecord, PersonaRecord } from "../../../api/types.js";
@@ -38,7 +39,6 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 
 // ── Module-boundary mocks ─────────────────────────────────────────────────
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSonner = await import("sonner");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realLorebookImportModal = await import("./LorebookImportModal.js");
@@ -65,16 +65,7 @@ const createLoreEntry = mock(realLorebookApi.createLoreEntry);
 const exportLorebookSt = mock(realLorebookApi.exportLorebookSt);
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // sonner toasts — stubbed so the duplicate test can assert success feedback
 // fires (the whole point of the toast: the duplicate must not be silent).

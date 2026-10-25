@@ -24,6 +24,7 @@ import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -47,7 +48,6 @@ const testScript = mock(() => Promise.resolve({
 	errors: [],
 }));
 const realScriptApi = await import("../../../api/script-api.js");
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
@@ -85,16 +85,7 @@ mock.module("../../../api/script-api.js", () => ({
 	testScript,
 }));
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../stores/snapshot-store.js", () => ({
 	...realSnapshotStore,

@@ -19,10 +19,10 @@ import { useForm, FormProvider, type UseFormReturn } from "react-hook-form";
 import type { LoreEntryRecord } from "../../../api/types.js";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realActivationTestPanel = await import("./activation-test-panel.js");
@@ -37,16 +37,7 @@ describe("parseGeneratedLoreKeys", () => {
   });
 });
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 mock.module("../../../stores/snapshot-store.js", () => ({
 	...realSnapshotStore,
   useActiveCharacter: () => null,

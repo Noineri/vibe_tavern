@@ -14,6 +14,7 @@
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { createElement, type ChangeEvent, type ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
@@ -30,7 +31,6 @@ const mocks = {
   rulesAiModalProps: null as null | Record<string, unknown>,
 };
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realInsightsCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
@@ -39,10 +39,7 @@ const realProviderActions = await import("../../../stores/api-actions/provider-a
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,
