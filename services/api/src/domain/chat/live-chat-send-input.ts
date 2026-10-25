@@ -29,3 +29,6 @@ export interface LiveChatSendInput {
   /** Optional live co-author editor snapshot; absent preserves legacy assembly. */
   coauthorEditorState?: CoauthorEditorState;
 }
+
+/** The same media dependencies on every send, reply and continuation attempt. */
+export type LiveChatMediaInput = Pick<LiveChatSendInput, "visionAssets" | "voiceTranscriber">;

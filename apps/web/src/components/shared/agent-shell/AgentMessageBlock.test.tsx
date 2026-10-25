@@ -4,7 +4,7 @@
  * its caption count from `coveredCount`. The user/assistant bubble path is
  * covered by the message-list test; this file isolates the role-dispatch.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
@@ -959,5 +959,177 @@ describe("ExperienceCopilotMessageBlock — assistant edit (AP-32)", () => {
     expect(button.className).toContain("h-11");
     expect(button.className).toContain("w-11");
     expect(button.getAttribute("aria-label")).toBe("edit");
+  });
+});
+
+// ─── CA-4f: sent shell attachments — chips, menu, view-only lightbox ────────
+
+const client = await import("../../../api/agent-attachment-actions-api.js");
+const { AgentAttachmentActionsContext } = await import("./agent-attachment-actions-context.js");
+
+describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
+  const spies: Array<{ mockRestore(): void }> = [];
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
+  });
+
+  const textFile: import("@vibe-tavern/domain").Attachment = {
+    id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+    mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+  };
+  const image: import("@vibe-tavern/domain").Attachment = {
+    id: "img1", assetId: "asset-2", name: "capture.png", type: "image",
+    mimeType: "image/png", sizeBytes: 34,
+  };
+
+  function userMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+    return {
+      id: "u1",
+      threadId: "thread-1",
+      role: "user",
+      content: "Read this",
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
+      createdAt: "2026-10-24T00:00:00.000Z",
+      ...over,
+    };
+  }
+
+  function renderWithActions(node: ReactNode) {
+    return render(
+      <AgentAttachmentActionsContext.Provider
+        value={{ threadId: "thread-1", providerProfileId: "p1", model: "m1", refreshMessages: () => {} }}
+      >
+        {node}
+      </AgentAttachmentActionsContext.Provider>,
+    );
+  }
+
+  it("a user message with a text file shows the chip and its «⋯» menu", async () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [textFile] })} />);
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+    expect(view.getByTitle("notes.md")).toBeDefined();
+    // The menu trigger mounts (desktop — the mobile override is false here).
+    expect(view.getByRole("button", { name: "attachment_file_actions" })).toBeDefined();
+  });
+
+  it("an attachment-only user message renders (empty content no longer hides it)", () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ content: "   ", attachments: [textFile] })} />);
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+  });
+
+  it("the pending bubble shows the chips WITHOUT the menu", () => {
+    const view = renderWithActions(
+      <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", attachments: [textFile] })} />,
+    );
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+    expect(view.queryByRole("button", { name: "attachment_file_actions" })).toBeNull();
+  });
+
+  it("a persisted image's lightbox shows the RP action set (behavior change: view-only → RP actions, basis owner 2026-10-24)", async () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
+    // WAS (CA-4f): view-only — no edit / regenerate / delete control. NOW:
+    // the shell's action seam supplies the RP lightbox's three controls.
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).not.toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull();
+  });
+
+  it("regenerate calls the agent client with the picker's profile + model", async () => {
+    const regenerate = spyOn(client, "regenerateAgentAttachmentDescription").mockResolvedValue({ description: "Fresh." });
+    spies.push(regenerate);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="regenerate_description_title"]')!);
+    await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1));
+    const call = regenerate.mock.calls[0]!;
+    expect(call.slice(0, 4)).toEqual(["thread-1", "u1", "img1", { providerProfileId: "p1", model: "m1" }]);
+    expect(call[4]).toBeInstanceOf(AbortSignal);
+    await waitFor(() => expect(document.body.textContent).toContain("Fresh."));
+  });
+
+  it("edit and delete call the agent description/remove clients", async () => {
+    const update = spyOn(client, "updateAgentAttachmentDescription").mockResolvedValue({ ok: true });
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(update, remove);
+    // Two images: the pinned RP delete path short-circuits (closes, no API
+    // call) when the deleted image was the message's LAST attachment, so the
+    // client call is only reachable with a surviving sibling.
+    const second = { ...image, id: "img2", assetId: "asset-3", name: "b.png" };
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image, second] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="Add description"], [title="Edit description"]')).not.toBeNull());
+    // Edit: open the editor, type, save.
+    fireEvent.click(document.querySelector('[title="Add description"], [title="Edit description"]')!);
+    fireEvent.change(document.querySelector("textarea")!, { target: { value: "Hand-written." } });
+    fireEvent.click([...document.querySelectorAll("button")].find((b) => b.textContent === "Save")!);
+    await waitFor(() => expect(update).toHaveBeenCalledWith("thread-1", "u1", "img1", "Hand-written."));
+    // Delete: confirm through the destructive modal.
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    const confirm = await waitFor(() => {
+      const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
+      expect(found).toBeDefined();
+      return found!;
+    });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+  });
+
+  it("deleting a persisted user message's ONLY image calls the agent delete client (CA-4h)", async () => {
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(remove);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    // The confirm button is located by its label text (the sibling CA-4g2
+    // test's idiom), not by the real modal's chrome classes: in a hand-bundled
+    // co-load the `destructive-confirm-modal` mock another suite registers
+    // (AgentChatPane / AgentProfileModal / skill-library) rewrites the module
+    // in place and its inline stub carries no `bg-danger` classes — the
+    // checked fact (confirm clicked → the agent delete client called) is
+    // identical under the real modal and every stub.
+    fireEvent.click(await waitFor(() => {
+      const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
+      expect(found).toBeDefined();
+      return found!;
+    }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(document.querySelector(".fixed.inset-0")).toBeNull());
+  });
+
+  it("the PENDING bubble's lightbox still has no controls", async () => {
+    const view = renderWithActions(
+      <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", content: "sending", attachments: [image] })} />,
+    );
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();
+  });
+
+  it("summarize calls the agent client with the picker's profile + model", async () => {
+    const summarize = spyOn(client, "summarizeAgentAttachment").mockResolvedValue({ ...textFile, description: "Short." });
+    spies.push(summarize);
+    const userEvent = (await import("@testing-library/user-event")).default;
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [textFile] })} />);
+    await userEvent.setup().click(view.getByRole("button", { name: "attachment_file_actions" }));
+    await waitFor(() => expect(view.getByRole("menuitem", { name: "attachment_summarize" })).toBeDefined());
+    await userEvent.setup().click(view.getByRole("menuitem", { name: "attachment_summarize" }));
+    await waitFor(() => expect(summarize).toHaveBeenCalledTimes(1));
+    expect(summarize.mock.calls[0]!.slice(0, 4)).toEqual(["thread-1", "u1", "att1", { providerProfileId: "p1", model: "m1" }]);
   });
 });

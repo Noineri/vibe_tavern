@@ -38,6 +38,8 @@ import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
+import type { LiveChatMediaInput } from "./live-chat-send-input.js";
+import { replyExecutionOptions, historyAttachmentDescriptions, type AttachmentDescriptionWriter } from "./live-chat-media.js";
 
 // ─── Shared structural types ────────────────────────────────────────────────
 
@@ -51,7 +53,7 @@ export type DrainFinalSnapshot = {
 /** Input of the orchestrator's stream-start helper. Exported here (not in the
  *  orchestrator) so this module can type the fallback's stream seams without
  *  importing api/runtime types. */
-export interface StreamStartInput {
+export interface StreamStartInput extends LiveChatMediaInput {
   chatId: string;
   profile: StoredProviderProfileRecord;
   model: string;
@@ -64,9 +66,6 @@ export interface StreamStartInput {
   continuationFallback?: boolean;
   tools?: ToolSet;
   maxSteps?: number;
-  visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
-  /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
-  voiceTranscriber?: import("../../infrastructure/ai/provider-execution-types.js").ProviderExecutionInput["voiceTranscriber"];
   onAttachmentDescriptions?: import("../../infrastructure/ai/provider-execution-types.js").ProviderExecutionInput["onAttachmentDescriptions"];
 }
 
@@ -94,13 +93,6 @@ export interface DrainStreamInput<TFinal extends DrainFinalSnapshot> {
   onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<TFinal>;
 }
 
-/** Cached-model entry shape the stream-start vision assets use (structural —
- *  mirrors the executor type without importing it as a value). */
-interface CachedModelEntry {
-  modelSlug: string;
-  capabilities?: { vision?: boolean };
-}
-
 /** Prompt shape returned by the runtime's preview assembly (structural slice
  *  of the ChatRuntime method's return type). */
 export interface ContinueFallbackPrompt extends AssemblePromptResponse {
@@ -126,7 +118,7 @@ export interface ContinueFallbackRuntime<TSnapshot extends FallbackVariantSnapsh
 }
 
 /** The Continue-seam input slice the fallback attempts consume. */
-export interface ContinueFallbackAttemptInput {
+export interface ContinueFallbackAttemptInput extends LiveChatMediaInput {
   chatId: string;
   messageId: string;
   /** The selected variant's text — the continuation start + stitch base. */
@@ -267,6 +259,7 @@ export function stitchContinuationOrPrefill(
 export async function runContinueFallback<TSnapshot extends FallbackVariantSnapshot>(
   deps: {
     chatRuntime: ContinueFallbackRuntime<TSnapshot>;
+    attachmentWriter?: AttachmentDescriptionWriter;
     executeNonstreaming: typeof nonstreamingProviderExecute;
     applyRegexLayer: (hook: "AI_OUTPUT" | "REASONING", chatId: string, text: string) => Promise<string>;
     withTokenContext: <T>(provider: { profile: StoredProviderProfileRecord; model: string }, fn: () => Promise<T>) => Promise<T>;
@@ -300,6 +293,7 @@ export async function runContinueFallback<TSnapshot extends FallbackVariantSnaps
       continuationFallback: true,
       tools: prompt.tools,
       maxSteps: prompt.maxSteps,
+      ...replyExecutionOptions(input, prompt, deps.attachmentWriter),
     });
   } catch (err) {
     deps.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
@@ -328,6 +322,7 @@ export async function runContinueFallback<TSnapshot extends FallbackVariantSnaps
 export async function* runContinueFallbackStream<TSnapshot extends FallbackVariantSnapshot>(
   deps: {
     chatRuntime: ContinueFallbackRuntime<TSnapshot>;
+    attachmentWriter?: AttachmentDescriptionWriter;
     startStream: (input: StreamStartInput, prompt: AssemblePromptResponse) => Promise<{ streamResult: ProviderStreamResult; startedAt: number }>;
     drainStream: <TFinal extends DrainFinalSnapshot>(input: DrainStreamInput<TFinal>) => AsyncGenerator<{ event: string; data: string }>;
     withTokenContext: <T>(provider: { profile: StoredProviderProfileRecord; model: string }, fn: () => Promise<T>) => Promise<T>;
@@ -345,7 +340,7 @@ export async function* runContinueFallbackStream<TSnapshot extends FallbackVaria
       setPendingTrace: true,
     }),
   );
-  const { streamResult, startedAt } = await deps.startStream({ ...input, ...provider, continuationFallback: true, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+  const { streamResult, startedAt } = await deps.startStream({ ...input, ...provider, continuationFallback: true, onAttachmentDescriptions: historyAttachmentDescriptions(prompt, deps.attachmentWriter), tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
   // Trace honesty: the pending trace describes THIS request — the fallback's
   // wire data, and NO prefill rode (null clears a preset prefill).
   deps.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {

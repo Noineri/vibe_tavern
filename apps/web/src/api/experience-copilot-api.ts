@@ -249,10 +249,11 @@ export interface ExperienceCopilotTurnDeleteResult {
  *  `includeUserMessage: true`). The caller refetches messages on settle —
  *  there is no optimistic removal (the server owns the turn resolution).
  *  Rejects with a 400 on user-row semantics, 404 on an unknown thread or
- *  message, 409 at/below the digest floor. */
+ *  message, 409 at/below the digest floor. `keepAttachmentFiles` (CA-4e1,
+ *  edit-last's delete-before-resend) keeps the deleted rows' physical files. */
 export async function deleteCopilotTurn(
   threadId: string,
-  body: { messageId: string; includeUserMessage: boolean },
+  body: { messageId: string; includeUserMessage: boolean; keepAttachmentFiles?: boolean },
 ): Promise<ExperienceCopilotTurnDeleteResult> {
   const response = await client.api["experience-copilot"][":threadId"].turns.delete.$post({
     param: { threadId },

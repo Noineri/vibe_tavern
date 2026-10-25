@@ -11,7 +11,10 @@ useDomEnv();
 // recommended chip is wrapped in it. Render children inline; this test pins
 // the feed wiring, not tooltip internals (same mock as the card/panel tests;
 // `...real` spread keeps the module's other exports alive for later files in
-// a hand-bundled co-load — the mandatory R4 shape AgentMessageBlock uses too).
+// a hand-bundled co-load — the mandatory R4 shape AgentMessageBlock uses too;
+// the loaded graph also pulls `TooltipProvider` (AttachmentGrid →
+// sent-file-attachment, since CA-4f) — a factory without the spread would
+// break unrelated importers sharing this worker).
 const realTooltip = await import("../Tooltip.js");
 mock.module("../Tooltip.js", () => ({
   ...realTooltip,

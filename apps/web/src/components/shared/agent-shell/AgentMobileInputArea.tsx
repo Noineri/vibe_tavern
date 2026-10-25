@@ -7,17 +7,23 @@ import { useT } from "../../../i18n/context.js";
 import { useAgentMention } from "./use-agent-mention.js";
 import { AgentContextPills } from "./AgentContextPills.js";
 import { AgentModelPills } from "./AgentModelPills.js";
+import { AttachmentPreview } from "../../chat/AttachmentPreview.js";
+import { AttachmentOverflowWarning } from "../../chat/attachment-overflow-warning.js";
+import { AttachmentVisionWarning } from "../../chat/attachment-vision-warning.js";
+import { useAgentComposerAttachments } from "./use-agent-composer-attachments.js";
 import type { AgentInputAreaProps } from "./AgentInputArea.js";
 
 /**
  * Experience-copilot input area (ER-11c, mobile). Same props + controlled
- * contract as `ExperienceCopilotInputArea`; only the chrome differs (compact
- * two-row surface: provider/model pills, then the textarea + send/cancel).
+ * contract as `AgentInputArea`; only the chrome differs (compact two-row
+ * surface: provider/model pills, then the textarea + send/cancel).
  *
  * Fork of `CoauthorMobileInputArea`, with the auto-grow textarea moved onto the
  * shared `AutoTextarea` (the co-author mobile hand-rolled `<textarea rows={1}>`
  * + manual height adjustment is exactly the §9 pattern this surface must NOT
- * repeat).
+ * repeat). CA-4e2: attachments come from the same shared
+ * `useAgentComposerAttachments` layer as the desktop arm; no drag-and-drop on
+ * the phone (Co-Author parity).
  */
 export function AgentMobileInputArea(props: AgentInputAreaProps) {
   const {
@@ -34,12 +40,16 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
     onUnpinContext,
     topSlot,
     answeringAsk = false,
+    contextMetrics = null,
   } = props;
 
   const [draft, setDraft] = useState("");
   // CX-6: the @-popover anchors to the input CARD (not the textarea —
   // AutoTextarea forwards no ref).
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const attachment = useAgentComposerAttachments({ providerProfileId, model, contextMetrics, locked: answeringAsk });
+  const { attachments } = attachment;
 
   const mention = useAgentMention({
     draft,
@@ -57,13 +67,22 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
 
   const { t } = useT();
 
-  const canSend = draft.trim().length > 0 && !isSending;
+  const canSend =
+    (answeringAsk ? draft.trim().length > 0 : draft.trim().length > 0 || attachments.length > 0) && !isSending;
 
   const handleSend = () => {
     const content = draft.trim();
-    if (!content || isSending) return;
+    if (answeringAsk) {
+      // CA-4a1: an answer carries text only — the drafted attachments stay.
+      if (!content || isSending) return;
+      setDraft("");
+      onSend(content, []);
+      return;
+    }
+    if ((!content && attachments.length === 0) || isSending) return;
     setDraft("");
-    onSend(content);
+    attachment.clear();
+    onSend(content, attachments);
   };
 
   // E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
@@ -84,6 +103,8 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
+      {attachment.attachmentVisionWarning && <AttachmentVisionWarning />}
+      {attachment.attachmentOverflow.overflow && <AttachmentOverflowWarning {...attachment.attachmentOverflow} />}
       <div ref={cardRef} className={cn("flex flex-col gap-1.5 rounded-xl border bg-s2 p-1.5 transition-colors duration-150", answeringAsk ? "border-accent" : "border-transparent")}>
         {/* Toolbar row: provider + model pills (AP-26b: the one pills
             component's mobile variant — bottom sheets, same test ids). */}
@@ -96,7 +117,9 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
         {topSlot}
 
         {/* Input row. */}
+        {attachments.length > 0 && <AttachmentPreview attachments={attachments} onRemove={attachment.remove} />}
         <div className="flex items-end gap-2">
+          <input type="file" ref={attachment.fileInputRef} className="hidden" accept={attachment.accept} multiple onChange={attachment.onFileInputChange} />
           <AutoTextarea
             bare
             className={composerCls}
@@ -109,9 +132,19 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             onSelect={mention.handleSelect}
             onClick={mention.handleClick}
             onBlur={mention.handleBlur}
+            onPaste={attachment.handlePaste}
             onKeyDown={(e) => mention.handleKeyDown(e, handleCancelKeyDown)}
           />
-          <div className="flex shrink-0 items-center">
+          <div className="flex shrink-0 items-center gap-[9px]">
+            <button
+              type="button"
+              aria-label={t("attach_image")}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-t3 transition-colors active:bg-s2 disabled:opacity-45"
+              onClick={() => attachment.fileInputRef.current?.click()}
+              disabled={answeringAsk || attachments.length >= 5}
+            >
+              <Icons.paperclip />
+            </button>
             {isSending ? (
               <button
                 type="button"

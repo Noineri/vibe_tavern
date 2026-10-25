@@ -1,4 +1,4 @@
-import { brandId, type ChatId, type EventBus } from "@vibe-tavern/domain";
+import { brandId, type Attachment, type ChatId, type EventBus } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
@@ -11,6 +11,7 @@ import {
 	resolveEffectiveSummaryProfile,
 } from "./summary-generation-seam.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { renderAttachmentsAsText, type AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 
 export interface SummarizeChatInput {
   chatId: string;
@@ -68,6 +69,7 @@ export class ChatSummaryService {
     /** Typed bus for background notifications (W7). Optional so non-runtime callers (tests) need not supply one. */
     private readonly events: EventBus | null = null,
     private readonly execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
+    private readonly assetLoader?: AttachmentAssetLoader,
   ) {}
 
   async summarizeChat(input: SummarizeChatInput): Promise<SummarizeChatResult> {
@@ -96,7 +98,7 @@ export class ChatSummaryService {
       contextBudget: effectiveProfile.contextBudget ?? null,
     });
 
-    const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
+    const prompt = await withSummaryAttachmentsAsText(withSummaryPromptAsFinalUserMessage(assembled.prompt), this.assetLoader);
     const messages = Array.isArray(prompt.finalPayload?.messages) ? prompt.finalPayload.messages : [];
     logSendDebug("summary.generate.prompt", {
       chatId: input.chatId,
@@ -160,7 +162,7 @@ export class ChatSummaryService {
       includePriorSummaries: input.includePriorSummaries,
       maxPriorSummaries: input.maxPriorSummaries,
     });
-    const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
+    const prompt = await withSummaryAttachmentsAsText(withSummaryPromptAsFinalUserMessage(assembled.prompt), this.assetLoader);
     const startedAt = Date.now();
     const result = await this.execute({
       profile: effectiveProfile,
@@ -303,6 +305,34 @@ function normalizeRangePoint(value: number, minimum: number): number {
 function normalizeMaxMessages(value: number): number {
   if (!Number.isFinite(value)) return 20;
   return Math.max(1, Math.floor(value));
+}
+
+/** Inline attachments before execution, then remove them so neither vision nor
+ *  STT can run on a summary. Preserve all other payload/trace fields verbatim. */
+export async function withSummaryAttachmentsAsText(
+  prompt: AssemblePromptResponse,
+  assetLoader?: AttachmentAssetLoader,
+): Promise<AssemblePromptResponse> {
+  const payload = prompt.finalPayload as { messages?: unknown } | undefined;
+  if (!Array.isArray(payload?.messages)) return prompt;
+  let changed = false;
+  const messages: unknown[] = [];
+  for (const record of payload.messages) {
+    if (!record || typeof record !== "object") {
+      messages.push(record);
+      continue;
+    }
+    const message = record as { role?: unknown; content?: unknown; attachments?: Attachment[] };
+    if (message.role !== "user" || typeof message.content !== "string" || !Array.isArray(message.attachments)) {
+      messages.push(record);
+      continue;
+    }
+    const { attachments, ...textMessage } = message;
+    const blocks = await renderAttachmentsAsText(attachments, assetLoader);
+    messages.push({ ...textMessage, content: blocks.length ? `${message.content}\n\n${blocks.join("\n\n")}` : message.content });
+    changed = true;
+  }
+  return changed ? { ...prompt, finalPayload: { ...prompt.finalPayload, messages } } : prompt;
 }
 
 export function withSummaryPromptAsFinalUserMessage(prompt: AssemblePromptResponse): AssemblePromptResponse {

@@ -20,8 +20,8 @@
  * fields stay empty; the trace UI simply shows fewer rows.
  */
 
-import type { ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
-import { brandId, readTrackerTemplate } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
+import { attachmentPromptTokens, brandId, promptVisibleAttachmentsOf, readTrackerTemplate } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
@@ -45,7 +45,7 @@ import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
  *  `as any` at the provider mapping layer — so the provider silently dropped
  *  them. Typed here so the compiler catches any future drift. */
 type CoauthorHistoryMessage =
-  | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
+  | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[]; attachments?: Attachment[]; messageId?: string }
   | { role: "tool"; content: ToolResultPart[] };
 
 /**
@@ -183,7 +183,8 @@ function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMe
 }
 
 function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
-  return estimateTokens(formatCoauthorHistoryMessages(messages));
+  return estimateTokens(formatCoauthorHistoryMessages(messages))
+    + messages.reduce((sum, message) => sum + (message.role === "tool" ? 0 : attachmentPromptTokens(message.attachments, estimateTokens)), 0);
 }
 
 /**
@@ -244,6 +245,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
           }
           // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
           const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
+          const attachments = promptVisibleAttachmentsOf(m.attachmentsJson);
+          if (attachments?.length) {
+            msg.attachments = attachments;
+            msg.messageId = m.id;
+          }
           if (m.toolCalls && m.toolCalls.length > 0) {
             msg.toolCalls = m.toolCalls.map((tc) => {
               const providerOptions = asToolProviderOptions(tc.providerOptions);

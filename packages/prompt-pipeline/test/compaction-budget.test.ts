@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { findSafeCompactionBoundary, planHistoryCompaction, setTokenCountFn } from "../src/compaction.ts";
+import type { Attachment } from "@vibe-tavern/domain";
+import type { RecentMessage } from "../src/types.js";
 
 const history = [
   { id: "msg_1", role: "user" as const, content: "Old user message." },
@@ -184,5 +186,120 @@ describe("history compaction budget", () => {
     const head = preserved[0];
     const headCarriesCalls = head.role === "assistant" && Array.isArray((head as { toolCalls?: unknown[] }).toolCalls) && ((head as { toolCalls?: unknown[] }).toolCalls?.length ?? 0) > 0;
     expect(headCarriesCalls).toBe(false);
+  });
+});
+
+describe("file history budget characterization (CA-1c)", () => {
+  it("pins every layer count, history text and payload for attachment-free history", () => {
+    const result = assemblePrompt(baseContext());
+    const characterText = "Character: Aria\nA fire mage.";
+    const historyText = "USER: Old user message.\n\nASSISTANT: Old assistant message.\n\nUSER: Recent user message.\n\nASSISTANT: Recent assistant message.";
+    expect(result.layers.map(({ id, tokenCount, text }) => ({ id, tokenCount, text }))).toEqual([
+      { id: "character_base", tokenCount: characterText.length, text: characterText },
+      { id: "recent_history", tokenCount: historyText.length, text: historyText },
+    ]);
+    expect(result.totalTokenEstimate).toBe(characterText.length + historyText.length);
+    expect(result.compactionSummary).toBeNull();
+    expect(result.finalPayload.messages).toEqual([
+      { role: "system", content: characterText, layerId: "character_base" },
+      ...history.map(({ id, role, content }) => ({ messageId: id, role, content })),
+    ]);
+    expect(assemblePrompt(baseContext({ config: { contextBudget: result.totalTokenEstimate } }))).toEqual(result);
+  });
+});
+
+describe("attached files in the RP history budget (CA-1c)", () => {
+  const file: Attachment = {
+    id: "file_1", assetId: "asset_file_1", type: "file", name: "notes.md",
+    mimeType: "text/markdown", sizeBytes: 10, tokenCount: 400_000,
+  };
+
+  function messagesWithFile(attachment = file): RecentMessage[] {
+    return history.map((message) => message.id === "msg_3"
+      ? { ...message, attachments: [attachment] }
+      : message);
+  }
+
+  it("an over-budget recent file drops older messages but preserves the full recent pair and truthful count", () => {
+    const unbounded = assemblePrompt(baseContext());
+    const config = { contextBudget: unbounded.totalTokenEstimate + 10 };
+    const withoutFile = assemblePrompt(baseContext({ config }));
+    const withFile = assemblePrompt(baseContext({ config, chat: { recentMessages: messagesWithFile() } }));
+    expect(withoutFile).toEqual(unbounded);
+    expect(withFile.compactionSummary).not.toBeNull();
+    expect(withFile.finalPayload.messages.length).toBeLessThan(withoutFile.finalPayload.messages.length);
+    expect(withFile.finalPayload.messages.slice(1)).toEqual([
+      { messageId: "msg_3", role: "user", content: "Recent user message.", attachments: [file] },
+      { messageId: "msg_4", role: "assistant", content: "Recent assistant message." },
+    ]);
+    const text = "USER: Recent user message.\n\nASSISTANT: Recent assistant message.";
+    expect(historyLayer(withFile).text).toBe(text);
+    expect(historyLayer(withFile).tokenCount).toBe(text.length + 400_000);
+    expect(withFile.totalTokenEstimate).toBeGreaterThan(config.contextBudget);
+  });
+
+  it("the meter's history layer adds the file weight without changing any text or non-history layer", () => {
+    const withoutFile = assemblePrompt(baseContext());
+    const withFile = assemblePrompt(baseContext({ chat: { recentMessages: messagesWithFile() } }));
+    expect(withFile.layers).toEqual(withoutFile.layers.map((layer) => layer.id === "recent_history"
+      ? { ...layer, tokenCount: layer.tokenCount + 400_000 }
+      : layer));
+    expect(withFile.totalTokenEstimate).toBe(withoutFile.totalTokenEstimate + 400_000);
+    expect(withFile.finalPayload.messages).toEqual([
+      withoutFile.finalPayload.messages[0],
+      ...messagesWithFile().map(({ id, role, content, attachments }) => ({
+        messageId: id, role, content, ...(attachments ? { attachments } : {}),
+      })),
+    ]);
+  });
+
+  it("summaries use their own stored or estimated weight in the history layer", () => {
+    const baseline = historyLayer(assemblePrompt(baseContext())).tokenCount;
+    for (const [attachment, weight] of [
+      [{ ...file, description: "Summary", summaryTokenCount: 9 }, 9],
+      [{ ...file, description: "  Summary\n" }, "  Summary\n".length],
+      [{ ...file, description: " \t\n", summaryTokenCount: 9 }, 400_000],
+      [{ ...file, tokenCount: undefined }, 0],
+      [{ ...file, type: "image", mimeType: "image/png", description: "An image" }, 0],
+    ] as const) {
+      const result = assemblePrompt(baseContext({ chat: { recentMessages: messagesWithFile(attachment) } }));
+      expect(historyLayer(result).tokenCount).toBe(baseline + weight);
+    }
+  });
+
+  it("summary weights drive compaction too, while a small summary restores the original window", () => {
+    const withoutFile = assemblePrompt(baseContext());
+    const config = { contextBudget: withoutFile.totalTokenEstimate + 10 };
+    for (const attachment of [
+      { ...file, tokenCount: 1, description: "Large summary", summaryTokenCount: 400_000 },
+      { ...file, tokenCount: 1, description: "s".repeat(400_000) },
+    ]) {
+      const result = assemblePrompt(baseContext({ config, chat: { recentMessages: messagesWithFile(attachment) } }));
+      expect(result.compactionSummary).not.toBeNull();
+      expect(historyLayer(result).text).not.toContain("Old user message.");
+      expect(historyLayer(result).tokenCount).toBe(historyLayer(result).text.length + 400_000);
+    }
+    const small = assemblePrompt(baseContext({
+      config, chat: { recentMessages: messagesWithFile({ ...file, description: "Small", summaryTokenCount: 5 }) },
+    }));
+    expect(small.compactionSummary).toBeNull();
+    expect(historyLayer(small).text).toBe(historyLayer(withoutFile).text);
+    expect(historyLayer(small).tokenCount).toBe(historyLayer(withoutFile).tokenCount + 5);
+  });
+
+  it("prepending messages never reduces suffix cost, including empty messages and mixed attachment weights", () => {
+    const messages: RecentMessage[] = [
+      ...messagesWithFile(),
+      { id: "empty", role: "user", content: "", attachments: [{ ...file, tokenCount: 0 }] },
+      { id: "summary", role: "user", content: "Summary turn", attachments: [{ ...file, description: "Summary" }] },
+    ];
+    let previous = 0;
+    for (let start = messages.length - 1; start >= 0; start -= 1) {
+      const suffix = messages.slice(start);
+      const result = assemblePrompt(baseContext({ chat: { recentMessages: suffix } }));
+      const count = historyLayer(result).tokenCount;
+      expect(count).toBeGreaterThanOrEqual(previous);
+      previous = count;
+    }
   });
 });

@@ -883,6 +883,13 @@
       "when": 1792864902014,
       "tag": "0125_premium_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "6",
+      "when": 1792859025361,
+      "tag": "0126_empty_spiral",
+      "breakpoints": true
     }
   ]
 }

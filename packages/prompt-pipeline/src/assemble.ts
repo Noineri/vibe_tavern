@@ -6,6 +6,7 @@ import type {
   RecentMessage,
 } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
+import { countHistoryTokens, formatRecentMessages } from "./history-token-count.js";
 import { createFullMacroEngine, type MacroEngine } from "./macro-registry.js";
 import { formatSceneHistory } from "./scene-injection.js";
 import type { PromptVariableContext } from "./prompt-variable-context.js";
@@ -53,12 +54,6 @@ const SUMMARY_LAYER_IDS: Set<string> = new Set([
 
 export function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
-}
-
-function formatRecentMessages(messages: RecentMessage[]): string {
-  return messages
-    .map((message) => `${message.role.toUpperCase()}: ${message.content.trim()}`)
-    .join("\n\n");
 }
 
 /**
@@ -1032,7 +1027,7 @@ function buildLayers(
     nonHistoryTokens: layers.reduce((sum, layer) => sum + layer.tokenCount, 0),
     contextBudget: context.config?.contextBudget,
     responseReserve: context.config?.responseReserve,
-    countHistoryTokens: (messages) => estimateTokens(formatRecentMessages([...messages])),
+    countHistoryTokens,
   });
   if (compactionPlan) {
     recentMessagesForHistory = compactionPlan.messages;
@@ -1051,15 +1046,18 @@ function buildLayers(
   const historyText = formatRecentMessages(recentMessagesForHistory);
   if (historyText && resolver.enabled("chatHistory")) {
     layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.recentHistory,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
-        sourceId: context.identity.chatId,
-        sourceName: "Chat History",
-        priority: PROMPT_LAYER_PRIORITY.recentHistory,
-        subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
-        text: historyText,
-      }),
+      {
+        ...makeLayer({
+          id: PROMPT_LAYER_ID.recentHistory,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+          sourceId: context.identity.chatId,
+          sourceName: "Chat History",
+          priority: PROMPT_LAYER_PRIORITY.recentHistory,
+          subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
+          text: historyText,
+        }),
+        tokenCount: countHistoryTokens(recentMessagesForHistory),
+      },
     );
   }
 

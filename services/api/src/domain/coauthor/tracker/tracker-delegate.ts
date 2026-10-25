@@ -3,6 +3,7 @@ import { normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/dom
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import { resolveSystemPrompt } from "../../ai-assistant/ai-assistant-prompts.js";
 import type { ProviderExecutionInput } from "../../../infrastructure/ai/provider-execution-types.js";
+import { buildOneShotPrompt } from "../../../infrastructure/ai/one-shot-prompt.js";
 
 /** The executor signature (typeof nonstreamingProviderExecute). */
 export type TrackerExecutor = (input: ProviderExecutionInput) => Promise<{ text: string }>;
@@ -32,23 +33,6 @@ export interface CreateTrackerDelegateDeps {
   profile: TrackerResolvedProfile;
   model: string;
   db: AppDb;
-}
-
-/** Build the minimal one-shot AssemblePromptResponse the executor consumes. */
-function buildOneShotPrompt(system: string, user: string): import("@vibe-tavern/domain").AssemblePromptResponse {
-  return {
-    layers: [],
-    tokenAccounting: { total: 0 },
-    activatedLoreEntries: [],
-    scriptInjections: [],
-    retrievedMemories: [],
-    finalPayload: {
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    },
-  };
 }
 
 /** Append the live character card and, for a refinement, its current base. */

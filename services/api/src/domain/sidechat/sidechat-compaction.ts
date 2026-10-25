@@ -41,6 +41,7 @@ import type {
 	ExperienceCopilotStore,
 } from "@vibe-tavern/db";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import {
@@ -167,8 +168,10 @@ export class SidechatOocCompactionService extends AgentCompactionService<Experie
 		providerProfiles: ProviderProfileService,
 		execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
 		db?: AppDb,
+		attachmentAssetLoader?: AttachmentAssetLoader,
 	) {
 		super(sidechatStore, providerProfiles, execute, {
+			attachmentAssetLoader,
 			storeMessagesToFlow: storeMessagesToHistory,
 			// SC-8a ladder over SC-8b's key: the active service-prompt
 			// profile's override first, else the bundled asset.

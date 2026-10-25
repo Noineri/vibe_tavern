@@ -43,6 +43,7 @@ import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } fro
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ScriptAgentStreamDeps {
+  readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The shared agent-thread store (thread + message persistence — script
    *  threads live in the same store as experience threads; only the assembly
    *  and tools are kind-specific). */
@@ -308,6 +309,7 @@ export async function* streamScriptAgentTurn(
     // Absent when the adapter has no provider profile service.
     ...(deps.autoCompact !== undefined ? { autoCompact: deps.autoCompact } : {}),
     ...(deps.deleteTurn !== undefined ? { deleteTurn: deps.deleteTurn } : {}),
+    ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);

@@ -180,6 +180,7 @@ function makeCtrl(over: Partial<AgentController> = {}): AgentController {
     pendingText: "",
     pendingReasoning: "",
     pendingUserContent: "",
+    pendingUserAttachments: [],
     pendingAskAnswer: null,
     pendingPermissionAnswer: null,
     handleSend: mock(),
@@ -278,6 +279,7 @@ function renderPane(over: {
         handleUnpinContext={() => {}}
         composerTopSlot={null}
         onStarterPick={over.onStarterPick}
+        refreshMessages={() => {}}
       />
     </I18nextProvider>,
   );

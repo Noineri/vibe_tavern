@@ -18,7 +18,7 @@ import { builtinFormatTemplateBySelection } from "@vibe-tavern/domain";
 import type { GenerationFormat } from "@vibe-tavern/domain";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
-import { resolveMultimodalContent } from "./vision-gate.js";
+import { resolveMultimodalContent, unseenImagePolicy } from "./vision-gate.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -324,42 +324,46 @@ export async function prepareSdkMessages(
   if (options.continuationFallback && options.prefill) {
     throw new Error("prepareSdkMessages: continuationFallback and prefill are mutually exclusive");
   }
-  let conversationMessages: SdkMessage[];
+  // Pair each policy with its original input occurrence. Google reorders these
+  // pairs, never re-derives indexes; synthetic continuation/prefill arrive later.
+  const inputMessages = messages.map((message, index) => ({ message, policy: unseenImagePolicy(messages, index) }));
+  let conversationMessages: typeof inputMessages;
 
   if (options.providerType === "google") {
     // Google requires system messages only at the beginning.
     // Merge all system messages into one, keep non-system in original order.
     const systemParts: string[] = [];
-    const nonSystem: SdkMessage[] = [];
+    const nonSystem: typeof inputMessages = [];
 
-    for (const msg of messages) {
+    for (const entry of inputMessages) {
+      const msg = entry.message;
       if (msg.role === "system") {
         systemParts.push(msg.content);
       } else {
-        nonSystem.push(msg);
+        nonSystem.push(entry);
       }
     }
 
     conversationMessages = systemParts.length > 0
-      ? [{ role: "system", content: systemParts.join("\n\n") }, ...nonSystem]
+      ? [{ message: { role: "system", content: systemParts.join("\n\n") }, policy: "error" }, ...nonSystem]
       : nonSystem;
   } else {
-    conversationMessages = [...messages];
+    conversationMessages = [...inputMessages];
   }
 
   if (options.continuationFallback) {
-    conversationMessages.push({ role: "user", content: CONTINUATION_USER_INSTRUCTION });
+    conversationMessages.push({ message: { role: "user", content: CONTINUATION_USER_INSTRUCTION }, policy: "error" });
   } else if (options.prefill && capabilities.prefill) {
-    conversationMessages.push({ role: "assistant", content: options.prefill });
+    conversationMessages.push({ message: { role: "assistant", content: options.prefill }, policy: "error" });
   }
 
   // Map to SDK `ModelMessage[]`. Attachments only ever live on user
   // messages by design (see `toSdkMessages` + executor filtering), so only
   // user content can become multimodal `UserContent` after vision resolution.
   const conversationModelMessages: ModelMessage[] = await Promise.all(
-    conversationMessages.map(async (msg): Promise<ModelMessage> => {
+    conversationMessages.map(async ({ message: msg, policy }): Promise<ModelMessage> => {
       if (msg.attachments?.length && options.visionGate && options.assetLoader) {
-        const parts = await resolveMultimodalContent(msg, options.visionGate, options.assetLoader);
+        const parts = await resolveMultimodalContent(msg, options.visionGate, options.assetLoader, { unseenImagePolicy: policy });
         return { role: "user", content: parts };
       }
       switch (msg.role) {

@@ -1,6 +1,7 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { type AgentThreadEventWire, type ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { Attachment } from "@vibe-tavern/domain";
 import {
   extractHistoricalTurnActivities,
   useAgentTurnStore,
@@ -16,7 +17,7 @@ import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult 
 import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
-import { syntheticAgentMessage } from "./agent-synthetic-message.js";
+import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
 import {
   AgentAnchorItems,
   recordProposalOf,
@@ -77,6 +78,9 @@ export interface AgentMessageListProps {
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
+  /** CA-4e3: the optimistic row's attachments — the bubble shows when the
+   *  row has text OR attachments, and the chips render from this list. */
+  pendingUserAttachments?: readonly Attachment[];
   /** TAG-9: disables ask-card interactivity while a stream runs. */
   isSending?: boolean;
   /** AP-29 follow-up 2: a regenerate is in flight — the replaced turn
@@ -159,6 +163,7 @@ export function AgentMessageList({
   pendingText,
   pendingReasoning,
   pendingUserContent,
+  pendingUserAttachments = [],
   isSending = false,
   isRegenerating = false,
   hiddenRegeneratedIds = null,
@@ -405,7 +410,8 @@ export function AgentMessageList({
     (isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex) ||
     activeHiddenIds.has(messageId);
   const hasPendingText = pendingText.trim().length > 0;
-  const hasPendingUserContent = pendingUserContent.trim().length > 0;
+  // CA-4e3: the optimistic user row shows when it has text OR attachments.
+  const hasPendingUserContent = pendingUserContent.trim().length > 0 || pendingUserAttachments.length > 0;
   // AP-29: live reasoning streams as text-only (no duration lands until the
   // turn persists) — the duration slot stays null like the minimal row did.
   const hasLiveReasoning = pendingReasoning.trim().length > 0;
@@ -647,10 +653,11 @@ export function AgentMessageList({
             <AgentMessageBlock
               messageMarkup={messageMarkup}
               message={syntheticAgentMessage({
-                id: "__pending-user",
+                id: PENDING_USER_MESSAGE_ID,
                 threadId,
                 role: "user",
                 content: pendingUserContent,
+                ...(pendingUserAttachments.length > 0 ? { attachments: pendingUserAttachments } : {}),
               })}
             />
           )}

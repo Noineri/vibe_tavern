@@ -20,7 +20,12 @@ useDomEnv();
 // OverflowTooltip wraps its text in it. Render the text inline; this test
 // pins the card's render contract (that the FULL first line reaches the
 // tooltip primitive), not tooltip internals.
+const realTooltip = await import("../../../components/shared/Tooltip.js");
+// Spread `...real` (R4): files sharing this worker may load the CA-4f graph
+// (AttachmentGrid → sent-file-attachment) whose `TooltipProvider` import a
+// spread-less factory would break.
 mock.module("../../../components/shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 

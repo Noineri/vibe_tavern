@@ -8,6 +8,7 @@ import type {
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
+import type { Attachment } from "@vibe-tavern/domain";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
@@ -28,6 +29,7 @@ import { AgentInputArea } from "./AgentInputArea.js";
 import { AgentMobileInputArea } from "./AgentMobileInputArea.js";
 import { AgentPendingStrip } from "./AgentPendingStrip.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
+import { AgentAttachmentActionsContext } from "./agent-attachment-actions-context.js";
 
 /**
  * AgentChatPane (AGENT_SHELL_POLISH AP-3b) — the agent shell's chat pane,
@@ -89,6 +91,10 @@ export interface AgentChatPaneProps {
   /** AP-18: starter-prompt pick from the empty session — the shell turns the
    *  text into a composer prefill (never sent); the pane focuses the composer. */
   onStarterPick?: (text: string) => void;
+  /** CA-4f: the shell's ONE settle refresh (`AgentShell.handleTurnSettled`'s
+   *  message/events reload). Sent-attachment actions refetch through it —
+   *  the same path a turn delete uses, never a second one. */
+  refreshMessages: () => void;
 }
 
 export function AgentChatPane({
@@ -121,6 +127,7 @@ export function AgentChatPane({
   handleUnpinContext,
   composerTopSlot,
   onStarterPick,
+  refreshMessages,
 }: AgentChatPaneProps) {
   const { t } = useT();
 
@@ -197,7 +204,7 @@ export function AgentChatPane({
   // selector is the ONE derivation of "is there a live ask" — the ask card's
   // interactive rule reads the same source, so the answerable card and the
   // answering send can never disagree.
-  const handleComposerSend = (content: string) => {
+  const handleComposerSend = (content: string, attachments: Attachment[]) => {
     const turnState = useAgentTurnStore.getState();
     const key = threadId !== null ? agentThreadKey(kind, threadId) : null;
     const liveAsk =
@@ -212,14 +219,28 @@ export function AgentChatPane({
         : null;
     sendWithOptions((options) => {
       if (liveAsk !== null) {
+        // CA-4a1: an answer carries text only — the composer already passed
+        // `[]` and kept its drafted attachments.
         void ctrl.handleAnswer(liveAsk.toolCallId, { text: content }, options);
       } else {
-        void ctrl.handleSend(content, options);
+        // CA-4e3: the composer's attachments ride the send options (the
+        // controller maps them onto the body); an answer never carries them,
+        // and an empty list adds nothing to the options.
+        void ctrl.handleSend(content, attachments.length > 0 ? { ...options, attachments } : options);
       }
     });
   };
 
+  // CA-4f: one provider above the whole thread branch — the sent-attachment
+  // mounts (file chips now, the lightbox actions in CA-4g2) read the thread,
+  // the picker's CURRENT profile + model, and the settle refresh from here,
+  // so neither the message list nor the block takes new props.
+  const attachmentActions = threadId !== null
+    ? { threadId, providerProfileId, ...(model !== undefined ? { model } : {}), refreshMessages }
+    : null;
+
   return (
+    <AgentAttachmentActionsContext.Provider value={attachmentActions}>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       {sessionLoading ? (
         <div className="flex flex-1 items-center justify-center">
@@ -292,6 +313,7 @@ export function AgentChatPane({
             pendingText={ctrl.pendingText}
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
+            pendingUserAttachments={ctrl.pendingUserAttachments}
             isSending={ctrl.isSending}
             // AP-29 follow-up 2: a regenerate in flight hides the replaced
             // turn (the server already deleted it) and streams the new turn
@@ -346,6 +368,7 @@ export function AgentChatPane({
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
               topSlot={composerTopSlot}
+              contextMetrics={copilotContext.metrics}
             />
           ) : (
             <AgentInputArea
@@ -362,6 +385,7 @@ export function AgentChatPane({
               onPinContext={handlePinContext}
               onUnpinContext={handleUnpinContext}
               topSlot={composerTopSlot}
+              contextMetrics={copilotContext.metrics}
             />
           )}
           {/* AP-11: the staged turn delete confirms here (mockup §3) — the
@@ -389,5 +413,6 @@ export function AgentChatPane({
         </div>
       )}
     </div>
+    </AgentAttachmentActionsContext.Provider>
   );
 }

@@ -253,7 +253,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
+	const summaryAssetLoader = (assetId: string) => assetService.loadBuffer(assetId);
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService, null, undefined, summaryAssetLoader);
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
@@ -268,11 +270,10 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	// Feature registry — features subscribe to events and mount routes
 	const features = new FeatureRegistry();
-	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events }));
+	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events, assetLoader: summaryAssetLoader }));
 	features.register(createChatEventsFeature());
 	features.register(createInsightsFeature({ objectiveService, trackerService }));
 
-	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
 	const mobileAccessService = await MobileAccessService.create(config.dataDir);
 
 	// RuntimeApi adapter
@@ -336,6 +337,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		copilotSkillService,
 		scriptSkillService,
 		sidechatSkillService,
+		summaryAssetLoader,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

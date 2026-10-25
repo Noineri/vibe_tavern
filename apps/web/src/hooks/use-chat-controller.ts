@@ -12,6 +12,7 @@ import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { getProviderErrorText, showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
+import { toSendAttachment } from "../lib/send-attachments.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { forkBranchFlow } from "./branch-fork.js";
 import {
@@ -531,15 +532,7 @@ export function useChatController(): ChatControllerActions {
     const csStore = useChatStore.getState();
     const draft = csStore.draft;
     const trimmed = draft.trim();
-    const attachments = csStore.draftAttachments.map((a) => ({
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      assetId: a.assetId,
-      mimeType: a.mimeType,
-      sizeBytes: a.sizeBytes,
-      ...(a.type === "audio" ? { purpose: a.purpose ?? ("voice" as const), durationMs: a.durationMs } : {}),
-    }));
+    const attachments = csStore.draftAttachments.map(toSendAttachment);
 
     if ((!trimmed && attachments.length === 0) || !activeChatId || getIsSending(activeChatId)) {
       return;

@@ -5,6 +5,7 @@ import {
 	renderLoreSection,
 	renderObjectivesSection,
 	renderPersonaSection,
+	renderRpSyncEvent,
 	renderTimelineEvent,
 	renderTimelineSection,
 	type SidechatTimelineEvent,
@@ -388,5 +389,47 @@ describe("sidechat XML renderers (SC-3a)", () => {
 				].join("\n"),
 			);
 		});
+	});
+});
+
+describe("RP attachment bodies (CA-1f)", () => {
+	const event: Extract<SidechatTimelineEvent, { kind: "rp_sync" }> = {
+		rowType: "event", kind: "rp_sync",
+		payload: {
+			fromPosition: 0, toPosition: 1,
+			messages: [
+				{ id: "m1", position: 0, role: "user", authorName: "Sable", variantId: null, model: null, preset: null, text: "Frozen <text> & trail." },
+				{ id: "m2", position: 1, role: "assistant", authorName: "Theron", variantId: "v2", model: "model", preset: "preset", text: "Unchanged." },
+			],
+		},
+	};
+
+	it("appends blocks inside one message body and escapes the whole body exactly once", () => {
+		const blocks = new Map([["m1", ["[Attached file: notes.md]\n<map> & route", "[Attached image: trail.png]\nA <tower>."]]]);
+		const expected = [
+			'<rp_sync from="0" to="1">',
+			'<rp_message position="0" role="user" author="Sable">Frozen &lt;text&gt; &amp; trail.\n\n[Attached file: notes.md]\n&lt;map&gt; &amp; route\n\n[Attached image: trail.png]\nA &lt;tower&gt;.</rp_message>',
+			'<rp_message position="1" role="assistant" author="Theron" model="model" preset="preset">Unchanged.</rp_message>',
+			"</rp_sync>",
+		].join("\n");
+		expect(renderRpSyncEvent(event.payload, blocks)).toBe(expected);
+		expect(renderTimelineEvent(event, blocks)).toBe(expected);
+	});
+
+	it("a missing or empty entry keeps the whole event byte-identical", () => {
+		const original = renderTimelineEvent(event);
+		expect(renderTimelineEvent(event, new Map([["other-branch-message", ["Hidden"]]]))).toBe(original);
+		expect(renderTimelineEvent(event, new Map([["m1", []]]))).toBe(original);
+	});
+
+	it("other event kinds ignore the attachment map", () => {
+		const blocks = new Map([["m1", ["Must not leak"]]]);
+		const events: SidechatTimelineEvent[] = [
+			{ rowType: "event", kind: "branch_forked", payload: { at: 1 } },
+			{ rowType: "event", kind: "rp_summary", payload: { fromPosition: 0, toPosition: 1, text: "Summary" } },
+			{ rowType: "event", kind: "variants_attached", payload: { position: 0, variants: [{ selected: true, text: "Variant", number: null, model: null, preset: null }] } },
+			{ rowType: "event", kind: "selection_changed", payload: { messageId: "m1", position: 0, previous: { variantId: "v1", text: "Before", model: null, preset: null }, current: { variantId: "v2", text: "After", model: null, preset: null } } },
+		];
+		for (const row of events) expect(renderTimelineEvent(row, blocks)).toBe(renderTimelineEvent(row));
 	});
 });

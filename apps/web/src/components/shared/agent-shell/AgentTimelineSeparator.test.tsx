@@ -24,7 +24,12 @@ useDomEnv();
 // CustomTooltip (Radix) never anchors under happy-dom — the ask card the list
 // may render is wrapped in it. Render children inline; this pins the
 // separator wiring, not tooltip internals (same mock as the list test).
+const realTooltip = await import("../../../components/shared/Tooltip.js");
+// Spread `...real` (R4): files sharing this worker may load the CA-4f graph
+// (AttachmentGrid → sent-file-attachment) whose `TooltipProvider` import a
+// spread-less factory would break.
 mock.module("../../../components/shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 

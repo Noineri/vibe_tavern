@@ -152,6 +152,9 @@ export async function forkChatThreadToBranch(
         // the row (a fork keeps the full history, reasoning included).
         reasoning: row.reasoning,
         reasoningDurationMs: row.reasoningDurationMs,
+        // CA-4a2: verbatim copy SHARES asset ids with the source thread.
+        // Attachment deletion must check references before removing an asset.
+        attachmentsJson: row.attachmentsJson,
         seq: row.seq,
         createdAt: row.createdAt,
       });

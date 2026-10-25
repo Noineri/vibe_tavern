@@ -8,9 +8,10 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { brandId, parseStoredAttachments, ensureActiveObjectiveTarget } from "@vibe-tavern/domain";
+import { applyAttachmentPatch, brandId, parseStoredAttachments, ensureActiveObjectiveTarget } from "@vibe-tavern/domain";
 import type {
   Attachment,
+  AttachmentPatch,
   ChatBranchId,
   ChatId,
   Message,
@@ -228,6 +229,17 @@ export class ChatApplicationService {
   async findAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
     const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
     return owner === null ? null : owner.attachments[owner.index];
+  }
+
+  /** Patch action-owned fields on the owning message/variant row, re-reading
+   * the set after generation so unrelated attachment edits are preserved. */
+  async updateSingleAttachment(messageId: string, attachmentId: string, patch: AttachmentPatch): Promise<Attachment> {
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    if (!owner) throw notFound("Attachment");
+    const updated = applyAttachmentPatch(owner.attachments[owner.index], patch);
+    const attachments = owner.attachments.map((att, index) => index === owner.index ? updated : att);
+    await this.persistAttachmentSet(messageId, { ...owner, attachments });
+    return updated;
   }
 
   /** Persist an attachment-set edit onto the row that owns it (MR-4). */

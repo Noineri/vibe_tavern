@@ -18,6 +18,8 @@ import {
   parseAgentPermissionState,
 } from "../../../stores/agent-turn-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
+import { toSendAttachment } from "../../../lib/send-attachments.js";
+import type { Attachment } from "@vibe-tavern/domain";
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
@@ -115,6 +117,10 @@ export interface AgentController extends AgentTurnActions {
    *  and the shell refetches, so without this the user's own message is
    *  invisible for the entire generation. Cleared in `finally`. */
   pendingUserContent: string;
+  /** CA-4e3: the just-sent message's attachments — set with (and cleared
+   *  with) `pendingUserContent`, so the optimistic bubble shows the chips and
+   *  the settle refetch swaps in the persisted row's identical attachments. */
+  pendingUserAttachments: readonly Attachment[];
   /** TAG-9: the optimistic resolution of the just-answered `ask_user` card
    *  (status flipped immediately on submit so the card does not wait for the
    *  settle+refetch round-trip). Cleared at the next turn start or thread
@@ -171,6 +177,8 @@ export function useAgentController(
   // after the turn settles + the shell refetches). Cleared in `finally` so
   // every exit path (success / error / abort) drops it once the turn is done.
   const [pendingUserContent, setPendingUserContent] = useState("");
+  // CA-4e3: the optimistic bubble's attachments (see the interface doc).
+  const [pendingUserAttachments, setPendingUserAttachments] = useState<readonly Attachment[]>([]);
   // TAG-9: the optimistic resolution of the just-answered ask card (see the
   // interface doc for the rollback/convergence contract).
   const [pendingAskAnswer, setPendingAskAnswer] = useState<AgentPendingAskAnswer | null>(null);
@@ -405,9 +413,15 @@ export function useAgentController(
   const handleSend = useCallback(
     async (content: string, opts?: AgentSendOptions): Promise<void> => {
       const trimmed = content.trim();
+      // CA-4e3: an attachment-only send is legal (the schema allows content
+      // OR non-empty attachments; an empty string is refused — content is
+      // then omitted from the body below).
+      const attachments = opts?.attachments ?? [];
+      const hasAttachments = attachments.length > 0;
 
-      // Silent guards (no toast): empty content, missing thread, already sending.
-      if (!trimmed || !threadId || isSendingRef.current) return;
+      // Silent guards (no toast): no text AND no attachments, missing thread,
+      // already sending.
+      if ((!trimmed && !hasAttachments) || !threadId || isSendingRef.current) return;
       // Missing provider is the one guard that deserves feedback.
       if (!providerProfileId) {
         toast.error(getT()("message_unavailable_no_provider"));
@@ -434,14 +448,19 @@ export function useAgentController(
       setPendingText("");
       setPendingReasoning("");
       setPendingUserContent(trimmed);
+      setPendingUserAttachments(attachments);
 
       try {
         const streamResult = await transport.sendStream(
           threadId,
           {
-            content: trimmed,
+            // CA-4e3: an attachment-only send omits `content` (the schema
+            // refuses an empty string); the attachments ride the body through
+            // the ONE send mapper.
+            ...(trimmed ? { content: trimmed } : {}),
             providerProfileId,
             ...(model ? { model } : {}),
+            ...(hasAttachments ? { attachments: attachments.map(toSendAttachment) } : {}),
             ...(opts?.rules !== undefined ? { rules: opts.rules } : {}),
             ...(opts?.visual !== undefined ? { visual: opts.visual } : {}),
             ...(opts?.code !== undefined ? { code: opts.code } : {}),
@@ -499,6 +518,7 @@ export function useAgentController(
       } finally {
         abortRef.current = null;
         setPendingUserContent("");
+        setPendingUserAttachments([]);
       }
     },
     [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
@@ -679,5 +699,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

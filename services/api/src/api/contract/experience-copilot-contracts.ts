@@ -7,6 +7,7 @@
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type { Attachment, ImageRoute } from "@vibe-tavern/domain";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -33,6 +34,11 @@ export interface ExperienceCopilotTurnDeleteRequest {
   /** Also delete the turn's user row — the user's own delete on their
    *  message. Required `true` when `messageId` addresses a user row. */
   includeUserMessage: boolean;
+  /** CA-4e1: keep the deleted rows' physical attachment files (edit-last
+   *  deletes the user row, then resends the SAME attachments — the files must
+   *  outlive the rows). Default false: a plain delete also deletes the rows'
+   *  unreferenced files (CA-4d2). */
+  keepAttachmentFiles?: boolean;
 }
 
 /** POST `/turns/delete` response (AP-8): every deleted row id in timeline
@@ -58,6 +64,29 @@ export interface AgentThreadProposalResolveWire {
 }
 
 export interface ExperienceCopilotRuntimeApi {
+	experienceCopilotSummarizeAttachment: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<Attachment>;
+	experienceCopilotClearAttachmentSummary: (threadId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
+	experienceCopilotSetAttachmentIncluded: (threadId: string, messageId: string, attachmentId: string, included: boolean) => Promise<{ ok: true }>;
+	experienceCopilotDeleteAttachment: (threadId: string, messageId: string, attachmentId: string) => Promise<{ ok: true }>;
+	/** CA-4g1: write an image/video description as given (the lightbox's
+	 *  edit action). Message-in-thread checked; a missing attachment is the
+	 *  shared not-found. Response `{ ok: true }`. */
+	experienceCopilotUpdateAttachmentDescription: (threadId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: true }>;
+	/** CA-4g1: re-describe one image/video attachment through the profile's
+	 *  vision model (the lightbox's regenerate action). The profile + model
+	 *  come from the summarize ladder (body → thread last-used → profile
+	 *  default); no vision model configured is a validation error. Unlike
+	 *  the chat twin, the request's abort signal reaches the describe call.
+	 *  Response `{ description }` — the trimmed, persisted text. */
+	experienceCopilotRegenerateAttachmentDescription: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<{ description: string }>;
+	/** CA-4e1: the shell's profile-level image-route read behind `GET
+	 *  /api/experience-copilot/image-route?providerProfileId=…&model=…`. The
+	 *  shell has no chat to resolve — it sends the picker's current
+	 *  profile + model per turn; the model falls back to the profile's
+	 *  default, none at all is a validation error, an unknown profile the
+	 *  shared not-found family. Response `{ route }` — the ONE domain rule
+	 *  (`image-route.ts`), same as the chat endpoint. */
+	experienceCopilotGetImageRoute: (providerProfileId: string, model?: string) => Promise<{ route: ImageRoute }>;
 	/** Resolve the agent kind serving a stream turn's script — the AS-2c
 	 *  kind-resolution seam. Loads the thread (404 when missing), then the
 	 *  script row, and resolves `script.scriptKind` through the agent-kind

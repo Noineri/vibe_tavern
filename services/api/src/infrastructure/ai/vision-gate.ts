@@ -12,7 +12,8 @@
  *  • Non-vision primary → the executor describes the image FIRST (via the
  *    configured fallback-vision model), then this gate sends only the textual
  *    description. A raw undescribed image reaching the non-vision path means
- *    no fallback was configured → VisionNotSupportedError.
+ *    no fallback was configured → VisionNotSupportedError on the current turn,
+ *    or a text note for an earlier message (CA-1g).
  *
  * `describeAttachments` (the parallel/first describe step) lives here too; the
  * executor calls it and persists descriptions before/assembling each turn.
@@ -20,6 +21,7 @@
 */
 
 import type { Attachment } from "@vibe-tavern/domain";
+import { isTextMime, log } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
@@ -108,6 +110,54 @@ export class VisionNotSupportedError extends Error {
 // resolveMultimodalContent
 // ---------------------------------------------------------------------------
 
+export type AttachmentAssetLoader = (assetId: string) => Promise<Buffer | null>;
+
+export type UnseenImagePolicy = "error" | "note";
+
+/** Decide on INPUT messages, before provider reorder, continuation or prefill.
+ * The last user message is the current turn; earlier messages cannot block it. */
+export function unseenImagePolicy(messages: readonly { role: string }[], index: number): UnseenImagePolicy {
+  for (let current = messages.length - 1; current >= 0; current--) {
+    if (messages[current].role === "user") return index === current ? "error" : "note";
+  }
+  return "note";
+}
+
+/** Render already-visible attachments for a text-only consumer such as summary
+ *  memory. Never describes images or transcribes audio; old untranscribed voice
+ *  notes are omitted rather than failing the summary. Only text files load bytes.
+ *  Visibility belongs to filterPromptVisibleAttachments upstream. */
+export async function renderAttachmentsAsText(
+  attachments: ReadonlyArray<Attachment>,
+  assetLoader: AttachmentAssetLoader = async () => null,
+): Promise<string[]> {
+  const blocks: string[] = [];
+  for (const att of attachments) {
+    if (att.type === "audio") {
+      if ((att.purpose ?? "voice") === "voice" && att.description?.trim()) {
+        blocks.push(`[Voice message: ${att.name}]\nTranscript: ${att.description}`);
+      }
+    } else if (att.type === "image" || att.type === "video") {
+      blocks.push(`[Attached ${att.type}: ${att.name}]${att.description?.trim() ? `\n${att.description}` : ""}`);
+    } else if (isTextMime(att.mimeType)) {
+      if (att.description?.trim()) {
+        blocks.push(`[Attached file: ${att.name}]\n${att.description}`);
+      } else {
+        const buffer = await assetLoader(att.assetId);
+        if (buffer === null) {
+          log.tag("attachments").warn("Text attachment asset missing: assetId=%s name=%s", att.assetId, att.name);
+          blocks.push(`[Attached file: ${att.name} — file is no longer available]`);
+        } else {
+          blocks.push(`[Attached file: ${att.name}]\n${new TextDecoder().decode(buffer)}`);
+        }
+      }
+    } else if (att.description?.trim()) {
+      blocks.push(`[Attached ${att.type}: ${att.name}]\n${att.description}`);
+    }
+  }
+  return blocks;
+}
+
 /**
  * Convert a message + its attachments into AI SDK ContentPart[].
  *
@@ -117,13 +167,15 @@ export class VisionNotSupportedError extends Error {
  *
  * For raw image/video attachments:
  * - If hasVision → load asset and create ImagePart
- * - If no hasVision → throw VisionNotSupportedError
+ * - If no hasVision → throw VisionNotSupportedError by default; the explicit
+ *   history policy "note" emits a short unavailable-image note instead
  *   (the executor should have already described them if a visionModel was set)
  */
 export async function resolveMultimodalContent(
   message: SdkMessage,
   gate: VisionGateConfig,
   assetLoader: (assetId: string) => Promise<Buffer | null>,
+  options: { unseenImagePolicy?: UnseenImagePolicy } = {},
 ): Promise<Array<TextPart | ImagePart>> {
   const parts: Array<TextPart | ImagePart> = [];
 
@@ -147,17 +199,15 @@ export async function resolveMultimodalContent(
 
   for (const att of audioAttachments) {
     if ((att.purpose ?? "voice") !== "voice") continue; // playback-only
-    if (att.description?.trim()) {
-      parts.push({
-        type: "text",
-        text: `[Voice message: ${att.name}]\nTranscript: ${att.description}`,
-      });
-    } else {
+    if (!att.description?.trim()) {
       // The executor should have transcribed this (STT profile configured).
       // Reaching here means no profile was set OR transcription failed —
       // the honest configuration error, the VisionNotSupportedError mirror.
       throw new VoiceTranscribeUnavailableError([att.name]);
     }
+  }
+  for (const text of await renderAttachmentsAsText(audioAttachments, assetLoader)) {
+    parts.push({ type: "text", text });
   }
 
   // ── Vision routing (ASYMMETRIC by design) ───────────────────────────────
@@ -175,7 +225,8 @@ export async function resolveMultimodalContent(
   //    image first (executor runs describeAttachments before calling us). We
   //    send only the textual description — no pixels. A raw undescribed image
   //    reaching here means no fallback was configured (or the describe step
-  //    failed) → VisionNotSupportedError.
+    //    failed) → VisionNotSupportedError for the current turn (the default),
+    //    or one text note per image/video in an earlier message (CA-1g).
   //
   // Routing invariant: the DB persists `type: "image"` + `description`; only
   // the executor's in-memory copy flips `type` to `"file"`. So we route by
@@ -187,18 +238,14 @@ export async function resolveMultimodalContent(
     (a) => a.type !== "image" && a.type !== "video" && a.type !== "audio",
   );
 
-  // Non-image/video attachments (e.g. files) → text when they carry a
-  // description; otherwise dropped (no native multimodal handling). Same on
-  // both paths — these never need vision. Audio is EXCLUDED: it is fully
+  // Text files use their summary when present, otherwise the full stored text.
+  // Other non-media attachments keep their described-only behavior. Match text
+  // by MIME, not type: described images can arrive flipped to "file" in memory.
+  // Same on both paths — these never need vision. Audio is EXCLUDED: it is fully
   // handled by the audio branch above (double-emitting a described voice
   // note here would duplicate the transcript in the prompt).
-  for (const att of otherAttachments) {
-    if (att.description?.trim()) {
-      parts.push({
-        type: "text",
-        text: `[Attached ${att.type}: ${att.name}]\n${att.description}`,
-      });
-    }
+  for (const text of await renderAttachmentsAsText(otherAttachments, assetLoader)) {
+    parts.push({ type: "text", text });
   }
 
   if (imageVideoAttachments.length === 0) return parts;
@@ -229,7 +276,7 @@ export async function resolveMultimodalContent(
     return parts;
   }
 
-  // Non-vision primary: described images → textual description; raw → error.
+  // Non-vision primary: described images → description; raw → error or note.
   const describedImages = imageVideoAttachments.filter((a) => a.description?.trim());
   const rawImages = imageVideoAttachments.filter((a) => !a.description?.trim());
 
@@ -241,9 +288,14 @@ export async function resolveMultimodalContent(
   }
 
   if (rawImages.length > 0) {
-    // The executor should have described these (vision fallback configured).
-    // Reaching here means no fallback was set OR describe failed — honest error.
-    throw new VisionNotSupportedError(rawImages.map((a) => a.name));
+    if (options.unseenImagePolicy !== "note") {
+      // The current turn still gets the honest configuration error.
+      throw new VisionNotSupportedError(rawImages.map((a) => a.name));
+    }
+    log.tag("vision-gate").warn("Undescribed history media replaced with notes: %s", rawImages.map((a) => a.name).join(", "));
+    for (const att of rawImages) {
+      parts.push({ type: "text", text: `[Image attachment: ${att.name}]\nThe current model cannot see this attachment and no description is available.` });
+    }
   }
 
   return parts;

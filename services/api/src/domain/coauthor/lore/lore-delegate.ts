@@ -24,7 +24,7 @@
  * the strategy seam. A delegate is optional — when no provider is configured
  * the delegation tools are absent from the set (toolSet-gated) and never run.
  */
-import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import { buildOneShotPrompt } from "../../../infrastructure/ai/one-shot-prompt.js";
 import type { ProviderExecutionInput } from "../../../infrastructure/ai/provider-execution-types.js";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 
@@ -94,23 +94,6 @@ const LOGIC_HINTS: Record<string, string> = {
 	not_any: "(secondary keys PREVENT activation when matched — generate terms indicating the conversation moved away from this topic)",
 	not_all: "(secondary keys prevent activation when ALL match — generate unrelated-topic indicators)",
 };
-
-/** Build the minimal one-shot AssemblePromptResponse the executor consumes. */
-function buildOneShotPrompt(system: string, user: string): AssemblePromptResponse {
-	return {
-		layers: [],
-		tokenAccounting: { total: 0 },
-		activatedLoreEntries: [],
-		scriptInjections: [],
-		retrievedMemories: [],
-		finalPayload: {
-			messages: [
-				{ role: "system", content: system },
-				{ role: "user", content: user },
-			],
-		},
-	};
-}
 
 /**
  * Append a grounding block (character card + lorebook meta) to a reused

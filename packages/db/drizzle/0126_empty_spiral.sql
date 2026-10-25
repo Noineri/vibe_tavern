@@ -1,0 +1,1 @@
+ALTER TABLE `experience_copilot_messages` ADD `attachments_json` text;

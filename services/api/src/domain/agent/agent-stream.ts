@@ -33,6 +33,8 @@ import { classifyProviderError } from "../../infrastructure/ai/provider-error-cl
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound, validation } from "../../shared/errors.js";
+import { promptVisibleAttachments, type Attachment, type AttachmentPatch } from "@vibe-tavern/domain";
+import { prepareAgentModelMessages, type AgentVisionAssets } from "./agent-attachments.js";
 import { resolveDigestBoundary, type AgentHistoryMessage } from "./agent-prompt.js";
 import {
   applyAgentTurnAnswer,
@@ -72,6 +74,7 @@ export interface AgentStreamStoredMessage {
   id: string;
   role: string;
   content: string;
+  attachments?: Attachment[];
   toolCallId: string | null;
   toolCallsJson: string | null;
 }
@@ -89,6 +92,7 @@ export interface AgentStreamStore<THREAD extends AgentStreamThread = AgentStream
   getById(threadId: string): Promise<THREAD | null>;
   listMessages(threadId: string): Promise<readonly AgentStreamStoredMessage[]>;
   appendMessage(threadId: string, input: AgentTurnAppendInput): Promise<unknown>;
+  updateMessageAttachment?(messageId: string, attachmentId: string, patch: AttachmentPatch): Promise<Attachment | null>;
   setToolResultOutput(
     threadId: string,
     toolCallId: string,
@@ -112,6 +116,7 @@ export interface AgentStreamStore<THREAD extends AgentStreamThread = AgentStream
 export interface AgentTurnRequest {
   readonly threadId: string;
   readonly content?: string;
+  readonly attachments?: Attachment[];
   readonly answer?: AgentTurnAnswer;
   /** AP-9 regenerate mode: rerun the last turn with NO new user row — the
    *  loop trims the replaced turn's rows (through the deletion seam below)
@@ -140,6 +145,7 @@ export interface AgentStreamDeps<THREAD extends AgentStreamThread = AgentStreamT
     model: string,
     fetch?: ProviderFetch,
   ) => LanguageModel;
+  readonly resolveVisionAssets?: (profile: ProviderProfile) => Promise<AgentVisionAssets>;
   /** The AI SDK streaming function. Defaults to the real `streamText` from "ai".
    *  Injectable so tests substitute a fake WITHOUT `mock.module("ai")` — under
    *  bun:test that mock is process-global and permanent. */
@@ -164,7 +170,8 @@ export interface AgentStreamDeps<THREAD extends AgentStreamThread = AgentStreamT
 /** One message in a kind's assembled prompt (system + compacted history) —
  *  the shape the generic `toModelMessages` fold consumes. */
 export type AgentPromptMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string; attachments?: Attachment[] }
   | { role: "assistant"; content: string; toolCalls?: ToolCallPart[] }
   | { role: "tool"; content: ToolResultPart[] };
 
@@ -324,10 +331,14 @@ export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
         ],
       };
     }
-    const msg: AgentHistoryMessage = {
+    const msg: Extract<AgentHistoryMessage, { role: "user" | "assistant" }> = {
       role: m.role === "assistant" ? "assistant" : "user",
       content: m.content,
     };
+    if (msg.role === "user") {
+      const attachments = promptVisibleAttachments(m.attachments ?? []);
+      if (attachments.length) msg.attachments = attachments;
+    }
     if (m.toolCallsJson) {
       try {
         const parsed = JSON.parse(m.toolCallsJson) as unknown;
@@ -390,6 +401,11 @@ function toModelMessages(
 // records segments, feeds the capture, and calls `persistTurn`.)
 
 // ─── The generic turn loop ───────────────────────────────────────────────────
+
+/** Content mode includes an attachment-only user turn (CA-4b1). */
+export function isAgentContentTurn(request: Pick<AgentTurnRequest, "content" | "attachments">): boolean {
+  return request.content !== undefined || Boolean(request.attachments?.length);
+}
 
 /**
  * Stream one agent turn through the generic mechanism: load the thread and the
@@ -469,6 +485,7 @@ export async function* streamAgentTurn<
   // in the split-turn module; the rewrite is validated first (the row must
   // still be awaiting in THIS thread) so a stale or foreign toolCallId can
   // never overwrite another tool's result.
+  let appendedUserRow: unknown;
   if (request.answer) {
     await applyAgentTurnAnswer({
       threadId: request.threadId,
@@ -486,10 +503,11 @@ export async function* streamAgentTurn<
           }
         : {}),
     });
-  } else if (request.content) {
-    await deps.store.appendMessage(request.threadId, {
+  } else if (isAgentContentTurn(request)) {
+    appendedUserRow = await deps.store.appendMessage(request.threadId, {
       role: "user",
-      content: request.content,
+      content: request.content ?? "",
+      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
     });
   } else if (request.regenerate === true) {
     // AP-9 regenerate mode: NO input row — the trimmed thread state (the
@@ -524,8 +542,9 @@ export async function* streamAgentTurn<
   // Answer mode (TAG-5) and regenerate mode (AP-9): NO user message is pushed
   // — answer mode's history already ends with the answered tool-result (the
   // turn's input), regenerate's ends with the surviving user row.
-  const history: AgentHistoryMessage[] = request.content
-    ? [...priorHistory, { role: "user", content: request.content }]
+  const visibleAttachments = promptVisibleAttachments(request.attachments ?? []);
+  const history: AgentHistoryMessage[] = isAgentContentTurn(request)
+    ? [...priorHistory, { role: "user", content: request.content ?? "", ...(visibleAttachments.length ? { attachments: visibleAttachments } : {}) }]
     : priorHistory;
   const assembled = await seams.assemble({
     thread,
@@ -557,11 +576,14 @@ export async function* streamAgentTurn<
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
 
-  const modelMessages = toModelMessages(assembled.messages);
-
   const stream = deps.streamText ?? streamText;
   let result: ReturnType<typeof streamText>;
   try {
+    const modelMessages = await prepareAgentModelMessages(assembled.messages, {
+      profile: effectiveProfile, model: modelName, store: deps.store, priorMessages,
+      appendedRow: appendedUserRow, currentAttachments: request.attachments,
+      resolveVisionAssets: deps.resolveVisionAssets, providerFetch, signal, convert: toModelMessages,
+    });
     result = stream({
       model: aiModel,
       messages: modelMessages,

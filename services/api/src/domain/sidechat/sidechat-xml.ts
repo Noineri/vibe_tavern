@@ -231,7 +231,7 @@ export function renderCurrentSceneSection(text: string): string | null {
  */
 export function renderTimelineSection(entries: readonly SidechatTimelineEvent[]): string | null {
 	if (entries.length === 0) return null;
-	return entries.map(renderTimelineEvent).join("\n");
+	return entries.map((entry) => renderTimelineEvent(entry)).join("\n");
 }
 
 /**
@@ -242,10 +242,13 @@ export function renderTimelineSection(entries: readonly SidechatTimelineEvent[])
  * unknown kind) THROWS rather than silently dropping or re-shaping it —
  * either would change what the model is shown.
  */
-export function renderTimelineEvent(entry: SidechatTimelineEvent): string {
+export function renderTimelineEvent(
+	entry: SidechatTimelineEvent,
+	rpAttachmentBlocks?: ReadonlyMap<string, readonly string[]>,
+): string {
 	switch (entry.kind) {
 		case "rp_sync":
-			return renderRpSyncEvent(entry.payload);
+			return renderRpSyncEvent(entry.payload, rpAttachmentBlocks);
 		case "variants_attached":
 			return renderVariantsAttachedEvent(entry.payload);
 		case "selection_changed":
@@ -268,16 +271,18 @@ export function renderTimelineEvent(entry: SidechatTimelineEvent): string {
 	}
 }
 
-function renderRpSyncEvent(payload: RpSyncPayload): string {
+export function renderRpSyncEvent(payload: RpSyncPayload, attachmentBlocks?: ReadonlyMap<string, readonly string[]>): string {
 	const messages = payload.messages.map((message) => {
 		// SC-23a provenance — appended after author, each rendered only when
 		// the value exists (a user message and pre-SC-23a events carry none).
 		const provenance =
 			(message.model !== null ? ` model="${escapeXmlAttribute(message.model)}"` : "") +
 			(message.preset !== null ? ` preset="${escapeXmlAttribute(message.preset)}"` : "");
+		const blocks = attachmentBlocks?.get(message.id);
+		const body = blocks?.length ? `${message.text}\n\n${blocks.join("\n\n")}` : message.text;
 		return (
 			`<rp_message position="${message.position}" role="${escapeXmlAttribute(message.role)}" ` +
-			`author="${escapeXmlAttribute(message.authorName ?? "")}"${provenance}>${escapeXmlText(message.text)}</rp_message>`
+			`author="${escapeXmlAttribute(message.authorName ?? "")}"${provenance}>${escapeXmlText(body)}</rp_message>`
 		);
 	});
 	return [`<rp_sync from="${payload.fromPosition}" to="${payload.toPosition}">`, ...messages, "</rp_sync>"].join(

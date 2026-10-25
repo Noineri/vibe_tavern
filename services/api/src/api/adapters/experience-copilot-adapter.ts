@@ -8,9 +8,11 @@ import {
   toKindSettingsWire,
   toChatSettingsWire,
 } from "./experience-copilot-wire-mappers.js";
-import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
-import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
+import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
+import { createAgentAttachmentActions, type AttachmentAssetCleanup, type AttachmentDescribeExecutor } from "./experience-copilot-attachment-actions.js";
+import type { AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { notFound } from "../../shared/errors.js";
+import { resolveProfileImageRoute } from "./chat-image-route.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
@@ -37,6 +39,7 @@ import { SidechatOocCompactionService } from "../../domain/sidechat/sidechat-com
 import { listAgentThreadEvents } from "../../domain/sidechat/sidechat-events.js";
 import { forkBranchSidechat, summarizeBranchSidechat } from "../../domain/sidechat/branch-sidechat-fork.js";
 import { readContextLinks, replaceContextLinks } from "./experience-copilot-context-links.js";
+import { readCopilotContextState, patchCopilotContextState } from "./experience-copilot-context-state.js";
 import { deleteCopilotTurnWire, makeRegenerateDeleteTurn } from "./experience-copilot-turn-delete.js";
 import { editCopilotMessageWire } from "./experience-copilot-message-edit.js";
 import { resolveScriptAgentContextCards } from "./experience-copilot-script-cards.js";
@@ -55,7 +58,7 @@ import {
 } from "../../domain/agent/agent-kind-registry.js";
 import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import { resolveEffectiveSettings } from "@vibe-tavern/domain";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
 
@@ -98,6 +101,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
    *  constructor body (it reads `this.stores`, which parameter properties
    * only make available there). */
   private readonly deleteTurnForRegenerate: AgentTurnDeleteTurn;
+  private readonly providerDeps: ReturnType<typeof buildAgentProviderDeps>;
+  private readonly attachmentActions: ReturnType<typeof createAgentAttachmentActions>;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -122,17 +127,34 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
      * (then the sidechat stream attaches no context, the same contract the
      * script kind has without ITS library). */
     private readonly sidechatSkillService?: SkillLibraryService,
+    /** Shared text-asset read for RP attachment rendering (CA-1f). */
+    private readonly attachmentAssetLoader?: AttachmentAssetLoader,
+    private readonly attachmentAssetCleanup?: AttachmentAssetCleanup,
+    attachmentSummaryExecutor?: AttachmentSummaryExecutor,
+    /** CA-4g1 test seam — the describe call the attachment actions' regenerate
+     *  routes through (production runs vision-gate's real `describeAttachments`). */
+    private readonly attachmentDescribeExecutor?: AttachmentDescribeExecutor,
   ) {
+    this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
+    this.attachmentActions = createAgentAttachmentActions({
+      db: stores.db,
+      store: stores.experienceCopilot,
+      providers: providerProfileService,
+      assetLoader: attachmentAssetLoader,
+      cleanup: attachmentAssetCleanup,
+      execute: attachmentSummaryExecutor,
+      ...(attachmentDescribeExecutor !== undefined ? { describe: attachmentDescribeExecutor } : {}),
+    });
     this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
-      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.scriptCompaction = providerProfileService
-      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new ScriptAgentCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.sidechatCompaction = providerProfileService
-      ? new SidechatOocCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db)
+      ? new SidechatOocCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
       : null;
     this.streamKinds = new Map<AgentKindId, KindStream>([
       ["experience", (threadId, body, signal) => this.streamExperienceThread(threadId, body, signal)],
@@ -279,21 +301,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         contextCharacterId?: string;
         contextPersonaId?: string;
       }) => resolveScriptAgentContextCards(this.stores, input),
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       // Kind-aware fallback (AS-8b): prompt/dice scripts seed the `script`
       // kind's builtin, interactive scripts the experience one.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
@@ -378,6 +386,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         // SC-23c: pinned-preset existence for the RP prompt view arm.
         presets: this.stores.presets,
         assembly,
+        assetLoader: this.attachmentAssetLoader,
       },
       // SC-17: the variant-attach freeze — the same stores/assembly the sync
       // and context seams read, plus the store's frozen-event append.
@@ -387,21 +396,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         assembly,
         experienceCopilot: this.stores.experienceCopilot,
       },
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       resolveProfileForChat: (thread) =>
         this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
       ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
@@ -450,21 +445,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
       getBoundVisualIds: (scriptId: string) => this.stores.scripts.getBoundVisualIds(scriptId),
       getVisual: (id: string) => this.stores.experienceResources.getVisualById(id),
-      getProviderProfile: (id: string) => this.stores.providers.getById(id),
-      getEffectiveProviderProfile: async (id: string, model: string) => {
-        const profile = await this.stores.providers.getById(id);
-        if (!profile) {
-          throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
-        }
-        if (!profile.bindPerModel) return profile;
-        const overlay = await this.stores.providers.getModelSettings(id, model);
-        return resolveEffectiveSettings(profile, overlay?.settings ?? null);
-      },
-      resolveModel: (
-        profile,
-        model,
-        fetch,
-      ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      ...this.providerDeps,
       // Profile resolution (CP-6): thread → script → copilot_profile_id → row,
       // falling back to the built-in seed. The stream already holds thread.scriptId.
       resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
@@ -713,35 +694,14 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   ): Promise<AgentBranchSidechatSummary> =>
     summarizeBranchSidechat(this.forkDeps(), chatId, branchId);
 
-  experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
-    const thread = await this.stores.experienceCopilot.getById(threadId);
-    if (!thread) {
-      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
-    }
-    return {
-      metrics: thread.contextMetrics ? toMetricsWire(thread.contextMetrics) : null,
-      autoCompact: thread.autoCompact,
-    };
-  };
+  experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> =>
+    readCopilotContextState(this.stores.experienceCopilot, threadId);
 
   experienceCopilotPatchContext = async (
     threadId: string,
     body: { autoCompact?: boolean },
-  ): Promise<ExperienceCopilotContextState> => {
-    const thread = await this.stores.experienceCopilot.getById(threadId);
-    if (!thread) {
-      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
-    }
-    if (body.autoCompact !== undefined) {
-      await this.stores.experienceCopilot.setAutoCompact(threadId, body.autoCompact);
-    }
-    // Re-read so the response reflects the persisted toggle (metrics unchanged).
-    const refreshed = await this.stores.experienceCopilot.getById(threadId);
-    return {
-      metrics: refreshed?.contextMetrics ? toMetricsWire(refreshed.contextMetrics) : null,
-      autoCompact: refreshed?.autoCompact ?? true,
-    };
-  };
+  ): Promise<ExperienceCopilotContextState> =>
+    patchCopilotContextState(this.stores.experienceCopilot, threadId, body);
 
   experienceCopilotGetContextLinks = async (threadId: string): Promise<ExperienceCopilotContextLink[]> =>
     readContextLinks(this.stores.experienceCopilot, threadId);
@@ -774,6 +734,35 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return { digest: toMessageWire(digest), metrics: toMetricsWire(metrics) };
   };
 
+  experienceCopilotSummarizeAttachment: ExperienceCopilotRuntimeApi['experienceCopilotSummarizeAttachment'] =
+    (...args) => this.attachmentActions.summarizeAttachment(...args);
+
+  experienceCopilotClearAttachmentSummary: ExperienceCopilotRuntimeApi['experienceCopilotClearAttachmentSummary'] =
+    (...args) => this.attachmentActions.clearAttachmentSummary(...args);
+
+  experienceCopilotSetAttachmentIncluded: ExperienceCopilotRuntimeApi['experienceCopilotSetAttachmentIncluded'] =
+    (...args) => this.attachmentActions.setIncluded(...args);
+
+  experienceCopilotDeleteAttachment: ExperienceCopilotRuntimeApi['experienceCopilotDeleteAttachment'] =
+    (...args) => this.attachmentActions.deleteAttachment(...args);
+
+  /** CA-4g1: the lightbox's image-description pair — thin delegates over the
+   *  shared attachment-actions module (the ladder + the chat twin's rules). */
+  experienceCopilotUpdateAttachmentDescription: ExperienceCopilotRuntimeApi['experienceCopilotUpdateAttachmentDescription'] =
+    (...args) => this.attachmentActions.updateDescription(...args);
+
+  experienceCopilotRegenerateAttachmentDescription: ExperienceCopilotRuntimeApi['experienceCopilotRegenerateAttachmentDescription'] =
+    (...args) => this.attachmentActions.regenerateDescription(...args);
+
+  /** CA-4e1: thin delegate — the profile lookup + the ONE image-route rule
+   *  live in adapters/chat-image-route.ts (`resolveProfileImageRoute`). */
+  experienceCopilotGetImageRoute: ExperienceCopilotRuntimeApi['experienceCopilotGetImageRoute'] =
+    (providerProfileId, model) => {
+      const providers = this.providerProfileService;
+      if (!providers) throw notFound("ProviderProfile", "Provider profile service is unavailable.");
+      return resolveProfileImageRoute(this.stores, providers, providerProfileId, model);
+    };
+
   /** AP-8: delete one turn — thin wiring over adapters/experience-copilot-
    *  turn-delete.ts (the store sibling call + the error mapping live there;
    *  this file sits at its size cap). */
@@ -781,7 +770,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     threadId: string,
     body: ExperienceCopilotTurnDeleteRequest,
   ): Promise<ExperienceCopilotTurnDeleteResult> =>
-    deleteCopilotTurnWire(this.stores.db, threadId, body);
+    deleteCopilotTurnWire(this.stores.db, threadId, body, { store: this.stores.experienceCopilot, cleanup: this.attachmentAssetCleanup });
 
   /** AP-30: edit one assistant text row in place — thin wiring over
    *  adapters/experience-copilot-message-edit.ts (the turn-delete sibling

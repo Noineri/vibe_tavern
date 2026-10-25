@@ -10,7 +10,8 @@
  * conflict), never a new error style.
  */
 
-import { deleteCopilotTurn, type AppDb } from "@vibe-tavern/db";
+import { deleteCopilotTurn, type AppDb, type ExperienceCopilotStore } from "@vibe-tavern/db";
+import { cleanupUnreferencedAgentAssets, type AttachmentAssetCleanup } from "./experience-copilot-attachment-actions.js";
 import { notFound, validation, conflict } from "../../shared/errors.js";
 import type { AgentTurnDeleteTurn } from "../../domain/agent/agent-regenerate.js";
 import type {
@@ -26,14 +27,32 @@ export async function deleteCopilotTurnWire(
   db: AppDb,
   threadId: string,
   body: ExperienceCopilotTurnDeleteRequest,
+  attachments?: {
+    store: Pick<ExperienceCopilotStore, "listMessages" | "hasMessageAttachmentAssetReference">;
+    cleanup?: AttachmentAssetCleanup;
+  },
 ): Promise<ExperienceCopilotTurnDeleteResult> {
+  // Capture before deletion, but only successful deleted ids are eligible for
+  // cleanup. Refused deletes never reach cleanup; forks retain shared assets.
+  // CA-4e1 `keepAttachmentFiles` (edit-last's delete-before-resend) skips the
+  // asset cleanup entirely — the rows still go.
+  const skipCleanup = body.keepAttachmentFiles === true;
+  const priorMessages = attachments?.cleanup && body.includeUserMessage && !skipCleanup
+    ? await attachments.store.listMessages(threadId) : [];
   const result = await deleteCopilotTurn({ db }, threadId, body.messageId, body.includeUserMessage);
   switch (result.status) {
-    case "deleted":
+    case "deleted": {
+      if (attachments?.cleanup && !skipCleanup) {
+        const deletedIds = new Set<string>(result.deletedMessageIds);
+        const assetIds = priorMessages.filter((message) => deletedIds.has(message.id))
+          .flatMap((message) => message.attachments?.map((attachment) => attachment.assetId) ?? []);
+        await cleanupUnreferencedAgentAssets(attachments.store, assetIds, attachments.cleanup);
+      }
       return {
         deletedMessageIds: [...result.deletedMessageIds],
         deletedUserMessageId: result.deletedUserMessageId,
       };
+    }
     case "refused-digest":
       throw conflict(
         "This turn is folded into a context digest (or is the digest itself) — delete from the newest turn backward.",

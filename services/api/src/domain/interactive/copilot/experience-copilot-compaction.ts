@@ -22,6 +22,7 @@
 
 import type { AppDb, ExperienceCopilotStore, ExperienceCopilotMessage } from "@vibe-tavern/db";
 import { nonstreamingProviderExecute } from "../../../infrastructure/ai/nonstreaming-provider-executor.js";
+import type { AttachmentAssetLoader } from "../../../infrastructure/ai/vision-gate.js";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { ProviderProfileService } from "../../providers/provider-profile-service.js";
 import { AgentCompactionService } from "../../agent/agent-compaction.js";
@@ -49,8 +50,10 @@ export class ExperienceCopilotCompactionService extends AgentCompactionService<E
     providerProfiles: ProviderProfileService,
     execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
     db?: AppDb,
+    attachmentAssetLoader?: AttachmentAssetLoader,
   ) {
     super(store, providerProfiles, execute, {
+      attachmentAssetLoader,
       storeMessagesToFlow: storeMessagesToHistory,
       // SC-8a: the summarizer prompt is the `copilot_compaction` service
       // prompt — profile override first, else the asset (the former constant,

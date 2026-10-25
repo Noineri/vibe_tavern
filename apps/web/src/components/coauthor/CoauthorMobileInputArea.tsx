@@ -16,12 +16,16 @@ import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
 import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useModuleSwitch, type CoauthorInputAreaData } from "./use-coauthor-input-area.js";
+import { AttachmentPreview } from "../chat/AttachmentPreview.js";
+import { AttachmentOverflowWarning } from "../chat/attachment-overflow-warning.js";
+import { AttachmentVisionWarning } from "../chat/attachment-vision-warning.js";
 
 export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData }) {
 	const {
 		t, chat,
 		draft, setDraft, isSending, activeChatId, canSend, canUseLiveApi,
 		activeModelId, favorites, handleSelectModel,
+		fileInputRef, accept, draftAttachments, onFileInputChange, handlePaste,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	} = data;
 
@@ -56,8 +60,10 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 				!activeChatId && "pointer-events-none opacity-45",
 			)}
 		>
+			{data.attachmentVisionWarning && <AttachmentVisionWarning />}
+			{data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
 			<div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
-				{/* Toolbar row: module switch + favorites (ToolbarSelect mobile → BottomSheet) */}
+				{/* Toolbar row: module switch + attach + favorites (mobile BottomSheet) */}
 				<div className="flex items-center gap-2">
 					<QuickSwitchPopover
 						mobile
@@ -94,6 +100,16 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						}
 					/>
 
+					<button
+						type="button"
+						aria-label={t("attach_image")}
+						className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-t3 transition-colors active:bg-s2 disabled:opacity-45"
+						onClick={() => fileInputRef.current?.click()}
+						disabled={draftAttachments.length >= 5}
+					>
+						<Icons.paperclip />
+					</button>
+
 					<ToolbarSelect
 						mobile
 						title={t("starred_models")}
@@ -107,7 +123,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 								type="button"
 								disabled={!canUseLiveApi}
 								data-testid="coauthor-favorites-pill"
-								className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
+								className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
 							>
 								<Icons.StarFilled />
 							</button>
@@ -116,7 +132,9 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 				</div>
 
 				{/* Input row */}
+				{draftAttachments.length > 0 && <AttachmentPreview attachments={draftAttachments} onRemove={data.remove} />}
 				<div className="flex items-end gap-2">
+					<input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
 					<textarea
 						ref={mobileTextareaRef}
 						data-testid="coauthor-input-textarea"
@@ -124,6 +142,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
 						value={draft}
 						onChange={mobileOnChange}
+						onPaste={handlePaste}
 						rows={1}
 					/>
 					<div className="flex shrink-0 items-center">

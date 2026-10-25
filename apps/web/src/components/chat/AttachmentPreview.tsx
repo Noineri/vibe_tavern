@@ -1,18 +1,11 @@
 import React, { useRef, useState } from "react";
 import { Icons } from "../shared/icons.js";
-import { useChatStore } from "../../stores/index.js";
+import { isTextMime, type Attachment } from "@vibe-tavern/domain";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
-
-function formatBytes(bytes: number, decimals = 1) {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
+import { FileAttachmentChip } from "./file-attachment-chip.js";
+import { formatBytes } from "./attachment-format.js";
 
 /** Audio draft chip duration (ST-6): "0:07" / "1:23" from durationMs. */
 function formatDuration(ms: number): string {
@@ -67,16 +60,19 @@ function AudioDraftPlayButton({ src, name }: { src: string; name: string }) {
   );
 }
 
-export function AttachmentPreview() {
-  const draftAttachments = useChatStore((s) => s.draftAttachments);
-  const removeDraftAttachment = useChatStore((s) => s.removeDraftAttachment);
+export function AttachmentPreview({ attachments, onRemove }: {
+  attachments: readonly Attachment[];
+  onRemove: (id: string) => void;
+}) {
   const isMobile = useIsMobile();
   
-  if (draftAttachments.length === 0) return null;
+  if (attachments.length === 0) return null;
 
   return (
     <div className="flex w-full items-center gap-2 overflow-x-auto pb-2 pl-3 pr-3 pt-2 scrollbar-hide">
-      {draftAttachments.map((att) => (
+      {attachments.map((att) => isTextMime(att.mimeType) ? (
+        <FileAttachmentChip key={att.id} attachment={att} onRemove={onRemove} />
+      ) : (
         <div key={att.id} className="group relative flex shrink-0 items-center gap-2 rounded-lg border border-border2 bg-s2 p-1.5 shadow-sm transition-colors hover:bg-s3" data-testid={att.type === "audio" ? "draft-audio-chip" : undefined}>
           {att.type === "audio" ? (
             <AudioDraftPlayButton src={`${getGatewayBaseUrl()}/api/assets/${att.assetId}`} name={att.name} />
@@ -101,7 +97,7 @@ export function AttachmentPreview() {
           <button
             type="button"
             className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface text-t2 shadow-sm transition-colors hover:bg-danger-dim hover:text-danger-text hover:border-danger"
-            onClick={() => removeDraftAttachment(att.id)}
+            onClick={() => onRemove(att.id)}
           >
             <Icons.Close />
           </button>
