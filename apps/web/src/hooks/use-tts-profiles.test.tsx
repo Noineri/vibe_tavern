@@ -1,11 +1,11 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
+import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const realTtsApi = await import("../api/tts-api.js");
-const realI18n = await import("../i18n/context.js");
 const realProviderApi = await import("../api/provider-api.js");
 // Voice-map cache seam: the hook must invalidate the chat-side snapshot
 // after every successful mutation (live incident 2026-09-05 — default
@@ -18,21 +18,17 @@ mock.module("../lib/tts/voice-map-data.js", () => ({
   refreshVoiceMapData: refreshVoiceMapMock,
 }));
 
-mock.module("../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) => {
       if (params && typeof params === "object" && "name" in params) {
         return `${key}:${String(params.name)}`;
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 type TtsRecord = import("../api/tts-api.js").TtsProfileRecord;
 
