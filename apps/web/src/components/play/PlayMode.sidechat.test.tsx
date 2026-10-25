@@ -29,6 +29,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { CHAT_MODE } from "@vibe-tavern/domain";
 import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
@@ -47,11 +48,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
-const realI18nContext = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // ── Heavy children become boundary stubs (the PlayMode surface is the unit) ──
 const realMessageList = await import("../chat/MessageList.js");

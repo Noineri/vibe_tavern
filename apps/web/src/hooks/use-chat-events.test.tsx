@@ -14,16 +14,13 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const { renderHook } = await import("@testing-library/react");
 
-const realI18n = await import("../i18n/context.js");
-mock.module("../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({ t: (k: string) => k, setLocale: () => {} }),
-}));
+installI18nContextSeam();
 
 class MockEventSource {
 	static instances: MockEventSource[] = [];
