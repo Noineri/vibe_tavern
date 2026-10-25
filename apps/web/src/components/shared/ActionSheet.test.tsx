@@ -28,19 +28,14 @@
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ActionSheetItem } from "./ActionSheet.js";
 
 useDomEnv();
 
 const { render, fireEvent } = await import("@testing-library/react");
 
-const realI18nContext = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => {
-	return {
-		...realI18nContext,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-	};
-});
+installI18nContextSeam();
 
 let ActionSheet: typeof import("./ActionSheet.js").ActionSheet;
 beforeAll(async () => {

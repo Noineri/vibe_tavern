@@ -16,6 +16,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
@@ -33,7 +34,6 @@ const realAiAssistantApi = await import("../../api/ai-assistant-api.js");
 const realSettingsApi = await import("../../api/settings-api.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 
 // Capture request bodies + control the stream.
@@ -64,12 +64,7 @@ mock.module("../../stores/api-actions/provider-actions.js", () => {
 });
 
 // useT must return a stable identity t() — the modal builds labels off it.
-mock.module("../../i18n/context.js", () => {
-  return {
-    ...realI18nContext,
-    useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-  };
-});
+installI18nContextSeam();
 
 // Mobile flag as a mutable cell: the file's tests pin the desktop Modal path
 // by default; the D1 block below flips it for the BottomSheet path.

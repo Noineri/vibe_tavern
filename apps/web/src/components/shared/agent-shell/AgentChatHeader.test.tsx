@@ -6,23 +6,14 @@
  */
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { render } = await import("@testing-library/react");
 
 // SAFE module mock (capture real first, spread `...real`): identity `t` so
 // the test pins WHICH key the gear reads, not the translated wording.
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (key: string) => key,
-		tDynamic: (key: string) => key,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam();
 
 let AgentChatHeader: typeof import("./AgentChatHeader.js").AgentChatHeader;
 beforeAll(async () => {

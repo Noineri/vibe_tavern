@@ -34,13 +34,13 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 import type { SkillCatalogEntryDto, SkillContentDto } from "@vibe-tavern/api-contracts";
 import type { SkillLibraryAdapter, SkillLibraryTestids } from "./skill-library-adapter.js";
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
 const realConfirmCloseModal = await import("../confirm-close-modal.js");
@@ -50,10 +50,7 @@ const realUseMobile = await import("../../../hooks/use-mobile.js");
 const realDndKit = await import("@dnd-kit/core");
 import type { ComponentProps } from "react";
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../hooks/use-mobile.js", () => ({
 	...realUseMobile,
