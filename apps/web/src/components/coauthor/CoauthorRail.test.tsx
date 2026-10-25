@@ -39,6 +39,7 @@ import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalize
 import type { AppCharacterEntry, ChatListItem } from "../../api/types.js";
 import type { CharacterImportMobileHandle } from "../modals/import/CharacterImportMobile.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireCharacter, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { formatRelativeTime } from "../layout/sidebar-utils.js";
 
@@ -46,17 +47,12 @@ useDomEnv();
 const { act, fireEvent, render, within } = await import("@testing-library/react");
 const { createElement } = await import("react");
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, opts?: { count?: number }) => (typeof opts?.count === "number" ? `${key}#${opts.count}` : key),
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam({
+  custom: {
+    t: (key, opts?) => (typeof opts?.count === "number" ? `${key}#${opts.count}` : key),
+    tDynamic: (key) => key,
+  },
+});
 
 // Radix Tooltip (ListSortToggle and friends inside the drawer) needs a
 // TooltipProvider ancestor the isolated render lacks — passthrough stub,

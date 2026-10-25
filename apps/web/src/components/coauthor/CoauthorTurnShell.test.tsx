@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -85,7 +86,11 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
     handleResend: mock(),
   }),
 }));
-mock.module("../../i18n/context.js", () => ({ useT: () => ({ t: (key: string) => key }) }));
+// Hand port onto the shared seam: the old one-liner mock did not even spread
+// the real module (the R4 violation this migration cures — the seam's factory
+// always spreads `...real`, so `LocaleProvider` etc. stay live for every
+// co-loaded suite). CoauthorTurnShell destructures only `t` (verified).
+installI18nContextSeam({ custom: { t: (key: string) => key } });
 mock.module("../../lib/avatar.js", () => ({ resolveEntityAvatarUrl: () => null }));
 mock.module("../../utils/tokenizer.js", () => ({ countTokens: () => 2 }));
 mock.module("../chat/MessageShell.js", () => ({
