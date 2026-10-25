@@ -21,8 +21,15 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
+
+// Co-load seam (identity spec): this suite pins the raw-key echo of
+// provider-less renders (`copilot_profile_*` actions, `agent_tool_*` labels)
+// — the previous inline identity `useT` mock, now order-independent.
+installI18nContextSeam();
+
 const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
@@ -31,7 +38,6 @@ import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotProfileCreate, type CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
-const realI18nContext = await import("../../../i18n/context.js");
 const realProfileApi = await import("../../../api/copilot-profile-api.js");
 const realSkillApi = await import("../../../api/copilot-skill-api.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
@@ -41,11 +47,6 @@ type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
-
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
 
 const BUILTIN: CopilotProfile = {
 	id: "builtin",

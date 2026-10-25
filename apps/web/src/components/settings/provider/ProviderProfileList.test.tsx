@@ -1,11 +1,17 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
+// Co-load seam (identity spec): this suite pins the raw-key echo of
+// provider-less renders (`profiles_label`, `search_profiles`, the family
+// `titleKey`s) — the previous inline identity `useT` mock, now
+// order-independent.
+installI18nContextSeam();
+
 const { act, fireEvent, render, within } = await import("@testing-library/react");
-const realI18n = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 // Co-load contract (master-list.test.tsx registers the SAME mock for
 // @dnd-kit/core; Bun's mock.module is process-global, last-write-wins — the
@@ -19,16 +25,6 @@ type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
 mock.module("../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetailModal,
   useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
