@@ -1,26 +1,22 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) => {
       if (params && typeof params === "object" && "name" in params) {
         return `${key}:${String(params.name)}`;
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { TtsProfileEditor } = await import("./TtsProfileEditor.js");

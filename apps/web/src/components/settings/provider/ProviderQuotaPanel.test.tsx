@@ -24,6 +24,7 @@ import {
 } from "@vibe-tavern/domain";
 import type { ProviderQuotaCapabilityRecord, ProviderQuotaRecord } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -46,17 +47,12 @@ mock.module("../../../api/quota-api.js", () => ({
   },
 }));
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => opts ? `${key}:${JSON.stringify(opts)}` : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam({
+  custom: {
+    t: (key, opts?) => opts ? `${key}:${JSON.stringify(opts)}` : key,
+    tDynamic: (key) => key,
+  },
+});
 
 const realTooltip = await import("../../shared/Tooltip.js");
 mock.module("../../shared/Tooltip.js", () => ({

@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -96,22 +97,17 @@ mock.module("../../../../lib/clipboard.js", () => ({
   copyText: async () => clipboardResult,
 }));
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && "version" in params
         ? `${key}:${String(params.version)}`
         : params && "url" in params
           ? `${key}:${String(params.url)}`
           : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
 

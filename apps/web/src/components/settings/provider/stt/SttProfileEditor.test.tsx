@@ -1,24 +1,20 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && "name" in params
         ? `${key}:${String(params.name)}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // Live model discovery (P8): safe mock.module pattern — real module first,
 // spread, override ONLY the draft-models fetch. The editor effect debounces

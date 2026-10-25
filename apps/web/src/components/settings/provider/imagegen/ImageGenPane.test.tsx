@@ -1,23 +1,19 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && Object.keys(params).length > 0
         ? `${key}:${Object.values(params).join(",")}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // Real-hook seam (the use-image-profiles.test.tsx harness): the api module
 // mocked with the `...real` spread — only the IG-12b functions the overlay

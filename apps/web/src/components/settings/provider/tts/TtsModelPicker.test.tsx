@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -11,22 +12,17 @@ const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/r
 // Same i18n fake as KokoroModelPanel.test.tsx: raw-key t (interpolated
 // params appended after ":"). Registered BEFORE the component import so
 // the picker picks up the mocked context.
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) => {
       if (params && typeof params === "object") {
         return `${key}:${Object.values(params).map(String).join(":")}`;
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
 // implement. The mutable flag lets one file pin BOTH branches (mobile parity
