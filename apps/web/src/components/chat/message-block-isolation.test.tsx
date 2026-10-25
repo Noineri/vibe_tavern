@@ -2,6 +2,7 @@ import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
 
@@ -73,7 +74,6 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../shared/Tooltip.js");
 
@@ -82,10 +82,10 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+// House i18n pattern via the shared co-load seam: raw keys render as-is
+// (identity spec — this suite has no interpolated pins, but registers so a
+// hand-bundled run never inherits a sibling's interpolating spec).
+installI18nContextSeam();
 
 // Scene header actions (SCN-12): keep the status-hydration mount effect
 // hermetic — the real getSceneStatusAction would hit the network. Spreading
