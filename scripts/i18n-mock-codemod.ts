@@ -22,10 +22,17 @@
  * - INTERPOLATED — hand-verified overrides (below): the mock's inline
  *   templates are byte-identical to the bundled EN table after single-brace
  *   `{param}` interpolation → `installI18nContextSeam({ interpolateKeys: […] });`
- * - OTHER — custom semantics the seam cannot express without pin rewrites
- *   (`key:name` suffixes, `key#count`, JSON.stringify(params), switch-table
- *   literals, RU label tables, stable-object identity). Listed, never
- *   touched; they stay for per-file hand work.
+ * - CUSTOM — the mock's `t` (and optional `tDynamic`) is a portable inline
+ *   function and every other `useT` field is the identity family →
+ *   `installI18nContextSeam({ custom: { t: …, tDynamic: … } });` with the
+ *   function bodies ported VERBATIM (parameter annotations dropped — they
+ *   take the seam's `TFunc`/`TDynamic` shapes contextually) and their
+ *   original indentation preserved. The suite's pins keep their checked
+ *   facts with ZERO assertion changes.
+ * - OTHER — semantics the codemod cannot port mechanically: named-reference
+ *   `t` (`t: stableT`, `useT: () => stableT`), a missing `...real` spread,
+ *   a non-identity mutable `locale` field, or several mock calls. Listed,
+ *   never touched; they stay for per-file hand work.
  * - ON-SEAM — already migrated; never touched.
  *
  * Editing mechanics (statement boundaries, never line regexes): the mock
@@ -48,7 +55,7 @@ import { parseArgs } from "node:util";
 const TEST_ROOT = "apps/web/src";
 const SEAM_MODULE = "i18n-context-seam";
 
-export type MockClassification = "IDENTITY" | "INTERPOLATED" | "OTHER" | "ON-SEAM" | "NO-MOCK";
+export type MockClassification = "IDENTITY" | "INTERPOLATED" | "CUSTOM" | "OTHER" | "ON-SEAM" | "NO-MOCK";
 
 export interface FilePlan {
 	readonly file: string;
@@ -134,11 +141,224 @@ export function extractUseTBody(block: string): string | null {
 	return body.replace(/\s+/g, " ").trim();
 }
 
+/** The RAW `useT` object literal body (no comment stripping, no collapsing); same null rule as `extractUseTBody`. */
+export function extractUseTBodyRaw(block: string): string | null {
+	const match = /useT\s*:\s*\(\)\s*=>\s*\(?\s*\{/.exec(block);
+	if (!match) return null;
+	let i = match.index + match[0].length - 1;
+	let depth = 0;
+	for (; i < block.length; i++) {
+		if (block[i] === "{") depth++;
+		else if (block[i] === "}") {
+			depth--;
+			if (depth === 0) break;
+		}
+	}
+	return block.slice(match.index + match[0].length, i);
+}
+
+/** Whitespace-collapse + comment-strip a RAW slice (the identity-entry test normalizer). */
+function collapse(text: string): string {
+	return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Split an object-literal body into RAW top-level entries. Strings, template
+ * literals (their `${…}` code included), and comments are skipped so a comma
+ * inside any of them never splits an entry (TrackerTemplateSummaryRow carries
+ * ` mode, ` inside plain template text).
+ */
+export function splitObjectEntries(body: string): string[] | null {
+	const entries: string[] = [];
+	let start = 0;
+	let depth = 0;
+	// Frame stack: "code" (plain code), "tpl" (template literal text), or an
+	// interpolation code frame carrying the brace depth its closing `}` pops to.
+	const frames: Array<{ kind: "code" | "tpl"; exitDepth?: number }> = [{ kind: "code" }];
+	for (let i = 0; i < body.length; i++) {
+		const frame = frames[frames.length - 1]!;
+		const c = body[i];
+		if (frame.kind === "tpl") {
+			if (c === "\\") { i++; continue; }
+			if (c === "`") { frames.pop(); continue; }
+			if (c === "$" && body[i + 1] === "{") {
+				depth++;
+				frames.push({ kind: "code", exitDepth: depth });
+				i++; // consume the `{` of `${`
+				continue;
+			}
+			continue;
+		}
+		if (c === "/" && body[i + 1] === "/") {
+			while (i < body.length && body[i] !== "\n") i++;
+			continue;
+		}
+		if (c === "/" && body[i + 1] === "*") {
+			const end = body.indexOf("*/", i + 2);
+			if (end === -1) return null;
+			i = end + 1;
+			continue;
+		}
+		if (c === '"' || c === "'") {
+			i++;
+			while (i < body.length && body[i] !== c) {
+				if (body[i] === "\\") i++;
+				i++;
+			}
+			if (i >= body.length) return null;
+			continue;
+		}
+		if (c === "`") { frames.push({ kind: "tpl" }); continue; }
+		if (c === "(" || c === "[" || c === "{") depth++;
+		else if (c === ")" || c === "]" || c === "}") {
+			depth--;
+			if (depth < 0) return null;
+			if (frame.exitDepth !== undefined && depth === frame.exitDepth - 1) frames.pop();
+		} else if (c === "," && depth === 0 && frame.exitDepth === undefined) {
+			entries.push(body.slice(start, i));
+			start = i + 1;
+		}
+	}
+	if (frames.length > 1) return null;
+	entries.push(body.slice(start));
+	// A trailing separator (or a body of only whitespace/comments) yields an
+	// empty tail entry — not an entry.
+	if (entries[entries.length - 1]!.trim() === "") entries.pop();
+	return entries;
+}
+
+/** One parsed `useT` object entry: the field name and its RAW value slice. */
+export interface UseTEntry {
+	readonly name: string;
+	readonly value: string;
+	/** The entry's full raw text (name + value), for the identity-family checks. */
+	readonly raw: string;
+}
+
+/** Parse the raw entries into name/value pairs; an entry without a plain `name:` shape makes the whole parse fail (→ hand work). */
+export function parseUseTEntries(rawBody: string): UseTEntry[] | null {
+	const split = splitObjectEntries(rawBody);
+	if (split === null) return null;
+	const entries: UseTEntry[] = [];
+	for (const entry of split) {
+		const match = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*([A-Za-z_$][\w$]*)\s*:/.exec(entry);
+		if (!match) {
+			// A whole-entry comment (e.g. a trailing `// note`) is not an entry.
+			if (/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*$/.test(entry)) continue;
+			return null;
+		}
+		entries.push({ name: match[1]!, value: entry.slice(match[0].length), raw: entry });
+	}
+	return entries;
+}
+
+/** True when the entry value is an inline function the codemod can port (arrow with a single-line parameter list, or a function expression). Concise object-literal returns (`=> ({`) are rejected — they are not string `t` semantics. */
+export function isPortableFunctionValue(value: string): boolean {
+	const v = value.trim();
+	if (/^function\b/.test(v)) return true;
+	if (!v.startsWith("(")) {
+		return /^[A-Za-z_$][\w$]*\s*=>/.test(v);
+	}
+	let depth = 0;
+	let close = -1;
+	for (let i = 0; i < v.length; i++) {
+		const c = v[i]!;
+		if (c === "(") depth++;
+		else if (c === ")") {
+			depth--;
+			if (depth === 0) { close = i; break; }
+		}
+	}
+	if (close === -1) return false;
+	const firstLineEnd = v.indexOf("\n");
+	const firstLine = firstLineEnd === -1 ? v : v.slice(0, firstLineEnd);
+	if (!firstLine.includes(")") || !/^\)[\s]*=>/.test(v.slice(close))) return false;
+	// `=> ({ … })` returns an object literal — not a string `t`; hand work.
+	return !/^\)[\s]*=>\s*\(\s*\{/.test(v.slice(close));
+}
+
+/** Drop the parameter annotations of a ported inline function — the seam's `TFunc`/`TDynamic` contextual types replace them (runtime untouched). Angle/round/curly/square brackets and their commas are tracked so `Record<string, unknown>` survives intact. */
+export function stripParameterAnnotations(value: string): string {
+	const open = value.indexOf("(");
+	if (open === -1) return value;
+	let depth = 0;
+	let close = -1;
+	for (let i = open; i < value.length; i++) {
+		const c = value[i]!;
+		if (c === "(") depth++;
+		else if (c === ")") {
+			depth--;
+			if (depth === 0) { close = i; break; }
+		}
+	}
+	if (close === -1) return value;
+	const params = value.slice(open + 1, close);
+	// Scan the parameter list: cut each parameter at its first depth-0 `:`
+	// (the name/annotation separator); everything after it — the annotation —
+	// is dropped together with the separator.
+	const kept: string[] = [];
+	let bracketDepth = 0;
+	let cutAt = -1;
+	let paramStart = 0;
+	for (let i = 0; i <= params.length; i++) {
+		const c = params[i] ?? ",";
+		if (bracketDepth === 0 && cutAt === -1 && c === ":") { cutAt = i; continue; }
+		if (c === "(" || c === "[" || c === "{" || c === "<") bracketDepth++;
+		else if (c === ")" || c === "]" || c === "}" || c === ">") bracketDepth--;
+		else if (c === "," && bracketDepth === 0) {
+			const end = cutAt === -1 ? i : cutAt;
+			kept.push(params.slice(paramStart, end));
+			paramStart = i + 1;
+			cutAt = -1;
+		}
+	}
+	return `${value.slice(0, open + 1)}${kept.join(",")}${value.slice(close)}`;
+}
+
 const IDENTITY_T = /^t: \((k|key)(?:: string)?\) => \1$/;
 const IDENTITY_T_DYNAMIC = /^tDynamic: \((k|key)(?:: string)?\) => \1$/;
 const IDENTITY_LOCALE = /^locale: "en"$/;
 const IDENTITY_SET_LOCALE = /^setLocale: \(\) => \{\}$|^setLocale: NOOP$/;
 const IDENTITY_READY = /^ready: true$/;
+const IDENTITY_EXTRA_ENTRY =
+	/^locale: "en"$|^setLocale: \(\) => \{\}$|^setLocale: NOOP$|^ready: true$/;
+
+/** True when the entry (raw text, collapsed) is exactly one of the identity family's non-`t` fields. */
+export function isIdentityExtraEntry(rawEntry: string): boolean {
+	return IDENTITY_EXTRA_ENTRY.test(collapse(rawEntry));
+}
+
+/** A portable custom stub extracted from the mock's `useT` object (verbatim, annotation-stripped function bodies). */
+export interface CustomSpecExtraction {
+	readonly t: string;
+	readonly tDynamic: string | null;
+}
+
+/**
+ * Extract the `custom` spec when the mock is mechanically portable: `t` is an
+ * inline function, `tDynamic` is an inline function or absent, and every other
+ * `useT` field is the identity family. Named references (`t: stableT`),
+ * non-identity `locale` entries (mutable-locale suites) and unparsable shapes
+ * return null → OTHER → per-file hand work.
+ */
+export function extractCustomSpec(block: string): CustomSpecExtraction | null {
+	const rawBody = extractUseTBodyRaw(block);
+	if (rawBody === null) return null;
+	const entries = parseUseTEntries(rawBody);
+	if (entries === null) return null;
+	const tEntry = entries.find((entry) => entry.name === "t");
+	const tDynEntry = entries.find((entry) => entry.name === "tDynamic");
+	if (!tEntry || !isPortableFunctionValue(tEntry.value)) return null;
+	if (tDynEntry && !isPortableFunctionValue(tDynEntry.value)) return null;
+	for (const entry of entries) {
+		if (entry === tEntry || entry === tDynEntry) continue;
+		if (!isIdentityExtraEntry(entry.raw)) return null;
+	}
+	return {
+		t: stripParameterAnnotations(tEntry.value),
+		tDynamic: tDynEntry ? stripParameterAnnotations(tDynEntry.value) : null,
+	};
+}
 
 /** True when the normalized `useT` object is exactly the identity family (t required; tDynamic/locale/setLocale/ready optional; nothing else). */
 export function isIdentityUseTBody(normalized: string): boolean {
@@ -179,6 +399,9 @@ export function classifyFile(file: string, src: string): FilePlan {
 	const override = INTERPOLATED_OVERRIDES[file];
 	if (override && override.markers.every((marker) => block.includes(marker))) {
 		return { file, classification: "INTERPOLATED", interpolateKeys: override.interpolateKeys, editable: true };
+	}
+	if (spreadOk && extractCustomSpec(block) !== null) {
+		return { file, classification: "CUSTOM", interpolateKeys: [], editable: true };
 	}
 	return {
 		file,
@@ -234,6 +457,34 @@ function dropUnusedMockBinding(src: string): string {
 	return src.slice(0, importMatch.index) + replacement + src.slice(importMatch.index + importMatch[0].length);
 }
 
+/** Build the multi-line `installI18nContextSeam({ custom: … })` call: verbatim function bodies, original indentation columns (the install call sits exactly where the mock sat, so every original column still lines up). */
+function buildCustomCall(block: string, mockIndent: string): string {
+	const spec = extractCustomSpec(block);
+	if (spec === null) throw new Error("buildCustomCall: block is not CUSTOM-classified");
+	const useTIndent = /^([ \t]*)useT\s*:/m.exec(block)?.[1] ?? "";
+	const unit = useTIndent.startsWith(mockIndent) ? useTIndent.slice(mockIndent.length) : "  ";
+	const entryIndent = `${mockIndent}${unit}${unit}`;
+	const tLineIndent = /^([ \t]*)t\s*:/m.exec(block)?.[1] ?? entryIndent;
+	const lines: string[] = [`${mockIndent}installI18nContextSeam({`, `${mockIndent}${unit}custom: {`];
+	const emitField = (name: string, value: string, originalIndent: string) => {
+		const valueLines = value.split("\n");
+		// First line: re-anchored at the field's original column (annotation-stripped).
+		lines.push(`${originalIndent}${name}:${valueLines[0]}`);
+		// Continuation lines: byte-verbatim — their original columns are still correct.
+		for (const line of valueLines.slice(1)) lines.push(line);
+		lines[lines.length - 1] += ",";
+	};
+	emitField("t", spec.t, tLineIndent);
+	if (spec.tDynamic !== null) {
+		const tdLineIndent = /^([ \t]*)tDynamic\s*:/m.exec(block)?.[1] ?? entryIndent;
+		emitField("tDynamic", spec.tDynamic, tdLineIndent);
+	} else {
+		lines.push(`${entryIndent}tDynamic: (key: string) => key,`);
+	}
+	lines.push(`${mockIndent}${unit}},`, `${mockIndent}});`);
+	return lines.join("\n");
+}
+
 export function transformFile(src: string, plan: FilePlan): string | null {
 	if (!plan.editable) return null;
 	const span = findMockCallSpan(src);
@@ -241,9 +492,11 @@ export function transformFile(src: string, plan: FilePlan): string | null {
 	const lineStart = src.lastIndexOf("\n", span.start) + 1;
 	const indent = src.slice(lineStart, span.start);
 	const call =
-		plan.interpolateKeys.length > 0
-			? `installI18nContextSeam({ interpolateKeys: [${plan.interpolateKeys.map((key) => `"${key}"`).join(", ")}] });`
-			: "installI18nContextSeam();";
+		plan.classification === "CUSTOM"
+			? buildCustomCall(src.slice(span.start, span.end), indent)
+			: plan.interpolateKeys.length > 0
+				? `installI18nContextSeam({ interpolateKeys: [${plan.interpolateKeys.map((key) => `"${key}"`).join(", ")}] });`
+				: "installI18nContextSeam();";
 	let out = src.slice(0, span.start) + indent + call + src.slice(span.end);
 	// Remove the now-dead real-context const when nothing else references it.
 	const realConst = REAL_CONST_PATTERN.exec(out);
@@ -279,7 +532,7 @@ export function runCodemod(prefix: string, dryRun: boolean): { report: string; e
 			edited++;
 		}
 	}
-	const counts = { IDENTITY: 0, INTERPOLATED: 0, OTHER: 0, "ON-SEAM": 0 } as Record<MockClassification, number>;	const lines: string[] = [];
+	const counts = { IDENTITY: 0, INTERPOLATED: 0, CUSTOM: 0, OTHER: 0, "ON-SEAM": 0 } as Record<MockClassification, number>;	const lines: string[] = [];
 	for (const plan of plans) {
 		counts[plan.classification]++;
 		const spec = plan.interpolateKeys.length > 0 ? ` keys=[${plan.interpolateKeys.join(", ")}]` : "";
@@ -288,7 +541,7 @@ export function runCodemod(prefix: string, dryRun: boolean): { report: string; e
 	}
 	const report = [
 		`i18n mock codemod: ${dryRun ? "dry run" : "apply"} prefix="${prefix}" over ${files.length} test file(s)`,
-		`identity: ${counts.IDENTITY}  interpolated: ${counts.INTERPOLATED}  other: ${counts.OTHER}  on-seam: ${counts["ON-SEAM"]}`,
+		`identity: ${counts.IDENTITY}  interpolated: ${counts.INTERPOLATED}  custom: ${counts.CUSTOM}  other: ${counts.OTHER}  on-seam: ${counts["ON-SEAM"]}`,
 		...lines,
 		dryRun ? "dry run — no files written" : `written: ${edited} file(s)`,
 	].join("\n");

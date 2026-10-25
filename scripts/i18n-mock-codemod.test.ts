@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
 	INTERPOLATED_OVERRIDES,
 	classifyFile,
+	extractCustomSpec,
 	findMockCallSpan,
 	insertSeamImport,
+	isPortableFunctionValue,
+	splitObjectEntries,
+	stripParameterAnnotations,
 	transformFile,
 } from "./i18n-mock-codemod.js";
 
@@ -54,11 +58,10 @@ describe("i18n mock codemod classification", () => {
 		}
 	});
 
-	test("custom semantics (param suffix, JSON params, object-returning t) classify OTHER", () => {
+	test("object-returning t (not a string function) classifies OTHER", () => {
 		const customs = [
-			`{ t: (key: string, params?: Record<string, unknown>) => params && "name" in params ? \`\${key}:\${String(params.name)}\` : key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }`,
-			`{ t: (key: string, opts?: Record<string, unknown>) => opts ? \`\${key}:\${JSON.stringify(opts)}\` : key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }`,
 			`{ t: (key: string) => ({ label: key }) }`,
+			`{ t: 42 }`,
 		];
 		for (const useT of customs) {
 			expect(classifyFile(IDENTITY_FILE, withUseT(useT)).classification, useT).toBe("OTHER");
@@ -90,9 +93,10 @@ describe("i18n mock codemod classification", () => {
 		expect(plan.classification).toBe("INTERPOLATED");
 		expect(plan.interpolateKeys).toEqual(keys);
 		// A mock block WITHOUT the override markers must not ride the stale
-		// table — it falls through to OTHER for hand reading.
+		// table — it falls through to CUSTOM (the suffix semantics port verbatim)
+		// for exact reading, never silently INTERPOLATED.
 		const stale = withUseT(`{ t: (key: string, n?: number) => \`\${key}!\${n}\`, tDynamic: (key: string) => key }`);
-		expect(classifyFile(file, stale).classification).toBe("OTHER");
+		expect(classifyFile(file, stale).classification).toBe("CUSTOM");
 	});
 });
 
@@ -111,7 +115,6 @@ describe("i18n mock codemod transform", () => {
 		// the component under test (exactly where the mock was).
 		expect(text.indexOf("installI18nContextSeam();")).toBeLessThan(text.indexOf('await import("./MyComponent.js")'));
 		// The seam import rides the dom-env import line (house style).
-		const domEnvAt = text.indexOf('from "../../../../test/dom-env.js";');
 		const lines = text.split("\n");
 		const domEnvLineIdx = lines.findIndex((line) => line.includes("test/dom-env.js"));
 		const seamLineIdx = lines.findIndex((line) => line.includes("i18n-context-seam.js"));
@@ -158,5 +161,74 @@ describe("i18n mock codemod transform", () => {
 		const out = insertSeamImport(src, "apps/web/src/hooks/use-x.test.tsx");
 		const lines = out.split("\n");
 		expect(lines[2]).toContain('from "../../test/i18n-context-seam.js"');
+	});
+});
+
+describe("i18n mock codemod custom extraction", () => {
+	test("splitObjectEntries never splits on commas inside strings, template text or ${…} code", () => {
+		const body = 't: (key, opts?) => {\n  if (key === "dice_meta_checks") return `${opts?.count} checks, total`;\n  return `Scene: ${opts?.n} field, done`;\n},\ntDynamic: (key) => key,\nlocale: "en",';
+		const entries = splitObjectEntries(body);
+		expect(entries).not.toBeNull();
+		expect((entries as string[]).length).toBe(3);
+		expect((entries as string[])[0]).toContain("dice_meta_checks");
+		expect((entries as string[])[0]).toContain("field, done");
+	});
+
+	test("isPortableFunctionValue accepts inline arrows, rejects bare identifiers and objects", () => {
+		expect(isPortableFunctionValue(" (key, opts?) => opts ? `${key}:${String(opts.n)}` : key")).toBe(true);
+		expect(isPortableFunctionValue(" (key) => {\n  return key;\n}")).toBe(true);
+		expect(isPortableFunctionValue(" k => k")).toBe(true);
+		expect(isPortableFunctionValue(" stableT")).toBe(false);
+		expect(isPortableFunctionValue(" ({ label: key })")).toBe(false);
+	});
+
+	test("stripParameterAnnotations drops annotations without touching Record commas", () => {
+		expect(stripParameterAnnotations(" (key: string, opts?: Record<string, unknown>) => key")).toBe(" (key, opts?) => key");
+		expect(stripParameterAnnotations(" (key: string, opts?: { count?: number }) => key")).toBe(" (key, opts?) => key");
+		expect(stripParameterAnnotations(" (key: string, values?: Record<string, string | number>) => key")).toBe(" (key, values?) => key");
+	});
+
+	test("param-suffix, count-suffix and JSON.stringify semantics classify CUSTOM", () => {
+		const customs = [
+			'{ t: (key: string, opts?: Record<string, unknown>) => opts ? `${key}:${JSON.stringify(opts)}` : key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }',
+			'{ t: (key: string, opts?: { count?: number }) => (typeof opts?.count === "number" ? `${key}#${opts.count}` : key), tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }',
+		];
+		for (const useT of customs) {
+			expect(classifyFile(IDENTITY_FILE, withUseT(useT)).classification, useT).toBe("CUSTOM");
+		}
+	});
+
+	test("multi-line switch tables and comment-led entries classify CUSTOM; missing tDynamic is allowed", () => {
+		const switchTable = '{\n    t: (key: string, opts?: Record<string, unknown>) => {\n      const n = Number(opts?.n);\n      switch (key) {\n        case "character_tracker_template_scene": return `Scene: ${n} field${n === 1 ? "" : "s"}, done`;\n        default: return key;\n      }\n    },\n    locale: "en",\n    ready: true,\n  }';
+		expect(classifyFile(IDENTITY_FILE, withUseT(switchTable)).classification).toBe("CUSTOM");
+		const commentLed = '{\n    // Identity with the single count echoed.\n    t: (key: string, opts?: Record<string, unknown>) =>\n      opts !== undefined ? `${key}:${String(opts.n)}` : key,\n    setLocale: () => {},\n  }';
+		expect(classifyFile(IDENTITY_FILE, withUseT(commentLed)).classification).toBe("CUSTOM");
+	});
+
+	test("named-reference t, mutable locale and missing spread classify OTHER (hand work)", () => {
+		expect(classifyFile(IDENTITY_FILE, withUseT('{ t: stableT, tDynamic: stableTDynamic, locale: "en" }')).classification).toBe("OTHER");
+		expect(classifyFile(IDENTITY_FILE, withUseT('{ t: (key) => key, locale: activeLocale ?? "en" }')).classification).toBe("OTHER");
+		const noSpread = IDENTITY_SOURCE.replace("...realI18n,", "");
+		expect(classifyFile(IDENTITY_FILE, noSpread).classification).toBe("OTHER");
+	});
+
+	test("CUSTOM transform emits the verbatim body with contextual parameter names", () => {
+		const src = IDENTITY_SOURCE.replace(
+			/useT: \(\) => \(\{[\s\S]*?\n  \}\),\n/,
+			'useT: () => ({\n    t: (key: string, opts?: Record<string, unknown>) => opts ? `${key}:${JSON.stringify(opts)}` : key,\n    tDynamic: (key: string) => key,\n    locale: "en",\n    setLocale: () => {},\n    ready: true,\n  }),\n',
+		);
+		const plan = classifyFile(IDENTITY_FILE, src);
+		expect(plan.classification).toBe("CUSTOM");
+		const out = transformFile(src, plan) as string;
+		expect(out).toContain("installI18nContextSeam({");
+		expect(out).toContain("t: (key, opts?) => opts ? `${key}:${JSON.stringify(opts)}` : key,");
+		expect(out).toContain("tDynamic: (key) => key,");
+		expect(out).not.toContain("mock.module");
+		expect(out).not.toContain("realI18n");
+		expect(out.indexOf("installI18nContextSeam({")).toBeLessThan(out.indexOf('await import("./MyComponent.js")'));
+	});
+
+	test("extractCustomSpec returns null for unparsable shapes", () => {
+		expect(extractCustomSpec('mock.module("x", () => ({ useT: () => ({ t: stableT }) }));')).toBeNull();
 	});
 });
