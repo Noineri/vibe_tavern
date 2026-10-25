@@ -32,6 +32,9 @@ import type { CharacterImportMobileHandle } from "../../modals/import/CharacterI
 import type { ChatImportMobileHandle } from "../../modals/import/ChatImportMobile.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
+import { installSnapshotStoreSeam } from "../../../../test/snapshot-store-seam.js";
+import { installExperienceStoreSeam } from "../../../../test/experience-store-seam.js";
 import { wireCharacter, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { i18next } from "../../../i18n/i18n.js";
 import en from "../../../i18n/locales/en.json";
@@ -39,6 +42,23 @@ import ru from "../../../i18n/locales/ru.json";
 import { formatRelativeTime } from "../sidebar-utils.js";
 
 useDomEnv({ failOnNetwork: true });
+
+// CO-LOAD CONTRACT (store seams): this suite seeds the REAL zustand stores
+// (`useBootstrapStore.setState` / `useSnapshotStore.setState` in beforeEach) —
+// register the real arms so a co-loaded narrow-store mock (ScriptEditor's
+// `useAllCharacters`, ExperienceSetupModal's `useChatList`, the bootstrap
+// plain-selector mocks) cannot leave its plain function live for this file's
+// seeding in a hand-bundled run (mock.module is last-write-wins; the order is
+// effectively arbitrary — reproduced 68/68 rail fails under ScriptEditor's
+// registration in BOTH argument orders, 2026-10-27 co-load unit).
+installBootstrapActionsSeam();
+installSnapshotStoreSeam();
+// CO-LOAD CONTRACT (experience-store seam): a co-loaded narrow-store mock
+// (ExperienceSetupModal's) left its hand-rolled `useExperienceStore` live for
+// this file's phase, and that suite's stale passive effect then hit the NARROW
+// getState during this file's renders (11 row/list fails, 2026-10-27) —
+// register the real arm; the same effect is harmless against the real store.
+installExperienceStoreSeam();
 
 const { act, fireEvent, render } = await import("@testing-library/react");
 

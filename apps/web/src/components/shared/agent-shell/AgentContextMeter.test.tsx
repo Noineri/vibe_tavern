@@ -1,32 +1,18 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
 
-// The shared Toggle wraps Radix Switch; mock it to a plain button so the meter
-// test drives it deterministically without Radix's happy-dom anchoring.
-// (Toggle's own behaviour is pinned in Toggle.test.tsx — a full replacement
-// here cannot leak because apps/web runs each test file in its own process.)
-mock.module("../../../components/shared/Toggle.js", () => ({
-  Toggle: ({
-    checked,
-    onChange,
-    disabled,
-  }: {
-    checked: boolean;
-    onChange: (v: boolean) => void;
-    disabled?: boolean;
-  }) => (
-    <button
-      type="button"
-      data-testid="copilot-context-autocompact-toggle"
-      data-checked={checked ? "true" : "false"}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    />
-  ),
-}));
+// The shared Toggle wraps Radix Switch; stub it to a plain button via the
+// shared toggle seam so the meter test drives it deterministically without
+// Radix's happy-dom anchoring. (Toggle's own behaviour is pinned in
+// Toggle.test.tsx.) CO-LOAD CONTRACT: the former inline full replacement was
+// R4-less AND stayed live process-globally in a hand-bundled run, breaking
+// every real-arm rider (`getByRole("switch", …)` — AgentSettingsModal et
+// al.); the seam restores the real Toggle for riders that register it.
+installToggleSeam({ stub: true });
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;

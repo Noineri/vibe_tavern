@@ -1,6 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installRadixPopoverSeam } from "../../../test/radix-popover-seam.js";
+import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -47,15 +49,19 @@ mock.module("../shared/Tooltip.js", () => ({
 }));
 
 // The interface-settings popover trigger renders inside Popover.Root far
-// below in TopBar — stub the Radix surface to plain passthrough divs.
-const realPopover = await import("@radix-ui/react-popover");
-mock.module("@radix-ui/react-popover", () => ({
-  ...realPopover,
-  Root: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Trigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Portal: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Content: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
+// below in TopBar — the shared radix-popover seam keeps the real export
+// surface alive for every co-loaded file and stubs only the (single,
+// uncontrolled) Root arm deterministically (CO-LOAD CONTRACT: the former
+// inline passthrough stayed live process-globally and rendered closed
+// controlled popovers' content at rest — e.g. AgentContextRing's meter —
+// breaking real-arm riders in a hand-bundled run).
+installRadixPopoverSeam();
+
+// CO-LOAD CONTRACT (snapshot-store seam): the harness seeds the REAL store
+// (`useSnapshotStore.getState().ingestSnapshot(...)` in mountTopBar) — register
+// the real arm so a co-loaded narrow-store mock cannot leave a plain function
+// live for it in a hand-bundled run.
+installSnapshotStoreSeam();
 
 // RX-14 seam under test — what the indicator counts. Overridden per test.
 let mockResolvedPresets: Array<Record<string, unknown>> = [];

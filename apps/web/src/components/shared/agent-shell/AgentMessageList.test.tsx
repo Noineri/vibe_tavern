@@ -2,10 +2,23 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ExperienceCopilotMessageWire, RecordProposal } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 
 useDomEnv();
+
+// CO-LOAD CONTRACT (i18n-context-seam family): this suite is provider-less —
+// its pins echo raw keys through the default context (the digest label below
+// composes `copilot_context_digest_title`/`copilot_context_digest_caption`).
+// Without its OWN registration it inherits whichever custom spec a
+// co-loaded mocking file registered last (ExperienceLauncher's and
+// ProviderQuotaPanel's `t` append `:${JSON}` for every params-bearing call —
+// the digest caption then renders with the params suffix and the pinned
+// label is gone; both pair runs reproduced exactly this one failure). The
+// identity spec reproduces the real provider-less default (`t: (key) => key`)
+// verbatim, so isolation behavior is unchanged.
+installI18nContextSeam();
 
 // CustomTooltip (Radix) never anchors under happy-dom — the ask card's
 // recommended chip is wrapped in it. Render children inline; this test pins

@@ -15,26 +15,39 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installCopilotSkillApiSeam } from "../../../../test/copilot-skill-api-seam.js";
+import { installAgentSkillModalSeam } from "../../../../test/agent-skill-modal-seam.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import type { SkillCatalog, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 
-const realSkillApi = await import("../../../api/copilot-skill-api.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
 
 installI18nContextSeam();
 
+// CO-LOAD CONTRACT (agent-skill-modal seam): this is the modal's OWN suite —
+// register the REAL component so a co-loaded stubber's registration
+// (AgentSettingsModal's `settings-child-skill` shell) cannot replace it for
+// this file's renders (mock.module is last-write-wins; the destructure-import
+// below would otherwise capture whatever stub is live).
+installAgentSkillModalSeam();
+
+// CO-LOAD CONTRACT (copilot-skill-api seam): the former inline mock's
+// registration was replaced by a sibling's (AgentSettingsModal/
+// AgentProfileModal mock the same module) in a hand-bundled run — the slot
+// then held THEIR reset-to-undefined `mock()` and this suite's catalog
+// waitFor timed out (11 fails, reproduced 2026-10-27). Register through the
+// shared seam: this file's own doubles are live for its own run.
 const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
 const readContentMock = mock();
 const createSkillMock = mock();
 const updateSkillMock = mock();
-mock.module("../../../api/copilot-skill-api.js", () => ({
-	...realSkillApi,
+installCopilotSkillApiSeam({
 	listCopilotSkills: listSkillsMock,
 	readCopilotSkill: mock(),
 	deleteCopilotSkill: deleteSkillMock,
@@ -42,7 +55,7 @@ mock.module("../../../api/copilot-skill-api.js", () => ({
 	readCopilotSkillContent: readContentMock,
 	createCopilotSkill: createSkillMock,
 	updateCopilotSkill: updateSkillMock,
-}));
+});
 
 mock.module("../MasterDetailModal.js", () => ({
 	...realMasterDetailModal,

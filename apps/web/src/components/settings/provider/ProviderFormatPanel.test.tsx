@@ -13,11 +13,14 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { FormState } from "../../modals/ProviderModal.js";
 import type { ProviderGenerationFormat } from "@vibe-tavern/domain";
 
 useDomEnv();
 
+
+installToggleSeam();
 
 installI18nContextSeam({
 	custom: {

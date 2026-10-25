@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installRadixPopoverSeam } from "../../../../../test/radix-popover-seam.js";
+import { installToggleSeam } from "../../../../../test/toggle-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
 import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotContextMetrics, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
@@ -241,25 +243,12 @@ mock.module("../../../shared/Tooltip.js", () => ({
 
 // The shared Toggle wraps Radix Switch (no happy-dom anchor); the shell test
 // renders the REAL meter (so its compact button is clickable) — stub the switch
-// to a plain button (Toggle's own behaviour is pinned in Toggle.test.tsx).
-const realToggle = await import("../../../shared/Toggle.js");
-mock.module("../../../shared/Toggle.js", () => ({
-  ...realToggle,
-  Toggle: ({
-    checked,
-    onChange,
-  }: {
-    checked: boolean;
-    onChange: (v: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="copilot-context-autocompact-toggle"
-      data-checked={checked ? "true" : "false"}
-      onClick={() => onChange(!checked)}
-    />
-  ),
-}));
+// to a plain button via the shared toggle seam (Toggle's own behaviour is
+// pinned in Toggle.test.tsx). CO-LOAD CONTRACT: the registration is live for
+// this file's own run only; real-arm riders (`getByRole("switch", …)` —
+// AgentSettingsModal et al.) re-register the REAL Toggle through the seam and
+// are no longer poisoned by this stub in a hand-bundled run.
+installToggleSeam({ stub: true });
 
 // Radix Select.Content / BottomSheet (vaul) do not mount under happy-dom, and
 // this test does not drive provider/model selection — render the trigger only.
@@ -346,15 +335,13 @@ mock.module("../../../shared/agent-shell/AgentSettingsModal.js", () => ({
 }));
 
 // Radix Popover.Content never mounts under happy-dom (Popper anchors via a 0x0
-// getBoundingClientRect — see LinkBindingPopover.test.tsx). Render it inline so
-// the ExperienceSessionSwitcher's session list is clickable here.
-mock.module("@radix-ui/react-popover", () => ({
-  Root: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Trigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Portal: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Content: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Anchor: () => null,
-}));
+// getBoundingClientRect — see LinkBindingPopover.test.tsx). The shared
+// radix-popover seam with `stubAllRoots` keeps this suite's legacy semantics —
+// the shell's pins read the context-ring meter at rest and click through
+// WITHOUT opening the ring, so even the CONTROLLED Roots must render inline
+// here. The registration is live only for this file's own run (sequential
+// hand-bundle), so the real-arm riders after it keep the real Radix.
+installRadixPopoverSeam({ stubAllRoots: true });
 
 // ExperienceFrame renders a sandboxed iframe served from a blob URL; its
 // DOM/CSP/URL lifecycle is pinned in ExperienceFrame.test.tsx. The shell test

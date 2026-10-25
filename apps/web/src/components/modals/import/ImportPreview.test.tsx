@@ -3,6 +3,7 @@ import type { RegexScriptImportDraft } from "@vibe-tavern/import-export";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { CharacterPreview } from "./parse-import-file.js";
 
 useDomEnv();
@@ -32,6 +33,12 @@ installI18nContextSeam({
     tDynamic: (key: string) => key,
   },
 });
+
+// CO-LOAD CONTRACT (toggle-seam family): this suite drives the REAL wrapped
+// Radix Toggle (`getByRole("switch")` on the import rows) — register the
+// real arm so a co-loaded stub suite's Toggle registration cannot poison it
+// in a hand-bundled run (mock.module is last-write-wins).
+installToggleSeam();
 
 mock.module("./parse-import-file.js", () => ({
   ...realParseImportFile,

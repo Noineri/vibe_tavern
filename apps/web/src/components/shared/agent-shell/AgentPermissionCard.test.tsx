@@ -10,11 +10,21 @@
 import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AgentPermissionState } from "../../../stores/agent-turn-store.js";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
 
 useDomEnv();
+
+// CO-LOAD CONTRACT (i18n-context-seam family): the non-plural pins echo raw
+// keys provider-lessly (`copilot_permission_tokens` with a `count` option —
+// the real default context returns the bare key); the RU/EN plural tests
+// mount a real provider (delegation keeps them on real i18next). Without its
+// OWN registration the file inherits a co-loaded custom spec — reproduced:
+// rail-character-browser's `key#count` stub rendered
+// `copilot_permission_tokens#1234` and broke the meta pin (2026-10-27 unit).
+installI18nContextSeam();
 
 // CustomTooltip (Radix) never anchors under happy-dom — the reply line's
 // OverflowTooltip wraps its text in it. Render the text inline; this test

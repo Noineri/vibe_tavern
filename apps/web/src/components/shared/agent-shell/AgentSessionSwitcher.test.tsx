@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
-import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installRadixPopoverSeam } from "../../../../test/radix-popover-seam.js";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -9,15 +9,14 @@ useDomEnv();
 // `getBoundingClientRect`, which reports a 0x0 box for every element, so the
 // content never anchors (documented in LinkBindingPopover.test.tsx). Render the
 // popover inline so the session list is queryable — the same workaround the
-// shell test applies to ToolbarSelect/CustomTooltip. apps/web runs each test
-// file in its own bun process, so this full replacement cannot leak cross-file.
-mock.module("@radix-ui/react-popover", () => ({
-  Root: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Trigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Portal: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Content: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Anchor: () => null,
-}));
+// shell test applies to ToolbarSelect/CustomTooltip. The shared radix-popover
+// seam keeps this file's uncontrolled `<Popover.Root>` (the switcher) on the
+// deterministic stub while every CONTROLLED Root rides the real Radix arm —
+// the former full replacement leaked process-globally in a hand-bundled run
+// (mock.module is last-write-wins; the R4-less factory also nulled every
+// other export for later files) and erased the closed-state contract of
+// real-arm riders like AgentContextRing.
+installRadixPopoverSeam();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;

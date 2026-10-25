@@ -25,6 +25,10 @@ import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
+import { installSnapshotStoreSeam } from "../../../../test/snapshot-store-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
+import { installPersonaApiSeam } from "../../../../test/persona-api-seam.js";
 
 useDomEnv();
 
@@ -48,8 +52,6 @@ const testScript = mock(() => Promise.resolve({
 	errors: [],
 }));
 const realScriptApi = await import("../../../api/script-api.js");
-const realSnapshotStore = await import("../../../stores/snapshot-store.js");
-const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
@@ -87,15 +89,39 @@ mock.module("../../../api/script-api.js", () => ({
 
 installI18nContextSeam();
 
-mock.module("../../../stores/snapshot-store.js", () => ({
-	...realSnapshotStore,
-  useAllCharacters: () => testCharacters,
-}));
+// CO-LOAD CONTRACT (snapshot-store seam): the former inline R4 mock narrowed
+// `useAllCharacters` to this file's fixture array — process-global,
+// last-write-wins, it stayed live for every later file and broke the real-store
+// riders (rail-character-browser's rail rows failed 68/68 in the reproduced
+// bundle). Register through the shared seam: this file's narrow semantics for
+// its own run, the REAL store for everyone after the next seam registration.
+installSnapshotStoreSeam({
+	useAllCharacters: () => testCharacters,
+});
 
-mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
-	...realBootstrapActions,
-  useBootstrapStore: <T,>(selector: (state: { personas: never[] }) => T): T => selector({ personas: [] }),
-}));
+// CO-LOAD CONTRACT (test/bootstrap-actions-seam.ts): the former inline R4
+// mock narrowed `useBootstrapStore` to a plain selector fn — process-global,
+// last-write-wins, it stayed live for every later file in a hand-bundled run
+// and killed the real-store suites wholesale (`useBootstrapStore.setState is
+// not a function`, 46/46 in the AgentProfileModal pair). Register through the
+// shared seam: this file's narrow semantics for its own run, the REAL hook
+// for everyone after the next seam registration.
+installBootstrapActionsSeam({
+	useBootstrapStore: <T,>(selector: (state: { personas: never[] }) => T): T => selector({ personas: [] }),
+});
+
+// CO-LOAD CONTRACT (toggle-seam family): this suite drives the REAL wrapped
+// Radix Toggle (`getByRole("switch")` in the safety-banner bar) — register
+// the real arm so a co-loaded stub suite's Toggle registration cannot poison
+// it in a hand-bundled run (mock.module is last-write-wins).
+installToggleSeam();
+
+// CO-LOAD CONTRACT (persona-api seam): this suite's AgentShell mount consumes
+// the real `listPersonas` (its allSettled catalog skips a REJECTED source
+// gracefully) — register the real arm so a co-loaded persona-api mock
+// (ExperienceSetupModal's) cannot leave a reset-to-undefined `mock()` live for
+// it in a hand-bundled run.
+installPersonaApiSeam();
 
 // Mobile flag as a mutable cell: the file's tests pin the desktop path by
 // default; the D3 block below flips it for the mobile booster path.

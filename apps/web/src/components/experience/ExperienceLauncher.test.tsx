@@ -29,6 +29,7 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -135,7 +136,6 @@ const storeMocks = {
 
 // ─── module mocks ───────────────────────────────────────────────────────────
 const realStore = await import("../../stores/experience-store.js");
-const realSnapshot = await import("../../stores/snapshot-store.js");
 const realMobile = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
@@ -158,11 +158,14 @@ installI18nContextSeam({
 // Snapshot store: returns the active chat/branch.
 let snapshotChat: { id: string } | null = { id: CHAT_ID };
 let snapshotBranch: { id: string } | null = { id: BRANCH_ID };
-mock.module("../../stores/snapshot-store.js", () => ({
-  ...realSnapshot,
+// CO-LOAD CONTRACT (snapshot-store seam): the former inline R4 narrow
+// (`useSnapshotStore` as a plain selector fn) stayed live process-globally in
+// a hand-bundled run — register through the shared seam so real-store riders
+// after the next registration get the REAL hook back.
+installSnapshotStoreSeam({
   useSnapshotStore: (selector: (s: { activeChat: typeof snapshotChat; activeBranch: typeof snapshotBranch }) => unknown) =>
     selector({ activeChat: snapshotChat, activeBranch: snapshotBranch }),
-}));
+});
 
 mock.module("../../stores/experience-store.js", () => ({
   ...realStore,

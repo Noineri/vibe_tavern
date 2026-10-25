@@ -22,6 +22,8 @@ import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installRadixPopoverSeam } from "../../../../test/radix-popover-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { AgentPlan, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
@@ -47,25 +49,11 @@ mock.module("../Tooltip.js", () => ({
 }));
 
 // The shared Toggle wraps Radix Switch (no happy-dom anchor); the Toggle's
-// own behaviour is pinned in Toggle.test.tsx — stub to a plain button.
-const realToggle = await import("../Toggle.js");
-mock.module("../Toggle.js", () => ({
-	...realToggle,
-	Toggle: ({
-		checked,
-		onChange,
-	}: {
-		checked: boolean;
-		onChange: (v: boolean) => void;
-	}) => (
-		<button
-			type="button"
-			data-testid="sc0i-autocompact-toggle"
-			data-checked={checked ? "true" : "false"}
-			onClick={() => onChange(!checked)}
-		/>
-	),
-}));
+// own behaviour is pinned in Toggle.test.tsx — stub to a plain button via the
+// shared toggle seam, keeping this suite's own testid (CO-LOAD CONTRACT: the
+// seam restores the REAL Toggle for real-arm riders that register it — the
+// former inline stub stayed live process-globally in a hand-bundled run).
+installToggleSeam({ stub: true, testId: "sc0i-autocompact-toggle" });
 
 // Radix Select.Content / BottomSheet (vaul) do not mount under happy-dom, and
 // this test does not drive provider/model selection — render the trigger only.
@@ -88,15 +76,13 @@ mock.module("./AgentSettingsModal.js", () => ({
 		(isOpen ? <div data-testid="sc0i-settings-modal-stub" data-chat-id={chatId ?? ""} data-script-id={scriptId ?? ""} /> : null),
 }));
 
-// Radix Popover.Content never mounts under happy-dom — render it inline so
-// the session switcher mounts without throwing.
-mock.module("@radix-ui/react-popover", () => ({
-	Root: ({ children }: { children?: ReactNode }) => <>{children}</>,
-	Trigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
-	Portal: ({ children }: { children?: ReactNode }) => <>{children}</>,
-	Content: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-	Anchor: () => null,
-}));
+// Radix Popover.Content never mounts under happy-dom — the shared
+// radix-popover seam keeps the switcher's uncontrolled `<Popover.Root>` on
+// the deterministic inline stub (the session list stays queryable) while
+// every CONTROLLED Root rides the real Radix arm. The former full
+// replacement was R4-less (every other export `undefined` for later files in
+// a hand-bundled run) and erased real-arm riders' closed-state contract.
+installRadixPopoverSeam();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;

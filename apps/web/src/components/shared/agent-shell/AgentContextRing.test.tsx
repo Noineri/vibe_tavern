@@ -22,6 +22,7 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 
@@ -40,28 +41,13 @@ mock.module("../../../components/shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-// The shared Toggle wraps Radix Switch; mock it to a plain button so the ring
-// test drives the auto toggle deterministically without Radix's happy-dom
-// anchoring (same replacement as AgentContextMeter.test.tsx).
-mock.module("../../../components/shared/Toggle.js", () => ({
-  Toggle: ({
-    checked,
-    onChange,
-    disabled,
-  }: {
-    checked: boolean;
-    onChange: (v: boolean) => void;
-    disabled?: boolean;
-  }) => (
-    <button
-      type="button"
-      data-testid="copilot-context-autocompact-toggle"
-      data-checked={checked ? "true" : "false"}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    />
-  ),
-}));
+// The shared Toggle wraps Radix Switch; stub it to a plain button via the
+// shared toggle seam so the ring test drives the auto toggle deterministically
+// without Radix's happy-dom anchoring (same registration as
+// AgentContextMeter.test.tsx). CO-LOAD CONTRACT: the former inline full
+// replacement was R4-less AND poisoned every real-arm rider
+// (`getByRole("switch", …)`) process-globally in a hand-bundled run.
+installToggleSeam({ stub: true });
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;

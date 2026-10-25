@@ -22,6 +22,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bu
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
+import { installCopilotSkillApiSeam } from "../../../../test/copilot-skill-api-seam.js";
 
 useDomEnv();
 
@@ -39,7 +41,6 @@ import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type Co
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
 const realProfileApi = await import("../../../api/copilot-profile-api.js");
-const realSkillApi = await import("../../../api/copilot-skill-api.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
 const realDndKit = await import("@dnd-kit/core");
@@ -152,7 +153,6 @@ mock.module("@dnd-kit/core", () => ({
 }));
 
 const realChatSettingsApi = await import("../../../api/agent-chat-settings-api.js");
-const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 
 const SKILL_CATALOG = {
 	entries: [
@@ -161,13 +161,16 @@ const SKILL_CATALOG = {
 	errors: [],
 };
 const listCopilotSkills = mock(() => Promise.resolve(SKILL_CATALOG));
-mock.module("../../../api/copilot-skill-api.js", () => ({
-	...realSkillApi,
+// CO-LOAD CONTRACT (copilot-skill-api seam): register through the shared
+// seam — the inline registration's slot held a sibling's reset-to-undefined
+// `mock()` for their runs in a hand-bundled run (the AgentSkillModal
+// timeouts, 2026-10-27). This file's own doubles are live for its own run.
+installCopilotSkillApiSeam({
 	listCopilotSkills,
 	readCopilotSkill: mock(),
 	importCopilotSkills: mock(),
 	deleteCopilotSkill: mock(),
-}));
+});
 
 mock.module("../../../api/agent-chat-settings-api.js", () => ({
 	...realChatSettingsApi,
@@ -175,10 +178,16 @@ mock.module("../../../api/agent-chat-settings-api.js", () => ({
 	patchAgentChatSettings,
 }));
 
-mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
-	...realBootstrapActions,
+// CO-LOAD CONTRACT (test/bootstrap-actions-seam.ts): this suite resets and
+// seeds the REAL zustand store (`useBootstrapStore.setState`), but its former
+// inline R4 mock captured the namespace AFTER any co-loaded narrow mocker —
+// the spread re-registered the POISONED `useBootstrapStore` slot (bun
+// replaces export slots in place), so `.setState` died 46/46 in the
+// ScriptEditor pair. The seam restores the real hook captured at its first
+// import; only the action override stays.
+installBootstrapActionsSeam({
 	patchAgentKindSettingsAction,
-}));
+});
 
 // MasterDetailModal passthrough (render master + detail + footer + headerActions flat).
 // Co-load contract (ML-1 rework, ML-8 rework): the `...real` spread supplies

@@ -24,8 +24,19 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bu
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
+import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
+import { installCopilotSkillApiSeam } from "../../../../test/copilot-skill-api-seam.js";
+import { installAgentSkillModalSeam } from "../../../../test/agent-skill-modal-seam.js";
 
 useDomEnv();
+
+// CO-LOAD CONTRACT (toggle-seam family): this suite pins the REAL wrapped
+// Radix Toggle (`getByRole("switch", …)`) — register the real arm so a
+// co-loaded stub suite's registration (ExperienceCopilotShell /
+// AgentContextMeter / AgentContextRing / AgentShellPlan) cannot poison it
+// (mock.module is process-global, last-write-wins in a hand-bundled run).
+installToggleSeam();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
@@ -38,7 +49,6 @@ const realProfileApi = await import("../../../api/copilot-profile-api.js");
 const realDropdownSelect = await import("../DropdownSelect.js");
 const realModelPills = await import("./AgentModelPills.js");
 const realProfileModal = await import("./AgentProfileModal.js");
-const realSkillModal = await import("./AgentSkillModal.js");
 
 installI18nContextSeam({
 	custom: {
@@ -77,7 +87,6 @@ mock.module("../../../api/copilot-profile-api.js", () => ({
 	setCopilotProfile,
 }));
 
-const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 const patchAgentKindSettingsAction = mock(async (_kind: string, _patch: { autoCompactDefault?: boolean }) => ({
 	agentKind: _kind,
 	providerProfileId: null,
@@ -87,10 +96,13 @@ const patchAgentKindSettingsAction = mock(async (_kind: string, _patch: { autoCo
 	servesChatModes: [],
 	autoCompactDefault: _patch.autoCompactDefault ?? true,
 }));
-mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
-	...realBootstrapActions,
+// CO-LOAD CONTRACT (bootstrap-actions seam): this suite seeds/resets the
+// REAL zustand store (`useBootstrapStore.setState`) — register through the
+// shared seam so a co-loaded narrow-store mock (ScriptEditor et al.) cannot
+// leave a plain selector function live for this file's resets.
+installBootstrapActionsSeam({
 	patchAgentKindSettingsAction,
-}));
+});
 
 const SKILL_ENTRIES = [
 	{ id: "experience-authoring", source: "builtin" as const, name: "Experience Authoring", description: "Craft guidance.", manifestPath: "experience-authoring/SKILL.md", shadowsBuiltin: false },
@@ -98,14 +110,18 @@ const SKILL_ENTRIES = [
 	{ id: "my-style", source: "user" as const, name: "My style", description: "Naming and comments.", manifestPath: "my-style/SKILL.md", shadowsBuiltin: false },
 ];
 const listCopilotSkills = mock(() => Promise.resolve({ entries: SKILL_ENTRIES, errors: [] }));
-const realSkillApi = await import("../../../api/copilot-skill-api.js");
-mock.module("../../../api/copilot-skill-api.js", () => ({
-	...realSkillApi,
+// CO-LOAD CONTRACT (copilot-skill-api seam): the former inline mock's
+// registration stayed live process-globally in a hand-bundled run — bun
+// resets `mock()` implementations at file boundaries, so a later rider
+// (AgentSkillModal's catalog waitFor) got undefined and timed out (11 fails,
+// reproduced 2026-10-27). Register through the shared seam: this file's
+// doubles for its own run.
+installCopilotSkillApiSeam({
 	listCopilotSkills,
 	readCopilotSkill: mock(),
 	importCopilotSkills: mock(),
 	deleteCopilotSkill: mock(),
-}));
+});
 
 let mobileOverride = false;
 const realUseMobile = await import("../../../hooks/use-mobile.js");
@@ -176,8 +192,12 @@ mock.module("./AgentProfileModal.js", () => ({
 	),
 }));
 
-mock.module("./AgentSkillModal.js", () => ({
-	...realSkillModal,
+// CO-LOAD CONTRACT (agent-skill-modal seam): the stub is registered through
+// the shared seam — the former inline registration stayed live in a
+// hand-bundled run and the modal's OWN suite (AgentSkillModal.test.tsx)
+// destructured the STUB for its renders (11 catalog timeouts, 2026-10-27).
+// The seam lets the victim re-register the REAL component for its own run.
+installAgentSkillModalSeam({
 	AgentSkillModal: ({ isOpen, parentBack }: {
 		isOpen: boolean;
 		parentBack?: { label: string; onBack: () => void };
@@ -191,7 +211,7 @@ mock.module("./AgentSkillModal.js", () => ({
 			</div>
 		) : null
 	),
-}));
+});
 
 let AgentSettingsModal: typeof import("./AgentSettingsModal.js").AgentSettingsModal;
 beforeAll(async () => {
