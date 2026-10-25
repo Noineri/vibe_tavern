@@ -15,6 +15,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -23,16 +24,12 @@ let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 
-const realI18nContext = await import("../../i18n/context.js");
 const realSkillApi = await import("../../api/skill-api.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
 
-mock.module("../../i18n/context.js", () => ({
-		...realI18nContext,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // ─── skill-api mock: the catalog the store loads + the delete/import fns ──
 const listSkillsMock = mock();

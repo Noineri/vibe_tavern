@@ -21,22 +21,13 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { render, fireEvent, act } = await import("@testing-library/react");
 
 // ─── i18n mock (keys verbatim; interpolation ignored — stable key text) ──────
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const { ExperienceEffectDiagnostics } = await import("./ExperienceEffectDiagnostics.js");
 import type { ExperienceEffectRow } from "../../api/types.js";

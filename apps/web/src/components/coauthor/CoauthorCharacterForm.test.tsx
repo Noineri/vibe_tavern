@@ -22,6 +22,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutcomeFixtureRequest } from "../../../test/review-outcome-fixtures.js";
 
 useDomEnv();
@@ -48,7 +49,6 @@ import {
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 const handleSaveCharacter = mock(async () => undefined);
-const realI18nContext = await import("../../i18n/context.js");
 const realCharacterController = await import("../../hooks/use-character-controller.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
@@ -66,10 +66,7 @@ const refetchTrackerTemplateMock = mock(async () => undefined);
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.

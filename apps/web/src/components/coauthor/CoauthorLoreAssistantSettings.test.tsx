@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
@@ -8,17 +9,13 @@ useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 const patchUiSettingsAction = mock(async (_patch: { coauthorLoreProviderId: string | null; coauthorLoreModelName: string | null }) => ({}));
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
-const realI18n = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({
   ...realBootstrapActions,
   patchUiSettingsAction,
 }));
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
   useIsMobile: () => false,
