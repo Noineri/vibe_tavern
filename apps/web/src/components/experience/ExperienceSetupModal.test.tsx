@@ -35,6 +35,7 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 import type { ReactNode } from "react";
 import type {
@@ -100,7 +101,6 @@ const mocks = {
   endSession: mock(),
 };
 
-const realI18n = await import("../../i18n/context.js");
 const realStore = await import("../../stores/experience-store.js");
 const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realScriptApi = await import("../../api/script-api.js");
@@ -119,17 +119,17 @@ mock.module("../../stores/snapshot-store.js", () => ({
   useChatList: () => fakeChatList,
 }));
 
-// Stable `t` object so its identity is preserved across renders — the modal's
-// discovery effect depends on `t`, and a per-render closure would loop.
-const stableT = {
-  t: (k: string) => k,
-  tDynamic: (k: string) => k,
-  locale: "en",
-  setLocale: () => {},
-  ready: true,
-};
-
-mock.module("../../i18n/context.js", () => ({ ...realI18n, useT: () => stableT }));
+// Hand port onto the shared seam (stable-identity family): the suite's own `t`
+// runs verbatim and `stable: true` keeps the old mock's whole-value identity —
+// `useT()` returned the exact same object every render (the modal's discovery
+// effect depends on `t`, and a per-render closure would loop).
+installI18nContextSeam({
+  custom: {
+    t: (k: string) => k,
+    tDynamic: (k: string) => k,
+    stable: true,
+  },
+});
 
 mock.module("../../stores/experience-store.js", () => ({
   ...realStore,
