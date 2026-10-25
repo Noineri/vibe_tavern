@@ -22,9 +22,17 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
+
+// Co-load seam (identity spec): this suite pins the raw-key echo of
+// provider-less renders (`context_usage_percent` etc.) — without its own
+// registration a hand-bundled run would inherit a sibling's interpolating
+// spec (MobileInputArea's "Context: {n}%") and the raw-key pins would break.
+// Behavior is byte-identical to the real default context for these renders.
+installI18nContextSeam();
 
 const realTooltip = await import("../../../components/shared/Tooltip.js");
 mock.module("../../../components/shared/Tooltip.js", () => ({

@@ -24,28 +24,19 @@ import type { Attachment } from "@vibe-tavern/domain";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
 import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realUseInputArea = await import("./use-input-area.js");
 const en = (await import("../../i18n/locales/en.json")).default;
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string, params?: Record<string, unknown>) => k === "attachments_overflow_warning"
-      ? en.attachments_overflow_warning.replace("{attached}", String(params?.attached)).replace("{free}", String(params?.free))
-      : k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// House i18n test pattern via the shared co-load seam: raw keys render as-is;
+// the overflow-warning pin reads the bundled EN template.
+installI18nContextSeam({ interpolateKeys: ["attachments_overflow_warning"] });
 
 // countTokens loads a real tiktoken encoding — heavy and irrelevant here.
 mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));

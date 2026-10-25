@@ -9,6 +9,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { TooltipProvider } from "../shared/Tooltip.js";
@@ -16,17 +17,10 @@ import type { CoauthorInputAreaData } from "./use-coauthor-input-area.js";
 
 useDomEnv();
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => key === "context_usage_percent" ? `Context: ${opts?.n}%` : key === "context_label" ? "Context" : key === "context_permanent" ? "Permanent" : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// House i18n pattern via the shared co-load seam: raw keys render as-is;
+// the context-meter pins read the bundled EN templates ("Context: {n}%",
+// "Context", "Permanent") — byte-identical to the previous hand-built values.
+installI18nContextSeam({ interpolateKeys: ["context_usage_percent", "context_label", "context_permanent"] });
 
 let act: typeof import("@testing-library/react").act;
 let render: typeof import("@testing-library/react").render;

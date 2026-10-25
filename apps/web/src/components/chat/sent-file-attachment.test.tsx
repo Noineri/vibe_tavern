@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { brandId, type Attachment, type MessageId, type ChatId, type ChatBranchId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../../api/types.js";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -7,19 +7,21 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv({ failOnNetwork: true });
 const { render, fireEvent, waitFor, act, cleanup } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const realI18n = await import("../../i18n/context.js");
 const en = (await import("../../i18n/locales/en.json")).default;
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
-      let value = en[key as keyof typeof en] ?? key;
-      for (const [name, replacement] of Object.entries(params ?? {})) value = value.replace(`{${name}}`, String(replacement));
-      return value;
-    },
-    tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true,
-  }),
-}));
+const { LocaleProvider } = await import("../../i18n/context.js");
+const { initI18n } = await import("../../i18n/i18n.js");
+// Real i18n (the AgentPermissionCard precedent): every pin in this suite
+// asserts real EN text, so it rides the real i18next behind a real
+// LocaleProvider — no stub `t` to poison real-i18next siblings in a
+// hand-bundled run (the old inline mock was a full en.json lookup, the
+// family's worst offender: 26 cross-suite failures in the AgentMessageList
+// pair probe, 2026-10-27).
+initI18n("en");
+
+/** Renders inside the real LocaleProvider — see the initI18n note above. */
+function renderWithLocale(ui: ReactElement) {
+  return render(<LocaleProvider>{ui}</LocaleProvider>);
+}
 
 const api = await import("../../api/attachment-actions-api.js");
 const chatApi = await import("../../api/chat-api.js");
@@ -62,7 +64,7 @@ function StoreGrid() {
 }
 function grid(attachment = file, siblings: Attachment[] = []) {
   seed([attachment, ...siblings]);
-  return render(<StoreGrid />);
+  return renderWithLocale(<StoreGrid />);
 }
 type View = ReturnType<typeof render>;
 async function openMenu(view: View) {
@@ -114,7 +116,7 @@ describe("sent file actions (CA-2c)", () => {
       const [attachment, setAttachment] = useState(file);
       return <SentFileAttachment attachment={attachment} actions={actions} onUpdated={(updated) => { onUpdated(updated); setAttachment(updated); }} onRemoved={() => {}} />;
     }
-    const view = render(<Harness />);
+    const view = renderWithLocale(<Harness />);
     await choose(view, en.attachment_summarize);
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(summary));
     expect(view.getByText("Summary · ~800 tok")).toBeTruthy();
@@ -219,7 +221,7 @@ describe("sent file actions (CA-2c)", () => {
   test("delete passes the attachment id through onRemoved", async () => {
     const onRemoved = mock((_id: string) => {});
     const remove = mock(async () => {});
-    const view = render(<SentFileAttachment attachment={file} actions={{ summarize: async () => summary, clearSummary: async () => file, setIncluded: async () => {}, remove }} onUpdated={() => {}} onRemoved={onRemoved} />);
+    const view = renderWithLocale(<SentFileAttachment attachment={file} actions={{ summarize: async () => summary, clearSummary: async () => file, setIncluded: async () => {}, remove }} onUpdated={() => {}} onRemoved={onRemoved} />);
     await choose(view, en.attachment_delete_title);
     fireEvent.click(await waitFor(() => view.getByRole("button", { name: en.delete })));
     await waitFor(() => expect(onRemoved).toHaveBeenCalledWith(file.id));
@@ -271,14 +273,14 @@ describe("sent file actions (CA-2c)", () => {
     expect(useSnapshotStore.getState().messagesById.message?.attachments).toEqual([summary, changedImage]);
     view.unmount();
     seed([{ ...summary, includeInPrompt: false }, changedImage]);
-    const refreshed = render(<StoreGrid />);
+    const refreshed = renderWithLocale(<StoreGrid />);
     expect(refreshed.getByText(en.attachment_excluded)).toBeTruthy();
     await openMenu(refreshed);
     expect(refreshed.getByRole("menuitem", { name: en.attachment_show_summary })).toBeTruthy();
   });
 
   test("images still open the original lightbox and read-only files have no actions", () => {
-    const view = render(<AttachmentGrid attachments={[file, image]} />);
+    const view = renderWithLocale(<AttachmentGrid attachments={[file, image]} />);
     expect(view.queryByRole("button", { name: en.attachment_file_actions })).toBeNull();
     fireEvent.click(view.getByAltText(image.name));
     expect(view.getAllByAltText(image.name)).toHaveLength(2);

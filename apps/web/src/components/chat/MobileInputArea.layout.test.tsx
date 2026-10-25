@@ -14,6 +14,7 @@ import {
   type ProviderQuotaSnapshot,
 } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import type { InputAreaData } from "./use-input-area.js";
 
@@ -36,17 +37,10 @@ mock.module("../../api/quota-api.js", () => ({
   updateQuotaConfig: () => new Promise<never>(() => {}),
 }));
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// House i18n pattern via the shared co-load seam: raw keys render as-is
+// (identity spec — this suite has no interpolated pins, but registers so a
+// hand-bundled run never inherits a sibling's interpolating spec).
+installI18nContextSeam();
 
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;

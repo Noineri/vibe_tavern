@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import type { InputAreaData } from "./use-input-area.js";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
@@ -8,17 +9,10 @@ import type { Attachment } from "@vibe-tavern/domain";
 
 useDomEnv();
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => key === "context_usage_percent" ? `Context: ${opts?.n}%` : key === "context_label" ? "Context" : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// House i18n test pattern via the shared co-load seam: raw keys render as-is;
+// the context-meter pins read the bundled EN templates ("Context: {n}%",
+// "Context") — byte-identical to the previous hand-built values.
+installI18nContextSeam({ interpolateKeys: ["context_usage_percent", "context_label"] });
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;

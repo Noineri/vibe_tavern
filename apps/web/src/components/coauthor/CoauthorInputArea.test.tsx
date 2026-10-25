@@ -27,6 +27,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireCharacter, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { brandId, type Attachment, type MessageId, type ChatId, type ChatBranchId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../../api/types.js";
@@ -74,16 +75,17 @@ afterAll(restore);
 const handleSelectFavoriteProviderModel = mock(async (_profileId: string, _modelId: string) => undefined);
 const handleSend = mock(async () => undefined);
 const handleCancelGeneration = mock();
-const realI18n = await import("../../i18n/context.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realChatController = await import("../../hooks/use-chat-controller.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 
-mock.module("../../i18n/context.js", () => ({
-		...realI18n,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+// House i18n pattern via the shared co-load seam: this suite pins raw keys
+// (identity echo), so it registers an IDENTITY spec — without its own
+// registration a hand-bundled run would inherit a sibling's interpolating
+// spec (e.g. per-send-prefill's attachments_overflow_warning, which this
+// suite's own pin echoes as the raw key).
+installI18nContextSeam();
 
 // Provider profiles: one active profile with two favorites — one tool-capable,
 // one not. The tool-only filtering is what the test pins.

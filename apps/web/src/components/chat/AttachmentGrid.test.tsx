@@ -8,6 +8,7 @@ import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:te
 import React from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -15,24 +16,11 @@ const { render, act, fireEvent, waitFor } = await import("@testing-library/react
 
 const { default: userEvent } = await import("@testing-library/user-event");
 
-// House i18n test pattern: raw keys render as-is.
-const realI18n = await import("../../i18n/context.js");
+// House i18n test pattern via the shared co-load seam: raw keys render as-is;
+// the two interpolated pins (attachment_tokens, voice_message_tone) read the
+// bundled EN templates with single-brace params.
+installI18nContextSeam({ interpolateKeys: ["attachment_tokens", "voice_message_tone"] });
 const en = (await import("../../i18n/locales/en.json")).default;
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    // Interpolates single-brace params (the ST-7 tone row passes {tone}) —
-    // otherwise the raw-key passthrough loses the split value under test.
-    t: (key: string, params?: Record<string, unknown>) =>
-      key === "attachment_tokens" ? en.attachment_tokens.replace("{tokens}", String(params?.tokens)) : params && typeof params === "object" && "tone" in params
-        ? `${key}:${String(params.tone)}`
-        : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
 
 import { AttachmentGrid } from "./AttachmentGrid.js";
 
@@ -109,9 +97,14 @@ describe("AttachmentGrid voice bubble (ST-6)", () => {
     });
     // The transcript block is the CLEAN transcript — the marker line is gone.
     expect(view.getByTestId("voice-transcript-text").textContent).toBe("я не могу больше");
-    // The tone rides its own row underneath — interpolation mock pins the
-    // split value reached the row.
-    expect(view.getByTestId("voice-tone-text").textContent).toBe("voice_message_tone:дрожит, сбивчиво");
+    // The tone rides its own row underneath — the seam interpolates the real
+    // EN template, so the pin sees the SPLIT value reaching the row.
+    // Pin adaptation (i18n co-load seam migration 2026-10-27): was
+    // "voice_message_tone:дрожит, сбивчиво" (the old inline mock's
+    // `${key}:${tone}` quirk), now "Tone: {tone}" from en.json interpolated;
+    // the checked fact — the split tone value renders as its own row —
+    // survives against the real label template.
+    expect(view.getByTestId("voice-tone-text").textContent).toBe("Tone: дрожит, сбивчиво");
   });
 
   test("ST-7: a description without a tone line renders no tone row", async () => {
