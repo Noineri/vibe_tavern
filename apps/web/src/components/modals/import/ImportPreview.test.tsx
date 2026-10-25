@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { RegexScriptImportDraft } from "@vibe-tavern/import-export";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { CharacterPreview } from "./parse-import-file.js";
 
 useDomEnv();
@@ -9,14 +10,18 @@ useDomEnv();
 const { render, fireEvent, waitFor } = await import("@testing-library/react");
 
 let useRussian = false;
-const realI18nContext = await import("../../../i18n/context.js");
 const realParseImportFile = await import("./parse-import-file.js");
 const parseCharacterFile = mock(realParseImportFile.parseCharacterFile);
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, values?: Record<string, number>) => {
+// Hand port onto the shared seam (mutable-locale family): the suite's own `t`
+// closes over the `useRussian` flag EXACTLY as the old inline mock did — the
+// closure is read per render, so flipping the flag mid-suite keeps working.
+// The old mock's `locale: useRussian ? "ru" : "en"` field is dropped as inert
+// (ImportPreview destructures only `t`; verified — nothing in this graph
+// reads `locale`). A mounted provider still delegates to real i18n.
+installI18nContextSeam({
+  custom: {
+    t: (key, values?) => {
       if (key === "regexImport.profileSummary") {
         return `${values?.n} Rules · ${values?.enabled} enabled · ${values?.disabled} disabled`;
       }
@@ -25,11 +30,8 @@ mock.module("../../../i18n/context.js", () => ({
       return key;
     },
     tDynamic: (key: string) => key,
-    locale: useRussian ? "ru" : "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+  },
+});
 
 mock.module("./parse-import-file.js", () => ({
   ...realParseImportFile,

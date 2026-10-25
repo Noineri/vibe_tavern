@@ -1,4 +1,5 @@
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 /**
@@ -41,7 +42,6 @@ class TestBoundary extends React.Component<{ children: ReactNode }, { hasError: 
   render() { return this.props.children; }
 }
 
-const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realMasterDetail = await import("../shared/MasterDetailModal.js");
@@ -91,17 +91,13 @@ const realSonner = await import("sonner");
 const toastErrorMock = mock(() => {});
 mock.module("sonner", () => ({ ...realSonner, toast: { ...realSonner.toast, error: toastErrorMock } }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, options?: { count?: number }) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, options?) =>
       key === "promptManager.regex.profileMemberCount" ? `${key}:${options?.count ?? 0}` : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
 mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
