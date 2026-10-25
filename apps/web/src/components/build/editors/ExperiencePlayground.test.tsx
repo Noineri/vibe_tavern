@@ -56,6 +56,7 @@ import type {
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -201,7 +202,6 @@ function asDiscovery(run: ExperienceTestRunData): ExperienceTestDiscoverData {
 
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realScriptApi = await import("../../../api/script-api.js");
-const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAutoTextarea = await import("../../shared/auto-textarea.js");
 
@@ -300,20 +300,13 @@ mock.module("../../../api/script-api.js", () => ({
 }));
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    // The setup-check keys interpolate a capability list / seat name; echo the
-    // variables for those keys only so the assertions can see them. Every
-    // other key stays the bare identity.
-    t: (k: string, vars?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (k, vars?) =>
       vars !== undefined && k.startsWith("experience_playground_setup_") ? `${k} ${JSON.stringify(vars)}` : k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (k) => k,
+  },
+});
 
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -50,16 +51,17 @@ const mocks = (() => {
   };
 })();
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realProviderDataStore = await import("../../../stores/provider-data-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string, opts?: Record<string, unknown>) => (opts && "n" in opts ? `${k}:${String(opts.n)}` : k), tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam({
+  custom: {
+    t: (k, opts?) => (opts && "n" in opts ? `${k}:${String(opts.n)}` : k),
+    tDynamic: (k) => k,
+  },
+});
 
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,

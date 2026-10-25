@@ -11,6 +11,7 @@
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { defaultObjectiveState, normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -18,11 +19,9 @@ const { createElement } = await import("react");
 const { useForm } = await import("react-hook-form");
 
 // useT at the module boundary — keys verbatim so assertions match.
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, opts?) => {
       const n = Number(opts?.n);
       switch (key) {
         case "character_tracker_template_label": return "Tracker template";
@@ -37,12 +36,9 @@ mock.module("../../../i18n/context.js", () => ({
         default: return key;
       }
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // CustomTooltip needs a Radix provider context irrelevant to this pin.
 const realTooltip = await import("../../shared/Tooltip.js");
