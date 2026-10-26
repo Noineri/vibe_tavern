@@ -37,6 +37,7 @@ import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
+import type { StoryPlanSync } from "../../domain/director/story-plan-sync.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { AiInstructionTemplateAdapter } from "./ai-instruction-template-adapter.js";
@@ -131,6 +132,11 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		 * 400). */
 		sidechatSkillService?: SkillLibraryService,
 		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
+		/** DR-3b: the story-plan sync the branch-plan PUT delegates to
+		 * (StoryPlanSync.applyPlan — normalize-or-422 + save + ACTIVE-branch
+		 * projection). Optional: harnesses without it keep the plain store
+		 * save; production (server-runtime) always injects the real sync. */
+		storyPlanSync?: Pick<StoryPlanSync, "applyPlan">,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -192,7 +198,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			),
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
-		this.agentPlan = new AgentPlanAdapter(stores);
+		this.agentPlan = new AgentPlanAdapter(stores, storyPlanSync);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);

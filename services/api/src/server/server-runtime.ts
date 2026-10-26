@@ -260,11 +260,17 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 	// DR-3a — story-plan ↔ goal-tracker sync: the ACTIVE branch's plan drives
 	// the tracker (projection on applyPlan/reconcile), and committed tracker
-	// statuses flow back into that branch's plan (follow-back observer). The
-	// branch-change call sites and the plan route wiring land in DR-3b.
+	// statuses flow back into that branch's plan (follow-back observer).
 	const storyPlanSync = new StoryPlanSync(stores, objectiveService);
 	objectiveService.registerStateObserver((chatId, nextState) =>
 		storyPlanSync.onObjectiveStateCommitted(chatId, nextState),
+	);
+	// DR-3b: every ACTIVE-branch change ends with the reconcile (R2 — the
+	// tracker re-fills from the ACTIVE branch's plan). Late-bound hook, not a
+	// constructor param: chatApp is born inside SessionRuntime's constructor,
+	// before ObjectiveService (and thus StoryPlanSync) can exist.
+	sessionRuntime.chatApp.registerActiveBranchReconciler((chatId) =>
+		storyPlanSync.reconcileActiveBranch(chatId),
 	);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
@@ -347,6 +353,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		scriptSkillService,
 		sidechatSkillService,
 		summaryAssetLoader,
+		storyPlanSync,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

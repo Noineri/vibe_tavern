@@ -44,9 +44,11 @@
  * The bypass also skips the state observer; the projection source field
  * survives it, so follow-back keeps targeting the right branch.
  *
- * DR-3b (a LATER unit) wires the branch-change call sites (activate, create,
- * delete, the load-time fallbacks) to `reconcileActiveBranch` and routes the
- * branch-plan PUT through `applyPlan`. Nothing here calls them.
+ * DR-3b (wired): the branch-change call sites (activate, create,
+ * delete, the load-time fallbacks — chat-application-service.ts, via the
+ * late-bound registerActiveBranchReconciler hook) call
+ * `reconcileActiveBranch`, and the branch-plan PUT (agent-plan-adapter.ts)
+ * routes through `applyPlan`. Nothing here calls them.
  */
 import {
   AGENT_PLAN_TASK_STATUS,

@@ -8,7 +8,7 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { applyAttachmentPatch, brandId, parseStoredAttachments, ensureActiveObjectiveTarget } from "@vibe-tavern/domain";
+import { applyAttachmentPatch, brandId, parseStoredAttachments, ensureActiveObjectiveTarget, log } from "@vibe-tavern/domain";
 import type {
   Attachment,
   AttachmentPatch,
@@ -70,6 +70,19 @@ type AddEditorVariantInput = {
   readonly finishReason?: string;
 };
 
+const logger = log.tag("chat-application-service");
+
+/**
+ * DR-3b (DIRECTOR_MODE_PLAN R2): the story-plan reconcile that runs after
+ * every ACTIVE-branch change — the tracker (one per chat) re-fills from the
+ * ACTIVE branch's plan. Registered late via
+ * {@link ChatApplicationService.registerActiveBranchReconciler} because this
+ * service is born inside SessionRuntime's constructor, one construction step
+ * before ObjectiveService (and therefore StoryPlanSync) can exist — a
+ * constructor param would force a construction cycle.
+ */
+export type ActiveBranchReconciler = (chatId: ChatId) => Promise<void>;
+
 export class ChatApplicationService {
   constructor(
     private readonly chatStore: ChatStore,
@@ -78,6 +91,41 @@ export class ChatApplicationService {
     private readonly experienceStore: ExperienceStore,
     private readonly macroStores: Pick<StoreContainer, "characters" | "personas">,
   ) {}
+
+  private activeBranchReconciler: ActiveBranchReconciler | null = null;
+
+  /**
+   * DR-3b: bind the post-commit story-plan reconcile — server-runtime
+   * registers `storyPlanSync.reconcileActiveBranch` right after constructing
+   * StoryPlanSync. Every branch path below that can change the chat's ACTIVE
+   * branch calls it once the change has committed (one call site per path:
+   * activateBranch, createBranch's activation, deleteBranch, and the two
+   * load-time dangling-branch fallbacks in getChatState).
+   */
+  registerActiveBranchReconciler(reconciler: ActiveBranchReconciler): void {
+    this.activeBranchReconciler = reconciler;
+  }
+
+  /**
+   * The ONE wrapper for the registered reconcile — a repair, never a gate:
+   * a reconcile failure is logged and swallowed (the ObjectiveService state
+   * observer's failure policy) so activation/creation/deletion/load never
+   * fails because of it. Without a registered reconciler (tests,
+   * lifecycle-only harnesses) this is a no-op — branch behavior stays
+   * byte-identical to pre-DR-3b.
+   */
+  private async reconcileStoryPlan(chatId: ChatId): Promise<void> {
+    if (!this.activeBranchReconciler) return;
+    try {
+      await this.activeBranchReconciler(chatId);
+    } catch (error) {
+      logger.warn(
+        "active-branch story-plan reconcile failed for chat %s: %s",
+        chatId as string,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -111,6 +159,7 @@ export class ChatApplicationService {
       branch = branches.find((b) => b.parentBranchId === null) ?? branches[0];
       resolvedBranchId = branch.id;
       await this.chatStore.activateBranch(chat.id, branch.id as ChatBranchId);
+      await this.reconcileStoryPlan(chatId);
     }
     // Defensive: chat with zero branches — auto-create a root branch
     if (!branch && branches.length === 0) {
@@ -121,6 +170,7 @@ export class ChatApplicationService {
         id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now,
       }).run();
       await this.chatStore.activateBranch(chat.id, branchId as ChatBranchId);
+      await this.reconcileStoryPlan(chatId);
       branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", loreActivationState: {}, createdAt: now };
       resolvedBranchId = branchId;
     }
@@ -410,6 +460,7 @@ export class ChatApplicationService {
 
     if (input.activateFork !== false) {
       await this.chatStore.activateBranch(chatId, branch.id as ChatBranchId);
+      await this.reconcileStoryPlan(chatId);
     }
 
     // Count messages in the new branch for the response
@@ -421,7 +472,9 @@ export class ChatApplicationService {
   }
 
   async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/db").Chat> {
-    return this.chatStore.activateBranch(chatId, branchId);
+    const chat = await this.chatStore.activateBranch(chatId, branchId);
+    await this.reconcileStoryPlan(chatId);
+    return chat;
   }
 
   async sleepBranch(_chatId: ChatId, _input: SleepBranchRequest): Promise<SleepBranchResponse> {
@@ -431,6 +484,9 @@ export class ChatApplicationService {
 
   async deleteBranch(chatId: ChatId, branchId: ChatBranchId): Promise<DeleteBranchResponse> {
     await this.chatStore.deleteBranch(branchId);
+    // The store re-points activeBranchId at a surviving branch when the ACTIVE
+    // one was deleted — the reconcile runs after that re-point (DR-3b).
+    await this.reconcileStoryPlan(chatId);
     const chat = await this.requireChat(chatId);
     return {
       chatId,

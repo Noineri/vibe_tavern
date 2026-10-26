@@ -2,12 +2,16 @@ import type { AgentPlanRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import {
 	EMPTY_AGENT_PLAN,
+	brandId,
 	type AgentPlan,
 	type AgentPlanOwner,
+	type ChatBranchId,
+	type ChatId,
 } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import { normalizePlanForSave } from "../../domain/agent-plan/agent-plan-validation.js";
+import type { StoryPlanSync } from "../../domain/director/story-plan-sync.js";
 
 /**
  * Thin adapter between the `AgentPlanRuntimeApi` contract and the
@@ -19,10 +23,23 @@ import { normalizePlanForSave } from "../../domain/agent-plan/agent-plan-validat
  * reads as the empty plan, and writes run the shared normalize-or-422
  * validation (domain/agent-plan/agent-plan-validation.ts — the same
  * normalizeAgentPlan path the model's `plan` tool feeds, now also shared
- * with StoryPlanSync.applyPlan per DR-3a).
+ * with StoryPlanSync.applyPlan per DR-3a). DR-3b: the branch-plan PUT
+ * delegates to `StoryPlanSync.applyPlan` when a sync is injected — the same
+ * validation/ownership codes, plus the ACTIVE-branch projection (A5) and
+ * the non-active-branch saves-without-touching-the-tracker rule, which then
+ * live in the service alone (one rule, one home).
  */
 export class AgentPlanAdapter implements AgentPlanRuntimeApi {
-	constructor(private readonly stores: StoreContainer) {}
+	constructor(
+		private readonly stores: StoreContainer,
+		/** DR-3b: the branch-plan PUT's sync delegate (StoryPlanSync.applyPlan).
+		 * Optional so lifecycle-only harnesses and the plan-route
+		 * characterization suites construct without it and keep the plain
+		 * store-save path (byte-identical to the pre-DR-3b route); production
+		 * (server-runtime → RuntimeApiAdapter) always injects the real sync.
+		 */
+		private readonly branchPlanSync?: Pick<StoryPlanSync, "applyPlan">,
+	) {}
 
 	getAgentPlan = async (scriptId: string): Promise<AgentPlan> => {
 		await this.requireScript(scriptId);
@@ -49,6 +66,18 @@ export class AgentPlanAdapter implements AgentPlanRuntimeApi {
 		branchId: string,
 		plan: unknown,
 	): Promise<AgentPlan> => {
+		// DR-3b: through the sync — the same normalize-or-422 and ownership
+		// 404 the fallback below runs, plus the ACTIVE-branch projection (A5:
+		// goals mode + goal replacement + tracker ON when events exist); a
+		// non-active branch saves without touching the tracker (the service's
+		// own rule). The branded ids enter at this API edge, as everywhere.
+		if (this.branchPlanSync) {
+			return this.branchPlanSync.applyPlan(
+				brandId<ChatId>(chatId),
+				brandId<ChatBranchId>(branchId),
+				plan,
+			);
+		}
 		await requireChatBranch(this.stores.chats, chatId, branchId);
 		return this.savePlan({ kind: "chatBranch", chatId, branchId }, plan);
 	};
