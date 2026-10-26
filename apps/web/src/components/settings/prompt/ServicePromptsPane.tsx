@@ -439,7 +439,10 @@ export function ServicePromptsPane({
 					selected={isSelected}
 					active={isActive}
 					status={
-						<CustomTooltip content="promptManager.servicePrompts.liveTooltip">
+						// ML-13: was the RAW key string — the tooltip showed the key
+						// itself. Wrapped in t() like the sibling pane
+						// (ImagePromptTemplatesPane's lock tooltip).
+						<CustomTooltip content={t("promptManager.servicePrompts.liveTooltip")}>
 							<span className="flex shrink-0 text-t3">
 								<Icons.Lock />
 							</span>
