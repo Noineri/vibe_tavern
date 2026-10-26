@@ -494,6 +494,30 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
     expect(result.systemMessage).toContain("Participants & launch settings");
   });
 
+  // CA-5b (2026-10-25, COPILOT_ATTACHMENTS_PLAN wave 5): user-flow.md gained
+  // the "Attaching files and screenshots" section so the copilot knows the
+  // user can attach files/images to ITS chat and never asks them to paste a
+  // file's contents. Pins the section's load-bearing facts (the send path,
+  // the sent-file actions) over the REAL asset — an intentional asset-content
+  // pin, like the sandbox-actions assertions above, not assembly.
+  test("the human-side flow doc covers chat attachments (CA-5b)", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [{ role: "user", content: "Hello" }],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).toContain("## Attaching files and screenshots");
+    // The composer surface: EN labels verbatim from en.json (attach_image,
+    // attachment_summarize, attachment_exclude) — the RU map is code-built
+    // from ru.json and must not be duplicated in the EN asset.
+    expect(result.systemMessage).toContain('"Attach file"');
+    expect(result.systemMessage).toContain('"Summarize contents"');
+    expect(result.systemMessage).toContain('"Exclude from prompt"');
+    // The model-facing contract: full text arrives, never ask for a paste.
+    expect(result.systemMessage).toContain("full text");
+    expect(result.systemMessage).toContain("Never ask the user to paste");
+  });
+
   test("a Russian-voice history appends the RU↔EN label map; an English one does not", async () => {
     const ru = await assembleExperienceCopilotPrompt({
       history: [
