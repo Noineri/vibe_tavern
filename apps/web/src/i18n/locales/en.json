@@ -3201,6 +3201,8 @@
 	"experience_report_no_events": "No events to queue",
 	"experience_report_pending_action": "Updating…",
 	"experience_report_action_error": "Couldn’t update the queued report.",
+	"experience_report_clear": "Clear queue",
+	"experience_report_clear_error": "Couldn’t clear the queued report.",
 	"experience_report_queued_events_one": "experience_report_queued_events",
 	"experience_report_queued_events_other": "experience_report_queued_events",
 	"experience_report_pending_events_one": "experience_report_pending_events",

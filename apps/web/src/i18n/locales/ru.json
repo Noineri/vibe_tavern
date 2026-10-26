@@ -3255,6 +3255,8 @@
 	"experience_report_no_events": "Нет событий для очереди",
 	"experience_report_pending_action": "Обновление…",
 	"experience_report_action_error": "Не удалось обновить отчёт в очереди.",
+	"experience_report_clear": "Очистить очередь",
+	"experience_report_clear_error": "Не удалось очистить очередь отчёта.",
 	"experience_report_queued_events_one": "Замороженные события: {n}",
 	"experience_report_queued_events_other": "Замороженные события: {n}",
 	"experience_report_pending_events_one": "Новые события: {n}",

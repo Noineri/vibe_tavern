@@ -2,7 +2,7 @@
  * ExperienceReportControls — the trusted report-control surface for an active
  * interactive-experience session (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 7 /
  * IR-73C_report_controls). A PURE presentational component plus the one async
- * queue action: every displayed count, frontier, and revision comes from
+ * queue/clear actions: every displayed count, frontier, and revision comes from
  * server-authoritative props, never inferred from reducer revisions or
  * synthesized locally.
  *
@@ -20,7 +20,7 @@
  *  - Queued attachment + pending === 0 → disabled "Up to date" (no call).
  *  - No queued attachment + no pending → disabled "No events" (no call).
  *
- * The single async action calls `onQueue` (the parent wires it to
+ * The queue action calls `onQueue` (the parent wires it to
  * `store.queueReport`, which is the same server operation for both the initial
  * manual Queue and a replacement/Add-later). Duplicate clicks are suppressed
  * while pending. On rejection the frozen values stay unchanged and a fail-closed
@@ -28,7 +28,7 @@
  * success the component renders ONLY the new props supplied by the store
  * rehydrate/response; it does not synthesize a queue revision or append events.
  */
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import type {
@@ -45,6 +45,8 @@ export interface ExperienceReportControlsProps {
    *  success; rejects on failure so the component surfaces a fail-closed
    *  error without touching the frozen values. */
   readonly onQueue: () => Promise<void>;
+  /** Clear the queue; reject on failure and leave all frozen props unchanged. */
+  readonly onClear: () => Promise<void>;
 }
 
 /** The four mutually-exclusive action-surface states, computed purely from
@@ -73,9 +75,10 @@ export function computeReportActionState(
 }
 
 export function ExperienceReportControls(props: ExperienceReportControlsProps): ReactNode {
-  const { queuedAttachment, reportStatus, onQueue } = props;
+  const { queuedAttachment, reportStatus, onQueue, onClear } = props;
   const { t } = useT();
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<"queue" | "clear" | null>(null);
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // ── Server-authoritative values (props only — never synthesized) ──────────
@@ -90,21 +93,23 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
   const action = computeReportActionState(queuedAttachment, reportStatus);
   const actionable = action.kind === "queue" || action.kind === "addLater";
 
-  async function handleClick(): Promise<void> {
+  async function handleClick(kind: "queue" | "clear"): Promise<void> {
     // Disable duplicate clicks; never act on a non-actionable state.
-    if (pending || !actionable) return;
-    setPending(true);
+    if (inFlight.current || (kind === "queue" ? !actionable : queuedAttachment === null)) return;
+    inFlight.current = true;
+    setPending(kind);
     setError(null);
     try {
-      await onQueue();
+      await (kind === "queue" ? onQueue() : onClear());
       // On success the store rehydrate supplies the new props; clear any
       // previous local error. No optimistic count/revision change here.
       setError(null);
     } catch {
       // Fail-closed: keep the old frozen values; surface a localized error.
-      setError(t("experience_report_action_error"));
+      setError(t(kind === "queue" ? "experience_report_action_error" : "experience_report_clear_error"));
     } finally {
-      setPending(false);
+      inFlight.current = false;
+      setPending(null);
     }
   }
 
@@ -120,66 +125,80 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
   const showFrozenMalformed = queuedAttachment !== null && frozenCount === undefined;
 
   return (
-    <div className="flex flex-col gap-1.5" data-testid="experience-report-controls">
-      {/* Frozen + pending counts (server-authoritative; never synthesized). */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-3px)]">
-        {showFrozenMalformed ? (
-          <span className="text-warning-text" data-testid="experience-report-frozen-malformed">
-            {t("experience_report_queued_malformed")}
-          </span>
-        ) : (
-          frozenCount !== undefined && (
-            <span className="text-t3" data-testid="experience-report-frozen">
-              {t("experience_report_queued_events", { n: frozenCount })}
+    <div className="@container/report flex flex-col gap-1.5" data-testid="experience-report-controls">
+      <div className="flex flex-col gap-1.5 @min-[40rem]/report:flex-row @min-[40rem]/report:items-center @min-[40rem]/report:justify-between">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          {/* Frozen + pending counts (server-authoritative; never synthesized). */}
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-3px)]">
+            {showFrozenMalformed ? (
+              <span className="text-warning-text" data-testid="experience-report-frozen-malformed">
+                {t("experience_report_queued_malformed")}
+              </span>
+            ) : (
+              frozenCount !== undefined && (
+                <span className="text-t3" data-testid="experience-report-frozen">
+                  {t("experience_report_queued_events", { n: frozenCount })}
+                </span>
+              )
+            )}
+            <span className="text-t4" data-testid="experience-report-pending">
+              {t("experience_report_pending_events", { n: pendingCount })}
             </span>
-          )
-        )}
-        <span className="text-t4" data-testid="experience-report-pending">
-          {t("experience_report_pending_events", { n: pendingCount })}
-        </span>
-      </div>
+          </div>
 
-      {/* Frontier / revisions metadata (distinct from event counts). */}
-      {(reportFrontier !== undefined || queueRevision !== undefined || sessionRevision !== undefined) && (
-        <div
-          className="flex flex-wrap gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4"
-          data-testid="experience-report-meta"
-        >
-          {reportFrontier !== undefined && (
-            <span data-testid="experience-report-frontier">
-              {t("experience_report_frontier", { n: reportFrontier })}
-            </span>
-          )}
-          {queueRevision !== undefined && (
-            <span data-testid="experience-report-queue-rev">
-              {t("experience_report_queue_rev", { n: queueRevision })}
-            </span>
-          )}
-          {sessionRevision !== undefined && (
-            <span data-testid="experience-report-session-rev">
-              {t("experience_report_session_rev", { n: sessionRevision })}
-            </span>
+          {/* Frontier / revisions metadata (distinct from event counts). */}
+          {(reportFrontier !== undefined || queueRevision !== undefined || sessionRevision !== undefined) && (
+            <div
+              className="flex flex-wrap gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4"
+              data-testid="experience-report-meta"
+            >
+              {reportFrontier !== undefined && (
+                <span data-testid="experience-report-frontier">
+                  {t("experience_report_frontier", { n: reportFrontier })}
+                </span>
+              )}
+              {queueRevision !== undefined && (
+                <span data-testid="experience-report-queue-rev">
+                  {t("experience_report_queue_rev", { n: queueRevision })}
+                </span>
+              )}
+              {sessionRevision !== undefined && (
+                <span data-testid="experience-report-session-rev">
+                  {t("experience_report_session_rev", { n: sessionRevision })}
+                </span>
+              )}
+            </div>
           )}
         </div>
-      )}
 
-      {/* Action button — enabled only for queue/addLater; pending suppresses
-          duplicate clicks. The SAME server operation backs both labels. */}
-      <button
-        type="button"
-        className={cn(
-          "rounded px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors max-md:min-h-9",
-          actionable && !pending
-            ? "bg-accent text-on-accent hover:opacity-90"
-            : "cursor-not-allowed bg-s2 text-t4",
-        )}
-        disabled={!actionable || pending}
-        onClick={() => void handleClick()}
-        data-testid="experience-report-action"
-        data-action={action.kind}
-      >
-        {pending ? t("experience_report_pending_action") : label}
-      </button>
+        {/* Narrow surfaces stack primary then secondary; wide footers put Clear first on the right. */}
+        <div className="flex flex-col gap-1.5 @min-[40rem]/report:shrink-0 @min-[40rem]/report:flex-row-reverse">
+          <button
+            type="button"
+            className={cn(
+              "rounded px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors max-md:min-h-9",
+              actionable && !pending
+                ? "bg-accent text-on-accent hover:opacity-90"
+                : "cursor-not-allowed bg-s2 text-t4",
+            )}
+            disabled={!actionable || pending !== null}
+            onClick={() => void handleClick("queue")}
+            data-testid="experience-report-action"
+            data-action={action.kind}
+          >
+            {pending === "queue" ? t("experience_report_pending_action") : label}
+          </button>
+          <button
+            type="button"
+            className="rounded bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:bg-s3 disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-9"
+            disabled={queuedAttachment === null || pending !== null}
+            onClick={() => void handleClick("clear")}
+            data-testid="experience-report-clear"
+          >
+            {t("experience_report_clear")}
+          </button>
+        </div>
+      </div>
 
       {error && (
         <p

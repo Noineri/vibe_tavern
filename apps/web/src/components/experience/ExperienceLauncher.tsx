@@ -493,6 +493,10 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     if (result === null) throw new Error("experience queue failed");
   }
 
+  async function handleClearQueue(): Promise<void> {
+    if (!await useExperienceStore.getState().clearQueue()) throw new Error("experience clear queue failed");
+  }
+
   // ── Effect retry (lobby diagnostics): reject on a null store result so the ─
   // diagnostics surface can show a fail-closed error. On success the store
   // resync brings the pending row back and the chat-page runner (LB-10)
@@ -611,6 +615,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           queuedAttachment={queuedAttachment}
           reportStatus={reportStatus}
           onQueue={handleQueueReport}
+          onClear={handleClearQueue}
         />
       )}
       {popupError && (
@@ -728,6 +733,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
                 queuedAttachment={queuedAttachment}
                 reportStatus={reportStatus}
                 onQueue={handleQueueReport}
+                onClear={handleClearQueue}
               />
             ) : undefined
           }

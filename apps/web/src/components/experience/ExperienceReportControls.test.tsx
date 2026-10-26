@@ -71,16 +71,18 @@ function makeReportStatus(over: Partial<ExperienceReportStatus> = {}): Experienc
 }
 
 function renderControls(over: Partial<ExperienceReportControlsProps> = {}):
-  ReturnType<typeof render> & { onQueue: ReturnType<typeof mock> } {
+  ReturnType<typeof render> & { onQueue: ReturnType<typeof mock>; onClear: ReturnType<typeof mock> } {
   const onQueue = mock((_over?: unknown) => Promise.resolve());
+  const onClear = mock(() => Promise.resolve());
   const utils = render(
     <ExperienceReportControls
       queuedAttachment={over.queuedAttachment ?? null}
       reportStatus={over.reportStatus ?? null}
       onQueue={(over.onQueue as () => Promise<void>) ?? onQueue}
+      onClear={over.onClear ?? onClear}
     />,
   );
-  return { ...utils, onQueue };
+  return { ...utils, onQueue, onClear };
 }
 
 beforeEach(() => {
@@ -88,6 +90,50 @@ beforeEach(() => {
 });
 
 // ─── Pure action-state derivation ──────────────────────────────────────────
+
+describe("clear queue (ERX-6b)", () => {
+  it("is disabled without a queue and never clears automatically", () => {
+    const view = renderControls();
+    const button = view.getByTestId("experience-report-clear") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(view.onClear).not.toHaveBeenCalled();
+  });
+
+  it("clears an up-to-date or malformed queue only on click, without optimistic removal", async () => {
+    const onClear = mock(async () => {});
+    const view = renderControls({ queuedAttachment: makeAttachment({ publicReport: null }),
+      reportStatus: makeReportStatus({ pendingPublicEventCount: 0 }), onClear });
+    const button = view.getByTestId("experience-report-clear") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(onClear).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(button); });
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("experience-report-frozen-malformed")).toBeDefined();
+  });
+
+  it("suppresses duplicate clear and queue clicks while clearing", async () => {
+    let finish!: () => void;
+    const onClear = mock(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const view = renderControls({ queuedAttachment: makeAttachment(), reportStatus: makeReportStatus(), onClear });
+    fireEvent.click(view.getByTestId("experience-report-clear"));
+    fireEvent.click(view.getByTestId("experience-report-clear"));
+    fireEvent.click(view.getByTestId("experience-report-action"));
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(view.onQueue).not.toHaveBeenCalled();
+    expect((view.getByTestId("experience-report-clear") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { finish(); });
+  });
+
+  it("shows a distinct localized clear failure and retains frozen values", async () => {
+    const view = renderControls({ queuedAttachment: makeAttachment(), reportStatus: makeReportStatus(),
+      onClear: async () => { throw new Error("clear failed"); } });
+    await act(async () => { fireEvent.click(view.getByTestId("experience-report-clear")); });
+    expect(view.getByRole("alert").textContent).toBe("experience_report_clear_error");
+    expect(view.getByTestId("experience-report-frozen")).toBeDefined();
+    expect((view.getByTestId("experience-report-clear") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 describe("computeReportActionState — pure derivation from server props", () => {
   it("no attachment + pending > 0 → queue", () => {
     expect(computeReportActionState(null, makeReportStatus({ pendingPublicEventCount: 3 }))).toEqual({
@@ -311,6 +357,7 @@ describe("ExperienceReportControls — action contract", () => {
         queuedAttachment={att}
         reportStatus={makeReportStatus({ pendingPublicEventCount: 1 })}
         onQueue={fail}
+        onClear={async () => {}}
       />,
     );
     expect(getByTestId("experience-report-frozen")).toBeTruthy();
