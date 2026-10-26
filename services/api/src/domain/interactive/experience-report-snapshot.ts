@@ -18,17 +18,28 @@
  *     assembly — a single bad attachment must not break the user's RP turn.
  */
 
-import type { ExperienceReportEvent, ExperienceReportSnapshot } from "@vibe-tavern/domain";
+import { isRecord, type ExperiencePublicReport, type ExperienceReportEvent, type ExperienceReportSnapshot } from "@vibe-tavern/domain";
 import type { ExperienceAttachmentRow } from "@vibe-tavern/db";
 
 /** A minimal structural check on the parsed `publicEventsJson` envelope. */
-function isPublicReportEnvelope(value: unknown): value is { title: string; summary?: string; events: unknown[] } {
+function isPublicReportEnvelope(value: unknown): value is { title: string; summary?: string; participants?: unknown; events: unknown[] } {
   if (typeof value !== "object" || value === null) return false;
   const rec = value as Record<string, unknown>;
   if (typeof rec.title !== "string") return false;
   if (rec.summary !== undefined && typeof rec.summary !== "string") return false;
   if (!Array.isArray(rec.events)) return false;
   return true;
+}
+
+/** The one public-roster projection for report writes and defensive reads. */
+export function readReportParticipants(value: unknown): ExperiencePublicReport["participants"] {
+  if (!Array.isArray(value)) return undefined;
+  const participants: { id: string; label: string }[] = [];
+  for (const participant of value) {
+    if (!isRecord(participant) || typeof participant.id !== "string" || typeof participant.label !== "string") continue;
+    participants.push({ id: participant.id, label: participant.label });
+  }
+  return participants;
 }
 
 /** Coerce one parsed event into the snapshot shape (type must be a string). */
@@ -68,11 +79,13 @@ export function storeAttachmentToReportSnapshot(
     const coerced = coerceEvent(raw);
     if (coerced) events.push(coerced);
   }
+  const participants = readReportParticipants(parsed.participants);
   return {
     kind: attachment.kind,
     sessionRevision: attachment.sessionRevision,
     title: parsed.title,
     ...(parsed.summary !== undefined ? { summary: parsed.summary } : {}),
+    ...(participants !== undefined ? { participants } : {}),
     events,
   };
 }

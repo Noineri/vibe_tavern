@@ -120,6 +120,34 @@ function makeExperienceService(options: ExperienceServiceOptions = {}) {
 }
 
 describe("PromptAssemblyService experience-report projection (IR-52)", () => {
+	it("ERX-3: carries only frozen public roster labels into the prompt and renders actor prose", async () => {
+		const service = makeExperienceService({ attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment({
+			publicEventsJson: JSON.stringify({
+				title: "Cards",
+				participants: [{ id: "seat_1", label: "Player", controller: "human", character: { secret: "PRIVATE_ROSTER_SECRET" } }],
+				events: [{ type: "move", participantId: "seat_1", detail: "played a yellow 6" }],
+			}),
+		})]]]) });
+		const built = await service.buildPipelineContext({ chatId: "chat_1" as ChatId, model: "m" });
+		const snapshot = built.context.chat.recentMessages.find((message) => message.id === "msg_1")?.experienceReports?.[0];
+		expect(snapshot?.participants).toEqual([{ id: "seat_1", label: "Player" }]);
+		expect(JSON.stringify(snapshot)).not.toContain("PRIVATE_ROSTER_SECRET");
+		const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m" });
+		const payload = JSON.stringify(result.prompt.finalPayload);
+		expect(payload).toContain("- Player: played a yellow 6");
+		expect(payload).not.toContain("PRIVATE_ROSTER_SECRET");
+	});
+
+	it("ERX-3: malformed or absent roster data degrades to actor ids without dropping legacy reports", async () => {
+		for (const participants of [undefined, null, "bad", [null, { id: 3, label: "bad" }, { id: "seat_1", label: 7 }]]) {
+			const service = makeExperienceService({ attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment({
+				publicEventsJson: JSON.stringify({ title: "Legacy", participants, events: [{ type: "move", participantId: "seat_1", detail: "passed" }] }),
+			})]]]) });
+			const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m" });
+			expect(JSON.stringify(result.prompt.finalPayload)).toContain("- seat_1: passed");
+		}
+	});
+
 	it("batch-loads bound attachments and attaches experienceReports to the correct user message", async () => {
 		const service = makeExperienceService({
 			attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment()]]]),

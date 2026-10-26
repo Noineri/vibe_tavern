@@ -13,7 +13,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
+import { createStoreContainer, experienceSessions, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND, type ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
@@ -202,6 +202,48 @@ async function seedChatAndScript(
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ExperienceService — basic lifecycle (counter, no capabilities)", () => {
+  test("ERX-3: every freeze carries public roster labels, re-freezes idempotently, and reflects a later rename", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [{ id: "human", label: "Player", controller: "human" }] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const initial = await service.getQueuedAttachment(sid);
+    expect(initial.ok).toBe(true);
+    if (!initial.ok || !initial.data) throw new Error("expected frozen start report");
+    expect(initial.data.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    const firstRow = await stores.experiences.getQueuedAttachmentForSession(sid);
+    if (!firstRow) throw new Error("expected stored report");
+    expect(JSON.parse(firstRow.publicEventsJson).participants).toEqual([{ id: "human", label: "Player" }]);
+    const unchanged = await service.queueReport(sid, 0);
+    expect(unchanged.ok && unchanged.data.queueRevision).toBe(initial.data.queueRevision);
+    expect(unchanged.ok && unchanged.data.publicReport?.participants).toEqual(initial.data.publicReport?.participants);
+    // This test DB contains one session; simulate a roster rename in persisted data.
+    stores.db.update(experienceSessions).set({ participantsJson: JSON.stringify([
+      { id: "human", label: "Renamed player", controller: "human", character: { secret: "PRIVATE_ROSTER_SECRET" } },
+    ]) }).run();
+    const sameFrontier = await service.queueReport(sid, 0);
+    expect(sameFrontier.ok).toBe(false);
+    if (sameFrontier.ok) throw new Error("expected a changed-content freeze conflict");
+    expect(sameFrontier.error.code).toBe("stale_revision");
+    const frozenAfterRename = await service.getQueuedAttachment(sid);
+    expect(frozenAfterRename.ok && frozenAfterRename.data?.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    const advanced = await service.submitAction(sid, { type: "inc", requestId: "after-rename", expectedRevision: 0 });
+    expect(advanced.ok).toBe(true);
+    const renamed = await service.queueReport(sid, 1);
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) throw new Error("expected re-frozen report");
+    expect(renamed.data.queueRevision).toBe(initial.data.queueRevision + 1);
+    expect(renamed.data.publicReport?.participants).toEqual([{ id: "human", label: "Renamed player" }]);
+    expect(initial.data.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    expect(JSON.stringify(renamed.data)).not.toContain("PRIVATE_ROSTER_SECRET");
+    const repeated = await service.queueReport(sid, 1);
+    expect(repeated.ok && repeated.data.queueRevision).toBe(renamed.data.queueRevision);
+    const final = await service.finishWithReport(sid, 1);
+    expect(final.ok && final.data?.publicReport?.participants).toEqual([{ id: "human", label: "Renamed player" }]);
+  });
+
   test("ERX-1b: actor ids survive the VM, journal, freeze, queue read and snapshot without private data", async () => {
     const service = await setup();
     const source = `

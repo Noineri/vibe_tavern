@@ -3,7 +3,7 @@ import type { AtomicReportData, ExperienceAttachmentRow, ExperienceSessionRow, E
 import type { ExperienceActionDescriptor, ExperienceParticipant, ExperiencePublicReport, ExperienceReportEvent } from "@vibe-tavern/domain";
 
 import type { ExperienceQueuedAttachmentView } from "./experience-service.js";
-import { storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
+import { readReportParticipants, storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
 import type { ExperienceApiError, ExperienceResult } from "./experience-shared.js";
 import { err, ok } from "./experience-shared.js";
 
@@ -161,13 +161,16 @@ export class ExperienceReportService {
   private atomicData(session: ExperienceSessionRow, report: ExperiencePublicReport): AtomicReportData {
     return {
       kind: "report",
-      publicEventsJson: JSON.stringify(report),
+      publicEventsJson: JSON.stringify({
+        ...report,
+        participants: readReportParticipants(parseStoredJson(session.participantsJson)) ?? [],
+      }),
       hiddenStateCheckpointJson: JSON.stringify({
         version: 1,
         identity: { sessionId: session.id, chatId: session.chatId, branchId: session.branchId },
         revision: session.revision,
         status: session.status,
-        currentState: parseCheckpointState(session.currentStateJson),
+        currentState: parseStoredJson(session.currentStateJson),
         random: { seed: session.randomSeed, cursor: session.randomCursor },
         sources: {
           rules: { id: session.rulesId, revision: session.rulesRevision, hash: session.rulesSourceHash },
@@ -226,7 +229,7 @@ function publicEvents(values: readonly unknown[]): ExperienceReportEvent[] {
   return events;
 }
 
-function parseCheckpointState(json: string): unknown {
+function parseStoredJson(json: string): unknown {
   try {
     return JSON.parse(json);
   } catch {
@@ -247,6 +250,7 @@ export function toQueuedAttachmentView(attachment: ExperienceAttachmentRow): Exp
     publicReport: snapshot === null ? null : {
       title: snapshot.title,
       ...(snapshot.summary !== undefined ? { summary: snapshot.summary } : {}),
+      ...(snapshot.participants !== undefined ? { participants: snapshot.participants } : {}),
       events: snapshot.events,
     },
     rulesSourceHash: attachment.rulesSourceHash,
