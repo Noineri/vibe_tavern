@@ -217,7 +217,11 @@ function publicEvents(values: readonly unknown[]): ExperienceReportEvent[] {
   for (const value of values) {
     const parsed = experienceEventSchema.safeParse(value);
     if (!parsed.success || parsed.data.visibility !== "public") continue;
-    events.push(parsed.data.detail === undefined ? { type: parsed.data.type } : { type: parsed.data.type, detail: parsed.data.detail });
+    events.push({
+      type: parsed.data.type,
+      ...(parsed.data.participantId !== undefined ? { participantId: parsed.data.participantId } : {}),
+      ...(parsed.data.detail !== undefined ? { detail: parsed.data.detail } : {}),
+    });
   }
   return events;
 }

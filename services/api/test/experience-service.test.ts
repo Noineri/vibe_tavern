@@ -18,6 +18,7 @@ import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND, type ExperienceCapabilit
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService, seedToNumeric } from "../src/domain/interactive/experience-service.js";
+import { storeAttachmentToReportSnapshot } from "../src/domain/interactive/experience-report-snapshot.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -201,6 +202,67 @@ async function seedChatAndScript(
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ExperienceService — basic lifecycle (counter, no capabilities)", () => {
+  test("ERX-1b: actor ids survive the VM, journal, freeze, queue read and snapshot without private data", async () => {
+    const service = await setup();
+    const source = `
+      context.experience.register({
+        apiVersion: 1,
+        manifest: { id: "actor-report", name: "Actor Report" },
+        capabilities: [{ capability: "participants", reason: "actor roster" }],
+        create() { return { n: 0, secret: "PRIVATE_ACTOR_REPORT_SECRET" }; },
+        project(c) { return { n: c.state.n }; },
+        actions() { return [{ type: "inc", participantId: "human" }]; },
+        reduce(c, a) {
+          return { state: { ...c.state, n: c.state.n + 1 }, status: "active", events: [
+            { visibility: "public", type: "move", participantId: a.participantId, detail: "raised the count" },
+            { visibility: "private", type: "secret", participantId: a.participantId, detail: c.state.secret },
+            { visibility: "public", type: "legacy", detail: { participantId: "human", n: 1 } },
+            { visibility: "public", type: "note", detail: "The round continues." }
+          ] };
+        }
+      });
+    `;
+    const { chatId, branchId } = await seedChatAndScript(source, [EXPERIENCE_CAPABILITY.participants]);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [{ id: "human", label: "Player", controller: "human" }] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const applied = await service.submitAction(sid, { type: "inc", participantId: "human", requestId: "actor-move", expectedRevision: 0 });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) throw new Error("expected applied action");
+    expect(applied.data.events[0]).toEqual({ visibility: "public", type: "move", participantId: "human", detail: "raised the count" });
+    const steps = await stores.experiences.getSteps(sid);
+    const journal = steps.flatMap((step) => JSON.parse(step.emittedEventsJson));
+    expect(journal).toContainEqual({ visibility: "public", type: "move", participantId: "human", detail: "raised the count" });
+    const queued = await service.queueReport(sid, 1);
+    expect(queued.ok).toBe(true);
+    if (!queued.ok) throw new Error("expected queued report");
+    const expectedEvents = [
+      { type: "move", participantId: "human", detail: "raised the count" },
+      { type: "legacy", detail: { participantId: "human", n: 1 } },
+      { type: "note", detail: "The round continues." },
+    ];
+    expect(queued.data.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    const row = await stores.experiences.getQueuedAttachmentForSession(sid);
+    expect(row).not.toBeNull();
+    if (!row) throw new Error("expected stored frozen report");
+    expect(JSON.parse(row.publicEventsJson).events.slice(1)).toEqual(expectedEvents);
+    expect(storeAttachmentToReportSnapshot(row)?.events.slice(1)).toEqual(expectedEvents);
+    const reread = await service.getQueuedAttachment(sid);
+    expect(reread.ok && reread.data?.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    const refrozen = await service.queueReport(sid, 1);
+    expect(refrozen.ok && refrozen.data.queueRevision).toBe(queued.data.queueRevision);
+    expect(refrozen.ok && refrozen.data.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    expect(JSON.stringify(queued.data)).not.toContain("PRIVATE_ACTOR_REPORT_SECRET");
+    expect(JSON.stringify(queued.data)).not.toContain("hiddenStateCheckpointJson");
+    for (const participantId of [null, 42, { secret: "PRIVATE_ACTOR_REPORT_SECRET" }]) {
+      const snapshot = storeAttachmentToReportSnapshot({ ...row, publicEventsJson: JSON.stringify({
+        title: "Malformed actor", events: [{ type: "note", participantId, detail: "still public", secret: "PRIVATE_ACTOR_REPORT_SECRET" }],
+      }) });
+      expect(snapshot?.events).toEqual([{ type: "note", detail: "still public" }]);
+    }
+  });
+
   test("start → project → action → resume → natural completion, with explicit report finalization", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);

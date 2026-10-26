@@ -18,7 +18,7 @@
  *     assembly — a single bad attachment must not break the user's RP turn.
  */
 
-import type { ExperienceReportSnapshot } from "@vibe-tavern/domain";
+import type { ExperienceReportEvent, ExperienceReportSnapshot } from "@vibe-tavern/domain";
 import type { ExperienceAttachmentRow } from "@vibe-tavern/db";
 
 /** A minimal structural check on the parsed `publicEventsJson` envelope. */
@@ -32,11 +32,15 @@ function isPublicReportEnvelope(value: unknown): value is { title: string; summa
 }
 
 /** Coerce one parsed event into the snapshot shape (type must be a string). */
-function coerceEvent(event: unknown): { type: string; detail?: unknown } | null {
+function coerceEvent(event: unknown): ExperienceReportEvent | null {
   if (typeof event !== "object" || event === null) return null;
   const rec = event as Record<string, unknown>;
   if (typeof rec.type !== "string") return null;
-  return rec.detail !== undefined ? { type: rec.type, detail: rec.detail } : { type: rec.type };
+  return {
+    type: rec.type,
+    ...(typeof rec.participantId === "string" ? { participantId: rec.participantId } : {}),
+    ...(rec.detail !== undefined ? { detail: rec.detail } : {}),
+  };
 }
 
 /**
@@ -59,7 +63,7 @@ export function storeAttachmentToReportSnapshot(
     return null;
   }
   if (!isPublicReportEnvelope(parsed)) return null;
-  const events: { type: string; detail?: unknown }[] = [];
+  const events: ExperienceReportEvent[] = [];
   for (const raw of parsed.events) {
     const coerced = coerceEvent(raw);
     if (coerced) events.push(coerced);
