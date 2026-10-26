@@ -79,6 +79,7 @@ import {
   type ExperienceViewer,
 } from "@vibe-tavern/domain";
 import { z } from "zod";
+import { normalizeFrameTransition } from "./experience-kernel-frame-transition.js";
 
 // Re-exports for frame hosts (the loop host builds the seeded cursor from the
 // round seed through the SAME domain primitive the server replay uses).
@@ -855,23 +856,7 @@ function validateTransition(
   if (!parsed.success) {
     return frameError("invalid_transition", describeZodError(parsed.error), console);
   }
-  const data = parsed.data;
-  // `status` is "active" | "completed" (schema-narrowed); effects are mapped
-  // explicitly to present-keyed canonical envelopes (same as the kernel).
-  const transition: ExperienceTransition = {
-    state: data.state,
-    status: data.status,
-    events: data.events.map((event) => ({
-      visibility: event.visibility,
-      type: event.type,
-      ...(event.detail !== undefined ? { detail: event.detail } : {}),
-    })),
-    ...(data.effects !== undefined
-      ? { effects: data.effects.map((effect) => ({ kind: effect.kind, request: effect.request })) }
-      : {}),
-    ...(data.message !== undefined ? { message: data.message } : {}),
-  };
-  return { ok: true, value: transition, console };
+  return { ok: true, value: normalizeFrameTransition(parsed.data), console };
 }
 
 // ─── Input validators (mirrors the kernel's) ─────────────────────────────────
