@@ -163,7 +163,8 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 		expect(userMsg!.content).toContain("I make my move.");
 		expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
 		expect(userMsg!.content).toContain("resolved facts");
-		expect(userMsg!.content).toContain("- move: X played center");
+		// ERX-2, 2026-10-27: normalize string details without changing the projection boundary.
+		expect(userMsg!.content).toContain("- X played center");
 		expect(userMsg!.content).toContain("[End experience report]");
 	});
 

@@ -11,7 +11,7 @@
  *
  * This is a PURE function over already-bound immutable {@link ExperienceReportSnapshot}
  * data — it performs NO experience-script execution, NO state projection, and NO
- * I/O. It reads ONLY the public report fields (title / summary / events). It
+ * I/O. It reads ONLY the public report fields (title / summary / participants / events). It
  * NEVER references hidden state: the hidden checkpoint lives in a separate DB
  * column read only on branch-fork restore, never on prompt assembly. Absence
  * (empty `reports`) returns an empty string, so a message without a bound
@@ -19,28 +19,16 @@
  */
 
 import type { ExperienceReportSnapshot } from "@vibe-tavern/domain";
+import { renderExperienceEventLine } from "@vibe-tavern/domain";
 
 /**
- * Render an event's `detail` payload compactly for the model.
- *
- * Strings render verbatim; every other JSON value renders as compact JSON. The
- * reducer is responsible for producing prompt-efficient prose or structured
- * facts; this function only serializes what the script emitted.
+ * Add the model block's list marker to the shared public-event rendering.
  */
-function formatDetail(detail: unknown): string {
-  if (typeof detail === "string") return detail;
-  return JSON.stringify(detail);
-}
-
-/**
- * Format one public event as a single compact line for the model.
- *
- * `- <type>: <detail>` when a detail is present; `- <type>` otherwise. The type
- * id is the reducer's bounded event label (e.g. `round`, `move`, `score`).
- */
-function formatEventLine(event: ExperienceReportSnapshot["events"][number]): string {
-  const label = event.type;
-  return event.detail !== undefined ? `- ${label}: ${formatDetail(event.detail)}` : `- ${label}`;
+function formatEventLine(
+  event: ExperienceReportSnapshot["events"][number],
+  participants: ExperienceReportSnapshot["participants"],
+): string {
+  return `- ${renderExperienceEventLine(event, participants)}`;
 }
 
 /**
@@ -73,7 +61,7 @@ const AUTHORITY_PREAMBLE =
 function formatReportBlock(report: ExperienceReportSnapshot): string {
   const header = `[Experience report — ${report.title} — authoritative]`;
   const summaryLine = report.summary ? report.summary : "";
-  const eventLines = report.events.map(formatEventLine);
+  const eventLines = report.events.map((event) => formatEventLine(event, report.participants));
   const body = [header, AUTHORITY_PREAMBLE, ...(summaryLine ? [summaryLine] : []), ...eventLines, "[End experience report]"];
   return body.join("\n");
 }

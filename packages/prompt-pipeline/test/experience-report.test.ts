@@ -63,7 +63,7 @@ describe("formatExperienceMessageBlock", () => {
       "[Experience report — Tic-Tac-Toe — authoritative]\n" +
         "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.\n" +
         "Round 3 — X to move\n" +
-        "- move: X played center\n" +
+        "- X played center\n" +
         "- score: {\"x\":1,\"o\":0}\n" +
         "[End experience report]",
     );
@@ -85,7 +85,26 @@ describe("formatExperienceMessageBlock", () => {
 
   it("renders a string detail verbatim", () => {
     const block = formatExperienceMessageBlock([makeReport({ events: [{ type: "note", detail: "A bare string." }], summary: undefined })]);
-    expect(block).toContain("- note: A bare string.");
+    expect(block).toContain("- A bare string.");
+  });
+
+  it("renders mixed prose, legacy JSON and actorless events from the frozen participant map", () => {
+    const block = formatExperienceMessageBlock([makeReport({
+      participants: [{ id: "seat_1", label: "Player" }],
+      summary: undefined,
+      events: [
+        { type: "played", participantId: "seat_1", detail: "played a yellow 6" },
+        { type: "raw", participantId: "seat_1", detail: { participantId: "seat_1" } },
+        { type: "note", detail: "The round ended." },
+        { type: "move", participantId: "unknown_seat", detail: "passed" },
+      ],
+    })]);
+    expect(block).toContain('- Player: played a yellow 6\n- raw: {"participantId":"seat_1"}\n- The round ended.\n- unknown_seat: passed');
+  });
+
+  it("keeps actor prefixes when a legacy envelope has no participant map", () => {
+    const block = formatExperienceMessageBlock([makeReport({ events: [{ type: "move", participantId: "seat_1", detail: "passed" }] })]);
+    expect(block).toContain("- seat_1: passed");
   });
 
   it("renders a number detail as JSON", () => {
@@ -115,8 +134,8 @@ describe("formatExperienceMessageBlock", () => {
   });
 
   it("never references hidden state — the snapshot carries no hidden field", () => {
-    // Structural guarantee: ExperienceReportSnapshot has title/summary/events/kind/sessionRevision
-    // and NOTHING else. The formatter reads only those. (The hidden checkpoint lives on the
+    // Structural guarantee: snapshots carry only public metadata (including an optional
+    // participants map), never the hidden checkpoint. (The hidden checkpoint lives on the
     // DB row's separate column and is never mapped into the snapshot — see
     // storeAttachmentToReportSnapshot.)
     const snapshot = makeReport();

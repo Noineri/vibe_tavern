@@ -704,7 +704,8 @@ describe("assemblePrompt", () => {
       expect(userMsg!.content).toContain("I make my move.");
       expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
       expect(userMsg!.content).toContain("resolved facts");
-      expect(userMsg!.content).toContain("- move: X played center");
+      // ERX-2, 2026-10-27: string details are prose; legacy raw details keep their type prefix.
+      expect(userMsg!.content).toContain("- X played center");
       expect(userMsg!.content).toContain("[End experience report]");
     });
 
