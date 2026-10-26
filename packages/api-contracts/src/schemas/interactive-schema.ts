@@ -641,6 +641,13 @@ export const experienceReportQueueRequestSchema = z.object({
   expectedRevision: boundedRevision,
 });
 
+/** Clear only the selected scope's queue, without rewinding its frozen frontier. */
+export const experienceReportClearRequestSchema = z.object({
+  chatId: boundedId,
+  branchId: boundedId,
+  expectedRevision: boundedRevision,
+}).strict();
+
 // ─── Runtime request envelopes (IR-32 routes) ───────────────────────────────
 
 /** Scope selector for the visuals list. */

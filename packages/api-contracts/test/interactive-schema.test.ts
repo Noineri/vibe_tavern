@@ -35,6 +35,7 @@ import {
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
   experienceEventSchema,
+  experienceReportClearRequestSchema,
   experienceManifestSchema,
   experienceParticipantSchema as experienceParticipantResponseSchema,
   experienceStartParticipantSchema as experienceParticipantSchema,
@@ -156,6 +157,17 @@ describe("experienceEventSchema actor ids (ERX-1a)", () => {
     expect(result.success).toBe(true);
     if (!result.success) throw new Error("expected a valid transition");
     expect(result.data.events[0]?.participantId).toBe("seat_1");
+  });
+});
+
+describe("experienceReportClearRequestSchema (ERX-5a)", () => {
+  it("requires an exact scope and nonnegative integer revision", () => {
+    const valid = { chatId: "chat_1", branchId: "branch_1", expectedRevision: 0 };
+    expect(expectData(experienceReportClearRequestSchema.safeParse(valid))).toEqual(valid);
+    for (const invalid of [{}, { ...valid, chatId: "" }, { ...valid, branchId: "" },
+      { ...valid, expectedRevision: -1 }, { ...valid, expectedRevision: 0.5 }, { ...valid, extra: true }]) {
+      expectReject(experienceReportClearRequestSchema.safeParse(invalid));
+    }
   });
 });
 
