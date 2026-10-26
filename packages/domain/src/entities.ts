@@ -2480,6 +2480,11 @@ export interface ObjectiveState {
   longTermGoal: ObjectiveLongTermGoal | null;
   /** Goals mode: flat list of independent short-term goals (one active at a time). */
   shortTermGoals: ObjectiveShortTermGoal[];
+  /** DR-3a (story-plan sync): the id of the branch whose plan currently drives
+   *  the goals (`null` = the tracker is NOT plan-driven — manual/foreign goals;
+   *  follow-back and reconcile skip it). Always present after
+   *  `normalizeObjectiveState`; in-memory literals may omit it (treated as null). */
+  planProjectedFromBranchId?: string | null;
   /** How often to auto-check completion (in qualifying assistant events). 0 = manual only. */
   autoCheckFrequency: number;
   /** Persisted qualifying assistant events accumulated since the last completed auto-check. */

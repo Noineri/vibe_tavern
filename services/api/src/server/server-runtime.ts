@@ -9,6 +9,7 @@ import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js
 import { createChatEventsFeature } from "../domain/chat/chat-events-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
 import { ObjectiveService } from "../domain/insights/objective-service.js";
+import { StoryPlanSync } from "../domain/director/story-plan-sync.js";
 import { SceneTrackerService } from "../domain/insights/tracker-service.js";
 import { createInsightsFeature, composeForwardStateWait } from "../domain/insights/insights-feature.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
@@ -257,6 +258,14 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const summaryAssetLoader = (assetId: string) => assetService.loadBuffer(assetId);
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService, null, undefined, summaryAssetLoader);
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
+	// DR-3a — story-plan ↔ goal-tracker sync: the ACTIVE branch's plan drives
+	// the tracker (projection on applyPlan/reconcile), and committed tracker
+	// statuses flow back into that branch's plan (follow-back observer). The
+	// branch-change call sites and the plan route wiring land in DR-3b.
+	const storyPlanSync = new StoryPlanSync(stores, objectiveService);
+	objectiveService.registerStateObserver((chatId, nextState) =>
+		storyPlanSync.onObjectiveStateCommitted(chatId, nextState),
+	);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
 		sessionRuntime.chatRuntime,

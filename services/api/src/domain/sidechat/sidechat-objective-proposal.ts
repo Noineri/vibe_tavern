@@ -169,7 +169,7 @@ function isRecordProposalShape(
 
 // fork #1 of ObjectiveKeyedCoordinator
 // (services/api/src/domain/insights/objective-service.ts — a private class;
-// forks: 1 there) — the same promise-tail FIFO, lifted here because the
+// forks: 2 there) — the same promise-tail FIFO, lifted here because the
 // source is private and generic enough to be worth one copy per consumer.
 // Correspondence: previous/tail chaining, slot release, map cleanup on the
 // tail identity — verbatim shape; the key is per-proposal, not per-chat.
