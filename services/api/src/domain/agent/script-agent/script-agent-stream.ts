@@ -30,6 +30,7 @@ import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type { ProviderFetch } from "../../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../../shared/send-debug-log.js";
 import { streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams } from "../agent-stream.js";
+import type { AgentOwnModelBinding } from "../agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../agent-thread-owner.js";
 import { renderAttachedContext, type CopilotContextItem } from "../agent-context.js";
@@ -92,6 +93,11 @@ export interface ScriptAgentStreamDeps {
     readonly chatId: string;
     readonly agentKind: string;
   }) => Promise<CopilotProfile>;
+  /** DR-2 (M1): read a resolved profile's own-model binding from the
+   *  agent_profile_models store (the adapter's provider-deps wiring — one
+   *  source for every kind). Absent (tests, legacy harnesses) → the turn
+   *  keeps the request's pair, exactly as before this seam existed. */
+  readonly getAgentOwnModel?: (profile: CopilotProfile) => Promise<AgentOwnModelBinding | null>;
   /** Optional user-skill root for the two-root catalog scan. */
   readonly skillUserRoot?: string;
   /** Optional DB handle for service-prompt overrides (script/dice_script API
@@ -235,6 +241,10 @@ export async function* streamScriptAgentTurn(
         : deps.resolveProfile
           ? deps.resolveProfile(thread.scriptId)
           : resolveBuiltinScriptAgentProfile(deps.db),
+    // DR-2 (M1): the resolved profile's own model, consulted by the loop
+    // BEFORE the provider resolution so it can take precedence over the
+    // request's pair (a dangling provider falls through inside the loop).
+    ...(deps.getAgentOwnModel !== undefined ? { resolveOwnModel: deps.getAgentOwnModel } : {}),
 
     // ── AS-7 assembly: live code + attached context + plan → prompt ──
     assemble: async ({ thread, request, kindContext: context, agentProfile, history, model: modelName }) => {

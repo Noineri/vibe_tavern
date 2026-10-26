@@ -44,6 +44,12 @@ export type {
   ChatAgentSettingsUpdate,
 } from './chat-agent-settings-store.js';
 
+export { AgentProfileModelStore } from './agent-profile-model-store.js';
+export type {
+  AgentProfileModel,
+  AgentProfileModelSetInput,
+} from './agent-profile-model-store.js';
+
 export { ChatStore } from './chat-store.js';
 export type {
   Chat,

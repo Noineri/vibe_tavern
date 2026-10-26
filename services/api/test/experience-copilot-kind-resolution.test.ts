@@ -404,6 +404,10 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
   const stores = {
     experienceCopilot: store,
     agentPlans: { get: async () => null, save: async () => {} },
+    // DR-2 (M1): the provider-deps wiring reads the own-model store on
+    // every turn now — null = no row, the pre-DR-2 resolution these dispatch
+    // tests pin.
+    agentProfileModels: { get: async () => null },
     scripts: {
       async getById(scriptId: string) {
         return script && script.id === scriptId ? script : null;
@@ -579,6 +583,8 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
     const stores = {
       experienceCopilot: store,
       agentPlans: { get: async () => null, save: async () => {} },
+      // DR-2 (M1): as above — the own-model read fires on every turn.
+      agentProfileModels: { get: async () => null },
       scripts: {
         async getById(scriptId: string) {
           return script && script.id === scriptId ? script : null;

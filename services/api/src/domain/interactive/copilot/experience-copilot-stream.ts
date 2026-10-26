@@ -39,6 +39,7 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../../agent/agent-stream.js";
+import type { AgentOwnModelBinding } from "../../agent/agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../../agent/agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
 import {
@@ -107,6 +108,11 @@ export interface ExperienceCopilotStreamDeps {
     readonly chatId: string;
     readonly agentKind: string;
   }) => Promise<CopilotProfile>;
+  /** DR-2 (M1): read a resolved profile's own-model binding from the
+   *  agent_profile_models store (the adapter's provider-deps wiring — one
+   *  source for every kind). Absent (tests, legacy harnesses) → the turn
+   *  keeps the request's pair, exactly as before this seam existed. */
+  readonly getAgentOwnModel?: (profile: CopilotProfile) => Promise<AgentOwnModelBinding | null>;
   /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
    *  built-in root only. */
   readonly skillUserRoot?: string;
@@ -252,6 +258,10 @@ export async function* streamExperienceCopilot(
         : deps.resolveProfile
           ? deps.resolveProfile(thread.scriptId)
           : resolveBuiltinCopilotProfile(),
+    // DR-2 (M1): the resolved profile's own model, consulted by the loop
+    // BEFORE the provider resolution so it can take precedence over the
+    // request's pair (a dangling provider falls through inside the loop).
+    ...(deps.getAgentOwnModel !== undefined ? { resolveOwnModel: deps.getAgentOwnModel } : {}),
 
     // ── ER-5 assembly: live drafts + attached context + plan → prompt ──
     assemble: async ({ thread, request, kindContext: context, agentProfile: copilotProfile, history, model: modelName }) => {

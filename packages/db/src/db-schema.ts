@@ -2142,6 +2142,31 @@ export const chatAgentSettings = sqliteTable('chat_agent_settings', {
   pk: primaryKey({ columns: [table.chatId, table.agentKind] }),
 }));
 
+// ─── agentProfileModels (DIRECTOR_MODE_PLAN DR-2 / M1) ──────────────────────
+// One profile's OWN model choice. Keyed by (agent_kind, profile_id) — the
+// kind must ride the key because built-in seed ids ("builtin",
+// "builtin-director", …) are kind-SCOPED code seeds, never rows, so
+// profile_id has no table to FK against (the same reason the profile chains
+// key by kind). provider_profile_id follows the ui_settings /
+// agent_kind_settings dangling-policy precedent: NO FK — a deleted provider
+// leaves a dangling id the stream's resolution falls through to the request's
+// pair (the existing chain), never a blocked delete. A row EXISTS only while
+// an own model is set; no row = same as sidechat (the existing kind
+// chain, byte-identical). Deleting a USER profile removes its row through the
+// profile adapter's delete path; a built-in's row lives until cleared —
+// model set/clear is a setting, not an edit (the read-only guard protects
+// prompt/tools only). model_name NULL = the provider's default model at
+// turn time.
+export const agentProfileModels = sqliteTable('agent_profile_models', {
+  agentKind: text('agent_kind').notNull(),
+  profileId: text('profile_id').notNull(),
+  providerProfileId: text('provider_profile_id').notNull(),
+  modelName: text('model_name'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.agentKind, table.profileId] }),
+}));
+
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────
 // Tombstone marker for a built-in experience the user explicitly deleted or
 // unlinked. `seedBuiltinExperiences` (BE-3) is create-or-return WITHOUT memory

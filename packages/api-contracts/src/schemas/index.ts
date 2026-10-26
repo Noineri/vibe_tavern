@@ -27,6 +27,14 @@ export {
   agentChatSettingsSchema,
   agentChatSettingsPatchSchema,
 } from "./agent-chat-settings-schema.js";
+export {
+  agentProfileModelSchema,
+  agentProfileModelPutSchema,
+} from "./agent-profile-model-schema.js";
+export type {
+  AgentProfileModelWire,
+  AgentProfileModelPutRequest,
+} from "./agent-profile-model-schema.js";
 export type {
   AgentChatSettingsWire,
   AgentChatSettingsPatchRequest,

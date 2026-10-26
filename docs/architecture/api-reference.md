@@ -1407,6 +1407,20 @@ The `:kind` segment is validated through the agent-kind registry: an unregistere
 **GET response:** `{ agentKind, providerProfileId, modelName, defaultProfileId, autoCompactDefault, updatedAt, servesChatModes }` (nullable fields are `null`, never `undefined`). **PATCH body:** `{ providerProfileId?, modelName?, defaultProfileId?, autoCompactDefault? }` — absent keeps the stored value, `null` clears one. Every registered kind is addressable (script- and chat-owned alike); an unregistered kind is a 400 `UNKNOWN_AGENT_KIND`.
 The binding is a remembered UI default, not a server override — the stream keeps taking provider/model per request. A kind with no row reads the legacy shared copilot pair ONLY if it is one of the two pre-split kinds (`experience`, `script`); every later kind reads nulls so its host's default model applies. `servesChatModes` is a registry fact carried on the wire (also in the bootstrap payload's per-kind map), never patched. `autoCompactDefault` (AP-20) is the kind's default for the auto-compact toggle on NEW sessions — non-nullable on the wire (the stored `NULL` = on resolves to `true`, the pre-AP-20 behavior); both new-session paths copy it onto the created thread's `auto_compact`, after which the per-thread toggle is authoritative.
 
+### Profile own model (M1)
+
+Any profile — built-ins included — may carry its own model choice (DIRECTOR_MODE_PLAN DR-2 / owner ruling 2026-10-25, M1 — see DIRECTOR_MODE_PLAN.md; the owner's RU quote lives in the plan repo, not here), stored per `(agent_kind, profile_id)` because built-in seed ids are kind-scoped:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/kinds/:kind/profiles/:profileId/model` | Read the binding — `{ model: null }` means no own model ("same as sidechat" in DR-8's labels; no row) |
+| `PUT /api/agent/kinds/:kind/profiles/:profileId/model` | Set/replace the whole binding; `.strict()` body |
+| `DELETE /api/agent/kinds/:kind/profiles/:profileId/model` | Clear (back to "same as sidechat"); idempotent |
+
+**PUT body:** `{ providerProfileId: string, modelName?: string | null }` — `modelName` absent/`null` pins the provider's default model (resolved at turn time). **GET/PUT response:** `{ model: { providerProfileId, modelName } | null }`.
+The model is a setting, not an edit: set/clear is served for the kind's built-in seed ids too (the read-only guard protects a built-in's prompt/tools only). The `(kind, id)` pair must address a declared seed of the kind or a user row of the kind — a foreign kind's built-in, another kind's profile, or a dangling user id is a 404; an unknown kind is the family's 400 `UNKNOWN_AGENT_KIND`. The provider link is soft (no FK): a dangling id stores fine and the stream falls through to the request's pair at turn time. Deleting a user profile removes its model row with it.
+The stream's model chain with M1, one line: the resolved profile's own model (this table, applied server-side where the per-turn profile resolves) → the request's pair (the kind binding above, derived client-side by the web binding hook) → the provider's default model. With no stored own model every kind resolves exactly as before.
+
 ### Chat settings (profile choice per chat)
 
 | Endpoint | Purpose |

@@ -92,6 +92,7 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../agent/agent-stream.js";
+import type { AgentOwnModelBinding } from "../agent/agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../agent/agent-regenerate.js";
 import {
   estimateHistoryTokens,
@@ -180,6 +181,11 @@ export interface SidechatStreamDeps {
     readonly chatId: string;
     readonly agentKind: string;
   }) => Promise<CopilotProfile>;
+  /** DR-2 (M1): read a resolved profile's own-model binding from the
+   *  agent_profile_models store (the adapter's provider-deps wiring — one
+   *  source for every kind). Absent (tests, legacy harnesses) → the turn
+   *  keeps the request's pair, exactly as before this seam existed. */
+  readonly getAgentOwnModel?: (profile: CopilotProfile) => Promise<AgentOwnModelBinding | null>;
   /** CX-3: resolve the thread's pinned-context links into rendered-block
    *  input (the same kind-agnostic loader the other kinds' streams use).
    *  Absent (tests, legacy harnesses) → no attached context. */
@@ -632,6 +638,10 @@ export async function* streamSidechatTurn(
       deps.resolveProfileForChat && isChatOwnedAgentThread(thread)
         ? deps.resolveProfileForChat(thread)
         : resolveBuiltinSidechatOocProfile(deps.db),
+    // DR-2 (M1): the resolved profile's own model, consulted by the loop
+    // BEFORE the provider resolution so it can take precedence over the
+    // request's pair (a dangling provider falls through inside the loop).
+    ...(deps.getAgentOwnModel !== undefined ? { resolveOwnModel: deps.getAgentOwnModel } : {}),
 
     // ── SC-4b/SC-4d assembly (digest-aware since SC-8c): base prompt +
     //  STATIC package in the system message, frozen events interleaved into
