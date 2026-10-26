@@ -32,25 +32,24 @@ function formatEventLine(
 }
 
 /**
- * The authority preamble every report block carries. Instructs the flat Writer
- * that the events are resolved facts: narrate them, but never alter, repeat as
- * new moves, or replace them. Kept as a single constant so the wording is
- * identical across every report and every send mode.
+ * The in-story preamble every report block carries. The settled outcome belongs
+ * to the scene, not an app interface; the Writer reacts without replaying it.
+ * Kept as a single constant for every report and send mode.
  */
-const AUTHORITY_PREAMBLE =
-  "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.";
+const STORY_PREAMBLE =
+  "The user's character just played this out in the scene. How it went is listed below; it is settled and now part of the story. Continue the scene from it: let the characters react to the outcome; do not change it, replay it as new moves, or replace it.";
 
 /**
  * Format one bound report snapshot as a delimited model-only block.
  *
  * Layout:
  * ```
- * [Experience report — <title> — authoritative]
- * <authority preamble>
+ * [In the story — <title>]
+ * <in-story preamble>
  * <optional summary line>
  * - <event>
  * - <event>
- * [End experience report]
+ * [End]
  * ```
  *
  * V1 only renders the `report` attachment kind (public events). The `transcript`
@@ -59,10 +58,10 @@ const AUTHORITY_PREAMBLE =
  * the block is never silently dropped.
  */
 function formatReportBlock(report: ExperienceReportSnapshot): string {
-  const header = `[Experience report — ${report.title} — authoritative]`;
+  const header = `[In the story — ${report.title}]`;
   const summaryLine = report.summary ? report.summary : "";
   const eventLines = report.events.map((event) => formatEventLine(event, report.participants));
-  const body = [header, AUTHORITY_PREAMBLE, ...(summaryLine ? [summaryLine] : []), ...eventLines, "[End experience report]"];
+  const body = [header, STORY_PREAMBLE, ...(summaryLine ? [summaryLine] : []), ...eventLines, "[End]"];
   return body.join("\n");
 }
 

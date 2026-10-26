@@ -28,6 +28,7 @@ function makeReport(overrides: Partial<ExperienceReportSnapshot> = {}): Experien
 
 describe("formatExperienceMessageBlock", () => {
   // ERX-1, 2026-10-27: characterize the legacy block before renderer/frame changes.
+  // ERX-2b, 2026-10-27: re-pin only frame lines; every legacy event line is unchanged.
   it("preserves the complete legacy block for non-string and missing details", () => {
     expect(formatExperienceMessageBlock([makeReport({
       title: "Legacy game",
@@ -41,15 +42,15 @@ describe("formatExperienceMessageBlock", () => {
         { type: "finished" },
       ],
     })])).toBe([
-      "[Experience report — Legacy game — authoritative]",
-      "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.",
+      "[In the story — Legacy game]",
+      "The user's character just played this out in the scene. How it went is listed below; it is settled and now part of the story. Continue the scene from it: let the characters react to the outcome; do not change it, replay it as new moves, or replace it.",
       '- card_played: {"participantId":"seat_1","card":"yellow_6"}',
       "- count: 0",
       "- ready: false",
       "- empty: null",
       '- cards: ["a",2]',
       "- finished",
-      "[End experience report]",
+      "[End]",
     ].join("\n"));
   });
 
@@ -57,30 +58,32 @@ describe("formatExperienceMessageBlock", () => {
     expect(formatExperienceMessageBlock([])).toBe("");
   });
 
-  it("formats a single report with header, authority preamble, summary, and events", () => {
+  // ERX-2b, 2026-10-27: the approved in-story frame replaces technical app framing.
+  it("formats a single report with the in-story frame, summary, and events", () => {
     const block = formatExperienceMessageBlock([makeReport()]);
     expect(block).toBe(
-      "[Experience report — Tic-Tac-Toe — authoritative]\n" +
-        "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.\n" +
+      "[In the story — Tic-Tac-Toe]\n" +
+        "The user's character just played this out in the scene. How it went is listed below; it is settled and now part of the story. Continue the scene from it: let the characters react to the outcome; do not change it, replay it as new moves, or replace it.\n" +
         "Round 3 — X to move\n" +
         "- X played center\n" +
         "- score: {\"x\":1,\"o\":0}\n" +
-        "[End experience report]",
+        "[End]",
     );
   });
 
-  it("always carries the authority preamble (narrate, do not alter/repeat/replace)", () => {
+  it("always frames settled events as part of the story without app terminology", () => {
     const block = formatExperienceMessageBlock([makeReport()]);
-    expect(block).toContain("authoritative");
-    expect(block).toContain("resolved facts");
-    expect(block).toContain("do not alter them, repeat them as new moves, or replace them");
+    expect(block).toContain("it is settled and now part of the story");
+    expect(block).toContain("let the characters react to the outcome");
+    expect(block).toContain("do not change it, replay it as new moves, or replace it");
+    expect(block).not.toMatch(/\b(experience|mini-app|app|interface)\b/i);
   });
 
   it("omits the summary line when the report has no summary", () => {
     const block = formatExperienceMessageBlock([makeReport({ summary: undefined })]);
     expect(block).not.toContain("Round 3");
     // Header still present directly above the preamble.
-    expect(block).toContain("[Experience report — Tic-Tac-Toe — authoritative]\nThe following experience events");
+    expect(block).toContain("[In the story — Tic-Tac-Toe]\nThe user's character just played this out in the scene.");
   });
 
   it("renders a string detail verbatim", () => {
@@ -127,9 +130,9 @@ describe("formatExperienceMessageBlock", () => {
       makeReport({ title: "Game A", summary: undefined, events: [{ type: "e1" }] }),
       makeReport({ title: "Game B", summary: undefined, events: [{ type: "e2" }] }),
     ]);
-    expect(block).toContain("[Experience report — Game A — authoritative]");
-    expect(block).toContain("[Experience report — Game B — authoritative]");
-    expect(block).toContain("[End experience report]\n\n[Experience report — Game B");
+    expect(block).toContain("[In the story — Game A]");
+    expect(block).toContain("[In the story — Game B]");
+    expect(block).toContain("[End]\n\n[In the story — Game B");
     expect(block.indexOf("Game A")).toBeLessThan(block.indexOf("Game B"));
   });
 

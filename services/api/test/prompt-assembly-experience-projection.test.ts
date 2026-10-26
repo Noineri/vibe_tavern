@@ -161,11 +161,12 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 			.find((m) => m.messageId === "msg_1");
 		expect(userMsg).toBeDefined();
 		expect(userMsg!.content).toContain("I make my move.");
-		expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
-		expect(userMsg!.content).toContain("resolved facts");
+		// ERX-2b, 2026-10-27: the in-story frame applies to already-bound report history too.
+		expect(userMsg!.content).toContain("[In the story — Tic-Tac-Toe]");
+		expect(userMsg!.content).toContain("it is settled and now part of the story");
 		// ERX-2, 2026-10-27: normalize string details without changing the projection boundary.
 		expect(userMsg!.content).toContain("- X played center");
-		expect(userMsg!.content).toContain("[End experience report]");
+		expect(userMsg!.content).toContain("[End]");
 	});
 
 	it("NEVER leaks the hidden checkpoint into the snapshot or the payload", async () => {
@@ -196,7 +197,7 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 
 		const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m", summary: true });
 		const payloadStr = JSON.stringify(result.prompt.finalPayload);
-		expect(payloadStr).toContain("[Experience report — Tic-Tac-Toe");
+		expect(payloadStr).toContain("[In the story — Tic-Tac-Toe]");
 		expect(payloadStr).toContain("X played center");
 	});
 
@@ -207,7 +208,7 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 		const userMsg = (result.prompt.finalPayload as { messages: Array<{ messageId?: string; content: string }> }).messages
 			.find((m) => m.messageId === "msg_1");
 		expect(userMsg!.content).toBe("I make my move.");
-		expect(userMsg!.content).not.toContain("[Experience report");
+		expect(userMsg!.content).not.toContain("[In the story");
 	});
 
 	it("skips a malformed publicEventsJson without crashing (graceful degradation)", async () => {
