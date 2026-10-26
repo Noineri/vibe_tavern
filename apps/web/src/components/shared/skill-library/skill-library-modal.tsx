@@ -6,6 +6,7 @@ import {
 	type MasterDetailParentBack,
 } from "../MasterDetailModal.js";
 import { MasterList } from "../master-list/master-list.js";
+import { MasterListTag } from "../master-list/master-list-tag.js";
 import { SortableMasterListPhoneRow } from "../master-list/master-list-phone-row.js";
 import { MasterListDragOverlayRow } from "../master-list/master-list-overlay-row.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
@@ -33,7 +34,8 @@ import { BLANK_SKILL_DRAFT, SkillEditor, type SkillDraft } from "./skill-editor.
  * fork #1 OF this modal — extend the adapter.
  *
  * Layout (mockup §6–7): master rows show name + one-line description (no id,
- * no per-row actions); the detail shows name + «свой»/«встроенный» tag, the
+ * no per-row actions; built-in rows carry the «встроенный» tag under the
+ * name, user rows carry no tag); the detail shows name + «свой»/«встроенный» tag, the
  * description, a clamped «Текст навыка» preview (AP-21 `body`, lazy-loaded
  * when the detail opens) with «Показать целиком»/«Свернуть», and a collapsed
  * «Технические детали» disclosure (id, path, source, shadow note, file list).
@@ -477,9 +479,11 @@ function SkillList({ entries, reorder, isLoading, hasLoaded, selectedId, labels,
 		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t(labels.loading)}</div>;
 	}
 	// Row anatomy lives in shared/master-list: handle, status slot, wrapping
-	// title, overlay, phone drill-down row. This list supplies data + slots.
-	// Title = the name (wraps, never cut); second line = the description;
-	// status = the built-in/user badge (the row rules); persist = arrayMove
+	// title, tags line, overlay, phone drill-down row. This list supplies
+	// data + slots. Title = the name (wraps, never cut); tags = the built-in
+	// tag under the name (user skills carry no tag — absence reads as
+	// «yours»; the status slot keeps markers only); second line = the
+	// description; persist = arrayMove
 	// + adapter.reorder (the ML-7 backend, adopted by the store). Built-in
 	// and user skills order together in the one list; no pinned rows.
 	return (
@@ -521,10 +525,8 @@ function SkillList({ entries, reorder, isLoading, hasLoaded, selectedId, labels,
 						sortableId={skill.id}
 						rowTestId={testids.row?.(skill.id)}
 						selected={isSelected}
-						status={(
-							<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-								{skill.source === "user" ? t(labels.user) : t(labels.builtIn)}
-							</span>
+						tags={skill.source === "user" ? undefined : (
+							<MasterListTag>{t(labels.builtIn)}</MasterListTag>
 						)}
 						title={skill.name}
 						secondLine={skill.description ? <span className="line-clamp-2 leading-snug">{skill.description}</span> : undefined}
@@ -591,9 +593,9 @@ function SkillDetail({ skill, content, isContentLoading, contentFailed, isBodyEx
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
 					<h3 className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{skill.name}</h3>
-					<span className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+					<MasterListTag>
 						{skill.source === "user" ? t(labels.user) : t(labels.builtIn)}
-					</span>
+					</MasterListTag>
 				</div>
 				<p className="mt-1 font-ui text-[calc(var(--ui-fs)+1px)] leading-relaxed text-t2">{skill.description}</p>
 			</div>

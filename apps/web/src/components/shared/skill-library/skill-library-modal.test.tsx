@@ -363,8 +363,8 @@ describe("skill-library-modal — detail (mockup §6)", () => {
 		await waitFor(() => expect(getByText("My Style")).toBeDefined());
 		fireEvent.pointerDown(getByTestId("test-row-my-style"));
 
-		// Tag + description (scoped to the detail: the ML-9 row badge shows
-		// the same source word in the master list now — was: bare getByText).
+		// Tag + description (scoped to the detail: user rows carry no tag in
+		// the master list — was: bare getByText).
 		expect(within(getByTestId("md-detail")).getByText("OWN")).toBeDefined();
 		// Lazy content: one read for the opened detail.
 		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("my-style"));
@@ -726,16 +726,22 @@ describe("skill-library-modal — drag reorder (ML-9)", () => {
 		return view;
 	}
 
-	it("built-in and user skills share one list with a handle per row, wrap titles, and status-slot badges", async () => {
+	it("built-in and user skills share one list with a handle per row, wrap titles, and the built-in tag under the name", async () => {
 		const view = await openAndFlushRows();
 		// One list in stored order: built-in first, user second.
 		expect(rowOrder(view)).toEqual(["test-row-grill-me", "test-row-my-style"]);
 		// A handle per row — no pinned rows here (nothing is pinned by design).
 		expect(view.getAllByLabelText("drag")).toHaveLength(2);
-		// Per-row badges in the status slot (was: no badge in the rows — the
-		// source tag lived in the detail only).
-		expect(within(view.getByTestId("test-row-grill-me")).getByText("BUILT_IN")).toBeDefined();
-		expect(within(view.getByTestId("test-row-my-style")).getByText("OWN")).toBeDefined();
+		// The built-in row carries its tag in the tags slot under the name
+		// (was: the built-in/user badge in the status slot, left of the
+		// name); a user row carries NO tag — absence reads as «yours».
+		const builtinRow = view.getByTestId("test-row-grill-me");
+		const builtinTag = within(builtinRow).getByText("BUILT_IN");
+		const builtinTitle = within(builtinRow).getByText("Grill Me");
+		expect(builtinTitle.compareDocumentPosition(builtinTag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(builtinTitle.parentElement!.contains(builtinTag)).toBe(true);
+		expect(builtinTag.parentElement!.classList.contains("flex-wrap")).toBe(true);
+		expect(within(view.getByTestId("test-row-my-style")).queryByText("OWN")).toBeNull();
 		// Titles wrap (was: truncate): no ellipsis anywhere up the row chain.
 		for (const [rowId, name] of [["test-row-grill-me", "Grill Me"], ["test-row-my-style", "My Style"]] as const) {
 			const title = within(view.getByTestId(rowId)).getByText(name);

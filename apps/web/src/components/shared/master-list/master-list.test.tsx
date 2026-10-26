@@ -38,6 +38,7 @@ mock.module("@dnd-kit/core", () => ({
 }));
 
 let MasterList: typeof import("./master-list.js").MasterList;
+let MasterListTag: typeof import("./master-list-tag.js").MasterListTag;
 let MasterListRow: typeof import("./master-list-row.js").MasterListRow;
 let SortableMasterListRow: typeof import("./master-list-row.js").SortableMasterListRow;
 let MasterListPhoneRow: typeof import("./master-list-phone-row.js").MasterListPhoneRow;
@@ -46,6 +47,7 @@ let MasterListDragOverlayRow: typeof import("./master-list-overlay-row.js").Mast
 beforeAll(async () => {
   ({ MasterList } = await import("./master-list.js"));
   ({ MasterListRow, SortableMasterListRow } = await import("./master-list-row.js"));
+  ({ MasterListTag } = await import("./master-list-tag.js"));
   ({ MasterListPhoneRow, SortableMasterListPhoneRow } = await import("./master-list-phone-row.js"));
   ({ MasterListDragOverlayRow } = await import("./master-list-overlay-row.js"));
 });
@@ -200,6 +202,32 @@ describe("master-list primitive", () => {
       dndHandlers!.onDragEnd!(endEvent);
     });
     expect(persisted).toEqual([[{ id: "b", sortOrder: 0 }, { id: "a", sortOrder: 1 }]]);
+  });
+
+  it("renders the tags slot on its own line under the title, never in the status cluster", () => {
+    const view = render(
+      <MasterListRow
+        status={<div data-testid="tags-status-dot" />}
+        title="Tagged"
+        tags={<MasterListTag>TAG</MasterListTag>}
+        secondLine="second-tags"
+        rowTestId="tags-row"
+      />,
+    );
+    const row = view.getByTestId("tags-row");
+    const tag = within(row).getByText("TAG");
+    const title = within(row).getByText("Tagged");
+    // The tag lives in the title column (the title's container), not the
+    // status cluster left of the name.
+    const statusCluster = within(row).getByTestId("tags-status-dot").parentElement!;
+    expect(statusCluster.contains(tag)).toBe(false);
+    expect(title.parentElement!.contains(tag)).toBe(true);
+    // DOM order: title, then the tags line, then the second line.
+    expect(title.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const second = within(row).getByText("second-tags");
+    expect(tag.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The tags line wraps.
+    expect(tag.parentElement!.classList.contains("flex-wrap")).toBe(true);
   });
 
   it("renders a pinned row without a handle inside the same list", () => {
