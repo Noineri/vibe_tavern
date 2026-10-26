@@ -344,6 +344,40 @@ Remove an attachment from a message.
 
 **Response:** `204`.
 
+### `PATCH /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/include-in-prompt`
+
+Toggle an attachment's prompt visibility. Body: `{ "includeInPrompt": boolean }`.
+
+Semantics (one filter — `filterPromptVisibleAttachments` in `@vibe-tavern/domain`): ordinary uploads are included when the flag is absent or `true`, excluded on explicit `false`; image-gen slots are opt-in — absent or `false` means OFF, and enabling requires a description or generation prompt.
+
+**Response:** the updated attachment.
+
+### `PATCH /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/prompt`
+
+Edit the generation prompt of a generated image slot (image-gen provenance only — not text-file attachments).
+
+**Body:** `{ "prompt": string }` (non-empty).
+
+**Errors:** `400` — the attachment is not a generated-image slot, or the prompt is empty.
+
+**Response:** `{ ok: true }`.
+
+### `POST /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/summarize`
+
+Summarize a text-file attachment with the active profile's default model (one-shot `attachment-summarize.md` system prompt; the file's full text is read from the asset store server-side). The summary replaces `description` and is costed into `summaryTokenCount`; the prompt then prefers the summary over the full text.
+
+**Errors:**
+- `400` — `attachment_not_text` (only text files), or `attachment_summary_empty` (the model returned an empty summary).
+- `404` — attachment not found, or `attachment_asset_missing` (the stored asset is gone).
+
+**Response:** the updated attachment (`description` = summary, `summaryTokenCount` set). Honors `AbortSignal` between steps.
+
+### `POST /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/clear-summary`
+
+Drop a text file's summary and restore the full text as the prompt representation. Only text files (`attachment_not_text` otherwise).
+
+**Response:** the updated attachment (`description` = `null`, `summaryTokenCount` cleared).
+
 ---
 
 ## Branches
@@ -1324,6 +1358,21 @@ The stream route resolves the thread's kind BEFORE sending SSE headers, and the 
 | `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies. `prompt_preset` links (SC-23c, the sidechat's `<rp_prompt>` view) are chat-owned-thread-only: a script/draft thread gets the typed 400 `preset_link_not_chat_owned` |
 | `POST /api/experience-copilot/:threadId/compact` | Manual compaction; optional `{ providerProfileId?, model? }` (defaults to the thread's last pair) |
 
+### Message attachments
+
+Agent messages carry attachments in the row's `attachments_json` (one `ADD COLUMN` migration; no join table). The action surface mirrors the chat's, over the same domain service (`domain/attachment/attachment-actions-service.ts`) — each adapter resolves message ownership (reference check via `json_each` over `attachments_json`) and persists only the patch:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST …/messages/:messageId/attachments/:attachmentId/summarize` | Text-file summary; optional `{ providerProfileId?, model? }` — the profile ladder defaults to the thread's last pair. Errors as the chat twin (`attachment_not_text` 400, `attachment_asset_missing`/404, `attachment_summary_empty` 400). Response: the updated attachment |
+| `POST …/attachments/:attachmentId/clear-summary` | Drop the summary; response: the updated attachment |
+| `PATCH …/attachments/:attachmentId/description` | Hand-edit an image/video caption (lightbox); response: the updated attachment |
+| `POST …/attachments/:attachmentId/regenerate-description` | Force re-describe an image/video (chat-twin rules over the agent store; needs a `visionModel`). Response: `{ description }` |
+| `PATCH …/attachments/:attachmentId/include-in-prompt` | Prompt-visibility toggle; response: `{ ok: true }` |
+| `DELETE …/attachments/:attachmentId` | Remove an attachment and delete its now-unreferenced asset file; response: `{ ok: true }` |
+
+Turn deletion (`POST /api/experience-copilot/:threadId/turns/delete`) takes `keepAttachmentFiles` to spare assets the user may re-attach.
+
 ### Profiles
 
 CRUD under `/api/copilot/profiles` (see the copilot profile schemas); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. User profiles carry `basePrompt` + `toolSet` toggles validated against the owning kind's registered schema (a wrong-kind set is a 422 `copilot_profile_invalid_tool_set`): the experience keys are the 9 `copilotToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`); the script keys are the 6 `scriptAgentToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_script_test`, `plan`, `read_plan`, `ask_user`); the sidechat keys are the 6 `sidechatOocToolSetSchema` keys (`search_context`, `read_context_item`, `propose_objective`, `todo`, `read_plan`, `read_message_prompt`). `read_skill_file` is in neither script/experience set (always on, never gated); `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
@@ -1409,11 +1458,13 @@ Body-less: the proposal payload lives in the addressed tool row. The thread must
 
 ### `POST /api/assets/upload`
 
-Upload an image asset (avatar, gallery image).
+Upload an asset (image, audio, or a text file — avatars, gallery images, voice notes, chat-attached files).
 
 **Body:** `multipart/form-data` with file field.
 
-**Response:** `{ assetId: string, url: string }`
+**Response:** `{ assetId: string, url: string, tokenCount?: number }` — `tokenCount` is present only for text files: the server UTF-8-decodes the bytes (BOM stripped) and counts with the default tokenizer once, at upload (`AssetService.upload`); the count rides the attachment so the UI can show `~N tok.` without reading the file again.
+
+**MIME resolution:** browsers report OS-guessed MIME types for text files (a Windows `.csv` arrives as `application/vnd.ms-excel`). `resolveAttachmentUploadMime` (`@vibe-tavern/domain`) is the one shared browser/server rule: a known text extension wins over any non-media reported MIME. `TEXT_MIME_TO_EXT` is the single extension↔MIME table.
 
 ### `GET /api/assets/:assetId`
 

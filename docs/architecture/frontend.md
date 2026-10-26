@@ -362,6 +362,19 @@ The gallery-only toggles (`includeGalleryInPrompt`, `includeAvatarInPrompt`, `av
 
 ---
 
+## Attachments (composer + message chips)
+
+**One draft path for every composer.** `hooks/use-attachment-draft.ts` is the single picker/paste/drop path (`allowedKinds` gates kinds per surface: RP chat `image|audio|file`, Co-Author and the agent shell `image|file`); it reserves slots before awaiting and queues uploads in input order. Consumers: `chat/use-input-area.ts`, `coauthor/use-coauthor-input-area.ts`, and `agent-shell/use-agent-composer-attachments.ts` (the agent-shell wrapper on top of the shared hook). The upload seam is the external network boundary, not a second implementation.
+
+**Chips and warnings** (all surfaces, desktop + mobile):
+- `file-attachment-chip.tsx` — one chip component for pending and sent files (icon, name, `~N tok.` from the upload-computed `tokenCount`).
+- `attachment-overflow-warning.tsx` + `hooks/attachment-overflow.ts` — the over-budget line above the composer; send stays enabled.
+- `attachment-vision-warning.tsx` + `hooks/use-image-route-warning.ts` — attach-time warning when the active model lacks vision AND no fallback `visionModel` is configured (RP chat + Co-Author); text-only attachments never warn.
+
+**Actions on sent files** ride one surface-independent seam: `sent-file-attachment.tsx` (the ⋯ menu / tap actions: summarize, show summary, restore full text, include/exclude, delete) with three mounts — `chat-file-attachment.tsx` (RP `MessageBlock`), `agent-file-attachment.tsx` (agent shell), and the Co-Author reusing the shared `MessageBlock` → `AttachmentGrid` path (proven by test, no own mount). Lightbox actions split the same way: `chat-lightbox-actions.tsx` / `agent-lightbox-actions.tsx` over the `AttachmentGrid` seam. `lib/send-attachments.ts`'s `toSendAttachment` is the one send-side mapper (typed against the schema-derived `WireAttachment`).
+
+---
+
 ## Prompt Trace History
 
 Prompt traces used to ship in every `SessionSnapshot` (`promptTraceHistory`). They are now **lazy-loaded and branch-scoped**: `useTraceHistoryStore` caches traces keyed by `${chatId}::${branchId}`, fetched on demand via `GET /api/chats/:chatId/traces`.

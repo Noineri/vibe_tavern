@@ -601,18 +601,57 @@ Because of the skip-if-described guard, a described attachment is never re-descr
 
 This keeps the auto-describe cache non-destructive while still letting the user force a fresh caption (or add one to a previously-empty attachment) from the lightbox.
 
+### Text files
+
+Text files attach the same way as images but ride a different rail end-to-end:
+
+- **Upload** — `AssetService.upload` checks `isTextMime`; a text file is UTF-8-decoded (BOM stripped) and costed once with the default tokenizer (`tokenCount` rides the response and later the attachment, so the composer chip can show `~N tok.` without re-reading bytes). `TEXT_MIME_TO_EXT` (`domain/attachment.ts`) is the single extension↔MIME table; `resolveAttachmentUploadMime` is the shared browser/server rule that a known text extension wins over the OS's guessed non-media MIME (a Windows `.csv` uploads as `application/vnd.ms-excel`).
+- **Prompt injection** — `type: "file"` attachments render as `TextPart`s with the file's **full text** read from the asset store at send time (`vision-gate.ts`). For text files `description` carries the **summary**; when one exists the prompt prefers it over the full text (`summaryTokenCount` tracks its cost).
+- **Visibility** — one filter, `filterPromptVisibleAttachments` (`domain/attachment.ts`): ordinary uploads are included when `includeInPrompt` is absent or `true`; explicit `false` excludes. `promptVisibleAttachmentsOf` is the shared stored-row projection (RP + Co-Author history) — no second hand-written derivation.
+
+### File summaries — the attachment actions service
+
+`domain/attachment/attachment-actions-service.ts` owns the three text-file actions — `summarize`, `clearSummary`, `setIncluded` — over a port, not a store:
+
+```ts
+interface AttachmentMessagePort {
+  find(messageId, attachmentId): Promise<Attachment | null>;
+  update(messageId, attachmentId, patch: AttachmentPatch): Promise<Attachment>;
+}
+```
+
+Each surface supplies its own adapter that resolves message/ownership and persists only the patch: `api/adapters/chat-attachment-actions.ts` (RP chat — message/variant rows) and `api/adapters/experience-copilot-attachment-actions.ts` (agent messages — `attachments_json`). `summarize` loads the full text through the asset loader and calls the profile's model with the one-shot `assets/attachment-summarize.md` system prompt (profile resolution is per-surface: active profile for chat, thread's last pair ladder for agents); it writes `description` + `summaryTokenCount` atomically. Machine-readable errors: `attachment_not_text` (400), `attachment_asset_missing` (404), `attachment_summary_empty` (400). `clearSummary` restores the full text as the prompt representation; `setIncluded` flips the visibility flag.
+
+### Text-only consumers
+
+`renderAttachmentsAsText` (`infrastructure/ai/vision-gate.ts`) is the ONE renderer for consumers that see text only — summary memory (the auto-summary feature reads file text and image descriptions, never bytes) and the RP sidechat's frozen-text view. It never describes images or transcribes audio; old untranscribed voice notes are omitted rather than failing the summary.
+
+### History budget
+
+Files weigh in the history window and the meter: `countHistoryTokens` (`prompt-pipeline/src/history-token-count.ts`) adds `attachmentPromptTokens(message.attachments)` (summary cost when summarized, full `tokenCount` otherwise) on top of the formatted message text — the same number feeds compaction and the trace. The agent side mirrors this in `agent-prompt.ts`'s `estimateHistoryTokens` and the kind compaction subclasses (budget, meter, and digest all see files).
+
+### Agent-side attachments
+
+Agent turns (all three kinds) send attachments like the chat does: `prepareAttachmentMedia` (`infrastructure/ai/attachment-media.ts`) is the single describe/transcribe step ahead of every model call, and `domain/agent/agent-attachments.ts`'s `prepareAgentModelMessages` maps stored attachments to model parts inside the setup-error `try`. The sidechat additionally renders RP-message attachments as text blocks (`sidechat-rp-attachments.ts`, inside `<rp_message>` after the text).
+
 ### Type: `Attachment` (`packages/domain/src/attachment.ts`)
 
 ```ts
-type AttachmentType = "image" | "file" | "video";
+type AttachmentType = "image" | "file" | "video" | "audio";
 interface Attachment {
-  id: string;          // correlates vision descriptions back to the attachment
-  assetId: string;     // stored asset in AssetService
-  type: AttachmentType;// image → ImagePart, file → TextPart, video → frame extraction
+  id: string;            // correlates vision descriptions back to the attachment
+  assetId: string;       // stored asset in AssetService
+  type: AttachmentType;  // image → ImagePart, file → TextPart (full text/summary), video → frame extraction, audio → voice transcript
   name: string;
   mimeType: string;
   sizeBytes: number;
-  description?: string | null;  // populated by the vision model (path 2); null = not described
+  description?: string | null;  // vision model caption; audio STT transcript; text-file SUMMARY (written by the summarize action)
+  purpose?: AudioPurpose;       // audio-only: "voice" (default) | "music" | "ambient" — only voice is transcribed/injected
+  durationMs?: number;          // audio-only: clip length (voice bubble UI)
+  includeInPrompt?: boolean;    // visibility — see filterPromptVisibleAttachments; one filter, no second rule
+  tokenCount?: number;          // text files: full-text cost, computed once at upload
+  summaryTokenCount?: number;   // text files: summary cost (set/cleared with the summary)
+  imageGen?: ImageGenSlotProvenance; // image-gen slots only (IG)
 }
 ```
 

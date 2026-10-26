@@ -76,6 +76,7 @@ Per experience script, the copilot keeps sessions (threads): one active, others 
 The thread row also carries `context_metrics_json` (the context meter's budget snapshot), `todo_json`, and `context_links_json` (pinned entities resolved by id at assembly time so a pinned entity can never go stale).
 The meter state and the compact flow live in `useCopilotContext` (`apps/web/src/hooks/use-copilot-context.ts`): metrics plus the auto-compact flag fetch from `GET .../context` on mount and thread switch, the `finish` event's metrics feed the meter live, and `compact` POSTs the manual compaction.
 Compaction (`ExperienceCopilotCompactionService` in `services/api/src/domain/interactive/copilot/experience-copilot-compaction.ts`) folds the history prefix behind a digest message; the digest boundary never splits tool-call/tool-result pairs.
+Message rows carry `attachments_json` (user attachments; no join table) — files weigh into the same budget/meter/digest as prose (`estimateHistoryTokens` and the kind compaction subclasses), and the actions (summarize / clear / include / delete, image caption edit/regenerate) ride the per-thread attachment routes (see [API reference](./api-reference.md#message-attachments)) over the same domain service as the RP chat.
 
 ## Review outcome feedback
 
