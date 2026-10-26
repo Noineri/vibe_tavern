@@ -1269,7 +1269,7 @@
 
     "typescript": ["typescript@7.1.0-dev.20260912.1", "", { "optionalDependencies": { "@typescript/typescript-darwin-arm64": "7.1.0-dev.20260912.1", "@typescript/typescript-darwin-x64": "7.1.0-dev.20260912.1", "@typescript/typescript-linux-arm": "7.1.0-dev.20260912.1", "@typescript/typescript-linux-arm64": "7.1.0-dev.20260912.1", "@typescript/typescript-linux-x64": "7.1.0-dev.20260912.1", "@typescript/typescript-win32-arm64": "7.1.0-dev.20260912.1", "@typescript/typescript-win32-x64": "7.1.0-dev.20260912.1" }, "bin": { "tsc": "bin/tsc" } }, "sha512-Et6EaO6QINBAbsGTRTJJbbqQd5nzIndf7uwkeI8ue8cdbXJWB1Mvvh5dK43ST7p42walugVp2c4lFldW22T/sQ=="],
 
-    "undici": ["undici@7.29.1", "", {}, "sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q=="],
+    "undici": ["undici@7.30.1", "", {}, "sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg=="],
 
     "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
 
