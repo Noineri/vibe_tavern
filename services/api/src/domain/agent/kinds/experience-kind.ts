@@ -24,7 +24,7 @@ import {
   copilotToolSetSchema,
   type AgentReviewSnapshot,
 } from "@vibe-tavern/api-contracts";
-import { EXPERIENCE_COPILOT_MODULE } from "../../interactive/copilot/experience-copilot-module.js";
+import { EXPERIENCE_COPILOT_MODULE, EXPERIENCE_BUILTIN_SEEDS } from "../../interactive/copilot/experience-copilot-module.js";
 import { renderReviewOutcomeSection } from "../agent-review-outcome-lines.js";
 import type {
   ExperienceCopilotBoundVisual,
@@ -173,6 +173,9 @@ const kind: AgentKind<ExperienceAgentContext> = {
   servesChatModes: [],
   basePromptServiceKey: "copilot_base",
   skillRootId: "experience",
+  // DR-1: the kind's built-in profile seeds, declared by the species module
+  // that owns the seed content (one seed today).
+  builtinSeeds: EXPERIENCE_BUILTIN_SEEDS,
   toolSetSchema: copilotToolSetSchema,
   defaultToolSet,
   recencyAnchorText: EXPERIENCE_RECENCY_ANCHOR_TEXT,

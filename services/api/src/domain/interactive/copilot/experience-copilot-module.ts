@@ -24,7 +24,11 @@ import { dirname, resolve } from "node:path";
 import { resolvePromptAssetPath, loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { AppDb } from "@vibe-tavern/db";
 import { resolveServicePrompt } from "../../service-prompts/service-prompt-resolver.js";
-import { getAgentKind } from "../../agent/agent-kind-registry.js";
+import {
+  getAgentKind,
+  listAgentKinds,
+  UnknownAgentKindError,
+} from "../../agent/agent-kind-registry.js";
 import {
   buildSkillCatalog,
   type ScanRoot,
@@ -35,8 +39,15 @@ import {
   type CopilotProfile,
   type CopilotToolSet,
 } from "@vibe-tavern/api-contracts";
-import { resolveBuiltinScriptAgentProfile } from "../../agent/script-agent/script-agent-module.js";
-import { resolveBuiltinSidechatOocProfile } from "../../agent/kinds/sidechat-ooc-kind.js";
+import { BUILTIN_PROFILE_ID, type AgentBuiltinProfileSeed } from "../../agent/agent-kind.js";
+import {
+  resolveBuiltinScriptAgentProfile,
+  SCRIPT_AGENT_BUILTIN_SEEDS,
+} from "../../agent/script-agent/script-agent-module.js";
+import {
+  resolveBuiltinSidechatOocProfile,
+  SIDECHAT_OOC_BUILTIN_SEEDS,
+} from "../../agent/kinds/sidechat-ooc-kind.js";
 
 // ─── Module definition (metadata only — the prompt text is loaded lazily) ────
 
@@ -151,6 +162,73 @@ export async function resolveExperienceCopilotSkillCatalog(
 // ─── Built-in profile seed (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-4) ─────────
 
 /**
+ * The experience kind's built-in seeds (DR-1) — one seed today; the first
+ * entry keeps the id `"builtin"` (the stored sentinel). Declared here (the
+ * experience seed's species home), read by the kind descriptor
+ * (`kinds/experience-kind.ts`), the seed dispatch below and the seed-list
+ * helpers — one declaration, one source.
+ */
+export const EXPERIENCE_BUILTIN_SEEDS: readonly AgentBuiltinProfileSeed[] = [
+  { id: BUILTIN_PROFILE_ID, name: EXPERIENCE_COPILOT_MODULE.name },
+];
+
+/**
+ * The kind's declared built-in seeds (DR-1). Registry-free for the three
+ * kinds the dispatch below knows literally — the same property that keeps
+ * every existing caller of `resolveBuiltinCopilotProfile` registry-free —
+ * and through the registry for any other registered kind
+ * (`UnknownAgentKindError` for an unknown one, the same error the dispatch's
+ * generic branch throws).
+ */
+export function builtinCopilotSeeds(kind: string): readonly AgentBuiltinProfileSeed[] {
+  if (kind === "experience") return EXPERIENCE_BUILTIN_SEEDS;
+  if (kind === "script") return SCRIPT_AGENT_BUILTIN_SEEDS;
+  if (kind === "sidechat-ooc") return SIDECHAT_OOC_BUILTIN_SEEDS;
+  return getAgentKind(kind).builtinSeeds;
+}
+
+/**
+ * Whether `profileId` is a built-in seed id OF THIS KIND (DR-1) — the
+ * chat-owned resolver's acceptance test. A built-in id of ANOTHER kind is
+ * `false` here, so it falls through the resolver chain exactly like a
+ * dangling id. An UNKNOWN kind has no built-ins — `false`, not a throw — so
+ * its stored ids keep resolving through the row paths exactly as before;
+ * the chain's final seed hop still throws `UnknownAgentKindError` where it
+ * always did.
+ */
+export function isBuiltinCopilotProfileOfKind(profileId: string, kind: string): boolean {
+  try {
+    return builtinCopilotSeeds(kind).some((seed) => seed.id === profileId);
+  } catch (err) {
+    if (err instanceof UnknownAgentKindError) return false;
+    throw err;
+  }
+}
+
+/**
+ * Whether `profileId` names a built-in seed of ANY known kind (DR-1) — the
+ * read-only guard the profile adapter's update/delete run, widened from the
+ * single `"builtin"` sentinel to every declared seed id. Covers the three
+ * literal kinds registry-free plus every registered kind's list.
+ */
+export function isBuiltinCopilotProfileId(profileId: string): boolean {
+  return (
+    isBuiltinCopilotProfileOfKind(profileId, "experience") ||
+    isBuiltinCopilotProfileOfKind(profileId, "script") ||
+    isBuiltinCopilotProfileOfKind(profileId, "sidechat-ooc") ||
+    listAgentKinds().some((kind) => kind.builtinSeeds.some((seed) => seed.id === profileId))
+  );
+}
+
+/** A caller asked a kind for a built-in seed id it does not declare — a
+ *  programming error (every caller reads the id from the same list it is
+ *  resolving against), so it fails loudly instead of silently resolving
+ *  another seed. */
+function undeclaredSeedError(kind: string, profileId: string): Error {
+  return new Error(`No built-in profile "${profileId}" is declared for agent kind "${kind}".`);
+}
+
+/**
  * Project the fixed {@link EXPERIENCE_COPILOT_MODULE} + its loaded `base.md`
  * into a `CopilotProfile`-shaped READ-ONLY seed (the default profile for any
  * experience with no profile assigned — zero behavior change vs. the ER-16
@@ -168,24 +246,39 @@ export async function resolveExperienceCopilotSkillCatalog(
  * `agentKind`; the `script` kind (AS-7) delegates to its own seed in
  * `agent/script-agent/script-agent-module.ts`, and the `sidechat-ooc` kind
  * (SC-4a) to its own in `agent/kinds/sidechat-ooc-kind.ts`.
+ *
+ * DR-1 adds the seed dimension: a kind ships a LIST of built-in seeds
+ * (`builtinCopilotSeeds` / the descriptor's `builtinSeeds`) and `profileId`
+ * picks one (the stored sentinel `"builtin"` by default — the first seed,
+ * the only one every kind has always had). An id the kind does not declare
+ * throws instead of silently resolving another seed.
  */
-export async function resolveBuiltinCopilotProfile(kind: string = "experience", db?: AppDb): Promise<CopilotProfile> {
+export async function resolveBuiltinCopilotProfile(
+  kind: string = "experience",
+  db?: AppDb,
+  profileId: string = BUILTIN_PROFILE_ID,
+): Promise<CopilotProfile> {
   if (kind === "script") {
     // AS-7: the script kind's own seed — base prompt from the
     // `script_agent_base` service prompt (SP-5 override honored on this
     // builtin path) + tool set projected through SCRIPT_AGENT_TOOL_KEYS. The
     // species owns the seed (agent/script-agent/script-agent-module.ts)
-    // exactly the way this module owns the experience one.
+    // exactly the way this module owns the experience one. One seed today —
+    // `SCRIPT_AGENT_BUILTIN_SEEDS` declares it.
+    const seed = SCRIPT_AGENT_BUILTIN_SEEDS.find((s) => s.id === profileId);
+    if (seed === undefined) throw undeclaredSeedError(kind, profileId);
     return resolveBuiltinScriptAgentProfile(db);
   }
   if (kind === "sidechat-ooc") {
-    // SC-4a: the sidechat kind's own seed — base prompt from the
+    // SC-4a: the sidechat kind's own seeds — base prompt from the
     // `sidechat_ooc_base` service prompt (SP-5 override honored on this
     // builtin path, the `script` seed's pattern) + a tool set projected
-    // through SIDECHAT_OOC_TOOL_KEYS, every toggle disabled until Wave 3's
-    // tools land (SC-5). The species owns the seed
-    // (agent/kinds/sidechat-ooc-kind.ts).
-    return resolveBuiltinSidechatOocProfile(db);
+    // through SIDECHAT_OOC_TOOL_KEYS from the declarative
+    // SIDECHAT_OOC_TOOL_SET. The species owns the seeds
+    // (agent/kinds/sidechat-ooc-kind.ts); DR-1 adds the second one
+    // (`builtin-director`, the Director shell whose own prompt and toggles
+    // land with DR-4 — until then it shares the OOC base and tools).
+    return resolveBuiltinSidechatOocProfile(db, profileId);
   }
   if (kind !== "experience") {
     // Validate FIRST — an unknown kind throws `UnknownAgentKindError` and
@@ -194,6 +287,8 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     // registry-free so every existing caller (which never registers kinds)
     // keeps byte-identical behavior.
     const descriptor = getAgentKind(kind);
+    const seed = descriptor.builtinSeeds.find((s) => s.id === profileId);
+    if (seed === undefined) throw undeclaredSeedError(kind, profileId);
     // Generic-kind seed (today only test fakes arrive here — AS-7's script
     // kind and SC-4a's sidechat kind bring their own base prompts + service
     // keys and branch ABOVE).
@@ -202,14 +297,16 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     // base prompt fails loudly (wire `min(1)`) if it ever reaches validation
     // instead of passing as a real prompt.
     return {
-      id: "builtin",
-      name: descriptor.id,
+      id: seed.id,
+      name: seed.name,
       isBuiltIn: true,
       basePrompt: "",
       toolSet: {},
       agentKind: descriptor.id,
     };
   }
+  const experienceSeed = EXPERIENCE_BUILTIN_SEEDS.find((s) => s.id === profileId);
+  if (experienceSeed === undefined) throw undeclaredSeedError(kind, profileId);
   // SP-5: the global service-prompt profile's `copilot_base` override replaces
   // the builtin base ONLY on this builtin path — explicit per-script copilot
   // profiles (basePrompt snapshots) never consult it (see copilot-profile-resolver).
@@ -221,8 +318,8 @@ export async function resolveBuiltinCopilotProfile(kind: string = "experience", 
     if (EXPERIENCE_COPILOT_MODULE.toolSet[key] === true) toolSet[key] = true;
   }
   return {
-    id: "builtin",
-    name: EXPERIENCE_COPILOT_MODULE.name,
+    id: experienceSeed.id,
+    name: experienceSeed.name,
     isBuiltIn: true,
     basePrompt,
     toolSet,

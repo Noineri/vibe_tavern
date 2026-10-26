@@ -21,6 +21,39 @@ import type { ZodType } from "zod";
 import type { ChatMode, ScriptKind } from "@vibe-tavern/domain";
 
 /**
+ * The stored sentinel id of every kind's FIRST built-in profile seed
+ * (DIRECTOR_MODE_PLAN, DR-1). Already-stored choices
+ * (`chat_agent_settings.profile_id`, `agent_kind_settings
+ * .default_profile_id`) hold this literal, so every kind's seed list keeps
+ * it as its first entry — the registry refuses a list whose first id is
+ * anything else. User profile ids are store-minted `cprof_…` rows (the
+ * strict create contract carries no `id` field), so the namespace stays
+ * disjoint: a user profile can never take a built-in id.
+ */
+export const BUILTIN_PROFILE_ID = "builtin";
+
+/**
+ * One read-only built-in profile seed a kind ships (DR-1). A seed is a
+ * SYNTHETIC profile resolved from code (`resolveBuiltinCopilotProfile`),
+ * never a DB row; `{@link id}` is what gets STORED when a user picks it
+ * (chat choice or kind default) and must be stable for the life of the kind.
+ * The seed's CONTENT (base prompt + tool set) is resolved kind-owned by the
+ * seed dispatch in `experience-copilot-module.ts` — this entry declares
+ * only the id and the display name (raw string; localization is a later
+ * unit).
+ */
+export interface AgentBuiltinProfileSeed {
+  /**
+   * Stable seed id. The FIRST seed of every kind MUST keep
+   * {@link BUILTIN_PROFILE_ID} (enforced at registration); later seeds use
+   * their own `builtin-<slug>` ids unique within the kind.
+   */
+  readonly id: string;
+  /** Display name shown in the profile list (raw string, not localized). */
+  readonly name: string;
+}
+
+/**
  * Stable kind id ("experience" today; "script" registers in AS-7). Plain
  * string for now — branding happens when the plan's ID pass requires it.
  */
@@ -108,6 +141,16 @@ export interface AgentKind<CTX = unknown> {
    * without touching this file.
    */
   readonly skillRootId: "experience" | "script" | (string & {});
+  /**
+   * The kind's read-only built-in profile seeds in DECLARED order (DR-1):
+   * the profile list serves every entry first (declared order) before the
+   * kind's user rows, and the chat-owned resolver accepts ANY of these ids
+   * as a stored choice. The first entry keeps the id `"builtin"` — the
+   * sentinel every already-stored choice resolves through (enforced at
+   * registration). Declared by the kind's own module beside its seed
+   * content; a kind ships one seed until it needs more.
+   */
+  readonly builtinSeeds: readonly AgentBuiltinProfileSeed[];
   /**
    * Validates a persisted/incoming tool set for this kind. `.strict()` object
    * schemas (the house pattern, cf. copilotToolSetSchema) so an unknown tool

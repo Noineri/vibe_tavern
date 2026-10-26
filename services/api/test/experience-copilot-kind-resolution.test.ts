@@ -492,6 +492,9 @@ function makeUnwiredFakeKind(): AgentKind {
     skillRootId: "kr-fake",
     toolSetSchema: {},
     defaultToolSet: {},
+    // DR-1: the descriptor's built-in seed list (the cast hides the field
+    // from the compiler — registration refuses a kind without it).
+    builtinSeeds: [{ id: "builtin", name: "kr-fake-unwired" }],
   } as unknown as AgentKind;
 }
 

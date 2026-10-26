@@ -54,6 +54,9 @@ function makeFakeKind(): AgentKind {
     skillRootId: FAKE_KIND_ID,
     toolSetSchema: z.object({ quill_draft: z.boolean().optional() }).strict(),
     defaultToolSet: { quill_draft: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: FAKE_KIND_ID }],
     recencyAnchorText: "Fake-kind recency anchor.",
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,

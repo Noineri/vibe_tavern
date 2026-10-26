@@ -28,7 +28,7 @@
  */
 
 import { scriptAgentToolSetSchema, SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
-import { SCRIPT_AGENT_MODULE } from "../script-agent/script-agent-module.js";
+import { SCRIPT_AGENT_MODULE, SCRIPT_AGENT_BUILTIN_SEEDS } from "../script-agent/script-agent-module.js";
 import type { AgentKind } from "../agent-kind.js";
 import { registerAgentKind } from "../agent-kind-registry.js";
 
@@ -155,6 +155,9 @@ const kind: AgentKind<ScriptAgentContext> = {
   servesChatModes: [],
   basePromptServiceKey: "script_agent_base",
   skillRootId: "script",
+  // DR-1: the kind's built-in profile seeds, declared by the species module
+  // that owns the seed content (one seed today).
+  builtinSeeds: SCRIPT_AGENT_BUILTIN_SEEDS,
   toolSetSchema: scriptAgentToolSetSchema,
   defaultToolSet,
   recencyAnchorText: SCRIPT_AGENT_RECENCY_ANCHOR_TEXT,

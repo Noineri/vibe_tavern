@@ -3,51 +3,70 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { CopilotProfile, CopilotProfileCreate, CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 import { unprocessable, validation } from "../../shared/errors.js";
 import { getAgentKind, UnknownAgentKindError } from "../../domain/agent/agent-kind-registry.js";
-import { resolveBuiltinCopilotProfile } from "../../domain/interactive/copilot/experience-copilot-module.js";
+import {
+  isBuiltinCopilotProfileId,
+  resolveBuiltinCopilotProfile,
+} from "../../domain/interactive/copilot/experience-copilot-module.js";
 import { copilotProfileRowToWire } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
-
-/** The built-in read-only seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
-const BUILTIN_PROFILE_ID = "builtin";
 
 /**
  * Thin adapter between the `CopilotProfileRuntimeApi` contract and the
  * `@vibe-tavern/db` `copilotProfiles` store (EXPERIENCE_COPILOT_PROFILES_PLAN,
- * Wave 3). Mirrors the co-author module adapter's role: the built-in seed is
- * code-defined (resolved via `resolveBuiltinCopilotProfile`), user profiles are
- * DB rows projected to the wire shape via `copilotProfileRowToWire`. The
- * built-in seed is READ-ONLY — update/delete reject its id with a 400.
+ * Wave 3). Mirrors the co-author module adapter's role: built-in seeds are
+ * code-defined (resolved via `resolveBuiltinCopilotProfile`), user profiles
+ * are DB rows projected to the wire shape via `copilotProfileRowToWire`.
+ * Built-in seeds are READ-ONLY — update/delete reject ANY built-in seed id
+ * with a 400 (`isBuiltinCopilotProfileId`).
  *
  * AS-3 (per-kind profiles): lists filter by `agentKind` (default
  * `'experience'`); create validates the tool set against the owning kind's
  * `toolSetSchema` (422 `copilot_profile_invalid_tool_set`); update re-validates
  * a supplied tool set against the profile's OWN stored kind (the kind itself is
  * immutable — the update contract omits it and the store never writes it).
+ *
+ * DR-1: a kind ships a LIST of built-in seeds — the list serves ALL of the
+ * kind's built-ins first (declared order, the descriptor's `builtinSeeds`)
+ * before the kind's user rows, and `reorderCopilotProfiles` returns the same
+ * envelope. User rows keep their stored manual order (ML-6) after the
+ * built-ins.
  */
 export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
 
+	/** The kind's built-in seeds resolved in declared order (DR-1) — the
+	 *  head of both list envelopes this adapter serves. */
+	private async builtinProfiles(kind: string): Promise<CopilotProfile[]> {
+		const descriptor = this.requireKind(kind);
+		return Promise.all(
+			descriptor.builtinSeeds.map((seed) =>
+				resolveBuiltinCopilotProfile(descriptor.id, undefined, seed.id),
+			),
+		);
+	}
+
 	listCopilotProfiles = async (kind: string = "experience"): Promise<CopilotProfile[]> => {
 		const descriptor = this.requireKind(kind);
-		const [builtin, userRows] = await Promise.all([
-			resolveBuiltinCopilotProfile(descriptor.id),
+		const [builtins, userRows] = await Promise.all([
+			this.builtinProfiles(descriptor.id),
 			this.stores.copilotProfiles.list(descriptor.id),
 		]);
-		return [builtin, ...userRows.map(copilotProfileRowToWire)];
+		return [...builtins, ...userRows.map(copilotProfileRowToWire)];
 	};
 
 	/** Rewrite one kind's user profiles' manual list order (ML-6) and serve
 	 *  the refreshed merged list — the same envelope `listCopilotProfiles`
-	 *  returns (seed first, then user rows in the new stored order). */
+	 *  returns (every built-in seed first in declared order, then user rows
+	 *  in the new stored order). */
 	reorderCopilotProfiles = async (
 		kind: string,
 		updates: Array<{ id: string; sortOrder: number }>,
 	): Promise<CopilotProfile[]> => {
 		const descriptor = this.requireKind(kind);
-		const [builtin, userRows] = await Promise.all([
-			resolveBuiltinCopilotProfile(descriptor.id),
+		const [builtins, userRows] = await Promise.all([
+			this.builtinProfiles(descriptor.id),
 			this.stores.copilotProfiles.reorder(descriptor.id, updates),
 		]);
-		return [builtin, ...userRows.map(copilotProfileRowToWire)];
+		return [...builtins, ...userRows.map(copilotProfileRowToWire)];
 	};
 
 	createCopilotProfile = async (input: CopilotProfileCreate): Promise<CopilotProfile> => {
@@ -62,7 +81,7 @@ export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 	};
 
 	updateCopilotProfile = async (id: string, input: CopilotProfileUpdate): Promise<CopilotProfile> => {
-		if (id === BUILTIN_PROFILE_ID) {
+		if (isBuiltinCopilotProfileId(id)) {
 			throw validation("The built-in profile is read-only.");
 		}
 		if (input.toolSet !== undefined) {
@@ -75,7 +94,7 @@ export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 	};
 
 	deleteCopilotProfile = async (id: string): Promise<void> => {
-		if (id === BUILTIN_PROFILE_ID) {
+		if (isBuiltinCopilotProfileId(id)) {
 			throw validation("The built-in profile is read-only.");
 		}
 		await this.stores.copilotProfiles.delete(id);

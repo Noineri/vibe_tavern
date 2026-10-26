@@ -25,14 +25,23 @@
 import type { StoreContainer, CopilotProfileRow } from "@vibe-tavern/db";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, SIDECHAT_OOC_TOOL_KEYS, type CopilotProfile, type CopilotToolSet, type ScriptAgentToolSet, type SidechatOocToolSet } from "@vibe-tavern/api-contracts";
 import { resolveKindForScript } from "../../agent/agent-kind-registry.js";
-import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
+import { BUILTIN_PROFILE_ID } from "../../agent/agent-kind.js";
+import {
+  isBuiltinCopilotProfileOfKind,
+  resolveBuiltinCopilotProfile,
+} from "./experience-copilot-module.js";
 
 /**
- * The literal chat-row/default value pinning the built-in seed (SC-0k). The
- * built-in is a synthetic seed, never a DB row, so `"builtin"` cannot
- * collide with a real `copilot_profiles` id (user rows are `cprof_…`).
+ * The literal chat-row/default value pinning the FIRST built-in seed (SC-0k).
+ * Built-ins are synthetic seeds, never DB rows, so seed ids ("builtin",
+ * "builtin-director", …) cannot collide with a real `copilot_profiles` id
+ * (user rows are store-minted `cprof_…`, and the strict create contract
+ * carries no `id` field). DR-1 widened the acceptance test from this one
+ * literal to the kind's declared seed list — see
+ * {@link isBuiltinCopilotProfileOfKind}; the constant stays the first seed's
+ * own id (the chain's final fallback resolves it).
  */
-const BUILTIN_PROFILE_SENTINEL = "builtin";
+const BUILTIN_PROFILE_SENTINEL = BUILTIN_PROFILE_ID;
 
 /**
  * Project a stored user-profile row into the wire `CopilotProfile` shape.
@@ -138,26 +147,36 @@ export class CopilotProfileResolver {
 	 * deleted falls through to the NEXT step (kind default, then built-in),
 	 * never errors — the same soft-link rule as `resolveForScript`.
 	 *
-	 * SC-0k — the built-in pin: a chat choice of `"builtin"` resolves to the
-	 * kind's built-in seed and NEVER falls through to the kind default (a
-	 * chat can run the built-in while the default is a custom profile). A
-	 * kind default of `"builtin"` reads as `null` (same outcome — the
-	 * seed). Dangling CUSTOM ids still fall through at both hops.
+	 * SC-0k — the built-in pin, widened by DR-1: a chat choice holding ANY
+	 * built-in seed id OF THIS KIND resolves THAT seed and NEVER falls through
+	 * to the kind default (a chat can run a built-in while the default is a
+	 * custom profile). A built-in id of ANOTHER kind is not one of this
+	 * kind's — it falls through the row lookup exactly like a dangling id. A
+	 * kind default holding a built-in id of the kind resolves that seed (the
+	 * pre-DR-1 `"builtin"` reads-as-null outcome, now seed-aware); the final
+	 * fallback is the kind's FIRST seed. Dangling CUSTOM ids still fall
+	 * through at both hops.
 	 */
 	async resolveForChat(chatId: string, agentKind: string): Promise<CopilotProfile> {
 		const chatChoice = await this.stores.chatAgentSettings.get(chatId, agentKind);
-		if (chatChoice.profileId === BUILTIN_PROFILE_SENTINEL) {
-			return resolveBuiltinCopilotProfile(agentKind, this.stores.db);
+		if (
+			chatChoice.profileId !== null &&
+			isBuiltinCopilotProfileOfKind(chatChoice.profileId, agentKind)
+		) {
+			return resolveBuiltinCopilotProfile(agentKind, this.stores.db, chatChoice.profileId);
 		}
 		if (chatChoice.profileId !== null) {
 			const chatRow = await this.stores.copilotProfiles.getById(chatChoice.profileId);
 			if (chatRow !== null) return copilotProfileRowToWire(chatRow);
 		}
 		const kindDefault = await this.stores.agentKindSettings.get(agentKind);
-		if (kindDefault.defaultProfileId !== null && kindDefault.defaultProfileId !== BUILTIN_PROFILE_SENTINEL) {
+		if (kindDefault.defaultProfileId !== null) {
+			if (isBuiltinCopilotProfileOfKind(kindDefault.defaultProfileId, agentKind)) {
+				return resolveBuiltinCopilotProfile(agentKind, this.stores.db, kindDefault.defaultProfileId);
+			}
 			const kindRow = await this.stores.copilotProfiles.getById(kindDefault.defaultProfileId);
 			if (kindRow !== null) return copilotProfileRowToWire(kindRow);
 		}
-		return resolveBuiltinCopilotProfile(agentKind, this.stores.db);
+		return resolveBuiltinCopilotProfile(agentKind, this.stores.db, BUILTIN_PROFILE_SENTINEL);
 	}
 }

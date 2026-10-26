@@ -68,6 +68,9 @@ function makeFakeChatKind(id: string): AgentKind {
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: id }],
     recencyAnchorText: "(fake kind pins no context)",
     // SC-7b: the fakes serve rp chats (this suite's chats are rp; the
     // stream-hop thread is born straight through the store anyway).
