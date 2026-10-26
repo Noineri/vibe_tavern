@@ -1,5 +1,6 @@
 import { arrayMove } from "@dnd-kit/sortable";
 import { MasterList } from "../shared/master-list/master-list.js";
+import { MasterListTag } from "../shared/master-list/master-list-tag.js";
 import { SortableMasterListPhoneRow } from "../shared/master-list/master-list-phone-row.js";
 import { MasterListDragOverlayRow } from "../shared/master-list/master-list-overlay-row.js";
 import { reorderCoauthorModules } from "../../api/coauthor-module-api.js";
@@ -27,7 +28,8 @@ export interface ModuleListProps {
 
 // Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
 // title, overlay, phone drill-down row). This list supplies data + slots:
-// the name (SC-16d: wraps, never cut) + built-in tag in the title slot, the
+// the name (SC-16d: wraps, never cut) + built-in tag through the primitive's
+// `tags` slot (ML-12: the shared `MasterListTag` under the title), the
 // description in the second line, the active dot for the live module in the status
 // slot (the row rules: «in use» is a marker, never a whole-row color), and
 // the arrayMove + reorderCoauthorModules persist (the ML-5 backend — the
@@ -76,22 +78,21 @@ export function ModuleList({ modules, isLoading, selectedId, activeModuleId, det
 							selected={isSelected}
 							active={isActive}
 							title={(
-								<>
-									<span
-										data-testid={`module-row-name-${m.id}`}
-										className="whitespace-normal break-words"
-									>
-										{m.name}
-									</span>
-									{m.isBuiltIn && (
-										<div data-testid={`module-row-pills-${m.id}`} className="mt-1 flex flex-wrap gap-1">
-											<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-												{t("coauthor.module.built_in")}
-											</span>
-										</div>
-									)}
-								</>
+								<span
+									data-testid={`module-row-name-${m.id}`}
+									className="whitespace-normal break-words"
+								>
+									{m.name}
+								</span>
 							)}
+							// ML-12: the built-in pill renders through the primitive's
+							// tags slot — the shared `MasterListTag` on the line under
+							// the title; a user row carries no tag.
+							tags={m.isBuiltIn ? (
+								<span data-testid={`module-row-pills-${m.id}`}>
+									<MasterListTag>{t("coauthor.module.built_in")}</MasterListTag>
+								</span>
+							) : undefined}
 							secondLine={m.description ? <span className="line-clamp-2 leading-snug">{m.description}</span> : undefined}
 							onSelect={() => onSelect(m.id)}
 						/>

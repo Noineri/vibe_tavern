@@ -477,11 +477,12 @@ describe("CopilotProfileModal — name never cut (SC-16d)", () => {
 		expect(nameEl.textContent).toContain("Experience Authoring");
 		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
 		// Separate lines: neither element contains the other; both hang off
-		// the primitive's title slot (ML-8 was: two sibling divs off the row
-		// container — the slot still stacks them, name first).
+		// the primitive's title column (ML-12 was: the pills sat inside the
+		// title slot next to the name; now the primitive's tags slot renders
+		// them on its own line under the title — name first).
 		expect(nameEl.contains(pillsEl)).toBe(false);
 		expect(pillsEl.contains(nameEl)).toBe(false);
-		expect(nameEl.parentElement).toBe(pillsEl.parentElement);
+		expect(nameEl.parentElement!.parentElement).toBe(pillsEl.parentElement!.parentElement);
 	});
 
 	it("the name element wraps (no truncate)", async () => {
@@ -788,16 +789,22 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 	});
 
 	it("a chat-target built-in default row shows both pills on the pill line (SC-16d)", async () => {
-		const { getByTestId } = renderChatModal(null, null);
+		const { getByTestId, getAllByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
 		// Null kind default → the built-in seed is the default (SC-0g mirror)
 		// AND built-in: both pills render, on their own line below the name.
 		const nameEl = getByTestId("copilot-profile-row-name-builtin");
-		const pillsEl = getByTestId("copilot-profile-row-pills-builtin");
-		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
-		expect(pillsEl.textContent).toContain("copilot_profile_default");
-		expect(nameEl.contains(pillsEl)).toBe(false);
-		expect(pillsEl.contains(nameEl)).toBe(false);
+		// ML-12: each pill is its own `MasterListTag` carrying the row's
+		// pills testid (was: one pills div under the name held them all).
+		const pills = getAllByTestId("copilot-profile-row-pills-builtin");
+		expect(pills).toHaveLength(2);
+		const pillsText = pills.map((el) => el.textContent).join(" ");
+		expect(pillsText).toContain("copilot_profile_built_in");
+		expect(pillsText).toContain("copilot_profile_default");
+		for (const pillsEl of pills) {
+			expect(nameEl.contains(pillsEl)).toBe(false);
+			expect(pillsEl.contains(nameEl)).toBe(false);
+		}
 	});
 
 	it("each button swaps to its state label when the selection already holds that state", async () => {

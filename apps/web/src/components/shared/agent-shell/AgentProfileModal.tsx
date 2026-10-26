@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import { MasterDetailModal, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
 import { MasterList } from "../master-list/master-list.js";
+import { MasterListTag } from "../master-list/master-list-tag.js";
 import { MasterListPhoneRow, SortableMasterListPhoneRow } from "../master-list/master-list-phone-row.js";
 import { MasterListDragOverlayRow } from "../master-list/master-list-overlay-row.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
@@ -465,10 +466,12 @@ interface ProfileListProps {
 
 // Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
 // title, overlay, phone drill-down row). This list supplies data + slots:
-// the name (SC-16d: wraps, never cut) + built-in/default tags in the title
-// slot, the active dot for the effective profile in the status slot (the row rules:
-// «in use» is a marker, never a whole-row color), and the arrayMove +
-// store `reorder(kind, …)` persist (the ML-6 backend, kind-scoped).
+// the name (SC-16d: wraps, never cut) + built-in/default tags through the
+// primitive's `tags` slot (ML-12: one shared `MasterListTag` per pill, on
+// the line under the title), the active dot for the effective profile in
+// the status slot (the row rules: «in use» is a marker, never a whole-row
+// color), and the arrayMove + store `reorder(kind, …)` persist (the ML-6
+// backend, kind-scoped).
 // The built-in seed (BUILTIN_PROFILE_ID) has no stored record, so it stays
 // pinned at the top as a handle-less `MasterListPhoneRow` — the ML-3
 // ServicePromptsPane Default-row precedent; dragging onto it is a noop.
@@ -521,32 +524,32 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 				// null default reads as the built-in seed, mirroring
 				// the script null→builtin fallback.
 				const showDefaultPill = defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID);
-				// SC-16d: the name owns line 1 alone (wraps, never cut);
-				// the pills own the line below (only when present); no id line.
+				// SC-16d: the name owns line 1 alone (wraps, never cut); the pills
+				// own the primitive's tags line below it (ML-12: the shared
+				// `MasterListTag` shape, no id line). Each pill keeps the row's
+				// pills testid on its wrapper — a chat-default seed row holds two.
 				const title = (
+					<span
+						data-testid={`copilot-profile-row-name-${p.id}`}
+						className="whitespace-normal break-words"
+					>
+						{p.name}
+					</span>
+				);
+				const tags = (p.isBuiltIn || showDefaultPill) ? (
 					<>
-						<span
-							data-testid={`copilot-profile-row-name-${p.id}`}
-							className="whitespace-normal break-words"
-						>
-							{p.name}
-						</span>
-						{(p.isBuiltIn || showDefaultPill) && (
-							<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
-								{p.isBuiltIn && (
-									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-										{t("copilot_profile_built_in")}
-									</span>
-								)}
-								{showDefaultPill && (
-									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-										{t("copilot_profile_default")}
-									</span>
-								)}
-							</div>
+						{p.isBuiltIn && (
+							<span data-testid={`copilot-profile-row-pills-${p.id}`}>
+								<MasterListTag>{t("copilot_profile_built_in")}</MasterListTag>
+							</span>
+						)}
+						{showDefaultPill && (
+							<span data-testid={`copilot-profile-row-pills-${p.id}`}>
+								<MasterListTag>{t("copilot_profile_default")}</MasterListTag>
+							</span>
 						)}
 					</>
-				);
+				) : undefined;
 				if (p.id === BUILTIN_PROFILE_ID) {
 					return (
 						<MasterListPhoneRow
@@ -554,6 +557,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 							selected={isSelected}
 							active={isActive}
 							title={title}
+							tags={tags}
 							onSelect={() => onSelect(p.id)}
 						/>
 					);
@@ -565,6 +569,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 						selected={isSelected}
 						active={isActive}
 						title={title}
+						tags={tags}
 						onSelect={() => onSelect(p.id)}
 					/>
 				);
@@ -619,8 +624,10 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
 					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{profile.name}</h3>
-					<span data-testid="copilot-profile-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-						{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
+					<span data-testid="copilot-profile-detail-tag">
+						<MasterListTag>
+							{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
+						</MasterListTag>
 					</span>
 				</div>
 			</div>
