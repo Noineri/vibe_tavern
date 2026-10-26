@@ -81,6 +81,21 @@ export class ExperienceReportService {
     });
   }
 
+  async getQueuedAttachment(sessionId: string): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null) return this.sessionNotFound(sessionId);
+    const attachment = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
+    return ok(attachment ? toQueuedAttachmentView(attachment) : null);
+  }
+
+  async clearQueue(sessionId: string, body: { chatId: string; branchId: string; expectedRevision: number }): Promise<ExperienceResult<null>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null || session.chatId !== body.chatId || session.branchId !== body.branchId) return this.sessionNotFound(sessionId);
+    if (session.revision !== body.expectedRevision) return this.staleRevision(body.expectedRevision, session.revision);
+    this.stores.experiences.purgeUnboundAttachments(sessionId);
+    return ok(null);
+  }
+
   /** LB-2 (lobby report): `finishDetail` overrides the public system event
    * text of a manual finish; omitted = the default user-ended wording.
    *

@@ -935,15 +935,11 @@ export class ExperienceService {
   async getQueuedAttachment(
     sessionId: string,
   ): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
-    const session = await this.stores.experiences.getSessionById(sessionId);
-    if (session === null) {
-      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
-    }
-    const attachment = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
-    if (attachment === null) {
-      return ok(null);
-    }
-    return ok(toQueuedAttachmentView(attachment));
+    return this.reports.getQueuedAttachment(sessionId);
+  }
+
+  clearReportQueue(...args: Parameters<ExperienceReportService["clearQueue"]>) {
+    return this.reports.clearQueue(...args);
   }
 
   /** Explicitly freeze the public journal frontier the user selected. */
