@@ -41,11 +41,12 @@ const TYPE_LABEL_KEYS = {
   lorebook: "copilot_mention_type_lorebook",
   script: "copilot_mention_type_script",
   skill: "copilot_mention_type_skill",
+  prompt_preset: "copilot_mention_type_prompt_preset",
 } as const;
 
 type KnownTargetType = keyof typeof TYPE_LABEL_KEYS;
 
-/** Chip label for a target type: localized for the five copilot kinds, raw
+/** Chip label for a target type: localized for the six copilot kinds, raw
  *  string otherwise. `t` is passed in (not imported) so this stays trivially
  *  testable through the component. */
 function typeLabel(t: ReturnType<typeof useTranslation>["t"], targetType: string): string {
@@ -140,7 +141,7 @@ export function MentionAutocomplete({
         aria-label={t("copilot_mention_picker_label")}
       >
         {items.length === 0 ? (
-          <div className="px-3 py-2.5 font-ui text-[12px] text-t3">
+          <div className="px-3 py-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             {query ? t("copilot_mention_no_matches", { query }) : t("copilot_mention_empty")}
           </div>
         ) : (
@@ -163,11 +164,11 @@ export function MentionAutocomplete({
                     isActive ? "bg-s2" : "bg-transparent",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate font-ui text-[12px] text-t1">{item.label}</span>
+                  <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{item.label}</span>
                   {item.hint ? (
-                    <span className="min-w-0 shrink-[2] truncate font-ui text-[11px] text-t3">{item.hint}</span>
+                    <span className="min-w-0 shrink-[2] truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{item.hint}</span>
                   ) : null}
-                  <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[9px] uppercase tracking-[0.06em] text-t4">
+                  <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-5px)] uppercase tracking-[0.06em] text-t4">
                     {typeLabel(t, item.targetType)}
                   </span>
                 </div>

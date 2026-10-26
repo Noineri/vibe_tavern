@@ -29,6 +29,8 @@ function msg(id: string, role: string, toolCallId: string | null = null): Experi
     content: `content-${id}`,
     toolCallsJson: null,
     toolCallId,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
   };
 }
@@ -77,7 +79,7 @@ describe("orderMessagesWithDigests", () => {
     expect(ordered.every((e) => e.coveredCount === null)).toBe(true);
   });
 
-  it("moves the digest to sit immediately before its anchor message", () => {
+  it("keeps the digest at its chronological slot — after the last pre-compaction row (AP-33)", () => {
     const ordered = orderMessagesWithDigests([
       msg("u1", "user"),
       msg("a1", "assistant"),
@@ -85,8 +87,23 @@ describe("orderMessagesWithDigests", () => {
       msg("a2", "assistant"),
       msg("d1", "digest", "u2"),
     ]);
-    expect(ordered.map((e) => e.message.id)).toEqual(["u1", "a1", "d1", "u2", "a2"]);
+    // AP-33: NO move to the anchor — the digest stays where the backend
+    // appended it (the compaction moment), after every row that existed then.
+    expect(ordered.map((e) => e.message.id)).toEqual(["u1", "a1", "u2", "a2", "d1"]);
     // covers the two flow messages before the anchor (u1, a1).
+    expect(ordered.find((e) => e.message.id === "d1")!.coveredCount).toBe(2);
+  });
+
+  it("a digest listed mid-flow stays at its slot (no move toward the anchor either)", () => {
+    const ordered = orderMessagesWithDigests([
+      msg("u1", "user"),
+      msg("a1", "assistant"),
+      msg("d1", "digest", "u2"),
+      msg("u2", "user"),
+      msg("a2", "assistant"),
+    ]);
+    expect(ordered.map((e) => e.message.id)).toEqual(["u1", "a1", "d1", "u2", "a2"]);
+    // The count still comes from the anchors alone (flow before u2 = u1, a1).
     expect(ordered.find((e) => e.message.id === "d1")!.coveredCount).toBe(2);
   });
 
@@ -102,20 +119,23 @@ describe("orderMessagesWithDigests", () => {
       msg("d2", "digest", "a3"),
       msg("u4", "user"),
     ]);
+    // AP-33: both digests keep their chronological slots (appended order).
     expect(ordered.map((e) => e.message.id)).toEqual([
-      "u1", "a1", "d1", "u2", "a2", "u3", "d2", "a3", "u4",
+      "u1", "a1", "u2", "a2", "d1", "u3", "a3", "d2", "u4",
     ]);
     expect(ordered.find((e) => e.message.id === "d1")!.coveredCount).toBe(2);
     // d2 covers the flow messages between u2's position and a3's position: u2, a2, u3.
     expect(ordered.find((e) => e.message.id === "d2")!.coveredCount).toBe(3);
   });
 
-  it("dangling anchor degrades to end-of-list placement (never wrong-side)", () => {
+  it("a dangling anchor keeps the digest at its slot and counts the whole prefix", () => {
     const ordered = orderMessagesWithDigests([
       msg("u1", "user"),
       msg("a1", "assistant"),
       msg("d1", "digest", "deleted-anchor"),
     ]);
+    // The digest stays where it sits (chronologically last here); the
+    // dangling anchor degrades to the flow's end for the COUNT (both rows).
     expect(ordered.map((e) => e.message.id)).toEqual(["u1", "a1", "d1"]);
     expect(ordered.find((e) => e.message.id === "d1")!.coveredCount).toBe(2);
   });
@@ -127,7 +147,8 @@ describe("orderMessagesWithDigests", () => {
       msg("a1", "assistant"),
       msg("d1", "digest", "a1"),
     ]);
-    expect(ordered.map((e) => e.message.id)).toEqual(["u1", "d1", "a1"]);
+    // AP-33: the digest stays at its slot (after a1); tool rows drop out.
+    expect(ordered.map((e) => e.message.id)).toEqual(["u1", "a1", "d1"]);
     expect(ordered.find((e) => e.message.id === "d1")!.coveredCount).toBe(1);
   });
 });

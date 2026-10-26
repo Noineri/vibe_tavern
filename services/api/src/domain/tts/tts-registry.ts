@@ -52,6 +52,52 @@ export function getTtsBackendCapabilities(slug: TtsBackendSlug): TtsBackendCapab
 }
 
 // ---------------------------------------------------------------------------
+// Model config key
+// ---------------------------------------------------------------------------
+
+/** The config-bag key carrying the model id, per backend — the field the
+ *  backend's own config reader consumes: `"model"` for the OpenAI-compatible
+ *  family (openai-compatible, gemini, mistral), `"modelId"` for the native
+ *  vendors that name it so (the resource id of volcengine rides it too), and
+ *  `null` for the backends that read no model at all (kokoro runs in the
+ *  browser). The single source for "which field is this config's model":
+ *  saved-profile voice lists are stored per model, keyed through it
+ *  (`voices:<modelId>`). Exhaustive on the slug — a new backend must declare
+ *  its field. Pinned against every backend's real request in
+ *  tts-model-config-key.test.ts. */
+export const TTS_BACKEND_MODEL_CONFIG_KEY: Record<TtsBackendSlug, "model" | "modelId" | null> = {
+  [TTS_BACKEND.Kokoro]: null,
+  [TTS_BACKEND.OpenAiCompatible]: "model",
+  [TTS_BACKEND.Gemini]: "model",
+  [TTS_BACKEND.ElevenLabs]: "modelId",
+  [TTS_BACKEND.Cartesia]: "modelId",
+  [TTS_BACKEND.Inworld]: "modelId",
+  [TTS_BACKEND.Lmnt]: "modelId",
+  [TTS_BACKEND.MiniMax]: "modelId",
+  [TTS_BACKEND.Volcengine]: "modelId",
+  [TTS_BACKEND.Deepgram]: null,
+  [TTS_BACKEND.Azure]: null,
+  [TTS_BACKEND.Polly]: null,
+  [TTS_BACKEND.GoogleCloud]: null,
+  [TTS_BACKEND.Xai]: null,
+  [TTS_BACKEND.Mistral]: "model",
+};
+
+/** The model id a backend would read from this config: the non-blank string
+ *  under the backend's own model key (see {@link TTS_BACKEND_MODEL_CONFIG_KEY}),
+ *  "" when the config names none or the backend reads no model. Unknown slug →
+ *  TtsUnknownBackendError. */
+export function ttsConfigModelId(slug: string, config: TtsProfileConfig): string {
+  if (!isKnownSlug(slug)) {
+    throw new TtsUnknownBackendError(slug);
+  }
+  const key = TTS_BACKEND_MODEL_CONFIG_KEY[slug];
+  if (key === null) return "";
+  const value = config[key];
+  return typeof value === "string" && value.trim() !== "" ? value : "";
+}
+
+// ---------------------------------------------------------------------------
 // Factory registry
 // ---------------------------------------------------------------------------
 

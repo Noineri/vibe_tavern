@@ -11,6 +11,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -19,7 +20,6 @@ const { useState } = await import("react");
 import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
 
 const realApi = await import("../../api/ai-instruction-template-api.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const { RpcError } = await import("../../api/unwrap.js");
 
@@ -38,16 +38,10 @@ mock.module("../../api/ai-instruction-template-api.js", () => ({
 	deleteAiInstructionTemplate: deleteMock,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (key: string) => key,
-		tDynamic: (key: string) => key,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+// House i18n pattern via the shared co-load seam: raw keys render as-is
+// (identity spec — this suite has no interpolated pins, but registers so a
+// hand-bundled run never inherits a sibling's interpolating spec).
+installI18nContextSeam();
 
 // Both halves of the dual-mode canon share the body; the flag switches the
 // shell (desktop popover / mobile sheet) and the row icon hit-area.

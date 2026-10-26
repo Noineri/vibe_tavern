@@ -3,7 +3,7 @@
  * validated `sceneState` block is VISUALLY rendered, shared by the chat header
  * (Scene zone, expanded) and the Build → Insights → Scene Preview.
  *
- * Selecting Graphical/Compact in the Preview re-renders the header too (and
+ * Selecting a Preview render variant re-renders the header too (and
  * vice-versa) — the choice is global, not Preview-local. Persisted to
  * localStorage so it survives a reload; defaults to `"rich"`.
  *
@@ -15,16 +15,23 @@
  */
 import { create } from "zustand";
 
-export type SceneRenderVariant = "rich" | "compact";
+export type SceneRenderVariant = "rich" | "compact" | "clean" | "hud";
+
+/** Variants with a matching SceneStateView implementation. */
+export const IMPLEMENTED_SCENE_RENDER_VARIANTS = ["rich", "compact", "clean", "hud"] as const satisfies readonly SceneRenderVariant[];
 
 const STORAGE_KEY = "vibe:sceneRenderVariant";
 const DEFAULT: SceneRenderVariant = "rich";
 
+/** Validates persisted values independently from the selector's implemented subset. */
+export function hydrateSceneRenderVariant(value: string | null): SceneRenderVariant {
+  return value === "rich" || value === "compact" || value === "clean" || value === "hud" ? value : DEFAULT;
+}
+
 function hydrate(): SceneRenderVariant {
   if (typeof window === "undefined") return DEFAULT;
   try {
-    const v = window.localStorage.getItem(STORAGE_KEY);
-    return v === "compact" || v === "rich" ? v : DEFAULT;
+    return hydrateSceneRenderVariant(window.localStorage.getItem(STORAGE_KEY));
   } catch {
     // localStorage disabled / quota — fall back to the default, stay in-memory.
     return DEFAULT;

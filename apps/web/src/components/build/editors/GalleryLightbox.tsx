@@ -150,26 +150,26 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
 
         {/* Caption (if any) — small label above the description. */}
         {asset.caption?.trim() && !editing && (
-          <div className="w-full text-center text-xs text-white/50">{asset.caption}</div>
+          <div className="w-full text-center text-[calc(var(--ui-fs)-2px)] leading-4 text-white/50">{asset.caption}</div>
         )}
 
         {/* Regenerating status. */}
         {isRegenerating && !editing && (
-          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/60">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-[var(--ui-fs)] leading-5 text-white/60">
             {t("gallery_regenerating")}
           </div>
         )}
 
         {/* Description (read). */}
         {currentDescription && !editing && !isRegenerating && (
-          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm leading-relaxed text-white/80">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-[var(--ui-fs)] leading-relaxed text-white/80">
             {currentDescription}
           </div>
         )}
 
         {/* Empty-description hint. */}
         {!currentDescription && !editing && !isRegenerating && (
-          <div className="w-full text-center text-xs text-white/30">
+          <div className="w-full text-center text-[calc(var(--ui-fs)-2px)] leading-4 text-white/30">
             {t("gallery_no_description")}
           </div>
         )}
@@ -188,13 +188,13 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
             />
             <div className="flex justify-end gap-2">
               <button
-                className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/20"
+                className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-white/70 transition-colors hover:bg-white/20"
                 onClick={(e) => { e.stopPropagation(); setEditing(false); }}
               >
                 {t("cancel")}
               </button>
               <button
-                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"
+                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-[var(--ui-fs)] leading-5 text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"
                 onClick={(e) => { e.stopPropagation(); void saveDescription(); }}
                 disabled={saving}
               >

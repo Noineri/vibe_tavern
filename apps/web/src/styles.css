@@ -125,6 +125,7 @@
 
 @layer base {
   html, body { font-family: var(--font-ui); }
+  body { font-size: var(--ui-fs); }
   /* Font smoothing — crisper/thinner text rendering (macOS only; other platforms ignore it). */
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -189,9 +190,20 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-content em{color:var(--md-italic);font-size:var(--md-fs-italic)}
 .md-content strong{color:var(--md-bold)}
 .md-content strong em,.md-content em strong{color:var(--md-bold-italic);font-size:var(--md-fs-bold-italic)}
+/* ── Agent markdown variants (AP-1) ──
+   agent-rp keeps the RP palette (italic/bold/bold-italic/quote colors) but
+   neutralizes every RP font-size override, so copilot emphasis renders at the
+   surrounding size. Doubled scope (.md-content.md-agent) outranks the base
+   rules regardless of source order. agent-plain drops the RP colors too:
+   emphasis is plain italic/bold in the surrounding color and size. */
+.md-content.md-agent em{font-size:inherit}
+.md-content.md-agent strong em,.md-content.md-agent em strong{font-size:inherit}
+.md-content.md-agent-plain em{color:inherit;font-size:inherit;font-style:italic}
+.md-content.md-agent-plain strong{color:inherit;font-weight:bold}
+.md-content.md-agent-plain strong em,.md-content.md-agent-plain em strong{color:inherit;font-size:inherit;font-style:italic}
 .scene-meta{font-size:.85em;color:var(--t3);font-family:var(--font-ui);margin-top:.4em;white-space:pre-line}
 .system-banner{display:inline-block;padding:2px 8px;margin:2px 0;border-radius:6px;background:var(--accent-dim);border:1px solid color-mix(in srgb, var(--accent) 35%, transparent);color:var(--t1);font-family:var(--font-ui);font-size:.85em;line-height:1.4}
-.scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
+.scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size: calc(var(--mfs)-4px);color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
 /* ── Markdown formatting ── */
 .md-h1{font-size:1.75em;font-weight:700;margin:1.2em 0 .5em;line-height:1.2;color:var(--t1)}
@@ -262,16 +274,16 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 
 /* ── Build mode fields (LorebookEditor, BuildMode) ── */
 .build-field{margin-bottom:20px}
-.build-field label{display:block;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.build-field label{display:block;font-size: calc(var(--ui-fs)-3px);font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
 .build-field textarea,.build-field input,.build-field select{
   width:100%;background:var(--s2);border:1px solid var(--border);border-radius:6px;
-  padding:10px 12px;font-family:var(--font-body);font-size:14px;line-height:1.7;
+  padding:10px 12px;font-family:var(--font-body);font-size: var(--ui-fs);line-height:1.7;
   color:var(--t1);outline:none;resize:vertical;transition:border-color .15s
 }
 .build-field textarea:focus,.build-field input:focus,.build-field select:focus{border-color:var(--accent)}
 .build-field textarea{min-height:120px}
 .build-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
+.build-tag{font-size: calc(var(--ui-fs)-3px);background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
 .build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
 
@@ -336,26 +348,26 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
   .canvas-disclosure-btn{flex-wrap:wrap;row-gap:0.25rem}
 }
 
-.build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
-.build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
+.build-section-title{font-family:var(--font-body);font-size: calc(var(--ui-fs)+8px);font-weight:500;color:var(--t1);margin-bottom:6px}
+.build-section-sub{font-size: calc(var(--ui-fs)-1px);color:var(--t2);margin-bottom:28px;line-height:1.55}
 
 /* ── Shared buttons (BuildMode, ProviderModal, save-btn) ── */
-.api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size:12px;font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
+.api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size: calc(var(--ui-fs)-2px);font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
 .api-test-btn.idle{background:var(--s3);color:var(--t2)}
 .api-test-btn.idle:hover{background:var(--border2);color:var(--t1)}
 .api-test-btn.ok{background:oklch(0.28 0.06 145);color:oklch(0.78 0.14 145)}
 .api-test-btn.err{background:oklch(0.22 0.06 25);color:oklch(0.72 0.18 25)}
-.api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size:12.5px;font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
+.api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size: calc(var(--ui-fs)-1px);font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
 .api-save-btn:hover{filter:brightness(1.1)}
-.api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
+.api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size: calc(var(--ui-fs)-1px);font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
 
 /* ── Empty states ── */
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 24px;text-align:center;min-height:220px;user-select:none}
 .empty-icon{width:48px;height:48px;border-radius:12px;background:var(--s2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--t3);flex-shrink:0}
-.empty-title{font-size:14px;font-weight:500;color:var(--t2)}
-.empty-sub{font-size:12px;color:var(--t3);line-height:1.55;max-width:280px}
-.empty-cta{margin-top:4px;font-size:12px;color:var(--accent-t);background:var(--accent-dim);border-radius:6px;padding:6px 16px;cursor:pointer;transition:background .15s}
+.empty-title{font-size: var(--ui-fs);font-weight:500;color:var(--t2)}
+.empty-sub{font-size: calc(var(--ui-fs)-2px);color:var(--t3);line-height:1.55;max-width:280px}
+.empty-cta{margin-top:4px;font-size: calc(var(--ui-fs)-2px);color:var(--accent-t);background:var(--accent-dim);border-radius:6px;padding:6px 16px;cursor:pointer;transition:background .15s}
 .empty-cta:hover{background:var(--accent)}
 
 /* ── Keyframes ── */
@@ -363,68 +375,6 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 @keyframes diceSettle{from{transform:translateY(-11px) rotate(-18deg);opacity:.25}55%{transform:translateY(2px) rotate(5deg)}to{transform:none;opacity:1}}
 .dice-settle{animation:diceSettle 480ms cubic-bezier(.2,.85,.3,1.3) both}
 @media (prefers-reduced-motion:reduce){.dice-settle{animation:none}}
-
-/* ── Avatar crop zoom slider ── */
-.crop-zoom-slider{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--border2);outline:none;cursor:pointer}
-.crop-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer;transition:transform .1s}
-.crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
-.crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
-
-/* ── Narration playlist sliders (FS-5) — a playlist-LOCAL family, NOT the
-   shared SliderField (settings keep it untouched). Rail = theme surface
-   token var(--s3) — the same pair the fetch mini-bar already uses
-   (s3 rail / accent fill) — so every theme stays coherent; never a
-   hardcoded translucent white (owner ruling: translucent white does not
-   fit every theme — verbatim quote in
-   reports/LEGACY_CYRILLIC_CLEANUP_REPORT.md ledger). Fill = accent with a
-   hard stop exactly at the value via the
-   --p custom property (set inline per render; Firefox paints the fill via
-   ::-moz-range-progress instead). Density: volume 4px rail / 12px thumb,
-   seek (--seek) 3px / 10px. Thumb = solid accent dot + 1px theme-token
-   outline (owner ruling: prefer an outline — same ledger). */
-.playlist-slider{-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0;cursor:grab}
-@media (pointer:coarse){.playlist-slider{height:44px}}
-.playlist-slider::-webkit-slider-runnable-track{height:4px;border-radius:9999px;background:linear-gradient(to right,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
-.playlist-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin-top:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
-.playlist-slider::-moz-range-track{height:4px;border-radius:9999px;background:var(--s3)}
-.playlist-slider::-moz-range-progress{height:4px;border-radius:9999px;background:var(--accent)}
-.playlist-slider::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
-.playlist-slider:active{cursor:grabbing}
-.playlist-slider:active::-webkit-slider-thumb{cursor:grabbing}
-.playlist-slider:active::-moz-range-thumb{cursor:grabbing}
-.playlist-slider:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:9999px}
-.playlist-slider:disabled{opacity:.4;cursor:default}
-.playlist-slider--seek::-webkit-slider-runnable-track{height:3px}
-.playlist-slider--seek::-webkit-slider-thumb{width:10px;height:10px;margin-top:-3.5px}
-.playlist-slider--seek::-moz-range-track{height:3px}
-.playlist-slider--seek::-moz-range-progress{height:3px}
-.playlist-slider--seek::-moz-range-thumb{width:10px;height:10px}
-/* ── Narration playlist vertical volume rail (RD-4) — same s3/accent
-   family, rotated: writing-mode:vertical-lr stacks the value bottom→top
-   (direction:rtl puts min at the bottom); the webkit fill gradient runs
-   to top instead of to right. Same 4px rail / 12px thumb density as the
-   old horizontal volume slider. Pixels are live-checked by the owner. */
-.playlist-slider--vertical{width:28px;height:auto}
-@media (pointer:coarse){.playlist-slider--vertical{width:44px}}
-.playlist-slider--vertical::-webkit-slider-runnable-track{width:4px;height:100%;border-radius:9999px;background:linear-gradient(to top,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
-.playlist-slider--vertical::-webkit-slider-thumb{width:12px;height:12px;margin-left:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
-.playlist-slider--vertical::-moz-range-track{width:4px;border-radius:9999px;background:var(--s3)}
-.playlist-slider--vertical::-moz-range-progress{width:4px;border-radius:9999px;background:var(--accent)}
-.playlist-slider--vertical::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
-
-/* ── Summary message-range dual slider (DualRangeSlider) ──
-   Two full-width range inputs stacked on one track. Making each *thumb* its own
-   hit target — host `pointer-events:none` + `::-webkit-slider-thumb{pointer-events:auto}`
-   — is Chromium-only: Firefox computes `pointer-events` on `::-moz-range-thumb`
-   but ignores it while hit-testing, so the whole control was dead there. Both
-   inputs are therefore inert to the pointer everywhere and the component drives
-   the values from its wrapper; these rules only paint the thumb. `.is-hot` marks
-   the handle the pointer would grab, replacing the old thumb `:hover`. */
-.dual-range{-webkit-appearance:none;appearance:none;background:transparent;pointer-events:none;margin:0}
-.dual-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);transition:box-shadow .15s}
-.dual-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);transition:box-shadow .15s}
-.dual-range.is-hot::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--accent-dim)}
-.dual-range.is-hot::-moz-range-thumb{box-shadow:0 0 0 3px var(--accent-dim)}
 
 /* ── Avatar crop: keep preview sharp when zoomed ──
    react-easy-crop shrinks the <img> to fit (max-width/height:100%) then zooms

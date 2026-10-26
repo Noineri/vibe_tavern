@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { normalizeAutoSummaryConfig, type ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../api/types.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls } from "../../lib/field-tokens.js";
+import { lblCls, listHeaderCls } from "../../lib/field-tokens.js";
 import { MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -16,15 +16,17 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DualRangeSlider } from "./DualRangeSlider.js";
+import { SummaryHistoryLimitControl } from "./summary-history-limit-control.js";
+import { resolveHistoryLimitState, upsertSummary } from "./summary-tab-helpers.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { updateUiSettings } from "../../api/settings-api.js";
-import { useReorderableList } from "../../hooks/use-reorderable-list.js";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { MasterList } from "../shared/master-list/master-list.js";
+import { SortableMasterListPhoneRow } from "../shared/master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../shared/master-list/master-list-overlay-row.js";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   createChatSummaryAction,
   deleteChatSummaryAction,
@@ -35,70 +37,13 @@ import {
   updateMemorySettingsAction,
 } from "../../stores/api-actions/chat-actions.js";
 
-/* ─── SUM-3b: sortable archive row ───
- * The drag affordance is a dedicated ≡ grip on the left (PresetList/
- * LoreEntryList convention — the row already carries click-to-select, a
- * toggle, and a delete button that would conflict with a whole-row
- * activator). The DragOverlay carries the visible preview; the source
- * becomes an invisible in-place placeholder while dragging. */
-interface SortableSummaryRowProps {
-  s: ChatSummaryRecord;
-  isActive: boolean;
-  onSelect: (s: ChatSummaryRecord) => void;
-  onToggleInclude: (s: ChatSummaryRecord) => void;
-  onDelete: (id: string) => void;
-  labelFor: (s: ChatSummaryRecord) => string;
-  sourceLabel: (s: ChatSummaryRecord) => string;
-}
-
-const SortableSummaryRow = memo(function SortableSummaryRow({
-  s, isActive, onSelect, onToggleInclude, onDelete, labelFor, sourceLabel,
-}: SortableSummaryRowProps) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
-  const style: CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    ...(isDragging ? { opacity: 0 } : {}),
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "group flex cursor-pointer items-center gap-2 border-l-2 border-l-transparent px-3 min-h-[56px] transition-colors touch-manipulation hover:bg-s2",
-        isActive && "border-l-accent bg-accent-dim",
-      )}
-      onPointerDown={() => onSelect(s)}
-    >
-      <button
-        type="button"
-        ref={setActivatorNodeRef}
-        {...attributes}
-        {...listeners}
-        aria-label="drag"
-        onClick={(e) => e.stopPropagation()}
-        className="flex h-8 w-5 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing"
-      >
-        <span className="text-base leading-none">≡</span>
-      </button>
-      <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-        <Toggle checked={s.includeInContext} onChange={() => onToggleInclude(s)} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-ui text-[12px] text-t1">{labelFor(s)}</div>
-        <div className="mt-0.5 font-ui text-[10px] text-t4">{sourceLabel(s)}</div>
-      </div>
-      <MasterDetailMobileDrillDown onSelect={() => onSelect(s)} />
-      <button type="button"
-        className="hidden md:flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
-        onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
-      >
-        <Ic.close />
-      </button>
-    </div>
-  );
-});
-
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, overlay, phone drill-down row). This list supplies data + slots:
+// the include-in-context Toggle in the status slot (pointer-down stopped so
+// tapping it never selects), the label + source second line, the desktop
+// hover-reveal delete in trailing, and the SUM-3b arrayMove + server-fresh
+// persist (the route returns the fresh list, which replaces the optimistic
+// one on success and rolls back on reject — owned by the primitive's hook).
 /** Shown while no chat is active; a chat's config always arrives complete. */
 const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = normalizeAutoSummaryConfig({});
 
@@ -250,37 +195,6 @@ export function useSummaryTab({
   const { latched, displayLimit } = resolveHistoryLimitState(limitOverride, messageCount);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
 
-  // SUM-3b: manual archive order — the shared single-container DnD
-  // orchestration (optimistic array + rollback on rejected persist).
-  const {
-    sensors,
-    displayItems,
-    activeDragItem: activeDragSummary,
-    handleDragStart,
-    handleDragEnd,
-    handleDragCancel,
-  } = useReorderableList<ChatSummaryRecord>({
-    items: summaries,
-    getId: (s) => s.id,
-    onReorder: (activeId, overId, currentItems) => {
-      const fromIdx = currentItems.findIndex((s) => s.id === activeId);
-      const toIdx = currentItems.findIndex((s) => s.id === overId);
-      if (fromIdx === -1 || toIdx === -1 || activeChatId === null) {
-        return { optimisticItems: currentItems, persist: () => {} };
-      }
-      const reordered = arrayMove(currentItems, fromIdx, toIdx);
-      return {
-        optimisticItems: reordered,
-        // The route returns the fresh server-ordered list — the committed
-        // state replaces the optimistic one on success (rollback otherwise).
-        persist: async () => {
-          const fresh = await reorderChatSummariesAction(activeChatId, reordered.map((s) => s.id));
-          setSummaries(fresh);
-        },
-      };
-    },
-  });
-  const sortableSummaryIds = useMemo(() => displayItems.map((s) => s.id), [displayItems]);
   const effectiveProviderId = useChatModel ? activeProvider?.id ?? selectedProviderId : selectedProviderId;
   const effectiveModel = (useChatModel ? (pinnedModel ?? activeProvider?.defaultModel ?? selectedModel) : (pinnedModel ?? selectedModel))?.trim() ?? "";
 
@@ -588,63 +502,94 @@ export function useSummaryTab({
     }
   }
 
-  /* ─── archive sidebar / list ─── */
-  const archiveList = (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <SortableContext items={sortableSummaryIds} strategy={verticalListSortingStrategy}>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading && <div className="px-4 py-3 font-ui text-xs text-t3">{t("loading_models")}</div>}
-          {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-xs text-t4">{t("no_saved_summaries")}</div>}
-          {displayItems.map((s) => (
-            <SortableSummaryRow
-              key={s.id}
-              s={s}
-              isActive={activeSummaryId === s.id}
-              onSelect={(row) => selectSummary(row)}
-              onToggleInclude={(row) => void patchSummary(row, { includeInContext: !row.includeInContext })}
-              onDelete={(id) => void handleDelete(id)}
-              labelFor={(row) => row.label || `T${row.summarizedFrom}\u2013T${row.summarizedTo}`}
-              sourceLabel={(row) => (row.source === "auto" ? t("summary_source_auto") : t("summary_source_manual"))}
-            />
-          ))}
-        </div>
-      </SortableContext>
-      {/* The drag preview mirror (PresetList convention: plain copy of the
-       *  row chrome, no sortable transform). */}
-      <DragOverlay>
-        {activeDragSummary !== null ? (
-          <div className="flex cursor-grabbing items-center gap-2 border-l-2 border-l-accent bg-s3 px-3 min-h-[56px] shadow-lg">
-            <span className="text-base leading-none text-t4">≡</span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-ui text-[12px] text-t1">{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
-              <div className="mt-0.5 font-ui text-[10px] text-t4">{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
-            </div>
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+  const historyLimitControl = (
+    <SummaryHistoryLimitControl
+      label={t("summary_messages_in_prompt")}
+      autoLabel={t("summary_history_auto")}
+      autoHint={t("summary_history_auto_hint")}
+      messageCount={messageCount}
+      value={displayLimit}
+      latched={latched}
+      onValueChange={setLimitOverride}
+      onValueCommitted={(value) => void commitMemorySettings({ historyLimit: value })}
+      onAutoChange={toggleHistoryLatch}
+    />
   );
 
-  /* ─── master pane content (archive label + list + new button) ─── */
+  /* ─── archive sidebar / list ─── */
   const masterContent = (
     <div className="flex flex-col min-h-0 h-full">
-      <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
-      {archiveList}
-      <div className="border-t border-border p-3 mt-auto">
-        <button type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-          onClick={() => void createNewSummary()}
-          disabled={!activeChatId || saving}
-        >
-          <Icons.Plus /> {t("new_summary_entry")}
-        </button>
-      </div>
+      <MasterList<ChatSummaryRecord>
+        items={summaries}
+        getId={(s) => s.id}
+        onReorderItems={(activeId, overId, currentItems) => {
+          const fromIdx = currentItems.findIndex((s) => s.id === activeId);
+          const toIdx = currentItems.findIndex((s) => s.id === overId);
+          if (fromIdx === -1 || toIdx === -1 || activeChatId === null) {
+            return { optimisticItems: currentItems, persist: () => {} };
+          }
+          const reordered = arrayMove(currentItems, fromIdx, toIdx);
+          return {
+            optimisticItems: reordered,
+            // The route returns the fresh server-ordered list — the
+            // committed state replaces the optimistic one on success
+            // (rollback otherwise).
+            persist: async () => {
+              const fresh = await reorderChatSummariesAction(activeChatId, reordered.map((s) => s.id));
+              setSummaries(fresh);
+            },
+          };
+        }}
+        header={<div className={cn(listHeaderCls, "px-4 pb-4")}>{t("summary_archive_label")}</div>}
+        emptyState={
+          loading
+            ? <div className="px-4 py-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("loading_models")}</div>
+            : summaries.length === 0
+              ? <div className="px-4 py-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t4">{t("no_saved_summaries")}</div>
+              : null
+        }
+        renderRow={(s) => (
+          <SortableMasterListPhoneRow
+            sortableId={s.id}
+            rowTestId={`summary-row-${s.id}`}
+            selected={activeSummaryId === s.id}
+            status={
+              <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                <Toggle checked={s.includeInContext} onChange={() => void patchSummary(s, { includeInContext: !s.includeInContext })} />
+              </div>
+            }
+            title={s.label || `T${s.summarizedFrom}\u2013T${s.summarizedTo}`}
+            secondLine={s.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}
+            onSelect={() => selectSummary(s)}
+            trailing={
+              <>
+                <MasterDetailMobileDrillDown onSelect={() => selectSummary(s)} />
+                <button type="button"
+                  aria-label={t("delete")}
+                  className="hidden md:flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
+                  onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
+                >
+                  <Ic.close />
+                </button>
+              </>
+            }
+          />
+        )}
+        renderOverlayRow={(item) => (
+          <MasterListDragOverlayRow title={item.label || `T${item.summarizedFrom}\u2013T${item.summarizedTo}`} />
+        )}
+        footer={
+          <div className="border-t border-border p-3">
+            <button type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+              onClick={() => void createNewSummary()}
+              disabled={!activeChatId || saving}
+            >
+              <Icons.Plus /> {t("new_summary_entry")}
+            </button>
+          </div>
+        }
+      />
     </div>
   );
 
@@ -654,31 +599,27 @@ export function useSummaryTab({
       {/* ── Range ── */}
       <section>
         <div className={lblCls}>{t("summary_range_label")}</div>
-        <div className="rounded-lg border border-border bg-input-bg p-4">
-          <DualRangeSlider min={1} max={maxMessage} from={rangeFrom} to={rangeTo} disabled={generating} onChange={handleRangeChange} />
-          <div className="flex items-center justify-between font-ui text-[11px] text-t4">
-            <span>{t("summary_msg_label", { n: rangeFrom })}</span>
-            <span className="rounded-full bg-accent-dim px-2 py-1 text-accent-t">
-              {t("summary_messages_count", { count: Math.max(0, rangeTo - rangeFrom + 1) })}
-            </span>
-            <span>{t("summary_msg_label", { n: rangeTo })}</span>
-          </div>
-        </div>
+        <DualRangeSlider
+          min={1} max={maxMessage} from={rangeFrom} to={rangeTo}
+          disabled={generating} onChange={handleRangeChange}
+          label={t("summary_range_field_label")}
+          formatValue={(from, to) => t("summary_range_value", { from, to, count: to - from + 1 })}
+        />
       </section>
 
       {/* ── Exclude toggle ── */}
-      <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+      <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
         <Toggle checked={excludeSummarized} onChange={(v) => { setExcludeSummarized(v); setDirty(true); }} />
         {t("summary_exclude_toggle")}
       </label>
 
       {/* ── Prior-summaries context (ranged generate) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
-      <label className="mt-2 flex items-center gap-2 font-ui text-[13px] text-t2">
+      <label className="mt-2 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
         <Toggle checked={rangedIncludePrior} onChange={setRangedIncludePrior} disabled={generating} />
         {t("summary_prior_toggle")}
       </label>
       {rangedIncludePrior && (
-        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <span>{t("summary_prior_max")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
@@ -721,7 +662,7 @@ export function useSummaryTab({
               </button>
             )}
             <button type="button"
-              className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
+              className="h-7 rounded-md bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
               disabled={!dirty || saving}
               onClick={() => void handleSave()}
             >
@@ -745,7 +686,7 @@ export function useSummaryTab({
             placeholder={t("summary_placeholder_short")}
           />
         </MobileExpandTextarea>
-        <div className="mt-1 text-right font-ui text-[11px] text-t4">{tokenEstimate.summaryTokens}t</div>
+        <div className="mt-1 text-right font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{tokenEstimate.summaryTokens}t</div>
       </section>
 
       {/* ── Token estimate ── */}
@@ -783,7 +724,7 @@ export function useSummaryTab({
             checked: useChatModel,
             onChange: setUseChatModel,
             label: t("summary_use_chat_model"),
-            className: "mb-3 flex items-center gap-2 font-ui text-[13px] text-t2",
+            className: "mb-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2",
             visibleModel: "provided",
           }}
           modelPin={{
@@ -816,14 +757,14 @@ export function useSummaryTab({
         />
         {generating ? (
           <button type="button"
-            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-on-danger transition-all hover:brightness-110"
+            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-danger transition-all hover:brightness-110"
             onClick={() => abortRef.current?.abort()}
           >
             {t("summary_stop_btn")}
           </button>
         ) : (
           <button type="button"
-            className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
+            className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
             disabled={!activeChatId || !effectiveProviderId || !effectiveModel}
             onClick={() => void handleGenerate()}
           >
@@ -834,14 +775,14 @@ export function useSummaryTab({
 
       {/* ── Auto-summary ── */}
       <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
-        <label className="flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.enabled}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, enabled: v } })}
           />
           {t("summary_auto_toggle")}
         </label>
-        <div className="mt-3 flex items-center gap-2 font-ui text-[12px] text-t3">
+        <div className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           <span>{t("summary_auto_every")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
@@ -858,7 +799,7 @@ export function useSummaryTab({
           />
           <span>{t("summary_auto_messages")}</span>
         </div>
-        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.excludeSummarized}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, excludeSummarized: v } })}
@@ -866,7 +807,7 @@ export function useSummaryTab({
           {t("summary_auto_exclude_toggle")}
         </label>
         {/* ── Prior-summaries context (auto) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
-        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <label className="mt-3 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
           <Toggle
             checked={autoConfig.includePriorSummaries}
             onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, includePriorSummaries: v } })}
@@ -874,7 +815,7 @@ export function useSummaryTab({
           {t("summary_prior_toggle")}
         </label>
         {autoConfig.includePriorSummaries && (
-          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             <span>{t("summary_prior_max")}</span>
             <NumberInput
               className="w-[80px] shrink-0"
@@ -896,33 +837,7 @@ export function useSummaryTab({
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
       {isMobile && (
         <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
-          <div className={lblCls}>{t("summary_messages_in_prompt")}</div>
-          <div className="flex items-center gap-3">
-            <input
-              className="accent-accent flex-1"
-              type="range" min={1} max={Math.max(1, messageCount)}
-              value={displayLimit}
-              onChange={(e) => setLimitOverride(Number(e.target.value))}
-              onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-              onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-            />
-            <NumberInput
-              className="w-[80px] shrink-0"
-              inputClassName="text-center"
-              hideControls
-              min={1}
-              max={Math.max(1, messageCount)}
-              value={displayLimit}
-              onChange={(v) => {
-                setLimitOverride(v);
-                void commitMemorySettings({ historyLimit: v });
-              }}
-            />
-            <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
-              <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
-              <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
-            </div>
-          </div>
+          {historyLimitControl}
         </section>
       )}
     </>
@@ -936,36 +851,12 @@ export function useSummaryTab({
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-s3">
           <div className="h-full bg-accent transition-all" style={{ width: `${contextPct}%` }} />
         </div>
-        <div className="shrink-0 font-ui text-[11px] text-t3 tabular-nums">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
+        <div className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
       </div>
       {/* Row 2: messages-in-prompt slider (desktop only) */}
       {!isMobile && (
         <div className="flex items-center gap-3">
-          <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
-          <input
-            className="accent-accent flex-1"
-            type="range" min={1} max={Math.max(1, messageCount)}
-            value={displayLimit}
-            onChange={(e) => setLimitOverride(Number(e.target.value))}
-            onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-            onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
-          />
-          <NumberInput
-            className="w-[80px] shrink-0"
-            inputClassName="text-center"
-            hideControls
-            min={1}
-            max={Math.max(1, messageCount)}
-            value={displayLimit}
-            onChange={(v) => {
-              setLimitOverride(v);
-              void commitMemorySettings({ historyLimit: v });
-            }}
-          />
-          <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
-            <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
-            <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
-          </div>
+          {historyLimitControl}
         </div>
       )}
     </div>
@@ -1019,27 +910,4 @@ export function computeRangeAfterChange(
   };
 }
 
-/** Maps the editor's history-limit state to display state. `null` (or a
- *  non-positive persisted value — the DB stores 0 = unlimited, consumed
- *  server-side as `limit || Infinity`) is the LATCHED/auto state: every
- *  message goes in and the slider thumb rides the branch's full length. A
- *  positive number is a manual cap, displayed clamped to the branch's real
- *  message count (a fork can shrink the branch below the persisted cap).
- *  count<=0 (the switchChat clearMessages dip) floors to 1 so the slider
- *  never renders a value below its own min. */
-export function resolveHistoryLimitState(
-  limit: number | null,
-  messageCount: number,
-): { latched: boolean; displayLimit: number } {
-  const max = Math.max(1, messageCount);
-  if (limit === null || limit <= 0) return { latched: true, displayLimit: max };
-  return { latched: false, displayLimit: Math.min(limit, max) };
-}
-
-export function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
-  const idx = list.findIndex((item) => item.id === summary.id);
-  if (idx < 0) return [...list, summary].sort((a, b) => a.summarizedFrom - b.summarizedFrom || a.createdAt.localeCompare(b.createdAt));
-  const next = [...list];
-  next[idx] = summary;
-  return next;
-}
+export { resolveHistoryLimitState, upsertSummary } from "./summary-tab-helpers.js";

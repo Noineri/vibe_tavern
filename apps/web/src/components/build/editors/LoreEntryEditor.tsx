@@ -280,7 +280,7 @@ export function LoreEntryEditor({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
             onClick={() => setAiHelperOpen(true)}
           >
             <Ic.brain /> {t("script_ai_helper")}
@@ -317,10 +317,10 @@ export function LoreEntryEditor({
 
         {/* ── Advanced settings toggle ── forks: 2 — LorebookAccordion book settings + search */}
         <button type="button"
-          className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+          className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-1px)] font-medium text-accent-t transition-all hover:text-accent"
           onClick={() => setAdvancedOpen((v) => !v)}
         >
-          <span className="text-[10px]">{advancedOpen ? "▲" : "▼"}</span>
+          <span className="text-[calc(var(--ui-fs)-4px)]">{advancedOpen ? "▲" : "▼"}</span>
           {advancedOpen
             ? t("lore_advanced_collapse")
             : t("lore_advanced_settings")}
@@ -420,9 +420,9 @@ export function LoreEntryEditor({
             {/* ── Position ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
               <CustomTooltip content={t("lore_position_hint")} side="right" align="start">
-                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[13px] font-medium text-t1">
+                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
                   {t("lore_position_label")}
-                  <span className="text-[11px] text-t3">?</span>
+                  <span className="text-[calc(var(--ui-fs)-3px)] text-t3">?</span>
                 </div>
               </CustomTooltip>
 
@@ -637,7 +637,7 @@ export function LoreEntryEditor({
                     .map((g) => (
                       <span
                         key={g}
-                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[calc(var(--ui-fs)-2px)] text-accent-t transition-all hover:bg-border2 hover:text-t1"
                         onClick={() => form.setValue("groupName", g, { shouldDirty: true })}
                       >
                         {g}
@@ -651,7 +651,7 @@ export function LoreEntryEditor({
 
             {/* ── Temporary effects ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
-              <div className="mb-3 text-[13px] font-medium text-t1">
+              <div className="mb-3 text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
                 {t("lore_timed_section")}
               </div>
               <div
@@ -707,9 +707,9 @@ export function LoreEntryEditor({
             {/* ── Recursion ── */}
             <div>
               <CustomTooltip content={t("lore_recursion_section_hint")} side="right" align="start">
-                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
+                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.07em] text-t3">
                   {t("lore_recursion_section")}
-                  <span className="text-[11px] normal-case tracking-normal text-t3">?</span>
+                  <span className="text-[calc(var(--ui-fs)-3px)] normal-case tracking-normal text-t3">?</span>
                 </div>
               </CustomTooltip>
               <div className="flex flex-wrap gap-4">

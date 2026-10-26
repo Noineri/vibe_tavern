@@ -1,7 +1,7 @@
 /**
  * Typed RPC client for the copilot profile endpoints
  * (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). Mirrors the co-author module
- * client (`chat-api.ts` listCoauthorModules/…) but against
+ * client (`coauthor-module-api.ts` listCoauthorModules/…) but against
  * `client.api.copilot.profiles…`. Assignment (which profile an experience uses)
  * rides the existing script-update path: `scripts.copilot_profile_id` is a
  * soft link, and `null` = "use the built-in seed" (the resolver's fallback).
@@ -15,9 +15,11 @@ import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { updateScript } from "./script-api.js";
 
-/** `GET /api/copilot/profiles` — built-in seed first, then user profiles. */
-export async function listCopilotProfiles(): Promise<CopilotProfile[]> {
-  const response = await client.api.copilot.profiles.$get();
+/** `GET /api/copilot/profiles?kind=` — the requested kind's built-in seed
+ *  first, then that kind's user profiles (AS-8b: the kind param is required —
+ *  the modal must never show another kind's profiles). */
+export async function listCopilotProfiles(kind: string): Promise<CopilotProfile[]> {
+  const response = await client.api.copilot.profiles.$get({ query: { kind } });
   const data = await unwrapRpc(response);
   return data.profiles;
 }
@@ -38,6 +40,20 @@ export async function updateCopilotProfile(
     json: input,
   });
   return unwrapRpc(response);
+}
+
+/** `PATCH /api/copilot/profiles/reorder?kind=` — rewrite ONE kind's user
+ *  profiles' manual list order (ML-6). Mirrors `reorderCoauthorModules'`
+ *  payload ({ updates: [{ id, sortOrder }] } via PATCH) with the kind riding
+ *  the query param, like `listCopilotProfiles`; the response is the refreshed
+ *  merged list — the same envelope `listCopilotProfiles` unwraps. */
+export async function reorderCopilotProfiles(
+  kind: string,
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<CopilotProfile[]> {
+  const response = await client.api.copilot.profiles.reorder.$patch({ query: { kind }, json: { updates } });
+  const data = await unwrapRpc(response);
+  return data.profiles;
 }
 
 /** `DELETE /api/copilot/profiles/:profileId` — delete a user profile (built-in id → 400). */

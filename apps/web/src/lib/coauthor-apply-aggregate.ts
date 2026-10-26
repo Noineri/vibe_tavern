@@ -26,20 +26,22 @@
  * load-bearing contract with the CA-7 backend).
  */
 import { parseProfileMd, serializeProfileMd } from "@vibe-tavern/db/codecs";
-import type { BuildCharacterDraft, CoauthorApplyRequest, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+import type { BuildCharacterDraft, CoauthorApplyRequest, CoauthorLoreBundle, CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { pinBodyFields, pinGreetingsFields } from "../components/build/editors/vibe-md-sync.js";
 
 /** A finalized, proposed-producing activity (streaming/error ones are excluded). */
 interface ProposedActivity {
 	toolCallId: string;
-	target: "profile" | "greeting" | "lore_bundle";
+	target: "profile" | "greeting" | "lore_bundle" | "tracker_template";
 	proposed: string;
 	summary?: string;
 	greetingIndex?: number;
 	isAdd?: boolean;
 	/** Present iff `target === "lore_bundle"` (the complete cumulative draft). */
 	loreBundle?: CoauthorLoreBundle;
+	/** Present iff `target === "tracker_template"`. */
+	trackerTemplate?: CoauthorTrackerTemplateOutput["trackerTemplate"];
 }
 
 /** The result of aggregating a turn's activities. */
@@ -56,6 +58,10 @@ export interface CoauthorProposal {
 	 *  request-local revision (or last call order for historical revision-less
 	 *  results), for the structured lore review surface. */
 	loreBundle?: CoauthorLoreBundle;
+	/** CT-7b: the last tracker-template proposal in the turn. */
+	trackerTemplate?: CoauthorTrackerTemplateOutput["trackerTemplate"];
+	/** CT-7b: the summary paired with the selected tracker-template proposal. */
+	trackerTemplateSummary?: string;
 }
 
 /**
@@ -76,6 +82,16 @@ function finalizedActivities(activities: CoauthorToolActivity[]): ProposedActivi
 				proposed: "",
 				summary: a.summary,
 				loreBundle: a.loreBundle,
+			});
+			continue;
+		}
+		if (a.trackerTemplate) {
+			byId.set(a.toolCallId, {
+				toolCallId: a.toolCallId,
+				target: "tracker_template",
+				proposed: "",
+				summary: a.summary,
+				trackerTemplate: a.trackerTemplate,
 			});
 			continue;
 		}
@@ -199,7 +215,28 @@ export function aggregateCoauthorProposal(
 		applyRequest.loreBundle = newestLore.loreBundle;
 	}
 
-	return { hasProposal: true, proposedDraft, applyRequest, summaries, loreBundle: newestLore?.loreBundle };
+	// ── Tracker template (CT-7b): the last structured proposal wins. ───────────
+	let lastTrackerTemplate: ProposedActivity | undefined;
+	for (const a of finalized) {
+		if (a.target === "tracker_template") lastTrackerTemplate = a;
+	}
+	if (lastTrackerTemplate?.trackerTemplate) {
+		applyRequest.trackerTemplate = lastTrackerTemplate.trackerTemplate;
+	}
+
+	return {
+		hasProposal: true,
+		proposedDraft,
+		applyRequest,
+		summaries,
+		loreBundle: newestLore?.loreBundle,
+		...(lastTrackerTemplate?.trackerTemplate
+			? {
+				trackerTemplate: lastTrackerTemplate.trackerTemplate,
+				trackerTemplateSummary: lastTrackerTemplate.summary ?? "",
+			}
+			: {}),
+	};
 }
 
 /**

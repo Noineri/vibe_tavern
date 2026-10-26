@@ -15,11 +15,11 @@
  *   is included only for that model family.
  * - Voices: kokoro-fastapi exposes GET /v1/audio/voices → { voices: [{ id, name? }] };
  *   Honest (TE2-3): listVoices hits ONLY /audio/voices and returns null on
- *   any failure — no fallback to /models. Known hosts (TPE-9a) discover
- *   models LIVE from /models through a per-host criterion (no static
- *   lists — owner rule 2026-09-01); they document no voices endpoint, so
- *   the manual voice input floor applies; aggregator catalogs carry the
- *   roster per entry.
+ *   any failure — no fallback to /models. Known vendor hosts (OpenAI,
+ *   Groq) list their LIVE /models catalog unfiltered (no static lists —
+ *   owner rule 2026-09-01; no name filters — owner ruling 2026-10-15);
+ *   they document no voices endpoint, so the manual voice input floor
+ *   applies; aggregator catalogs carry the roster per entry.
  */
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
@@ -89,28 +89,18 @@ function isNanoGptStyleEndpoint(endpoint: string): boolean {
 
 // ─── Documented catalogs (F8, owner decision 2026-08-29) ─────────────────────
 
-/** Known hosts whose live OpenAI-compatible /models catalog mixes TTS with
- *  chat models. TPE-9a (owner rule 2026-09-01): no static model lists in
- *  code — discovery fetches the LIVE catalog and keeps only the entries
- *  matching a CRITERION over the provider's own documented TTS naming
- *  (new releases of the family appear without a code change):
- *  - api.openai.com: the TTS guide names gpt-4o-mini-tts / tts-1 / tts-1-hd
- *    — every id of that family contains "tts".
- *  - api.groq.com: the TTS page names the orpheus family (playai retired)
- *    — every id of that family contains "orpheus".
- *  ElectronHub is deliberately absent: its TTS roster mixes unrelated
- *  families (elevenlabs/playai/kokoro/dia/melotts/…) with no unifying
- *  criterion — its plain /models catalog serves as-is. The host ALWAYS
- *  wins over legacy stamps (pre-F8 profiles carry preset glue stamps
- *  that are not a user choice — same healing rule as the nano-gpt fix). */
-const HOST_MODEL_FILTERS: Record<string, (modelId: string) => boolean> = {
-  "api.openai.com": (id) => id.includes("tts"),
-  "api.groq.com": (id) => id.includes("orpheus"),
-};
-
-function hostModelFilterFor(host: string | null): ((modelId: string) => boolean) | null {
-  return host === null ? null : (HOST_MODEL_FILTERS[host] ?? null);
-}
+/** Known vendor hosts that document NO voices endpoint and no TTS-only
+ *  catalog: their plain /models catalog is listed UNFILTERED, and the
+ *  chatterbox-style `GET /voices` fallback (meant for local servers) is
+ *  never tried against them. They used to carry name-allowlist filters
+ *  (api.openai.com: ids containing "tts"; api.groq.com: "orpheus") — removed
+ *  by owner ruling 2026-10-15 (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step
+ *  8): a name guess silently hides every new model that does not match it,
+ *  and the picker is searchable. The host ALWAYS wins over legacy stamps
+ *  (pre-F8 profiles carry preset glue stamps such as "documented" or
+ *  "name-heuristic" that are not a user choice — same healing rule as the
+ *  nano-gpt fix). */
+const KNOWN_VENDOR_TTS_HOSTS = new Set(["api.openai.com", "api.groq.com"]);
 
 /** SiliconFlow documents a server-side catalog filter: GET /v1/models?type=audio
  *  (docs.siliconflow.cn/en/api-reference/models/get-model-list — `type`:
@@ -322,23 +312,23 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
   let lastVoicesSource: "library" | "roster" | null = null;
 
   /** Catalog selection (D15/D23/TPE-9a), shared by listModels and
-   *  listVoices: known-host criteria and audio-type hosts ALWAYS win over
+   *  listVoices: known vendor hosts and audio-type hosts ALWAYS win over
    *  legacy stamps (the F6 field-fix rule — old profiles carry preset-glue
-   *  stamps that must heal); `plain` = the ordinary OpenAI-compatible
-   *  /models catalog. */
+   *  stamps that must heal); `vendor` = a known vendor's plain /models
+   *  catalog (no local-server voice fallback); `plain` = the ordinary
+   *  OpenAI-compatible /models catalog. */
   const catalogRequest = (): {
-    kind: "audio-models" | "modality" | "audio-type" | "filtered" | "plain";
+    kind: "audio-models" | "modality" | "audio-type" | "vendor" | "plain";
     url: string;
   } => {
     const modelFilter = readString(config, "modelFilter");
     const host = hostnameOf(cfg.endpoint);
-    // Known hosts (TPE-9a): the live /models catalog filtered by the
-    // per-host criterion — no static lists (owner rule 2026-09-01). The
-    // host also wins over the retired "documented" preset stamp; on a
-    // host that lost its criterion (ElectronHub) the stamp no longer
-    // matches anything and falls through to plain.
-    if (hostModelFilterFor(host) !== null) {
-      return { kind: "filtered", url: `${cfg.endpoint}/models` };
+    // Known vendor hosts: the live /models catalog, unfiltered. The host
+    // also wins over the retired "documented" / "name-heuristic" preset
+    // stamps; on any other host those stamps match nothing and fall
+    // through to plain.
+    if (host !== null && KNOWN_VENDOR_TTS_HOSTS.has(host)) {
+      return { kind: "vendor", url: `${cfg.endpoint}/models` };
     }
     // SiliconFlow: documented server-side filter beats every stamp.
     if ((host !== null && AUDIO_TYPE_HOSTS.has(host)) || modelFilter === "audio-type") {
@@ -412,10 +402,6 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
       const { kind, url } = catalogRequest();
-      // Known-host criterion (TPE-9a): drop everything outside the
-      // provider's documented TTS family — live catalog + criterion, no
-      // static list.
-      const hostFilter = kind === "filtered" ? hostModelFilterFor(hostnameOf(cfg.endpoint)) : null;
       const useModalityParam = kind === "modality";
       const useAudioModelsCatalog = kind === "audio-models";
       const response = await fetchOrWrap(
@@ -444,7 +430,6 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         const record = entry as Record<string, unknown>;
         const id = record.id;
         if (typeof id !== "string" || id.length === 0) continue;
-        if (hostFilter !== null && !hostFilter(id)) continue;
         // NanoGPT audio-models entries (D23): `type=tts` still returns music
         // models — only entries with capabilities.text_to_speech === true
         // synthesize via POST /audio/speech. Docs say to rely on the
@@ -516,7 +501,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listVoices(): Promise<TtsVoiceInfo[] | null> {
       const { kind, url } = catalogRequest();
-      // Known hosts (TPE-9a): no hardcoded voice rosters — these hosts
+      // Known vendor hosts (TPE-9a): no hardcoded voice rosters — these hosts
       // document no voices endpoint, so the /audio/voices attempt below
       // answers 404 → null → manual voice input floor.
       // D22: aggregators (audio-models/modality) have NO /audio/voices

@@ -42,7 +42,7 @@ export function ProviderBindingPanel({
           className="!mb-0 !inline-flex"
         />
         <div className="min-w-0">
-          <div className="font-ui text-[13px] font-medium text-t1">
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
             {t("bind_to_favorite_model")}
           </div>
           <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
@@ -55,20 +55,20 @@ export function ProviderBindingPanel({
       {form.bindPerModel && (
         <div className="mt-3">
           {favorites.length === 0 ? (
-            <div className="flex items-center gap-1.5 font-ui text-[12px] text-t3 italic">
+            <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 italic">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("binding_no_favorites_hint")}
             </div>
           ) : form.editingModelId ? (
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-2.5 py-1 font-mono text-[11px] text-accent">
+              <span className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-2.5 py-1 font-mono text-[calc(var(--ui-fs)-3px)] text-accent">
                 <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Edit /></span>
                 {t("editing_model_badge", { model: form.editingModelId })}
               </span>
             </div>
           ) : (
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded bg-s3 px-2.5 py-1 font-mono text-[11px] text-t3">
+              <span className="inline-flex items-center gap-1.5 rounded bg-s3 px-2.5 py-1 font-mono text-[calc(var(--ui-fs)-3px)] text-t3">
                 <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Settings /></span>
                 {t("binding_base_badge")}
               </span>

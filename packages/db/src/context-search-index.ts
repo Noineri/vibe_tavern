@@ -24,8 +24,11 @@
 
 import { Database } from "bun:sqlite";
 
-/** Discriminator grouping record families that share read semantics. */
-export type ContextChannel = "entity" | "skill";
+/** Discriminator grouping record families that share read semantics:
+ * `"entity"` (canonical store read), `"skill"` (progressive-disclosure
+ * file read), `"branch"` (the session-held branch view — SC-10's `rp-message`
+ * records, read as the message plus its neighbours, never from a store). */
+export type ContextChannel = "entity" | "skill" | "branch";
 
 /** How a result matched the query, in priority order. */
 export type ContextMatchKind = "exact-title" | "content" | "trigram-title";
@@ -37,9 +40,11 @@ export type ContextMatchKind = "exact-title" | "content" | "trigram-title";
  * DTO; `body` is indexed but never returned (two-step search → read).
  */
 export interface IndexedContextRecord {
-  /** Read-semantics family: `"entity"` (canonical stores) or `"skill"` (files). */
+  /** Read-semantics family: `"entity"` (canonical stores), `"skill"` (files),
+   *  or `"branch"` (the session-held branch view). */
   channel: ContextChannel;
-  /** Kind within the channel, e.g. `"character"`, `"lore-entry"`, `"skill"`. */
+  /** Kind within the channel, e.g. `"character"`, `"lore-entry"`, `"skill"`,
+   *  `"rp-message"`. */
   type: string;
   /** Canonical locator the reader uses to fetch full content. */
   id: string;

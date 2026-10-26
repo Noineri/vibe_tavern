@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeAll, mock, afterEach } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
@@ -39,11 +40,7 @@ afterEach(() => {
 // Mock the i18n context so `t` returns keys verbatim (stable chrome text). The
 // `...real` spread keeps every other export intact (AGENTS.md mock.module
 // gotcha — file-scoped vi.mock does not apply here; bun:test module mock does).
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // Mock ExperienceFrame to a thin shell that captures the onAction prop so the
 // rejection-handling regression can invoke the modal's internal handleAction

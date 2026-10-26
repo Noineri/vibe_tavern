@@ -112,7 +112,7 @@ afterAll(async () => {
 });
 
 /** Minimal valid `ChatModeAssembleResult` for the fake `assemblePrompt`. */
-function fakeAssembleResult(chatId: string, branchId: string): ChatModeAssembleResult {
+function fakeAssembleResult(chatId: string, branchId: string, model: string): ChatModeAssembleResult {
   return {
     branchId: brandId<ChatBranchId>(branchId),
     prompt: {
@@ -126,7 +126,7 @@ function fakeAssembleResult(chatId: string, branchId: string): ChatModeAssembleR
     promptTraceDraft: {
       chatId,
       branchId,
-      model: "test-model",
+      model,
       presetName: "test",
       assembledLayers: [],
       tokenAccounting: {},
@@ -155,7 +155,11 @@ function makeHarness(chat: TestChat): InstanceType<typeof LiveChatOrchestrator> 
     diceRolls: chat.stores.diceRolls,
     uiSettings: chat.stores.uiSettings,
     experiences: chat.stores.experiences,
-    assemblePrompt: async () => fakeAssembleResult(chat.chatId as string, chat.branchId),
+    assemblePrompt: async (chatId, branchId, options) => fakeAssembleResult(
+      chatId,
+      branchId ?? chat.branchId,
+      options?.model ?? "test-model",
+    ),
     // Typed stubs (the hygiene budget forbids new never-casts): the response
     // builders the append paths call return minimal valid shapes; the rest
     // must never run here. prepareLiveTurn's snapshot is read only for
@@ -266,13 +270,22 @@ describe("provider cuts the stream mid-reply", () => {
       chatId: chat.chatId as string,
       messageId: greeting.id,
       profile: TEST_PROFILE,
-      model: "test-model",
+      model: "override-model",
     }));
 
+    const metadataAt = events.findIndex((event) => event.event === "generation-metadata");
+    const firstDeltaAt = events.findIndex((event) => event.event === "text-delta" || event.event === "reasoning-delta");
+    expect(metadataAt).toBeGreaterThanOrEqual(0);
+    expect(metadataAt).toBeLessThan(firstDeltaAt);
+    const metadata = JSON.parse(events[metadataAt]!.data);
+    expect(metadata).toEqual({ modelId: "override-model", presetName: "test" });
     expect(errorEvent(events).partialSaved).toBe(true);
     const variants = await chat.stores.messages.getVariants(greeting.id);
     expect(variants).toHaveLength(variantsBefore + 1);
-    expect(variants.some((v) => v.content === "A different hello, cut")).toBe(true);
+    const persistedVariant = variants.find((variant) => variant.content === "A different hello, cut");
+    expect(persistedVariant).toBeDefined();
+    expect(persistedVariant!.modelId).toBe(metadata.modelId);
+    expect(persistedVariant!.presetName).toBe(metadata.presetName);
   });
 
   it("a cut before any text arrives stores nothing and the error event carries no partialSaved (unchanged)", async () => {

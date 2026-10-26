@@ -26,8 +26,23 @@ export type { CreateProviderData, UpdateProviderData, ProviderProfile, CachedMod
 export { ProxyStore } from './proxy-store.js';
 export type { ProxyProfile } from './proxy-store.js';
 
+export { SkillOrderStore } from './skill-order-store.js';
+export type { SkillOrderRow } from './skill-order-store.js';
+
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
+
+export { AgentKindSettingsStore } from './agent-kind-settings-store.js';
+export type {
+  AgentKindSettings,
+  AgentKindSettingsUpdate,
+} from './agent-kind-settings-store.js';
+
+export { ChatAgentSettingsStore } from './chat-agent-settings-store.js';
+export type {
+  ChatAgentSettings,
+  ChatAgentSettingsUpdate,
+} from './chat-agent-settings-store.js';
 
 export { ChatStore } from './chat-store.js';
 export type {
@@ -110,6 +125,10 @@ export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGe
 export { ImageGenPromptCapStore } from './image-gen-prompt-cap-store.js';
 export { ImageGenListingSnapshotStore, IMAGE_GEN_LISTING_SNAPSHOT_KINDS } from './image-gen-listing-snapshot-store.js';
 export type { ImageGenListingSnapshot, ImageGenListingSnapshotKind } from './image-gen-listing-snapshot-store.js';
+export { SttListingSnapshotStore, STT_LISTING_SNAPSHOT_KINDS } from './stt-listing-snapshot-store.js';
+export type { SttListingSnapshot, SttListingSnapshotKind } from './stt-listing-snapshot-store.js';
+export { TtsListingSnapshotStore, TTS_LISTING_SNAPSHOT_KINDS, TTS_VOICES_SNAPSHOT_KIND_PREFIX, ttsVoicesSnapshotKind } from './tts-listing-snapshot-store.js';
+export type { TtsListingSnapshot, TtsListingSnapshotKind } from './tts-listing-snapshot-store.js';
 export type { ImageGenPromptCapRow } from './image-gen-prompt-cap-store.js';
 
 export { ImagePromptVariantStore } from './image-prompt-variant-store.js';
@@ -172,8 +191,36 @@ export type {
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   AppendMessageInput,
-  CopilotContextMetrics,
 } from './experience-copilot-store.js';
+export { forkChatThreadToBranch } from './experience-copilot-fork-copy.js';
+export type {
+  ForkEventPayloadDecision,
+  ForkThreadCopyDeps,
+  ForkThreadRemap,
+} from './experience-copilot-fork-copy.js';
+export { deleteCopilotTurn } from './experience-copilot-turn-delete.js';
+export type {
+  CopilotTurnDeleteResult,
+  TurnDeleteDeps,
+} from './experience-copilot-turn-delete.js';
+export { updateAssistantMessageContent } from './experience-copilot-message-edit.js';
+export type {
+  CopilotMessageEditResult,
+  MessageEditDeps,
+} from './experience-copilot-message-edit.js';
+export type {
+  CopilotContextMetrics,
+  CopilotContextLink,
+  CopilotMeterSegment,
+  CopilotTodoItem,
+} from './experience-copilot-row-parse.js';
+export { AGENT_THREAD_CONTEXT_EVENT_KINDS, parseFrontier } from './agent-thread-context-events.js';
+export type {
+  AgentThreadContextEvent,
+  AgentThreadContextEventKind,
+  AgentThreadRpFrontier,
+  AgentThreadTimelineEntry,
+} from './agent-thread-context-events.js';
 
 export { ServicePromptProfileStore } from './service-prompt-store.js';
 export type { ServicePromptProfile, CreateServicePromptProfileData, UpdateServicePromptProfileData } from './service-prompt-store.js';

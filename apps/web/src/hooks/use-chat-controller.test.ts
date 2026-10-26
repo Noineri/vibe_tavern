@@ -15,9 +15,11 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 
 import { brandId, type ChatId } from "@vibe-tavern/domain";
-import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
-import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
+import type { CoauthorLoreBundle, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { AppSnapshot, DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
+import type { BootstrapData } from "../stores/api-actions/bootstrap-actions.js";
+import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -26,9 +28,11 @@ const { act, renderHook } = await import("@testing-library/react");
 
 // --- chat-api stubs (the functions the non-stream path crosses) ---
 const regenerateChatMessage = mock();
+const regenerateChatMessageStream = mock();
 const sendChatMessageStream = mock();
 const fetchChat = mock();
 const sendChatMessageAction = mock();
+const generateReplyAction = mock();
 // LS-4a: the non-stream continue entry handleContinueMessage calls.
 const continueMessageAction = mock();
 
@@ -69,7 +73,7 @@ mock.module("sonner", () => ({
 	toast: toastMock,
 }));
 mock.module("../api/chat-api.js", () => {
-	return { ...realChatApi, regenerateChatMessage, sendChatMessageStream, fetchChat };
+  return { ...realChatApi, regenerateChatMessage, regenerateChatMessageStream, sendChatMessageStream, fetchChat };
 });
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend
@@ -77,7 +81,7 @@ mock.module("../api/chat-api.js", () => {
 // to end while all unrelated exports remain real. continueMessageAction is
 // stubbed for the same reason (LS-4a).
 mock.module("../stores/api-actions/chat-actions.js", () => {
-	return { ...realChatActions, sendChatMessageAction, continueMessageAction };
+	return { ...realChatActions, sendChatMessageAction, generateReplyAction, continueMessageAction };
 });
 
 // Most controller assertions use stable i18n keys; the overflow path calls
@@ -91,6 +95,12 @@ mock.module("../i18n/locale-helpers.js", () => ({
 	),
 }));
 
+// SC-21: handleFork is a thin delegate to forkBranchFlow (the gate + timer
+// live there per the file-size ratchet) — stubbed so this file pins the
+// wiring while branch-fork.test.ts pins the gate itself.
+const forkBranchFlow = mock();
+mock.module("./branch-fork.js", () => ({ forkBranchFlow }));
+
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
 const { ProviderStreamError, markUserMessageSaved } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
@@ -103,9 +113,63 @@ const { useSnapshotStore } = await import("../stores/snapshot-store.js");
 const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
 const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-actions.js");
 const { useExperienceStore } = await import("../stores/experience-store.js");
+const { useGenerationQueueStore } = await import("../stores/generation-queue-store.js");
 
 const CHAT = "chat-1" as ChatId;
 const MSG = "msg-1";
+
+function seedGenerationBatch(): void {
+  useGenerationQueueStore.setState({
+    batchesByChat: { [CHAT]: { messageId: MSG, variantIdsAtStart: ["variant-1"] } },
+    recordsByChat: {
+      [CHAT]: [
+        {
+          id: "failed-record",
+          messageId: MSG,
+          startVariantPosition: 1,
+          origin: "regenerate",
+          status: "failed",
+          model: "failed-model",
+          presetName: "Failed preset",
+          presetId: "failed-preset",
+          error: "kept failure",
+        },
+        {
+          id: "running-record",
+          messageId: MSG,
+          startVariantPosition: 1,
+          origin: "queue",
+          status: "running",
+          model: "running-model",
+          presetName: "Running preset",
+          presetId: "running-preset",
+        },
+        {
+          id: "pending-record",
+          messageId: MSG,
+          startVariantPosition: 1,
+          origin: "queue",
+          status: "pending",
+          model: "pending-model",
+          presetName: "Pending preset",
+          presetId: "pending-preset",
+        },
+      ],
+    },
+    jobsByChat: {
+      [CHAT]: [{
+        id: "running-job",
+        chatId: CHAT,
+        messageId: MSG,
+        model: "running-model",
+        promptPresetId: "running-preset",
+        recordId: "running-record",
+        status: "running",
+        enqueuedAt: 1,
+      }],
+    },
+  });
+}
 
 /** Stub that rejects with an AbortError-shaped error when the signal fires,
  *  mirroring how `fetch` rejects on `AbortController.abort()`. */
@@ -121,7 +185,10 @@ function rejectOnAbort(_chatId: ChatId, _messageId: string, opts?: { signal?: Ab
 
 beforeEach(() => {
   regenerateChatMessage.mockReset();
+  regenerateChatMessageStream.mockReset();
   sendChatMessageStream.mockReset();
+  sendChatMessageAction.mockReset();
+  generateReplyAction.mockReset();
   continueMessageAction.mockReset();
   fetchChat.mockReset();
   toastWarning.mockClear();
@@ -142,9 +209,124 @@ beforeEach(() => {
   useProviderDataStore.setState({
     profiles: [{ id: "p1", isActive: true, defaultModel: "gpt-x" } as never],
   });
+  useBootstrapStore.setState({ data: null });
+  useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
 });
 
 describe("useChatController — handleRegenerateMessage (non-stream)", () => {
+
+  test("plain regenerate keeps the provider-facing failure text on its record", async () => {
+    const error = new ProviderStreamError("provider says no", "rate_limit");
+    regenerateChatMessage.mockRejectedValue(error);
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleRegenerateMessage(MSG); });
+
+    const records = useGenerationQueueStore.getState().recordsByChat[CHAT];
+    expect(records).toHaveLength(1);
+    expect(records).toMatchObject([{
+      messageId: MSG, origin: "regenerate", status: "failed", error: "provider says no",
+    }]);
+    expect(toastError.mock.calls[0]![0]).toBe("provider says no");
+    expect(records?.[0]?.error).toBe(toastError.mock.calls[0]![0]);
+    expect(records?.[0]?.error).toBe(error.message);
+  });
+
+  test("stream metadata replaces the plain regenerate record's quick-switch guess", async () => {
+    useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+    let settle!: () => void;
+    regenerateChatMessageStream.mockImplementation((_chatId: unknown, _messageId: unknown, opts: {
+      onGenerationMetadata?: (metadata: GenerationMetadata) => void;
+    }) => {
+      opts.onGenerationMetadata?.({ modelId: "resolved-model", presetName: "Resolved preset" });
+      return new Promise<void>((resolve) => { settle = resolve; });
+    });
+    const { result } = renderHook(() => useChatController());
+    let pending!: Promise<void>;
+
+    await act(async () => {
+      pending = result.current.handleRegenerateMessage(MSG);
+      await Promise.resolve();
+    });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(1);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toMatchObject([{
+      model: "resolved-model", presetName: "Resolved preset", status: "running",
+    }]);
+
+    await act(async () => { settle(); await pending; });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toEqual([]);
+  });
+
+  test("continue leaves the batch, failed/running/pending records, and jobs untouched", async () => {
+    seedGenerationBatch();
+    continueMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleContinueMessage(MSG); });
+
+    expect(continueMessageAction).toHaveBeenCalledWith(CHAT, MSG, expect.any(AbortSignal));
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]).toEqual({ messageId: MSG, variantIdsAtStart: ["variant-1"] });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.map((record) => record.id))
+      .toEqual(["failed-record", "running-record", "pending-record"]);
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.map((job) => job.id)).toEqual(["running-job"]);
+  });
+
+	test("non-stream send snapshots the visible quick-switch model and preset for its generation lifetime", async () => {
+		let resolveSend!: () => void;
+		sendChatMessageAction.mockImplementation(() => new Promise<void>((resolve) => { resolveSend = resolve; }));
+		useChatStore.setState({ draft: "hello" });
+		useSnapshotStore.setState({ activeChat: { id: CHAT, mode: "rp", promptPresetId: "preset-1" } as unknown as AppSnapshot["activeChat"] });
+		useBootstrapStore.setState({ data: { promptPresets: [{ id: "preset-1", name: "Quick preset" }], uiSettings: { userMessageCount: 0 } } as unknown as BootstrapData });
+		const { result } = renderHook(() => useChatController());
+
+		let pending!: Promise<void>;
+		await act(async () => {
+			pending = result.current.handleSend();
+			await Promise.resolve();
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({ modelId: "gpt-x", presetName: "Quick preset" });
+
+		await act(async () => {
+			resolveSend();
+			await pending;
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({ modelId: null, presetName: null });
+	});
+
+	test("stream send exposes server generation metadata until the stream settles", async () => {
+		let settleStream!: () => void;
+		sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: {
+			onGenerationMetadata?: (metadata: GenerationMetadata) => void;
+		}) => {
+			opts.onGenerationMetadata?.({ modelId: "resolved-model", presetName: "Resolved preset" });
+			return new Promise<void>((resolve) => { settleStream = resolve; });
+		});
+		useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+		useChatStore.setState({ draft: "hello" });
+		const { result } = renderHook(() => useChatController());
+
+		let pending!: Promise<void>;
+		await act(async () => {
+			pending = result.current.handleSend();
+			await Promise.resolve();
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({
+			isSending: true,
+			modelId: "resolved-model",
+			presetName: "Resolved preset",
+		});
+
+		await act(async () => {
+			settleStream();
+			await pending;
+		});
+		expect(useChatStore.getState().generations[CHAT]).toMatchObject({
+			isSending: false,
+			modelId: null,
+			presetName: null,
+		});
+	});
+
   test("success clears messageActionId and isSending", async () => {
     regenerateChatMessage.mockResolvedValue({});
     const { result } = renderHook(() => useChatController());
@@ -155,6 +337,31 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBeNull();
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toEqual([]);
+  });
+
+  test("cancellation drops the plain regenerate record when the refreshed snapshot contains a partial variant", async () => {
+    regenerateChatMessage.mockImplementation(rejectOnAbort);
+    fetchChat.mockResolvedValueOnce({
+      messages: [{ id: MSG, variants: [{ id: "partial-variant", isSelected: true }] }],
+    });
+    const { result } = renderHook(() => useChatController());
+    let pending!: Promise<void>;
+
+    await act(async () => {
+      pending = result.current.handleRegenerateMessage(MSG);
+      await Promise.resolve();
+    });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(1);
+
+    await act(async () => {
+      useChatStore.getState().abortGeneration(CHAT);
+      await pending;
+    });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useSnapshotStore.getState().messagesById[MSG]?.variants).toHaveLength(1);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toEqual([]);
   });
 
   test("cancel (abort) clears messageActionId and isSending — the regression under fix", async () => {
@@ -171,6 +378,7 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBe(MSG);
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(true);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(1);
 
     // User clicks Cancel — abortGeneration flips the abort flag synchronously,
     // the stubbed action rejects, the controller's catch must run cleanup.
@@ -181,6 +389,7 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBeNull();
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toEqual([]);
   });
 
   test("provider error clears messageActionId and isSending", async () => {
@@ -193,6 +402,149 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBeNull();
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+  });
+});
+
+describe("useChatController — generation batch resets", () => {
+  test("a valid Send clears the batch, records, and jobs before sending its unchanged body", async () => {
+    seedGenerationBatch();
+    useChatStore.setState({ draft: "hello", draftAttachments: [], generations: {}, messageActionId: null });
+    seedRpSnapshot();
+    let settle!: () => void;
+    sendChatMessageAction.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const { result } = renderHook(() => useChatController());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend();
+      await Promise.resolve();
+    });
+
+    expect(sendChatMessageAction.mock.calls[0]?.slice(0, 4)).toEqual([CHAT, "hello", undefined, undefined]);
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]).toBeUndefined();
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toBeUndefined();
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toBeUndefined();
+    await act(async () => { settle(); await pending; });
+  });
+
+  test("no-provider, empty-draft, and already-sending Sends leave queue state untouched", async () => {
+    const activeProfiles = useProviderDataStore.getState().profiles;
+    useProviderDataStore.setState({ profiles: [] });
+    useChatStore.setState({ draft: "hello", draftAttachments: [], generations: {}, messageActionId: null });
+    seedGenerationBatch();
+    const noProvider = renderHook(() => useChatController());
+    await act(async () => { await noProvider.result.current.handleSend(); });
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]?.messageId).toBe(MSG);
+    noProvider.unmount();
+
+    useProviderDataStore.setState({ profiles: activeProfiles });
+    useChatStore.setState({ draft: "", draftAttachments: [], generations: {}, messageActionId: null });
+    seedGenerationBatch();
+    const emptyDraft = renderHook(() => useChatController());
+    await act(async () => { await emptyDraft.result.current.handleSend(); });
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(3);
+    emptyDraft.unmount();
+
+    useChatStore.setState({ draft: "hello", draftAttachments: [], generations: {}, messageActionId: null });
+    useChatStore.getState().startGeneration(CHAT);
+    seedGenerationBatch();
+    const alreadySending = renderHook(() => useChatController());
+    await act(async () => { await alreadySending.result.current.handleSend(); });
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toHaveLength(1);
+    expect(sendChatMessageAction).not.toHaveBeenCalled();
+    alreadySending.unmount();
+  });
+
+  test("a valid Resend clears the batch, records, and jobs before its unchanged request", async () => {
+    seedGenerationBatch();
+    let settle!: () => void;
+    generateReplyAction.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const { result } = renderHook(() => useChatController());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleResend();
+      await Promise.resolve();
+    });
+
+    expect(generateReplyAction).toHaveBeenCalledWith(CHAT, expect.any(AbortSignal));
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]).toBeUndefined();
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toBeUndefined();
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toBeUndefined();
+    await act(async () => { settle(); await pending; });
+  });
+
+  test("a no-provider Resend leaves the batch, records, and jobs untouched", async () => {
+    seedGenerationBatch();
+    useProviderDataStore.setState({ profiles: [] });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleResend(); });
+
+    expect(generateReplyAction).not.toHaveBeenCalled();
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]?.messageId).toBe(MSG);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(3);
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toHaveLength(1);
+  });
+});
+
+describe("useChatController — runRegenerateJob", () => {
+  test("a provider failure settles only the linked running queue record with the shared toast text and preserves the override", async () => {
+    const error = new ProviderStreamError("queue provider says no", "rate_limit");
+    const override: RegenerateOverride = { model: "queued-model", promptPresetId: "queued-preset" };
+    seedGenerationBatch();
+    useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+    regenerateChatMessageStream.mockRejectedValue(error);
+    const { result } = renderHook(() => useChatController());
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.runRegenerateJob(CHAT, MSG, override); });
+
+    const records = useGenerationQueueStore.getState().recordsByChat[CHAT];
+    expect(outcome).toBe("failed");
+    expect(regenerateChatMessageStream.mock.calls[0]?.[3]).toEqual(override);
+    expect(records?.filter((record) => record.status === "failed")).toHaveLength(2);
+    expect(records?.find((record) => record.id === "running-record")).toMatchObject({
+      status: "failed", error: "queue provider says no",
+    });
+    expect(records?.find((record) => record.id === "running-record")?.error).toBe(toastError.mock.calls[0]?.[0]);
+    expect(records?.find((record) => record.id === "running-record")?.error).not.toBe("generation_failed");
+    expect(records?.find((record) => record.id === "running-record")?.error).not.toBe("regen_failed");
+  });
+
+  test("cancelling a queue regenerate does not turn its linked running record into a failure", async () => {
+    seedGenerationBatch();
+    useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: true } }));
+    regenerateChatMessageStream.mockImplementation(rejectOnAbort);
+    const { result } = renderHook(() => useChatController());
+    let pending!: Promise<string>;
+
+    await act(async () => {
+      pending = result.current.runRegenerateJob(CHAT, MSG);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      useChatStore.getState().abortGeneration(CHAT);
+      await pending;
+    });
+
+    const record = useGenerationQueueStore.getState().recordsByChat[CHAT]?.find((item) => item.id === "running-record");
+    expect(record?.status).toBe("running");
+    expect(record?.error).toBeUndefined();
+  });
+
+  test("the non-stream queue regenerate forwards the full override unchanged", async () => {
+    const override: RegenerateOverride = { model: "queued-model", promptPresetId: "queued-preset" };
+    useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse: false } }));
+    regenerateChatMessage.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.runRegenerateJob(CHAT, MSG, override); });
+
+    expect(regenerateChatMessage).toHaveBeenCalledWith(CHAT, MSG, {
+      signal: expect.any(AbortSignal),
+      override,
+    });
   });
 });
 
@@ -650,11 +1002,15 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
 
   test("unresolved choose roll ⇒ send blocked (no stream call)", async () => {
     setNormalLane([makeRoll({ included: true, policy: "choose", finalAttemptId: null })]);
+    seedGenerationBatch();
     const { result } = renderHook(() => useChatController());
 
     await act(async () => { await result.current.handleSend(); });
 
     expect(sendChatMessageStream).not.toHaveBeenCalled();
+    expect(useGenerationQueueStore.getState().batchesByChat[CHAT]?.messageId).toBe(MSG);
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]).toHaveLength(3);
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]).toHaveLength(1);
   });
 
   test("persona actor mismatch ⇒ send blocked (no stream call)", async () => {
@@ -1170,5 +1526,27 @@ describe("useChatController — lorebook overflow toast (P21, stream done path)"
     await act(async () => { await result.current.handleSend(); });
 
     expect(toastWarning).not.toHaveBeenCalled();
+  });
+});
+
+describe("useChatController — handleFork delegation (SC-21)", () => {
+  test("passes the active chat id and message id through to forkBranchFlow", async () => {
+    forkBranchFlow.mockReset();
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleFork(MSG); });
+
+    expect(forkBranchFlow).toHaveBeenCalledTimes(1);
+    expect(forkBranchFlow).toHaveBeenCalledWith(CHAT, MSG);
+  });
+
+  test("no active chat ⇒ returns early without touching forkBranchFlow", async () => {
+    forkBranchFlow.mockReset();
+    useChatStore.setState({ activeChatId: null });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleFork(MSG); });
+
+    expect(forkBranchFlow).not.toHaveBeenCalled();
   });
 });

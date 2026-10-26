@@ -30,6 +30,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { createRef } from "react";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { mocked } from "../../../../test/mock-utils.js";
 import type { CharacterImportMobileHandle } from "./CharacterImportMobile.js";
 import type { RegexScriptImportDraft } from "@vibe-tavern/import-export";
@@ -43,23 +44,18 @@ const toastError = mock();
 const toastSuccess = mock();
 const toastWarning = mock();
 const toastInfo = mock();
-const realI18nContext = await import("../../../i18n/context.js");
 const realSonner = await import("sonner");
 const realParseImportFile = await import("./parse-import-file.js");
 const parseCharacterFile = mock(realParseImportFile.parseCharacterFile);
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, values?: Record<string, number>) => key === "regexImport.profileSummary"
+installI18nContextSeam({
+  custom: {
+    t: (key, values?) => key === "regexImport.profileSummary"
       ? `${values?.n} Rules · ${values?.enabled} enabled · ${values?.disabled} disabled`
       : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 mock.module("sonner", () => ({
   ...realSonner,

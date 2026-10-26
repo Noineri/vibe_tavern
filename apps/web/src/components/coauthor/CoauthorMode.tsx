@@ -178,6 +178,9 @@ interface TabButtonProps {
   badge?: boolean;
 }
 
+// forks: 1 — apps/web/src/components/shared/agent-shell/AgentShellTabButton.tsx
+// (fork #1 of this file-private primitive; SC-15 names its `onClose` +
+// `closeLabel` deviation in that file's header).
 function TabButton({ label, active, onClick, pulse, badge }: TabButtonProps) {
   return (
     <button
@@ -186,7 +189,7 @@ function TabButton({ label, active, onClick, pulse, badge }: TabButtonProps) {
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
+        "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[var(--ui-fs)] font-medium transition-colors",
         active ? "border-b-2 border-accent text-t1" : "border-b-2 border-transparent text-t3",
         pulse && "coauthor-tab-pulse",
       )}

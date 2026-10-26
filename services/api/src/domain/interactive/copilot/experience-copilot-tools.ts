@@ -2,14 +2,21 @@
  * Experience-Copilot AI tools (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-4).
  *
  * These tools are the model's ONLY channel for proposing rules/visual edits to
- * an experience and for running tests against the unsaved source. They NEVER
- * write to the {@link ExperienceCopilotStore} or any script/visual resource —
- * each mutating `execute()` validates the proposal and returns it as the
- * proposed buffer; the user commits via the BE-6 binding endpoints
+ * an experience and for running tests against the unsaved source. The buffer
+ * tools NEVER write to the {@link ExperienceCopilotStore} or any script/visual
+ * resource — each mutating `execute()` validates the proposal and returns it as
+ * the proposed buffer; the user commits via the BE-6 binding endpoints
  * (`/api/scripts/:scriptId/visuals`), the sole write path. This is the same
  * Google-Docs-Suggestions / pull-request pattern the Co-Author tools use, with
  * two named text buffers ("rules"/"visual") in place of the profile/greeting
  * surfaces — adapted from {@link buildCoauthorTools}.
+ *
+ * AS-2c SPLIT: the buffer-tool MECHANISM (working state, first-mutation guard,
+ * validation plumbing, mutation queue, empty-content rejection) lives in
+ * `domain/agent/agent-buffer-tools.ts` (`createBufferTools`); this module is
+ * the EXPERIENCE wiring — buffer ids, description fragments (byte-identical
+ * to the pre-AS-2c strings), the rules validator, and the seeds — plus the
+ * experience-only tools below (AS-10 removes the shim notes).
  *
  * Returned shape for the proposing tools (`write_buffer`/`edit_buffer`):
  * {@link ExperienceCopilotToolOutput} — `{ target, proposed, summary }`.
@@ -20,7 +27,11 @@
  * The read-only tools (`run_test`, `run_simulate`, `suggest_visual_binding`)
  * return condensed digests the model reasons over; they never mutate the
  * working state. `read_skill_file` is REUSED from the Co-Author skill system
- * (same sandboxed reader, same progressive-disclosure flow).
+ * (same sandboxed reader, same progressive-disclosure flow). `plan` and
+ * `read_plan` are supplied by standalone script-owned agent-plan tools; `todo`
+ * (the thread-session quick checklist, restored PM-7 to live BESIDE the plan
+ * — the tool descriptions carry the choice guidance) by the standalone
+ * `createCopilotTodoTool` factory.
  *
  * The model may call several tools per turn; the AI SDK multi-step loop feeds
  * results back so the model stays coherent (bounded only by the nominal
@@ -42,15 +53,14 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import {
   DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
-  applyExactEditsToBody,
   deriveDefaultLaunchContext,
   log,
+  type AgentPlan,
   type ExperienceCapability,
   type ExperienceController,
   type ExperienceParticipant,
 } from "@vibe-tavern/domain";
 import {
-  copilotTodoListSchema,
   type CopilotTodoItem,
   type ExperienceCopilotLaunchContext,
   type ExperienceCopilotToolOutput,
@@ -62,6 +72,9 @@ import {
   simulateExperienceTest,
 } from "../experience-tester.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
+import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
+import { createBufferTools } from "../../agent/agent-buffer-tools.js";
+import { createCopilotTodoTool } from "./copilot-todo-tool.js";
 
 /** Structured log for every experience-copilot tool call — the observability
  *  channel for a path whose tool I/O and validation verdicts are otherwise
@@ -96,9 +109,11 @@ interface ResolvedExperienceCopilotLaunchContext {
   readonly humanSeatId?: string;
 }
 
-/** A create-only test digest: the model reasons over status, legal actions, a
- *  capped state snapshot, and the console tail; on failure it gets the typed
- *  error code/kind/message to self-correct in the same turn. */
+/** A create-only test digest: the model reasons over status, legal actions,
+ *  the full state snapshot, and the whole console (AS-8e7b, owner
+ *  2026-10-18: everything the script produced, no invented economies); on
+ *  failure it gets the typed error code/kind/message to self-correct in the
+ *  same turn. */
 export interface ExperienceCopilotRunTestDigest {
   readonly ok: boolean;
   /** Session status after create (ok path). */
@@ -110,9 +125,12 @@ export interface ExperienceCopilotRunTestDigest {
   /** Per-seat legality matrix (one entry per roster participant + the current
    *  turn owners) for the resolved sandbox or capability-derived roster. */
   readonly seatLegality?: ExperienceSeatLegalityMatrix;
-  /** Compact JSON snapshot of the projected state (capped). */
+  /** Full JSON snapshot of the projected state — never capped (AS-8e7b,
+   *  owner 2026-10-18: everything the script produced, no invented
+   *  economies). */
   readonly stateSummary?: string;
-  /** Last few flattened console entries (`level: args…`). */
+  /** Every flattened console entry (`level: args…`), in order — never capped
+   *  (AS-8e7b, owner 2026-10-18: everything the script produced). */
   readonly consoleTail?: string[];
   /** The exact sandbox context used, or the capability-derived fallback. */
   readonly launchContext?: ExperienceCopilotLaunchContextDigest;
@@ -125,7 +143,9 @@ export interface ExperienceCopilotRunTestDigest {
 }
 
 /** A bounded-simulation digest: stop reason + iteration count tell the model
- *  whether the rules auto-terminate or stall; the console tail aids debugging. */
+ *  whether the rules auto-terminate or stall; the full console aids debugging
+ *  (AS-8e7b, owner 2026-10-18: everything the script produced, no invented
+ *  economies). */
 export interface ExperienceCopilotRunSimulateDigest {
   readonly ok: boolean;
   /** Why the simulation stopped (`completed`/`awaiting_human`/`no_legal_action`/…). */
@@ -189,21 +209,6 @@ export type ExperienceCopilotBufferOutput = ExperienceCopilotToolOutput & {
   readonly notValidated?: string;
 };
 
-/** Result envelope for the `todo` tool (TAG-3). Success carries the rewritten
- *  list plus the collapsed-panel summary the frontend renders (`activeTitle` +
- *  `remaining`); a `saveTodo` persistence failure returns `ok:false` (NOT a
- *  throw — mirroring how `run_test` reports failures as a structured digest the
- *  model can reason over) so a transient DB error does not surface as an opaque
- *  tool-error. `remaining` counts non-completed, non-abandoned items (pending +
- *  active) — the "N remaining goals" the collapsed panel shows. */
-export interface ExperienceCopilotTodoResult {
-  readonly ok: boolean;
-  readonly items?: readonly CopilotTodoItem[];
-  readonly activeTitle?: string;
-  readonly remaining?: number;
-  readonly error?: string;
-}
-
 /** Marker result for the `ask_user` tool (TAG-3): the tool does NOT persist and
  *  does NOT wait — it only marks the turn as awaiting an answer. TAG-5's
  *  stop-condition and the frontend read this envelope; the question/options/
@@ -215,15 +220,6 @@ export interface ExperienceCopilotAskResult {
   readonly options?: readonly string[];
   readonly recommended?: string;
 }
-
-// ─── Tunables ─────────────────────────────────────────────────────────────────
-
-/** Max entries retained in a digest's `consoleTail` (the model needs recent
- *  output, not the full trace). */
-const CONSOLE_TAIL_MAX = 20;
-/** Max chars of the projected state kept in `stateSummary` (avoids dumping the
- *  whole 256KB state into the model context). */
-const STATE_SUMMARY_MAX = 1500;
 
 // ─── SS-4B trust gate (SCRIPT_SAFETY_PLAN decisions 10/13) ───────────────────
 //
@@ -245,25 +241,26 @@ const NOT_VALIDATED_MARKER = "not validated: script is imported and not yet enab
 
 // ─── Digest helpers ──────────────────────────────────────────────────────────
 
-/** Flatten the last {@link CONSOLE_TAIL_MAX} console entries to `level: args`
- *  strings. Structural typing on the entry shape avoids importing the sandbox
- *  type transitively. */
-function consoleTail(
+/** Format EVERY console entry as a `level: args` string, in order — the
+ *  digest's `consoleTail` field carries the whole console the script produced,
+ *  not a tail (AS-8e7b, owner 2026-10-18: everything the script produced, no
+ *  invented economies). Structural typing on the entry shape avoids importing
+ *  the sandbox type transitively. */
+function formatConsole(
   entries: ReadonlyArray<{ readonly level: string; readonly args: readonly string[] }>,
 ): string[] {
-  return entries.slice(-CONSOLE_TAIL_MAX).map((e) => `${e.level}: ${e.args.join(" ")}`);
+  return entries.map((e) => `${e.level}: ${e.args.join(" ")}`);
 }
 
-/** Compact JSON snapshot of an unknown projected state, capped to keep the
- *  model context bounded. Falls back to a placeholder for unserializable state. */
+/** Full JSON snapshot of an unknown projected state — never capped, so the
+ *  model sees everything the script produced (AS-8e7b, owner 2026-10-18: no
+ *  invented economies). Falls back to a placeholder for unserializable state. */
 function summarizeState(state: unknown): string {
-  let s: string;
   try {
-    s = JSON.stringify(state) ?? String(state);
+    return JSON.stringify(state) ?? String(state);
   } catch {
     return "(unserializable state)";
   }
-  return s.length > STATE_SUMMARY_MAX ? `${s.slice(0, STATE_SUMMARY_MAX)}\u2026` : s;
 }
 
 function launchContextDigest(
@@ -286,9 +283,11 @@ function launchContextDigest(
  * Build the experience-copilot tool set. Pure — no I/O, no store access. The
  * proposing tools validate and echo the proposal; `run_test`/`run_simulate` are
  * read-only diagnostics; `read_skill_file` is the reused Co-Author skill
- * reader; `suggest_visual_binding` is a non-binding recommendation; `todo`
- * maintains the session step-plan (full-list rewrite through the injected
- * `saveTodo`); `ask_user` ends the turn with a clarifying question (a marker —
+ * reader; `suggest_visual_binding` is a non-binding recommendation; `plan` and
+ * `read_plan` maintain the script-owned plan through injected load/save
+ * functions; `todo` maintains the thread-session checklist (full-list rewrite
+ * through the injected `saveTodo`); `ask_user` ends the turn with a clarifying
+ * question (a marker —
  * the stream, not this builder, persists/acts on it). The caller
  * passes this set to the executor (tools propose/diagnose; the BE-6 endpoints
  * are the sole write path).
@@ -304,13 +303,19 @@ function launchContextDigest(
  *   true: trusted scripts behave exactly as before.
  * @param opts.launchContext Latest Try-panel roster, grants, settings and seed.
  *   When absent, each rules body gets the shared capability-derived default.
- * @param opts.toolSet Optional inclusion map for the seven authoring/diagnostic
+ * @param opts.toolSet Optional inclusion map for the nine authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
+ * @param opts.loadPlan Optional reader for the script-owned plan. When absent,
+ *   a `read_plan` call throws — a precondition miss, mirroring `run_test`'s
+ *   no-buffer guard.
+ * @param opts.savePlan Optional writer for the script-owned plan. When absent,
+ *   a `plan` call returns the standard `{ ok: false, error }` persistence
+ *   envelope.
  * @param opts.saveTodo Optional writer for the `todo` tool's full-list rewrite
- *   (TAG-6 wires it to `ExperienceCopilotStore.updateTodo(threadId, items)`; the
- *   test injects a fake). When absent, a `todo` call throws — a precondition
- *   miss, mirroring `run_test`'s no-buffer guard.
+ *  (the stream wires it to `ExperienceCopilotStore.updateTodo(threadId,
+ *  items)`; the test injects a fake). When absent, a `todo` call throws — a
+ *  precondition miss, mirroring `run_test`'s no-buffer guard.
  * @param opts.skillRoots  Roots for the reused `read_skill_file` tool.
  */
 export function buildExperienceCopilotTools(opts: {
@@ -319,10 +324,12 @@ export function buildExperienceCopilotTools(opts: {
   rulesTrusted?: boolean;
   launchContext?: ExperienceCopilotLaunchContext;
   toolSet?: Record<string, boolean>;
+  loadPlan?: () => Promise<AgentPlan | null>;
+  savePlan?: (plan: AgentPlan) => Promise<void>;
   saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
-  const { toolSet, skillRoots, saveTodo } = opts;
+  const { toolSet, skillRoots, loadPlan, savePlan, saveTodo } = opts;
   const rulesTrusted = opts.rulesTrusted ?? true;
 
   /** Resolve the context independently for each working rules body: explicit
@@ -357,20 +364,15 @@ export function buildExperienceCopilotTools(opts: {
     };
   }
 
-  // ── Turn-local composable buffer state ─────────────────────────────────────
-  // Two named text buffers (rules/visual) seeded from the turn-start source.
-  // Each successful buffer mutation advances the working copy, so a later call
-  // composes on top of earlier mutations. Per-buffer mutation counters drive
-  // the write_buffer first-mutation guard (a whole-buffer rewrite may only be
-  // the FIRST change to a buffer; afterwards the model must use edit_buffer for
-  // incremental changes — mirrors co-author's write_profile late-rewrite reject).
-  let workingRules: string | undefined = opts.rules;
-  let workingVisual: string | undefined = opts.visual;
-  let rulesMutationCount = 0;
-  let visualMutationCount = 0;
+  // ── Turn-local serialization queue ─────────────────────────────────────────
+  // AS-2c: the buffer tools serialize on the generic factory's OWN queue
+  // (agent-buffer-tools.ts); this one remains for the `todo` tool's
+  // full-list rewrite. The two queues guard DISJOINT state (buffers vs the
+  // thread checklist), so per-queue serialization preserves every observable
+  // ordering that existed under the single shared chain.
   let turnChain: Promise<unknown> = Promise.resolve();
 
-  /** Serialize a buffer mutation onto the turn queue (non-poisoning: a rejected
+  /** Serialize a mutation onto the turn queue (non-poisoning: a rejected
    *  call is swallowed so the next call runs against the last good state). */
   function runQueued<T>(fn: () => Promise<T>): Promise<T> {
     const result = turnChain.catch(() => undefined).then(fn);
@@ -420,127 +422,62 @@ export function buildExperienceCopilotTools(opts: {
     return {};
   }
 
-  const allTools = {
-    write_buffer: tool({
-      description:
-        "Replace the ENTIRE rules OR visual buffer with `content`. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale. " +
-        "Use it for a ground-up rewrite of a buffer. " +
-        "It must be the FIRST change to that buffer in a turn — once a buffer has been mutated, refine it with edit_buffer instead. " +
-        "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn. " +
-        "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.",
-      inputSchema: z.object({
-        target: z
-          .enum(["rules", "visual"])
-          .describe("REQUIRED on every call. Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source). Never omit."),
-        content: z
-          .string()
-          .describe("The FULL proposed buffer content, replacing the current buffer entirely."),
-        summary: z
-          .string()
-          .max(200)
-          .describe("One-line description of what this change does, shown above the Apply action."),
-      }),
-      execute: async ({ target, content, summary }): Promise<ExperienceCopilotBufferOutput> =>
-        runQueued(async () => {
-          const toolName = "write_buffer";
-          if (!content.trim()) {
-            logger.warn("%s REJECTED empty content target=%s", toolName, target);
-            throw new Error(`${toolName}: content must not be empty`);
-          }
-          logger.info("%s IN target=%s len=%d summary=%s", toolName, target, content.length, summary);
-          if (target === "rules") {
-            // A whole-buffer rewrite may only be the FIRST rules change in a
-            // turn — once the buffer has been mutated, edit_buffer must be used
-            // for incremental changes (a guard-thrown write does NOT increment
-            // the count, so a self-correct re-emit in the same turn is allowed).
-            if (rulesMutationCount > 0) {
-              logger.warn("%s REJECTED late whole-buffer rules rewrite after %d mutation(s)", toolName, rulesMutationCount);
-              throw new Error(
-                `${toolName}: a whole-buffer rewrite of 'rules' can only be the FIRST rules change in a turn. ` +
-                  `Earlier edits already composed into the working rules buffer; a full rewrite now would erase them. ` +
-                  `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
-              );
-            }
-            const marker = validateRules(content, toolName);
-            workingRules = content; // advance ONLY on success — atomic on failure
-            rulesMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-            return { target, proposed: content, summary, ...marker };
-          } else {
-            if (visualMutationCount > 0) {
-              logger.warn("%s REJECTED late whole-buffer visual rewrite after %d mutation(s)", toolName, visualMutationCount);
-              throw new Error(
-                `${toolName}: a whole-buffer rewrite of 'visual' can only be the FIRST visual change in a turn. ` +
-                  `Earlier edits already composed into the working visual buffer; a full rewrite now would erase them. ` +
-                  `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
-              );
-            }
-            workingVisual = content; // no validator for the visual buffer
-            visualMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-            return { target, proposed: content, summary };
-          }
-        }),
+  const agentPlanTools = createAgentPlanTools({
+    load: loadPlan ?? (async () => {
+      throw new Error("read_plan: no plan reader wired");
     }),
+    save: savePlan ?? (async () => {
+      throw new Error("plan: no plan writer wired");
+    }),
+  });
 
-    edit_buffer: tool({
-      description:
-        "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale before any edit runs. " +
-        "Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
-        "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error. " +
-        "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.",
-      inputSchema: z.object({
-        target: z
-          .enum(["rules", "visual"])
-          .describe("REQUIRED on every call. Which buffer to edit: 'rules' or 'visual'. Never omit."),
-        edits: z
-          .array(
-            z.object({
-              search: z.string().describe("Exact text to find in the current buffer (must match once)."),
-              replace: z.string().describe("The replacement text."),
-            }),
-          )
-          .min(1)
-          .describe("Ordered exact SEARCH/REPLACE edits applied to the current buffer."),
-        summary: z
-          .string()
-          .max(200)
-          .describe("One-line description of what these edits change, shown above the Apply action."),
-      }),
-      execute: async ({ target, edits, summary }): Promise<ExperienceCopilotBufferOutput> =>
-        runQueued(async () => {
-          const toolName = "edit_buffer";
-          logger.info("%s IN target=%s edits=%d summary=%s", toolName, target, edits.length, summary);
-          const current = target === "rules" ? workingRules : workingVisual;
-          if (current === undefined) {
-            logger.warn("%s REJECTED no %s buffer in working state", toolName, target);
-            throw new Error(
-              `${toolName}: no '${target}' buffer in the working state — use write_buffer to set the buffer first`,
-            );
-          }
-          // Shared exact-edit primitive (ER-1). Atomic on failure: a failed item
-          // throws and the working buffer is left untouched.
-          const proposed = applyExactEditsToBody(current, edits, toolName);
-          if (target === "rules") {
-            const marker = validateRules(proposed, toolName);
-            workingRules = proposed;
-            rulesMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
-            return { target, proposed, summary, ...marker };
-          }
-          workingVisual = proposed;
-          visualMutationCount += 1;
-          logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
-          return { target, proposed, summary };
-        }),
+  // ── Buffer tools through the generic factory (AS-2c) ────────────────────────
+  // The MECHANISM (working state, first-mutation guard, validation plumbing,
+  // mutation queue, empty-content rejection) lives in agent-buffer-tools.ts;
+  // this wiring supplies the EXPERIENCE copy — the description fragments below
+  // reproduce the pre-AS-2c tool strings BYTE-EXACTLY (pinned by the tools
+  // suite's description pins), including the rules-vs-visual validation
+  // sentences and the SS-4B marker flow through makeOutput.
+  const bufferTools = createBufferTools({
+    bufferIds: ["rules", "visual"],
+    seeds: {
+      ...(opts.rules !== undefined ? { rules: opts.rules } : {}),
+      ...(opts.visual !== undefined ? { visual: opts.visual } : {}),
+    },
+    descriptions: {
+      write: (bufferId) =>
+        bufferId === "rules"
+          ? "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn."
+          : "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.",
+      edit: (bufferId) =>
+        bufferId === "rules"
+          ? "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error."
+          : "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.",
+      targetDescribe: (bufferId) =>
+        bufferId === "rules" ? "'rules' (the experience rules source)" : "'visual' (the visual source)",
+    },
+    validators: {
+      rules: (proposed, toolName) => validateRules(proposed, toolName),
+    },
+    firstMutationGuard: { rules: true, visual: true },
+    makeOutput: (target, proposed, summary, marker) => ({
+      target,
+      proposed,
+      summary,
+      ...(marker ?? {}),
     }),
+  });
+
+  const allTools = {
+    write_buffer: bufferTools.write_buffer,
+    edit_buffer: bufferTools.edit_buffer,
 
     run_test: tool({
       description:
         "Run a CREATE-ONLY test of the CURRENT working rules buffer: discover the definition, create the initial state, project it for one seat, and list the legal actions. " +
         "It runs with the Try-it panel's roster, grants, settings and seed when the user has the panel open; otherwise with the default roster derived from the declared capabilities (one human seat, plus an AI seat for participants + model). " +
         "The digest's `launchContext` says which (`source: \"sandbox\"` or `source: \"derived\"`) and lists the seats, grants and seed. " +
-        "Returns a condensed digest: status, revision, the legal action types for the projected seat (the user's seat, or the first human seat), `seatLegality` (which seats can act — who owns the turn), a capped state snapshot and the console tail. " +
+        "Returns a condensed digest: status, revision, the legal action types for the projected seat (the user's seat, or the first human seat), `seatLegality` (which seats can act — who owns the turn), the full state snapshot and the full console. " +
         "On failure, returns the typed error code/kind/message to self-correct. Read-only — it NEVER mutates the working buffers. " +
         "Use it after every rules edit to confirm the rules bootstrap and that exactly the right seat can act.",
       inputSchema: z.object({}),
@@ -557,6 +494,7 @@ export function buildExperienceCopilotTools(opts: {
             errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
           };
         }
+        const workingRules = bufferTools.getBuffer("rules");
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(
@@ -586,7 +524,7 @@ export function buildExperienceCopilotTools(opts: {
             legalActionTypes: result.data.projection.actions.map((a) => a.type),
             seatLegality: result.data.seatLegality,
             stateSummary: summarizeState(result.data.projection.state),
-            consoleTail: consoleTail(result.data.console),
+            consoleTail: formatConsole(result.data.console),
             launchContext: digestContext,
           };
         }
@@ -596,7 +534,7 @@ export function buildExperienceCopilotTools(opts: {
           errorCode: result.error.code,
           errorKind: result.error.kind,
           errorMessage: result.error.message,
-          consoleTail: consoleTail(result.error.console),
+          consoleTail: formatConsole(result.error.console),
           launchContext: digestContext,
         };
       },
@@ -606,7 +544,7 @@ export function buildExperienceCopilotTools(opts: {
       description:
         "Run a bounded SIMULATION of the CURRENT working rules buffer: discover, create, then auto-advance script-controlled seats via the real `choose` until a human/model boundary, a terminal status, no legal action, or a host bound is reached. " +
         "It runs with the same roster, grants, settings and seed as run_test (see the digest's `launchContext`). " +
-        "Returns a diagnostic digest (stop reason, iteration count, status, console tail, `launchContext`). " +
+        "Returns a diagnostic digest (stop reason, iteration count, status, the full console, `launchContext`). " +
         "`no_legal_action` means no seat in the echoed roster can act — a real stall only when that roster has seats. " +
         "Read-only — it NEVER mutates the working buffers. " +
         "Use it once script-controlled seats or automated flow exist, to check that the rules terminate or hand the turn back to a human.",
@@ -623,6 +561,7 @@ export function buildExperienceCopilotTools(opts: {
             errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
           };
         }
+        const workingRules = bufferTools.getBuffer("rules");
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(
@@ -647,7 +586,7 @@ export function buildExperienceCopilotTools(opts: {
             iterations: result.data.iterations,
             status: result.data.status,
             revision: result.data.revision,
-            consoleTail: consoleTail(result.data.console),
+            consoleTail: formatConsole(result.data.console),
             launchContext: digestContext,
           };
         }
@@ -657,7 +596,7 @@ export function buildExperienceCopilotTools(opts: {
           errorCode: result.error.code,
           errorKind: result.error.kind,
           errorMessage: result.error.message,
-          consoleTail: consoleTail(result.error.console),
+          consoleTail: formatConsole(result.error.console),
           launchContext: digestContext,
         };
       },
@@ -686,39 +625,12 @@ export function buildExperienceCopilotTools(opts: {
       },
     }),
 
-    todo: tool({
-      description:
-        "Maintain the step-by-step action plan for this authoring session. Send the FULL list every call (rewrite semantics, not incremental) as {items: [...]}. " +
-        "One item should be `active` — the step you are on now. Use for any work that needs more than ~3 steps; this is a real development project, plan it.",
-      // Object root (2026-08-21 incident): a bare-array inputSchema made models
-      // emit `{}` — tool-calling arguments are JSON objects, and providers
-      // reject/never produce a non-object root — so every call failed
-      // validation ("expected array, received object") and the turn died.
-      inputSchema: z.object({
-        items: copilotTodoListSchema.describe("The FULL rewritten todo list — every item, every time."),
-      }),
-      execute: async ({ items }): Promise<ExperienceCopilotTodoResult> =>
-        runQueued(async () => {
-          const toolName = "todo";
-          logger.info("%s IN items=%d", toolName, items.length);
-          if (saveTodo === undefined) {
-            logger.warn("%s REJECTED no saveTodo writer wired", toolName);
-            throw new Error(`${toolName}: no todo writer wired — saveTodo is required for this tool`);
-          }
-          try {
-            await saveTodo(items);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.warn("%s FAIL message=%s", toolName, message);
-            return { ok: false, error: message };
-          }
-          const activeTitle = items.find((i) => i.status === "active")?.title;
-          const remaining = items.filter((i) => i.status === "pending" || i.status === "active").length;
-          logger.info("%s OK items=%d remaining=%d activeTitle=%s", toolName, items.length, remaining, activeTitle ?? "(none)");
-          return { ok: true, items, activeTitle, remaining };
-        }),
-    }),
+    ...agentPlanTools,
 
+    todo: createCopilotTodoTool({ save: saveTodo, enqueue: runQueued }),
+
+    // forks: 1 — agent/script-agent/script-agent-tools.ts (AS-7: the script kind's
+    // ask_user — description/schema/refine byte-identical to this original).
     ask_user: tool({
       description:
         "Ask the user ONE clarifying question and end your turn. Provide option chips when the answer space is small (mark your recommended option via `recommended`), or omit options for open questions. " +

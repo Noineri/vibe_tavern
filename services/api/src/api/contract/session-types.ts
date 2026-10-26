@@ -33,7 +33,7 @@ import type { UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
-import type { CharacterListEntry, ChatDto, ChatListItem, CoauthorCorrection } from "@vibe-tavern/api-contracts";
+import type { CharacterListEntry, ChatDto, ChatListItem, CoauthorCorrection, AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 
 // ChatListItem lives in @vibe-tavern/api-contracts (shared with the frontend)
 // so drift becomes a compile error. Re-exported here so existing backend
@@ -75,6 +75,12 @@ export interface BootstrapState {
 	promptPresets: PromptPresetDto[];
 	uiSettings: UiSettings;
 	isArmServer: boolean;
+	/** Per-agent-kind model settings (SIDECHAT_PLAN SC-0d): one entry per
+	 *  REGISTERED kind (keyed by kind id) — the kind's own row, or the legacy
+	 *  `ui_settings` copilot pair for kinds without a row yet. Consumed by
+	 *  SC-0e's web binding; the map exists so the shells get every kind's
+	 *  remembered model in the single bootstrap round-trip. */
+	agentKindSettings: Record<string, AgentKindSettingsWire>;
 }
 
 export interface ImportResult {

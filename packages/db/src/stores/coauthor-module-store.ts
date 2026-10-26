@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { coauthorModules } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -15,9 +15,10 @@ export type StoredCoauthorToolSet = Partial<Record<string, boolean>>;
 /**
  * Store-level Co-Author module — a user-created module projected from a DB row.
  * `isBuiltIn` is NOT stored (it's derived in the registry merge: seed defs are
- * built-in, every row here is a user module). `createdAt`/`updatedAt` are kept
- * for ordering and UI; they are dropped when the registry maps to the API
- * `CoauthorModule` shape.
+ * built-in, every row here is a user module). `sortOrder` is the manual list
+ * order (ML-5; new modules append, `reorder` rewrites it). `createdAt`/
+ * `updatedAt` are kept for the store's total ordering and UI; they are dropped
+ * when the registry maps to the API `CoauthorModule` shape.
  */
 export interface CoauthorModuleRow {
   id: string;
@@ -28,6 +29,7 @@ export interface CoauthorModuleRow {
   skillIds: string[];
   toolSet: StoredCoauthorToolSet;
   maxSteps: number;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,7 +65,14 @@ export class CoauthorModuleStore {
   }
 
   async list(): Promise<CoauthorModuleRow[]> {
-    const rows = await this.db.select().from(coauthorModules).all();
+    // Total ordering for the master list (ML-5): stored order first, with a
+    // created_at → id fallback so ties (rows sharing the migration backfill's
+    // default) still resolve deterministically.
+    const rows = await this.db
+      .select()
+      .from(coauthorModules)
+      .orderBy(asc(coauthorModules.sortOrder), asc(coauthorModules.createdAt), asc(coauthorModules.id))
+      .all();
     return rows.map((row) => this.mapRow(row));
   }
 
@@ -75,6 +84,13 @@ export class CoauthorModuleStore {
   async create(data: CreateCoauthorModuleData): Promise<CoauthorModuleRow> {
     const id = this.idGen.next('cmod');
     const now = this.clock.now();
+    // Append at end: sort_order = current max + 1 (see ProxyStore.create /
+    // SttStore.create — the provider-store list-order rule).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${coauthorModules.sortOrder}), -1)` })
+      .from(coauthorModules)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
     await this.db
       .insert(coauthorModules)
       .values({
@@ -86,6 +102,7 @@ export class CoauthorModuleStore {
         skillIdsJson: JSON.stringify(data.skillIds),
         toolSetJson: JSON.stringify(data.toolSet),
         maxSteps: data.maxSteps,
+        sortOrder: nextSortOrder,
         createdAt: now,
         updatedAt: now,
       })
@@ -118,6 +135,27 @@ export class CoauthorModuleStore {
     await this.db.delete(coauthorModules).where(eq(coauthorModules.id, id)).run();
   }
 
+  /**
+   * Rewrite the manual list order (ML-5). All position updates run in ONE
+   * synchronous transaction (the ProxyStore.reorder pattern —
+   * ASYNC_TRANSACTION_AUDIT: drizzle-orm + bun:sqlite commits at the end of
+   * the synchronous callback, so a throw rolls back every position write).
+   * Returns the full list in its new stored order.
+   */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<CoauthorModuleRow[]> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      for (const u of updates) {
+        tx
+          .update(coauthorModules)
+          .set({ sortOrder: u.sortOrder, updatedAt: now })
+          .where(eq(coauthorModules.id, u.id))
+          .run();
+      }
+    });
+    return this.list();
+  }
+
   private mapRow(row: typeof coauthorModules.$inferSelect): CoauthorModuleRow {
     return {
       id: row.id,
@@ -128,6 +166,7 @@ export class CoauthorModuleStore {
       skillIds: parseStringArray(row.skillIdsJson),
       toolSet: parseToolSet(row.toolSetJson) as StoredCoauthorToolSet,
       maxSteps: row.maxSteps,
+      sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -7,27 +7,20 @@ import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
-import { CodeEditor } from "../../shared/CodeEditor.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
-import { SaveButton } from "../../shared/SaveBar.js";
-import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
-import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import {
   ImportedScriptWarningModal,
   scriptSafetyWarningFlow,
   type ScriptSafetyWarningFlow,
 } from "./script-safety/ImportedScriptWarningModal.js";
-import { FindingsWarningModal, scriptSafetyRevealLine } from "./script-safety/FindingsWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
+import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
-import { lblCls } from "../../../lib/field-tokens.js";
-import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
-import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
-import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -42,9 +35,15 @@ import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
 import { LoreEntryList } from "./LoreEntryList.js";
-import { ScriptTester } from "./ScriptTester.js";
-import { DiceScriptTester } from "./DiceScriptTester.js";
-import { ScriptApiReference } from "./script-api-reference.js";
+import { ScriptManagementControls } from "./script-management-controls.js";
+import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
+// The script agent host registers itself (getAgentHost("script")) at module
+// init — this side-effect import is the shell's ONLY registration for the
+// kind, exactly once per process (the panel and the host module are a pair;
+// mirrors ExperienceCopilotShell's import of the experience host).
+import "./script-agent-host.js";
+import { AgentShell } from "../../shared/agent-shell/AgentShell.js";
+import type { ScriptAgentHostProps } from "./script-agent-host.js";
 import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -111,15 +110,15 @@ function SortableScriptCard({ script, isActive, isMobile, links, linksLoaded, un
 						className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center text-t3 active:cursor-grabbing"
 						onClick={e => e.stopPropagation()}
 					>
-						<span className="text-xl leading-none">≡</span>
+						<span className="text-[calc(var(--ui-fs)+6px)] leading-none">≡</span>
 					</button>
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-				<span data-testid="script-name" className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
-				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+				<span data-testid="script-name" className="flex-1 truncate text-[var(--ui-fs)] font-semibold text-t1">{script.name}</span>
+				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide bg-s3 text-t2 mr-1">
 					{script.scriptKind === "dice" ? "DICE" : "PROMPT"}
 				</div>
-				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
 					{script.enabled ? "ON" : "OFF"}
 				</div>
 			</div>
@@ -147,7 +146,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
   useKeyDown("Escape", () => { setImportOpen(false); setImportCode(""); }, { enabled: importOpen });
   const [apiRefOpen, setApiRefOpen] = useState(false);
-  const [aiHelperOpen, setAiHelperOpen] = useState(false);
+  // AS-8c3b: always-on assistant — every open script renders the generic
+  // AgentShell (kind "script") with the AS-8c1 management bar above it; no
+  // toggle, no back-to-plain. The lore editor's own editorHeader caret stays
+  // the script view's back control on both viewports. The old AiAssistantModal
+  // is gone from THIS editor only (its other consumers are untouched).
 
   // ── Queries (replaced with local state + async fetch) ────
   // "entity" is a BROWSE filter here, not an owner view: the sidebar's
@@ -485,52 +488,39 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setImportOpen(false); setImportCode(""); }}>
           <div className="flex w-[520px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "80vh" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
-              <span className="text-sm font-semibold text-t1">{t("script_import_title")}</span>
+              <span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">{t("script_import_title")}</span>
               <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}><Ic.close /></div>
             </div>
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-              <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
+              <div className="mb-3 text-[calc(var(--ui-fs)-1px)] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
                 <AutoTextarea mono className="leading-[1.6]" maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
-                <div className="mt-2 text-[11px] text-accent-t">
+                <div className="mt-2 text-[calc(var(--ui-fs)-3px)] text-accent-t">
                   {(importCode.trim().startsWith("{") || importCode.trim().startsWith("[")) ? t("script_import_detect_json") : t("script_import_detect_js")}
                 </div>
               )}
-              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_prompt")}:</div>
+              <div className="mt-3 text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_template_group_prompt")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "prompt").map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
-              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_dice")}:</div>
+              <div className="mt-3 text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_template_group_dice")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "dice").map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
             </div>
           </div>
         </div>
       )}
-      <AiAssistantModal
-        mode="full"
-        apiMode={activeScript?.scriptKind === "dice" ? "dice_script" : "script"}
-        isOpen={aiHelperOpen}
-        onClose={() => setAiHelperOpen(false)}
-        existingContent={activeScript?.code ?? ""}
-        onInsert={(text) => updateDraft({ code: text })}
-        onReplace={(text) => updateDraft({ code: text })}
-        scopeContext={{
-          characterId: characterId,
-          personaId: personaId ?? undefined,
-        }}
-      />
       {/* SS-7: the first-enable warning surfaces. Only one can be open — the
           flow is a single discriminated union; plain shows when there are no
           blocking findings, findings shows ALONE otherwise (decision 11). */}
@@ -562,7 +552,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     <div className="flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
-          <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
+          <div className="mb-2 text-[calc(var(--ui-fs)-1px)] text-t3">{t("script_no_scripts")}</div>
           <div className="flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
@@ -607,11 +597,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
               <div className={cn("rounded-xl border", activeDragDisplay.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
                 <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragDisplay.name}</span>
-                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+                  <span className="flex-1 truncate text-[var(--ui-fs)] font-semibold text-t1">{activeDragDisplay.name}</span>
+                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide bg-s3 text-t2 mr-1">
                     {activeDragDisplay.scriptKind === "dice" ? "DICE" : "PROMPT"}
                   </div>
-                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
                     {activeDragDisplay.enabled ? "ON" : "OFF"}
                   </div>
                 </div>
@@ -623,135 +613,136 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     </div>
   );
 
-  // ── Script editor panel (for LorebookEditor editor view) ──
-  const scriptEditorPanel = activeScript ? (
-    <div className={cn("mx-auto max-w-[860px]",
-      // D3 (v1.2.1): same exclusion as LorebookEditor — the blanket min-h
-      // stretched Toggle tracks (role=switch) into oversized blobs.
-      isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button:not([role=switch])]:min-h-[40px] [&_input]:text-base")}>
-      {/* Explicit-save status + action. Ctrl/Cmd+S calls the same handler. */}
-      <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
-        <span
-          className={cn("min-w-0 truncate font-ui text-[12px]", draftSaveState === "error" ? "text-danger" : "text-t3")}
-          title={activeDraft?.error ?? undefined}
-        >
-          {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
-        <SaveButton
-          dirty={draftDirty}
-          saveState={draftSaveState}
-          resetKey={activeScriptId}
-          onClick={() => void handleSave()}
-          label={draftSaveState === "error" ? t("retry") : t("save")}
-        />
-      </div>
-
-      {/* Header: name + toggle + delete */}
-      <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1"><TextInput value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
-          <Toggle checked={activeScript.enabled} onChange={handleToggleEnabled} />
-          <CustomTooltip content={t("delete_script_confirm")}>
-            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
-          </CustomTooltip>
-        </div>
-        <div className="flex items-center">
-          {/* Script kind is immutable after creation — set via the New Script /
-              New Dice Script buttons. Shown as a read-only badge so the user
-              always sees which runtime a script targets. The previous kind
-              toggle was removed: it could never persist (updateScriptSchema
-              excludes scriptKind), so it silently reverted on save. */}
-          <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
-            {activeScript.scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
-          </div>
-        </div>
-      </div>
-
-      {/* Imported-script banner (SS-6): near the enable toggle, above the
-          code. Renders only for untrusted imports — no layout shift for
-          trusted/in-app scripts. */}
-      <ScriptSafetyBanner script={activeScript} />
-
-      {/* Description */}
-      <div style={{ marginBottom: 16 }}>
-        <label className={lblCls}>{t("script_desc_label")}</label>
-        <TextInput value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
-      </div>
-
-      {/* Entity scripts bind to characters/personas; global scripts run unconditionally and chat scripts are chat-bound. */}
-      {activeScript.scopeType === "entity" && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
-            <CustomTooltip content={t("script_links_hint")}>
-              <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
-            </CustomTooltip>
-          </div>
-          <LinkBindingPopover
-            links={scriptLinks}
-            characters={linkCharacters}
-            personas={linkPersonas}
-            onSetLinks={(next) => {
-              void handleSetScriptLinks(next
-                .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
-                  link.targetType === "character" || link.targetType === "persona",
-                )
-                .map(({ targetType, targetId }) => ({ targetType, targetId })));
-            }}
-            t={t}
-            isMobile={isMobile}
-            tooltipLabel={t("script_links_add")}
-            emptyLabel={t("script_links_empty")}
-          />
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="mb-2 flex flex-wrap gap-2">
-        <button type="button" className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")} onClick={() => setApiRefOpen(v => !v)}><Ic.book /> {t("script_api_reference")}</button>
-        <button type="button" className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => setAiHelperOpen(true)}><Ic.brain /> {t("script_ai_helper")}</button>
-      </div>
-
-      {/* API Reference */}
-      {apiRefOpen && (
-        <ScriptApiReference kind={activeScript.scriptKind || "prompt"} />
-      )}
-
-      {/* Code editor */}
-      <div style={{ marginBottom: 20 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
-        <div className="relative rounded-md border border-border bg-bg">
-          <CodeEditor
-            value={activeScript.code}
-            onChange={(code) => updateDraft({ code })}
-            minHeight={isMobile ? "220px" : "300px"}
-            scrollMode={isMobile ? "page" : "inner"}
-            extensions={scriptSafetyExtensions}
-          />
-        </div>
-      </div>
-
-      {/* Templates — only the active script's kind (SCRIPT_EDITOR_CLEANUP step 3) */}
-      <div className="mb-4">
-        <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_templates")}</div>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === (activeScript.scriptKind || "prompt")).map(([key, tpl]) => (
-            <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
-          ))}
-        </div>
-      </div>
-
-      {activeScript.scriptKind === "dice" ? (
-        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} script={activeScript} onRevealLine={(line) => setRevealLine({ line })} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
-      ) : (
-        <ScriptTester scriptId={activeScriptId} code={activeScript.code} script={activeScript} onRevealLine={(line) => setRevealLine({ line })} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
-      )}
-    </div>
-  ) : (
-    <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">
+  // ── No-script placeholder (for LorebookEditor editor view) ──
+  // AS-8c4b: the plain form is gone — one render path for scripts. The only
+  // survivor of the former plain surface is this no-script empty state,
+  // moved verbatim from the removed plain-form module (same classes,
+  // same key). The editor view shows it while open with no active
+  // script record — the agent panel is null then, so the view still has
+  // content in that corner case instead of an empty pane.
+  const scriptPlaceholderPanel = (
+    <div className="flex h-full items-center justify-center text-t3 font-ui text-[calc(var(--ui-fs)-1px)] italic">
       {t("script_test_no_result")}
     </div>
   );
 
-  return { modals, scriptListContent, scriptEditorPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
+  // AS-8c4d: back leaves the open script — clears the active script, then
+  // the lore editor drops back to the list (the delete flow's handleDelete
+  // already pairs setActiveScriptIdRaw(null) with onBackToList the same
+  // way). Desktop renders it FIRST in the top bar (the ExperienceEditor
+  // back-button shape, verbatim classes); mobile passes it to the shell as
+  // onBack, so it lands in the shell's tab-bar chevron row at zero added
+  // height — exactly as in the mini-app editor.
+  const handleBackToList = () => {
+    setActiveScriptIdRaw(null);
+    onBackToList?.();
+  };
+
+  // ── Always-on assistant (AS-8c3b) ──
+  // ONE shared management-controls node (the AS-8c1 bar) built from the
+  // active script and the same handlers the former plain form also used —
+  // the SS-7 enable-warning flow still runs through handleToggleEnabled and
+  // the delete still goes through the existing confirm modal. The editing
+  // wiring travels opaquely to the `script` host through hostProps; the host
+  // renders it as the tabbed Code/Test pane (AS-8c2, ScriptAgentEditorTabs)
+  // inside the shell's editor pane, with the hunk-review decorations joined
+  // onto the same extensions. Rendered whenever an active script exists —
+  // the shell's threads are script-owned and the assistant is always on.
+  // The caller (LorebookEditor) renders this INSTEAD of its padded scroll
+  // container, which now holds only the no-script placeholder (the 2-pane
+  // layout needs the full unpadded height — the ExperienceEditor container
+  // approach).
+  // Back sits IN the script bar on desktop (first element, the
+  // ExperienceEditor back-button shape) and in the shell's tab-row chevron
+  // on mobile via onBack, by owner decision 2026-10-17 (AS-8c4d) — the
+  // lore editor's own editorHeader caret is gone from the script view, so
+  // no row is spent on a lone caret. No trust-blocked hint: scripts have
+  // no enable lock, so the ScriptSafetyBanner alone sits under the bar
+  // (named deviation 2).
+  const scriptManagementControls = activeScript && activeScriptId ? (
+    <ScriptManagementControls
+      name={activeScript.name}
+      enabled={activeScript.enabled}
+      scriptKind={activeScript.scriptKind}
+      draftDirty={draftDirty}
+      draftSaveState={draftSaveState}
+      draftError={activeDraft?.error}
+      resetKey={activeScriptId}
+      isMobile={isMobile}
+      onUpdateDraft={updateDraft}
+      onToggleEnabled={handleToggleEnabled}
+      onDelete={() => setConfirmDeleteId(activeScriptId)}
+      onSave={() => { void handleSave(); }}
+    />
+  ) : null;
+  const scriptAgentHostProps: ScriptAgentHostProps | null = activeScript && activeScriptId ? {
+    isMobile,
+    activeScript,
+    activeScriptId,
+    draftDirty,
+    apiRefOpen,
+    scriptSafetyExtensions,
+    characterName: scope === "entity" && !personaId ? allCharacters.find((x) => x.id === characterId)?.name : undefined,
+    contextCharacterId: characterId,
+    contextPersonaId: personaId ?? undefined,
+    scriptLinks,
+    linkCharacters,
+    linkPersonas,
+    onSetScriptLinks: (next) => { void handleSetScriptLinks(next); },
+    onUpdateDraft: updateDraft,
+    onToggleApiRef: () => setApiRefOpen((v) => !v),
+    onAddFromTemplate: (key) => handleAddFromTemplate(key),
+    onRevealLine: (line) => setRevealLine({ line }),
+  } : null;
+  // Desktop: back (first) + the management bar + the safety banner sit above
+  // the shell in one column (the ExperienceEditor top-bar shape, back button
+  // included). Mobile: no top bar — the shell gets the same nodes as its
+  // edit-tab header and the back chevron in its tab-bar row via onBack.
+  // The shell keeps ONE tree position on both viewports (only its siblings and
+  // the editTabHeader/onBack props change, as in ExperienceEditor), so crossing
+  // the 768px breakpoint re-renders it instead of remounting it — the loaded
+  // session is not fetched again and a running assistant turn is not torn
+  // down by a resize or a tablet rotation.
+  const scriptAgentPanel = scriptAgentHostProps ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {!isMobile && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
+          <button
+            type="button"
+            aria-label={t("import_back")}
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            onClick={handleBackToList}
+          >
+            {Ic.caret("l")} {t("import_back")}
+          </button>
+          {scriptManagementControls}
+        </div>
+      )}
+      {!isMobile && <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />}
+      <div className="flex min-h-0 flex-1">
+        <AgentShell
+          kind="script"
+          // SC-0c: the typed thread owner — script-owned, so the active
+          // script id is the whole owner.
+          owner={{ kind: "script", scriptId: scriptAgentHostProps.activeScriptId }}
+          isMobile={isMobile}
+          editTabDirty={scriptAgentHostProps.draftDirty}
+          assignedProfileId={scriptAgentHostProps.activeScript.copilotProfileId ?? null}
+          onBack={isMobile ? handleBackToList : undefined}
+          hostProps={scriptAgentHostProps}
+          editTabHeader={
+            isMobile ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2">{scriptManagementControls}</div>
+                <ScriptSafetyBanner script={scriptAgentHostProps.activeScript} className="mx-3" />
+              </>
+            ) : undefined
+          }
+        />
+      </div>
+    </div>
+  ) : null;
+
+
+  return { modals, scriptListContent, scriptPlaceholderPanel, scriptAgentPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
 }

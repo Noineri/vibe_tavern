@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "failed normal send and its retry",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "retry this review",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "retry this review",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

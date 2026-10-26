@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,6 +61,38 @@ async function webpDimensions(bytes: Uint8Array): Promise<{ width: number; heigh
 }
 
 describe("avatar thumbnail backfill (LB-1C)", () => {
+	// Console-quietness contract (owner 2026-10-17): a no-op pass prints
+	// nothing; a pass that did work prints the summary once. Spies are
+	// installed per test and restored both between tests and after the file
+	// so nothing leaks into the shared worker process.
+	const originalLog = console.log;
+	const originalDebug = console.debug;
+	let logCalls: unknown[][] = [];
+	let debugCalls: unknown[][] = [];
+
+	beforeEach(() => {
+		console.log = originalLog;
+		console.debug = originalDebug;
+		logCalls = [];
+		debugCalls = [];
+		console.log = (...args: unknown[]) => {
+			logCalls.push(args);
+		};
+		console.debug = (...args: unknown[]) => {
+			debugCalls.push(args);
+		};
+	});
+
+	afterEach(() => {
+		console.log = originalLog;
+		console.debug = originalDebug;
+	});
+
+	afterAll(() => {
+		console.log = originalLog;
+		console.debug = originalDebug;
+	});
+
 	test("oversized PNG without full → 512 webp thumb + ORIGINAL preserved + stale leaf gone + updatedAt bumped", async () => {
 		const { stores, assetService } = await setup();
 		const original = minimalPng(600, 600, [60, 120, 200]);
@@ -287,5 +319,41 @@ describe("avatar thumbnail backfill (LB-1C)", () => {
 
 		expect(returned).toBeUndefined();
 		expect(passedTheCall).toBe(true);
+	});
+
+	test("a no-op run prints nothing to console.log/console.debug", async () => {
+		const { stores, assetService } = await setup();
+		const small = new Uint8Array(await new Bun.Image(minimalPng(300, 300)).webp({ quality: 85 }).bytes());
+		await addCharacterAvatar(stores, "Quiet", small, "webp");
+
+		// Clear setup-time logs (store creation); only the pass may speak.
+		logCalls = [];
+		debugCalls = [];
+
+		const counts = await runAvatarThumbnailBackfill(stores, assetService);
+		expect(counts.scanned).toBe(1);
+		expect(counts.normalized).toBe(0);
+		expect(counts.skipped).toBe(1);
+		expect(counts.failed).toBe(0);
+		expect(logCalls).toEqual([]);
+		expect(debugCalls).toEqual([]);
+	});
+
+	test("a run that normalizes prints the summary exactly once", async () => {
+		const { stores, assetService } = await setup();
+		const original = minimalPng(600, 600, [60, 120, 200]);
+		await addCharacterAvatar(stores, "Big", original, "png");
+
+		// Clear setup-time logs (store creation); only the pass may speak.
+		logCalls = [];
+		debugCalls = [];
+
+		const counts = await runAvatarThumbnailBackfill(stores, assetService);
+		expect(counts.normalized).toBe(1);
+		const summaries = logCalls.filter(
+			(args) => typeof args[0] === "string" && (args[0] as string).includes("[avatar-backfill]"),
+		);
+		expect(summaries).toHaveLength(1);
+		expect(summaries[0][0]).toContain("1 scanned, 1 normalized");
 	});
 });

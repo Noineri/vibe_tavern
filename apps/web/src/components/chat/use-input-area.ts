@@ -5,17 +5,20 @@
 // divergent wiring.
 //
 // This hook is the "everything before the `if (isMobile)` check" from the
-// pre-fork InputArea, formalised. UI-only state (dropdown open-flags, drag
-// hover, the mobile textarea auto-grow ref) is co-located with the branch
+// pre-fork InputArea, formalised. UI-only state (dropdown open-flags and
+// the mobile textarea auto-grow ref) is co-located with the branch
 // that owns it; this hook holds only data + behaviour shared by both.
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { ChangeEvent, ClipboardEvent } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget, resolvePerSendPrefillSupport } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
+import { useAttachmentDraft, VALID_AUDIO_TYPES } from "../../hooks/use-attachment-draft.js";
+import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
+import { fetchChatImageRoute } from "../../api/image-route-api.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -96,51 +99,19 @@ export function useInputArea() {
   };
 
   // --- Attachments ---
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
   const draftAttachments = useChatStore((s) => s.draftAttachments);
-
-  // Image pickers stay image-typed; audio accepts the full ST-6 upload set
-  // (the asset service normalizes `;codecs=` parameters away).
-  const VALID_AUDIO_TYPES = [
-    "audio/webm", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/m4a",
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/flac",
-  ];
-
-  const handleFileSelected = async (file: File) => {
-    const mime = file.type.split(";", 1)[0].trim().toLowerCase();
-    const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-    const isAudio = VALID_AUDIO_TYPES.includes(mime);
-    if (!validTypes.includes(mime) && !isAudio) {
-      toast.error(t("unsupported_image_format"));
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error(t("file_too_large"));
-      return;
-    }
-    if (draftAttachments.length >= 5) {
-      toast.error(t("max_attachments"));
-      return;
-    }
-
-    try {
-      const { assetId } = await uploadAsset(file);
-      addDraftAttachment({
-        id: randomUUID(),
-        assetId,
-        type: isAudio ? "audio" : "image",
-        // Hand-picked audio files keep the picker's purpose default (voice)
-        // — the record button is the only music/ambient producer in v1 UI.
-        ...(isAudio ? { purpose: "voice" as const } : {}),
-        name: file.name,
-        mimeType: mime,
-        sizeBytes: file.size,
-      });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-    }
-  };
+  const removeDraftAttachment = useChatStore((s) => s.removeDraftAttachment);
+  const attachmentDraft = useAttachmentDraft({
+    attachments: draftAttachments,
+    add: addDraftAttachment,
+    remove: removeDraftAttachment,
+    allowedKinds: ["image", "audio", "file"],
+    getAttachments: () => useChatStore.getState().draftAttachments,
+  });
+  const imageRouteKey = JSON.stringify([activeChatId, provider.activeProviderProfile?.id, activeModelId, effectiveProfile?.visionModel]);
+  const attachmentVisionWarning = useImageRouteWarning(draftAttachments, imageRouteKey, () =>
+    activeChatId ? fetchChatImageRoute(activeChatId) : Promise.reject(new Error("No active chat")));
 
   /** Voice-record button landing (STT_PLAN ST-6): upload the recorded clip
    *  and add it as a voice-purpose audio draft attachment. Returns false on a
@@ -179,26 +150,6 @@ export function useInputArea() {
       return false;
     }
   }, [draftAttachments.length, addDraftAttachment, t]);
-
-  const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleFileSelected(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith("image/")) {
-        const file = items[i].getAsFile();
-        if (file) {
-          e.preventDefault();
-          void handleFileSelected(file);
-          break;
-        }
-      }
-    }
-  };
 
   // --- Dice send gate (DICE-F3) ---
   // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
@@ -251,6 +202,7 @@ export function useInputArea() {
   const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
   const totalUsed = permanent + buckets.history + inputTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);
+  const attachmentOverflow = estimateAttachmentOverflow({ totalUsed, availableBudget, attachments: draftAttachments });
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState: "ok" | "mid" | "warn" = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
@@ -260,8 +212,8 @@ export function useInputArea() {
     draft, setDraft, isSending, activeChatId, chatMeta, canUseLiveApi,
     personas, activePersonaId, promptPresets, activePromptPresetId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
-    fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
-    canSend, buckets, inputTokens, permanent, availableBudget, tokenState,
+    ...attachmentDraft, draftAttachments, handleVoiceRecorded,
+    canSend, buckets, inputTokens, permanent, availableBudget, tokenState, attachmentOverflow, attachmentVisionWarning,
     showGenerateMore, handleGenerateMore,
     // LS-4b/LS-8: the per-send prefill entry point renders only when BOTH
     // gates pass — the shared fail-closed capability resolution in

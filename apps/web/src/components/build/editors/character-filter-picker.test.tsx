@@ -338,8 +338,9 @@ describe("CharacterFilterPicker — search / order / mobile (LB-3B)", () => {
 		expect(within(document.body).getAllByText("lore_charfilter_section").length).toBe(2);
 		await waitFor(() => expect(searchInput() instanceof HTMLInputElement).toBe(true));
 		// Thumb-sized rows on mobile (44px target, 15px text).
+		// Behavior change: was `text-[15px]` → now `text-[calc(var(--ui-fs)+1px)]`, basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 4.
 		const row = within(document.body).getByText("Cory").closest("button");
-		expect(row?.className.split(" ")).toEqual(expect.arrayContaining(["min-h-[44px]", "text-[15px]"]));
+		expect(row?.className.split(" ")).toEqual(expect.arrayContaining(["min-h-[44px]", "text-[calc(var(--ui-fs)+1px)]"]));
 		await act(async () => {
 			fireEvent.click(within(document.body).getByText("Cory"));
 		});

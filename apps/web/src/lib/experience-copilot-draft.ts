@@ -2,7 +2,7 @@
  * ER-10a — cross-session persistence of unapplied experience-copilot proposals
  * (the "draft" that survives a page reload).
  *
- * The experience-copilot turn store (`experience-copilot-turn-store.ts`) is
+ * The experience-copilot turn store (`agent-turn-store.ts`) is
  * deliberately ephemeral: it holds a turn's tool activities in memory with no
  * `persist` middleware, because the backend does not persist tool calls onto
  * the message record. The consequence is that a page reload wipes any in-review
@@ -14,7 +14,7 @@
  * ENVELOPE V2 — THE WHOLE ROUND. A review is more than its activities: the
  * turn-start snapshot (the diff "before" side), the per-buffer accepted /
  * dismissed hunk ids and the CD-8 dangling capture all live in the review-round
- * store (`experience-copilot-review-store.ts`) and are needed to rebuild the
+ * store (`agent-review-store.ts`) and are needed to rebuild the
  * SAME review after a reload — without the round the rehydrated activities
  * would have `base === undefined` and render nothing. V2 therefore persists
  * `{ activities, round }` together; a V1 envelope (activities only) still
@@ -51,10 +51,18 @@
  * correctness constraint — the canonical buffers are the script/visual draft
  * stores' source of truth).
  */
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
-import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
-import type { CopilotReviewRound } from "../stores/experience-copilot-review-store.js";
-import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
+import { useAgentTurnStore } from "../stores/agent-turn-store.js";
+import type { AgentReviewRound } from "../stores/agent-review-store.js";
+import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
+import { agentThreadKey } from "./agent-host-registry.js";
+
+/** The draft envelope is experience-scoped (the `vt:experience-copilot-draft:`
+ *  prefix, the store slices below) — its store-map keys go through the shared
+ *  helper with the experience kind (AS-6c-ii: the helper keeps the legacy
+ *  bare threadId for this kind, so boot rehydration keeps hitting the
+ *  pre-6c-ii localStorage entries with zero migration). */
+const DRAFT_KIND = "experience";
 
 const DRAFT_PREFIX = "vt:experience-copilot-draft:";
 const DRAFT_VERSION = 2;
@@ -64,15 +72,15 @@ interface DraftEnvelope {
   _v: number;
   activities: unknown[];
   /** V2: the review round (snapshots / hunk selections / dangling). */
-  round: CopilotReviewRound | null;
+  round: AgentReviewRound | null;
 }
 
 /** What a parsed envelope yields: the finalized activities plus (V2 only) the
  *  review round. `round` is null for V1 envelopes and for a malformed round —
  *  the activities still load, degraded. */
 export interface ParsedCopilotDraft {
-  activities: ExperienceCopilotToolActivity[];
-  round: CopilotReviewRound | null;
+  activities: AgentToolActivity[];
+  round: AgentReviewRound | null;
 }
 
 /**
@@ -82,7 +90,7 @@ export interface ParsedCopilotDraft {
  * value that fails any clause is dropped on load (corruption / version-skew
  * defense).
  */
-export function isFinalizedActivity(x: unknown): x is ExperienceCopilotToolActivity {
+export function isFinalizedActivity(x: unknown): x is AgentToolActivity {
   if (typeof x !== "object" || x === null) return false;
   const a = x as Record<string, unknown>;
   if (
@@ -97,9 +105,9 @@ export function isFinalizedActivity(x: unknown): x is ExperienceCopilotToolActiv
 }
 
 /** Type guard for the V2 review-round payload. Mirrors the round store's
- *  `CopilotReviewRound` shape field by field — a value that fails any clause
+ *  `AgentReviewRound` shape field by field — a value that fails any clause
  *  degrades to `round: null` while the activities still load. */
-export function isReviewRound(x: unknown): x is CopilotReviewRound {
+export function isReviewRound(x: unknown): x is AgentReviewRound {
   if (typeof x !== "object" || x === null) return false;
   const r = x as Record<string, unknown>;
   if (!Array.isArray(r.snapshots) || typeof r.nextSnapshotId !== "number") return false;
@@ -129,12 +137,12 @@ export function isReviewRound(x: unknown): x is CopilotReviewRound {
  * deduped by `toolCallId` (later wins) in insertion order — mirroring the
  * store's own upsert-merge semantics. Pure: no I/O.
  */
-export function finalizeForPersistence(activities: ExperienceCopilotToolActivity[]): ExperienceCopilotToolActivity[] {
+export function finalizeForPersistence(activities: AgentToolActivity[]): AgentToolActivity[] {
   // Map (not Set) so a later duplicate toolCallId OVERWRITES the value while
   // preserving the first occurrence's POSITION — mirroring both the store's
   // upsert-merge (later fields win) and `aggregateExperienceCopilotProposal`'s
   // finalizedActivities dedup. Map iteration is insertion order.
-  const byId = new Map<string, ExperienceCopilotToolActivity>();
+  const byId = new Map<string, AgentToolActivity>();
   for (const a of activities) {
     if (!isFinalizedActivity(a)) continue;
     byId.set(a.toolCallId, a);
@@ -149,8 +157,8 @@ export function finalizeForPersistence(activities: ExperienceCopilotToolActivity
  * a proposal source, so a resolved/reverted round clears the key). Pure: no I/O.
  */
 export function serializeDraft(
-  activities: ExperienceCopilotToolActivity[],
-  round: CopilotReviewRound | null,
+  activities: AgentToolActivity[],
+  round: AgentReviewRound | null,
 ): string | null {
   const finalized = finalizeForPersistence(activities);
   if (finalized.length === 0 && round?.dangling == null) return null;
@@ -194,8 +202,8 @@ function key(threadId: string): string {
  */
 export function saveDraft(
   threadId: string,
-  activities: ExperienceCopilotToolActivity[],
-  round: CopilotReviewRound | null,
+  activities: AgentToolActivity[],
+  round: AgentReviewRound | null,
 ): void {
   if (typeof localStorage === "undefined") return;
   const json = serializeDraft(activities, round);
@@ -285,8 +293,9 @@ export function loadAllDrafts(): Record<string, ParsedCopilotDraft> {
  * the stores themselves. Idempotent; no-op without localStorage.
  */
 export function syncPersistedCopilotRound(threadId: string): void {
-  const activities = useExperienceCopilotTurnStore.getState().turnsByThread[threadId] ?? [];
-  const round = useCopilotReviewRoundStore.getState().roundsByThread[threadId] ?? null;
+  const key = agentThreadKey(DRAFT_KIND, threadId);
+  const activities = useAgentTurnStore.getState().turnsByThread[key] ?? [];
+  const round = useAgentReviewRoundStore.getState().roundsByThread[key] ?? null;
   saveDraft(threadId, activities, round);
 }
 
@@ -300,17 +309,19 @@ export function syncPersistedCopilotRound(threadId: string): void {
 export function rehydrateExperienceCopilotDrafts(): void {
   const drafts = loadAllDrafts();
   if (Object.keys(drafts).length === 0) return;
-  useExperienceCopilotTurnStore.setState((s) => ({
+  useAgentTurnStore.setState((s) => ({
     turnsByThread: {
       ...s.turnsByThread,
-      ...Object.fromEntries(Object.entries(drafts).map(([tid, d]) => [tid, d.activities])),
+      ...Object.fromEntries(
+        Object.entries(drafts).map(([tid, d]) => [agentThreadKey(DRAFT_KIND, tid), d.activities]),
+      ),
     },
   }));
   const rounds = Object.fromEntries(
     Object
       .entries(drafts)
-      .flatMap(([tid, d]) => (d.round !== null ? [[tid, d.round] as const] : [])),
+      .flatMap(([tid, d]) => (d.round !== null ? [[agentThreadKey(DRAFT_KIND, tid), d.round] as const] : [])),
   );
   if (Object.keys(rounds).length === 0) return;
-  useCopilotReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, ...rounds } }));
+  useAgentReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, ...rounds } }));
 }

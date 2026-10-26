@@ -12,25 +12,28 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { FormState } from "../../modals/ProviderModal.js";
 import type { ProviderGenerationFormat } from "@vibe-tavern/domain";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (key: string, vars?: Record<string, string>) => {
+installToggleSeam();
+
+installI18nContextSeam({
+	custom: {
+		t: (key, vars?) => {
 			let text: string = key;
 			if (vars) {
-				for (const [k, v] of Object.entries(vars)) text = text.replaceAll(`{${k}}`, v);
+				for (const [k, v] of Object.entries(vars)) text = text.replaceAll(`{${k}}`, String(v));
 			}
 			return text;
 		},
-	}),
-}));
+		tDynamic: (key: string) => key,
+	},
+});
 
 const realFormatApi = await import("../../../api/format-template-api.js");
 

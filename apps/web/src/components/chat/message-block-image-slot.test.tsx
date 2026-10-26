@@ -17,6 +17,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -43,20 +45,18 @@ const STABLE_CONTROLLER = {
 };
 
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../shared/Tooltip.js");
-const realFramerMotion = await import("framer-motion");
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+// House i18n pattern via the shared co-load seam: raw keys render as-is
+// (identity spec — this suite has no interpolated pins, but registers so a
+// hand-bundled run never inherits a sibling's interpolating spec).
+installI18nContextSeam();
 
 mock.module("../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
@@ -74,11 +74,11 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-mock.module("framer-motion", () => ({
-  ...realFramerMotion,
-  AnimatePresence: ({ children }: { children?: ReactNode }) => children,
-  motion: { ...realFramerMotion.motion, div: ({ children }: { children?: ReactNode }) => <div>{children}</div> },
-}));
+// House animation mock via the shared co-load seam (the AP-29 fix): the
+// seam's motion.div FORWARDS DOM props — the file-private children-only
+// copy this harness used to inline dropped className, which poisoned
+// AgentMessageList's caption pins in any hand-bundled run of this file.
+installFramerMotionSeam();
 
 beforeAll(() => {
   if (typeof window !== "undefined") {

@@ -6,9 +6,10 @@
  * switcher in the editor — unlike Co-Author's user-pickable modules). This file
  * is that one mode's DEFINITION, adapted from the Co-Author seed-module pattern
  * ({@link getCoauthorModule}): a base prompt loaded lazily from a `.md` asset +
- * a declarative tool set + the skill ids this mode bundles. "Module" here is a
- * declarative config object the prompt assembler + tool builder consult, NOT a
- * runtime-selectable entity.
+ * a declarative tool set. "Module" here is a declarative config object the
+ * prompt assembler + tool builder consult, NOT a runtime-selectable entity.
+ * The mode does NOT pick skills (PM-8, owner ruling 2026-10-12): the catalog is
+ * UNGATED — every skill the scan finds is listed and readable, Co-Author-style.
  *
  * The skill system is REUSED wholesale from Co-Author (scanner + catalog +
  * `read_skill_file`), not reimplemented: the copilot simply has its OWN skill
@@ -23,6 +24,7 @@ import { dirname, resolve } from "node:path";
 import { resolvePromptAssetPath, loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { AppDb } from "@vibe-tavern/db";
 import { resolveServicePrompt } from "../../service-prompts/service-prompt-resolver.js";
+import { getAgentKind } from "../../agent/agent-kind-registry.js";
 import {
   buildSkillCatalog,
   type ScanRoot,
@@ -33,6 +35,8 @@ import {
   type CopilotProfile,
   type CopilotToolSet,
 } from "@vibe-tavern/api-contracts";
+import { resolveBuiltinScriptAgentProfile } from "../../agent/script-agent/script-agent-module.js";
+import { resolveBuiltinSidechatOocProfile } from "../../agent/kinds/sidechat-ooc-kind.js";
 
 // ─── Module definition (metadata only — the prompt text is loaded lazily) ────
 
@@ -52,8 +56,6 @@ export interface ExperienceCopilotModuleDef {
   readonly description: string;
   /** Asset path (relative to the prompt-asset root) holding the base prompt. */
   readonly basePromptFile: string;
-  /** Skills this mode advertises in its catalog (scanned from its own root). */
-  readonly skillIds: readonly string[];
   /** Authoring/diagnostic tools enabled for this mode (`read_skill_file` is
    *  always available on top, mirroring Co-Author — it is the universal
    *  read-only skill channel, NOT gated by `toolSet`). */
@@ -66,13 +68,14 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
   description:
     "The copilot mode for authoring an interactive experience's rules and visual source. Proposes buffer edits via tools, self-tests, and never binds.",
   basePromptFile: "experience-copilot/base.md",
-  skillIds: ["experience-authoring", "grill-me"],
   toolSet: {
     write_buffer: true,
     edit_buffer: true,
     run_test: true,
     run_simulate: true,
     suggest_visual_binding: true,
+    plan: true,
+    read_plan: true,
     todo: true,
     ask_user: true,
   },
@@ -154,9 +157,59 @@ export async function resolveExperienceCopilotSkillCatalog(
  * module). `isBuiltIn: true` + a stable `"builtin"` id mark it as the seed the
  * profile editor shows read-only and that users duplicate from (Wave 3). The
  * tool set is projected through {@link COPILOT_TOOL_KEYS} so the wire contract
- * stays the single source of truth for the toggleable-tool names.
+ * stays the single source of truth for the toggleable-tool names. No
+ * `skillIds` — the catalog is ungated (PM-8).
+ *
+ * AS-3: the seed is per kind (`resolveBuiltinCopilotProfile(kind)`). A
+ * non-`experience` kind is validated through the registry FIRST — an unknown
+ * kind throws `UnknownAgentKindError` and NEVER falls back to the experience
+ * seed (a silent cross-kind fallback would mask a miswired list). The
+ * `experience` path is byte-identical to the pre-AS-3 behavior, plus
+ * `agentKind`; the `script` kind (AS-7) delegates to its own seed in
+ * `agent/script-agent/script-agent-module.ts`, and the `sidechat-ooc` kind
+ * (SC-4a) to its own in `agent/kinds/sidechat-ooc-kind.ts`.
  */
-export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotProfile> {
+export async function resolveBuiltinCopilotProfile(kind: string = "experience", db?: AppDb): Promise<CopilotProfile> {
+  if (kind === "script") {
+    // AS-7: the script kind's own seed — base prompt from the
+    // `script_agent_base` service prompt (SP-5 override honored on this
+    // builtin path) + tool set projected through SCRIPT_AGENT_TOOL_KEYS. The
+    // species owns the seed (agent/script-agent/script-agent-module.ts)
+    // exactly the way this module owns the experience one.
+    return resolveBuiltinScriptAgentProfile(db);
+  }
+  if (kind === "sidechat-ooc") {
+    // SC-4a: the sidechat kind's own seed — base prompt from the
+    // `sidechat_ooc_base` service prompt (SP-5 override honored on this
+    // builtin path, the `script` seed's pattern) + a tool set projected
+    // through SIDECHAT_OOC_TOOL_KEYS, every toggle disabled until Wave 3's
+    // tools land (SC-5). The species owns the seed
+    // (agent/kinds/sidechat-ooc-kind.ts).
+    return resolveBuiltinSidechatOocProfile(db);
+  }
+  if (kind !== "experience") {
+    // Validate FIRST — an unknown kind throws `UnknownAgentKindError` and
+    // NEVER falls back to the experience seed (a silent cross-kind fallback
+    // would mask a miswired list). The `experience` default path below stays
+    // registry-free so every existing caller (which never registers kinds)
+    // keeps byte-identical behavior.
+    const descriptor = getAgentKind(kind);
+    // Generic-kind seed (today only test fakes arrive here — AS-7's script
+    // kind and SC-4a's sidechat kind bring their own base prompts + service
+    // keys and branch ABOVE).
+    // Deliberately NOT the experience prompt: serving another kind's content
+    // here would be the silent cross-kind fallback AS-3 forbids. The empty
+    // base prompt fails loudly (wire `min(1)`) if it ever reaches validation
+    // instead of passing as a real prompt.
+    return {
+      id: "builtin",
+      name: descriptor.id,
+      isBuiltIn: true,
+      basePrompt: "",
+      toolSet: {},
+      agentKind: descriptor.id,
+    };
+  }
   // SP-5: the global service-prompt profile's `copilot_base` override replaces
   // the builtin base ONLY on this builtin path — explicit per-script copilot
   // profiles (basePrompt snapshots) never consult it (see copilot-profile-resolver).
@@ -172,8 +225,8 @@ export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotP
     name: EXPERIENCE_COPILOT_MODULE.name,
     isBuiltIn: true,
     basePrompt,
-    skillIds: [...EXPERIENCE_COPILOT_MODULE.skillIds],
     toolSet,
+    agentKind: "experience",
   };
 }
 

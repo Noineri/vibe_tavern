@@ -39,6 +39,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
 import type { ExperienceApiError } from "../../domain/interactive/experience-shared.js";
 import type { ExperienceParticipant } from "@vibe-tavern/domain";
 import {
+	discoverExperienceTest,
 	runExperienceTest,
 	simulateExperienceTest,
 	type ExperienceTestError,
@@ -460,6 +461,12 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 
 	simulateExperienceTest = async (body: ExperienceTestSimulateInput) => {
 		const result = simulateExperienceTest(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
+	};
+
+	discoverExperienceTest = async (body: { rulesCode: string; scriptName?: string }) => {
+		const result = discoverExperienceTest(body);
 		if (!result.ok) throw mapTestError(result.error);
 		return result.data;
 	};

@@ -218,6 +218,12 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .post("/api/experience/test/simulate", zValidator("json", schemas.experienceTestSimulateRequestSchema), async (c) => {
       return c.json(await runtime.simulateExperienceTest(c.req.valid("json")));
     })
+    // Discover-only: collects the registration from the rules body and returns
+    // the definition (same shape as /test/run's `definition`) WITHOUT running
+    // `create` — the Try tab derives grants / roster / setup from this.
+    .post("/api/experience/test/discover", zValidator("json", schemas.experienceTestDiscoverRequestSchema), async (c) => {
+      return c.json({ definition: (await runtime.discoverExperienceTest(c.req.valid("json"))).definition });
+    })
 
     // ── Interactive playground session driver (Wave 8 / IR-84A) ──────────────
     // Drive UNSAVED-or-saved rules through the real kernel as an interactive

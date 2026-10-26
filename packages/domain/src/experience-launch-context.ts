@@ -49,3 +49,39 @@ export function deriveDefaultLaunchContext(
 
   return { participants, capabilityGrants };
 }
+
+export interface LaunchContextComparison {
+  /** Declared capabilities the setup does not grant. */
+  missingGrants: ExperienceCapability[];
+  /** Granted capabilities the rules do not declare (every explicit run fails with `capability_denied`). */
+  undeclaredGrants: ExperienceCapability[];
+  /** True when the default derivation would add a model seat and the roster has none. */
+  missingModelSeat: boolean;
+  /** Model seats lacking a provider profile or a model id. */
+  modelSeatsWithoutModel: Array<{ id: string; label: string }>;
+}
+
+/** Compare a Try setup (roster + grants) with what the discovered rules declare.
+ *  The model-seat expectation comes from {@link deriveDefaultLaunchContext}, never a second hand-written rule. */
+export function compareLaunchContext(
+  declaredCapabilities: readonly string[],
+  participants: readonly ExperienceParticipant[],
+  grants: readonly ExperienceCapability[],
+): LaunchContextComparison {
+  const derived = deriveDefaultLaunchContext(declaredCapabilities);
+  const expectsModelSeat = derived.participants.some(
+    (participant) => participant.controller === EXPERIENCE_CONTROLLER.model,
+  );
+  const modelSeats = participants.filter(
+    (participant) => participant.controller === EXPERIENCE_CONTROLLER.model,
+  );
+
+  return {
+    missingGrants: derived.capabilityGrants.filter((capability) => !grants.includes(capability)),
+    undeclaredGrants: grants.filter((capability) => !declaredCapabilities.includes(capability)),
+    missingModelSeat: expectsModelSeat && modelSeats.length === 0,
+    modelSeatsWithoutModel: modelSeats
+      .filter((seat) => !seat.providerProfileId || !seat.modelId)
+      .map((seat) => ({ id: seat.id, label: seat.label })),
+  };
+}

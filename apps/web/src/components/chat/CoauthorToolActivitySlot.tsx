@@ -179,11 +179,15 @@ type OpPreview =
   | { kind: "write-profile" }
   | { kind: "greeting"; labelKey: GreetingLabelKey; labelNum?: number; content: string }
   | { kind: "lore"; labelKey: LoreLabelKey; content?: string; chips?: string[]; chipKeys?: string[] }
+  | { kind: "tracker-template" }
   | null;
 
 /** Narrow the opaque `args` per `toolName` into a renderable operation, or
  * `null` when the input is missing/unparseable (historical or malformed). */
 function parseOperation(toolName: string, args: unknown): OpPreview {
+  // CT-7b: this operation's preview is the result summary, not its structured
+  // template args, so it remains renderable even for a historical call missing args.
+  if (toolName === "set_tracker_template") return { kind: "tracker-template" };
   if (args == null || typeof args !== "object") return null;
   switch (toolName) {
     case "edit_personality":
@@ -292,8 +296,8 @@ function SearchResultsPreview({ results }: { results: ContextSearchResultItem[] 
   return (
     <div className="flex flex-col gap-1">
       {results.map((r, i) => (
-        <div key={`${r.type}-${r.id}-${i}`} className="flex items-center gap-1.5 font-ui text-[11px]">
-          <span className="shrink-0 rounded-full border border-border/60 bg-s3 px-1.5 py-px text-[10px] text-t3">{searchTypeLabel(tDynamic, r.type)}</span>
+        <div key={`${r.type}-${r.id}-${i}`} className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)]">
+          <span className="shrink-0 rounded-full border border-border/60 bg-s3 px-1.5 py-px text-[calc(var(--ui-fs)-4px)] text-t3">{searchTypeLabel(tDynamic, r.type)}</span>
           <span className="truncate text-msg-t2">{r.title}</span>
         </div>
       ))}
@@ -301,8 +305,8 @@ function SearchResultsPreview({ results }: { results: ContextSearchResultItem[] 
   );
 }
 
-const PREVIEW_PRE_CLS = "whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-msg-t2";
-const PREVIEW_LABEL_CLS = "font-ui text-[10px] uppercase tracking-wide text-t3";
+const PREVIEW_PRE_CLS = "whitespace-pre-wrap break-words font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed text-msg-t2";
+const PREVIEW_LABEL_CLS = "font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide text-t3";
 
 /** One SEARCH/REPLACE hunk, unified-diff style: `-` search lines, `+` replace lines. */
 function DiffHunk({ search, replace }: { search: string; replace: string }) {
@@ -313,14 +317,14 @@ function DiffHunk({ search, replace }: { search: string; replace: string }) {
     <div className="flex flex-col">
       <span className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_op_search")}</span>
       {searchLines.map((l, i) => (
-        <div key={`s${i}`} className="flex gap-1 font-mono text-[11px] leading-relaxed">
+        <div key={`s${i}`} className="flex gap-1 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed">
           <span className="select-none text-danger-text">-</span>
           <span className="whitespace-pre-wrap break-words text-msg-t2">{l}</span>
         </div>
       ))}
       <span className={`mt-1 ${PREVIEW_LABEL_CLS}`}>{t("coauthor_tool_op_replace")}</span>
       {replaceLines.map((l, i) => (
-        <div key={`r${i}`} className="flex gap-1 font-mono text-[11px] leading-relaxed">
+        <div key={`r${i}`} className="flex gap-1 font-mono text-[calc(var(--ui-fs)-3px)] leading-relaxed">
           <span className="select-none text-success-text">+</span>
           <span className="whitespace-pre-wrap break-words text-msg-t2">{l}</span>
         </div>
@@ -330,7 +334,7 @@ function DiffHunk({ search, replace }: { search: string; replace: string }) {
 }
 
 /** Scoped operation preview rendered when the card is expanded. */
-function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }) {
+function OperationPreview({ op, proposed, summary }: { op: OpPreview; proposed?: string; summary?: string }) {
   const { t, tDynamic } = useT();
   if (!op) {
     // Historical/malformed: no input to reconstruct the operation. Do NOT fall
@@ -365,6 +369,13 @@ function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }
     case "write-profile":
       // The ONLY case the full cumulative document is shown — the operation itself is document-wide.
       return <pre className={PREVIEW_PRE_CLS}>{proposed ?? ""}</pre>;
+    case "tracker-template":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_tracker_template")}</span>
+          <span className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-msg-t2">{summary}</span>
+        </div>
+      );
     case "lore":
       return (
         <div className="flex flex-col gap-1">
@@ -375,14 +386,14 @@ function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }
           {op.chips && op.chips.length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
               {op.chips.map((c, i) => (
-                <span key={`c${i}`} className="rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent">{c}</span>
+                <span key={`c${i}`} className="rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent">{c}</span>
               ))}
             </div>
           )}
           {op.chipKeys && op.chipKeys.length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
               {op.chipKeys.map((k, i) => (
-                <span key={`p${i}`} className="rounded-full border border-border/60 bg-s3 px-1.5 py-px font-ui text-[10px] text-t3">{tDynamic(k)}</span>
+                <span key={`p${i}`} className="rounded-full border border-border/60 bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-t3">{tDynamic(k)}</span>
               ))}
             </div>
           )}
@@ -441,7 +452,7 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         type="button"
         disabled={streaming}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-1.5 py-1.5 text-left font-ui text-[11px] font-medium tracking-[0.03em] text-t2 transition-colors duration-100 hover:text-t1 hover:bg-s2/50 rounded px-2 disabled:cursor-default"
+        className="flex w-full cursor-pointer items-center gap-1.5 py-1.5 text-left font-ui text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.03em] text-t2 transition-colors duration-100 hover:text-t1 hover:bg-s2/50 rounded px-2 disabled:cursor-default"
       >
         <span className={statusClass}>{statusIcon}</span>
         <span className="truncate">{title}</span>
@@ -458,14 +469,14 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         )}
       </button>
       {errored && (
-        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
+        <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
       <AnimatedDisclosure open={!streaming && !isRead && !isContextRead && open}>
         <div className="ml-2 mt-1 max-h-48 overflow-auto border-l-2 border-border/50 px-3 py-2">
           {isSearch ? (
             <SearchResultsPreview results={activity.search!.results} />
           ) : (
-            <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
+            <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} summary={activity.summary} />
           )}
         </div>
       </AnimatedDisclosure>

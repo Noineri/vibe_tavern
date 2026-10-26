@@ -1,9 +1,6 @@
+import { isRecord } from "@vibe-tavern/domain";
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Strip prototype-pollution keys from an arbitrary record.

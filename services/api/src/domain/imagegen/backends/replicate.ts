@@ -72,6 +72,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -169,25 +170,6 @@ function parseConfig(config: ImageGenAdapterConfig): ReplicateImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new ReplicateImageError(
-      `Replicate ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
-
 /** Best-effort cancel — returns instead of throwing so the original
  *  error/abort is never masked (the aihorde/fal precedent). */
 async function cancelReplicatePrediction(
@@ -198,7 +180,7 @@ async function cancelReplicatePrediction(
   await fetchOrWrap(transport, cancelUrl, {
     method: "POST",
     headers: buildHeaders(apiKey, false),
-  }, "cancel").catch(() => undefined);
+  }, "cancel", "Replicate", ReplicateImageError).catch(() => undefined);
 }
 
 /** Poll a prediction until a terminal status; resolves with the
@@ -224,6 +206,8 @@ export async function pollReplicatePrediction(params: {
         signal: params.signal,
       },
       "prediction poll",
+      "Replicate",
+      ReplicateImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -276,6 +260,8 @@ async function listReplicateModels(
     `${endpoint}/v1/collections/text-to-image`,
     { method: "GET", headers: buildHeaders(apiKey, false), signal },
     "model list",
+    "Replicate",
+    ReplicateImageError,
   );
   if (!response.ok) {
     const excerpt = await readProviderErrorBody(response);
@@ -340,6 +326,8 @@ export const replicateImageFactory = (config: ImageGenAdapterConfig): ImageGenBa
           signal: request.signal,
         },
         "generation",
+        "Replicate",
+        ReplicateImageError,
       );
       if (!submit.ok) {
         const excerpt = await readProviderErrorBody(submit);
@@ -405,6 +393,8 @@ export const replicateImageFactory = (config: ImageGenAdapterConfig): ImageGenBa
             signal: request.signal,
           },
           "image download",
+          "Replicate",
+          ReplicateImageError,
         );
         if (!download.ok) {
           throw new ReplicateImageError(

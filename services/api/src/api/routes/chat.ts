@@ -94,6 +94,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
+    .get("/api/chats/:chatId/image-route", async (c) => {
+      return c.json(await runtime.getImageRoute(c.req.param("chatId")));
+    })
     .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.createChatForCharacter(body.characterId, body.mode));
@@ -106,6 +109,13 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     })
     .post("/api/coauthor/modules", zValidator("json", schemas.coauthorModuleCreateSchema), async (c) => {
       return c.json(await runtime.createCoauthorModule(c.req.valid("json")));
+    })
+    // Registered BEFORE the :moduleId PATCH so the literal "reorder" segment
+    // is matched here, not swallowed as a module id (the proxies/reorder
+    // pattern; Hono matches registration order).
+    .patch("/api/coauthor/modules/reorder", zValidator("json", schemas.reorderCoauthorModulesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json({ modules: await runtime.reorderCoauthorModules(body.updates) });
     })
     .patch("/api/coauthor/modules/:moduleId", zValidator("json", schemas.coauthorModuleUpdateSchema), async (c) => {
       return c.json(await runtime.updateCoauthorModule(c.req.param("moduleId"), c.req.valid("json")));
@@ -291,6 +301,16 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     })
     .delete("/api/chats/:chatId/messages/:messageId", async (c) => {
       return c.json(await runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
+    })
+    .post("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/summarize", async (c) => {
+      return c.json(await runtime.summarizeAttachment(
+        c.req.param("chatId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.raw.signal,
+      ));
+    })
+    .post("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) => {
+      return c.json(await runtime.clearAttachmentSummary(
+        c.req.param("chatId"), c.req.param("messageId"), c.req.param("attachmentId"),
+      ));
     })
     .post("/api/chats/:chatId/messages", zValidator("json", schemas.sendMessageSchema), async (c) => {
       const chatId = c.req.param("chatId");

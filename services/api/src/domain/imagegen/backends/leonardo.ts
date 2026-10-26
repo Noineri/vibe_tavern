@@ -76,6 +76,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -183,25 +184,6 @@ function parseConfig(config: ImageGenAdapterConfig): LeonardoImageConfig {
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new LeonardoImageError(
-      `Leonardo ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
-
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 
 export const leonardoImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend => {
@@ -248,6 +230,8 @@ export const leonardoImageFactory = (config: ImageGenAdapterConfig): ImageGenBac
           signal: request.signal,
         },
         "generation",
+        "Leonardo",
+        LeonardoImageError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -298,6 +282,8 @@ export const leonardoImageFactory = (config: ImageGenAdapterConfig): ImageGenBac
           entry.url,
           { method: "GET", signal: request.signal },
           "image download",
+          "Leonardo",
+          LeonardoImageError,
         );
         if (!download.ok) {
           throw new LeonardoImageError(

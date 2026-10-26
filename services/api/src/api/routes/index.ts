@@ -25,12 +25,20 @@ import { createFsRoutes } from "./fs.js";
 import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
 import { createCopilotSkillRoutes } from "./copilot-skill.js";
 import { createCopilotProfileRoutes } from "./copilot-profile.js";
+import { createAgentPlanRoutes } from "./agent-plan.js";
+import { createAgentBranchPlanRoutes } from "./agent-branch-plan.js";
 import { createSamplerSetRoutes } from "./sampler-set.js";
 import { createFormatTemplateRoutes } from "./format-template.js";
 import { createAiInstructionTemplateRoutes } from "./ai-instruction-template.js";
 import { createDiceRoutes } from "./dice.js";
 import { createExperienceRoutes } from "./experience.js";
 import { createExperienceCopilotRoutes } from "./experience-copilot.js";
+import { createAgentChatSessionsRoutes } from "./agent-chat-sessions.js";
+import { createAgentKindSettingsRoutes } from "./agent-kind-settings.js";
+import { createAgentChatSettingsRoutes } from "./agent-chat-settings.js";
+import { createAgentThreadProposalRoutes } from "./agent-thread-proposals.js";
+import { createAgentThreadEventsRoutes } from "./agent-thread-events.js";
+import { createAgentBranchSidechatRoutes } from "./agent-branch-sidechat.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -59,11 +67,19 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createDiceRoutes(runtime.dice))
     .route("/", createExperienceRoutes(runtime.experience))
     .route("/", createExperienceCopilotRoutes(runtime.experienceCopilot))
+    .route("/", createAgentChatSessionsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentKindSettingsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentChatSettingsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentThreadProposalRoutes(runtime.agentThreadProposals))
+    .route("/", createAgentThreadEventsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentBranchSidechatRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
     .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
     .route("/", createCopilotProfileRoutes(runtime.copilotProfiles))
+    .route("/", createAgentPlanRoutes(runtime.agentPlan))
+    .route("/", createAgentBranchPlanRoutes(runtime.agentPlan))
     .route("/", createSamplerSetRoutes(runtime.samplerSets))
     .route("/", createFormatTemplateRoutes(runtime.formatTemplates))
     .route("/", createAiInstructionTemplateRoutes(runtime.aiInstructionTemplates))

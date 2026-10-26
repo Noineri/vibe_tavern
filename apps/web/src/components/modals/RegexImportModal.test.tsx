@@ -1,4 +1,5 @@
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -8,19 +9,9 @@ import { brandId, type RegexProfileId } from "@vibe-tavern/domain";
 import { parseStandaloneRegexJson } from "@vibe-tavern/import-export";
 import type { CreateRegexProfileBundleBody, RegexProfileBundleRecord } from "../../api/regex-api.js";
 
-const realI18nContext = await import("../../i18n/context.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");

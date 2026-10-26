@@ -16,6 +16,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
@@ -33,7 +34,6 @@ const realAiAssistantApi = await import("../../api/ai-assistant-api.js");
 const realSettingsApi = await import("../../api/settings-api.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 
 // Capture request bodies + control the stream.
@@ -63,13 +63,8 @@ mock.module("../../stores/api-actions/provider-actions.js", () => {
   };
 });
 
-// useT must return a stable identity t() — the modal builds labels off it.
-mock.module("../../i18n/context.js", () => {
-  return {
-    ...realI18nContext,
-    useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-  };
-});
+// t echoes keys (the modal builds labels off it) — the shared co-load seam keeps it order-independent.
+installI18nContextSeam();
 
 // Mobile flag as a mutable cell: the file's tests pin the desktop Modal path
 // by default; the D1 block below flips it for the BottomSheet path.
@@ -238,43 +233,6 @@ describe("AiAssistantModal — request construction", () => {
     useBootstrapStore.setState({ data: null });
   });
 
-  it("script mode: emits the expected request body", async () => {
-    useProviderDataStore.setState({
-      profiles: [makeProfile("prov-1", "Provider One")],
-      favoritesByProfile: {},
-    });
-    seedBootstrap("prov-1", "model-a");
-    const { updateUiSettings } = await mocks();
-
-    renderModal(
-      <AiAssistantModal
-        mode="full"
-        apiMode="script"
-        isOpen={true}
-        onClose={() => {}}
-        existingContent="print('hello')"
-        onInsert={() => {}}
-        onReplace={() => {}}
-        scopeContext={{ characterId: "char-1" }}
-      />,
-    );
-
-    await generateWithPrompt("add a comment");
-
-    await waitFor(() => expect(mockState.requests).toHaveLength(1));
-    const body = mockState.requests[0];
-    if (body === undefined) throw new Error("Expected the script request to be captured");
-    expect(body).toMatchObject({
-      mode: "script",
-      instruction: "add a comment",
-      existingContent: "print('hello')",
-      providerProfileId: "prov-1",
-      model: "model-a",
-    });
-    expect(body.enabledLayers).toContain("character_base");
-    expect(updateUiSettings).toHaveBeenCalled();
-  });
-
   it("lore_entry mode: emits the expected request body without lorebooks", async () => {
     useProviderDataStore.setState({
       profiles: [makeProfile("prov-1", "Provider One")],
@@ -364,7 +322,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     ]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("greet");
@@ -383,7 +341,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     ]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("think");
@@ -400,7 +358,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     setChunks([{ type: "error", error: "model-overloaded" }]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -414,7 +372,7 @@ describe("AiAssistantModal — streaming accumulation", () => {
     mockState.shouldThrow = true;
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -442,7 +400,7 @@ describe("AiAssistantModal — stop / cancellation", () => {
     setChunks([{ type: "text", text: "partial" }]);
 
     renderModal(
-      <AiAssistantModal mode="full" apiMode="script" isOpen={true} onClose={() => {}} />,
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
     await generateWithPrompt("go");
@@ -478,7 +436,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"old code"}
@@ -505,7 +463,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"old code"}
@@ -542,7 +500,7 @@ describe("AiAssistantModal — line diff preview", () => {
     renderModal(
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode="lore_entry"
         isOpen={true}
         onClose={() => {}}
         existingContent={"line one v1"}
@@ -553,9 +511,9 @@ describe("AiAssistantModal — line diff preview", () => {
 
     await generateWithPrompt("edit");
 
-    // The diff title "script_ai_changes" renders with +1/-1 counts.
+    // The diff title "lore_entry_ai_changes" renders with +1/-1 counts.
     await waitFor(() => {
-      expect(screen.getByText("script_ai_changes")).toBeTruthy();
+      expect(screen.getByText("lore_entry_ai_changes")).toBeTruthy();
     });
     await waitFor(() => {
       expect(screen.getByText("+1")).toBeTruthy();
@@ -623,6 +581,57 @@ describe("AiAssistantModal — quickpill settings sync", () => {
     // In quickpill mode, changing settings should not call updateUiSettings.
     // The only writes to ui settings come from full-mode persistence.
     expect(updateUiSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("AiAssistantModal — quickpill seed pairs provider with its own model", () => {
+  beforeEach(() => {
+    mockState.requests = [];
+    mockState.chunks = [];
+    mockState.shouldThrow = false;
+    useProviderDataStore.setState({
+      profiles: [
+        makeProfile("prov-1", "Provider One"),
+        makeProfile("prov-2", "Provider Two", { defaultModel: "two-default" }),
+      ],
+      favoritesByProfile: {},
+    });
+    // The page-load snapshot still holds provider one + its model.
+    seedBootstrap("prov-1", "model-a");
+  });
+
+  function triggerTexts(): string[] {
+    return Array.from(document.body.querySelectorAll("button")).map((b) => b.textContent?.trim() ?? "");
+  }
+
+  it("pill settings with a provider and an empty model seed that provider with its default, never the snapshot model", async () => {
+    renderModal(
+      <AiAssistantModal
+        mode="quickpill"
+        isOpen={true}
+        onClose={() => {}}
+        settings={{ providerId: "prov-2", modelName: "" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(triggerTexts()).toContain("Provider Two"));
+    expect(triggerTexts()).toContain("two-default");
+    expect(triggerTexts()).not.toContain("model-a");
+    expect(triggerTexts()).not.toContain("Model A");
+  });
+
+  it("pill settings with nothing seed the persisted pair whole (fresh install)", async () => {
+    renderModal(
+      <AiAssistantModal
+        mode="quickpill"
+        isOpen={true}
+        onClose={() => {}}
+        settings={{ providerId: "", modelName: "" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(triggerTexts()).toContain("Provider One"));
+    await waitFor(() => expect(triggerTexts()).toContain("Model A"));
   });
 });
 

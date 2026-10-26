@@ -107,7 +107,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-s3 text-[12px] font-medium text-t3">
+              <div className="flex h-full w-full items-center justify-center bg-s3 text-[calc(var(--ui-fs)-2px)] font-medium text-t3">
                 {authorInfo.character.name.charAt(0).toUpperCase()}
               </div>
             )}
@@ -291,12 +291,12 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
           </MobileExpandTextarea>
           <div className="mt-1.5 flex gap-1.5">
             <button type="button"
-              className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+              className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all duration-100 hover:brightness-110"
               disabled={isBusy}
               onClick={() => void chat.handleSaveMessageEdit(messageId)}
             >{t("save_edit")}</button>
             <button type="button"
-              className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
+              className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all duration-100 hover:bg-s3"
               disabled={isBusy}
               onClick={chat.handleCancelEdit}
             >{t("cancel")}</button>

@@ -218,6 +218,10 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
   maxSteps: integer('max_steps').notNull().default(5),
+  // Manual list order (drag-to-reorder, ML-5). New modules append at the end;
+  // the migration backfills existing rows to created_at ASC. Same shape as
+  // proxy_profiles / stt_profiles sort_order.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -235,11 +239,53 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   basePrompt: text('base_prompt').notNull(),
+  // AGENT_SHELL_PLAN AS-3: which agent kind owns this profile ('experience'
+  // today; 'script' registers in AS-7). Immutable after create (the store
+  // never writes it, the update contract omits it) — a wrong-kind profile is
+  // recreated under the right kind, never converted. Default-only migration:
+  // existing rows read as 'experience' with unchanged tool sets.
+  agentKind: text('agent_kind').notNull().default('experience'),
+  // superseded: skills are ungated (EXPERIENCE_COPILOT_PLAN_MODE_PLAN PM-8) —
+  // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
+  // Manual list order (drag-to-reorder, ML-6), WITHIN one agent kind (the
+  // master list is per kind — the plan's ML-6 row). New profiles append at
+  // the end of their kind's list; the migration backfills existing rows to
+  // created_at ASC per kind. Same shape as proxy_profiles /
+  // coauthor_modules sort_order.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// ─── skillOrders ───────────────────────────────────────────────────────────────
+// Per-library manual list order for the FILESYSTEM skill catalog (ML-7). Skills
+// are directories on disk (a read-only built-in assets root + a writable user
+// root per library) with no DB row of their own, so the stored order lives in
+// this dedicated table keyed by (library, skill id): `library` names the skill
+// root the modal shows — 'coauthor' for the Co-Author library, the agent-kind
+// id for the copilot libraries ('experience' / 'script' / 'sidechat-ooc', the
+// same key the per-kind skill routes resolve through the kind registry);
+// `skill_id` is the skill's directory name (the catalog id — shadowing is
+// resolved BEFORE ordering: the catalog collapses a builtin/user id collision
+// to ONE user-won entry, so one id always has one position). The table starts
+// EMPTY (nothing to number on migration): a library with no rows serves its
+// catalog in the scanner's alphabetical order, and ids the table does not
+// know (a freshly imported or new built-in skill) sort after the known ones,
+// alphabetically — the plan's merge rule. A reorder replaces the library's
+// whole map; rows for ids the catalog no longer lists are inert until that id
+// exists again.
+export const skillOrders = sqliteTable('skill_orders', {
+  library: text('library').notNull(),
+  skillId: text('skill_id').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (table) => ({
+  // Composite PK: one position per (library, skill id) pair — a duplicate id
+  // in one reorder payload is a constraint error that rolls the whole
+  // transaction back. The PK index also serves the per-library reads.
+  pk: primaryKey({ columns: [table.library, table.skillId] }),
+}));
 
 // ─── lorebooks ────────────────────────────────────────────────────────────────
 
@@ -658,6 +704,24 @@ export const ttsProfileLinks = sqliteTable('tts_profile_links', {
   profileIdx: index('idx_tts_profile_links_profile').on(table.ttsProfileId),
 }));
 
+// Last-good listing snapshots of a saved TTS profile
+// (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11b; fork #2 of
+// image_gen_listing_snapshots). Every successful live listing for the saved
+// profile (the model catalog, the per-model voice envelopes) overwrites its
+// row; the profile editor opens on the stored copy instead of listing live.
+// `kind` is a TTS_LISTING_SNAPSHOT_KINDS value ('models') or a
+// `voices:<modelId>` key; `payloadJson` is the listing as the live route
+// returned it. Rows cascade with the profile and are cleared when its
+// backend/endpoint changes (another server's lists).
+export const ttsListingSnapshots = sqliteTable('tts_listing_snapshots', {
+  ttsProfileId: text('tts_profile_id').notNull().references(() => ttsProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ttsProfileId, table.kind] }),
+}));
+
 // ─── sttProfiles ──────────────────────────────────────────────────────
 //
 // Named speech-to-text profiles (STT_PLAN ST-1; design STT_DESIGN).
@@ -694,6 +758,23 @@ export const sttProfiles = sqliteTable('stt_profiles', {
 }, (table) => ({
   defaultIdx: index('idx_stt_profiles_default').on(table.isDefault),
   backendIdx: index('idx_stt_profiles_backend').on(table.backend),
+}));
+
+// Last-good listing snapshot of a saved STT profile
+// (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11b; fork #1 of
+// image_gen_listing_snapshots). The one kind is the model catalog
+// ('models'): every successful live listing for the saved profile overwrites
+// the row and the profile editor opens on it instead of listing live.
+// `payloadJson` is the listing as the live route returned it. Rows cascade
+// with the profile and are cleared when its backend/endpoint changes
+// (another server's catalog).
+export const sttListingSnapshots = sqliteTable('stt_listing_snapshots', {
+  sttProfileId: text('stt_profile_id').notNull().references(() => sttProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sttProfileId, table.kind] }),
 }));
 
 // ─── chatBranches ──────────────────────────────────────────────────────────────
@@ -1244,6 +1325,13 @@ export const promptTraces = sqliteTable('prompt_traces', {
   latencyMs: integer('latency_ms').notNull(),
   sentConfigJson: text('sent_config_json'),
   providerResponseJson: text('provider_response_json'),
+  /** SC-23b (SIDECHAT_PLAN Wave 5b): the swipe (message_variants row) this
+   *  trace's prompt produced. Null = the producing swipe is unknown: greeting
+   *  traces (no model wrote them), legacy traces the boot back-fill could not
+   *  resolve structurally (see trace-variant-backfill.ts), and traces whose
+   *  variant was later deleted (FK SET NULL — the trace itself survives).
+   *  Read by the trace viewer to show the exact prompt of a chosen swipe. */
+  variantId: text('variant_id').references(() => messageVariants.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   chatBranchIdx: index('idx_prompt_traces_chat_branch').on(table.chatId, table.branchId, table.createdAt),
@@ -1809,6 +1897,23 @@ export const experienceAttachments = sqliteTable('experience_attachments', {
 // identifies the in-progress work. Deleting a script never cascade-deletes
 // copilot history (the snapshot/no-FK-source convention used throughout this
 // runtime), and a thread can predate the script row it will eventually point at.
+//
+// Chat-owned threads (SIDECHAT_PLAN SC-0a): the same table also hosts agent
+// threads owned by an RP chat branch instead of a script (the sidechat and,
+// later, the director). Ownership is mutually exclusive per row — script rows
+// set script_id, chat rows set chat_id + branch_id + agent_kind, drafts set
+// neither. UNLIKE script_id, the chat-owner columns are real FKs with
+// CASCADE: a branch (and its chat) is runtime state whose threads must not
+// outlive it (the owner-confirmed branch-delete wording already promises
+// sidechats die with their branch). agent_kind is the shared agent-shell kind
+// registry slug (e.g. "sidechat-ooc") — stored on the row because a chat
+// thread has no script to derive it from; NULL on script/draft rows, where
+// the kind stays derived. Required whenever chat_id is set — enforced by the
+// store (startNewChatSession takes it as a required parameter), not by a
+// column constraint, because the same column must stay NULL for script rows.
+// The at-most-one-active invariant is scoped per owner: the partial unique
+// index below on (chat_id, branch_id, agent_kind) is the chat-owner twin of
+// the script_id one, and the store archives only same-owner siblings.
 export const experienceCopilotThreads = sqliteTable('experience_copilot_threads', {
   id: text('id').primaryKey(),
   // Soft link to the experience (scripts row). Nullable + set-on-first-save.
@@ -1817,6 +1922,14 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // Identifies an unsaved draft session before the experience has a script_id.
   // Null once script_id is set.
   draftSessionId: text('draft_session_id'),
+  // Chat-owner triple (SC-0a): set together on chat-owned threads, NULL on
+  // script-owned and draft rows. Hard FK cascade — see the section comment.
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').references(() => chatBranches.id, { onDelete: 'cascade' }),
+  // Agent-shell kind slug for chat-owned threads; NULL on script/draft rows
+  // (their kind is derived from the script). Store-enforced required when
+  // chat_id is set — never a column constraint, so script rows stay NULL.
+  agentKind: text('agent_kind'),
   title: text('title').notNull().default(''),
   // NULL = the active session for this script_id; non-null ISO timestamp =
   // archived (resumable). The partial unique index below guarantees at most one
@@ -1832,12 +1945,13 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // (malformed → [], logged, never fatal). Resolved by id at ASSEMBLY time —
   // never a stored content copy, so a pinned entity can never go stale.
   contextLinksJson: text('context_links_json').notNull().default('[]'),
-  // The model's step-plan for this thread (copilot todo/ask plan, TAG-2): JSON
-  // array of {title, status: pending|active|completed|abandoned}. The model
-  // owns it (read-only for the user); every `todo` tool call is a full-list
-  // rewrite. Nullable: null until the first todo call. Malformed JSON on read
-  // → [] (logged, never fatal) — same defensive-parse contract as
-  // context_links_json above.
+  // The model's session-scoped checklist for this thread (copilot todo/ask
+  // plan, TAG-2 — RESTORED in PM-7, owner ruling 2026-10-11, to live beside
+  // the script-owned agent plan): JSON array of {title, status:
+  // pending|active|completed|abandoned}. The model owns it (read-only for
+  // the user); every `todo` tool call is a full-list rewrite. Nullable: null
+  // until the first todo call. Malformed JSON on read → [] (logged, never
+  // fatal) — same defensive-parse contract as context_links_json above.
   todoJson: text('todo_json'),
   // The provider/model the thread LAST used (persisted from the stream finish
   // path) — the compaction service (CM-5) reuses this pair when the manual
@@ -1847,10 +1961,24 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // Auto-compact toggle (CM-6): 1 = on (default), 0 = off. Stored as int 0/1
   // (SQLite has no native boolean) and exposed as a boolean on the store row.
   autoCompact: integer('auto_compact').notNull().default(1),
+  // Frozen-context sequencing (SIDECHAT_PLAN SC-1). next_seq: the next seq to
+  // allocate for a CHAT-OWNED thread's rows (messages + context events),
+  // read-and-incremented inside every append transaction so seq is gapless per
+  // thread under the synchronous SQLite runtime. NULL on script/draft rows —
+  // they never allocate seq and their message ordering stays created_at-based
+  // (unchanged). rp_frontier_json: the RP-chat frontier the thread has frozen
+  // (`AgentThreadRpFrontier`: lastPosition + selected variant map). NULL until
+  // the first rp sync; written wholesale by setFrontier. Malformed JSON on read
+  // → null (logged, never fatal) — the store's defensive-parse contract.
+  nextSeq: integer('next_seq'),
+  rpFrontierJson: text('rp_frontier_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   scriptIdIdx: index('idx_experience_copilot_threads_script').on(table.scriptId),
+  // Chat-owner listing lookup (SC-0a): listSessionsForChat filters by the
+  // (chat_id, branch_id) pair — the chat twin of scriptIdIdx above.
+  chatBranchIdx: index('idx_experience_copilot_threads_chat_branch').on(table.chatId, table.branchId),
   // At-most-one-active invariant (DB layer): at most one row per script_id with
   // archived_at IS NULL. The `sql` template is used instead of `and(isNull(...),
   // isNotNull(...))` because `and()` returns `SQL | undefined`, which the
@@ -1860,6 +1988,17 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   activeScriptUnique: uniqueIndex('idx_experience_copilot_threads_active_script')
     .on(table.scriptId)
     .where(sql`${table.archivedAt} IS NULL AND ${table.scriptId} IS NOT NULL`),
+  // At-most-one-active invariant for chat owners (SC-0a): at most one active
+  // thread per (chat_id, branch_id, agent_kind) triple. The same `sql`-template
+  // form as the script index above (and for the same reason — `and()` returns
+  // `SQL | undefined`, which IndexBuilder.where() rejects). Two agent kinds on
+  // one branch, or the same kind on two branches, coexist by design; only the
+  // exact triple is unique. agent_kind is store-required whenever chat_id is
+  // set, so the triple has no NULL hole (script/draft rows are excluded by
+  // chat_id IS NOT NULL).
+  activeChatUnique: uniqueIndex('idx_experience_copilot_threads_active_chat')
+    .on(table.chatId, table.branchId, table.agentKind)
+    .where(sql`${table.archivedAt} IS NULL AND ${table.chatId} IS NOT NULL`),
 }));
 
 // ─── experienceCopilotMessages ────────────────────────────────────────────────
@@ -1874,9 +2013,133 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   content: text('content').notNull().default(''),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
+  // AP-28 (AGENT_SHELL_POLISH): the turn's reasoning, persisted onto the
+  // FIRST assistant row the turn's persist pass writes (text row or
+  // tool-call row). Same nullable pair as `message_variants` on the RP side:
+  // text joined burst-by-burst in arrival order, duration = the summed
+  // per-burst elapsed ms. Null on every other row and on turns without
+  // reasoning; display-only — NEVER fed back into the model prompt
+  // (`storeMessagesToHistory` reads neither column).
+  reasoning: text('reasoning'),
+  reasoningDurationMs: integer('reasoning_duration_ms'),
+  // CA-4a2: stored Attachment[] JSON (images/files), shared across agent kinds.
+  // NULL = no attachments; read through parseStoredAttachments, like RP rows.
+  attachmentsJson: text('attachments_json'),
+  // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
+  // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
+  // messages interleave with agent_thread_context_events rows on the merged
+  // timeline. NULL on script/draft threads — their ordering stays created_at
+  // + id (unchanged), and rows written before SC-1 stay NULL (legacy chat-owned
+  // rows sort before all seq'd rows on the timeline).
+  seq: integer('seq'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
+}));
+
+// ─── agentThreadContextEvents (SIDECHAT_PLAN SC-1) ──────────────────────────
+// Frozen context events on agent threads: chat-state milestones (rp sync,
+// variant attach, selection change, branch fork) recorded on the thread's
+// timeline beside its messages, so the frozen context can be replayed in
+// order (SC-3 reads the merged timeline). seq interleaves with
+// experience_copilot_messages.seq — both are allocated from the owning
+// thread's next_seq inside the append transaction (chat-owned threads only;
+// script/draft threads have no RP chat to freeze and leave seq NULL).
+// Deleting a thread cascades its events (the same convention as messages).
+export const agentThreadContextEvents = sqliteTable('agent_thread_context_events', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  // Allocated for chat-owned threads; NULL for script/draft threads (SC-1).
+  seq: integer('seq'),
+  // Timeline kind — one of AGENT_THREAD_CONTEXT_EVENT_KINDS in the store.
+  kind: text('kind').notNull(),
+  // JSON payload; kind-specific shape, owned by the event's writer (SC-2c+).
+  // Nullable: read defensively — malformed JSON skips the event from the
+  // timeline (logged, never fatal).
+  payloadJson: text('payload_json'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  threadIdx: index('idx_agent_thread_context_events_thread').on(table.threadId),
+}));
+
+// ─── agentPlans ──────────────────────────────────────────────────────────────
+// One persisted agent plan belongs to each saved script. script_id is a soft
+// link with NO FK: deleting a script never cascade-deletes copilot data, and
+// its plan follows that same snapshot/no-FK-source convention.
+export const agentPlans = sqliteTable('agent_plans', {
+  id: text('id').primaryKey(),
+  scriptId: text('script_id').notNull(),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  scriptIdUnique: uniqueIndex('idx_agent_plans_script').on(table.scriptId),
+}));
+
+// ─── agentBranchPlans (SIDECHAT_PLAN SC-0h) ──────────────────────────────────
+// One persisted agent plan belongs to each (chat, branch) pair — the chat-owned
+// twin of agent_plans above. Unlike the script owner's soft link, both columns
+// here are HARD FKs with CASCADE: a branch (and its chat) is runtime state
+// whose plan must not outlive it — the same convention the SC-0a chat-owned
+// copilot threads use. The unique index makes it one row per pair.
+export const agentBranchPlans = sqliteTable('agent_branch_plans', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchUnique: uniqueIndex('idx_agent_branch_plans_chat_branch').on(table.chatId, table.branchId),
+}));
+
+// ─── agentKindSettings (SIDECHAT_PLAN SC-0d) ────────────────────────────────
+// Per-agent-kind model binding + profile default: one row per kind id, the
+// UI default a kind's shell boots with (the stream still takes its actual
+// provider/model from each request — this is a remembered choice, not a
+// server-side override). provider_profile_id follows the ui_settings
+// dangling-policy precedent (copilot_provider_id & co.): NO FK — a deleted
+// profile leaves a dangling id the adapter/UI resolves with a fallback
+// rather than blocking the delete. Rows are born only from user PATCHes;
+// a kind with no row reads the legacy ui_settings copilot pair (owner
+// decision: nobody loses their choice; no seed SQL) — see the store.
+// default_profile_id is SC-0f's column: stored here, consumed by SC-0f's
+// stream profile resolution.
+export const agentKindSettings = sqliteTable('agent_kind_settings', {
+  agentKind: text('agent_kind').primaryKey(),
+  providerProfileId: text('provider_profile_id'),
+  modelName: text('model_name'),
+  defaultProfileId: text('default_profile_id'),
+  // AP-20: the kind's default for the NEW-session auto-compact toggle —
+  // NULL = on (auto-compact was the pre-AP-20 effective behavior, so an
+  // absent setting must not change it). Read at creation time by the two
+  // new-session paths (adapter resolves the kind, reads this default, and
+  // writes it onto the thread's auto_compact); the per-thread toggle is
+  // authoritative afterwards — changing this column later never rewrites
+  // existing threads. Stored 0/1 like threads.auto_compact; the store
+  // resolves NULL → on at read (the legacy ui_settings pair fallback is
+  // provider/model only — auto-compact never lived there, so every no-row
+  // read is on alike).
+  autoCompactDefault: integer('auto_compact_default'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── chatAgentSettings (SIDECHAT_PLAN SC-0f) ────────────────────────────────
+// Per-(chat, agent-kind) settings — the chat-scoped twin of agent_kind_settings.
+// One row per (chat, kind): the chat's OWN choice of copilot profile for that
+// kind's threads in this chat ("use here", SC-0g), overriding the kind-wide
+// default_profile_id. profile_id is a soft link with NO FK — the house
+// dangling-id policy (cf. agent_kind_settings): a deleted profile row makes
+// the stored id dangle, and the RESOLVER falls through to the next chain step
+// at read time; the delete is never blocked. Deleting the chat cascades the
+// rows away (FK ON DELETE cascade) — the settings live and die with the chat.
+export const chatAgentSettings = sqliteTable('chat_agent_settings', {
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  agentKind: text('agent_kind').notNull(),
+  profileId: text('profile_id'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.chatId, table.agentKind] }),
 }));
 
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────

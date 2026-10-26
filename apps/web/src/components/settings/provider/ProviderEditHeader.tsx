@@ -70,7 +70,7 @@ export function ProviderEditHeader({
 
   return (
     <div className="mb-5 border-b border-border2 pb-5">
-      <div className="mb-4 flex items-center gap-2 font-ui text-[15px] font-semibold text-t1">
+      <div className="mb-4 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">
         <Icons.Edit />
         {t("provider_connection_settings")}
       </div>
@@ -81,7 +81,7 @@ export function ProviderEditHeader({
           <label className={lblCls}>{t("profile_name")}</label>
           <TextInput value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} />
           {duplicateNameWarning && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+            <div className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("profile_name_exists")}
             </div>
@@ -127,7 +127,7 @@ export function ProviderEditHeader({
 
       {/* API key */}
       {hidesApiKey ? (
-        <div className="mb-4 rounded-md border border-border2 bg-s2 px-3 py-2 font-ui text-[12px] text-t3">
+        <div className="mb-4 rounded-md border border-border2 bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
           {t("api_key_not_required")}
         </div>
       ) : (
@@ -159,7 +159,7 @@ export function ProviderEditHeader({
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button type="button"
           className={cn(
-            'flex min-h-11 items-center justify-center gap-2 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0',
+            'flex min-h-11 items-center justify-center gap-2 rounded-md border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium transition-colors sm:min-h-0',
             testOk === true ? 'border-success/30 bg-success/10 text-success' :
             testOk === false ? 'border-danger/30 bg-danger/10 text-danger' :
             'border-border bg-s2 text-t2 hover:border-border2 hover:text-t1',
@@ -172,7 +172,7 @@ export function ProviderEditHeader({
         </button>
         <div className="flex-1" />
         {!isNew && onCancel && (
-          <button type="button" onClick={onCancel} className="min-h-11 rounded-md border border-border bg-transparent px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1 sm:min-h-0">
+          <button type="button" onClick={onCancel} className="min-h-11 rounded-md border border-border bg-transparent px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1 sm:min-h-0">
             {t("cancel")}
           </button>
         )}

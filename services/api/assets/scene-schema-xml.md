@@ -24,6 +24,33 @@ The root is a JSON object whose keys are field names. Every value is a NODE obje
 ## Optional display label
 Any node may carry a `"label"`: a short human-readable name shown in the UI instead of the machine key (e.g. `"obedience": { "$type": "number", "min": 0, "max": 100, "label": "Obedience" }`). The key stays machine-stable; the label is presentation-only and may contain spaces/unicode even when the key cannot. Omit `label` when the key is already readable.
 
+## Tone coding
+Any node may also carry a `"tone"`: one of four SEMANTIC color tokens that tint how the node renders in the UI (its value text, meter fill, or group rail). The tokens carry meaning, never decoration:
+
+- `"danger"` — harmful, urgent, or failed states.
+- `"success"` — positive, progress, or achieved states.
+- `"warning"` — at-risk, transitional, or degrading states.
+- `"accent"` — emphasis: quest-critical or spotlight groups.
+
+A STRING field whose values form a small closed set may instead carry `"toneBy"`: a value → tone map. Each listed value renders in its own tone; values left out of the map stay neutral. `tone` and `toneBy` are presentation-only — they never change what is tracked or generated.
+
+Use tone when it carries meaning:
+
+- a status field with a small closed value set → `toneBy`, one entry per value that needs a color;
+- a meter whose meaning is fixed at any level (a corruption meter is bad news at every reading) → `tone`;
+- the quest / main-arc group → `"accent"`.
+
+Do NOT: tone every field (color must stay a signal — the default is neutral); pick tokens for looks (a rainbow tracker reads as noise); write raw hex or color names — validation accepts ONLY the four tokens above; put `toneBy` on a non-string field or on open-ended free text.
+
+Fragment (shape to imitate, not to copy):
+```json
+{
+  "condition": { "$type": "string", "toneBy": { "Stable": "success", "Wounded": "warning", "Ruined": "danger" } },
+  "corruption": { "$type": "number", "min": 0, "max": 100, "tone": "danger" },
+  "hunt": { "$type": "object", "tone": "accent", "properties": { "target": { "$type": "string" } } }
+}
+```
+
 ## Naming keys — XML-safe names required
 Because each key becomes an XML tag (`<key>…</key>`), every field key MUST match `^[A-Za-z_][A-Za-z0-9_\-.]*$`:
 - Start with an ASCII letter or underscore.
@@ -36,7 +63,7 @@ Translate a card's human wording into a safe key: «Time of day» → `timeOfDay
 Nesting depth ≤ 8. A single object (or the root) may declare ≤ 64 fields. The whole schema may have ≤ 256 nodes. Keep the schema focused — track only what the card's tracker actually tracks. Do not invent fields the author did not ask for.
 
 ## Refinement
-If a current schema is supplied as "refine it", keep the structure that still fits and only adjust fields/ranges/labels to better match the request — do not gratuitously rename or restructure working fields. Existing keys already satisfy the XML-name rule; keep them.
+If a current schema is supplied as "refine it", keep the structure that still fits and only adjust fields/ranges/labels to better match the request — do not gratuitously rename or restructure working fields. A request to color or tone an existing schema keeps every key, type, range and label exactly as it is and only adds or changes `tone` / `toneBy`. Existing keys already satisfy the XML-name rule; keep them.
 
 ## Worked example
 Input intent (from a card's tracker format): `[⏳ Day: X | Time: Night]`, `[🏰 Citadel: Lv. X | Condition: Ruined]`, `[💎 Summoning Crystals: X]`, `[📜 Active Quest: Name | Status: Active]`.
@@ -48,14 +75,15 @@ Input intent (from a card's tracker format): `[⏳ Day: X | Time: Night]`, `[�
     "$type": "object",
     "label": "Citadel",
     "properties": {
-      "level": { "$type": "number", "min": 1, "label": "Level" },
-      "condition": { "$type": "string", "label": "Condition" }
+      "level": { "$type": "number", "label": "Level" },
+      "condition": { "$type": "string", "label": "Condition", "toneBy": { "Stable": "success", "Damaged": "warning", "Ruined": "danger" } }
     }
   },
-  "summoningCrystals": { "$type": "number", "min": 0, "label": "Crystals" },
+  "summoningCrystals": { "$type": "number", "label": "Crystals" },
   "activeQuest": {
     "$type": "object",
     "label": "Active Quest",
+    "tone": "accent",
     "properties": {
       "name": { "$type": "string" },
       "status": { "$type": "string" }

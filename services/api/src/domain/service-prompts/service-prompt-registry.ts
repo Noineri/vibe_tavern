@@ -25,7 +25,9 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   message_edit: "message-edit-ai-prompt.md",
   message_merge: "message-merge-ai-prompt.md",
   message_tts_annotate: "message-tts-annotate-ai-prompt.md",
+  tracker_template: "tracker-template.md",
   regex: "regex-ai-prompt.md",
+  skill: "skill-ai-prompt.md",
   // summary (1)
   summary: "summary-ai-prompt.md",
   // insights (4)
@@ -33,9 +35,15 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   objective_generate_goals: "objective-generate-goals.md",
   objective_check: "objective-check.md",
   scene_generate: "scene-generate.md",
-  // bases (5)
+  // bases (11)
   coauthor_base: "coauthor/base.md",
+  coauthor_summary: "coauthor/summary.md",
   copilot_base: "experience-copilot/base.md",
+  copilot_compaction: "experience-copilot/compaction.md",
+  script_agent_base: "agent-script/base.md",
+  script_agent_compaction: "agent-script/compaction.md",
+  sidechat_ooc_base: "agent-sidechat/ooc.md",
+  sidechat_ooc_digest: "agent-sidechat/ooc-digest.md",
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",
   interactive_visual: "interactive-visual.md",

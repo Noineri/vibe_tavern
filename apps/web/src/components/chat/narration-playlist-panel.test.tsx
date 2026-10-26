@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AppMessage } from "../../api/types.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "../../lib/tts/narration-player.js";
@@ -110,27 +111,22 @@ const mocks = {
 
 const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realChatSelectors = await import("../../stores/chat-selectors.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
 const realPlatform = await import("../../lib/platform.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, vars?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, vars?) => {
       // Same shape as the dice-panel test mock: key + colon-joined vars.
       if (!vars) return key;
       return `${key}:${Object.values(vars).map((value) => String(value)).join(":")}:`;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
@@ -647,6 +643,41 @@ describe("narration playlist player controls (TPE-18b)", () => {
     });
   });
 
+  it("SL-12: only seek has a clock bubble and its position / total readout stays live", async () => {
+    const lane = installDeferredLane({ "audio:Para one.": 120 });
+    const view = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => view.getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().progress["m1"]?.durations).toEqual([120]);
+    });
+    const seek = view.getByTestId("playlist-seek");
+    const thumb = seek.closest("[data-slider-thumb]");
+    expect(thumb?.querySelectorAll("[data-slider-bubble]")).toHaveLength(1);
+    expect(thumb?.querySelector("[data-slider-bubble]")?.textContent).toBe("0:00");
+    expect(view.getAllByText("0:00 / 2:00")).toHaveLength(1);
+    const volume = view.getByTestId("playlist-volume").closest("[data-slider-root]");
+    expect(volume?.querySelector("[data-slider-bubble]")).toBeNull();
+    expect(view.baseElement.querySelectorAll("[data-slider-bubble]")).toHaveLength(1);
+
+    await act(async () => { fireEvent.change(seek, { target: { value: "84" } }); });
+    await waitFor(() => { expect(lane.plays).toHaveLength(2); });
+    expect(view.getByTestId("playlist-seek").closest("[data-slider-thumb]")?.querySelector("[data-slider-bubble]")?.textContent).toBe("1:24");
+    expect(view.getAllByText("1:24 / 2:00")).toHaveLength(1);
+    expect(lane.plays[1]).toEqual({ text: "audio:Para one.", startAt: 84 });
+
+    await act(async () => { lane.resolveCurrent("ended"); });
+    await started;
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+  });
+
   it("seek bar jumps the live lane to the dragged position (cache hit, offset kept)", async () => {
     const lane = installDeferredLane({ "audio:Para one.": 10 });
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
@@ -720,8 +751,6 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(useTtsPlaybackStore.getState().volume).toBe(0.5);
     expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0.5");
     expect(lane.volumeCalls).toContain(0.5);
-    // The hard-stop fill follows the value via the --p custom property.
-    expect(rail.getAttribute("style") ?? "").toContain("--p: 50%");
     await act(async () => { fireEvent.mouseUp(rail); });
     expect(getByTestId("playlist-volume-percent").textContent).toBe("");
   });
@@ -766,7 +795,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(useTtsPlaybackStore.getState().volume).toBe(0.45);
   });
 
-  it("RD-4d: rail and seek render the playlist-local slider family (vertical rail density)", async () => {
+  it("RD-4d: rail and seek render shared sliders with their compact geometry", async () => {
     const lane = installDeferredLane();
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     let started: Promise<void> | null = null;
@@ -777,12 +806,19 @@ describe("narration playlist player controls (TPE-18b)", () => {
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     const volume = await waitFor(() => getByTestId("playlist-volume"));
-    expect(volume.getAttribute("class") ?? "").toContain("playlist-slider");
-    expect(volume.getAttribute("class") ?? "").toContain("playlist-slider--vertical");
-    expect(volume.getAttribute("class") ?? "").not.toContain("playlist-slider--seek");
-    // The live row's playback bar joins the same family at seek density.
+    expect((volume as HTMLInputElement).type).toBe("range");
+    const volumeRoot = volume.closest("[data-slider-root]");
+    expect(volumeRoot?.getAttribute("data-orientation")).toBe("vertical");
+    expect(volumeRoot?.classList.contains("w-[14px]")).toBe(true);
+    const volumeSlot = volumeRoot?.parentElement;
+    expect(volumeSlot?.classList.contains("flex")).toBe(true);
+    expect(volumeSlot?.classList.contains("justify-center")).toBe(true);
+    expect(volumeSlot?.classList.contains("w-7")).toBe(true);
     const seek = await waitFor(() => getByTestId("playlist-seek"));
-    expect(seek.getAttribute("class") ?? "").toContain("playlist-slider--seek");
+    expect((seek as HTMLInputElement).type).toBe("range");
+    const seekRoot = seek.closest("[data-slider-root]");
+    expect(seekRoot?.getAttribute("data-orientation")).toBe("horizontal");
+    expect(seekRoot?.classList.contains("h-3")).toBe(true);
   });
 
   it("RD-4e: disabled rail renders inert", () => {
@@ -794,7 +830,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
   });
 
   it("formats the seek clock as m:ss", async () => {
-    const { formatPlaybackTime } = await import("./NarrationPlaylist.js");
+    const { formatPlaybackTime } = await import("./playlist-seek-bar.js");
     expect(formatPlaybackTime(0)).toBe("0:00");
     expect(formatPlaybackTime(5)).toBe("0:05");
     expect(formatPlaybackTime(65)).toBe("1:05");

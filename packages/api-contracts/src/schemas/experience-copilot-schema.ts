@@ -22,14 +22,20 @@
  */
 
 import { z } from "zod";
+import type { Attachment } from "@vibe-tavern/domain";
+import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
+import { attachmentSchema } from "./chat-schema.js";
 import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
 /**
  * Which buffer a copilot proposed edit lands on. Drives which editor surface
  * shows the diff (the rules editor vs the visual editor). Mirrors
  * `CoauthorTarget` ("profile" | "greeting") for the two co-author surfaces.
+ * AS-8b adds `"code"` — the script kind's single buffer (its `write_buffer`/
+ * `edit_buffer` results carry `target: "code"`); the experience kind never
+ * emits it, so the union only grows for the kind that uses it.
  */
-export const experienceCopilotTargetSchema = z.enum(["rules", "visual"]);
+export const experienceCopilotTargetSchema = z.enum(["rules", "visual", "code"]);
 export type ExperienceCopilotTarget = z.infer<typeof experienceCopilotTargetSchema>;
 
 /**
@@ -67,7 +73,7 @@ export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
  * tool-result row that is still awaiting an answer in THIS thread; that is
  * thread state, so it is enforced by the stream (domain), not by the schema.
  */
-export const experienceCopilotStreamAnswerSchema = z
+const experienceCopilotAskAnswerSchema = z
   .object({
     toolCallId: z.string().min(1),
     text: z.string().min(1).max(50_000).optional(),
@@ -89,6 +95,43 @@ export const experienceCopilotStreamAnswerSchema = z
       });
     }
   });
+export type ExperienceCopilotStreamAskAnswer = z.infer<typeof experienceCopilotAskAnswerSchema>;
+
+/**
+ * Permission decision for a pending wait-tool request (SC-23e split-turn):
+ * `decision: "allow"` = the user lets the model read the material the tool
+ * asked about (the kind re-runs the tool's granted execution and stores its
+ * real result); `decision: "deny"` = the user refuses (the row stores the
+ * denied marker and the turn continues without the material). Carries
+ * NEITHER `text` NOR `skipped` — those belong to the ask family, and the
+ * `.strict()` member rejects them here. The `toolCallId` must point at a
+ * still-awaiting permission marker row in THIS thread (thread state —
+ * enforced by the stream, not the schema).
+ */
+export const experienceCopilotStreamPermissionAnswerSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    decision: z.enum(["allow", "deny"]),
+  })
+  .strict();
+export type ExperienceCopilotStreamPermissionAnswer = z.infer<
+  typeof experienceCopilotStreamPermissionAnswerSchema
+>;
+
+/**
+ * Answer to a pending wait-tool request — a DISCRIMINATED-BY-SHAPE union of
+ * the two split-turn families: the `ask_user` answer (TAG-5, `text`/
+ * `skipped`) and the permission decision (SC-23e, `decision`). The
+ * permission member is tried FIRST: an ask body has no `decision` field and
+ * falls through to the ask member unchanged, while a permission body's
+ * `decision` key would be rejected by the ask member's `.strict()` anyway —
+ * so every valid body of either family parses to exactly one member and the
+ * ask family's validation is byte-identical for its own bodies.
+ */
+export const experienceCopilotStreamAnswerSchema = z.union([
+  experienceCopilotStreamPermissionAnswerSchema,
+  experienceCopilotAskAnswerSchema,
+]);
 export type ExperienceCopilotStreamAnswer = z.infer<typeof experienceCopilotStreamAnswerSchema>;
 
 /** The Try sandbox context copied into copilot test and validation tools. The
@@ -117,36 +160,95 @@ export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLau
  * a typed digest, because the digest shapes live in the backend domain
  * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
  *
- * TAG-5 split-turn (style B): `content` and `answer` are exactly-one-of. A
- * normal turn sends `content`; answering a pending `ask_user` question sends
+ * TAG-5 split-turn (style B): content mode and `answer` are exactly-one-of.
+ * A normal turn sends `content` or non-empty `attachments` (CA-4a1);
+ * answering a pending wait-tool request sends
  * `answer` instead (no new user row — the answer replaces the awaiting marker
- * of the referenced tool-result and the turn resumes as a continuation).
+ * of the referenced tool-result and the turn resumes as a continuation:
+ * an `ask_user` answer since TAG-5, a permission decision since SC-23e).
+ * AP-9 (AGENT_SHELL_POLISH Wave 3) adds `regenerate` as the THIRD exclusive
+ * mode: rerun the last turn without a new user row — the server deletes the
+ * rows after the thread's last user row (the replaced turn's own rows,
+ * through the AP-8 turn-delete store) and runs the turn against the surviving
+ * thread state. Exactly one of the three modes must be present; an explicit
+ * `regenerate: false` counts as the absent mode (a client sending the flag
+ * alongside `content` stays a content turn).
  */
 export const experienceCopilotStreamRequestSchema = z
   .object({
     content: z.string().min(1).max(50_000).optional(),
+    attachments: z.array(attachmentSchema).max(5).optional(),
     providerProfileId: z.string().min(1),
     model: z.string().min(1).optional(),
     step: experienceCopilotStepSchema.optional(),
     rules: z.string().max(200_000).optional(),
     visual: z.string().max(200_000).optional(),
+    // AS-8b — the script kind's live-buffer fields. `code` is the LIVE editor
+    // buffer (never a stale DB read — the model must see the user's unsaved
+    // edits, exactly like `rules`/`visual` for the experience kind);
+    // `scriptKind` is ADVISORY telemetry (the STORED script kind is the
+    // authoritative selector for the API-knowledge section — immutable after
+    // creation, so a mismatching advisory is ignored, never fatal);
+    // `codeSaved` mirrors `rulesSaved`/`visualSaved`.
+    code: z.string().max(200_000).optional(),
+    scriptKind: z.enum(["prompt", "dice"]).optional(),
+    codeSaved: z.boolean().optional(),
+    // AS-8e1 — the script kind's build-panel context (the same ids the old
+    // modal's scopeContext carried): the character and persona open in the
+    // editor when the turn was sent. The script kind renders their full cards
+    // into the context package; the experience kind ignores both fields.
+    contextCharacterId: z.string().min(1).optional(),
+    contextPersonaId: z.string().min(1).optional(),
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),
+    // AP-9 — regenerate mode: rerun the last turn with NO new user row (the
+    // server deletes the replaced turn's rows through the AP-8 store sibling
+    // and streams the replacement). Exactly-one-of with `content`/`answer`
+    // (the refine below); an explicit `false` is the absent mode.
+    regenerate: z.boolean().optional(),
+    // SC-17 — the "discuss in the sidechat" server side: RP variants attached to
+    // this sidechat turn, as plain (messageId, variantId) pairs — nothing
+    // else. The pair schema is `.strict()` on purpose: the request NEVER
+    // carries a `selected` marker, because the server reads the RP's own
+    // selection (`message_variants.is_selected`) at freeze time — a stale
+    // tab must not freeze a wrong marker. The array carries no length cap
+    // (SC-21b, owner review 2026-10-21: a bound here would be invented
+    // provenance — no owner decision ever set one). Only the `sidechat-ooc`
+    // kind reads the field; the other kinds ignore it entirely (SC-17's
+    // plan row).
+    attachedVariants: z
+      .array(z.object({ messageId: z.string().min(1), variantId: z.string().min(1) }).strict())
+      .optional(),
+    reviewSnapshot: agentReviewSnapshotSchema.optional(),
+    rulesSaved: z.boolean().optional(),
+    visualSaved: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
-    const hasContent = val.content !== undefined;
-    const hasAnswer = val.answer !== undefined;
-    if (hasContent && hasAnswer) {
+    // AP-9: THREE exclusive modes — content (text and/or attachments), answer
+    // (answering the pending question), regenerate (rerunning the last
+    // turn). Exactly one must be present; `regenerate: false` counts as
+    // absent (an explicit false never turns a content turn into a pair).
+    const present: string[] = [];
+    if (val.content !== undefined || val.attachments?.length) {
+      present.push(val.content !== undefined ? "`content`" : "`attachments`");
+    }
+    if (val.answer !== undefined) present.push("`answer`");
+    if (val.regenerate === true) present.push("`regenerate`");
+    if (present.length > 1) {
       ctx.addIssue({
         code: "custom",
-        message: "Provide either `content` (a new message) or `answer` (answering the pending question), not both.",
+        message:
+          `Provide only one turn mode — got ${present.join(" + ")}; \`content\` (a new message), ` +
+          "`answer` (answering the pending question), and `regenerate` (rerunning the last turn) " +
+          "are mutually exclusive.",
       });
     }
-    if (!hasContent && !hasAnswer) {
+    if (present.length === 0) {
       ctx.addIssue({
         code: "custom",
-        message: "Provide either `content` (a new message) or `answer` (answering the pending question).",
+        message:
+          "Provide either `content` (a new message), `answer` (answering the pending question), or `regenerate` (rerunning the last turn).",
       });
     }
   });
@@ -165,12 +267,31 @@ export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStr
  * (`systemTokens`/`digestTokens`/`historyTokens`) are always the assembler's
  * estimate (the provider only reports an aggregate). `.strict()` rejects unknown
  * keys so a client/server typo cannot silently widen the shape.
+ *
+ * SC-0j: `segments` is the OPTIONAL kind-provided breakdown. Absent = the
+ * fixed system/digest/history breakdown above (every existing consumer stays
+ * valid); present = the kind's own token sections, rendered by
+ * `AgentContextMeter` with labels from the host descriptor's
+ * `meterSegmentLabels`. No producer emits it yet (the first consumer is the
+ * sidechat kind, Wave 1) — the server never sends it.
  */
 export const experienceCopilotContextMetricsSchema = z
   .object({
     systemTokens: z.number().int(),
     digestTokens: z.number().int(),
     historyTokens: z.number().int(),
+    /** SC-0j: kind-provided meter segments (`{ key, tokens }` per section).
+     *  Optional so existing producers/consumers that ignore it stay valid. */
+    segments: z
+      .array(
+        z
+          .object({
+            key: z.string().min(1),
+            tokens: z.number().int(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Tokens of the pinned-context attached block + recency anchor (CX-1,
      *  additive). Rows written before this plan lack the field — the DB parse
      *  guard defaults it to 0, so the wire can require it unconditionally. */
@@ -187,13 +308,19 @@ export type ExperienceCopilotContextMetrics = z.infer<typeof experienceCopilotCo
 /** Pinned-context target types the copilot picker offers (CX-1). Mirrors the
  *  Co-Author CE-C1 set plus `skill` — skills are filesystem-scanned (id = the
  *  skill directory name), and pinning one eagerly injects its `SKILL.md` body
- *  (user decision 2026-08-18; `read_skill_file` stays for on-demand assets). */
+ *  (user decision 2026-08-18; `read_skill_file` stays for on-demand assets).
+ *  `prompt_preset` (SC-23c) is the sidechat's RP-prompt discussion pin: a
+ *  CHAT-OWNED-thread-only link (the set-links path rejects it on a script or
+ *  draft thread with the typed 400 `preset_link_not_chat_owned`) that never
+ *  resolves through the generic pinned-context loader — the sidechat context
+ *  loader renders it as the `<rp_prompt>` view (rp-prompt-view.ts) instead. */
 export const experienceCopilotContextTargetTypeSchema = z.enum([
   "character",
   "persona",
   "lorebook",
   "script",
   "skill",
+  "prompt_preset",
 ]);
 export type ExperienceCopilotContextTargetType = z.infer<typeof experienceCopilotContextTargetTypeSchema>;
 
@@ -210,11 +337,13 @@ export type ExperienceCopilotContextLink = z.infer<typeof experienceCopilotConte
 
 /** Body for `PATCH /api/experience-copilot/:threadId/context-links` (CX-1): a
  *  full replace of the thread's pinned-context set (the client sends the whole
- *  array; add/remove are computed client-side). Array cap mirrors the
- *  co-author's pragmatic bound — plenty for grounding, cheap to validate. */
+ *  array; add/remove are computed client-side). The array carries no length
+ *  cap (SC-21b, owner review 2026-10-21): the dropped bound claimed to mirror
+ *  the co-author's, but the co-author's schema has none — invented
+ *  provenance. */
 export const setCopilotContextLinksSchema = z
   .object({
-    links: z.array(experienceCopilotContextLinkSchema).max(64),
+    links: z.array(experienceCopilotContextLinkSchema),
   })
   .strict();
 export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;
@@ -223,14 +352,16 @@ export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLink
 
 /**
  * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
- * the model maintain a step-by-step action plan for the authoring session via
- * full-list rewrites; the list persists on the thread row (`todo_json`, TAG-2)
- * and re-enters the prompt every turn as a context section (TAG-6), surviving
- * history compaction. The four statuses mirror the objective tracker's
- * `objectiveTaskStatusSchema` (insights-schema.ts) — a deliberate match so the
- * pinned panel (TAG-8) reuses the tracker's visual language (`NodeGlyph`,
- * `statusClass`) unchanged. `.strict()` rejects unknown keys: a model-authored
- * list must not smuggle extra fields through persistence.
+ * the model maintain a quick session-scoped checklist for the authoring
+ * thread via full-list rewrites; the list persists on the thread row
+ * (`todo_json`, TAG-2). PM-7 (owner ruling 2026-10-11) restored the mechanic
+ * to live BESIDE the script-owned agent plan: todo = the thread's session
+ * (small tasks), plan = the script's durable document. The four statuses
+ * mirror the objective tracker's `objectiveTaskStatusSchema`
+ * (insights-schema.ts) — a deliberate match so the pinned panel (TAG-8)
+ * reuses the tracker's visual language (`NodeGlyph`, `statusClass`)
+ * unchanged. `.strict()` rejects unknown keys: a model-authored list must
+ * not smuggle extra fields through persistence.
  */
 export const copilotTodoItemSchema = z
   .object({
@@ -243,8 +374,8 @@ export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
 /**
  * A complete todo list as the `todo` tool sends it (rewrite semantics — every
  * call carries the FULL list, never a delta; Cline-style). The cap is a
- * pragmatic bound: room for a real development plan, bounded cost for the
- * per-turn context section and the pinned panel render.
+ * pragmatic bound: room for a real working checklist, bounded cost for the
+ * pinned panel render.
  */
 export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
 export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
@@ -274,11 +405,13 @@ export const experienceCopilotThreadSchema = z.object({
    *  ids are skipped silently. Empty array = nothing pinned (the zero-pinned
    *  assembly stays byte-identical to the pre-plan output). */
   contextLinks: z.array(experienceCopilotContextLinkSchema),
-  /** The model's step-plan (TAG-6): `[]` until the first `todo` call, then the
-   *  full-list rewrite the tool persists every call. Mirrors the store's parsed
-   *  `todo` (TAG-2). REQUIRED (always present, empty = no plan yet) so the
-   *  client never has to null-check — the adapter maps the store row's todo
-   *  into this field on every thread read. */
+  /** The model's session-scoped checklist (TAG-6, restored PM-7): `[]` until
+   * the first `todo` call, then the full-list rewrite the tool persists every
+   * call. Mirrors the store's parsed `todo` (TAG-2). REQUIRED (always
+   * present, empty = no checklist yet) so the client never has to
+   * null-check — the adapter maps the store row's todo into this field on
+   * every thread read. The DURABLE plan is separate: script-owned
+   * (`agent_plans`), served by GET/PUT `/api/scripts/:scriptId/agent-plan`. */
   todo: z.array(copilotTodoItemSchema),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
@@ -304,9 +437,36 @@ export const experienceCopilotMessageSchema = z.object({
   content: z.string(),
   toolCallsJson: z.string().nullable(),
   toolCallId: z.string().nullable(),
+  // AP-28 (AGENT_SHELL_POLISH): the turn's reasoning + its summed per-burst
+  // duration, persisted onto the FIRST assistant row of the turn; null on
+  // every other row, on turns without reasoning, and on rows written before
+  // the column existed. Display-only — never sent back to the model.
+  reasoning: z.string().nullable(),
+  reasoningDurationMs: z.number().nullable(),
+  /** Server-owned stored shape, not send-input validation: preserve summaries,
+   * visibility and provenance without a second attachment field list. */
+  attachments: z.array(z.custom<Attachment>()).optional(),
   createdAt: z.string(),
 });
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;
+
+/**
+ * Body for `PATCH /api/experience-copilot/:threadId/messages/:messageId`
+ * (AP-30): the replacement text for ONE assistant text row — an in-place
+ * rewrite of the stored `content`, nothing regenerated (no model call, no
+ * row replaced). `content` mirrors the stream request's content field
+ * (min 1, max 50 000); blank-only text is refused by the store seam with the
+ * typed 400 `empty_content`. Everything else about the row (id, createdAt,
+ * seq, the reasoning pair) is preserved server-side; the eligibility
+ * refusals (wrong role, tool-call carrier, digest-folded row, empty text)
+ * are THREAD STATE — enforced by the store seam, not this schema.
+ */
+export const experienceCopilotMessageEditSchema = z
+  .object({
+    content: z.string().min(1).max(50_000),
+  })
+  .strict();
+export type ExperienceCopilotMessageEditRequest = z.infer<typeof experienceCopilotMessageEditSchema>;
 
 /**
  * Wire shape of a visual that is bound to the experience being authored and so
@@ -331,10 +491,13 @@ export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBound
 // `openingMessage` — the copilot is not a chat-mode and does not greet.
 
 /**
- * Which tools a profile may toggle. A PARTIAL record over exactly the 7
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 9
  * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
- * suggest_visual_binding, todo, ask_user — the last two are wired to their
- * tool implementations in Wave 2). `read_skill_file` is intentionally ABSENT — it is
+ * suggest_visual_binding, plan, read_plan, todo, ask_user). `todo` was
+ * restored as a real key in PM-7 (owner ruling 2026-10-11): it is the
+ * session-scoped quick checklist living beside the script-owned plan, and a
+ * stored `todo: true` projects to `todo: true` and nothing else (no alias).
+ * `read_skill_file` is intentionally ABSENT — it is
  * the always-on, read-only skill-access channel and is never gated by a
  * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
  * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
@@ -348,12 +511,110 @@ export const copilotToolSetSchema = z
     run_test: z.boolean().optional(),
     run_simulate: z.boolean().optional(),
     suggest_visual_binding: z.boolean().optional(),
+    plan: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
     todo: z.boolean().optional(),
     ask_user: z.boolean().optional(),
   })
   .strict();
 
 export type CopilotToolSet = z.infer<typeof copilotToolSetSchema>;
+
+/**
+ * Which tools a SCRIPT-kind agent profile may toggle (AGENT_SHELL_PLAN AS-7).
+ * A PARTIAL record over exactly the 6 toggleable script-agent tools
+ * (write_buffer, edit_buffer, run_script_test, plan, read_plan, ask_user) —
+ * the same convention as {@link copilotToolSetSchema}: `read_skill_file` is
+ * intentionally absent (always-on, read-only skill channel, never gated), and
+ * there is no `todo` (the script kind wires no thread-session checklist).
+ * `.strict()` rejects any unknown key — including experience-only keys like
+ * `run_test` — so a profile cannot silently carry another kind's tools on the
+ * wire; the adapter additionally re-validates against the kind's REGISTERED
+ * schema (`copilot_profile_invalid_tool_set`), which stays the enforcement
+ * seam for cross-kind sets that pass this union.
+ */
+export const scriptAgentToolSetSchema = z
+  .object({
+    write_buffer: z.boolean().optional(),
+    edit_buffer: z.boolean().optional(),
+    run_script_test: z.boolean().optional(),
+    plan: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
+  })
+  .strict();
+
+export type ScriptAgentToolSet = z.infer<typeof scriptAgentToolSetSchema>;
+
+/**
+ * Every tool a script-agent profile may toggle, in stable definition order.
+ * Derived from {@link scriptAgentToolSetSchema} exactly the way
+ * {@link COPILOT_TOOL_KEYS} derives from `copilotToolSetSchema` (the wire
+ * contract is the single source of truth for toggleable-tool names).
+ * `read_skill_file` is intentionally absent (always-on).
+ */
+export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
+  scriptAgentToolSetSchema.shape,
+) as (keyof ScriptAgentToolSet)[];
+
+/**
+ * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
+ * Wave 1 / SC-5). A PARTIAL record over exactly the 6 toggleable sidechat
+ * tools (search_context, read_context_item, propose_objective, todo,
+ * read_plan, read_message_prompt) — the same convention as
+ * {@link copilotToolSetSchema} and
+ * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
+ * tool that is not yet served is simply absent from every set. The keys
+ * exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
+ * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
+ * ahead of their implementations) because the tools arrive in later waves
+ * and flip on one by one — until then a stored `true` is inert (the stream
+ * serves no tools, `buildTools` returns the empty set). `.strict()` rejects
+ * any unknown key — including the other kinds' keys — so a profile cannot
+ * silently carry another kind's tools on the wire; the adapter additionally
+ * re-validates against the kind's REGISTERED schema
+ * (`copilot_profile_invalid_tool_set`).
+ */
+export const sidechatOocToolSetSchema = z
+  .object({
+    search_context: z.boolean().optional(),
+    read_context_item: z.boolean().optional(),
+    propose_objective: z.boolean().optional(),
+    todo: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
+    read_message_prompt: z.boolean().optional(),
+  })
+  .strict();
+
+export type SidechatOocToolSet = z.infer<typeof sidechatOocToolSetSchema>;
+
+/**
+ * Every tool a sidechat-ooc profile may toggle, in stable definition order.
+ * Derived from {@link sidechatOocToolSetSchema} exactly the way
+ * {@link SCRIPT_AGENT_TOOL_KEYS} derives from `scriptAgentToolSetSchema`
+ * (the wire contract is the single source of truth for toggleable-tool
+ * names — the kind's default set and builtin seed project through this, and
+ * Wave 3 flips each key on by enabling it in the kind's declarative set).
+ */
+export const SIDECHAT_OOC_TOOL_KEYS = Object.keys(
+  sidechatOocToolSetSchema.shape,
+) as (keyof SidechatOocToolSet)[];
+
+/**
+ * The tool set a copilot/agent profile may carry ACROSS kinds: the experience
+ * record, the script record, or the sidechat record (a union — a set valid
+ * for any kind passes; a set mixing keys from several kinds, or carrying an
+ * unknown key, fails EVERY member and is rejected). Per-kind enforcement (a
+ * sidechat profile may not carry experience keys and vice versa) lives with
+ * the kind's REGISTERED schema in the profile adapter, which knows the
+ * profile's `agentKind`.
+ */
+export const agentToolSetSchema = z.union([
+  copilotToolSetSchema,
+  scriptAgentToolSetSchema,
+  sidechatOocToolSetSchema,
+]);
+export type AgentToolSet = CopilotToolSet | ScriptAgentToolSet | SidechatOocToolSet;
 
 /**
  * Every tool a profile may toggle, in stable definition order. Derived from
@@ -372,16 +633,28 @@ export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (key
  * `description`, no `openingMessage`. No `maxSteps`: the tool-loop bound was
  * removed by user decision (TAG-4 → TAG-10) — the loop runs unbounded to
  * `COPILOT_TOOL_LOOP_CEILING`, and the DB `copilot_profiles.max_steps` column
- * was dropped in TAG-4b.
+ * was dropped in TAG-4b. No `skillIds` either (PM-8, owner ruling
+ * 2026-10-12): the skill catalog is UNGATED like Co-Author's — the catalog
+ * carries only id + one-line description (progressive disclosure), so listing
+ * every scanned skill is free; profiles are `basePrompt` + `toolSet` only.
+ * `.strict()` rejects unknown keys — including a retired `skillIds` — so a
+ * stale client cannot smuggle the retired field back in.
  */
-export const copilotProfileSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  isBuiltIn: z.boolean(),
-  basePrompt: z.string().min(1),
-  skillIds: z.array(z.string().min(1)),
-  toolSet: copilotToolSetSchema,
-});
+export const copilotProfileSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    isBuiltIn: z.boolean(),
+    basePrompt: z.string().min(1),
+    // AS-7: the union of per-kind tool-set records — which keys a profile may
+    // toggle depends on its `agentKind` (experience, script, or sidechat-ooc).
+    toolSet: agentToolSetSchema,
+    // AS-3: owning agent kind ('experience' for every pre-AS-3 profile).
+    // Required on the wire profile — the server always emits it (seed and
+    // rows alike) so a list consumer can tell kinds apart.
+    agentKind: z.string().min(1),
+  })
+  .strict();
 
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
 
@@ -391,18 +664,42 @@ export const copilotProfileListSchema = z.array(copilotProfileSchema);
  * Input for creating a user profile. `id` is assigned by the store; `isBuiltIn`
  * is always `false` for user-created profiles (enforced server-side, never
  * accepted from the client). Leaner than `CoauthorModuleCreate` — no
- * `description`, no `openingMessage`.
+ * `description`, no `openingMessage`, and no `skillIds` (PM-8: skills are
+ * ungated, so there is nothing to pick). `.strict()` rejects unknown keys.
  */
-export const copilotProfileCreateSchema = z.object({
-  name: z.string().min(1),
-  basePrompt: z.string().min(1),
-  skillIds: z.array(z.string().min(1)),
-  toolSet: copilotToolSetSchema,
-});
+export const copilotProfileCreateSchema = z
+  .object({
+    name: z.string().min(1),
+    basePrompt: z.string().min(1),
+    // AS-7: per-kind tool-set records (union) — the adapter validates the set
+    // against the OWNING kind's registered schema (sidechat keys: SC-5).
+    toolSet: agentToolSetSchema,
+    // AS-3: optional with an 'experience' default so the current web client
+    // (which sends no kind) keeps creating experience profiles untouched.
+    agentKind: z.string().min(1).optional().default("experience"),
+  })
+  .strict();
 
-export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;
+export type CopilotProfileCreate = z.input<typeof copilotProfileCreateSchema>;
 
-/** Partial update for a user profile. Every field is optional. */
-export const copilotProfileUpdateSchema = copilotProfileCreateSchema.partial();
+/**
+ * Partial update for a user profile. Every field is optional. `agentKind` is
+ * OMITTED (not merely optional) — the kind is immutable after create, and
+ * the object stays `.strict()`, so a PATCH smuggling an `agentKind` key is
+ * rejected with a 400 instead of being silently stripped. A wrong-kind
+ * profile is recreated under the right kind, never converted.
+ */
+export const copilotProfileUpdateSchema = copilotProfileCreateSchema.omit({ agentKind: true }).partial();
 
 export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;
+
+/** Manual list order rewrite (ML-6): one update per user-profile row, applied
+ *  in a single transaction. The kind rides the route's `?kind=` param (like
+ *  the GET — the order lives within one kind's list). Same shape as
+ *  `reorderCoauthorModulesSchema`. */
+export const reorderCopilotProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

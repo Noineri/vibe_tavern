@@ -15,6 +15,7 @@ import type {
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strategy.js";
+import type { SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound } from "../../shared/errors.js";
 
@@ -71,7 +72,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+    options?: SessionPromptAssemblyOptions,
   ) => Promise<ChatModeAssembleResult>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
@@ -111,12 +112,12 @@ export class ChatRuntime {
    * but with attachments) DOES insert — the message carries its attachments and,
    * when `diceCommit` is present, binds Dice exactly like a prose send (DICE-B11).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"], experienceCommit?: SendMessageRequest["experienceCommit"]): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"], experienceCommit?: SendMessageRequest["experienceCommit"], coauthorEditorState?: import("@vibe-tavern/api-contracts").CoauthorEditorState): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     const hasAttachments = !!(attachments && attachments.length > 0);
     if (!trimmed && !hasAttachments) {
-      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
+      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
       return {
         prompt: assembled.prompt,
         tools: assembled.tools,
@@ -135,7 +136,7 @@ export class ChatRuntime {
 
     let assembled;
     try {
-      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
+      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
     } catch (err) {
       try {
         // DICE-B11 / IR-51: release any Dice rolls AND any experience
@@ -190,11 +191,13 @@ export class ChatRuntime {
   /** Patch the pending prompt trace with executor-level request/response data.
    *  `prefill` (LS-4a) records what actually rode as the pushed assistant
    *  message — the Continue path's continuation text replaces the draft's
-   *  preset prefill so the trace stays honest about the prompt that was sent. */
+   *  preset prefill so the trace stays honest about the prompt that was sent.
+   *  Passing `null` CLEARS it (CPF-2b fallback: no prefill rode, so a stale
+   *  preset prefill must not claim it did). */
   patchPendingTrace(chatId: ChatId, patch: {
     sentConfig?: AssemblePromptResponse["sentConfig"];
     providerResponse?: ProviderResponseTrace;
-    prefill?: string;
+    prefill?: string | null;
   }): void {
     const pending = this.pendingPromptTraceByChat.get(chatId);
     if (!pending) return;
@@ -282,10 +285,15 @@ export class ChatRuntime {
     }
 
     if (pending) {
+      // SC-23b: link the trace to the swipe it produced — the reply's selected
+      // variant (addMessage creates exactly one selected variant for the
+      // appended reply; a defensive miss leaves the link null).
+      const selectedVariant = await messages.getSelectedVariant(assistantMessage.id);
       await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId: assistantMessage.id,
+        variantId: selectedVariant?.id ?? null,
         model: pending.draft.model,
         presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
@@ -352,7 +360,7 @@ export class ChatRuntime {
     const chat = (await chats.getById(chatId))!;
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    await messages.addVariant(
+    const newVariant = await messages.addVariant(
       messageId,
       trimmed,
       input.finishReason ?? undefined,
@@ -371,10 +379,13 @@ export class ChatRuntime {
     );
 
     if (pending) {
+      // SC-23b: link the trace to the swipe it just produced — the newly
+      // added variant (selected by addVariant).
       await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId,
+        variantId: newVariant.id,
         model: pending.draft.model,
         presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
@@ -556,7 +567,15 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId;
+      /** CPF-2b: create the pending prompt trace even without
+       *  `excludeMessageId`. The continue-fallback assembly keeps the target
+       *  message IN the history, so it passes no exclusion — yet that request
+       *  must still be traced (its finalPayload is what actually rode on the
+       *  wire) and the appended variant must keep its model/preset
+       *  attribution via the normal consume-at-append path. Only the continue
+       *  fallback paths pass this. */
+      setPendingTrace?: boolean },
   ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string | null }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
@@ -566,7 +585,7 @@ export class ChatRuntime {
       responseReserve: options.responseReserve,
       presetId: options.presetId,
     });
-    if (options.excludeMessageId) {
+    if (options.excludeMessageId || options.setPendingTrace) {
       this.pendingPromptTraceByChat.set(chatId, {
         branchId: assembled.branchId,
         draft: assembled.promptTraceDraft,
@@ -593,7 +612,7 @@ export class ChatRuntime {
    *  draft for a chat. Used by the editor-variant path, which must NOT consume
    *  the draft — a subsequent generated variant on the same trace still needs
    *  it. Null when there is no pending trace or no preset was resolved. */
-  private peekPendingPresetName(chatId: ChatId): string | null {
+  peekPendingPresetName(chatId: ChatId): string | null {
     return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
 }

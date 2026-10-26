@@ -6,17 +6,12 @@ import type {
   RecentMessage,
 } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
+import { countHistoryTokens, formatRecentMessages } from "./history-token-count.js";
 import { createFullMacroEngine, type MacroEngine } from "./macro-registry.js";
-import {
-  applyRegexToChatHistory,
-  createValueEscapingMacroSource,
-  type RegexMacroSource,
-} from "./regex-engine.js";
 import { formatSceneHistory } from "./scene-injection.js";
-import { formatDiceMessageBlock } from "./dice-message-format.js";
-import { formatExperienceMessageBlock } from "./experience-report.js";
 import type { PromptVariableContext } from "./prompt-variable-context.js";
 import { buildAssemblyVariableContext } from "./assembly-variable-context.js";
+import { transformHistoryMessages } from "./history-message-transform.js";
 import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
 import { buildLoreLayers } from "./build-lore-layers.js";
@@ -59,12 +54,6 @@ const SUMMARY_LAYER_IDS: Set<string> = new Set([
 
 export function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
-}
-
-function formatRecentMessages(messages: RecentMessage[]): string {
-  return messages
-    .map((message) => `${message.role.toUpperCase()}: ${message.content.trim()}`)
-    .join("\n\n");
 }
 
 /**
@@ -284,23 +273,10 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     persona: resolvedPersona,
   });
 
-  // RX-13 assembled-prompt regex seam: prompt-affecting presets (ST
-  // `promptOnly` — "prompt" / "display+prompt" apply-targets) transform the
-  // RAW stored message text before macro resolution below (ST parity: the
-  // regex sees the unexpanded text; find-pattern macros resolve only via the
-  // preset's own substituteRegex mode). The macro source rides a FRESH engine
-  // per assembly (RX-8 rule) so find-pattern variable state never leaks into
-  // content macro state. persist presets are excluded inside
-  // applyRegexToChatHistory (they already applied at generation time, RX-5/8);
-  // display-only presets belong to the client render seam.
-  const regexPresets = context.regexPresets ?? [];
-  let regexMacroSource: RegexMacroSource | undefined;
-  if (regexPresets.length > 0) {
-    const regexMacroEngine = createFullMacroEngine();
-    regexMacroSource = createValueEscapingMacroSource((text) =>
-      regexMacroEngine.resolve(text, baseVariableContext),
-    );
-  }
+  // The RX-13 prompt-regex seam construction (fresh engine + escaping macro
+  // source over the RAW-field variable context) moved WITH the per-message
+  // transform into history-message-transform.ts — the ONE derivation of
+  // "what the model sees of a history message" (SC-2a).
 
   return {
     ...context,
@@ -341,37 +317,17 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     },
     chat: {
       ...context.chat,
-      // SINGLE DERIVATION SEAM (Wave B5 / DICE-B13, extended IR-52): effective
-      // message content is derived ONCE here — prompt-regex-transformed prose
-      // (RX-13: same array when no prompt-mode preset applies), macro-resolved,
-      // plus the
-      // compact Dice block (when the message carries bound rolls) PLUS the
-      // delimited experience-report block (when it carries a frozen public
-      // report). Every downstream consumer (compaction token-counting via
-      // formatRecentMessages, the history layer text, and the final payload
-      // mapping in finalizeAssembly) reads this same effective content, so
-      // neither Dice nor experience text is undercounted or appended twice.
-      // Absent diceRolls / experienceReports → no-op (content unchanged).
-      // The regex transform runs on the RAW stored content (before macros),
-      // and only on the prose — structured dice/experience blocks are appended
-      // after, outside regex reach.
-      recentMessages: applyRegexToChatHistory(
-        context.chat.recentMessages,
-        regexPresets,
-        regexMacroSource,
-      ).map((msg) => {
-        const baseContent = applyMacros(msg.content, variableContext, macroEngine);
-        const diceBlock = msg.diceRolls?.length
-          ? formatDiceMessageBlock(msg.diceRolls)
-          : "";
-        const experienceBlock = msg.experienceReports?.length
-          ? formatExperienceMessageBlock(msg.experienceReports)
-          : "";
-        const appended = [diceBlock, experienceBlock].filter((block) => block.length > 0).join("\n");
-        return {
-          ...msg,
-          content: appended ? `${baseContent}\n${appended}` : baseContent,
-        };
+      // The per-message history transform (Wave B5 / DICE-B13 / IR-52 single
+      // derivation seam — RX-13 prompt-regex on RAW text → macros → dice /
+      // experience-report blocks appended) lives in history-message-transform.ts
+      // — the ONE source for "what the model sees of a history message"
+      // (SC-2a); resolveHistoryAsModelSees below serves the same transform to
+      // whole-branch readers.
+      recentMessages: transformHistoryMessages(context.chat.recentMessages, {
+        regexPresets: context.regexPresets ?? [],
+        baseVariableContext,
+        variableContext,
+        macroEngine,
       }),
       scriptInjections: context.chat.scriptInjections?.map((msg) => ({
         ...msg,
@@ -413,6 +369,22 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   // by both assembly stages so the mode never has to be re-derived downstream.
   const resolver = createResolver(context.preset);
   return finalizeAssembly(context, buildLayers(context, resolver), resolver);
+}
+
+/**
+ * Whole-branch history read (SIDECHAT_PLAN SC-2a): the branch's messages
+ * exactly as the RP model sees each one — the SAME per-message transform
+ * (RX-13 prompt-regex on RAW text → macros → dice / experience-report blocks,
+ * via history-message-transform.ts) that {@link assemblePrompt} applies to
+ * its history window, returned WITHOUT layer building, compaction, or final
+ * payload assembly. Byte-identical to the history inside an assembled prompt
+ * by construction: this re-runs the same applyMacrosToContext pass and returns
+ * its transformed chat.recentMessages. Pure, like every entry point here —
+ * the caller (services/api rp-branch-view.ts) supplies a context built by the
+ * same buildPipelineContext seam a chat turn uses.
+ */
+export function resolveHistoryAsModelSees(context: PromptAssemblyContext): RecentMessage[] {
+  return applyMacrosToContext(context).chat.recentMessages;
 }
 
 /** Pure summary-specific entry point. The caller supplies the same complete
@@ -1055,7 +1027,7 @@ function buildLayers(
     nonHistoryTokens: layers.reduce((sum, layer) => sum + layer.tokenCount, 0),
     contextBudget: context.config?.contextBudget,
     responseReserve: context.config?.responseReserve,
-    countHistoryTokens: (messages) => estimateTokens(formatRecentMessages([...messages])),
+    countHistoryTokens,
   });
   if (compactionPlan) {
     recentMessagesForHistory = compactionPlan.messages;
@@ -1074,15 +1046,18 @@ function buildLayers(
   const historyText = formatRecentMessages(recentMessagesForHistory);
   if (historyText && resolver.enabled("chatHistory")) {
     layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.recentHistory,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
-        sourceId: context.identity.chatId,
-        sourceName: "Chat History",
-        priority: PROMPT_LAYER_PRIORITY.recentHistory,
-        subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
-        text: historyText,
-      }),
+      {
+        ...makeLayer({
+          id: PROMPT_LAYER_ID.recentHistory,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+          sourceId: context.identity.chatId,
+          sourceName: "Chat History",
+          priority: PROMPT_LAYER_PRIORITY.recentHistory,
+          subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
+          text: historyText,
+        }),
+        tokenCount: countHistoryTokens(recentMessagesForHistory),
+      },
     );
   }
 

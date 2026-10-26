@@ -16,7 +16,7 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { afterAll, afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
 import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
@@ -24,6 +24,11 @@ import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
+import { installSnapshotStoreSeam } from "../../../../test/snapshot-store-seam.js";
+import { installToggleSeam } from "../../../../test/toggle-seam.js";
+import { installPersonaApiSeam } from "../../../../test/persona-api-seam.js";
 
 useDomEnv();
 
@@ -47,9 +52,6 @@ const testScript = mock(() => Promise.resolve({
 	errors: [],
 }));
 const realScriptApi = await import("../../../api/script-api.js");
-const realI18nContext = await import("../../../i18n/context.js");
-const realSnapshotStore = await import("../../../stores/snapshot-store.js");
-const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
@@ -85,26 +87,41 @@ mock.module("../../../api/script-api.js", () => ({
 	testScript,
 }));
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
-mock.module("../../../stores/snapshot-store.js", () => ({
-	...realSnapshotStore,
-  useAllCharacters: () => testCharacters,
-}));
+// CO-LOAD CONTRACT (snapshot-store seam): the former inline R4 mock narrowed
+// `useAllCharacters` to this file's fixture array — process-global,
+// last-write-wins, it stayed live for every later file and broke the real-store
+// riders (rail-character-browser's rail rows failed 68/68 in the reproduced
+// bundle). Register through the shared seam: this file's narrow semantics for
+// its own run, the REAL store for everyone after the next seam registration.
+installSnapshotStoreSeam({
+	useAllCharacters: () => testCharacters,
+});
 
-mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
-	...realBootstrapActions,
-  useBootstrapStore: <T,>(selector: (state: { personas: never[] }) => T): T => selector({ personas: [] }),
-}));
+// CO-LOAD CONTRACT (test/bootstrap-actions-seam.ts): the former inline R4
+// mock narrowed `useBootstrapStore` to a plain selector fn — process-global,
+// last-write-wins, it stayed live for every later file in a hand-bundled run
+// and killed the real-store suites wholesale (`useBootstrapStore.setState is
+// not a function`, 46/46 in the AgentProfileModal pair). Register through the
+// shared seam: this file's narrow semantics for its own run, the REAL hook
+// for everyone after the next seam registration.
+installBootstrapActionsSeam({
+	useBootstrapStore: <T,>(selector: (state: { personas: never[] }) => T): T => selector({ personas: [] }),
+});
+
+// CO-LOAD CONTRACT (toggle-seam family): this suite drives the REAL wrapped
+// Radix Toggle (`getByRole("switch")` in the safety-banner bar) — register
+// the real arm so a co-loaded stub suite's Toggle registration cannot poison
+// it in a hand-bundled run (mock.module is last-write-wins).
+installToggleSeam();
+
+// CO-LOAD CONTRACT (persona-api seam): this suite's AgentShell mount consumes
+// the real `listPersonas` (its allSettled catalog skips a REJECTED source
+// gracefully) — register the real arm so a co-loaded persona-api mock
+// (ExperienceSetupModal's) cannot leave a reset-to-undefined `mock()` live for
+// it in a hand-bundled run.
+installPersonaApiSeam();
 
 // Mobile flag as a mutable cell: the file's tests pin the desktop path by
 // default; the D3 block below flips it for the mobile booster path.
@@ -151,10 +168,11 @@ let act: typeof import("@testing-library/react").act;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let within: typeof import("@testing-library/react").within;
 let userEvent: typeof import("@testing-library/user-event").default;
 let EditorView: typeof import("@codemirror/view").EditorView;
 beforeAll(async () => {
-	({ act, fireEvent, render, waitFor } = await import("@testing-library/react"));
+	({ act, fireEvent, render, waitFor, within } = await import("@testing-library/react"));
 	({ default: userEvent } = await import("@testing-library/user-event"));
 	({ EditorView } = await import("@codemirror/view"));
 	({ useScriptPanel } = await import("./ScriptEditor.js"));
@@ -230,24 +248,66 @@ beforeEach(() => {
   });
 });
 
+// ── AS-8c4a: the whole file runs on the always-on layout ────────────────────
+// The shell's session load runs against this minimal fetch router: the
+// file-level module mocks cover script-api, not the script-agent transport
+// (the real hono client → real fetch). Installed for the WHOLE file
+// (testing skill R3: set in beforeEach, restore in afterEach + afterAll).
+const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+	const path = new URL(String(input), "http://gateway.test").pathname;
+	const method = (init?.method ?? "GET").toUpperCase();
+	const json = (payload: unknown, status = 200) =>
+		new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
+	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) return json(null);
+	if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
+		return json({ id: "agent-thread-1", scriptId: "s1", draftSessionId: null, title: "Agent", archivedAt: null, createdAt: "", updatedAt: "", metrics: null, contextLinks: [], todo: [] });
+	}
+	if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) return json([]);
+	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) return json([]);
+	if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) return json({ metrics: null, autoCompact: true });
+	if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) return json({ plan: { goal: "", constraints: [], tasks: [] } });
+	if (method === "GET" && /\/api\/settings\/script-safety$/.test(path)) return json({ suppressImportWarnings: false, updatedAt: "" });
+	if (method === "GET" && (path.endsWith("/api/personas") || path.endsWith("/api/lorebooks/all") || path.endsWith("/api/scripts/all") || path.endsWith("/model-favorites"))) return json([]);
+	if (method === "GET" && path.endsWith("/api/coauthor/skills")) return json({ entries: [], errors: [] });
+	return json({ error: { message: `Unhandled fetch in script editor test: ${method} ${path}` } }, 404);
+});
+
+const realFetch = globalThis.fetch;
+
+beforeEach(() => {
+	globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
+});
+
+afterEach(() => {
+	globalThis.fetch = realFetch;
+});
+
+afterAll(() => {
+	globalThis.fetch = realFetch;
+});
+
+/** Every harness below renders the always-on layout (AS-8c4a): the agent
+ *  shell whenever an open script exists, the no-script placeholder while
+ *  the editor view is open with none, the script list otherwise — the path
+ *  the user sees. */
 function Harness() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessAll() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessGlobal() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessCurrent() {
   const panel = useScriptPanel({ characterId: "c1", chatId: "chat-current", personaId: null, scope: "current", ownerId: null });
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
 }
 
 function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
@@ -255,7 +315,7 @@ function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; name
   useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
   return <>
     <div data-testid="script-owner-options">{panel.ownerOptions.map((owner) => owner.id).join(",")}</div>
-    {panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}
+    {panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}
   </>;
 }
 
@@ -291,6 +351,16 @@ function replaceCode(view: EditorViewInstance, code: string) {
   });
 }
 
+/** AS-8c4a bar scope: the management bar holds the script_name input and the
+ *  enable toggle, while the shell's context-auto toggle lives outside it —
+ *  so scoping the switch query to the input's parent finds the enable toggle
+ *  and never the shell's toggle. */
+function barScope(nameInput: HTMLElement) {
+  const bar = nameInput.parentElement;
+  if (!bar) throw new Error("management bar not found");
+  return within(bar);
+}
+
 describe("useScriptPanel explicit save", () => {
   it("keeps every field local until Save, then PATCHes one complete snapshot without refetching", async () => {
     const { container, findByText, getByPlaceholderText, getByRole } = render(<Harness />);
@@ -300,7 +370,8 @@ describe("useScriptPanel explicit save", () => {
     await user.clear(getByPlaceholderText("script_name"));
     await user.type(getByPlaceholderText("script_name"), "Renamed");
     await user.type(getByPlaceholderText("script_desc_placeholder"), "Description");
-    fireEvent.click(getByRole("switch"));
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     replaceCode(view, "context.state.set('x', 1);");
 
     expect(updateScript).not.toHaveBeenCalled();
@@ -332,10 +403,11 @@ describe("useScriptPanel explicit save", () => {
   });
 
   it("runs the current unsaved code directly, without saving first", async () => {
-    const { container, findByText, getByPlaceholderText, getByText } = render(<Harness />);
+    const { container, findByText, getByPlaceholderText, getByRole, getByText } = render(<Harness />);
     const view = await openEditor(container, findByText);
     const user = userEvent.setup();
     replaceCode(view, "context.character.personality = 'DRAFT';");
+    fireEvent.click(getByRole("radio", { name: "script_tab_check" }));
 
     await user.type(getByPlaceholderText("script_test_input_placeholder"), "hello");
     fireEvent.click(getByText("script_test_run"));
@@ -353,6 +425,7 @@ describe("useScriptPanel explicit save", () => {
     serverScript = { ...baseScript, scriptKind: "dice" };
     const { container, findByText, getByText, getByRole } = render(<Harness />);
     await openEditor(container, findByText);
+    fireEvent.click(getByRole("radio", { name: "script_tab_check" }));
 
     const title = getByText("script_test_panel");
     const badge = getByText("DICE");
@@ -595,31 +668,6 @@ describe("useScriptPanel link-binding scope filter", () => {
   });
 });
 
-describe("ScriptEditor — D3 mobile touch booster", () => {
-  beforeEach(() => {
-    mobileState.isMobile = true;
-  });
-
-  afterEach(() => {
-    mobileState.isMobile = false;
-  });
-
-  it("excludes role=switch from the editor-panel touch-target booster", async () => {
-    // v1.2.1 mobile defect D3: the blanket `[&_button]:min-h-[40px]` booster
-    // stretched Toggle tracks into oversized blobs. happy-dom has no layout
-    // engine, so this is a string-level regression pin (see the matching
-    // LorebookEditor D3 test; the Toggle side is pinned in Toggle.test.tsx).
-    const { container, findByText } = render(<Harness />);
-    await openEditor(container, findByText);
-    const candidates = Array.from(container.querySelectorAll('[class*="min-h-"]'));
-    const booster = candidates.find((el) =>
-      (el as HTMLElement).className.includes("min-h-[40px]"),
-    ) as HTMLElement | undefined;
-    expect(booster).toBeTruthy();
-    expect(booster!.className).toContain(":not([role=switch])");
-  });
-});
-
 // LORE_SCRIPT_OWNERS_AS_LINKS step 2: creating (or importing) a script never
 // derives an owner from the persona/character context — the create body
 // carries scopeType (+chatId for chat scope) and nothing else; owners are
@@ -688,20 +736,22 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   }
 
   it("enabling an untrusted import is blocked by the plain warning; confirm enables and Save persists it", async () => {
-    const { getByRole, getAllByRole, getByText, queryAllByText, editor } = await openUntrustedImport();
+    const { getByPlaceholderText, getByRole, getAllByRole, getByText, queryAllByText, editor } = await openUntrustedImport();
     expect(editor.state.doc.toString()).toBe(CLEAN);
+    const bar = barScope(getByPlaceholderText("script_name"));
 
-    fireEvent.click(getByRole("switch"));
+    fireEvent.click(bar.getByRole("switch"));
     // The honest warning blocks (visible copy + the Modal's sr-only pair).
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(2);
     // The modal's own suppress toggle is a second switch — the EDITOR's
-    // switch stays aria-checked=false until the modal is confirmed.
-    expect(getAllByRole("switch").every((el) => el.getAttribute("aria-checked") !== "true")).toBe(true);
+    // switch stays aria-checked=false until the modal is confirmed. (hidden:
+    // the open modal aria-hides the bar, so the scoped query pierces that.)
+    expect(bar.getAllByRole("switch", { hidden: true }).every((el) => el.getAttribute("aria-checked") !== "true")).toBe(true);
     expect(updateScript).not.toHaveBeenCalled();
 
     fireEvent.click(getByText("script_safety_warning_confirm_enable"));
     // The pending enable released: the draft flips on; Save persists it.
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
     fireEvent.click(getByRole("button", { name: "save" }));
     await waitFor(() => {
       expect(updateScript).toHaveBeenCalledWith("s1", expect.objectContaining({ enabled: true }));
@@ -709,10 +759,11 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   });
 
   it("cancel leaves the untrusted import disabled", async () => {
-    const { getByRole, getByText } = await openUntrustedImport();
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, getByText } = await openUntrustedImport();
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     fireEvent.click(getByText("cancel"));
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("false");
     expect(updateScript).not.toHaveBeenCalled();
   });
 
@@ -720,22 +771,25 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
     serverScript = { ...baseScript, enabled: false, origin: "in_app" };
     const view = render(<Harness />);
     await openEditor(view.container, (text) => view.findByText(text));
-    fireEvent.click(view.getByRole("switch"));
+    const bar = barScope(view.getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(view.queryByText("script_safety_warning_body")).toBeNull();
-    expect(view.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
   });
 
   it("a suppressed untrusted import enables with no modal", async () => {
     useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
-    const { getByRole, queryAllByText } = await openUntrustedImport();
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, queryAllByText } = await openUntrustedImport();
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
-    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(bar.getByRole("switch").getAttribute("aria-checked")).toBe("true");
   });
 
   it("findings fire the findings modal ALONE with the honest text; «Show in code» closes it and jumps the real editor caret", async () => {
-    const { getByRole, getByText, queryAllByText, editor } = await openUntrustedImport({ code: FINDINGS_CODE });
-    fireEvent.click(getByRole("switch"));
+    const { getByPlaceholderText, getByRole, getByText, queryAllByText, editor } = await openUntrustedImport({ code: FINDINGS_CODE });
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
     // Honest text rides inside the findings modal (decision 11) — exactly
     // once (visible paragraph; the sr-only pair describes the findings intro).
@@ -751,12 +805,136 @@ describe("useScriptPanel SS-7 enable warning flow", () => {
   });
 
   it("a TRUSTED import with findings re-enables through the findings modal — without the honest text", async () => {
-    const { getByRole, queryAllByText } = await openUntrustedImport({
+    const { getByPlaceholderText, getByRole, queryAllByText } = await openUntrustedImport({
       code: FINDINGS_CODE,
       firstEnabledAt: "2026-01-01T00:00:00.000Z",
     });
-    fireEvent.click(getByRole("switch"));
+    const bar = barScope(getByPlaceholderText("script_name"));
+    fireEvent.click(bar.getByRole("switch"));
     expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
   });
+});
+
+// ── AS-8c3b: always-on assistant (AGENT_SHELL_PLAN, section "AS-8c") ─────────
+// The assistant is ALWAYS on for every open script: the AS-8c1 management bar
+// sits above the shell, with no toggle and no back-to-plain (the lore
+// editor's own editorHeader caret stays the script view's back control). The
+// legacy AiAssistantModal is gone from THIS editor (ScriptEditor.tsx no longer
+// imports it — the file-level stub above stays null, so any modal open would
+// have to surface as a dialog role). The shell's session load runs against the
+// fetch router above the harnesses (installed for the whole file since AS-8c4a).
+/** Mirrors LorebookEditorView: the agent panel renders whenever an open script
+ *  exists (always-on — the hook returns null only with no active script). */
+function AgentModeHarness() {
+	const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
+	return <>{panel.modals}{panel.scriptAgentPanel ?? (panel.activeScriptId ? panel.scriptPlaceholderPanel : panel.scriptListContent)}</>;
+}
+
+describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
+	it("shows the script agent shell at once — no helper button, no back control, no modal", async () => {
+		const { container, findByText, findByTestId, queryByRole, queryByTestId } = render(<AgentModeHarness />);
+		await openEditor(container, findByText);
+
+		// Always-on: the shell's chat input is mounted as soon as the editor
+		// opens — no helper-button click. The removed helper button would
+		// render a script_ai_helper button, the removed back control a
+		// script-agent-back testid, the legacy modal a dialog role.
+		expect(await findByTestId("copilot-send-btn")).toBeTruthy();
+		expect(queryByRole("button", { name: "script_ai_helper" })).toBeNull();
+		expect(queryByTestId("script-agent-back")).toBeNull();
+		expect(queryByRole("dialog")).toBeNull();
+	});
+
+	it("renders the management bar above the shell with no back-to-plain control", async () => {
+		const { container, findByText, getByPlaceholderText, getByRole, getByText, queryByTestId } = render(<AgentModeHarness />);
+		await openEditor(container, findByText);
+
+		// The AS-8c1 bar above the shell: the name input shows the script
+		// name, the kind badge and the save button render alongside it —
+		// and there is no back-to-plain control anywhere.
+		expect((getByPlaceholderText("script_name") as HTMLInputElement).value).toBe("Test Script");
+		expect(getByText("script_kind_prompt")).toBeTruthy();
+		expect(getByRole("button", { name: "save" })).toBeTruthy();
+		expect(queryByTestId("script-agent-back")).toBeNull();
+	});
+
+	it("renders the shell editor with the live draft code", async () => {
+		const { container, findByText, findByTestId } = render(<AgentModeHarness />);
+		const view = await openEditor(container, findByText);
+		replaceCode(view, "AGENT DRAFT");
+		await findByTestId("copilot-send-btn");
+
+		// One CodeMirror in the document (the agent pane's): the opaque
+		// hostProps share the hook's draft state, not a copy.
+		const editors = container.querySelectorAll(".cm-editor");
+		expect(editors).toHaveLength(1);
+		const agentView = EditorView.findFromDOM(editors[0] as HTMLElement);
+		expect(agentView?.state.doc.toString()).toBe("AGENT DRAFT");
+	});
+
+	it("keeps the shell mounted across the mobile breakpoint — no second session load", async () => {
+		const activeCalls = () =>
+			agentModeFetch.mock.calls.filter(([input, init]) =>
+				(init?.method ?? "GET").toUpperCase() === "GET" &&
+				/\/api\/experience-copilot\/script\/[^/]+\/active$/.test(new URL(String(input), "http://gateway.test").pathname),
+			).length;
+		try {
+			const ui = render(<AgentModeHarness />);
+			await openEditor(ui.container, ui.findByText);
+			await ui.findByTestId("copilot-send-btn");
+			const before = activeCalls();
+			expect(before).toBeGreaterThan(0);
+
+			// Cross the breakpoint: the bar moves into the shell's Edit-tab
+			// header, the shell itself keeps its tree position. A remount would
+			// run the shell's session load again (a second GET …/active).
+			mobileState.isMobile = true;
+			ui.rerender(<AgentModeHarness />);
+			await ui.findByRole("tab", { name: "agent_tab_edit" });
+			// Drain the macrotasks a remounted shell's chained session load
+			// would need to reach fetch, so a remount cannot slip past the count.
+			await act(async () => {
+				for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+			});
+			expect(activeCalls()).toBe(before);
+		} finally {
+			mobileState.isMobile = false;
+		}
+	});
+
+	it("returns to the list through the bar's back button on desktop (AS-8c4d)", async () => {
+		const { container, findByText, findByTestId, getByRole, queryByTestId } = render(<AgentModeHarness />);
+		await openEditor(container, findByText);
+		await findByTestId("copilot-send-btn");
+
+		// The back control is the FIRST element of the script bar (the
+		// ExperienceEditor back-button shape, label import_back) — there is
+		// no header row above the bar. The name is unique on desktop (the
+		// shell's mobile chevron renders only with onBack, which desktop
+		// never passes), so no bar scoping is needed.
+		fireEvent.click(getByRole("button", { name: "import_back" }));
+
+		// Back on the list: the script row shows, the shell is gone.
+		expect(await findByText("Test Script")).toBeTruthy();
+		await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeNull());
+	});
+
+	it("returns to the list through the shell's tab-row chevron on mobile (AS-8c4d)", async () => {
+		try {
+			mobileState.isMobile = true;
+			const { container, findByText, findByTestId, getByTestId, queryByTestId } = render(<AgentModeHarness />);
+			await openEditor(container, findByText);
+			await findByTestId("copilot-send-btn");
+
+			// No desktop bar on mobile — back lives in the shell's tab-bar
+			// row (the copilot-mobile-back chevron, as in script-agent-host).
+			fireEvent.click(getByTestId("copilot-mobile-back"));
+
+			expect(await findByText("Test Script")).toBeTruthy();
+			await waitFor(() => expect(queryByTestId("copilot-send-btn")).toBeNull());
+		} finally {
+			mobileState.isMobile = false;
+		}
+	});
 });

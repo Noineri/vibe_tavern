@@ -196,7 +196,7 @@ POST /api/chats/:chatId/messages/stream
   │       │   ├─ Load ranged summaries + exclusion ranges
   │       │   ├─ resolveActivatedEntries()       → domain/prompt/lore-activation-engine
   │       │   ├─ executeScripts()                 → domain/scripts-engine/script-sandbox
-  │       │   └─ Persist activation + script state
+  │       │   └─ Persist activation + script state (dryRun reads skip both writes — SC-4c)
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
   │       └─ assemblePrompt()                    → @vibe-tavern/prompt-pipeline
   │           ├─ Build layers (preset, character, persona, lore, memory, history)
@@ -491,29 +491,33 @@ Provider-bound HTTP traffic (AI SDK generation — streaming, non-streaming, Res
 
 A separate generation subsystem (`domain/ai-assistant/`) for the lightbulb-icon "assist" actions in the Build editor — generate a script, draft a lore entry, extract lore keys, impersonate a character, import a card from markdown. These are short, user-initiated, result-returning LLM calls distinct from the main chat generation path.
 
-### Six modes, one config table
+### Eleven modes, one config table
 
-`MODE_CONFIGS` (`ai-assistant-modes.ts`) registers six modes. Five are user-facing in the AI Assistant modal; `vision_describe` is backend-only (it drives the attachment-description pipeline — see [Vision and Attachment Pipeline](#vision-and-attachment-pipeline)):
+`MODE_CONFIGS` (`ai-assistant-modes.ts`) registers eleven modes. Most are user-facing; `vision_describe` is backend-only (it drives the attachment-description pipeline — see [Vision and Attachment Pipeline](#vision-and-attachment-pipeline)):
 
 | Mode | Output | Reasoning | Purpose |
 |------|--------|-----------|---------|
-| `script` | text | kept | Generate a script from a description |
 | `lore_entry` | text | kept | Draft a lorebook entry |
+| `message_edit` | text | kept | Revise a chat message per the user's request |
+| `message_merge` | text | kept | Synthesize one message from variants and preferences |
+| `message_tts_annotate` | text | kept | Insert vocal sound tags for TTS narration |
 | `lore_keys` | **JSON** | **stripped** | Extract `{ keys, secondaryKeys }` from text; only the parsed JSON is emitted |
-| `chat_impersonate` | text | stripped | Write a message in the character's voice |
+| `chat_impersonate` | text | stripped | Write the next message in the user's voice |
 | `md_import` | **JSON** | stripped | Parse a markdown card into a structured character JSON |
 | `vision_describe` | text | stripped | Backend: caption an attachment (not in the modal) |
+| `scene_schema` | **JSON** | stripped | Design a Scene Tracker schema (the tracked shape, not values) |
+| `scene_rules` | text | stripped | Extract the author's per-chat Scene Tracker rules |
+| `regex` | **JSON** | stripped | Draft one runnable regex rule (pattern, replacement, target, depth) |
 
-The `outputFormat: "json"` modes (`lore_keys`, `md_import`) buffer the whole response, strip reasoning, then parse the remainder as JSON against a per-mode schema hint before emitting. Text modes stream directly.
+The `outputFormat: "json"` modes (`lore_keys`, `md_import`, `scene_schema`, `regex`) buffer the whole response, strip reasoning, then parse the remainder as JSON against a per-mode schema hint before emitting. Text modes stream directly.
 
 ### Prompt fallback chain
 
-Each mode resolves its system prompt through the same chain (`resolveSystemPrompt(mode)` in `ai-assistant-prompts.ts`):
-1. **Preset override** — `aiAssistantPrompts[mode]` from the active prompt preset (user-editable in Settings).
-2. **Legacy column** — for the modes that predate the preset (`script` only: the old `scriptAiSystemPrompt` column).
-3. **Default `.md`** — `services/api/assets/<mode>-ai-prompt.md`, loaded + cached once.
-
-Registering `vision_describe` as a real mode (rather than a separate code path) is what unifies this chain across all six modes — see [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode).
+Each mode resolves its system prompt through the same chain (`resolveSystemPrompt` in `ai-assistant-prompts.ts`):
+1. **Active service-prompt profile override** — the profile's stored override for the mode's field (format-agnostic: one override wins over both the json and xml defaults of `scene_schema`).
+2. **Default `.md`** — the mode's asset file (format-aware: an xml `scene_schema` request selects the xml variant), re-read from disk on every call, never cached.
+The preset JSON (`aiAssistantPrompts`) and the legacy `scriptAiSystemPrompt` column now only feed the one-time preset→profile migration (`preset-to-profile-migration.ts`) — no read path consults them.
+Registering `vision_describe` as a real mode (rather than a separate code path) is what unifies this chain across all eleven modes — see [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode).
 
 ### Runtime
 
@@ -523,7 +527,7 @@ Registering `vision_describe` as a real mode (rather than a separate code path) 
 
 ## Interactive Experiences
 
-The mini-app engine (`domain/interactive/`, contracts in `packages/api-contracts/src/schemas/interactive-schema.ts`). A package is two sources authored in Build mode: **rules** (the `context.experience.register({...})` DSL — `create`/`project`/`actions`/`reduce`, executed in a `node:vm` sandbox with no DOM/network) and a **visual** (a self-contained HTML document rendered in a CSP-sandboxed iframe, driven through the `VibeExperience` bridge). Live sessions pin the rules source, visual source, and random seed at start; every turn advances through the kernel and journals transitions.
+The mini-app engine (`domain/interactive/`, contracts in `packages/api-contracts/src/schemas/interactive-schema.ts`). A package is two sources authored in Build mode: **rules** (the `context.experience.register({...})` DSL — `create`/`project`/`actions`/`reduce`, executed in `node:vm` with a DOM-free context surface — not a security boundary, see [Scripts — Confinement posture](./scripts.md#confinement-posture)) and a **visual** (a self-contained HTML document rendered in a CSP-sandboxed iframe, driven through the `VibeExperience` bridge). Live sessions pin the rules source, visual source, and random seed at start; every turn advances through the kernel and journals transitions.
 
 Two execution modes (REALTIME_EXPERIENCE_MODE_PLAN):
 
@@ -536,13 +540,26 @@ The authoring DSL reference lives in `services/api/assets/interactive-rules.md` 
 
 Mounted as the `experience-copilot` FeatureModule; domain code in `domain/interactive/copilot/`. Full architecture: [Experience Copilot](./experience-copilot.md). Key mechanics:
 
-- **Propose-only tool surface** — `write_buffer`/`edit_buffer`/`run_test`/`run_simulate`/`suggest_visual_binding` plus `todo` (full-list-rewrite session step-plan, persisted to `todo_json`) and `ask_user` (clarifying questions). `read_skill_file` is always on. Rules proposals are sandbox-validated before surfacing; the tool set is per-profile gated (7 toggleable keys).
+- **Propose-only tool surface** — `write_buffer`/`edit_buffer`/`run_test`/`run_simulate`/`suggest_visual_binding` plus `plan`/`read_plan` (the script-owned agent plan — see [Agent plan mechanic](#agent-plan-mechanic)), `todo` (the session-scoped quick checklist restored in PM-7 — full-list-rewrite, persisted to the thread's `todo_json`; see [Todo mechanic](./experience-copilot.md#todo-mechanic-session-scoped-restored-pm-7)) and `ask_user` (clarifying questions). `read_skill_file` is always on. Rules proposals are sandbox-validated before surfacing; the tool set is per-profile gated (9 toggleable keys).
 - **Unbounded tool loop** — `stopWhen: [isStepCount(1_000_000 formality), hasToolCall("ask_user")]`. No profile step cap exists (deliberately removed); the loop runs until the model stops or the user cancels.
 - **Ask split-turn** — a question ends the turn (the `ask_user` marker tool-result); the answer arrives as a stream request in answer mode, rewrites the awaiting tool-result row in place (no user row), and resumes the logical turn. Dangling asks self-heal at assembly time with a sentinel string (stored rows never mutated).
 - **Skills** — filesystem-scanned `SKILL.md` dirs under `assets/experience-copilot/skills/` (`experience-authoring`, `grill-me`); scanner/catalog reused from Co-Author with an isolated root.
 - **Compaction + context meter** — digest-based history folding (never splitting tool-call/result pairs) and persisted context metrics driving the meter UI.
 
 The engine the copilot authors against — kernel, sandbox, durable effects (`model`, `timer`), the visual bridge — is Interactive Experiences, documented in the copilot architecture doc's references and the shared asset references (`interactive-rules.md`, `interactive-visual.md`). The engine now has two authoring modes — the classic turn-based flow and realtime loop rounds (`mode: "realtime"`) — and mode-choice guidance lives in `base.md` plus the realtime sections of the shared assets.
+
+## Agent plan mechanic
+
+`EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — a host-agnostic, script-owned plan the model maintains and the user can edit. It is the DURABLE half of the plan/todo pair (PM-7, owner ruling 2026-10-11: **todo = the thread's session quick checklist; plan = the script's durable document surviving sessions**). Domain shape in `packages/domain/src/agent-plan.ts` (`AgentPlan` = goal + constraints + tasks; at most one `active` task), storage in `packages/db/src/stores/agent-plan-store.ts` (one `agent_plans` row per owner, full-rewrite save, malformed JSON → null + log, never throw).
+
+- **Owner kinds** — `AgentPlanOwner` is a discriminated union; today exactly one arm exists (`{ kind: "script", scriptId }`). The union is the extension seam: a chat-scoped owner later is one nullable owner column on the host's table + one union arm, with zero changes to the store, tools, or contracts.
+- **Tools** — `createAgentPlanTools({ load, save })` (`services/api/src/domain/agent-plan/agent-plan-tools.ts`) builds the host-agnostic `plan` (whole-structure rewrite, object root, returns `{ok, activeTitle?, remaining?}`) and `read_plan` (returns the full plan or `{empty: true}`). The factory has zero copilot imports; the copilot injects `load`/`save` bound to the thread's `scriptId`.
+- **Progressive injection** — each turn the assembler injects a `# Plan` system section (`agent-plan-prompt.ts`, pure): header, goal, constraints, every task as `[status] title`, then ONLY the active task's body plus the discipline lines. Bodies of other tasks are deliberately absent (they are readable on demand via `read_plan`) — bounded prompt cost for long plans. An absent/empty plan omits the section byte-identically, and the section survives history compaction (system-level).
+- **HTTP** — `GET`/`PUT /api/scripts/:scriptId/agent-plan` run the same `normalizeAgentPlan` validation as the tool, so the user editor and the model write through one contract (two `active` tasks → typed `422`).
+- **Locked during streams** — the frontend locks plan editing while a turn streams (see the frontend doc's section); the backend needs no extra guard because both writers go through the same normalize+upsert path.
+- **Beside it, the todo mechanic** — `createCopilotTodoTool` (`services/api/src/domain/interactive/copilot/copilot-todo-tool.ts`) is the session-scoped twin: full-list rewrite onto the thread's `todo_json` via the ER-3 store's `updateTodo`. The todo-vs-plan choice guidance lives in the two tool descriptions (todo = the current session's small tasks; plan = durable multi-step work with a goal), so the assembled prompt bytes stay unchanged.
+
+**Adding a new host** (a second AI surface that wants a plan): one owner arm in `AgentPlanOwner` + one nullable owner column on the host's table + pass `owner` (and the host's streaming `locked` flag) to the shared tools/UI. Nothing else changes.
 
 ---
 
@@ -584,18 +601,57 @@ Because of the skip-if-described guard, a described attachment is never re-descr
 
 This keeps the auto-describe cache non-destructive while still letting the user force a fresh caption (or add one to a previously-empty attachment) from the lightbox.
 
+### Text files
+
+Text files attach the same way as images but ride a different rail end-to-end:
+
+- **Upload** — `AssetService.upload` checks `isTextMime`; a text file is UTF-8-decoded (BOM stripped) and costed once with the default tokenizer (`tokenCount` rides the response and later the attachment, so the composer chip can show `~N tok.` without re-reading bytes). `TEXT_MIME_TO_EXT` (`domain/attachment.ts`) is the single extension↔MIME table; `resolveAttachmentUploadMime` is the shared browser/server rule that a known text extension wins over the OS's guessed non-media MIME (a Windows `.csv` uploads as `application/vnd.ms-excel`).
+- **Prompt injection** — `type: "file"` attachments render as `TextPart`s with the file's **full text** read from the asset store at send time (`vision-gate.ts`). For text files `description` carries the **summary**; when one exists the prompt prefers it over the full text (`summaryTokenCount` tracks its cost).
+- **Visibility** — one filter, `filterPromptVisibleAttachments` (`domain/attachment.ts`): ordinary uploads are included when `includeInPrompt` is absent or `true`; explicit `false` excludes. `promptVisibleAttachmentsOf` is the shared stored-row projection (RP + Co-Author history) — no second hand-written derivation.
+
+### File summaries — the attachment actions service
+
+`domain/attachment/attachment-actions-service.ts` owns the three text-file actions — `summarize`, `clearSummary`, `setIncluded` — over a port, not a store:
+
+```ts
+interface AttachmentMessagePort {
+  find(messageId, attachmentId): Promise<Attachment | null>;
+  update(messageId, attachmentId, patch: AttachmentPatch): Promise<Attachment>;
+}
+```
+
+Each surface supplies its own adapter that resolves message/ownership and persists only the patch: `api/adapters/chat-attachment-actions.ts` (RP chat — message/variant rows) and `api/adapters/experience-copilot-attachment-actions.ts` (agent messages — `attachments_json`). `summarize` loads the full text through the asset loader and calls the profile's model with the one-shot `assets/attachment-summarize.md` system prompt (profile resolution is per-surface: active profile for chat, thread's last pair ladder for agents); it writes `description` + `summaryTokenCount` atomically. Machine-readable errors: `attachment_not_text` (400), `attachment_asset_missing` (404), `attachment_summary_empty` (400). `clearSummary` restores the full text as the prompt representation; `setIncluded` flips the visibility flag.
+
+### Text-only consumers
+
+`renderAttachmentsAsText` (`infrastructure/ai/vision-gate.ts`) is the ONE renderer for consumers that see text only — summary memory (the auto-summary feature reads file text and image descriptions, never bytes) and the RP sidechat's frozen-text view. It never describes images or transcribes audio; old untranscribed voice notes are omitted rather than failing the summary.
+
+### History budget
+
+Files weigh in the history window and the meter: `countHistoryTokens` (`prompt-pipeline/src/history-token-count.ts`) adds `attachmentPromptTokens(message.attachments)` (summary cost when summarized, full `tokenCount` otherwise) on top of the formatted message text — the same number feeds compaction and the trace. The agent side mirrors this in `agent-prompt.ts`'s `estimateHistoryTokens` and the kind compaction subclasses (budget, meter, and digest all see files).
+
+### Agent-side attachments
+
+Agent turns (all three kinds) send attachments like the chat does: `prepareAttachmentMedia` (`infrastructure/ai/attachment-media.ts`) is the single describe/transcribe step ahead of every model call, and `domain/agent/agent-attachments.ts`'s `prepareAgentModelMessages` maps stored attachments to model parts inside the setup-error `try`. The sidechat additionally renders RP-message attachments as text blocks (`sidechat-rp-attachments.ts`, inside `<rp_message>` after the text).
+
 ### Type: `Attachment` (`packages/domain/src/attachment.ts`)
 
 ```ts
-type AttachmentType = "image" | "file" | "video";
+type AttachmentType = "image" | "file" | "video" | "audio";
 interface Attachment {
-  id: string;          // correlates vision descriptions back to the attachment
-  assetId: string;     // stored asset in AssetService
-  type: AttachmentType;// image → ImagePart, file → TextPart, video → frame extraction
+  id: string;            // correlates vision descriptions back to the attachment
+  assetId: string;       // stored asset in AssetService
+  type: AttachmentType;  // image → ImagePart, file → TextPart (full text/summary), video → frame extraction, audio → voice transcript
   name: string;
   mimeType: string;
   sizeBytes: number;
-  description?: string | null;  // populated by the vision model (path 2); null = not described
+  description?: string | null;  // vision model caption; audio STT transcript; text-file SUMMARY (written by the summarize action)
+  purpose?: AudioPurpose;       // audio-only: "voice" (default) | "music" | "ambient" — only voice is transcribed/injected
+  durationMs?: number;          // audio-only: clip length (voice bubble UI)
+  includeInPrompt?: boolean;    // visibility — see filterPromptVisibleAttachments; one filter, no second rule
+  tokenCount?: number;          // text files: full-text cost, computed once at upload
+  summaryTokenCount?: number;   // text files: summary cost (set/cleared with the summary)
+  imageGen?: ImageGenSlotProvenance; // image-gen slots only (IG)
 }
 ```
 

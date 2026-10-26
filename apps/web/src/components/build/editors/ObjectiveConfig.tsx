@@ -13,6 +13,7 @@ import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
+import { PromptField } from "./prompt-field.js";
 import {
   generateObjectiveTasksAction,
   checkObjectiveCompletionAction,
@@ -121,6 +122,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <div>
           <label className={lblCls}>{t("obj_description_label")}</label>
           <AutoTextarea
+            key={state.objectiveDescription}
             defaultValue={state.objectiveDescription}
             placeholder={t("obj_description_placeholder")}
             minRows={2}
@@ -143,7 +145,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
           disabled={busy !== null && busy !== "generate"}
           onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[12px] font-medium transition-colors disabled:opacity-50",
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors disabled:opacity-50",
             busy === "generate"
               ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
               : "bg-accent text-on-accent hover:opacity-90",
@@ -156,7 +158,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
           type="button"
           disabled={(busy !== null && busy !== "check") || (busy === null && !hasCheckTarget)}
           onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-50"
         >
           {busy === "check" ? spinner : <Ic.checkCircle />}
           {t(busy === "check" ? "obj_stop_button" : "obj_check_button")}
@@ -177,7 +179,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <button
           type="button"
           onClick={() => setAdvancedOpen((v) => !v)}
-          className="flex w-full items-center gap-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3 hover:text-t2"
+          className="flex w-full items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3 hover:text-t2"
         >
           <span className={cn("transition-transform")}>{Ic.caret(advancedOpen ? "d" : "r")}</span>
           {t("obj_advanced_label")}
@@ -224,7 +226,7 @@ function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveL
           }}
         />
       </div>
-      <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_long_term_hint")}</p>
+      <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{t("obj_long_term_hint")}</p>
     </div>
   );
 }
@@ -330,7 +332,7 @@ function ShortTermGoalRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveSho
           type="button"
           onClick={() => setEditing(true)}
           className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[12px] hover:text-accent",
+            "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
             goal.status === "completed" && "text-success-text line-through",
             goal.status === "abandoned" && "text-t4 line-through",
             (goal.status === "pending" || goal.status === "active") && "text-t2",
@@ -464,7 +466,7 @@ function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; i
 
   return (
     <li className="group flex items-center gap-2 rounded-md border border-border bg-s2 px-2 py-1.5">
-      <span className="w-5 shrink-0 text-center font-mono text-[10px] text-t4">{index + 1}</span>
+      <span className="min-w-5 shrink-0 text-center font-mono text-[calc(var(--ui-fs)-4px)] text-t4">{index + 1}</span>
       <StatusDot status={task.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} />
       {editing ? (
         <TextInput
@@ -479,7 +481,7 @@ function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; i
           type="button"
           onClick={() => setEditing(true)}
           className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[12px] hover:text-accent",
+            "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
             task.status === "completed" && "text-success-text line-through",
             task.status === "abandoned" && "text-t4 line-through",
             (task.status === "pending" || task.status === "active") && "text-t2",
@@ -636,32 +638,35 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         <div>
           <label className={lblCls}>{t("obj_frequency_label")}</label>
           <TextInput
+            key={state.autoCheckFrequency}
             type="number"
             min={0}
             defaultValue={state.autoCheckFrequency}
             onBlur={(e) => saveNumber("autoCheckFrequency", e.target.value)}
           />
-          <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
+          <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
         </div>
         <div>
           <label className={lblCls}>{t("obj_context_window_label")}</label>
           <TextInput
+            key={state.contextWindow}
             type="number"
             min={1}
             defaultValue={state.contextWindow}
             onBlur={(e) => saveNumber("contextWindow", e.target.value)}
           />
-          <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_context_window_hint")}</p>
+          <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{t("obj_context_window_hint")}</p>
         </div>
         <div>
           <label className={lblCls}>{t("obj_depth_label")}</label>
           <TextInput
+            key={state.injectionDepth}
             type="number"
             min={1}
             defaultValue={state.injectionDepth}
             onBlur={(e) => saveNumber("injectionDepth", e.target.value)}
           />
-          <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_depth_hint")}</p>
+          <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">{t("obj_depth_hint")}</p>
         </div>
       </div>
       <PromptField
@@ -681,21 +686,6 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         hint={t("obj_prompt_hint")}
         defaultValue={state.injectPrompt}
         onSave={(v) => savePrompt("injectPrompt", v)}
-      />
-    </div>
-  );
-}
-
-function PromptField({ label, hint, defaultValue, onSave }: { label: string; hint: string; defaultValue: string; onSave: (v: string) => void }) {
-  return (
-    <div>
-      <label className={lblCls}>{label}</label>
-      <AutoTextarea
-        mono
-        defaultValue={defaultValue}
-        placeholder={hint}
-        minRows={2}
-        onBlur={(e) => { if (e.target.value !== defaultValue) onSave(e.target.value); }}
       />
     </div>
   );

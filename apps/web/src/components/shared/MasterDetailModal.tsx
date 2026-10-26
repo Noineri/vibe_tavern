@@ -163,6 +163,12 @@ export function MasterDetailFooter({
   );
 }
 
+export interface MasterDetailParentBack {
+  /** Parent-screen label rendered next to the back chevron (consumer-owned, no i18n key). */
+  label: string;
+  onBack: () => void;
+}
+
 export interface MasterDetailModalProps<T extends string = string> {
   isOpen: boolean;
   onClose: () => void;
@@ -195,6 +201,13 @@ export interface MasterDetailModalProps<T extends string = string> {
   /** Hook for when user clicks back on mobile */
   onBack?: () => void;
 
+  /** Optional parent-level back (AP-3): a quiet «‹ {label}» link above the
+   *  desktop title and a back chevron before the phone MAIN-header title.
+   *  While a detail drill-down is open the drill-down back keeps priority —
+   *  the phone chevron shows only on the main header. No consumer yet
+   *  (AP-27 wires the assistant-settings summary); absent = no link. */
+  parentBack?: MasterDetailParentBack;
+
   /** CSS classes for the outermost container on desktop. (On mobile, it's always full screen). */
   containerClassName?: string;
   /** CSS classes for the master (left) column wrapper on desktop. */
@@ -221,6 +234,7 @@ export function MasterDetailModal<T extends string = string>({
   detailContent,
   footer,
   onBack,
+  parentBack,
   // Sizes only — the panel chrome rides modalPanelCls at the composition
   // below, so a custom containerClassName can never drop the canon shape.
   containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px]",
@@ -249,9 +263,29 @@ export function MasterDetailModal<T extends string = string>({
 
   const desktopHeader = (
     <div className={cn("shrink-0 border-b border-border", headerClassName || (isMobile ? "px-3 py-2.5" : "px-6 pt-5"))}>
-      <div className={cn("flex items-start justify-between", !isMobile && !headerBottom && !tabs && !headerClassName && "pb-4")}>
-        <div>
-          <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[18px] mb-1")}>
+      <div className={cn(isMobile && parentBack ? "flex items-center gap-2" : "flex items-start justify-between", !isMobile && !headerBottom && !tabs && !headerClassName && "pb-4")}>
+        {isMobile && parentBack && (
+          <button
+            type="button"
+            aria-label={parentBack.label}
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-colors hover:bg-s2 hover:text-t1"
+            onClick={parentBack.onBack}
+          >
+            <Icons.Caret direction="l" />
+          </button>
+        )}
+        <div className={isMobile && parentBack ? "min-w-0 flex-1" : undefined}>
+          {!isMobile && parentBack && (
+            <button
+              type="button"
+              onClick={parentBack.onBack}
+              className="mb-1 inline-flex cursor-pointer items-center gap-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1"
+            >
+              <Icons.Caret direction="l" />
+              {parentBack.label}
+            </button>
+          )}
+          <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[calc(var(--ui-fs)+4px)] mb-1")}>
             {title}
             {dirty && (
               <CustomTooltip content={t("unsaved_changes_title")}>
@@ -260,7 +294,7 @@ export function MasterDetailModal<T extends string = string>({
             )}
           </div>
           {!isMobile && subtitle && (
-            <div className="font-ui text-[13px] text-t3">{subtitle}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{subtitle}</div>
           )}
         </div>
         <div className="flex items-center gap-2">

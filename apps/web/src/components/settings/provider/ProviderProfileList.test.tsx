@@ -1,46 +1,34 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
+// Co-load seam (identity spec): this suite pins the raw-key echo of
+// provider-less renders (`profiles_label`, `search_profiles`, the family
+// `titleKey`s) — the previous inline identity `useT` mock, now
+// order-independent.
+installI18nContextSeam();
+
 const { act, fireEvent, render, within } = await import("@testing-library/react");
-const realI18n = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
-const realSortable = await import("@dnd-kit/sortable");
+// Co-load contract (master-list.test.tsx registers the SAME mock for
+// @dnd-kit/core; Bun's mock.module is process-global, last-write-wins — the
+// two factories must stay shape-identical so either registration order is
+// safe). @dnd-kit/sortable is NOT mocked anymore: ML-1 moved the sortable
+// wiring into the primitive, so this suite renders the real useSortable
+// (handle attributes, activator listeners) through SortableMasterListPhoneRow.
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
 
-const useSortable = mock(() => ({
-  attributes: {},
-  listeners: {},
-  setNodeRef: mock(),
-  setActivatorNodeRef: mock(),
-  transform: null,
-  transition: undefined,
-  isDragging: false,
-}));
-
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
 mock.module("../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetailModal,
   useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
-  MasterDetailMobileDrillDown: ({ onSelect, className }: { onSelect?: () => void; className?: string }) => (
-    <button type="button" className={className} onClick={onSelect}>drill</button>
-  ),
 }));
-mock.module("@dnd-kit/sortable", () => ({ ...realSortable, useSortable }));
 mock.module("@dnd-kit/core", () => ({
   ...realDndKit,
   // Preserve dnd-kit's provider while exposing the exact drag-end boundary
@@ -49,6 +37,11 @@ mock.module("@dnd-kit/core", () => ({
     dndHandlers = props;
     return <RealDndContext {...props} />;
   },
+  // DragOverlay mounts children only while dnd-kit's INTERNAL active state
+  // is set; the captured-handler pattern drives the hook state, never the
+  // internal one — so the preview renders inline here. Shape-identical with
+  // master-list.test.tsx (co-load contract: last-write-wins).
+  DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 let ProviderProfileList: typeof import("./ProviderProfileList.js").ProviderProfileList;
@@ -88,7 +81,16 @@ describe("ProviderProfileList", () => {
     const view = render(<ProviderProfileList {...baseProps({ onProfileSearchChange, onAddProfile })} />);
 
     expect(view.getByText("profiles_label")).toBeTruthy();
-    expect(view.getByText("★ Alpha")).toBeTruthy();
+    // Behavior change (was: `★ Alpha` as one title text node, then: the ★ in
+    // the status slot; now: the unified green dot — owner follow-up
+    // 2026-10-24, ★ retired. Alpha is active with a stored key → green).
+    expect(view.getByText("Alpha")).toBeTruthy();
+    const alphaRow = view.getByText("Alpha").closest("div.group");
+    expect(alphaRow?.querySelector(".bg-success")).toBeTruthy();
+    // The inactive row renders no dot at all (the gray bg-t4 dot is retired).
+    const betaRow = view.getByText("Beta").closest("div.group");
+    expect(betaRow?.querySelector(".bg-success")).toBeNull();
+    expect(betaRow?.querySelector(".bg-danger")).toBeNull();
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
     fireEvent.change(view.getByPlaceholderText("search_profiles"), { target: { value: "Alpha" } });
     expect(onProfileSearchChange).toHaveBeenCalledWith("Alpha");
@@ -96,9 +98,13 @@ describe("ProviderProfileList", () => {
     expect(onAddProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the title ellipsis inside the master column after the drag handle takes its width", () => {
+  it("wraps the title inside the master column instead of truncating it", () => {
+    // Behavior change (was: `truncate` on the title; now: `break-words` wrap
+    // per MASTER_LIST_PRIMITIVE_PLAN row rules — authored names are UI copy).
     const view = render(<ProviderProfileList {...baseProps()} />);
-    const title = view.getByText("★ Alpha");
+    const title = view.getByText("Alpha");
+    expect(title.classList.contains("truncate")).toBe(false);
+    expect(title.classList.contains("break-words")).toBe(true);
     const textColumn = title.parentElement;
     const contentRow = textColumn?.parentElement;
     if (!contentRow) throw new Error("Profile-row content wrapper missing");
@@ -146,12 +152,16 @@ describe("ProviderProfileList", () => {
     ]);
   });
 
-  it("uses family slots for the title, row sub-label, active marker, status, and test-id stem", () => {
+  it("uses family slots for the title, row sub-label, active marker, tone, and test-id stem", () => {
     const profiles = [
       { id: "media-1", name: "Voice One", backend: "local", connected: true },
       { id: "media-2", name: "Voice Two", backend: "cloud", connected: false },
     ];
     const onSelectProfile = mock();
+    // Behavior change (was: a hand-rolled per-row status dot fed by
+    // `statusClassName` — gray on inactive rows, accent on the editing row;
+    // now: the primitive owns the dot. Rows pass `active` + `activeTone`
+    // only — owner follow-up 2026-10-24. Inactive rows show no dot.)
     const view = render(
       <ProviderProfileList
         profiles={profiles}
@@ -160,7 +170,7 @@ describe("ProviderProfileList", () => {
         activeProfileId={null}
         rowActive={(profile) => profile.id === "media-2"}
         rowSubLabel={(profile) => `backend:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         titleKey="tts_section_title"
         newProfileKey="tts_profile_new"
         testidStem="tts"
@@ -173,15 +183,28 @@ describe("ProviderProfileList", () => {
 
     expect(view.getByText("tts_section_title")).toBeTruthy();
     expect(view.getByText("backend:local")).toBeTruthy();
-    expect(view.getByText("★ Voice Two")).toBeTruthy();
+    // Behavior change (was: `★ Voice Two` as one title text node, then: the ★
+    // in the status slot; now: the unified green/red dot — owner follow-up
+    // 2026-10-24. Rows pass `active` + `activeTone` only).
+    expect(view.getByText("Voice Two")).toBeTruthy();
     const voiceOneRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-1");
     if (!voiceOneRow) throw new Error("Voice One row missing");
     expect(voiceOneRow.getAttribute("data-profile-id")).toBe("media-1");
-    expect(voiceOneRow.querySelector(".bg-success")).toBeTruthy();
+    // Inactive: no dot (the old connected-green dot is retired).
+    expect(voiceOneRow.querySelector(".bg-success")).toBeNull();
+    expect(voiceOneRow.querySelector(".bg-danger")).toBeNull();
+    const voiceTwoRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-2");
+    if (!voiceTwoRow) throw new Error("Voice Two row missing");
+    // Active with a danger tone: the red dot.
+    expect(voiceTwoRow.querySelector(".bg-danger")).toBeTruthy();
     expect(within(voiceOneRow).getByText("backend:local")).toBeTruthy();
     fireEvent.pointerDown(voiceOneRow);
     expect(onSelectProfile).toHaveBeenCalledWith("media-1");
-    fireEvent.click(within(voiceOneRow).getByText("drill"));
+    // Behavior change (was: a stubbed `drill` button asserted via getByText;
+    // now: the REAL MasterDetailMobileDrillDown caret, basis: ML-1 rework —
+    // the stub diverged from master-list.test.tsx's MasterDetailModal mock
+    // and poisoned its co-load run; same click→select boundary either way).
+    fireEvent.click(within(voiceOneRow).getByLabelText("master_detail_open"));
     expect(onSelectProfile).toHaveBeenCalledTimes(2);
   });
 
@@ -192,9 +215,9 @@ describe("ProviderProfileList", () => {
         profiles={initialProfiles}
         filteredProfiles={initialProfiles}
         editingId={null}
-        activeProfileId={null}
+        activeProfileId="media-1"
         rowSubLabel={(profile) => `first:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         profileSearch=""
         onProfileSearchChange={() => {}}
         onSelectProfile={() => {}}
@@ -210,9 +233,9 @@ describe("ProviderProfileList", () => {
         profiles={updatedProfiles}
         filteredProfiles={updatedProfiles}
         editingId={null}
-        activeProfileId={null}
+        activeProfileId="media-1"
         rowSubLabel={(profile) => `second:${profile.backend}`}
-        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        rowActiveTone={(profile) => profile.connected ? "success" : "danger"}
         profileSearch=""
         onProfileSearchChange={() => {}}
         onSelectProfile={() => {}}
@@ -221,5 +244,17 @@ describe("ProviderProfileList", () => {
 
     expect(view.getByText("second:cloud")).toBeTruthy();
     expect(view.container.querySelector(".bg-danger")).toBeTruthy();
+  });
+
+  it("renders the danger tone for the active profile without a usable key", () => {
+    // Owner follow-up 2026-10-24: the LLM default tone — active without a
+    // stored API key (and no no-key preset) renders the red dot.
+    const view = render(<ProviderProfileList {...baseProps({ editingId: null, activeProfileId: "p2" })} />);
+    const betaRow = view.getByText("Beta").closest("div.group");
+    expect(betaRow?.querySelector(".bg-danger")).toBeTruthy();
+    expect(betaRow?.querySelector(".bg-success")).toBeNull();
+    const alphaRow = view.getByText("Alpha").closest("div.group");
+    expect(alphaRow?.querySelector(".bg-danger")).toBeNull();
+    expect(alphaRow?.querySelector(".bg-success")).toBeNull();
   });
 });

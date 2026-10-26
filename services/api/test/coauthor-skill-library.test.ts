@@ -8,12 +8,15 @@ import {
   deleteUserSkill,
   importSkillTree,
   listTopLevelDirs,
+  saveUserSkill,
+  skillIdFromName,
   SkillImportError,
   validateRelativePath,
   type SkillImportFile,
 } from "../src/domain/coauthor/skills/skill-library.js";
-import { scanSkillRoot } from "../src/domain/coauthor/skills/skill-scanner.js";
+import { scanSkillRoot, parseSkillManifest, skillManifestBody, locateFrontmatter } from "../src/domain/coauthor/skills/skill-scanner.js";
 import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
+import { DomainError, httpStatusForDomainError } from "../src/shared/errors.js";
 
 /**
  * CTX-S2 — Filesystem skill library (import + delete). Pins the eight
@@ -396,6 +399,252 @@ describe("SkillLibraryService — durable import reload", () => {
     expect(await restarted.readCatalogEntry("durable-skill")).toEqual(
       expect.objectContaining({ id: "durable-skill", source: "user" }),
     );
+  });
+});
+
+// ─── skillIdFromName — transliteration + slug (AP-23a) ─────────────────────
+
+describe("skillIdFromName — transliteration + slug", () => {
+  test("a Russian name transliterates (BGN-style map), lowercases, and hyphenates", () => {
+    expect(skillIdFromName("Психолог Речей")).toBe("psikholog-rechey");
+  });
+
+  test("mixed-script and punctuation names collapse to hyphen groups; edges trim", () => {
+    expect(skillIdFromName("Plot Talk!")).toBe("plot-talk");
+    expect(skillIdFromName("--Weird --Name--")).toBe("weird-name");
+    expect(skillIdFromName("Ёлка & Жук")).toBe("elka-zhuk");
+  });
+
+  test("a name with no transliteratable characters falls back to 'skill'", () => {
+    expect(skillIdFromName("日本語")).toBe("skill");
+    expect(skillIdFromName("!!!")).toBe("skill");
+  });
+});
+
+// ─── saveUserSkill — create ─────────────────────────────────────────────────
+
+describe("saveUserSkill — create (AP-23a)", () => {
+  test("creates <id>/SKILL.md from a Russian name: transliterated id, minimal manifest, discoverable", async () => {
+    const res = await saveUserSkill(
+      { name: "Психолог Речей", description: "Speech psychology.", body: "# Psy\nTalk.\n" },
+      userRoot,
+      [],
+    );
+    expect(res).toEqual({ id: "psikholog-rechey" });
+
+    const text = await readText(join(userRoot, "psikholog-rechey", "SKILL.md"));
+    expect(parseSkillManifest(text)).toEqual({ name: "Психолог Речей", description: "Speech psychology." });
+    expect(skillManifestBody(text)).toBe("# Psy\nTalk.\n");
+
+    // The scanner discovers the new skill (a valid manifest, no errors).
+    const { skills, errors } = await scanSkillRoot({ path: userRoot, source: "user" });
+    expect(errors).toEqual([]);
+    expect(skills.map((s) => s.id)).toEqual(["psikholog-rechey"]);
+  });
+
+  test("a YAML-hostile name/description survive round-trip (stringify quotes them)", async () => {
+    await saveUserSkill(
+      { name: 'Bane: "The" #1, Skill', description: "a: b {c} [d]", body: "body with --- fence-ish lines\n" },
+      userRoot,
+      [],
+    );
+    const text = await readText(join(userRoot, "bane-the-1-skill", "SKILL.md"));
+    expect(parseSkillManifest(text)).toEqual({ name: 'Bane: "The" #1, Skill', description: "a: b {c} [d]" });
+    expect(skillManifestBody(text)).toBe("body with --- fence-ish lines\n");
+  });
+
+  test("a colliding name gets the -2 suffix; the first skill is untouched", async () => {
+    await saveUserSkill({ name: "My Skill", description: "first", body: "one\n" }, userRoot, []);
+    const second = await saveUserSkill({ name: "My Skill", description: "second", body: "two\n" }, userRoot, []);
+    expect(second.id).toBe("my-skill-2");
+
+    expect(parseSkillManifest(await readText(join(userRoot, "my-skill", "SKILL.md")))).toEqual({
+      name: "My Skill",
+      description: "first",
+    });
+    expect(parseSkillManifest(await readText(join(userRoot, "my-skill-2", "SKILL.md")))).toEqual({
+      name: "My Skill",
+      description: "second",
+    });
+  });
+
+  test("create never shadows a built-in: the de-dupe counts the builtin root too", async () => {
+    const res = await saveUserSkill({ name: "Alpha", description: "mine", body: "b" }, userRoot, ["alpha"]);
+    expect(res.id).toBe("alpha-2");
+    expect(await listTopLevelDirs(userRoot)).toEqual(["alpha-2"]);
+  });
+
+  test("a non-skill user directory also occupies the id (filesystem collision avoided)", async () => {
+    await mkdir(join(userRoot, "plot-talk"), { recursive: true }); // no SKILL.md
+    const res = await saveUserSkill({ name: "Plot Talk", description: "d", body: "b" }, userRoot, []);
+    expect(res.id).toBe("plot-talk-2");
+  });
+
+  test("an invalid save writes NOTHING: no partial folder, no empty file (parse-before-write)", async () => {
+    let err: unknown;
+    try {
+      await saveUserSkill({ name: "   ", description: "d", body: "b" }, userRoot, []);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DomainError);
+    expect(httpStatusForDomainError(err as DomainError)).toBe(400);
+    expect((err as DomainError).message).toMatch(/non-empty/);
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+});
+
+// ─── saveUserSkill — update ─────────────────────────────────────────────────
+
+describe("saveUserSkill — update (AP-23a)", () => {
+  test("rewrites ONLY SKILL.md: references/ + assets survive, every extra frontmatter key kept", async () => {
+    await importSkillTree(
+      [
+        file("my-skill/SKILL.md", "---\nname: my-skill\ndescription: old\nlicense: MIT\nmodeSlugs: [a, b]\n---\n\n# old body\n"),
+        file("my-skill/references/rules.md", "# Rules\n"),
+        file("my-skill/assets/template.md", "# Template\n"),
+      ],
+      userRoot,
+    );
+
+    const res = await saveUserSkill(
+      { id: "my-skill", name: "Renamed Skill", description: "new desc", body: "# new body\n" },
+      userRoot,
+      [],
+    );
+    expect(res).toEqual({ id: "my-skill" });
+
+    const text = await readText(join(userRoot, "my-skill", "SKILL.md"));
+    expect(parseSkillManifest(text)).toEqual({ name: "Renamed Skill", description: "new desc" });
+    expect(skillManifestBody(text)).toBe("# new body\n");
+    // Every OTHER frontmatter key survives the rebuild.
+    const fm = Bun.YAML.parse(locateFrontmatter(text)!.frontmatter) as Record<string, unknown>;
+    expect(fm.license).toBe("MIT");
+    expect(fm.modeSlugs).toEqual(["a", "b"]);
+    // Sibling files untouched.
+    expect(await readText(join(userRoot, "my-skill", "references", "rules.md"))).toBe("# Rules\n");
+    expect(await readText(join(userRoot, "my-skill", "assets", "template.md"))).toBe("# Template\n");
+    expect(await listTopLevelDirs(userRoot)).toEqual(["my-skill"]);
+  });
+
+  test("updating a pure built-in id (no user dir) → 409 Conflict, nothing written", async () => {
+    let err: unknown;
+    try {
+      await saveUserSkill({ id: "profile-overview", name: "X", description: "d", body: "b" }, userRoot, [
+        "profile-overview",
+      ]);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DomainError);
+    expect(httpStatusForDomainError(err as DomainError)).toBe(409);
+    expect((err as DomainError).message).toMatch(/built-in skills are read-only/);
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("updating a user SHADOW of a built-in id → also 409; the shadow file is unchanged", async () => {
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "user shadow"))], userRoot);
+
+    let err: unknown;
+    try {
+      await saveUserSkill({ id: "profile-overview", name: "X", description: "d", body: "b" }, userRoot, [
+        "profile-overview",
+      ]);
+    } catch (e) {
+      err = e;
+    }
+    expect(httpStatusForDomainError(err as DomainError)).toBe(409);
+    expect(await readText(join(userRoot, "profile-overview", "SKILL.md"))).toContain("user shadow");
+  });
+
+  test("updating a missing id → 404 notFound", async () => {
+    let err: unknown;
+    try {
+      await saveUserSkill({ id: "never-imported", name: "X", description: "d", body: "b" }, userRoot, []);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DomainError);
+    expect(httpStatusForDomainError(err as DomainError)).toBe(404);
+  });
+
+  test("an unsafe id on update → SkillImportError (the same vocabulary as delete)", async () => {
+    await expect(
+      saveUserSkill({ id: "../evil", name: "X", description: "d", body: "b" }, userRoot, []),
+    ).rejects.toThrow(SkillImportError);
+  });
+
+  test("an update target without a frontmatter block → 400 validation, file unchanged", async () => {
+    await mkdir(join(userRoot, "broken"), { recursive: true });
+    await Bun.write(join(userRoot, "broken", "SKILL.md"), "no frontmatter here");
+
+    let err: unknown;
+    try {
+      await saveUserSkill({ id: "broken", name: "X", description: "d", body: "b" }, userRoot, []);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DomainError);
+    expect(httpStatusForDomainError(err as DomainError)).toBe(400);
+    expect(await readText(join(userRoot, "broken", "SKILL.md"))).toBe("no frontmatter here");
+  });
+});
+
+// ─── SkillLibraryService — saveSkill (the ONE seam) ────────────────────────
+
+/**
+ * AP-23a — the service-level save seam both route families call. Verifies the
+ * built-in de-dupe against the REAL builtin root, the fresh-entry return, and
+ * the 409 boundary through the cached built-in id set.
+ */
+describe("SkillLibraryService — saveSkill (AP-23a)", () => {
+  test("create returns the FRESH catalog entry (source user, not a shadow)", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("alpha/SKILL.md", manifest("alpha", "built-in"))], builtin);
+
+    const service = new SkillLibraryService(user, builtin);
+    const entry = await service.saveSkill({ name: "Plot Talk", description: "Talk plots.", body: "b" });
+    expect(entry.id).toBe("plot-talk");
+    expect(entry.source).toBe("user");
+    expect(entry.name).toBe("Plot Talk");
+    expect(entry.description).toBe("Talk plots.");
+    expect(entry.shadowsBuiltin).toBe(false);
+  });
+
+  test("create de-dupes against the REAL builtin root and update returns the updated entry", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("alpha/SKILL.md", manifest("alpha", "built-in"))], builtin);
+
+    const service = new SkillLibraryService(user, builtin);
+    const created = await service.saveSkill({ name: "Alpha", description: "mine", body: "b" });
+    // The builtin root really holds 'alpha' → the create must not shadow it.
+    expect(created.id).toBe("alpha-2");
+    expect(created.shadowsBuiltin).toBe(false);
+
+    const updated = await service.saveSkill({ id: "alpha-2", name: "Alpha Two", description: "renamed", body: "b2" });
+    expect(updated.id).toBe("alpha-2");
+    expect(updated.name).toBe("Alpha Two");
+    expect(updated.description).toBe("renamed");
+  });
+
+  test("update of a builtin id through the service → 409 conflict (cached builtin ids)", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "built-in"))], builtin);
+
+    const service = new SkillLibraryService(user, builtin);
+    let err: unknown;
+    try {
+      await service.saveSkill({ id: "profile-overview", name: "X", description: "d", body: "b" });
+    } catch (e) {
+      err = e;
+    }
+    expect(httpStatusForDomainError(err as DomainError)).toBe(409);
+    // The builtin file is untouched in its own root.
+    expect(await Bun.file(join(builtin, "profile-overview", "SKILL.md")).text()).toContain("built-in");
+    expect(await listTopLevelDirs(user)).toEqual([]);
   });
 });
 

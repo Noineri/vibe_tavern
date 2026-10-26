@@ -6,7 +6,7 @@ useDomEnv();
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import type { SttProfileRecord } from "../../../../api/stt-api.js";
-import type { useSttProfiles } from "./use-stt-profiles.js";
+import type { useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 // ── Mobile mock (mutable-flag convention, MasterDetailModal.test.tsx) ────
 // Registered BEFORE the footer module loads (dynamic import in beforeAll).
@@ -48,6 +48,7 @@ function makeStt(overrides: Partial<SttHook> = {}): SttHook {
     saving: false,
     headerMode: "view",
     draftAutoKeyProviderName: null,
+    defaultProfileId: null,
     startEdit: () => {},
     setDefault: async () => {},
     select: () => {},

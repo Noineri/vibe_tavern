@@ -80,6 +80,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -290,23 +291,6 @@ function parseConfig(config: ImageGenAdapterConfig): KreaImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new KreaImageError(
-      `Krea ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 /** The in-memory spec cache (endpoint → {catalog, expiresAt}). Tests
  *  reset it through the exported seam. */
 const specCache = new Map<string, { catalog: KreaCatalog; expiresAt: number }>();
@@ -336,6 +320,8 @@ async function getKreaCatalog(params: {
     `${params.endpoint}/openapi.json`,
     { method: "GET", headers: buildHeaders(params.apiKey, false), signal: params.signal },
     "spec fetch",
+    "Krea",
+    KreaImageError,
   );
   if (!response.ok) {
     const excerpt = await readProviderErrorBody(response);
@@ -366,6 +352,8 @@ async function cancelKreaJob(
     `${endpoint}/jobs/${jobId}`,
     { method: "DELETE", headers: buildHeaders(apiKey, false) },
     "job cancel",
+    "Krea",
+    KreaImageError,
   ).catch(() => undefined);
 }
 
@@ -392,6 +380,8 @@ export async function pollKreaJob(params: {
         signal: params.signal,
       },
       "job poll",
+      "Krea",
+      KreaImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -482,6 +472,8 @@ async function downloadKreaImage(
     url,
     { method: "GET", signal },
     "image download",
+    "Krea",
+    KreaImageError,
   );
   if (response.status === 401 || response.status === 403) {
     response = await fetchOrWrap(
@@ -489,6 +481,8 @@ async function downloadKreaImage(
       url,
       { method: "GET", headers: buildHeaders(cfg.apiKey, false), signal },
       "image download retry",
+      "Krea",
+      KreaImageError,
     );
   }
   if (!response.ok) {
@@ -589,6 +583,8 @@ export const kreaImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend
           signal: request.signal,
         },
         "generation",
+        "Krea",
+        KreaImageError,
       );
       if (!submit.ok) {
         const excerpt = await readProviderErrorBody(submit);

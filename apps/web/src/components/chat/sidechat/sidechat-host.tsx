@@ -1,0 +1,281 @@
+/**
+ * The `sidechat-ooc` agent host (SIDECHAT_PLAN, Wave 4 / SC-13b) — the
+ * out-of-character discussion beside an RP chat as the THIRD registered host
+ * of the generic `AgentShell`, and the FIRST chat-owned one (module-load
+ * registration, like `script-agent-host.tsx`; SC-14's panel imports this
+ * module for the descriptor and the owner selector).
+ *
+ * Everything the shell deliberately does not know lives here: the chat+branch
+ * owner (the snapshot store's active chat + active branch), the transport
+ * (the experience client's thread-keyed members — the server dispatches the
+ * thread routes by the thread's kind — composed with the SC-0c chat client's
+ * owner-keyed members), the branch plan owner, the chat profile assignment,
+ * the kind's tool toggles (six since SC-23e), the RP-model default binding,
+ * the five meter
+ * segment labels, and the search/read tool captions.
+ *
+ * Chat-only host: no `renderEditorPane` (the shell renders the mini-app
+ * assistant's chat pane); the objective proposal card (SC-13c) renders
+ * `recordType: "objective"`, the AS-5 fallback covers every other type.
+ */
+import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import {
+  chatOwnerTriple,
+  registerAgentHost,
+  type AgentDefaultModelContext,
+  type AgentPlanOwnerContext,
+} from "../../../lib/agent-host-registry.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
+import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
+import {
+  activateExperienceCopilotSession,
+  answerCopilotAsk,
+  deleteCopilotTurn,
+  editCopilotMessage,
+  listExperienceCopilotMessages,
+  renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
+  streamExperienceCopilot,
+} from "../../../api/experience-copilot-api.js";
+import {
+  getAgentChatActive,
+  listAgentChatSessions,
+  listAgentThreadEvents,
+  startAgentChatSession,
+} from "../../../api/agent-chat-api.js";
+import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
+import { useChatStore } from "../../../stores/chat-store.js";
+import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
+import {
+  readPendingVariantAttachments,
+  useSidechatVariantAttachmentsStore,
+} from "../../../stores/sidechat-variant-attachments-store.js";
+import { Icons } from "../../shared/icons.js";
+import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { SidechatVariantChips } from "./SidechatVariantChips.js";
+
+/**
+ * The sidechat's thread owner for the active chat + active branch (SC-14's
+ * panel builds its shell owner through this — the host module is the pair).
+ * Null while either is missing (no chat open yet) — the panel renders nothing
+ * then. Mode-agnostic on purpose: whether the chat's mode is served is the
+ * `selectSidechatServedChatModes` selector's answer, never a second
+ * hard-coded mode check here.
+ */
+export function selectSidechatOwner(
+  activeChat: { id: string } | null,
+  activeBranch: { id: string } | null,
+): AgentThreadOwner | null {
+  if (activeChat === null || activeBranch === null) return null;
+  return { kind: "chat", chatId: activeChat.id, branchId: activeBranch.id, agentKind: SIDECHAT_AGENT_KIND };
+}
+
+/** Read one non-empty string field off an opaque tool-call args object. */
+function readArgsField(args: unknown, field: string): string | undefined {
+  if (typeof args !== "object" || args === null) return undefined;
+  const value = (args as Record<string, unknown>)[field];
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * The sidechat's `search_context` / `read_context_item` captions (owner 6) —
+ * the machine-shaped result envelopes must never render as raw JSON titles
+ * (live `summarizeToolOutput` or the persisted tool-result text on reload).
+ * `search_context`: the query comes from `activity.args` (the search output
+ * carries `{ results }` but no query), the count is the output's
+ * `results.length`. `read_context_item`: the title comes from the output.
+ * Anything unparseable → undefined (the shell's fallback). Any other tool →
+ * undefined.
+ */
+function sidechatToolCaption(activity: AgentToolActivity): {
+  titleKey: "sidechat_search_caption" | "sidechat_read_caption";
+  titleParams: Record<string, string | number>;
+} | undefined {
+  if (activity.toolName === "search_context") {
+    const query = readArgsField(activity.args, "query");
+    if (query === undefined) return undefined;
+    const record = parseAgentToolOutput(activity);
+    const results = record !== undefined ? record.results : undefined;
+    if (!Array.isArray(results)) return undefined;
+    return { titleKey: "sidechat_search_caption", titleParams: { query, count: results.length } };
+  }
+  if (activity.toolName === "read_context_item") {
+    const record = parseAgentToolOutput(activity);
+    if (record === undefined) return undefined;
+    const title = readArgsField(record, "title");
+    if (title === undefined) return undefined;
+    return { titleKey: "sidechat_read_caption", titleParams: { title } };
+  }
+  return undefined;
+}
+
+/**
+ * The sidechat's first model default (owner 2, corrected SC-7): the RP chat's
+ * active provider profile (`isActive`) with its `defaultModel` — the very
+ * pair SC-7's route returns (`providers.getActive()` + `defaultModel`), read
+ * without a fetch (the hook is synchronous and pure, and a fetched default
+ * loses the race to the shell's first-profile fallback). A saved binding
+ * still wins (SC-0e: the hook consults this ONLY with no usable saved pair).
+ * No active profile (or no default model on it) → undefined (the shell's
+ * first-available fallback). Must stay pure.
+ */
+function sidechatDefaultModelBinding(ctx: AgentDefaultModelContext): {
+  providerProfileId: string;
+  modelName?: string | null;
+} | undefined {
+  const active = ctx.profiles.find((profile) => profile.isActive);
+  if (active === undefined) return undefined;
+  return {
+    providerProfileId: active.id,
+    ...(typeof active.defaultModel === "string" && active.defaultModel !== "" ? { modelName: active.defaultModel } : {}),
+  };
+}
+
+/**
+ * SC-16: copy a sidechat assistant reply into the RP composer. Empty draft →
+ * `setDraft(text)`; non-empty → append on a new line. Nothing is sent (no
+ * transport call, no turn state touched). Fresh `getState()` reads — the
+ * handler runs outside render (the render-closure rule). The mobile tab
+ * returns to `"chat"` unconditionally: the store is mobile-only (desktop
+ * never reads it) and `setTab` no-ops when already on `"chat"`.
+ */
+function copySidechatReplyToComposer(text: string): void {
+  const { draft, setDraft } = useChatStore.getState();
+  setDraft(draft.length === 0 ? text : `${draft}\n${text}`);
+  useSidechatMobileStore.getState().setTab("chat");
+}
+
+/**
+ * Storage key prefix for the per-chat open state (chat id appended) — the ONE
+ * spelling both surfaces share (SC-14's desktop panel, SC-15's mobile tabs).
+ * Defined in `sidechat-open-store.ts` (SC-18a: the store is the actual
+ * reader/writer) and re-exported here so the pair's owner module stays the
+ * import path both surfaces already use. Default closed; read through the
+ * store (re-reads on chat switch, never cross-writes).
+ */
+export { SIDECHAT_OPEN_KEY_PREFIX } from "../../../stores/sidechat-open-store.js";
+
+registerAgentHost({
+  kind: SIDECHAT_AGENT_KIND,
+  i18n: {
+    title: "agent_title",
+    // AP-17: the kind heading for the strip/modal (mockup section 3, the
+    // RU sidechat kind label).
+    kindLabel: "agent_kind_sidechat",
+    placeholder: "sidechat_input_placeholder",
+    loading: "agent_loading",
+    emptyTitle: "agent_title",
+    emptySub: "sidechat_empty_hint",
+  },
+  // AP-17: the empty-session starter prompts (mockup §3, sidechat row) —
+  // rendered by AP-18 as click-to-fill composer chips, never sent directly.
+  starterPromptKeys: [
+    "agent_starter_sidechat_recap",
+    "agent_starter_sidechat_feelings",
+    "agent_starter_sidechat_twists",
+    "agent_starter_sidechat_pacing",
+  ],
+  // The toggleable tool keys of the sidechat profiles — the wire contract's
+  // six keys since SC-23e (the single source for toggleable-tool names), so
+  // the shared profile modal never branches on the kind.
+  toolKeys: SIDECHAT_OOC_TOOL_KEYS,
+  // SC-0g: the sidechat's profile choice is chat-owned (the modal's "use
+  // here" writes the (chat, kind) row, "use by default" the kind default).
+  profileAssignment: { target: "chat" },
+  // Chat-only host: no editor pane (absent = the shell's chat pane, the
+  // mini-app assistant's chat pane) and no buffers to edit.
+  bufferSpecs: [],
+  // The transport seam — the experience client's thread-keyed members (the
+  // server dispatches the thread routes by the thread's kind) composed with
+  // the SC-0c chat client's owner-keyed members (chat owners route to the
+  // SC-0b routes, narrowed back to chat+branch+kind in one line each).
+  transport: {
+    sendStream: streamExperienceCopilot,
+    answerAsk: answerCopilotAsk,
+    // AP-10: the turn-delete REST call — the experience client's
+    // thread-keyed member (the server dispatches the thread routes by the
+    // thread's kind, like every other thread-keyed member above).
+    deleteTurn: deleteCopilotTurn,
+    // AP-31: the assistant-edit REST call — the experience client's
+    // thread-keyed member (the same thread routes as the delete above).
+    editMessage: editCopilotMessage,
+    getActiveThread: (owner) => {
+      const triple = chatOwnerTriple(owner);
+      return getAgentChatActive(triple.chatId, triple.branchId, triple.agentKind);
+    },
+    listMessages: listExperienceCopilotMessages,
+    // SC-19b: only the sidechat host wires the events read — the two
+    // built-in hosts omit it and render exactly as today (no separators).
+    listEvents: listAgentThreadEvents,
+    startSession: (owner, title?) => {
+      const triple = chatOwnerTriple(owner);
+      return startAgentChatSession(triple.chatId, triple.branchId, triple.agentKind, title);
+    },
+    listSessions: (owner) => {
+      const triple = chatOwnerTriple(owner);
+      return listAgentChatSessions(triple.chatId, triple.branchId, triple.agentKind);
+    },
+    activateSession: activateExperienceCopilotSession,
+    renameSession: renameExperienceCopilotSession,
+    setContextLinks: setExperienceCopilotContextLinks,
+  },
+  // SC-18: the pending variant chips ride the next turn as `attachedVariants`
+  // (plain pairs — the `selected` marker is chip copy only, never the wire).
+  // Chat-only host: no editor pane, so no bridge session — the base is always
+  // `{}` and the chips are the whole options object when any are pending.
+  buildSendOptions: (ctx) => {
+    const base = ctx.bridge.session?.buildSendOptions() ?? {};
+    const triple = chatOwnerTriple(ctx.owner);
+    const pending = readPendingVariantAttachments(triple.chatId, triple.branchId);
+    if (pending.length === 0) return base;
+    return {
+      ...base,
+      attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })),
+    };
+  },
+  // SC-18: a successful send clears the pending chips, a failed (or
+  // cancelled) send keeps them for a retry.
+  onSendSettled: (ctx, ok) => {
+    if (!ok) return;
+    const triple = chatOwnerTriple(ctx.owner);
+    useSidechatVariantAttachmentsStore.getState().clearVariantAttachments(triple.chatId, triple.branchId);
+  },
+  // SC-18: the pending chips row inside the composer's input card.
+  composerTopSlot: (ctx) => {
+    const triple = chatOwnerTriple(ctx.owner);
+    return <SidechatVariantChips chatId={triple.chatId} branchId={triple.branchId} />;
+  },
+  // SC-0i: the sidechat's plan is branch-owned (the shell's plan section
+  // reads/writes the branch route through this owner).
+  planOwner: (ctx: AgentPlanOwnerContext) => {
+    const triple = chatOwnerTriple(ctx.owner);
+    return { kind: "chatBranch", chatId: triple.chatId, branchId: triple.branchId };
+  },
+  toolCaption: (activity) => sidechatToolCaption(activity),
+  defaultModelBinding: (ctx) => sidechatDefaultModelBinding(ctx),
+  // SC-0j: the kind-provided meter segment labels — the five SC-9 segment
+  // keys with their i18n keys (the meter resolves each through `useT`).
+  meterSegmentLabels: {
+    context: "sidechat_meter_context",
+    rp_summaries: "sidechat_meter_rp_summaries",
+    rp_messages: "sidechat_meter_rp_messages",
+    digest: "sidechat_meter_digest",
+    discussion: "sidechat_meter_discussion",
+  },
+  // SC-13c: the objective proposal card renders `recordType: "objective"`
+  // in place; every other recordType still falls back to the AS-5 card.
+  recordProposalRenderers: { objective: ObjectiveProposalCard },
+  // AP-2: RP colors without RP sizes for the sidechat's bubbles.
+  messageMarkup: "rp-colors",
+  // SC-16: «В поле ввода РП» under each assistant reply — the RP row's copy
+  // icon (`Icons.Copy`, the action-row language) with the composer handler.
+  messageActions: [
+    {
+      labelKey: "sidechat_copy_to_composer",
+      icon: Icons.Copy,
+      onSelect: copySidechatReplyToComposer,
+      testId: "sidechat-copy-to-composer",
+    },
+  ],
+});

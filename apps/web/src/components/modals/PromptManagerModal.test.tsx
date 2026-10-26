@@ -1,4 +1,5 @@
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 /**
@@ -41,7 +42,6 @@ class TestBoundary extends React.Component<{ children: ReactNode }, { hasError: 
   render() { return this.props.children; }
 }
 
-const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realMasterDetail = await import("../shared/MasterDetailModal.js");
@@ -91,17 +91,13 @@ const realSonner = await import("sonner");
 const toastErrorMock = mock(() => {});
 mock.module("sonner", () => ({ ...realSonner, toast: { ...realSonner.toast, error: toastErrorMock } }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, options?: { count?: number }) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, options?) =>
       key === "promptManager.regex.profileMemberCount" ? `${key}:${options?.count ?? 0}` : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
 mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
@@ -111,7 +107,11 @@ mock.module("../shared/Tooltip.js", () => ({
 mock.module("../shared/MasterDetailModal.js", () => {
   return {
     ...realMasterDetail,
-    MasterDetailMobileDrillDown: (props: { onSelect: () => void }) => <button onClick={() => props.onSelect()}>drill</button>,
+    // Co-load contract (master-list.test.tsx + the prompt-list suites render
+    // the REAL drill-down with aria-label `master_detail_open`; a label-less
+    // stub poisons their shared-process runs — last-write-wins. The `drill`
+    // text stays: this suite asserts on it below).
+    MasterDetailMobileDrillDown: (props: { onSelect: () => void }) => <button aria-label="master_detail_open" onClick={() => props.onSelect()}>drill</button>,
   };
 });
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
@@ -253,7 +253,12 @@ function makeImagePromptTemplates(): ImagePromptProfileDetailResponse["catalog"]
       isCustomized: false,
     }))),
     qualityCanon: { pony: "canon quality pony" },
-    assist: { core: "assist core", addenda: { pony: "pony addendum" } },
+    assist: {
+      core: "assist core",
+      addenda: { pony: "pony addendum" },
+      coreCustom: { text: null, isCustomized: false },
+      addendaCustom: { pony: { text: null, isCustomized: false } },
+    },
   };
 }
 
@@ -2013,6 +2018,37 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
   });
 
+  test("AP-23b: skill field renders inside the assistant family with its label; siblings intact", async () => {
+    const def = makeServiceProfile();
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def], activeProfileId: null });
+    getServiceDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
+    // Open ONLY the assistant family accordion — the new key must land there.
+    const assistantToggle = Array.from(view.baseElement.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("promptManager.servicePrompts.family.assistant"),
+    );
+    expect(assistantToggle).toBeTruthy();
+    await act(async () => { fireEvent.click(assistantToggle!); });
+    const q = within(view.baseElement);
+    await waitFor(() => expect(q.getByText("promptManager.servicePrompts.field.skill")).toBeTruthy());
+    // Siblings in the same family stay intact (label-key queries per the i18n mock).
+    expect(q.getByText("promptManager.servicePrompts.field.regex")).toBeTruthy();
+    expect(q.getByText("ai_assistant_mode_script")).toBeTruthy();
+  });
+
   test("service detail switches dirty tracking via pane", async () => {
     const def = makeServiceProfile();
     const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false, overrides: { summary: "hi" } };
@@ -2038,7 +2074,10 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     // Click Alpha row to load its detail
     await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
     const alphaEl = within(view.baseElement).getByText("Alpha");
-    await act(async () => { fireEvent.click(alphaEl); });
+    // Behavior change (was: row selected on click; now: the master-list
+    // primitive selects on pointer-down per MASTER_LIST_PRIMITIVE_PLAN row
+    // rules — drag starts from the handle only, a tap selects).
+    await act(async () => { fireEvent.pointerDown(alphaEl); });
     await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
     // Detail shows the service editor: family accordion headings render
     // collapsed by default; opening them reveals the field textareas.

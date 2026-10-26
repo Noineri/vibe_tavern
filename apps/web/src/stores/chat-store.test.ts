@@ -87,6 +87,19 @@ beforeEach(() => {
 });
 
 describe("DICE-F9 chat-store pendingDiceRolls capture", () => {
+	test("generation metadata is scoped to the generation and cleared on every settle", () => {
+		useChatStore.getState().startGeneration(C1);
+		useChatStore.getState().setGenerationMetadata(C1, { modelId: "model-a", presetName: "Preset A" });
+		expect(useChatStore.getState().generations[C1]).toMatchObject({ modelId: "model-a", presetName: "Preset A" });
+
+		useChatStore.getState().finishGeneration(C1);
+		expect(useChatStore.getState().generations[C1]).toMatchObject({ modelId: null, presetName: null });
+
+		useChatStore.getState().startGeneration(C1);
+		useChatStore.getState().setGenerationMetadata(C1, { modelId: "model-b", presetName: "Preset B" });
+		useChatStore.getState().abortGeneration(C1);
+		expect(useChatStore.getState().generations[C1]).toMatchObject({ modelId: null, presetName: null });
+	});
   test("startGeneration captures the active normal lane's included rolls only", () => {
     const inc1 = makeRoll({ rollId: brandId<DiceRollId>("r-inc-1") });
     const inc2 = makeRoll({ rollId: brandId<DiceRollId>("r-inc-2") });

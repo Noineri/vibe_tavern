@@ -7,6 +7,7 @@
  * silently flatten or misname imported files.
  */
 import { afterEach, beforeAll, describe, expect, it, jest, mock, spyOn } from "bun:test";
+import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
@@ -16,9 +17,12 @@ GlobalRegistrator.unregister();
 useDomEnv();
 
 let importCoauthorSkills: typeof import("./skill-api.js").importCoauthorSkills;
+let createCoauthorSkill: typeof import("./skill-api.js").createCoauthorSkill;
+let updateCoauthorSkill: typeof import("./skill-api.js").updateCoauthorSkill;
+let reorderCoauthorSkills: typeof import("./skill-api.js").reorderCoauthorSkills;
 
 beforeAll(async () => {
-	({ importCoauthorSkills } = await import("./skill-api.js"));
+	({ importCoauthorSkills, createCoauthorSkill, updateCoauthorSkill, reorderCoauthorSkills } = await import("./skill-api.js"));
 });
 
 /** Make a File with a `webkitRelativePath` (readonly in the DOM type, so define
@@ -123,5 +127,104 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 
 		await importCoauthorSkills([folderFile("x/SKILL.md")]);
 		expect(capturedUrl).toContain("/api/coauthor/skills/import");
+	});
+});
+
+describe("createCoauthorSkill / updateCoauthorSkill — save op (AP-23d)", () => {
+	const ENTRY = {
+		id: "fresh-skill",
+		source: "user" as const,
+		name: "Fresh Skill",
+		description: "Fresh.",
+		manifestPath: "fresh-skill/SKILL.md",
+		shadowsBuiltin: false,
+	};
+	const INPUT = { name: "Fresh Skill", description: "Fresh.", body: "Fresh body." };
+
+	it("POSTs the save body to /api/coauthor/skills and returns the fresh entry", async () => {
+		let capturedUrl: string | undefined;
+		let capturedInit: { method?: string; body?: unknown } | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = input.toString();
+			capturedInit = init;
+			return new Response(JSON.stringify(ENTRY), {
+				status: 201,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as unknown as typeof fetch;
+
+		const saved = await createCoauthorSkill(INPUT);
+		expect(capturedUrl).toContain("/api/coauthor/skills");
+		expect(capturedInit?.method).toBe("POST");
+		expect(JSON.parse(capturedInit?.body as string)).toEqual(INPUT);
+		expect(saved).toEqual(ENTRY);
+	});
+
+	it("PUTs the save body to /api/coauthor/skills/:id and returns the fresh entry", async () => {
+		let capturedUrl: string | undefined;
+		let capturedInit: { method?: string; body?: unknown } | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = input.toString();
+			capturedInit = init;
+			return new Response(JSON.stringify(ENTRY), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as unknown as typeof fetch;
+
+		const saved = await updateCoauthorSkill("fresh-skill", INPUT);
+		expect(capturedUrl).toContain("/api/coauthor/skills/fresh-skill");
+		expect(capturedInit?.method).toBe("PUT");
+		expect(JSON.parse(capturedInit?.body as string)).toEqual(INPUT);
+		expect(saved).toEqual(ENTRY);
+	});
+
+	it("throws on a non-OK update, surfacing the server message", async () => {
+		globalThis.fetch = mockFetch(async () =>
+			new Response(JSON.stringify({ error: "Built-in skills are read-only." }), {
+				status: 409,
+				headers: { "Content-Type": "application/json" },
+			}),
+		) as unknown as typeof fetch;
+
+		await expect(updateCoauthorSkill("grill-me", INPUT)).rejects.toThrow(/read-only/);
+	});
+});
+
+describe("reorderCoauthorSkills client (ML-7)", () => {
+	const CATALOG: SkillCatalog = {
+		entries: [
+			{ id: "gamma", source: "user", name: "Gamma", description: "", manifestPath: "gamma/SKILL.md", shadowsBuiltin: false },
+			{ id: "alpha", source: "builtin", name: "Alpha", description: "", manifestPath: "alpha/SKILL.md", shadowsBuiltin: false },
+		],
+		errors: [],
+	};
+
+	it("PATCHes the full { updates: [{ id, sortOrder }] } payload to /api/coauthor/skills/reorder and unwraps the catalog envelope", async () => {
+		let capturedUrl: string | undefined;
+		let capturedInit: { method?: string; body?: unknown } | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = input.toString();
+			capturedInit = init;
+			return new Response(JSON.stringify(CATALOG), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as unknown as typeof fetch;
+
+		const catalog = await reorderCoauthorSkills([
+			{ id: "gamma", sortOrder: 0 },
+			{ id: "alpha", sortOrder: 1 },
+		]);
+
+		expect(capturedUrl?.endsWith("/api/coauthor/skills/reorder")).toBe(true);
+		expect(capturedInit?.method).toBe("PATCH");
+		expect(JSON.parse(capturedInit?.body as string)).toEqual({
+			updates: [
+				{ id: "gamma", sortOrder: 0 },
+				{ id: "alpha", sortOrder: 1 },
+			],
+		});
+		expect(catalog).toEqual(CATALOG);
 	});
 });

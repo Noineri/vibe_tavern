@@ -74,7 +74,7 @@ export function ImportPreviewModal({
               <div
                 className={cn(
                   "mb-0.5 font-body font-medium text-t1",
-                  isMobile ? "text-lg" : "text-[calc(var(--ui-fs)+4px)]",
+                  isMobile ? "text-[calc(var(--ui-fs)+4px)] leading-7" : "text-[calc(var(--ui-fs)+4px)]",
                 )}
               >
                 {title}
@@ -82,7 +82,7 @@ export function ImportPreviewModal({
               <div
                 className={cn(
                   "mb-3.5 font-ui text-t3",
-                  isMobile ? "text-xs" : "text-[calc(var(--ui-fs)-2px)]",
+                  isMobile ? "text-[calc(var(--ui-fs)-2px)] leading-4" : "text-[calc(var(--ui-fs)-2px)]",
                 )}
               >
                 {subtitle}

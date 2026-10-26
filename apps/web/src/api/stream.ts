@@ -7,6 +7,9 @@ import type { ChatGenerationStatus, DiceMode } from "./types.js";
 import type { RpcErrorBody } from "./unwrap.js";
 import type { z } from "zod";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
+import { readCoauthorEditorState } from "../lib/coauthor-editor-snapshot.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
+import type { GenerationMetadata } from "../lib/generation-metadata.js";
 
 export interface StreamOpts {
   signal?: AbortSignal;
@@ -19,6 +22,7 @@ export interface StreamOpts {
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
+  onGenerationMetadata?: (info: GenerationMetadata) => void;
 }
 
 /**
@@ -84,6 +88,7 @@ export async function streamChatEndpoint(
     onToolInputDelta: opts.onToolInputDelta,
     onToolResult: opts.onToolResult,
     onCoauthorModule: opts.onCoauthorModule,
+    onGenerationMetadata: opts.onGenerationMetadata,
   });
 }
 
@@ -92,7 +97,17 @@ export const sendStream = (
   chatId: string,
   input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   opts: StreamOpts,
-) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
+) => {
+  const state = useSnapshotStore.getState();
+  const coauthorEditorState = state.activeChat?.id === chatId && state.activeChat.mode === "coauthor" && state.character
+    ? readCoauthorEditorState(chatId, state.character.id)
+    : undefined;
+  return streamChatEndpoint(
+    `/api/chats/${chatId}/messages/stream`,
+    { ...input, ...(coauthorEditorState ? { coauthorEditorState } : {}) },
+    opts,
+  );
+};
 
 /** Convenience: regenerate message stream */
 export const regenerateStream = (

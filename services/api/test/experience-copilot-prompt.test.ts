@@ -10,19 +10,50 @@
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { AgentPlan } from "@vibe-tavern/domain";
 import {
   assembleExperienceCopilotPrompt,
+  COPILOT_RECENCY_ANCHOR_TEXT,
+} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import {
   resolveDigestBoundary,
   estimateHistoryTokens,
-  COPILOT_RECENCY_ANCHOR_TEXT,
-  type ExperienceCopilotHistoryMessage,
-} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+  type AgentHistoryMessage as ExperienceCopilotHistoryMessage,
+} from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
+import { readSkillFile } from "../src/domain/coauthor/skills/skill-read-tool.js";
+import { resolveExperienceCopilotSkillCatalog } from "../src/domain/interactive/copilot/experience-copilot-module.js";
+import { loadPromptAsset, resolvePromptAssetPath } from "../src/shared/prompt-asset-loader.js";
+import {
+  STAND_IN_SKILL_IDS,
+  standInAssetNames,
+  withStandInAssets,
+} from "./fixtures/copilot-prompt-stand-in-assets.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
+
+/**
+ * SHA-256 of the zero-plan / zero-digest / zero-attached system message
+ * assembled over the STAND-IN assets (fixtures/copilot-prompt-stand-in-assets.ts,
+ * S2-0a). It pins HOW the prompt is assembled — section order, the code-built
+ * blocks, the catalog frame — and deliberately NOT the prose of the asset
+ * `.md` files, so an intentional asset edit no longer forces a re-capture.
+ * It changes only when assembly code (or the stand-in texts) changes.
+ */
+const STAND_IN_ASSEMBLY_SHA256 = "f494ed41d33d1a495be463b183c2ef73c92c753bcf0b3541585d6267f98d0459";
+
+/** Assemble the baseline (no plan/digest/attached) prompt over the stand-in assets. */
+function assembleOverStandIns(
+  input: Parameters<typeof assembleExperienceCopilotPrompt>[0],
+): ReturnType<typeof assembleExperienceCopilotPrompt> {
+  return withStandInAssets(() => assembleExperienceCopilotPrompt(input));
+}
 
 /** A minimal valid experience (the "Counter" shape from the SDK examples). */
 const VALID_RULES = `context.experience.register({
@@ -121,6 +152,42 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.skillRoots[0]).toContain("skills");
   });
 
+  test("a user skill root joins the catalog and its roots — usable with the builtin seed profile (PM-8)", async () => {
+    // The owner's live bug: an imported user skill was invisible/unreadable
+    // unless a custom profile's skillIds enabled it (and no profile existed).
+    // PM-8 ungates the catalog: the builtin-seed default assembly lists the
+    // user skill AND exposes its root to read_skill_file.
+    const userRoot = await mkdtemp(join(tmpdir(), "copilot-prompt-user-root-"));
+    try {
+      await mkdir(join(userRoot, "user-skill"), { recursive: true });
+      await Bun.write(
+        join(userRoot, "user-skill", "SKILL.md"),
+        "---\nname: user-skill\ndescription: an imported user skill\n---\n\n# user-skill\n",
+      );
+
+      // No `profile` input → the builtin seed resolves internally.
+      const result = await assembleExperienceCopilotPrompt({
+        history: [],
+        rules: VALID_RULES,
+        step: "rules",
+        skillUserRoot: userRoot,
+      });
+
+      // The user skill is listed in the catalog block.
+      expect(result.systemMessage).toContain("user-skill");
+      expect(result.systemMessage).toContain("user-skill/SKILL.md");
+      // ...and its root is exposed alongside the built-in root.
+      expect(result.skillRoots).toContain(userRoot);
+
+      // End-to-end through the real read resolver the tool closes over: the
+      // user-skill manifest path resolves under the builtin seed profile.
+      const read = await readSkillFile("user-skill/SKILL.md", result.skillRoots);
+      expect(read.content).toContain("# user-skill");
+    } finally {
+      await rm(userRoot, { recursive: true, force: true });
+    }
+  });
+
   test("contract is omitted when rules discovery fails (broken rules)", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
@@ -198,15 +265,19 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(explicitResult.skillRoots).toEqual(defaultResult.skillRoots);
   });
 
-  test("a custom profile overrides the base prompt and gates the skill catalog", async () => {
+  test("a custom profile overrides the base prompt; the skill catalog stays UNGATED (PM-8)", async () => {
+    // PM-8 (owner ruling 2026-10-12) — same boundary as the old gating test,
+    // inverted: the profile used to gate the catalog via skillIds (an empty
+    // skillIds hid the catalog and emptied skillRoots); now the profile carries
+    // ONLY basePrompt + toolSet and the catalog lists everything scanned,
+    // whichever profile is active.
     const custom: CopilotProfile = {
       id: "custom",
       name: "Custom",
       isBuiltIn: false,
       basePrompt: "CUSTOM SYSTEM PROMPT MARKER",
-      skillIds: [],
       toolSet: {},
-      maxSteps: 5,
+      agentKind: "experience",
     };
     const result = await assembleExperienceCopilotPrompt({
       history: [],
@@ -216,9 +287,9 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     });
     expect(result.systemMessage).toContain("CUSTOM SYSTEM PROMPT MARKER");
     expect(result.systemMessage).not.toContain("MINI-APP ASSISTANT");
-    // No enabled skills → no "Available skills" section and no skill roots.
-    expect(result.systemMessage).not.toContain("Available skills");
-    expect(result.skillRoots).toEqual([]);
+    // The catalog is NOT gated by the profile: the section and roots persist.
+    expect(result.systemMessage).toContain("Available skills");
+    expect(result.skillRoots.length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -423,6 +494,30 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
     expect(result.systemMessage).toContain("Participants & launch settings");
   });
 
+  // CA-5b (2026-10-25, COPILOT_ATTACHMENTS_PLAN wave 5): user-flow.md gained
+  // the "Attaching files and screenshots" section so the copilot knows the
+  // user can attach files/images to ITS chat and never asks them to paste a
+  // file's contents. Pins the section's load-bearing facts (the send path,
+  // the sent-file actions) over the REAL asset — an intentional asset-content
+  // pin, like the sandbox-actions assertions above, not assembly.
+  test("the human-side flow doc covers chat attachments (CA-5b)", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [{ role: "user", content: "Hello" }],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).toContain("## Attaching files and screenshots");
+    // The composer surface: EN labels verbatim from en.json (attach_image,
+    // attachment_summarize, attachment_exclude) — the RU map is code-built
+    // from ru.json and must not be duplicated in the EN asset.
+    expect(result.systemMessage).toContain('"Attach file"');
+    expect(result.systemMessage).toContain('"Summarize contents"');
+    expect(result.systemMessage).toContain('"Exclude from prompt"');
+    // The model-facing contract: full text arrives, never ask for a paste.
+    expect(result.systemMessage).toContain("full text");
+    expect(result.systemMessage).toContain("Never ask the user to paste");
+  });
+
   test("a Russian-voice history appends the RU↔EN label map; an English one does not", async () => {
     const ru = await assembleExperienceCopilotPrompt({
       history: [
@@ -473,11 +568,82 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
   });
 });
 
+// ─── Review outcome feedback (RO-2) ──────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", () => {
+  test("renders per-target outcomes, counts, supersession, and independently unsaved buffers", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      reviewSnapshot: {
+        targets: [
+          {
+            target: "rules",
+            roundId: "a1b2c3d4e5f6",
+            outcome: "applied-partial",
+            hunks: { accepted: 2, rejected: 1, pending: 3 },
+          },
+          {
+            target: "visual",
+            roundId: "0f1e2d3c4b5a",
+            outcome: "superseded",
+            hunks: { accepted: 0, rejected: 4, pending: 1 },
+            supersededByRound: "abcdef123456",
+          },
+        ],
+      },
+      rulesSaved: false,
+      visualSaved: true,
+    });
+
+    expect(result.systemMessage).toContain(
+      "## Proposal review outcomes\nThese records are authoritative: they report what the user actually did with your earlier proposals, and they override your own memory of what you proposed.\n" +
+      "`rejected`, `cancelled` and `superseded` changes are NOT in the editor — never describe them as applied or insist that they are.\n",
+    );
+    expect(result.systemMessage).toContain("- rules round `a1b2c3d4e5f6`: **applied-partial** (hunks: accepted 2, rejected 1, pending 3)");
+    expect(result.systemMessage).toContain("- visual round `0f1e2d3c4b5a`: **superseded** (hunks: accepted 0, rejected 4, pending 1; superseded by round `abcdef123456`)");
+    expect(result.systemMessage).toContain("## Buffer save status\n- rules buffer: unsaved\n- visual buffer: saved");
+  });
+
+  test("renders an explicit empty snapshot and each supplied save flag without inventing the absent flag", async () => {
+    const emptySnapshot = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", reviewSnapshot: { targets: [] },
+    });
+    const rulesOnly = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", rulesSaved: true,
+    });
+    const visualOnly = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", visualSaved: false,
+    });
+
+    expect(emptySnapshot.systemMessage).toContain("## Proposal review outcomes\nno unreviewed proposals and no recorded outcomes");
+    expect(emptySnapshot.systemMessage).not.toContain("Buffer save status");
+    expect(rulesOnly.systemMessage).toContain("- rules buffer: saved");
+    expect(rulesOnly.systemMessage).not.toContain("visual buffer:");
+    expect(visualOnly.systemMessage).toContain("- visual buffer: unsaved");
+    expect(visualOnly.systemMessage).not.toContain("rules buffer:");
+  });
+
+  test("omitted review metadata leaves the legacy system message byte-identical", async () => {
+    const result = await assembleOverStandIns({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+
+    expect(result.systemMessage).not.toContain("Proposal review outcomes");
+    expect(result.systemMessage).not.toContain("Buffer save status");
+    expect(createHash("sha256").update(result.systemMessage).digest("hex"))
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
+  });
+});
+
 // ─── (d) Digest messages (CM-3) ──────────────────────────────────────────────
 
 describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
   test("zero-digest assembly is byte-identical to the pre-CM-3 assembly", async () => {
-    const result = await assembleExperienceCopilotPrompt({
+    const result = await assembleOverStandIns({
       history: [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi! I can help author your experience." },
@@ -485,6 +651,11 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
       rules: VALID_RULES,
       step: "rules",
     });
+    // S2-0a: this and the other three SHA pins in this file run over the
+    // STAND-IN assets (see STAND_IN_ASSEMBLY_SHA256), so they pin assembly,
+    // not asset prose. The re-capture trail below is the history of the
+    // pre-S2-0a pin, which hashed the real asset text; it is kept as the
+    // record of those intentional prompt changes.
     // SHA-256 of the system message — pins that lifting digest messages out
     // of the history flow changed nothing for a thread that never compacted
     // (zero behavior change without a digest). Re-captured after the
@@ -524,8 +695,13 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // buttons ("Send log to assistant" / "Copy log" / "Ask the copilot about
     // this error") and the live-only Developer-diagnostics digest button.
     // Intentional system-prompt content changes, not drift.
+    // Re-captured again (2026-10-11, node:vm docs-honesty unit): the
+    // interactive-rules.md "Sandbox bounds" section became "Runtime surface
+    // bounds" — security-implying wording removed; surface facts unchanged.
+    // Re-captured again (2026-10-18, AS-8e7b, owner: no invented economies):
+    // user-flow.md's Developer-diagnostics digest says «console», not «console tail».
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
     expect(result.messages).toHaveLength(3);
   });
 
@@ -631,64 +807,59 @@ describe("resolveDigestBoundary (CM-5)", () => {
   });
 });
 
-// ─── TAG-6: todo step-plan section ────────────────────────────────────────
+// ─── PM-3: durable script-owned plan section ───────────────────────────────
 
-describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", () => {
-  test("empty todo → section omitted, system message byte-identical to pre-TAG-6", async () => {
-    const result = await assembleExperienceCopilotPrompt({
+describe("assembleExperienceCopilotPrompt — agent plan section (PM-3)", () => {
+  const plan: AgentPlan = {
+    goal: "Build the experience",
+    constraints: ["Keep the reducer deterministic"],
+    tasks: [
+      { id: "rules", title: "Write the rules buffer", body: "ACTIVE BODY MARKER", status: "active" },
+      { id: "reduce", title: "Add the reduce loop", body: "PENDING BODY MARKER", status: "pending" },
+      { id: "visual", title: "Sketch the visual", body: "", status: "completed" },
+      { id: "old", title: "Old idea", body: "", status: "abandoned" },
+    ],
+  };
+
+  test("no plan → section omitted, system message byte-identical to the zero-todo baseline", async () => {
+    const result = await assembleOverStandIns({
       history: [],
       rules: VALID_RULES,
       step: "rules",
     });
-    expect(result.systemMessage).not.toContain("Current step plan");
-    // The zero-todo SHA is still the pinned pre-feature digest — the omission
-    // is total, not a substituted empty header. (Re-captured TAG-11: the
-    // `grill-me` skill catalog entry is present in the baseline system message.
-    // Re-captured for #16 (context economy): base.md shrunk to role + skill pointer + hard constraints, and the system message was reordered cache-first (stable role/catalog/refs prefix, volatile context package at the tail) — see the
-    // zero-digest pin's trail. Re-captured again (2026-10-07, Experience
-    // Copilot Grounding Report step 3 / P2): interactive-visual.md became a
-    // pure visual-bridge reference. Re-captured again for step 4 / P3's
-    // interactive-rules grounding corrections — see the zero-digest trail.
-    // Re-captured again for step 8 / P5's user-flow log-button corrections —
-    // see the zero-digest trail.)
+    expect(result.systemMessage).not.toContain("# Plan");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
   });
 
-  test("non-empty todo renders [status] title lines with a preamble", async () => {
+  test("the plan section renders task statuses and only the active task body", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
       rules: VALID_RULES,
       step: "rules",
-      todo: [
-        { title: "Write the rules buffer", status: "active" },
-        { title: "Add the reduce loop", status: "pending" },
-        { title: "Sketch the visual", status: "completed" },
-        { title: "Old idea", status: "abandoned" },
-      ],
+      plan,
     });
-    expect(result.systemMessage).toContain("# Current step plan");
-    expect(result.systemMessage).toContain("keep it current via the `todo` tool");
+    expect(result.systemMessage).toContain("# Plan");
+    expect(result.systemMessage).toContain("Goal: Build the experience");
     expect(result.systemMessage).toContain("[active] Write the rules buffer");
     expect(result.systemMessage).toContain("[pending] Add the reduce loop");
     expect(result.systemMessage).toContain("[completed] Sketch the visual");
     expect(result.systemMessage).toContain("[abandoned] Old idea");
+    expect(result.systemMessage).toContain("ACTIVE BODY MARKER");
+    expect(result.systemMessage).not.toContain("PENDING BODY MARKER");
   });
 
-  test("the todo section is injected into the SYSTEM message (survives history compaction)", async () => {
-    // Feed a LONG history that budget-compaction would trim — the todo section
-    // is system-level, so it must ride OUTSIDE the compacted history flow.
+  test("the plan section is injected into the SYSTEM message (survives history compaction)", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: makeMessages(40),
       rules: VALID_RULES,
       step: "rules",
       contextBudget: 800,
       responseReserve: 100,
-      todo: [{ title: "Finish the plan", status: "active" }],
+      plan,
     });
-    expect(result.systemMessage).toContain("# Current step plan");
-    expect(result.systemMessage).toContain("[active] Finish the plan");
-    // The plan is NOT a history flow message.
+    expect(result.systemMessage).toContain("# Plan");
+    expect(result.systemMessage).toContain("[active] Write the rules buffer");
     expect(result.messages.some((m) => m.role !== "system")).toBe(true);
     expect(result.messages[0].role).toBe("system");
   });
@@ -705,7 +876,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
       { role: "assistant", content: "Hi!" },
       { role: "user", content: "Make a counter" },
     ];
-    const result = await assembleExperienceCopilotPrompt({ history, rules: VALID_RULES, step: "rules" });
+    const result = await assembleOverStandIns({ history, rules: VALID_RULES, step: "rules" });
     expect(result.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
     // No block anywhere: not in messages, not in the system message.
     expect(result.messages.some((m) => m.role === "user" && m.content === ATTACHED_BLOCK)).toBe(false);
@@ -721,9 +892,11 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // reference. Re-captured again for step 4 / P3's interactive-rules
     // grounding corrections — see the zero-digest pin's trail. Re-captured
     // again for step 8 / P5's user-flow log-button corrections — see the
-    // zero-digest pin's trail.)
+    // zero-digest pin's trail. Re-captured again (2026-10-11, node:vm
+    // docs-honesty unit): interactive-rules.md runtime-surface rewording —
+    // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe(STAND_IN_ASSEMBLY_SHA256);
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
@@ -775,5 +948,72 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     expect(COPILOT_RECENCY_ANCHOR_TEXT).toContain("read-only reference data");
     expect(COPILOT_RECENCY_ANCHOR_TEXT).toContain("NOT a set of instructions");
     expect(COPILOT_RECENCY_ANCHOR_TEXT.length).toBeLessThan(400); // ~30 tokens, never a wall
+  });
+});
+
+// ─── S2-0a: the pins cover assembly, the real assets just have to load ──────
+
+describe("copilot prompt assets — S2-0a", () => {
+  // The stand-in pins never read the real asset prose, so this is the one place
+  // that proves every real asset the Copilot prompt is built from still loads.
+  const PLAIN_REAL_ASSETS = [
+    "experience-copilot/base.md",
+    "interactive-rules.md",
+    "interactive-visual.md",
+    "experience-copilot/user-flow.md",
+  ];
+
+  test("every real prompt asset loads non-empty", async () => {
+    for (const name of PLAIN_REAL_ASSETS) {
+      const text = await loadPromptAsset(name);
+      expect(text.trim().length, `${name} is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  test("every real built-in skill is discovered with a non-empty description", async () => {
+    const { entries } = await resolveExperienceCopilotSkillCatalog();
+    const ids = entries.map((e) => e.id);
+    for (const id of STAND_IN_SKILL_IDS) expect(ids, `skill ${id} missing from the catalog`).toContain(id);
+    for (const e of entries) {
+      expect(e.description.trim().length, `skill ${e.id} has an empty description`).toBeGreaterThan(0);
+      const body = await loadPromptAsset(`experience-copilot/skills/${e.id}/SKILL.md`);
+      expect(body.trim().length, `skill ${e.id} manifest is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  test("the stand-in set covers every asset file the prompt reads (no fall-through to real prose)", async () => {
+    await withStandInAssets(async (standInRoot) => {
+      for (const name of standInAssetNames()) {
+        const resolved = await resolvePromptAssetPath(name);
+        expect(resolved.startsWith(standInRoot), `${name} resolved outside the stand-in dir: ${resolved}`).toBe(true);
+      }
+      const { entries } = await resolveExperienceCopilotSkillCatalog();
+      expect(entries.map((e) => e.id).sort()).toEqual([...STAND_IN_SKILL_IDS].sort());
+    });
+  });
+
+  test("the baseline system message is built from stand-in markers in assembly order", async () => {
+    const result = await assembleOverStandIns({ history: [], rules: VALID_RULES, step: "rules" });
+    const msg = result.systemMessage;
+    const order = [
+      "[[asset:base.md]]",
+      "# Available skills (read on demand)",
+      "[[skill-description:experience-authoring]]",
+      "[[skill-description:grill-me]]",
+      "[[asset:user-flow.md]]",
+      "# Experience rules API reference",
+      "[[asset:interactive-rules.md]]",
+      "# Experience visual API reference",
+      "[[asset:interactive-visual.md]]",
+    ];
+    let cursor = -1;
+    for (const marker of order) {
+      const at = msg.indexOf(marker);
+      expect(at, `${marker} missing`).toBeGreaterThan(cursor);
+      expect(msg.indexOf(marker, at + 1), `${marker} duplicated`).toBe(-1);
+      cursor = at;
+    }
+    // Real prose never reaches the pinned run.
+    expect(msg).not.toContain("MINI-APP ASSISTANT");
   });
 });

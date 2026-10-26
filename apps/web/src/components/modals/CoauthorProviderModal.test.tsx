@@ -14,7 +14,11 @@ const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _
 const updateProviderProfileAction = mock(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never);
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
-const realI18n = await import("../../i18n/context.js");
+// i18n is NOT mocked: the modal renders providerless, so the real `useT`
+// returns the STABLE module-scope context default (identity `t`) — key-verbatim
+// assertions work with zero process-global registration. A `useT` override
+// here (a fresh literal per call, on top of that) poisoned real-LocaleProvider
+// consumers in co-loaded files (owner order 2026-10-24, co-load pair fixes).
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({ ...realBootstrapActions, patchUiSettingsAction }));
 mock.module("../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
@@ -22,10 +26,6 @@ mock.module("../../stores/api-actions/provider-actions.js", () => ({
   updateProviderProfileAction,
   loadCoauthorConnectionSettingsAction,
   upsertCoauthorConnectionSettingsAction,
-}));
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 const { useProviderDataStore } = await import("../../stores/provider-data-store.js");
@@ -40,7 +40,7 @@ beforeAll(async () => {
 function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
   return {
     id, name, providerPreset: "openai", coauthorTransport: "chat_completions", endpoint: "https://api.test/v1",
-    defaultModel: null, isActive: false,
+    defaultModel: null, isActive: false, hasStoredApiKey: true,
     cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32_000, capabilities: { tools: true } }] },
     ...over,
   } as ClientProviderProfileRecord;
@@ -99,9 +99,16 @@ describe("CoauthorProviderModal", () => {
       ],
     });
     const view = renderModal();
-    await waitFor(() => expect(view.getByText("★ Bound Profile")).toBeTruthy());
+    // Behavior change: was `getByText("★ Bound Profile")` (the ★ was an inline
+    // title prefix), then the ★ in its own aria-hidden span; now the unified
+    // green dot (owner follow-up 2026-10-24, ★ retired), so the row title is
+    // the bare name and the marker is asserted separately. The bare name
+    // also renders in the connection selector, so the unscoped query sees
+    // two nodes (row title + selector); the list-scoped query below pins one.
+    await waitFor(() => expect(view.getAllByText("Bound Profile")).toHaveLength(2));
     const profileList = view.getByText("profiles_label").parentElement!;
-    expect(within(profileList).getAllByText("★ Bound Profile")).toHaveLength(1);
+    expect(profileList.querySelector(".bg-success")).toBeTruthy();
+    expect(within(profileList).getAllByText("Bound Profile")).toHaveLength(1);
     expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
     expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
     expect(within(profileList).getAllByLabelText("drag")).toHaveLength(2);
@@ -123,7 +130,11 @@ describe("CoauthorProviderModal", () => {
     useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha", { maxTokens: 2_000, contextBudget: 16_000 })] });
     const view = renderModal();
     await waitFor(() => expect(view.baseElement.textContent).toContain("sampler_basic_settings"));
-    expect(view.getByText("Alpha")).toBeTruthy();
+    // Behavior change: was a single `getByText("Alpha")` (the row title read
+    // "★ Alpha"), then the ★ in the status slot; now the unified dot per
+    // the owner follow-up 2026-10-24, so the bare name renders twice: row
+    // title + connection selector.
+    expect(view.getAllByText("Alpha")).toHaveLength(2);
     expect(view.getByText("coauthor.provider.transport_label")).toBeTruthy();
     expect(view.getByText("coauthor.provider.model_label")).toBeTruthy();
     expect(view.baseElement.textContent).not.toContain("coauthor.provider.tokens_label");

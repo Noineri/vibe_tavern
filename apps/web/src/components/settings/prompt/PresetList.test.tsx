@@ -1,64 +1,56 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
-const { fireEvent, render, screen, within } = await import("@testing-library/react");
+const { act, fireEvent, render, within } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
-const realTooltip = await import("../../shared/Tooltip.js");
-const realSortable = await import("@dnd-kit/sortable");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
+// Co-load contract (master-list.test.tsx + ProviderProfileList.test.tsx
+// register the SAME mock for @dnd-kit/core; Bun's mock.module is
+// process-global, last-write-wins — the factories must stay shape-identical
+// so either registration order is safe). @dnd-kit/sortable is NOT mocked:
+// ML-2 moved the sortable wiring into the primitive, so this suite renders
+// the real useSortable through SortableMasterListPhoneRow (only `arrayMove`
+// is consumed here, for the reorder payload math).
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
 const mobileState = { isMobile: false };
 
-const useSortable = mock(() => ({
-  attributes: {},
-  listeners: {},
-  setNodeRef: mock(),
-  setActivatorNodeRef: mock(),
-  transform: null,
-  transition: undefined,
-  isDragging: false,
-}));
-
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
   useIsMobile: () => mobileState.isMobile,
 }));
 
-// PresetList uses useMasterDetail (mobile drill-down) — stub the context so
-// the component can render outside a full MasterDetailModal shell.
+// The rows render the REAL MasterDetailMobileDrillDown (ML-1 precedent: a
+// label-less `drill` stub diverged from master-list.test.tsx's mock and
+// poisoned its co-load run). The hook mock carries the full context shape so
+// either registration order renders the same caret. Shape-identical with
+// master-list.test.tsx (co-load contract: last-write-wins).
 mock.module("../../shared/MasterDetailModal.js", () => ({
-    ...realMasterDetailModal,
-    useMasterDetail: () => ({ activeId: null, openDetail: () => {}, closeDetail: () => {} }),
-    MasterDetailMobileDrillDown: ({ onSelect, className }: { onSelect: () => void; className?: string }) => (
-      <button onClick={onSelect} className={className}>drill</button>
-    ),
+  ...realMasterDetailModal,
+  useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
-// CustomTooltip wraps Radix's Tooltip (needs TooltipProvider). Replace with a
-// bare wrapper so tests don't need the full provider shell.
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ content, children }: { content?: string; children: React.ReactNode }) => <>{children}</>,
-}));
-
-// Stub useSortable so dnd-kit's sortable context works without a real DOM
-// sensor setup (happy-dom can't drive PointerEvent chains). The overlay
-// transform/transition are no-ops; the consumer only tests render output.
-mock.module("@dnd-kit/sortable", () => ({
-  ...realSortable,
-  useSortable,
+mock.module("@dnd-kit/core", () => ({
+  ...realDndKit,
+  // Preserve dnd-kit's provider while exposing the exact drag-end boundary
+  // without fragile pointer simulation in happy-dom.
+  DndContext: (props: RealDndContextProps) => {
+    dndHandlers = props;
+    return <RealDndContext {...props} />;
+  },
+  // DragOverlay mounts children only while dnd-kit's INTERNAL active state
+  // is set; the captured-handler pattern drives the hook state, never the
+  // internal one — so the preview renders inline here. Shape-identical with
+  // master-list.test.tsx (co-load contract: last-write-wins).
+  DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
 let PresetList: typeof import("./PresetList.js").PresetList;
@@ -87,6 +79,7 @@ function baseProps(overrides: Partial<Parameters<typeof PresetList>[0]> = {}) {
 describe("PresetList", () => {
   beforeEach(() => {
     mock.clearAllMocks();
+    dndHandlers = null;
   });
 
   afterEach(() => {
@@ -94,43 +87,72 @@ describe("PresetList", () => {
   });
 
   it("renders presets with names and a drag handle on each row", () => {
-    render(<PresetList {...baseProps()} />);
-    expect(screen.getByText("Alpha")).toBeTruthy();
-    expect(screen.getByText("Beta")).toBeTruthy();
-    expect(screen.getByText("Gamma")).toBeTruthy();
+    const view = render(<PresetList {...baseProps()} />);
+    expect(view.getByText("Alpha")).toBeTruthy();
+    expect(view.getByText("Beta")).toBeTruthy();
+    expect(view.getByText("Gamma")).toBeTruthy();
     // Each row gets a ≡ handle (three rows → three handles).
-    const handles = screen.getAllByLabelText("drag");
+    const handles = view.getAllByLabelText("drag");
     expect(handles).toHaveLength(3);
   });
 
-  it("highlights the active preset (accent border + dot)", () => {
-    render(<PresetList {...baseProps({ activePresetId: "p1" })} />);
-    // Active state is a CSS concern; we trust the class. Smoke: row renders.
-    expect(screen.getByText("Alpha")).toBeTruthy();
+  it("marks the active preset with the status-slot dot (never a whole-row color)", () => {
+    // Behavior change (was: an active-only dot + accent row, then: ★ in the
+    // primitive's status slot; now: the unified green dot — owner follow-up
+    // 2026-10-24, ★ retired. Selection stays the primitive's accent look).
+    const view = render(<PresetList {...baseProps({ activePresetId: "p1" })} />);
+    expect(view.getByText("Alpha")).toBeTruthy();
+    const activeRow = view.getByText("Alpha").closest("div.group")!;
+    expect(activeRow.querySelector(".bg-success")).toBeTruthy();
+    const idleRow = view.getByText("Beta").closest("div.group")!;
+    expect(idleRow.querySelector(".bg-success")).toBeNull();
+    expect(idleRow.querySelector(".bg-danger")).toBeNull();
+  });
+
+  it("wraps the title instead of truncating it", () => {
+    // Behavior change (was: `truncate` title in a tooltip; now: `break-words`
+    // wrap per MASTER_LIST_PRIMITIVE_PLAN row rules — authored names are UI
+    // copy, and UI copy is never truncated).
+    const view = render(<PresetList {...baseProps()} />);
+    const title = view.getByText("Alpha");
+    expect(title.classList.contains("truncate")).toBe(false);
+    expect(title.classList.contains("break-words")).toBe(true);
+  });
+
+  it("renders the drag preview through the primitive overlay", () => {
+    const view = render(<PresetList {...baseProps()} />);
+    expect(view.getAllByText("Alpha")).toHaveLength(1);
+    const start = { active: { id: "p1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    const end = { active: { id: "p1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragStart!(start); });
+    // Row + inline overlay preview (the DragOverlay mock renders inline —
+    // the ML-1 rework-2 lesson: the preview must exist during a drag).
+    expect(view.getAllByText("Alpha")).toHaveLength(2);
+    act(() => { dndHandlers!.onDragEnd!(end); });
   });
 
   it("shows empty state when the list is empty", () => {
-    render(<PresetList {...baseProps({ presets: [] })} />);
-    expect(screen.getByText("no_presets")).toBeTruthy();
-    expect(screen.getByText("no_presets_sub")).toBeTruthy();
+    const view = render(<PresetList {...baseProps({ presets: [] })} />);
+    expect(view.getByText("no_presets")).toBeTruthy();
+    expect(view.getByText("no_presets_sub")).toBeTruthy();
   });
 
   it("hides drag handles while a search filter is active", async () => {
     const user = userEvent.setup();
-    render(<PresetList {...baseProps()} />);
-    const searchInput = screen.getByPlaceholderText("search_presets");
+    const view = render(<PresetList {...baseProps()} />);
+    const searchInput = view.getByPlaceholderText("search_presets");
     await user.type(searchInput, "Beta");
     // Only Beta matches → one row rendered; no drag handle (dndDisabled = true).
-    expect(screen.getByText("Beta")).toBeTruthy();
-    expect(screen.queryByLabelText("drag")).toBeNull();
+    expect(view.getByText("Beta")).toBeTruthy();
+    expect(view.queryByLabelText("drag")).toBeNull();
   });
 
   it("calls onAdd with the entered name when creating a new preset", async () => {
     const onAdd = mock();
     const user = userEvent.setup();
-    render(<PresetList {...baseProps({ onAdd })} />);
-    await user.click(screen.getByText("new_preset_btn"));
-    const input = screen.getByPlaceholderText("new_preset_name_placeholder") as HTMLInputElement;
+    const view = render(<PresetList {...baseProps({ onAdd })} />);
+    await user.click(view.getByText("new_preset_btn"));
+    const input = view.getByPlaceholderText("new_preset_name_placeholder") as HTMLInputElement;
     await user.type(input, "Delta{enter}");
     expect(onAdd).toHaveBeenCalledWith("Delta");
   });
@@ -138,15 +160,15 @@ describe("PresetList", () => {
   it("enters rename mode on edit button click and calls onRename on save", async () => {
     const onRename = mock();
     const user = userEvent.setup();
-    render(<PresetList {...baseProps({ onRename })} />);
+    const view = render(<PresetList {...baseProps({ onRename })} />);
     // Find the edit button inside Alpha's row. The row has two edit buttons
     // (mobile md:hidden + desktop hidden md:flex); both are in the DOM, so
     // user.click will target whichever is visible. In jsdom (no media queries
     // applied), both are "visible" by RTL criteria; user-event picks the first.
-    const alphaRow = screen.getByText("Alpha").closest("div.group") as HTMLElement;
+    const alphaRow = view.getByText("Alpha").closest("div.group") as HTMLElement;
     const editBtn = within(alphaRow).getAllByRole("button")[1]; // skip drag handle
     await user.click(editBtn);
-    const input = screen.getByDisplayValue("Alpha") as HTMLInputElement;
+    const input = view.getByDisplayValue("Alpha") as HTMLInputElement;
     // Clear and type new name, submit with Enter.
     await user.clear(input);
     await user.type(input, "Alpha Prime{enter}");
@@ -155,17 +177,17 @@ describe("PresetList", () => {
 
   it("shows no-matches empty state when search yields nothing", async () => {
     const user = userEvent.setup();
-    render(<PresetList {...baseProps()} />);
-    await user.type(screen.getByPlaceholderText("search_presets"), "ZZZ");
-    expect(screen.getByText("no_preset_matches")).toBeTruthy();
-    expect(screen.getByText("no_preset_matches_sub")).toBeTruthy();
+    const view = render(<PresetList {...baseProps()} />);
+    await user.type(view.getByPlaceholderText("search_presets"), "ZZZ");
+    expect(view.getByText("no_preset_matches")).toBeTruthy();
+    expect(view.getByText("no_preset_matches_sub")).toBeTruthy();
   });
 
   it("renders an import button when onImportPreset is provided", async () => {
     const onImportPreset = mock();
     const user = userEvent.setup();
-    render(<PresetList {...baseProps({ onImportPreset })} />);
-    const importBtn = screen.getByText("import_preset_btn");
+    const view = render(<PresetList {...baseProps({ onImportPreset })} />);
+    const importBtn = view.getByText("import_preset_btn");
     await user.click(importBtn);
     expect(onImportPreset).toHaveBeenCalledTimes(1);
   });
@@ -180,7 +202,7 @@ describe("PresetList", () => {
     const click = mock(() => {});
     input.click = click;
 
-    await user.click(screen.getByText("import_preset_btn"));
+    await user.click(view.getByText("import_preset_btn"));
     expect(click).toHaveBeenCalledTimes(1);
 
     const file = new File(["{}"], "preset.json", { type: "application/json" });

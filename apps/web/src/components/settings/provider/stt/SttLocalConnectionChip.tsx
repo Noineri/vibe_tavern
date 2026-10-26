@@ -8,7 +8,7 @@ import { useT } from "../../../../i18n/context.js";
 import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import { configString, formDraftConfig } from "./stt-form-helpers.js";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 /** The STT local-connection chip, rendered OUTSIDE the provider card (owner
  *  ruling 2026-09-22: not inside the card and not only at first connection

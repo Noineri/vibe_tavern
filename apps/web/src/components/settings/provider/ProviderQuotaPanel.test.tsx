@@ -24,6 +24,7 @@ import {
 } from "@vibe-tavern/domain";
 import type { ProviderQuotaCapabilityRecord, ProviderQuotaRecord } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -46,17 +47,12 @@ mock.module("../../../api/quota-api.js", () => ({
   },
 }));
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string, opts?: Record<string, unknown>) => opts ? `${key}:${JSON.stringify(opts)}` : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam({
+  custom: {
+    t: (key, opts?) => opts ? `${key}:${JSON.stringify(opts)}` : key,
+    tDynamic: (key) => key,
+  },
+});
 
 const realTooltip = await import("../../shared/Tooltip.js");
 mock.module("../../shared/Tooltip.js", () => ({
@@ -110,6 +106,32 @@ function setup(
   capability = nextCapability;
   record = { providerProfileId: PROFILE, config, snapshot: null, lastError: null, updatedAt: null };
   return render(<ProviderQuotaPanel providerProfileId={PROFILE} />);
+}
+
+function thresholdShell(rangeInput: HTMLElement): HTMLElement {
+  const shell = rangeInput.closest<HTMLElement>("[data-slider-field-shell]");
+  if (!shell) throw new Error("Expected the threshold range to live inside a slider field");
+  return shell;
+}
+
+/** Counts the elements from the range input up to the document root that carry the 40% disabled dim. */
+function dimLayers(rangeInput: HTMLElement): number {
+  let layers = 0;
+  for (let node: HTMLElement | null = rangeInput; node; node = node.parentElement) {
+    if (node.classList.contains("opacity-40")) layers += 1;
+  }
+  return layers;
+}
+
+function typeThreshold(rangeInput: HTMLElement, text: string) {
+  const shell = thresholdShell(rangeInput);
+  const field = shell.querySelector<HTMLElement>("[data-slider-field]");
+  if (!field) throw new Error("Missing the threshold field box");
+  fireEvent.doubleClick(field);
+  const editor = shell.querySelector<HTMLInputElement>("[data-slider-field-editor] input");
+  if (!editor) throw new Error("The inline editor did not open");
+  fireEvent.change(editor, { target: { value: text } });
+  fireEvent.keyDown(editor, { key: "Enter" });
 }
 
 describe("ProviderQuotaPanel", () => {
@@ -169,17 +191,58 @@ describe("ProviderQuotaPanel", () => {
     expect(balance.queryByText("quota_poll_interval")).not.toBeNull();
   });
 
-  test("the low-quota toggle and its threshold write the same config", async () => {
+  test("the low-quota toggle and its nested slider threshold write the same config", async () => {
     const { findByText, getByLabelText } = setup(windowedCapability(), WINDOWED_CONFIG);
     fireEvent.click(await findByText("quota_section"));
+    const threshold = getByLabelText("quota_low_threshold") as HTMLInputElement;
+
+    expect(threshold.type).toBe("range");
+    expect(threshold.min).toBe("1");
+    expect(threshold.max).toBe("100");
+    expect(threshold.step).toBe("1");
+    expect(threshold.disabled).toBe(true);
 
     fireEvent.click(getByLabelText("quota_low_notify"));
     await waitFor(() => expect(updateCalls).toHaveLength(1));
     expect(updateCalls[0]).toMatchObject({ lowQuotaEnabled: true, lowQuotaRemainingPercent: 10 });
+    await waitFor(() => expect((getByLabelText("quota_low_threshold") as HTMLInputElement).disabled).toBe(false));
 
     fireEvent.change(getByLabelText("quota_low_threshold"), { target: { value: "25" } });
     await waitFor(() => expect(updateCalls).toHaveLength(2));
     expect(updateCalls[1]).toMatchObject({ lowQuotaRemainingPercent: 25 });
+  });
+
+  test("the threshold is one field with its label inside and a single 40% dim while the notification is off", async () => {
+    const { findByText, getByLabelText } = setup(windowedCapability(), WINDOWED_CONFIG);
+    fireEvent.click(await findByText("quota_section"));
+    const shell = thresholdShell(getByLabelText("quota_low_threshold"));
+
+    expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("quota_low_threshold");
+    expect(shell.querySelector("[data-slider-field-value]")?.textContent).toBe("10");
+    // Disabled: the field dims itself (label included) and nothing around it dims a second time.
+    expect(dimLayers(getByLabelText("quota_low_threshold"))).toBe(1);
+
+    fireEvent.click(getByLabelText("quota_low_notify"));
+    await waitFor(() => expect((getByLabelText("quota_low_threshold") as HTMLInputElement).disabled).toBe(false));
+    expect(dimLayers(getByLabelText("quota_low_threshold"))).toBe(0);
+  });
+
+  test("a typed threshold goes through the inline editor into the same debounced config, rounded and clamped", async () => {
+    const { findByText, getByLabelText } = setup(windowedCapability(), WINDOWED_CONFIG);
+    fireEvent.click(await findByText("quota_section"));
+    fireEvent.click(getByLabelText("quota_low_notify"));
+    await waitFor(() => expect(updateCalls).toHaveLength(1));
+    await waitFor(() => expect((getByLabelText("quota_low_threshold") as HTMLInputElement).disabled).toBe(false));
+
+    // Seam: the number box beside the slider is now the field's inline editor, opened by double-click.
+    typeThreshold(getByLabelText("quota_low_threshold"), "42.6");
+    await waitFor(() => expect(updateCalls).toHaveLength(2));
+    // Behavior change: a typed fraction was written as typed (42.6) -> now whole percent (26), like a drag; basis: SL-9 brief (integer rounding on both paths).
+    expect(updateCalls[1]).toMatchObject({ lowQuotaEnabled: true, lowQuotaRemainingPercent: 43 });
+
+    typeThreshold(getByLabelText("quota_low_threshold"), "150");
+    await waitFor(() => expect(updateCalls).toHaveLength(3));
+    expect(updateCalls[2]).toMatchObject({ lowQuotaRemainingPercent: 100 });
   });
 
   test("the poll period writes whole minutes", async () => {

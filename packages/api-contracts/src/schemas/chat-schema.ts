@@ -1,6 +1,8 @@
 import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
+import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
 import { updateLoreEntrySchema, updateLorebookMetaSchema } from "./lorebook-schema.js";
+import { trackerTemplateSchema } from "./tracker-template-schema.js";
 
 /** The settings the lore review renders for a lorebook. */
 export const LOREBOOK_REVIEW_SETTING_FIELDS = [
@@ -50,6 +52,10 @@ export const attachmentSchema = z.object({
   purpose: z.enum(["voice", "music", "ambient"]).optional(),
   /** Audio-only (STT_PLAN ST-6): clip length in ms for the bubble UI. */
   durationMs: z.number().int().nonnegative().optional(),
+  /** Text files only: server-computed token count from the upload response,
+   *  echoed back on send. `summaryTokenCount` / `includeInPrompt` are written
+   *  by the server and are deliberately not accepted here. */
+  tokenCount: z.number().int().nonnegative().optional(),
 });
 
 export const sendMessageSchema = z.object({
@@ -91,6 +97,15 @@ export const sendMessageSchema = z.object({
    * providers), so this field is inert where prefill is unsupported.
    */
   prefill: z.string().min(1).optional(),
+  coauthorEditorState: z.object({
+    card: z.object({
+      name: z.string(),
+      body: z.string(),
+      greetings: z.array(z.string()),
+      cardClean: z.boolean(),
+    }),
+    review: agentReviewSnapshotSchema,
+  }).optional(),
 }).refine(
   (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
   { message: "diceMode and pendingRevision must both be present or both absent" },
@@ -107,6 +122,7 @@ export const sendMessageSchema = z.object({
   },
   { message: "experienceAttachmentId, experienceQueueRevision, and experienceSessionRevision must all be present or all absent" },
 );
+export type CoauthorEditorState = NonNullable<z.infer<typeof sendMessageSchema>["coauthorEditorState"]>;
 
 const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<MessageVariantId>(value));
 
@@ -347,6 +363,14 @@ export const coauthorApplySchema = z.object({
    * field carries the user-accepted graph to be written idempotently.
    */
   loreBundle: coauthorLoreBundleSchema.optional(),
+  /**
+   * CT-7a: the accepted tracker-template proposal (the tool-normalized echo
+   * of a `set_tracker_template` call). Apply writes it through the domain
+   * `withTrackerTemplate` helper inside the same `character.update` call as
+   * the profile merge — every other `extensions` key is preserved. Omitted =
+   * the character's template is left untouched.
+   */
+  trackerTemplate: trackerTemplateSchema.optional(),
 });
 
 export type CoauthorApplyRequest = z.infer<typeof coauthorApplySchema>;
@@ -375,6 +399,24 @@ export const coauthorToolOutputSchema = z.object({
   summary: z.string(),
 });
 export type CoauthorToolOutput = z.infer<typeof coauthorToolOutputSchema>;
+
+/**
+ * The `output` payload of a `set_tracker_template` `tool-result` SSE event
+ * (CT-7a). A PROPOSAL, like {@link coauthorToolOutputSchema} /
+ * {@link coauthorLoreBundleOutputSchema} — but its proposed document is a
+ * structured object (the domain `TrackerTemplate`), not a string, so it does
+ * not reuse the `target`/`proposed` string shape. Carries no `target`: the
+ * frontend routes it by tool name, and aggregation follows «the LAST
+ * `set_tracker_template` wins» (mirroring `lore_bundle`). The backend tool
+ * (`coauthor-tools.ts`) normalizes via the domain `normalizeTrackerTemplate`
+ * and echoes the canonical template — this schema is the single source of
+ * truth for the wire shape.
+ */
+export const coauthorTrackerTemplateOutputSchema = z.object({
+  trackerTemplate: trackerTemplateSchema,
+  summary: z.string(),
+});
+export type CoauthorTrackerTemplateOutput = z.infer<typeof coauthorTrackerTemplateOutputSchema>;
 
 /**
  * The `output` payload of a `read_skill_file` `tool-result` SSE event (CTX-S4).
@@ -486,6 +528,68 @@ export const skillImportResultSchema = z.object({
   importedTopLevelDirs: z.array(z.string()),
 });
 export type SkillImportResult = z.infer<typeof skillImportResultSchema>;
+
+/**
+ * Full content view of one skill (AGENT_SHELL_POLISH, AP-21) — the payload of
+ * `GET .../skills/:id/content` on BOTH the copilot (per kind) and Co-Author
+ * skill routes. The manifest crosses the wire three ways: `content` is the
+ * RAW manifest file (frontmatter included); `body` is the same text with the
+ * frontmatter block stripped (the skill editor's text view); `files` are the
+ * skill folder's POSIX-style relative file paths (the technical-details list)
+ * with the manifest itself EXCLUDED — it is already surfaced as
+ * `content`/`body`. The read goes through the sandboxed `readSkillFile` (user
+ * shadow first), so no absolute filesystem path crosses the wire.
+ */
+export const skillContentSchema = z.object({
+  /** Stable skill id = the skill directory name. */
+  id: z.string(),
+  /** Root-relative manifest path that was read (`<id>/SKILL.md`) — portable. */
+  path: z.string(),
+  /** Raw manifest text, YAML frontmatter included. */
+  content: z.string(),
+  /** The manifest text WITHOUT its frontmatter block. */
+  body: z.string(),
+  /** Relative file paths inside the skill folder (manifest excluded), sorted. */
+  files: z.array(z.string()),
+});
+export type SkillContentDto = z.infer<typeof skillContentSchema>;
+
+/**
+ * Request body of the skill save operation (AGENT_SHELL_POLISH, AP-23a) — the
+ * payload of `POST .../skills` (create) and `PUT .../skills/:id` (update) on
+ * BOTH the copilot (per kind) and Co-Author skill routes. `name` and
+ * `description` become the manifest frontmatter (a create starts from that
+ * minimal manifest; an update rebuilds the EXISTING frontmatter with these two
+ * keys replaced, every other key kept); `body` is the skill text below the
+ * frontmatter fence. The response is the fresh `SkillCatalogEntryDto`.
+ */
+export const skillSaveSchema = z.object({
+  /** Skill display name — the manifest `name`; on create also the source of the generated folder id. */
+  name: z.string().min(1),
+  /** One-line description — the manifest `description`. */
+  description: z.string(),
+  /** The skill text below the frontmatter fence (the editor's document). */
+  body: z.string(),
+});
+export type SkillSaveDto = z.infer<typeof skillSaveSchema>;
+
+/**
+ * Manual skill-catalog list-order rewrite (ML-7): the position updates for ONE
+ * skill library's ids — the payload of `PATCH .../skills/reorder` on BOTH the
+ * copilot (per kind, `?kind=`) and Co-Author skill routes. Skills are folders
+ * on disk with no DB row of their own, so the order lives in a dedicated
+ * table keyed by (library, skill id); the response is the refreshed `SkillCatalog`
+ * envelope (known ids in stored positions, ids the table does not know last,
+ * alphabetically). Same shape as `reorderCoauthorModulesSchema` /
+ * `reorderCopilotProfilesSchema`.
+ */
+export const reorderSkillsSchema = z.object({
+  updates: z.array(z.object({
+    /** Skill id — the skill's directory name (the catalog id). */
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});
 
 /**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by

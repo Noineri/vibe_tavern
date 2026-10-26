@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
@@ -34,17 +35,13 @@ const STABLE_CONTROLLER = {
 };
 
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam();
 
 // LS-4a: the Continue button renders a Radix CustomTooltip; this suite renders
 // MessageBlock without a TooltipProvider, so the tooltip is shimmed to a

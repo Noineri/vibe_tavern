@@ -17,11 +17,13 @@ function makeThread(overrides: Partial<ExperienceCopilotThread> = {}): Experienc
     title: "Draft",
     archivedAt: null,
     contextMetrics: null,
+    contextLinks: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
+    todo: [],
     ...overrides,
   };
 }
@@ -50,7 +52,7 @@ type StoreOverrides = {
 
 function makeStore(overrides: StoreOverrides = {}) {
   const calls: {
-    startNewSession: Array<{ scriptId: string; title?: string }>;
+    startNewSession: Array<{ scriptId: string; title?: string; autoCompact?: boolean }>;
     renameSession: Array<{ sessionId: string; title: string }>;
   } = {
     startNewSession: [],
@@ -61,8 +63,8 @@ function makeStore(overrides: StoreOverrides = {}) {
     listMessages: overrides.listMessages ?? (async () => []),
     startNewSession:
       overrides.startNewSession ??
-      (async (scriptId: string, title?: string) => {
-        calls.startNewSession.push({ scriptId, title });
+      (async (scriptId: string, title?: string, autoCompact?: boolean) => {
+        calls.startNewSession.push({ scriptId, title, autoCompact });
         return makeThread({ scriptId, title: title ?? "" });
       }),
     renameSession:
@@ -76,7 +78,29 @@ function makeStore(overrides: StoreOverrides = {}) {
 }
 
 function makeAdapter(store: ExperienceCopilotStore): ExperienceCopilotAdapter {
-  return new ExperienceCopilotAdapter({ experienceCopilot: store } as unknown as StoreContainer);
+  // AP-20: the create path resolves the script's agent kind (scripts store)
+  // and reads the kind's auto-compact default (agentKindSettings store)
+  // before delegating — a missing script row resolves to the draft kind, and
+  // the default-absent kind settings read ON, so the delegation below carries
+  // `autoCompact: true` without this file growing a registry dependency.
+  const scripts = {
+    async getById(_scriptId: string) {
+      return null;
+    },
+  };
+  const agentKindSettings = {
+    async get(kind: string) {
+      return {
+        agentKind: kind,
+        providerProfileId: null,
+        modelName: null,
+        defaultProfileId: null,
+        autoCompactDefault: true,
+        updatedAt: null,
+      };
+    },
+  };
+  return new ExperienceCopilotAdapter({ experienceCopilot: store, scripts, agentKindSettings } as unknown as StoreContainer);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -98,6 +122,8 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
       createdAt: "2025-01-01T00:00:00.000Z",
       updatedAt: "2025-01-01T00:00:00.000Z",
       metrics: null,
+      contextLinks: [],
+      todo: [],
     });
   });
 
@@ -108,7 +134,7 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
     expect(await adapter.experienceCopilotGetActive("script_1")).toBeNull();
   });
 
-  it("maps the thread's todo step-plan to the wire (TAG-6)", async () => {
+  it("maps the thread's todo checklist to the wire (TAG-6, restored PM-7)", async () => {
     const thread = makeThread({
       todo: [
         { title: "Write the rules buffer", status: "active" },
@@ -146,12 +172,14 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
     });
   });
 
-  it("startNewSession delegates the title to the store and returns the wire-mapped thread", async () => {
+  it("startNewSession delegates the title and the kind's auto-compact default to the store and returns the wire-mapped thread", async () => {
     const { store, calls } = makeStore();
     const adapter = makeAdapter(store);
 
     const wire = await adapter.experienceCopilotStartNewSession("script_1", "Renamed");
-    expect(calls.startNewSession).toEqual([{ scriptId: "script_1", title: "Renamed" }]);
+    // AP-20: the delegation carries the resolved default (the fake kind
+    // settings read ON) beside the title.
+    expect(calls.startNewSession).toEqual([{ scriptId: "script_1", title: "Renamed", autoCompact: true }]);
     expect(wire.title).toBe("Renamed");
     expect(wire.archivedAt).toBeNull();
   });

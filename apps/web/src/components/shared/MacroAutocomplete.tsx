@@ -141,7 +141,7 @@ export function MacroAutocomplete({
         aria-label="Macro picker"
       >
         {items.length === 0 ? (
-          <div className="px-3 py-2.5 font-ui text-[12px] text-t3">
+          <div className="px-3 py-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             {query ? <>No macro matches “{query}”.</> : "No macros available."}
           </div>
         ) : (
@@ -165,14 +165,14 @@ export function MacroAutocomplete({
                     isActive ? "bg-s2" : "bg-transparent",
                   )}
                 >
-                  <code className="shrink-0 font-mono text-[12px] text-accent-t">{`{{${entry.name}}}`}</code>
+                  <code className="shrink-0 font-mono text-[calc(var(--ui-fs)-2px)] text-accent-t">{`{{${entry.name}}}`}</code>
                   {matchingAliases.length > 0 ? (
-                    <span className="shrink-0 font-mono text-[11px] text-t3">
+                    <span className="shrink-0 font-mono text-[calc(var(--ui-fs)-3px)] text-t3">
                       · {matchingAliases.join(", ")}
                     </span>
                   ) : null}
-                  <span className="min-w-0 flex-1 truncate font-ui text-[11px] text-t3">{macroDescription(t, entry)}</span>
-                  <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[9px] uppercase tracking-[0.06em] text-t4">
+                  <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{macroDescription(t, entry)}</span>
+                  <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-5px)] uppercase tracking-[0.06em] text-t4">
                     {macroCategoryLabel(entry.category)}
                   </span>
                 </div>

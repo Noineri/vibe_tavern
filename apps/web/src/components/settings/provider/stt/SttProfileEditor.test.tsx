@@ -1,24 +1,20 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && "name" in params
         ? `${key}:${String(params.name)}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 // Live model discovery (P8): safe mock.module pattern — real module first,
 // spread, override ONLY the draft-models fetch. The editor effect debounces
@@ -28,7 +24,8 @@ const listSttDraftModelsMock = mock(async (_body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
-}) => [
+  source?: "stored";
+}): Promise<Array<{ id: string; label: string; isFree?: boolean }>> => [
   { id: "whisper-1", label: "Whisper v1" },
   { id: "gpt-4o-transcribe", label: "GPT-4o Transcribe", isFree: true },
 ]);
@@ -105,6 +102,24 @@ afterEach(async () => {
   listSttDraftModelsMock.mockClear();
 });
 
+describe("SttProfileEditor — view mode base card auto-key", () => {
+  it("an auto-matched keyless card counts as ready and does NOT name its source (the form does)", async () => {
+    const stt = makeStt({
+      profiles: [makeRecord({ autoKeyProviderName: "LLM Hub" })],
+      form: makeForm({ autoKeyProviderName: "LLM Hub" }),
+    });
+    const props = { stt } as unknown as React.ComponentProps<typeof SttProfileEditor>;
+    const view = render(React.createElement(SttProfileEditor, props));
+    await waitFor(() => expect(view.getByTestId("stt-base-card")).toBeTruthy());
+    const status = view.getByTestId("stt-base-card-status").textContent ?? "";
+    expect(status).toContain("api_key_saved");
+    expect(status).not.toContain("no_api_key");
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 2, owner
+    // 2026-10-15): the base card no longer carries the key-source hint.
+    expect(view.queryByTestId("stt-key-source-hint")).toBeNull();
+  });
+});
+
 describe("SttProfileEditor — view mode (level-2 recognition settings)", () => {
   it("renders the base card with the profile name; model picker + language below, NO endpoint field (connection-level)", async () => {
     const stt = makeStt();
@@ -125,6 +140,10 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
     const call = listSttDraftModelsMock.mock.calls[0][0];
     expect(call.backend).toBe("openai-compat");
     expect(call.profileId).toBe("p1");
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c, owner
+    // 2026-10-15): opening a SAVED profile asks for the server stored list,
+    // not a live listing.
+    expect(call.source).toBe("stored");
   });
 
   it("whisper-browser view hides the API key + shows the roster dropdown (no fetch)", async () => {
@@ -160,26 +179,21 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
     expect(view.queryByTestId("stt-field-language")).toBeNull();
   });
 
-  it("an empty model settles on the first fetched entry (D20 rule, the TTS twin)", async () => {
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c, owner
+  // 2026-10-15): the D20 rule (an empty model settles on the first fetched
+  // entry) is gone - the model is never auto-picked from the list, and no code
+  // rewrites a saved model. An empty model stays empty until the user picks.
+  it("an empty model STAYS empty: the fetched list is never auto-picked (D20 removed)", async () => {
     const stt = makeStt({
       form: makeForm({ config: { endpoint: "https://api.openai.com/v1" } }),
     });
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
-    await waitFor(() => expect(view.getByTestId("stt-field-model")).toBeTruthy());
-    await waitFor(
-      () => {
-        const calls = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
-        const settled = calls.some(
-          (patch) =>
-            patch !== undefined &&
-            typeof patch === "object" &&
-            "config" in patch &&
-            (patch["config"] as Record<string, unknown>)["model"] === "whisper-1",
-        );
-        expect(settled).toBe(true);
-      },
-      { timeout: 2000 },
-    );
+    await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
+    // The list has arrived once the refresh button leaves its loading state.
+    await waitFor(() => expect((view.getByTestId("stt-models-refresh") as HTMLButtonElement).disabled).toBe(false));
+    expect(view.getByTestId("stt-field-model").textContent).toBe("select_model");
+    const writes = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    expect(writes.some((patch) => patch !== undefined && "config" in patch)).toBe(false);
   });
 
   it("refresh button re-runs the fetch on demand", async () => {
@@ -191,6 +205,11 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
       view.getByTestId("stt-models-refresh").click();
     });
     await waitFor(() => expect(listSttDraftModelsMock.mock.calls.length).toBeGreaterThan(before));
+    // Step 11c: the refresh is the LIVE path - no stored marker (the server
+    // then lists upstream and replaces its stored copy); the open call before
+    // it was the stored read.
+    expect(listSttDraftModelsMock.mock.calls[0][0].source).toBe("stored");
+    expect("source" in listSttDraftModelsMock.mock.calls.at(-1)![0]).toBe(false);
   });
 });
 
@@ -240,6 +259,8 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     expect(call?.backend).toBe("openai-compat");
     expect(call?.profileId).toBe("p1");
     expect(call?.config["apiKey"]).toBe("sk-live");
+    // Step 11c: a connection test is never answered from the stored list.
+    expect("source" in (call ?? {})).toBe(false);
   });
 
   it("P10: a rejected probe shows the failure badge (probe semantics, no transcription)", async () => {
@@ -705,5 +726,84 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
     expect((configPatch!['config'] as Record<string, unknown>)['localServer']).toBe(true);
     // No model key rides the apply — the model is server-bound.
     expect((configPatch!['config'] as Record<string, unknown>)['model']).toBeUndefined();
+  });
+});
+
+// IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c (owner 2026-10-15: "the first
+// time you pick the model, after that it must not be requested again for
+// things to work"): a saved profile opens on the stored model list, the
+// refresh button is the only live path, and nothing about a pick re-lists.
+describe("SttProfileEditor - stored-first model listing (step 11c)", () => {
+  const listUrl = "https://api.openai.com/v1";
+  // Typed props seam: the file-wide never-cast is a ratchet-budgeted
+  // pattern (test-hygiene), so the tests added since do not extend it.
+  const props = (stt: ReturnType<typeof makeStt>) =>
+    ({ stt }) as unknown as React.ComponentProps<typeof SttProfileEditor>;
+
+  it("a draft (no id yet) lists live: no stored marker, no profile id", async () => {
+    const stt = makeStt({ form: makeForm({ id: null }) });
+    render(React.createElement(SttProfileEditor, props(stt)));
+    await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
+    const call = listSttDraftModelsMock.mock.calls[0][0];
+    expect("source" in call).toBe(false);
+    expect(call.profileId).toBeUndefined();
+  });
+
+  it("a failed OPEN is quiet (no error chip, empty picker); a failed REFRESH shows the error", async () => {
+    listSttDraftModelsMock.mockImplementationOnce(() => Promise.reject(new Error("upstream down")));
+    const view = render(React.createElement(SttProfileEditor, props(makeStt())));
+    await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
+    const refresh = view.getByTestId("stt-models-refresh") as HTMLButtonElement;
+    await waitFor(() => expect(refresh.disabled).toBe(false));
+    expect(view.queryByText("upstream down")).toBeNull();
+    expect(view.getByTestId("stt-field-model").textContent).toBe("whisper-1");
+
+    listSttDraftModelsMock.mockImplementationOnce(() => Promise.reject(new Error("refresh down")));
+    await act(async () => {
+      refresh.click();
+    });
+    await waitFor(() => expect(view.getByText("refresh down")).toBeTruthy());
+  });
+
+  it("picking a model or a language does not re-list or blank the picker", async () => {
+    const view = render(React.createElement(SttProfileEditor, props(makeStt())));
+    await waitFor(() => expect(view.getByTestId("stt-field-model").textContent).toBe("Whisper v1"), { timeout: 2000 });
+    const before = listSttDraftModelsMock.mock.calls.length;
+
+    const picked = makeStt({
+      form: makeForm({ config: { endpoint: listUrl, model: "gpt-4o-transcribe", language: "ru" } }),
+    });
+    view.rerender(React.createElement(SttProfileEditor, props(picked)));
+    // A re-run would have armed a loading state in this very commit.
+    expect((view.getByTestId("stt-models-refresh") as HTMLButtonElement).disabled).toBe(false);
+    // The list is intact: the pick resolves to its LABEL, not the bare id.
+    expect(view.getByTestId("stt-field-model").textContent).toBe("GPT-4o Transcribe");
+    expect(listSttDraftModelsMock.mock.calls.length).toBe(before);
+  });
+
+  it("a late list from the previous profile never lands on the one just opened", async () => {
+    let releaseLate: (list: Array<{ id: string; label: string }>) => void = () => {};
+    listSttDraftModelsMock.mockImplementationOnce(
+      () =>
+        new Promise<Array<{ id: string; label: string }>>((resolve) => {
+          releaseLate = resolve;
+        }),
+    );
+    const view = render(React.createElement(SttProfileEditor, props(makeStt())));
+    await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+    listSttDraftModelsMock.mockImplementationOnce(async () => [{ id: "gpt-4o-transcribe", label: "List of p2" }]);
+    const second = makeStt({
+      editingId: "p2",
+      profiles: [makeRecord({ id: "p2" })],
+      form: makeForm({ id: "p2", config: { endpoint: listUrl, model: "gpt-4o-transcribe" } }),
+    });
+    view.rerender(React.createElement(SttProfileEditor, props(second)));
+    await waitFor(() => expect(view.getByTestId("stt-field-model").textContent).toBe("List of p2"), { timeout: 2000 });
+
+    await act(async () => {
+      releaseLate([{ id: "gpt-4o-transcribe", label: "Late list of p1" }]);
+    });
+    expect(view.getByTestId("stt-field-model").textContent).toBe("List of p2");
   });
 });

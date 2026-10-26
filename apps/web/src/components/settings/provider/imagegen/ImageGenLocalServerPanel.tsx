@@ -119,7 +119,7 @@ export function ImageGenLocalServerPanel({
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="image-gen-setup-help-accordion">
         <div
           className={cn(
-            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
             helpOpen && "!rounded-b-none",
           )}
         >
@@ -133,7 +133,7 @@ export function ImageGenLocalServerPanel({
 
         <AnimatedDisclosure open={helpOpen} className="border-t border-border2 bg-surface p-4" data-testid="image-gen-setup-help-body">
           <div className="flex flex-col gap-3">
-            <div className="font-ui text-[11px] text-t4">{t("image_gen_local_help_hint")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_local_help_hint")}</div>
 
             {/* Step 1 — choose the server family (one card today; ComfyUI
                 and others join when their adapters land). */}
@@ -152,11 +152,11 @@ export function ImageGenLocalServerPanel({
                       selected ? "border-accent" : "border-border",
                     )}
                   >
-                    <span className="flex items-center gap-2 font-ui text-[12px] font-medium text-t1">
+                    <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
                       {selected && <Icons.Check />}
                       {guide.name}
                     </span>
-                    <span className="font-ui text-[11px] text-t3">{t(guide.descriptionKey)}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t(guide.descriptionKey)}</span>
                   </button>
                 );
               })}
@@ -178,14 +178,14 @@ export function ImageGenLocalServerPanel({
 
             <div
               data-testid="image-gen-help-terminal-hint"
-              className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4"
+              className="flex items-center justify-between gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
             >
               <span>{t("image_gen_local_terminal_hint")}</span>
               {checklist.total > 0 && (
                 <button
                   type="button"
                   data-testid="image-gen-help-reset-checks"
-                  className="shrink-0 cursor-pointer font-ui text-[11px] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
+                  className="shrink-0 cursor-pointer font-ui text-[calc(var(--ui-fs)-3px)] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
                   onClick={checklist.reset}
                 >
                   {t("image_gen_local_reset_checks")}
@@ -217,7 +217,7 @@ export function ImageGenLocalServerPanel({
                     );
                   })}
                   {s.noteKey !== undefined && (
-                    <div className="font-ui text-[11px] text-t4">{t(s.noteKey)}</div>
+                    <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t(s.noteKey)}</div>
                   )}
                 </div>
               );
@@ -237,7 +237,7 @@ export function ImageGenLocalServerPanel({
                       <button
                         type="button"
                         data-testid={`image-gen-help-use-${guide.id}`}
-                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-white transition-colors hover:bg-accent/90"
                         onClick={() => updateForm("endpoint", guide.endpoint)}
                       >
                         {t("image_gen_local_adopt")}
@@ -253,10 +253,10 @@ export function ImageGenLocalServerPanel({
                 means the GPU is busy with another local service. */}
             <div data-testid="image-gen-help-diagnosis" className="flex flex-col gap-1.5 border-t border-border2 pt-3">
               <label className={lblCls}>{t("image_gen_local_diag_title")}</label>
-              <div className="font-ui text-[11px] text-t3">{t("image_gen_local_diag_404")}</div>
-              <div className="font-ui text-[11px] text-t3">{t("image_gen_local_diag_gpu")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("image_gen_local_diag_404")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("image_gen_local_diag_gpu")}</div>
             </div>
-            {copyError !== null && <div className="font-ui text-[11px] text-danger">{copyError}</div>}
+            {copyError !== null && <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">{copyError}</div>}
           </div>
         </AnimatedDisclosure>
       </div>

@@ -1,12 +1,21 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import { installRadixPopoverSeam } from "../../../../../test/radix-popover-seam.js";
+import { installToggleSeam } from "../../../../../test/toggle-seam.js";
+import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
+import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotContextMetrics, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
+import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
-import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
-import { useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
+import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/agent-turn-store.js";
+import { useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
+import { useAgentPendingReviewStore } from "../../../../stores/agent-pending-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
 import type { ProviderProfileRecord } from "../../../../api/types.js";
 
@@ -30,6 +39,8 @@ interface RouterState {
   newSession: ExperienceCopilotThreadWire;
   activateReturns: ExperienceCopilotThreadWire | null;
   streamEvents: string[];
+  /** Fail this many following POST stream requests before opening their SSE body. */
+  nextStreamFailures: number;
   /** Per-thread messages override (session-switcher test); falls back to `messages`. */
   messagesFor?: (threadId: string) => ExperienceCopilotMessageWire[];
   /** Hold the SSE stream open (freeze test): no events until `releaseStream()`. */
@@ -39,8 +50,33 @@ interface RouterState {
   contextLinks: ExperienceCopilotContextLink[];
   /** CX-6: when true the context-links PATCH returns 500 (revert-path test). */
   contextLinksFail: boolean;
+  /** PM-6: the script-owned plan served by GET /api/scripts/:id/agent-plan.
+   *  Default empty — the AgentPlanPanel stays hidden for every test that does
+   *  not set it (mirrors the hidden-until-first-plan contract). */
+  agentPlan: AgentPlan;
+  /** AP-14: the context metrics served by GET …/context. Default null (no
+   *  usage data yet — the ring renders its idle slot and the meter body is
+   *  unmounted). Tests that drive the meter body set a metered fixture. */
+  contextMetrics: ExperienceCopilotContextMetrics | null;
 }
 let router: RouterState;
+
+/** PM-6: the empty plan — hidden panel. */
+const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
+
+/** AP-14: metered context metrics — the ring renders ring + % and the meter
+ *  body mounts inside its popover (inline here via this file's popover mock). */
+const CONTEXT_METRICS: ExperienceCopilotContextMetrics = {
+  systemTokens: 2500,
+  digestTokens: 1000,
+  historyTokens: 500,
+  attachedTokens: 0,
+  totalTokens: 4000,
+  budgetTokens: 10000,
+  reserveTokens: 1000,
+  source: "estimate",
+  measuredAt: "2026-08-15T00:00:00.000Z",
+};
 
 const jsonResponse = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -67,6 +103,8 @@ function makeDigest(threadId: string): ExperienceCopilotMessageWire {
     content: "summary",
     toolCallsJson: null,
     toolCallId: "u1",
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
   };
 }
@@ -91,11 +129,11 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse(router.activateReturns);
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
+    return jsonResponse({ metrics: router.contextMetrics, autoCompact: true });
   }
   if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
     const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
-    return jsonResponse({ metrics: null, autoCompact: body.autoCompact ?? true });
+    return jsonResponse({ metrics: router.contextMetrics, autoCompact: body.autoCompact ?? true });
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
     return jsonResponse(router.contextLinks);
@@ -113,6 +151,10 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse({ digest: makeDigest(threadId), metrics: null });
   }
   if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+    if (router.nextStreamFailures > 0) {
+      router.nextStreamFailures--;
+      return new Response(JSON.stringify({ error: { message: "pre-stream failure" } }), { status: 400 });
+    }
     if (router.holdStreamOpen) {
       return new Response(
         new ReadableStream<Uint8Array>({
@@ -132,6 +174,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
   // falls back to `String(null)` in build-config) — route on path SUFFIXES,
   // never exact equality.
+  if (method === "POST" && path.endsWith("/api/experience/test/discover")) return jsonResponse({ definition: TEST_RUN_DATA.definition });
   if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
   if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
   // CX-6: the shell fetches the mention catalog on mount (best-effort). Serve
@@ -141,6 +184,12 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
   if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
   if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: SKILL_CATALOG_ENTRIES, errors: [] });
+  // PM-6: the shell's useAgentPlan fetches the script-owned plan once per
+  // scriptId (module-level cache in use-agent-plan.ts — one GET per unique
+  // id per process, which is exactly what the apiCalls assertions below see).
+  if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
+    return jsonResponse({ plan: router.agentPlan });
+  }
   // Unmodeled endpoints (e.g. best-effort model-favorites) get a 404 body —
   // callers treat it like any RPC failure and swallow it.
   if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
@@ -194,25 +243,12 @@ mock.module("../../../shared/Tooltip.js", () => ({
 
 // The shared Toggle wraps Radix Switch (no happy-dom anchor); the shell test
 // renders the REAL meter (so its compact button is clickable) — stub the switch
-// to a plain button (Toggle's own behaviour is pinned in Toggle.test.tsx).
-const realToggle = await import("../../../shared/Toggle.js");
-mock.module("../../../shared/Toggle.js", () => ({
-  ...realToggle,
-  Toggle: ({
-    checked,
-    onChange,
-  }: {
-    checked: boolean;
-    onChange: (v: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="copilot-context-autocompact-toggle"
-      data-checked={checked ? "true" : "false"}
-      onClick={() => onChange(!checked)}
-    />
-  ),
-}));
+// to a plain button via the shared toggle seam (Toggle's own behaviour is
+// pinned in Toggle.test.tsx). CO-LOAD CONTRACT: the registration is live for
+// this file's own run only; real-arm riders (`getByRole("switch", …)` —
+// AgentSettingsModal et al.) re-register the REAL Toggle through the seam and
+// are no longer poisoned by this stub in a hand-bundled run.
+installToggleSeam({ stub: true });
 
 // Radix Select.Content / BottomSheet (vaul) do not mount under happy-dom, and
 // this test does not drive provider/model selection — render the trigger only.
@@ -225,12 +261,13 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
-// The ExperiencePlayground (inside the sandbox modal) drives BOTH
-// runExperienceTest (the auto-derive discovery and the absorbed tester's
-// discover) and startExperiencePlayground. Both are served by the fetch router
-// above (POST /api/experience/test/run and /api/experience/playground/start),
-// so the ER-14 send-to-copilot flow is observable through the REAL shell →
-// child → callback → controller → client → router wiring — with no module mocks.
+// The ExperiencePlayground (inside the sandbox modal) drives discoverExperience
+// (the auto-derive, discover-only), runExperienceTest (the absorbed tester's
+// discover) and startExperiencePlayground. All are served by the fetch router
+// above (POST /api/experience/test/discover, /test/run and
+// /api/experience/playground/start), so the ER-14 send-to-copilot flow is
+// observable through the REAL shell → child → callback → controller → client →
+// router wiring — with no module mocks.
 // CX-6: the shell's mount-time catalog fetch hits the skills endpoint; the
 // loader test seeds one entry so the pinned pill resolves its display label.
 const SKILL_CATALOG_ENTRIES = [
@@ -287,25 +324,24 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
-// The copilot profile modal (opened by the session-line gear) is tested in its
-// own suite — stub it here so the gear test only pins the gear → modal wiring
-// (click sets profileModalOpen → the modal mounts). SAFE: capture real first.
-const realCopilotProfileModal = await import("./CopilotProfileModal.js");
-mock.module("./CopilotProfileModal.js", () => ({
-  ...realCopilotProfileModal,
-  CopilotProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="copilot-profile-modal-stub" /> : null),
+// The assistant settings summary (opened by the session-line gear) is tested
+// in its own suite — stub it here so the gear test only pins the gear →
+// modal wiring (click sets settingsModalOpen → the modal mounts). SAFE:
+// capture real first.
+const realAgentSettingsModal = await import("../../../shared/agent-shell/AgentSettingsModal.js");
+mock.module("../../../shared/agent-shell/AgentSettingsModal.js", () => ({
+  ...realAgentSettingsModal,
+  AgentSettingsModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="agent-settings-modal-stub" /> : null),
 }));
 
 // Radix Popover.Content never mounts under happy-dom (Popper anchors via a 0x0
-// getBoundingClientRect — see LinkBindingPopover.test.tsx). Render it inline so
-// the ExperienceSessionSwitcher's session list is clickable here.
-mock.module("@radix-ui/react-popover", () => ({
-  Root: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Trigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Portal: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Content: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Anchor: () => null,
-}));
+// getBoundingClientRect — see LinkBindingPopover.test.tsx). The shared
+// radix-popover seam with `stubAllRoots` keeps this suite's legacy semantics —
+// the shell's pins read the context-ring meter at rest and click through
+// WITHOUT opening the ring, so even the CONTROLLED Roots must render inline
+// here. The registration is live only for this file's own run (sequential
+// hand-bundle), so the real-arm riders after it keep the real Radix.
+installRadixPopoverSeam({ stubAllRoots: true });
 
 // ExperienceFrame renders a sandboxed iframe served from a blob URL; its
 // DOM/CSP/URL lifecycle is pinned in ExperienceFrame.test.tsx. The shell test
@@ -326,6 +362,8 @@ let EditorView: typeof import("@codemirror/view").EditorView;
 let EditorState: typeof import("@codemirror/state").EditorState;
 
 const realFetch = globalThis.fetch;
+const outcomesBeforeShellSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
+const supersededBeforeShellSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
 beforeAll(async () => {
   globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
@@ -335,6 +373,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
+  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -362,6 +401,8 @@ function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilo
     content: "hello",
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
     createdAt: "",
     ...over,
   };
@@ -388,20 +429,25 @@ function hasHiddenClass(el: HTMLElement): boolean {
 
 beforeEach(() => {
   mobileOverride = false;
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
-  useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  // AP-15: the pending-review summary seam — same rationale (an unmounted
+  // test's entry must not leak into the next mount).
+  useAgentPendingReviewStore.setState({ summariesByThread: {} });
   localStorage.clear();
   // CX-6: the mention catalog reads the live snapshot store — reset it so a
   // previous test's seeded characters don't leak into the next test's popover.
   useSnapshotStore.setState({ allCharacters: [] });
   useProviderDataStore.setState({ profiles: PROFILES });
-  // Reset the persisted copilot binding between tests (the shell restores it).
+  // Reset the persisted per-kind binding between tests (the shell restores
+  // it from the bootstrap map — SC-0e; the legacy global pair is untouched).
   const current = useBootstrapStore.getState().data;
   if (current) {
-    useBootstrapStore.setState({ data: { ...current, uiSettings: { ...current.uiSettings, copilotProviderId: null, copilotModelName: null } } });
+    useBootstrapStore.setState({ data: { ...current, agentKindSettings: {} } });
   }
   router = {
     activeThread: null,
@@ -410,13 +456,42 @@ beforeEach(() => {
     newSession: thread("thread-new"),
     activateReturns: null,
     streamEvents: [FINISH_STOP],
+    nextStreamFailures: 0,
     holdStreamOpen: false,
     releaseStream: null,
     contextLinks: [],
     contextLinksFail: false,
+    agentPlan: EMPTY_PLAN,
+    contextMetrics: null,
   };
   fetchRouter.mockClear();
 });
+
+// Per-test isolated i18next instance (empty resources ⇒ t() returns the key
+// verbatim, so every key-based assertion keeps passing). This silences
+// react-i18next's NO_I18NEXT_INSTANCE warning from the @-mention popover
+// WITHOUT touching the process-global i18n singleton: initI18n() has no reset
+// and would poison sibling files sharing the worker (R13).
+function makeIsolatedI18n() {
+  const instance = createInstance();
+  void instance.init({
+    lng: "en",
+    fallbackLng: "en",
+    resources: {},
+    ns: ["translation"],
+    defaultNS: "translation",
+    keySeparator: false,
+    nsSeparator: false,
+    interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+  });
+  return instance;
+}
+
+// The provider must wrap BOTH the initial render and every rerender: a root
+// element type change between render and rerender unmounts/remounts the tree.
+function withIsolatedI18n(node: ReactNode) {
+  return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
+}
 
 function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {}) {
   const props = {
@@ -430,7 +505,7 @@ function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]>
     onVisualChange: mock(),
     ...over,
   };
-  const utils = render(<ExperienceCopilotShell {...props} />);
+  const utils = render(withIsolatedI18n(<ExperienceCopilotShell {...props} />));
   return { ...utils, props };
 }
 
@@ -475,7 +550,7 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
     await flushSessionLoad();
 
     // MessageList's empty state (thread exists but no messages/activities).
-    expect(getByText("experience_copilot_subtitle")).toBeDefined();
+    expect(getByText("agent_subtitle")).toBeDefined();
     expect(apiCalls("GET", /\/script\/script-1\/active$/)).toHaveLength(1);
     expect(apiCalls("POST", /\/script\/script-1\/session$/)).toHaveLength(1);
     expect(apiCalls("GET", /messages$/)).toHaveLength(0);
@@ -483,15 +558,21 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
 });
 
 describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", () => {
-  it("mounts the meter once a thread is loaded and compacts on click (POST → refetch)", async () => {
+  it("mounts the ring once a thread is loaded and compacts on click (POST → refetch)", async () => {
     router.activeThread = thread("thread-1");
     router.messages = [
       msg({ id: "u1", role: "user", content: "Make it scarier" }),
     ];
+    // AP-14 plan row — the meter row leaves the chat pane: the ring (with
+    // the meter body inside its popover — inline here via this file's
+    // popover mock) is what mounts once a thread is loaded, and the compact
+    // flow goes through it.
+    router.contextMetrics = CONTEXT_METRICS;
 
     const { getByTestId } = renderShell();
     await flushSessionLoad();
 
+    expect(getByTestId("copilot-context-ring")).toBeDefined();
     expect(getByTestId("copilot-context-meter")).toBeDefined();
     const callsBefore = apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length;
 
@@ -506,31 +587,113 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
   });
 });
 
-describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
+describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
+  // The plan owner cache in use-agent-plan.ts is MODULE-level (one entry per
+  // script id, never evicted), so every case here renders the shell with a
+  // UNIQUE scriptId — that is what makes `router.agentPlan` deterministic per
+  // test despite the shared cache (same trick the review tests use for
+  // buffer content).
+  const PLAN: AgentPlan = {
+    goal: "Ship the editor",
+    constraints: [],
+    tasks: [
+      { id: "t1", title: "Design the turn loop", body: "", status: "completed" },
+      { id: "t2", title: "Write the rules buffer", body: "", status: "active" },
+      { id: "t3", title: "Bind the visual", body: "", status: "pending" },
+    ],
+  };
+
+  it("mounts the AgentPlanPanel DIRECTLY below the header, fed by useAgentPlan's GET", async () => {
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+
+    const { getByTestId } = renderShell({ scriptId: "script-plan-mount" });
+    await flushSessionLoad();
+
+    // AP-14 plan row — the meter row leaves the chat pane, so the
+    // mount-order anchor moves from the meter to the header: the panel is
+    // the header's IMMEDIATE next sibling (the pinned stack is now
+    // header → panel → feed). The gear is a direct header child, so its
+    // parent IS the header row — mock-agnostic (portal or inline alike).
+    await waitFor(() => {
+      const panel = getByTestId("agent-plan-panel");
+      const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+      expect(header.nextElementSibling).toBe(panel);
+    });
+    // Fed by the hook: collapsed summary shows the active task + remaining.
+    const panel = getByTestId("agent-plan-panel");
+    expect(panel.getAttribute("data-state")).toBe("collapsed");
+    expect(panel.textContent).toContain("Write the rules buffer");
+    expect(panel.textContent).toContain("· 2");
+    // The panel's data came over the script-scoped route (not the thread wire).
+    expect(apiCalls("GET", /\/api\/scripts\/script-plan-mount\/agent-plan$/)).toHaveLength(1);
+  });
+
+  it("stays hidden when the stored plan is empty", async () => {
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = EMPTY_PLAN;
+
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-plan-empty" });
+    await flushSessionLoad();
+
+    // AP-14: the meter row is gone — the header holds the ring's idle slot
+    // (no usage data yet) while the empty plan stays hidden.
+    expect(getByTestId("copilot-context-ring-idle")).toBeDefined();
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
+  });
+
+  it("locks the editor button while a turn streams (locked = ctrl.isSending)", async () => {
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+    // Hang the stream so isSending stays true while we assert the locked state.
+    router.holdStreamOpen = true;
+
+    const { container, getByTestId } = renderShell({ scriptId: "script-plan-locked" });
+    await flushSessionLoad();
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+
+    const editorButton = getByTestId("agent-plan-open-editor");
+    expect((editorButton as HTMLButtonElement).disabled).toBe(false);
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+
+    await waitFor(() => expect((getByTestId("agent-plan-open-editor") as HTMLButtonElement).disabled).toBe(true));
+  });
+});
+
+describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
   const PLAN = [
     { status: "completed", title: "Design the turn loop" },
     { status: "active", title: "Write the rules buffer" },
     { status: "pending", title: "Bind the visual" },
   ] as const;
 
-  it("mounts the panel DIRECTLY below the meter, seeded from the thread wire todo", async () => {
+  it("mounts the panel DIRECTLY below the header, seeded from the thread wire todo", async () => {
     router.activeThread = { ...thread("thread-1"), todo: [...PLAN] };
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
 
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    const meter = getByTestId("copilot-context-meter");
     const panel = getByTestId("copilot-todo-panel");
-    // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
-    // stack is header → meter → panel → feed).
-    expect(meter.nextElementSibling).toBe(panel);
+    // AP-14 plan row — the meter row leaves the chat pane, so the
+    // mount-order anchor moves from the meter to the header (the pinned
+    // stack is now header → todo → plan → feed; the plan panel is hidden
+    // here because the stored plan is empty — the independent-hiding contract).
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(panel);
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
     // Seeded from the wire: collapsed summary shows the active goal + remaining.
     expect(panel.getAttribute("data-state")).toBe("collapsed");
     expect(panel.textContent).toContain("Write the rules buffer");
     expect(panel.textContent).toContain("· 2");
     // The panel state went through the session-scoped store (not local).
-    expect(useExperienceCopilotTurnStore.getState().getTodo("thread-1")).toHaveLength(3);
+    expect(useAgentTurnStore.getState().getTodo("experience", "thread-1")).toHaveLength(3);
   });
 
   it("stays hidden when the thread wire todo is empty", async () => {
@@ -540,7 +703,9 @@ describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    // AP-14: the meter row is gone — the header holds the ring's idle slot
+    // (no usage data yet) while the empty todo stays hidden.
+    expect(getByTestId("copilot-context-ring-idle")).toBeDefined();
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
   });
 
@@ -553,7 +718,7 @@ describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
 
     act(() => {
-      useExperienceCopilotTurnStore.getState().setTodo("thread-1", [
+      useAgentTurnStore.getState().setTodo("experience", "thread-1", [
         { status: "active", title: "Fresh plan step" },
       ]);
     });
@@ -561,6 +726,71 @@ describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
     const panel = getByTestId("copilot-todo-panel");
     expect(panel.textContent).toContain("Fresh plan step");
     expect(panel.textContent).toContain("· 1");
+  });
+});
+
+describe("ExperienceCopilotShell — todo + plan coexistence (PM-7)", () => {
+  const TODO = [
+    { status: "active", title: "Tweak the copy" },
+  ] as const;
+  const PLAN: AgentPlan = {
+    goal: "Ship the editor",
+    constraints: [],
+    tasks: [
+      { id: "t1", title: "Design the turn loop", body: "", status: "completed" },
+      { id: "t2", title: "Write the rules buffer", body: "", status: "active" },
+    ],
+  };
+
+  it("both panels mounted: todo DIRECTLY ABOVE the plan section (owner ruling: todo = session, plan = script)", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...TODO] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+
+    const { getByTestId } = renderShell({ scriptId: "script-coexist-both" });
+    await flushSessionLoad();
+
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+    const todoPanel = getByTestId("copilot-todo-panel");
+    const planPanel = getByTestId("agent-plan-panel");
+    // AP-14: the meter row is gone — pinned stack header → TODO → PLAN →
+    // feed, todo above plan; the todo↔plan adjacency pin is unchanged.
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(todoPanel);
+    expect(todoPanel.nextElementSibling).toBe(planPanel);
+    // Both render their own data (todo's current step; plan's active task).
+    expect(todoPanel.textContent).toContain("Tweak the copy");
+    expect(planPanel.textContent).toContain("Write the rules buffer");
+  });
+
+  it("each panel hides independently: plan shown while todo empty", async () => {
+    router.activeThread = thread("thread-1"); // todo: [] → todo hidden
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-coexist-plan-only" });
+    await flushSessionLoad();
+
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+    // AP-14: the meter row is gone — the plan panel is the header's
+    // immediate sibling again (todo rendered nothing).
+    const header = getByTestId("copilot-profile-gear-btn").parentElement as HTMLElement;
+    expect(header.nextElementSibling).toBe(getByTestId("agent-plan-panel"));
+  });
+
+  it("each panel hides independently: todo shown while the plan is empty", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...TODO] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = EMPTY_PLAN;
+
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-coexist-todo-only" });
+    await flushSessionLoad();
+
+    expect(getByTestId("copilot-todo-panel")).toBeDefined();
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
+    // Session switching never touches the plan: it stays the empty-plan GET.
+    expect(apiCalls("GET", /\/api\/scripts\/script-coexist-todo-only\/agent-plan$/)).toHaveLength(1);
   });
 });
 
@@ -641,7 +871,7 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
 
     // XU-5: a non-empty visual source defaults to the Preview tab — navigate to
     // Code to reach the editor.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
 
     const cmEl = container.querySelector<HTMLElement>(".cm-editor");
     expect(cmEl).not.toBeNull();
@@ -650,7 +880,7 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
     expect(view!.state.doc.toString()).toBe("// rules buffer");
 
     // Switch to the Visual buffer.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // CodeEditor syncs the external value without clobbering the editor.
     expect(view!.state.doc.toString()).toBe("// visual buffer");
@@ -680,10 +910,10 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     // Banner only exists on the code tab's Visual buffer — preview (the default
     // here, since a visual source exists) has no validator.
     expect(first.queryByTestId("copilot-visual-validator")).toBeNull();
-    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_code" }));
-    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(first.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(first.getByRole("radio", { name: "agent_visual" }));
 
-    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_problems");
+    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("agent_visual_problems");
     expect(first.getByTestId("copilot-visual-validator").textContent).toContain("script block 1");
     first.unmount();
 
@@ -691,9 +921,9 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     const clean = "<style>.x{c:red}</style>\n<div></div>\n<script>var a = 1;</script>";
     const second = renderShell({ visualSource: clean });
     await flushSessionLoad();
-    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_code" }));
-    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_visual" }));
-    expect(second.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_valid");
+    fireEvent.click(second.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(second.getByRole("radio", { name: "agent_visual" }));
+    expect(second.getByTestId("copilot-visual-validator").textContent).toContain("agent_visual_valid");
   });
 });
 
@@ -707,9 +937,9 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
 
     // XU-6 (quote 10): the 3-position toggle is ALWAYS present — the old
     // "Test it" sandbox button is gone (the Try tab replaces it).
-    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     // XU-5: the preview button is gone — preview is the default editor tab.
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     // XU-6: the sandbox "Test it" button is gone (the Try tab replaces it).
@@ -746,7 +976,7 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     expect(queryByTestId("experience-frame-stub")).toBeNull();
 
     // Switch to Preview → the empty-state (no frame).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    fireEvent.click(getByRole("radio", { name: "agent_preview" }));
     expect(getByText("experience_playground_no_visual")).toBeDefined();
     expect(queryByTestId("experience-frame-stub")).toBeNull();
   });
@@ -755,7 +985,7 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     const { getByRole, getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     // XU-6: the shared playground element mounts INLINE on the Try tab — the
     // sandbox modal is gone entirely.
@@ -764,18 +994,20 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   });
 });
 
-describe("ExperienceCopilotShell — copilot profile gear (CP-8)", () => {
-  it("opens the profile modal from the session-line gear button", async () => {
+describe("ExperienceCopilotShell — assistant settings gear (CP-8 / AP-27)", () => {
+  it("opens the settings summary from the session-line gear button", async () => {
+    // AP-27 was: the gear opened the profile modal directly; now (mockup
+    // §4): it opens the settings summary (the profile modal is its child).
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
     // The gear lives on the session line (rendered once a thread exists).
     expect(getByTestId("copilot-profile-gear-btn")).toBeDefined();
-    expect(queryByTestId("copilot-profile-modal-stub")).toBeNull();
+    expect(queryByTestId("agent-settings-modal-stub")).toBeNull();
 
     fireEvent.click(getByTestId("copilot-profile-gear-btn"));
 
-    expect(getByTestId("copilot-profile-modal-stub")).toBeDefined();
+    expect(getByTestId("agent-settings-modal-stub")).toBeDefined();
   });
 });
 
@@ -802,13 +1034,13 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(false);
     expect(hasHiddenClass(editPane)).toBe(true);
 
-    fireEvent.click(getByRole("tab", { name: "experience_copilot_tab_edit" }));
+    fireEvent.click(getByRole("tab", { name: "agent_tab_edit" }));
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
     // The unified outer toggle lives in the Edit pane: the Try tab is present
     // (XU-6 — the old sandbox "Test it" button is gone).
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
   });
 
   it("guards the whole mobile flex column with min-w-0 (4a: the 844px tablist blow-out)", async () => {
@@ -875,7 +1107,7 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the rules slot is rendered.
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(queryByTestId("rules-toolbar-slot")).toBeNull();
   });
 
@@ -888,10 +1120,10 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the visual slot is absent.
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(getByRole("radio", { name: "agent_rules" }));
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
   });
 });
@@ -903,16 +1135,16 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
 
     // Identity i18n: the creation labels resolve through `t` (key-as-string
     // fallback without a LocaleProvider).
-    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
   });
 
   it("try position renders the playground inline and hides the code editor + toolbar buttons", async () => {
     const { container, getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     // The shared playground element mounts INLINE.
     expect(queryByTestId("experience-playground")).toBeTruthy();
@@ -929,7 +1161,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     const { getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
   });
 
@@ -958,7 +1190,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     await flushSessionLoad();
 
     // Default is Code (rules); switch the inner sub-toggle to Visual.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
@@ -971,7 +1203,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     const { getByRole, getByText, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    fireEvent.click(getByRole("radio", { name: "agent_preview" }));
     expect(getByText("experience_playground_no_visual")).toBeDefined();
     expect(queryByTestId("copilot-preview-modal")).toBeNull();
     // XU-4: the tester modal is gone entirely.
@@ -979,10 +1211,12 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
   });
 });
 
-describe("ExperienceCopilotShell — provider binding persistence", () => {
-  /** Seed the persisted uiSettings copilot binding. The bootstrap store starts
-   * empty in tests (no bootstrap fetch), so synthesize a minimal data record
-   * when needed — the shell only reads `data.uiSettings` from it. */
+describe("ExperienceCopilotShell — provider binding persistence (SC-0e: per-kind)", () => {
+  /** Seed the persisted per-kind binding. The bootstrap store starts empty
+   * in tests (no bootstrap fetch), so synthesize a minimal data record when
+   * needed — the shell only reads `data.agentKindSettings["experience"]`
+   * from it (was: the global `uiSettings` copilot pair — owner decision 2
+   * moved the source to the kind's settings, SC-0d/0e). */
   function seedBinding(providerId: string | null, modelName: string | null): void {
     const current = useBootstrapStore.getState().data;
     const base = current ?? {
@@ -1007,12 +1241,24 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
         copilotModelName: null,
         updatedAt: "",
       },
+      agentKindSettings: {},
       isArmServer: false,
     };
     useBootstrapStore.setState({
       data: {
         ...base,
-        uiSettings: { ...base.uiSettings, copilotProviderId: providerId, copilotModelName: modelName },
+        agentKindSettings: {
+          ...base.agentKindSettings,
+          experience: {
+            agentKind: "experience",
+            providerProfileId: providerId,
+            modelName,
+            defaultProfileId: null,
+            updatedAt: "",
+            servesChatModes: [],
+            autoCompactDefault: true,
+          },
+        },
       },
     });
   }
@@ -1067,12 +1313,13 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch to the Try tab (inline playground) and open its collapsed
     // diagnostics disclosure; run the absorbed discover ("Validate rules").
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_diagnostics"));
     fireEvent.click(getByText("experience_tester_run"));
-    // The playground's auto-derive also POSTs run once on mount, so the explicit
-    // discover is the SECOND call.
-    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(2));
+    // The playground's auto-derive POSTs the discover-only endpoint once on mount;
+    // the explicit discover is the ONLY run call.
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/discover$/).length).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1));
     // Wait for the result to render (the definition block appears after setTesterResult).
     await findByText("experience_tester_definition");
 
@@ -1087,7 +1334,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch back to the Code tab so the inline playground unmounts (only the
     // chat input textarea remains in the container).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
 
     // The digest text sits in the chat input, prefilled for the user to send.
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
@@ -1113,7 +1360,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await flushSessionLoad();
 
     // Switch to the Try tab (inline playground) + start a session.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/playground\/start$/)).toHaveLength(1));
     // Wait for the session to render (the turn title appears after setSession).
@@ -1130,7 +1377,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch back to the Code tab so the inline playground unmounts, then send
     // the prefilled digest manually.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     expect(textarea.value.length).toBeGreaterThan(0);
     fireEvent.click(getByTestId("copilot-send-btn"));
@@ -1196,13 +1443,15 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     // The parent applies a change (e.g. the user accepted a proposal / edited
     // by hand): the buffer drifted from the turn-start snapshot.
     rerender(
-      <ExperienceCopilotShell
-        scriptId="script-1"
-        rulesCode="// rules buffer v2"
-        visualSource="// visual buffer"
-        onRulesChange={onRulesChange}
-        onVisualChange={mock()}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          scriptId="script-1"
+          rulesCode="// rules buffer v2"
+          visualSource="// visual buffer"
+          onRulesChange={onRulesChange}
+          onVisualChange={mock()}
+        />,
+      ),
     );
     expect(getByTestId("copilot-toolbar-revert")).toBeDefined();
 
@@ -1222,26 +1471,709 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
 
     // Drift the rules buffer while on the rules position: revert visible…
     rerender(
-      <ExperienceCopilotShell
-        scriptId="script-1"
-        rulesCode="// rules buffer v2"
-        visualSource="// visual buffer"
-        onRulesChange={mock()}
-        onVisualChange={mock()}
-        creationMode
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          scriptId="script-1"
+          rulesCode="// rules buffer v2"
+          visualSource="// visual buffer"
+          onRulesChange={mock()}
+          onVisualChange={mock()}
+          creationMode
+        />,
+      ),
     );
     expect(queryByTestId("copilot-toolbar-revert")).not.toBeNull();
     // …but the try (sandbox) position has no code editor / review affordances.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
+  });
+});
+
+describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+
+  function ControlledShell({ initialRules = BASE, rulesOverride, onRulesCode }: { initialRules?: string; rulesOverride?: string; onRulesCode?: (rules: string) => void }) {
+    const [rulesCode, setRulesCode] = useState(initialRules);
+    useEffect(() => {
+      if (rulesOverride !== undefined) setRulesCode(rulesOverride);
+    }, [rulesOverride]);
+    return (
+      <ExperienceCopilotShell
+        scriptId="ro4-supervisor-script"
+        rulesCode={rulesCode}
+        onRulesChange={(rules) => {
+          setRulesCode(rules);
+          onRulesCode?.(rules);
+        }}
+        visualSource=""
+        onVisualChange={() => {}}
+        rulesSaved={rulesCode === initialRules}
+        visualSaved={true}
+      />
+    );
+  }
+
+  async function sendFollowup(utils: ReturnType<typeof render>, content: string, count: number) {
+    const textarea = utils.container.querySelector<HTMLTextAreaElement>("textarea")!;
+    fireEvent.change(textarea, { target: { value: content } });
+    fireEvent.click(utils.getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(count));
+    await flushSessionLoad();
+    return experienceCopilotStreamRequestSchema.parse(streamCalls()[count - 1]!.body);
+  }
+
+  async function openReview(utils: ReturnType<typeof render>, threadId: string) {
+    return openReviewProposal(utils, threadId, PROPOSED);
+  }
+
+  /** RO-6: the raw stream bodies this mounted flow sent (1-based call numbers), pinned
+   *  against the shared fixture the server suite replays into the provider prompt. */
+  function sentCopilotRequests(scenario: string, calls: readonly number[]): ReviewOutcomeFixture {
+    const sent = streamCalls();
+    return {
+      surface: "copilot",
+      scenario,
+      requests: calls.map((call) => ({ mode: "stream" as const, body: sent[call - 1]!.body })),
+    };
+  }
+
+  async function openReviewProposal(utils: ReturnType<typeof render>, threadId: string, proposed: string) {
+    await flushSessionLoad();
+    await sendFollowup(utils, "propose changes", 1);
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "rules",
+        proposed,
+        summary: "header and tail",
+      });
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+  }
+
+  function awaitingAskMessages(threadId: string): ExperienceCopilotMessageWire[] {
+    const toolCallId = "ro4-ask-tool-call";
+    const question = "Which buffer should change?";
+    const options = ["Rules", "Visual"];
+    return [
+      msg({ id: "ro4-ask-user", threadId, role: "user", content: "Please clarify" }),
+      msg({
+        id: "ro4-ask-carrier",
+        threadId,
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId, toolName: "ask_user", input: { question, options, recommended: "Rules" } }]),
+      }),
+      msg({
+        id: "ro4-ask-result",
+        threadId,
+        role: "tool",
+        toolCallId,
+        content: JSON.stringify({ toolName: "ask_user", output: { status: "awaiting_answer", question, options, recommended: "Rules" } }),
+      }),
+    ];
+  }
+
+  it("toolbar revert of a fully accepted round reports cancelled on two following HTTP turns", async () => {
+    const threadId = "ro4-supervisor-full-revert";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    fireEvent.click(utils.getByTestId("copilot-toolbar-revert"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-toolbar-revert")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain revert ${count}`, count);
+      expect(body.rules).toBe(BASE);
+      expect(body.rulesSaved).toBe(true);
+      expect(body.visualSaved).toBe(true);
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    }
+    await expectReviewOutcomeFixture("copilot-revert-cancelled", sentCopilotRequests("toolbar revert of a fully accepted round, two following turns", [2, 3]));
+  });
+
+  it("cancel of a partially accepted round retains cancelled rather than recomputing rejected in HTTP", async () => {
+    const threadId = "ro4-supervisor-partial-cancel";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    const body = await sendFollowup(utils, "explain cancelled review", 2);
+    expect(body.rules).toBe(BASE);
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    await expectReviewOutcomeFixture("copilot-partial-cancel", sentCopilotRequests("cancel of a partially accepted round", [2]));
+  });
+
+  it("reverting accepted rules preserves a rejected visual outcome that never changed the buffer", async () => {
+    const threadId = "ro4-supervisor-revert-target-isolation";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-visual-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "visual",
+        proposed: "<div>proposed visual</div>",
+        summary: "visual proposal",
+      });
+    });
+    fireEvent.click(utils.getByRole("radio", { name: "agent_visual" }));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    fireEvent.click(utils.getByRole("radio", { name: "agent_rules" }));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    fireEvent.click(utils.getByTestId("copilot-toolbar-revert"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-toolbar-revert")).toBeNull());
+
+    const body = await sendFollowup(utils, "explain rules-only revert", 2);
+    expect(body.rules).toBe(BASE);
+    expect(body.visual).toBe("");
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({ outcome: "rejected" });
+    await expectReviewOutcomeFixture("copilot-revert-rules-keep-visual-rejection", sentCopilotRequests("rules revert beside a rejected visual proposal", [2]));
+  });
+
+  it("a replacement proposal reports the superseded round identity without inheriting its applied hunks", async () => {
+    const threadId = "ro4-supervisor-supersession";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    const priorBody = await sendFollowup(utils, "revise the pending proposal", 2);
+    const prior = priorBody.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(prior).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-replacement-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "rules",
+        proposed: "// RULES v3\nconst keep = 1;\nconst tail = 333.",
+        summary: "revised header and tail",
+      });
+    });
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+
+    const body = await sendFollowup(utils, "explain the replacement", 3);
+    const current = body.reviewSnapshot?.targets.find((target) => target.target === "rules" && target.roundId !== prior?.roundId);
+    expect(current).toMatchObject({ outcome: "awaiting", hunks: { accepted: 0, rejected: 0, pending: 2 } });
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules" && target.roundId === prior?.roundId)).toMatchObject({
+      outcome: "superseded",
+      supersededByRound: current?.roundId,
+    });
+    await expectReviewOutcomeFixture("copilot-supersession", sentCopilotRequests("a replacement proposal supersedes a partially applied round", [2, 3]));
+  });
+
+  it("retries a failed normal send with the same partial review snapshot and independent save flags", async () => {
+    const threadId = "ro4-normal-retry";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    router.nextStreamFailures = 1;
+    const failed = await sendFollowup(utils, "retry this review", 2);
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    const retried = await sendFollowup(utils, "retry this review", 3);
+    const failedReview = failed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const retriedReview = retried.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(failed).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(retriedReview).toEqual(failedReview);
+    expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1);
+    await expectReviewOutcomeFixture("copilot-send-error-retry", sentCopilotRequests("failed normal send and its retry", [2, 3]));
+  });
+
+  it("rolls back a failed ask answer and retries its review snapshot through the rendered ask card", async () => {
+    const threadId = "ro4-ask-retry";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    router.messages = awaitingAskMessages(threadId);
+    await sendFollowup(utils, "show the question", 2);
+    await waitFor(() => expect(utils.getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("awaiting"));
+
+    router.nextStreamFailures = 1;
+    fireEvent.click(utils.getByTestId("copilot-ask-chip-0"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(3));
+    await waitFor(() => expect(utils.getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("awaiting"));
+    const failed = experienceCopilotStreamRequestSchema.parse(streamCalls()[2]!.body);
+
+    fireEvent.click(utils.getByTestId("copilot-ask-chip-0"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(4));
+    const retried = experienceCopilotStreamRequestSchema.parse(streamCalls()[3]!.body);
+    const failedReview = failed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const retriedReview = retried.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(failed.answer).toEqual({ toolCallId: "ro4-ask-tool-call", text: "Rules" });
+    expect(retried.answer).toEqual(failed.answer);
+    expect(failed).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(retriedReview).toEqual(failedReview);
+    await expectReviewOutcomeFixture("copilot-ask-answer-retry", sentCopilotRequests("failed ask_user answer and its retry", [3, 4]));
+  });
+
+  it("keeps only cleanly anchored accepted hunks applied across two HTTP turns", async () => {
+    const threadId = "ro4-accept-drift";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    utils.rerender(withIsolatedI18n(<ControlledShell rulesOverride={BASE.replace("// rules buffer", "// external header")} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    const first = await sendFollowup(utils, "explain anchored change", 2);
+    const second = await sendFollowup(utils, "explain anchored change again", 3);
+    const firstReview = first.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const secondReview = second.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(first.rules).toContain("// external header");
+    expect(first.rules).toContain("const tail = 22.");
+    expect(first).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(secondReview).toEqual(firstReview);
+    await expectReviewOutcomeFixture("copilot-manual-edit-before-accept", sentCopilotRequests("manual buffer edit, then accept-all applies only anchored hunks", [2, 3]));
+  });
+
+  it("resolves an explicit tooLarge acceptance when the live parent buffer already equals the proposal", async () => {
+    const threadId = "ro4-too-large-already-applied";
+    const base = Array.from({ length: 900 }, (_, index) => `base-${index}`).join("\n");
+    const proposed = Array.from({ length: 900 }, (_, index) => `proposed-${index}`).join("\n");
+    const onRulesCode = mock();
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={onRulesCode} />));
+    await openReviewProposal(utils, threadId, proposed);
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={proposed} onRulesCode={onRulesCode} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const body = await sendFollowup(utils, "explain wholesale acceptance", 2);
+    const review = body.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(body.rules).toBe(proposed);
+    expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(review).toMatchObject({ outcome: "applied", hunks: { accepted: 1, rejected: 0, pending: 0 } });
+    expect(onRulesCode).not.toHaveBeenCalled();
+  });
+
+  it("cancelling a drifted round retains only accepted hunks whose reverse anchor still exists", async () => {
+    const threadId = "ro4-cancel-drift";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={liveRules.replace("A: new", "A: drift")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    const first = await sendFollowup(utils, "explain partial cancellation", 2);
+    const second = await sendFollowup(utils, "explain partial cancellation again", 3);
+    const firstReview = first.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const secondReview = second.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(first.rules).toContain("A: drift");
+    expect(first.rules).toContain("B: old");
+    expect(first.rules).toContain("C: old");
+    expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
+    expect(secondReview).toEqual(firstReview);
+    await expectReviewOutcomeFixture("copilot-cancel-after-manual-edit", sentCopilotRequests("manual edit after a partial accept, then cancel keeps the surviving hunk", [2, 3]));
+  });
+
+  it("cumulatively applies separately accepted hunks into the controlled parent buffer and HTTP snapshot", async () => {
+    const threadId = "ro4-cumulative-individual-accept";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    const first = utils.container.querySelectorAll<HTMLButtonElement>(".cm-copilotDiffAccept")[0]!;
+    fireEvent.click(first);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: old");
+    expect(liveRules).toContain("C: old");
+
+    const second = utils.container.querySelectorAll<HTMLButtonElement>(".cm-copilotDiffAccept")[0]!;
+    fireEvent.click(second);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: new");
+    expect(liveRules).toContain("C: old");
+
+    const partial = await sendFollowup(utils, "explain cumulative partial acceptance", 2);
+    const partialReview = partial.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(partial.rules).toBe(liveRules);
+    expect(partial).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(partialReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 2, rejected: 0, pending: 1 } });
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: new");
+    expect(liveRules).toContain("C: new");
+
+    for (const count of [3, 4]) {
+      const body = await sendFollowup(utils, `explain cumulative completion ${count}`, count);
+      expect(body.rules).toBe(liveRules);
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        roundId: partialReview?.roundId,
+        outcome: "applied",
+        hunks: { accepted: 3, rejected: 0, pending: 0 },
+      });
+    }
+    await expectReviewOutcomeFixture("copilot-partial-then-full-apply", sentCopilotRequests("partial local apply before Save, then full apply over two following turns", [2, 3, 4]));
+  });
+
+  it("accept-all preserves a previously dismissed hunk in both the live buffer and HTTP outcome", async () => {
+    const threadId = "ro4-supervisor-dismiss-before-accept-all";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain preserved rejection ${count}`, count);
+      expect(body.rules).toContain("A: new");
+      expect(body.rules).toContain("B: old");
+      expect(body.rules).toContain("C: new");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 2, rejected: 1, pending: 0 },
+      });
+    }
+  });
+
+  it("accept-all preserves a previously dismissed visual hunk in the live buffer and HTTP outcome", async () => {
+    const threadId = "ro4-supervisor-visual-dismiss-before-accept-all";
+    const base = ["<main>", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "</main>"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    function ControlledVisualShell() {
+      const [visualSource, setVisualSource] = useState(base);
+      return <ExperienceCopilotShell scriptId="ro4-supervisor-visual-script" rulesCode={BASE} onRulesChange={() => {}} visualSource={visualSource} onVisualChange={setVisualSource} rulesSaved={true} visualSaved={visualSource === base} />;
+    }
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledVisualShell />));
+    await flushSessionLoad();
+    fireEvent.click(utils.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(utils.getByRole("radio", { name: "agent_visual" }));
+    await sendFollowup(utils, "propose visual changes", 1);
+    await act(async () => {
+      useAgentTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-visual-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "visual",
+        proposed,
+        summary: "visual changes",
+      });
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain preserved visual rejection ${count}`, count);
+      expect(body.visual).toContain("A: new");
+      expect(body.visual).toContain("B: old");
+      expect(body.visual).toContain("C: new");
+      expect(body).toMatchObject({ rulesSaved: true, visualSaved: false });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 2, rejected: 1, pending: 0 },
+      });
+    }
+    await expectReviewOutcomeFixture("copilot-visual-mixed", sentCopilotRequests("visual: dismissed hunk survives accept-all over two turns", [2, 3]));
+  });
+
+  it("retains an actual accepted-and-dismissed round as partial across two following requests", async () => {
+    const threadId = "ro4-mixed-accept-dismiss";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain mixed result ${count}`, count);
+      expect(body.rules).toBe("// RULES v2\nconst keep = 1;\nconst tail = 2.");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 1, rejected: 1, pending: 0 },
+      });
+    }
+    await expectReviewOutcomeFixture("copilot-mixed-accept-reject", sentCopilotRequests("one hunk accepted, the rest rejected, over two turns", [2, 3]));
+  });
+
+  it("retains an actual full rejection without changing the clean parent buffer", async () => {
+    const threadId = "ro4-full-rejection";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain rejection ${count}`, count);
+      expect(body.rules).toBe(BASE);
+      expect(body).toMatchObject({ rulesSaved: true, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "rejected",
+        hunks: { accepted: 0, rejected: 2, pending: 0 },
+      });
+    }
+
+    utils.unmount();
+    const remounted = render(withIsolatedI18n(<ControlledShell />));
+    await flushSessionLoad();
+    const afterRemount = await sendFollowup(remounted, "explain rejection after remount", 4);
+    expect(afterRemount.rules).toBe(BASE);
+    expect(afterRemount).toMatchObject({ rulesSaved: true, visualSaved: true });
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      outcome: "rejected",
+      hunks: { accepted: 0, rejected: 2, pending: 0 },
+    });
+    await expectReviewOutcomeFixture("copilot-full-rejection-remount", sentCopilotRequests("full rejection over two turns and a remount", [2, 3, 4]));
+  });
+
+  it("keeps a completed local application through review-round reset and shell remount", async () => {
+    const threadId = "ro4-reset-remount";
+    router.newSession = thread(threadId);
+    let setMounted: ((mounted: boolean) => void) | undefined;
+    function PersistentShell() {
+      const [rulesCode, setRulesCode] = useState(BASE);
+      const [mounted, setMountedState] = useState(true);
+      setMounted = setMountedState;
+      return mounted ? (
+        <ExperienceCopilotShell
+          scriptId="ro4-reset-remount-script"
+          rulesCode={rulesCode}
+          onRulesChange={setRulesCode}
+          visualSource=""
+          onVisualChange={() => {}}
+          rulesSaved={rulesCode === BASE}
+          visualSaved={true}
+        />
+      ) : null;
+    }
+    const utils = render(withIsolatedI18n(<PersistentShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    const completed = await sendFollowup(utils, "explain completed review", 2);
+    const completedReview = completed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(completed.rules).toBe(PROPOSED);
+    expect(completedReview).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
+
+    act(() => useAgentReviewRoundStore.getState().resetRound("experience", threadId));
+    const afterReset = await sendFollowup(utils, "explain after round reset", 3);
+    expect(afterReset.rules).toBe(PROPOSED);
+    expect(afterReset.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: completedReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+
+    act(() => setMounted?.(false));
+    await waitFor(() => expect(utils.queryByTestId("copilot-send-btn")).toBeNull());
+    act(() => setMounted?.(true));
+    await flushSessionLoad();
+    const afterRemount = await sendFollowup(utils, "explain after remount", 4);
+    expect(afterRemount.rules).toBe(PROPOSED);
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: completedReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+    await expectReviewOutcomeFixture("copilot-completed-review-reset-remount", sentCopilotRequests("completed review through a round reset and a remount", [2, 3, 4]));
+  });
+
+  it("keeps a pending mixed choice through a normal next turn and remount", async () => {
+    const threadId = "ro4-pending-remount";
+    router.newSession = thread(threadId);
+    let setMounted: ((mounted: boolean) => void) | undefined;
+    function PersistentShell() {
+      const [rulesCode, setRulesCode] = useState(BASE);
+      const [mounted, setMountedState] = useState(true);
+      setMounted = setMountedState;
+      return mounted ? (
+        <ExperienceCopilotShell
+          scriptId="ro4-pending-remount-script"
+          rulesCode={rulesCode}
+          onRulesChange={setRulesCode}
+          visualSource=""
+          onVisualChange={() => {}}
+          rulesSaved={rulesCode === BASE}
+          visualSaved={true}
+        />
+      ) : null;
+    }
+    const utils = render(withIsolatedI18n(<PersistentShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    const afterNextTurn = await sendFollowup(utils, "keep the pending hunk", 2);
+    const partialReview = afterNextTurn.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(afterNextTurn.rules).toBe("// RULES v2\nconst keep = 1;\nconst tail = 2.");
+    expect(partialReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+
+    act(() => setMounted?.(false));
+    await waitFor(() => expect(utils.queryByTestId("copilot-send-btn")).toBeNull());
+    act(() => setMounted?.(true));
+    await flushSessionLoad();
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    const afterRemount = await sendFollowup(utils, "keep it after remount", 3);
+    expect(afterRemount.rules).toBe(afterNextTurn.rules);
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: partialReview?.roundId,
+      outcome: "applied-partial",
+      hunks: { accepted: 1, rejected: 0, pending: 1 },
+    });
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const completed = await sendFollowup(utils, "accept the restored pending hunk", 4);
+    expect(completed.rules).toBe(PROPOSED);
+    expect(completed.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+  });
+
+  it("isolates thread ledger records and restores the original buffer and outcome on return", async () => {
+    const firstThread = "ro4-thread-one";
+    const secondThread = "ro4-thread-two";
+    router.activeThread = thread(firstThread);
+    router.sessions = [thread(firstThread), thread(secondThread)];
+    router.messagesFor = () => [];
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, firstThread);
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const firstBody = await sendFollowup(utils, "explain first thread", 2);
+    const firstReview = firstBody.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(firstBody.rules).toBe(PROPOSED);
+    expect(firstReview).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
+
+    router.activateReturns = thread(secondThread);
+    fireEvent.click(utils.getByTestId(`copilot-session-${secondThread}`));
+    await flushSessionLoad();
+    const secondBody = await sendFollowup(utils, "explain second thread", 3);
+    expect(secondBody.rules).toBe(PROPOSED);
+    expect(secondBody.reviewSnapshot?.targets).toEqual([]);
+
+    router.activateReturns = thread(firstThread);
+    fireEvent.click(utils.getByTestId(`copilot-session-${firstThread}`));
+    await flushSessionLoad();
+    const returned = await sendFollowup(utils, "explain returned thread", 4);
+    expect(returned.rules).toBe(PROPOSED);
+    expect(returned.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: firstReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+    await expectReviewOutcomeFixture("copilot-session-switch", sentCopilotRequests("session switch isolates the ledger and the return restores it", [2, 3, 4]));
+  });
+
+  it("batch acceptance reverses only the surviving applied anchor after independent drift", async () => {
+    const threadId = "ro4-batch-cancel-partial-reverse";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={base.replace("C: old", "C: external")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(liveRules).toContain("B: new"));
+
+    const accepted = await sendFollowup(utils, "explain partial batch acceptance", 2);
+    const acceptedReview = accepted.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(accepted.rules).toContain("A: new");
+    expect(accepted.rules).toContain("B: new");
+    expect(accepted.rules).toContain("C: external");
+    expect(accepted).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(acceptedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 2, rejected: 0, pending: 1 } });
+    const roundId = acceptedReview?.roundId;
+    expect(roundId).toBeDefined();
+
+    utils.rerender(withIsolatedI18n(<ControlledShell initialRules={base} rulesOverride={liveRules.replace("A: new", "A: drift")} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [3, 4]) {
+      const body = await sendFollowup(utils, `explain partial reversal ${count}`, count);
+      const review = body.reviewSnapshot?.targets.find((target) => target.target === "rules");
+      expect(body.rules).toContain("A: drift");
+      expect(body.rules).toContain("B: old");
+      expect(body.rules).toContain("C: external");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(review).toMatchObject({ roundId, outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
+    }
+    await expectReviewOutcomeFixture("copilot-revert-of-accepted-partial", sentCopilotRequests("accept-all over external drift, then revert of the accepted hunks", [2, 3, 4]));
   });
 });
 
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
   it("shows the review bar + tab dot after a proposal and accepts all into the buffer", async () => {
     const onRulesChange = mock();
-    const { getByTestId, queryByTestId } = renderShell({ onRulesChange });
+    const { getByTestId, queryByTestId } = renderShell({ onRulesChange, rulesSaved: false, visualSaved: true });
     await flushSessionLoad();
 
     // A real turn (snapshot) against the v1 buffers.
@@ -1253,19 +2185,21 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
 
     // The turn's write_buffer proposal lands in the live store (as the SSE
     // tool-result path would fill it).
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "c1",
-            toolName: "write_buffer",
-            status: "done",
-            target: "rules",
-            proposed: "// rules buffer v2",
-            summary: "rewrote",
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "c1",
+              toolName: "write_buffer",
+              status: "done",
+              target: "rules",
+              proposed: "// rules buffer v2",
+              summary: "rewrote",
+            },
+          ],
+        },
+      });
     });
 
     // The review bar appears with the pending count and the rules tab dot.
@@ -1279,6 +2213,18 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     // Accept-all writes the proposed buffer into the rules draft.
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+
+    // The real shell → controller → fetch router path reports the successful
+    // local application before either independent buffer has been saved.
+    fireEvent.change(textarea, { target: { value: "describe the accepted edit" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(2));
+    const body = streamCalls()[1]!.body!;
+    expect(body.rulesSaved).toBe(false);
+    expect(body.visualSaved).toBe(true);
+    expect((body.reviewSnapshot as { targets: Array<{ target: string; outcome: string }> }).targets.map(({ target, outcome }) => ({ target, outcome }))).toEqual([
+      { target: "rules", outcome: "applied" },
+    ]);
   });
 
   it("per-hunk dismiss (✕) drops hunks from the round without touching the buffer (RV-2)", async () => {
@@ -1293,19 +2239,21 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "header + tail",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22.",
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
     await waitFor(() => expect(container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
@@ -1337,7 +2285,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -1383,7 +2331,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
     expect(onRulesChange).toHaveBeenCalledWith(HYBRID);
     // The parent applies the accept → the draft becomes the hybrid.
-    utils.rerender(<ExperienceCopilotShell {...utils.props} rulesCode={HYBRID} onRulesChange={onRulesChange} />);
+    utils.rerender(withIsolatedI18n(<ExperienceCopilotShell {...utils.props} rulesCode={HYBRID} onRulesChange={onRulesChange} />));
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     fireEvent.click(utils.getByTestId("copilot-cancel-all"));
@@ -1391,7 +2339,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
     // RV-3: the round is cancelled WITHOUT popping the snapshot / clearTurn —
     // the live turn's activities survive (the toolbar revert is a separate path).
-    expect(useExperienceCopilotTurnStore.getState().turnsByThread["thread-new"]?.length).toBeGreaterThan(0);
+    expect(useAgentTurnStore.getState().turnsByThread["thread-new"]?.length).toBeGreaterThan(0);
   });
 
   it("«Отменить все» (drift) reverses anchored accepted hunks and toasts nothing when all anchor", async () => {
@@ -1405,11 +2353,13 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     // Drift the MIDDLE context line (not part of hunk 0's added/removed lines),
     // so hunk 0 still anchors onto the drifted buffer.
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode={HYBRID.replace("const keep = 1;", "const keep = 999;")}
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode={HYBRID.replace("const keep = 1;", "const keep = 999;")}
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
 
     fireEvent.click(utils.getByTestId("copilot-cancel-all"));
@@ -1431,19 +2381,21 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w-big",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "rewrote",
-            target: "rules",
-            proposed: bigProposed,
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w-big",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "rewrote",
+              target: "rules",
+              proposed: bigProposed,
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
@@ -1465,7 +2417,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     // A SECOND proposal lands on the visual buffer while the rules round is
     // still open — both rounds are live at once (CD-8: they hang until resolved).
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -1512,20 +2464,24 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     await flushSessionLoad();
   }
 
+  // Direct store writes re-render the mounted shell outside React's event flow
+  // — wrap the trigger in act() so no "not wrapped in act" warning fires.
   function seedProposal(text: string) {
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: `w-${text.length}`,
-            toolName: "write_buffer",
-            status: "done",
-            summary: "wrote rules",
-            target: "rules",
-            proposed: text,
-          },
-        ],
-      },
+    act(() => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: `w-${text.length}`,
+              toolName: "write_buffer",
+              status: "done",
+              summary: "wrote rules",
+              target: "rules",
+              proposed: text,
+            },
+          ],
+        },
+      });
     });
   }
 
@@ -1587,29 +2543,31 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
 
     // Turn 2: the model proposes ONLY a visual (rules untouched).
     await sendOne("now write the visual");
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "v1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "wrote visual",
-            target: "visual",
-            proposed: "<!doctype html><html><body>v2</body></html>",
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "v1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "wrote visual",
+              target: "visual",
+              proposed: "<!doctype html><html><body>v2</body></html>",
+            },
+          ],
+        },
+      });
     });
 
     // The visual round shows on the visual tab…
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
 
     // …while the rules tab stays RESOLVED: no re-lit review bar, no dot. The
     // old combined proposalKey reset BOTH accepted sets on any buffer change,
     // re-lighting hunks the user had already accepted (and saved).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(getByRole("radio", { name: "agent_rules" }));
     await waitFor(() => expect(queryByTestId("copilot-review-bar")).toBeNull());
     expect(queryByTestId("copilot-buffer-dot-rules")).toBeNull();
   });
@@ -1629,30 +2587,34 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "two edits",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 2;",
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "two edits",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 2;",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     // External drift: the template tool rewrote the whole buffer — no hunk can
     // anchor. Accept-all must skip BOTH hunks, warn, and write NOTHING.
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode="// HAND-EDITED BUFFER"
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode="// HAND-EDITED BUFFER"
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
     fireEvent.click(utils.getByTestId("copilot-accept-all"));
 
@@ -1673,30 +2635,34 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "header + tail",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22;",
-          },
-        ],
-      },
+    await act(async () => {
+      useAgentTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22;",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     // Drift away from the MIDDLE line only: the header hunk and the tail hunk
     // still anchor; they splice onto the drifted text (no clobber of the edit).
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode={base.replace("const keep = 1;", "const keep = 999;")}
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode={base.replace("const keep = 1;", "const keep = 999;")}
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
     fireEvent.click(utils.getByTestId("copilot-accept-all"));
 
@@ -1724,7 +2690,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -1774,7 +2740,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     await act(async () => {
-      useExperienceCopilotTurnStore.setState({
+      useAgentTurnStore.setState({
         turnsByThread: {
           "thread-new": [
             {
@@ -1799,8 +2765,8 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     // stores and CLEAR the persisted key — on a real reload nothing is
     // mounted when the stores die.)
     first.unmount();
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-    useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+    useAgentTurnStore.setState({ turnsByThread: {} });
+    useAgentReviewRoundStore.setState({ roundsByThread: {} });
 
     // Fresh page load: the shell's mount effect rehydrates from localStorage.
     const second = renderShell({ rulesCode: HYBRID, onRulesChange: mock() });
@@ -1956,6 +2922,10 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     mobileOverride = true;
     const onBack = mock();
     const { getByTestId } = renderShell({ onBack, editTabHeader: <div data-testid="e6-header-node">management cluster</div> });
+    // Settle the mount-time loadSession chain inside act (every other test
+    // does this via flushSessionLoad — without it the chain lands outside
+    // act() and warns repeatedly).
+    await flushSessionLoad();
 
     const chevron = getByTestId("copilot-mobile-back");
     expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
@@ -1977,7 +2947,7 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     const { getByTestId, findByRole } = renderShell({ editTabDirty: true });
     await flushSessionLoad();
 
-    const editTab = await findByRole("tab", { name: "experience_copilot_tab_edit" });
+    const editTab = await findByRole("tab", { name: "agent_tab_edit" });
     expect(editTab.querySelector("span[aria-hidden]")).not.toBeNull();
     // Чат stays the visible pane (no auto-switch — the deliberate difference
     // from co-author's CA-14).
@@ -2006,7 +2976,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
 
     jest.useFakeTimers();
     try {
-      fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+      fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
       // The shared localized auto-skip state renders (identity i18n — the
       // shared message key verbatim) instead of the discovery-driven no-fields
@@ -2019,6 +2989,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
       await act(async () => {
         jest.advanceTimersByTime(600);
       });
+      expect(apiCalls("POST", /\/api\/experience\/test\/discover$/)).toHaveLength(0);
       expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(0);
     } finally {
       jest.useRealTimers();
@@ -2031,10 +3002,10 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
     });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     await waitFor(
-      () => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1),
+      () => expect(apiCalls("POST", /\/api\/experience\/test\/discover$/).length).toBeGreaterThanOrEqual(1),
       { timeout: 4000 },
     );
     expect(queryByTestId("playground-auto-skip")).toBeNull();
@@ -2046,12 +3017,12 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
       script: { origin: "imported", firstEnabledAt: null },
     });
     await flushSessionLoad();
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await findByTestId("script-safety-findings-modal");
     fireEvent.click(getByText("script_safety_findings_show_in_code"));
 
-    await waitFor(() => expect(getByRole("radio", { name: "experience_copilot_code" }).getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect(getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("true"));
     const firstView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
     if (!firstView) throw new Error("rules editor missing");
     const findingPosition = firstView.state.doc.line(2).from;
@@ -2059,10 +3030,111 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
 
     firstView.dispatch({ selection: { anchor: 0 } });
     expect(firstView.state.selection.main.head).toBe(0);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await findByTestId("script-safety-findings-modal");
     fireEvent.click(getByText("script_safety_findings_show_in_code"));
     await waitFor(() => expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)?.state.selection.main.head).toBe(findingPosition));
+  });
+});
+
+// ─── AP-15: pending-review summary seam ─────────────────────────────────────
+
+describe("ExperienceCopilotShell — AP-15: pending-review summary seam", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+  const VISUAL_BASE = "<html>old</html>";
+  const VISUAL_PROPOSED = "<html>new</html>";
+
+  /** The AP-15 store entry of this suite's thread (experience kind keys stay
+   *  the legacy bare threadId — pinned by the store's own suite). */
+  const seamEntry = () => useAgentPendingReviewStore.getState().summariesByThread["thread-new"];
+
+  async function startProposal(
+    targets: Partial<Record<"rules" | "visual", string>>,
+    over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {},
+  ) {
+    const utils = renderShell({ rulesCode: BASE, visualSource: VISUAL_BASE, ...over });
+    await flushSessionLoad();
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit it" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    // The turn's write_buffer proposals land in the live store (as the SSE
+    // tool-result path would fill them) — one per requested buffer.
+    const activities: AgentToolActivity[] = [];
+    if (targets.rules !== undefined) {
+      activities.push({ toolCallId: "w-rules", toolName: "write_buffer", status: "done", summary: "edit rules", target: "rules", proposed: targets.rules });
+    }
+    if (targets.visual !== undefined) {
+      activities.push({ toolCallId: "w-visual", toolName: "write_buffer", status: "done", summary: "edit visual", target: "visual", proposed: targets.visual });
+    }
+    await act(async () => {
+      useAgentTurnStore.setState({ turnsByThread: { "thread-new": activities } });
+    });
+    return utils;
+  }
+
+  it("publishes both buffers' pending counts with the descriptor's label keys; resolution clears", async () => {
+    const onRulesChange = mock();
+    const onVisualChange = mock();
+    const utils = await startProposal({ rules: PROPOSED, visual: VISUAL_PROPOSED }, { onRulesChange, onVisualChange });
+    // The seam entry lands with both buffers in the descriptor's bufferSpecs
+    // order (rules first, then visual).
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(seamEntry()!.buffers).toEqual([
+      { labelKey: "agent_rules", pending: 2 },
+      { labelKey: "agent_visual", pending: 1 },
+    ]);
+
+    // The store's acceptAll is the session's: it accepts BOTH buffers' hunks
+    // through the live closures (the strip's «Принять все», AP-16).
+    const entry = seamEntry()!;
+    await act(async () => {
+      entry.acceptAll();
+    });
+    await waitFor(() => expect(onRulesChange).toHaveBeenCalledWith(PROPOSED));
+    await waitFor(() => expect(onVisualChange).toHaveBeenCalledWith(VISUAL_PROPOSED));
+
+    // Full resolution clears the entry — nothing pending, no strip.
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+  });
+
+  it("open switches the editor to the Code layer's pending buffer (the strip's open action)", async () => {
+    // A non-empty visual defaults the pane to the Preview layer — the review
+    // bar is unmounted there, so the entry publishes regardless of the
+    // visible layer and `open` must land on the Code layer's pending buffer.
+    const utils = await startProposal({ rules: PROPOSED });
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(utils.queryByTestId("copilot-review-bar")).toBeNull();
+
+    await act(async () => {
+      seamEntry()!.open();
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    // The pending RULES buffer is the opened one (the rules sub-toggle).
+    expect(utils.getByRole("radio", { name: "agent_rules" }).getAttribute("aria-checked")).toBe("true");
+    expect(utils.getByRole("radio", { name: "agent_visual" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("clears the entry on unmount (no stale callables) and republishes on remount", async () => {
+    const first = await startProposal({ rules: PROPOSED });
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+
+    // Navigating away unmounts the pane — the entry (whose callables die
+    // with it) must go with it.
+    first.unmount();
+    await waitFor(() => expect(seamEntry()).toBeUndefined());
+
+    // Coming back: the round survives in the round store (the hanging-diff
+    // contract) and the seam republishes from the restored review (the pane
+    // reopens on the Preview layer — the entry publishes regardless of the
+    // visible layer, the seam's whole point).
+    const second = renderShell({ rulesCode: BASE, visualSource: VISUAL_BASE });
+    await flushSessionLoad();
+    await waitFor(() => expect(seamEntry()).toBeDefined());
+    expect(seamEntry()!.buffers).toEqual([{ labelKey: "agent_rules", pending: 2 }]);
   });
 });

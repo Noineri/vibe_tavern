@@ -97,7 +97,7 @@ export function BuildCharacterSwitcher({
             <div
               className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', open ? '' : 'hover:bg-s2')}
             >
-              <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm", activeAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", open && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
+              <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-[var(--ui-fs)] leading-5", activeAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", open && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
                 {activeAvatarSrc
                   ? <img src={activeAvatarSrc} alt="" className="h-full w-full object-cover" />
                   : initials(activeCharacterName ?? '?')}
@@ -160,7 +160,7 @@ export function BuildCharacterSwitcher({
             {activeAvatarSrc ? (
               <img className="h-full w-full object-cover" src={activeAvatarSrc} alt="" />
             ) : (
-              <span className="font-ui text-sm">{initials(activeCharacterName ?? '?')}</span>
+              <span className="font-ui text-[var(--ui-fs)] leading-5">{initials(activeCharacterName ?? '?')}</span>
             )}
           </div>
           <div className="min-w-0 flex-1">

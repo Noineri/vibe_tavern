@@ -34,7 +34,7 @@ export function VariantJumpSheet({ items, messageId, selectedVariantIndex, varia
     <>
       <button
         type="button"
-        className="flex min-h-10 min-w-12 items-center justify-center gap-0.5 rounded-lg px-2 font-ui text-[13px] tabular-nums text-t2 active:bg-s2"
+        className="flex min-h-10 min-w-12 items-center justify-center gap-0.5 rounded-lg px-2 font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t2 active:bg-s2"
         aria-label={`Variant ${selectedVariantIndex + 1} of ${variantCount}`}
         aria-expanded={open}
         onClick={() => setOpen(true)}

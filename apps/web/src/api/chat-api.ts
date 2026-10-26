@@ -1,5 +1,5 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
-import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest, CoauthorCorrection, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, errorFromBody, type RpcErrorBody, type RpcResponse } from "./unwrap.js";
@@ -15,6 +15,8 @@ import type { z } from "zod";
 export type WireAttachment = z.infer<typeof attachmentSchema>;
 import { getGatewayBaseUrl } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
+import { readCoauthorEditorState } from "../lib/coauthor-editor-snapshot.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 
 export type CreateMessageVariantInput = {
   readonly content: string;
@@ -84,27 +86,6 @@ export async function setCoauthorContextLinks(chatId: ChatId, links: Array<{ tar
   return unwrapRpc(response);
 }
 
-export async function listCoauthorModules(): Promise<CoauthorModule[]> {
-  const response = await client.api.coauthor.modules.$get();
-  const data = await unwrapRpc(response);
-  return data.modules;
-}
-
-export async function createCoauthorModule(input: CoauthorModuleCreate): Promise<CoauthorModule> {
-  const response = await client.api.coauthor.modules.$post({ json: input });
-  return unwrapRpc(response);
-}
-
-export async function updateCoauthorModule(moduleId: string, input: CoauthorModuleUpdate): Promise<CoauthorModule> {
-  const response = await client.api.coauthor.modules[":moduleId"].$patch({ param: { moduleId }, json: input });
-  return unwrapRpc(response);
-}
-
-export async function deleteCoauthorModule(moduleId: string): Promise<void> {
-  const response = await client.api.coauthor.modules[":moduleId"].$delete({ param: { moduleId } });
-  if (!response.ok) throw await unwrapError(response);
-}
-
 export async function setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["coauthor-module"].$patch({ param: { chatId }, json: { moduleId } });
   return unwrapRpc(response);
@@ -127,8 +108,12 @@ export async function sendChatMessage(
   input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
+  const state = useSnapshotStore.getState();
+  const coauthorEditorState = state.activeChat?.id === chatId && state.activeChat.mode === "coauthor" && state.character
+    ? readCoauthorEditorState(chatId, state.character.id)
+    : undefined;
   const response = await client.api.chats[":chatId"].messages.$post(
-    { param: { chatId }, json: input },
+    { param: { chatId }, json: { ...input, ...(coauthorEditorState ? { coauthorEditorState } : {}) } },
     { init: { signal: options?.signal } },
   );
   if (!response.ok) {
@@ -280,9 +265,9 @@ export async function updateAttachmentDescription(
   return response.json();
 }
 
-/** IG-18: set the per-image "include in prompt" opt-in on a generated-image
- *  slot attachment (server validates: slots only; enabling requires a filled
- *  vision description). Returns the route's { ok: true } envelope. */
+/** IG-18 / CA-2b: set prompt visibility for a generated-image slot or text
+ *  file. The server keeps the image-slot identity gate and validates the kind.
+ *  Returns the route's { ok: true } envelope. */
 export async function updateAttachmentIncludeInPrompt(
   chatId: string,
   messageId: string,
@@ -298,10 +283,7 @@ export async function updateAttachmentIncludeInPrompt(
       body: JSON.stringify({ includeInPrompt }),
     },
   );
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `Failed to update include-in-prompt: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
   return response.json();
 }
 

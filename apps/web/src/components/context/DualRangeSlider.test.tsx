@@ -1,24 +1,8 @@
 /**
- * DualRangeSlider — from/to invariant + wrapper-driven pointer interaction.
+ * DualRangeSlider — controlled from/to invariants at the shared Slider seam.
  *
- * The slider exposes two overlapping range inputs (`dual-range-l` = lower/from,
- * `dual-range-u` = upper/to). The invariant: dragging `from` up never crosses
- * `to`, dragging `to` down never crosses `from`, and both clamp to [min,max].
- * Pinned because a sign-flip or swapped safeFrom/safeTo would silently break
- * selection.
- *
- * The pointer suite pins the Firefox fix: dragging must be driven by the
- * WRAPPER, never by per-thumb hit-testing. Making each thumb its own hit target
- * needs `::-webkit-slider-thumb{pointer-events:auto}` under a
- * `pointer-events:none` host — Firefox ignores that on `::-moz-range-thumb`, so
- * the whole control went dead there. These tests dispatch on the wrapper and
- * never touch an input, which is exactly what a browser without thumb
- * hit-testing does.
- *
- * Plain <input type="range"> (no Radix), so happy-dom's 0x0 layout is fine for
- * the invariant suite — unlike the Radix-Popover DropdownSelect keyboard test,
- * which is skipped. The pointer suite stubs the wrapper's box, since happy-dom
- * has no layout of its own.
+ * Nested range inputs pin endpoint invariants; field pointer events pin window
+ * routing. The public callback continues to expose two arguments.
  */
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -32,7 +16,7 @@ beforeAll(async () => {
 	({ DualRangeSlider } = await import("./DualRangeSlider.js"));
 });
 
-function setup(props: { from: number; to: number; min?: number; max?: number }) {
+function setup(props: { from: number; to: number; min?: number; max?: number; disabled?: boolean; label?: string; formatValue?: (from: number, to: number) => string }) {
 	const onChange = mock();
 	const { container } = render(
 		<DualRangeSlider
@@ -40,102 +24,139 @@ function setup(props: { from: number; to: number; min?: number; max?: number }) 
 			max={props.max ?? 10}
 			from={props.from}
 			to={props.to}
+			disabled={props.disabled}
+			label={props.label}
+			formatValue={props.formatValue}
 			onChange={onChange}
 		/>,
 	);
-	const lower = container.querySelector(".dual-range-l") as HTMLInputElement;
-	const upper = container.querySelector(".dual-range-u") as HTMLInputElement;
-	return { onChange, lower, upper };
+	const start = container.querySelector<HTMLInputElement>("[data-testid=\"range-start-input\"]");
+	const end = container.querySelector<HTMLInputElement>("[data-testid=\"range-end-input\"]");
+	if (!start || !end) throw new Error("Missing nested range inputs");
+	return { container, onChange, start, end };
 }
 
-describe("DualRangeSlider — from/to invariant", () => {
+function fieldWithRect(container: HTMLElement): HTMLElement {
+	const field = container.querySelector<HTMLElement>("[data-slider-field]");
+	if (!field) throw new Error("Missing range field");
+	Object.defineProperty(field, "getBoundingClientRect", { configurable: true, value: () => ({ left: 0, width: 90 }) });
+	return field;
+}
+
+describe("DualRangeSlider — shared range invariants", () => {
+	it("renders one field shell with two real nested range inputs, edge handles and an inside label", () => {
+		const { container, start, end } = setup({ from: 3, to: 7, label: "Messages" });
+		const roots = container.querySelectorAll<HTMLElement>("[data-slider-root]");
+		const shells = container.querySelectorAll<HTMLElement>("[data-slider-field-shell]");
+
+		expect(roots).toHaveLength(1);
+		// Seam change: rail footprint/thumbs -> a field shell and two 3 px edge handles (SL-11 D1).
+		expect(shells).toHaveLength(1);
+		expect(shells[0]!.querySelectorAll("[data-slider-field-handle]")).toHaveLength(2);
+		expect(shells[0]!.querySelector("[data-slider-field-label]")?.textContent).toBe("Messages");
+		expect(container.querySelector("[data-slider-track], [data-slider-thumb]")).toBeNull();
+		expect(start.type).toBe("range");
+		expect(end.type).toBe("range");
+		expect(roots[0]!.querySelectorAll('input[type="range"]')).toHaveLength(2);
+		expect(shells[0]!.contains(start) && shells[0]!.contains(end)).toBe(true);
+	});
+
+	it("shows the two-argument formatter result or the default endpoint text", () => {
+		const formatValue = mock((from: number, to: number) => `${from} through ${to}`);
+		const formatted = setup({ from: 3, to: 7, formatValue });
+		expect(formatValue).toHaveBeenCalledWith(3, 7);
+		expect(formatted.container.querySelector("[data-slider-field-value]")?.textContent).toBe("3 through 7");
+		const plain = setup({ from: 3, to: 7 });
+		expect(plain.container.querySelector("[data-slider-field-value]")?.textContent).toBe("3 – 7");
+	});
+
+	it("drags the whole window two steps and clamps at max without changing its width", () => {
+		const { container, onChange } = setup({ from: 3, to: 7 });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		expect(onChange).toHaveBeenLastCalledWith(5, 9);
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 200 });
+		expect(onChange).toHaveBeenLastCalledWith(6, 10);
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 200 });
+		for (const [from, to] of onChange.mock.calls) {
+			expect(to - from).toBe(4);
+			expect(to).toBeLessThanOrEqual(10);
+		}
+	});
+
+	it("ignores a pointer press and drag while disabled for generation", () => {
+		const { container, onChange } = setup({ from: 3, to: 7, disabled: true });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 60 });
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
 	it("dragging `from` above `to` clamps to `to` (from never exceeds to)", () => {
-		const { onChange, lower } = setup({ from: 3, to: 7 });
-		fireEvent.change(lower, { target: { value: "8" } });
+		const { onChange, start } = setup({ from: 3, to: 7 });
+		fireEvent.change(start, { target: { value: "8" } });
 		expect(onChange).toHaveBeenCalledWith(7, 7);
 	});
 
 	it("dragging `to` below `from` clamps to `from` (to never goes below from)", () => {
-		const { onChange, upper } = setup({ from: 3, to: 7 });
-		fireEvent.change(upper, { target: { value: "2" } });
+		const { onChange, end } = setup({ from: 3, to: 7 });
+		fireEvent.change(end, { target: { value: "2" } });
 		expect(onChange).toHaveBeenCalledWith(3, 3);
 	});
 
-	it("dragging `from`/`to` within bounds passes the value through unchanged", () => {
-		const { onChange, lower, upper } = setup({ from: 3, to: 7 });
-		fireEvent.change(lower, { target: { value: "5" } });
+	it("forwards in-bounds changes live through the two-argument callback", () => {
+		const { onChange, start, end } = setup({ from: 3, to: 7 });
+		fireEvent.change(start, { target: { value: "5" } });
 		expect(onChange).toHaveBeenLastCalledWith(5, 7);
-		fireEvent.change(upper, { target: { value: "9" } });
+		fireEvent.change(end, { target: { value: "9" } });
 		expect(onChange).toHaveBeenLastCalledWith(3, 9);
 	});
 
-	it("clamps out-of-range values to [min, max]", () => {
-		const { onChange, lower, upper } = setup({ from: 3, to: 7, min: 1, max: 10 });
-		fireEvent.change(lower, { target: { value: "0" } });
+	it("does not emit for an unchanged value", () => {
+		const { onChange, start } = setup({ from: 3, to: 7 });
+		fireEvent.change(start, { target: { value: "3" } });
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it("clamps out-of-range changes to [min, max]", () => {
+		const { onChange, start, end } = setup({ from: 3, to: 7, min: 1, max: 10 });
+		fireEvent.change(start, { target: { value: "0" } });
 		expect(onChange).toHaveBeenLastCalledWith(1, 7);
-		fireEvent.change(upper, { target: { value: "20" } });
+		fireEvent.change(end, { target: { value: "20" } });
 		expect(onChange).toHaveBeenLastCalledWith(3, 10);
 	});
 
-	it("min === max (degenerate single-message range) renders without throwing and pins both thumbs", () => {
-		// Guards the ratio divide-by-zero (max > min ? … : 0). Value is already
-		// at the only legal bound, so React does not fire onChange for a no-op
-		// change — assert the render + bound value instead.
-		const { lower, upper } = setup({ from: 1, to: 1, min: 1, max: 1 });
-		expect(lower.value).toBe("1");
-		expect(upper.value).toBe("1");
-	});
-});
+	it("normalizes reversed and non-finite controlled values before rendering", () => {
+		const reversed = setup({ from: 8, to: 3 });
+		expect(reversed.start.value).toBe("3");
+		expect(reversed.end.value).toBe("8");
 
-/**
- * 216px box − 16px thumb = 200px of travel across min..max = 1..101, i.e. one
- * message every 2px. Thumb centre for value v sits at `8 + (v - 1) * 2`, so
- * clientX 88 → 41 and clientX 148 → 71.
- */
-const TRACK_WIDTH = 216;
-
-function setupPointer(props: { from: number; to: number; disabled?: boolean }) {
-	const onChange = mock();
-	const { container } = render(
-		<DualRangeSlider
-			min={1}
-			max={101}
-			from={props.from}
-			to={props.to}
-			disabled={props.disabled}
-			onChange={onChange}
-		/>,
-	);
-	const track = container.querySelector(".dual-range-l")?.parentElement;
-	if (!track) throw new Error("wrapper not found");
-	// happy-dom has no layout engine, so the wrapper measures 0x0 and every
-	// pointer position would clamp to `min`. Stub the box the component reads.
-	track.getBoundingClientRect = () => new DOMRect(0, 0, TRACK_WIDTH, 20);
-	return { onChange, track };
-}
-
-describe("DualRangeSlider — wrapper-driven pointer interaction", () => {
-	it("pointerdown near the lower thumb drags `from`, not the topmost input", () => {
-		// `dual-range-u` is the z-3 input covering the whole track. If the wrapper
-		// did not pick the handle itself, this press would move `to`.
-		const { onChange, track } = setupPointer({ from: 21, to: 81 });
-		fireEvent.pointerDown(track, { clientX: 88, button: 0, pointerId: 1 });
-		expect(onChange).toHaveBeenCalledWith(41, 81);
+		const nonFinite = setup({ from: Number.NaN, to: Number.POSITIVE_INFINITY });
+		expect(nonFinite.start.value).toBe("1");
+		expect(nonFinite.end.value).toBe("1");
 	});
 
-	it("pointerdown near the upper thumb drags `to`", () => {
-		const { onChange, track } = setupPointer({ from: 21, to: 81 });
-		fireEvent.pointerDown(track, { clientX: 148, button: 0, pointerId: 1 });
-		expect(onChange).toHaveBeenCalledWith(21, 71);
+	it("min === max renders two thumbs at the sole legal value", () => {
+		const { container, onChange, start, end } = setup({ from: 1, to: 1, min: 1, max: 1 });
+		expect(start.value).toBe("1");
+		expect(end.value).toBe("1");
+		fireEvent.keyDown(start, { key: "ArrowRight" });
+		const field = fieldWithRect(container);
+		fireEvent.pointerDown(field, { pointerId: 1, pointerType: "mouse", clientX: 40, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		fireEvent.pointerUp(field, { pointerId: 1, pointerType: "mouse", clientX: 80 });
+		expect(onChange).not.toHaveBeenCalled();
 	});
 
-	it("ignores the pointer while disabled", () => {
-		// The old shape got this from the inputs' `disabled` attribute; a
-		// wrapper-driven press has to re-check it or the range stays draggable
-		// mid-generation.
-		const { onChange, track } = setupPointer({ from: 21, to: 81, disabled: true });
-		fireEvent.pointerDown(track, { clientX: 88, button: 0, pointerId: 1 });
-		fireEvent.pointerMove(track, { clientX: 148, pointerId: 1 });
+	it("keeps disabled nested inputs inert", () => {
+		const { onChange, start, end } = setup({ from: 3, to: 7, disabled: true });
+		expect(start.disabled).toBe(true);
+		expect(end.disabled).toBe(true);
+		fireEvent.change(start, { target: { value: "5" } });
+		fireEvent.change(end, { target: { value: "9" } });
 		expect(onChange).not.toHaveBeenCalled();
 	});
 });

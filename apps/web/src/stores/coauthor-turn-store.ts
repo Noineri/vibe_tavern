@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type CoauthorTarget, type CoauthorLoreBundle, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorTrackerTemplateOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type CoauthorTarget, type CoauthorLoreBundle, type CoauthorTrackerTemplateOutput, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
 // CA-15: persistence of unapplied proposals across reloads. Imported here (not
 // subscribed) so the two resolution points — finalize (upsert) and discard
@@ -65,6 +65,8 @@ export interface CoauthorToolActivity {
    *  arms); aggregation routes on `loreBundle` instead, taking the latest
    *  cumulative graph. Rendered as the structured lore review surface. */
   loreBundle?: CoauthorLoreBundle;
+  /** CT-7b: present iff this is a `set_tracker_template` proposal. */
+  trackerTemplate?: CoauthorTrackerTemplateOutput["trackerTemplate"];
   /** CE-D2: present iff this is a `search_context` activity (the model ran an
    *  indexed library search). A read — carries NO `target`/`proposed`, never
    *  enters proposal aggregation or draft persistence; renders as the search
@@ -172,6 +174,22 @@ export function extractPersistedCoauthorActivities(
         status: "done",
         summary: lore.data.summary,
         loreBundle: lore.data.bundle,
+      });
+      continue;
+    }
+    // CT-7b: `set_tracker_template` produces a structured proposal rather than
+    // the profile/greeting string shape. Recognize its canonical output before
+    // the generic proposal parser so persisted review rows remain actionable.
+    if (info?.name === "set_tracker_template") {
+      const trackerTemplate = coauthorTrackerTemplateOutputSchema.safeParse(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName: info.name,
+        args: info.args,
+        status: trackerTemplate.success ? "done" : "error",
+        ...(trackerTemplate.success
+          ? { summary: trackerTemplate.data.summary, trackerTemplate: trackerTemplate.data.trackerTemplate }
+          : { summary: message.content }),
       });
       continue;
     }

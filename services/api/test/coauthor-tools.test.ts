@@ -1,7 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { serializeProfileMd } from "@vibe-tavern/db";
+import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
+import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
+import { buildCoauthorWorkingDocument } from "../src/domain/chat/coauthor-working-document.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
+import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -254,6 +258,57 @@ describe("coauthor-tools: add_alt_greeting", () => {
 });
 
 describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
+  test("uses the supplied live editor document as the mutation base and retains canonical metadata across composed edits", async () => {
+    const working = buildCoauthorWorkingDocument(
+      "---\nname: Saved\ncreator: Server\nvt:\n  storage_id: char_saved\n  mes_example_mode: always\n  mes_example_depth: 4\n  server_flag: keep\n---\n# PERSONALITY\nSaved-only text.\n\n# SCENARIO\nSaved scenario.",
+      {
+        card: {
+          name: "Live",
+          body: "# PERSONALITY\nLive-only text.\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES\n\n# GREETINGS\nIgnored",
+          greetings: [],
+          cardClean: false,
+        },
+        review: { targets: [] },
+      },
+    );
+    const tools = buildCoauthorTools({ profileMd: working.profileMd });
+
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "Saved-only text.", replace: "x" }], summary: "wrong base" },
+      ctx,
+    )).rejects.toThrow(/not found/);
+    const personality = await tools.edit_personality.execute(
+      { edits: [{ search: "Live-only text.", replace: "Edited live text." }], summary: "edit live" },
+      ctx,
+    );
+    const scenario = await tools.edit_scenario.execute(
+      { edits: [{ search: "Live scenario.", replace: "Edited live scenario." }], summary: "compose" },
+      ctx,
+    );
+
+    expect(JSON.stringify(personality)).toContain("Edited live text.");
+    expect(JSON.stringify(scenario)).toContain("Edited live scenario.");
+    expect(JSON.stringify(scenario)).toContain("creator: Server");
+    expect(JSON.stringify(scenario)).toContain("storage_id: char_saved");
+    expect(JSON.stringify(scenario)).toContain("server_flag: keep");
+  });
+
+  test("does not recover saved content for an explicitly empty live editor section", async () => {
+    const working = buildCoauthorWorkingDocument(
+      sampleProfileMd({ description: "Saved personality." }),
+      {
+        card: { name: "Live", body: "# PERSONALITY\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES", greetings: [], cardClean: false },
+        review: { targets: [] },
+      },
+    );
+    const tools = buildCoauthorTools({ profileMd: working.profileMd });
+
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "Saved personality.", replace: "x" }], summary: "must not recover" },
+      ctx,
+    )).rejects.toThrow(/PERSONALITY section is empty.*write_personality/);
+  });
+
   test("applies a unique exact edit to PERSONALITY and preserves other sections", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     const out = (await tools.edit_personality.execute(
@@ -1010,5 +1065,115 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
     const off = buildCoauthorTools({ toolSet: { create_lorebook: true } }) as unknown as Record<string, unknown>;
     expect(off.edit_lorebook).toBeUndefined();
     expect(off.add_lore_entry).toBeUndefined();
+  });
+});
+
+describe("coauthor-tools: set_tracker_template (CT-11)", () => {
+  /** Parsed through the wire schema so the fake delegate returns a canonical
+   * portable template just as the real delegate does. */
+  const validTemplate = trackerTemplateSchema.parse({
+    version: 1,
+    scene: {
+      enabled: true,
+      config: { schema: { location: { $type: "string" } }, contextWindow: 12 },
+    },
+    objective: {
+      enabled: true,
+      state: {
+        mode: "goals",
+        objectiveDescription: "Escape the city",
+        shortTermGoals: [{ id: "goal_escape", description: "Reach the gate", status: "pending" }],
+      },
+    },
+  });
+  const delegatedTemplate = normalizeTrackerTemplate(validTemplate)!;
+
+  test("input schema is intent-only: { action, modeHint?, focusNotes?, summary }", () => {
+    const tools = buildCoauthorTools();
+    const schema = tools.set_tracker_template.inputSchema as unknown as {
+      shape: Record<string, unknown>;
+      safeParse(value: unknown): { success: boolean };
+    };
+    expect(Object.keys(schema.shape).sort()).toEqual(["action", "focusNotes", "modeHint", "summary"]);
+    expect(schema.safeParse({ summary: "s" }).success).toBe(false);
+    expect(schema.safeParse({ action: "create", summary: "s" }).success).toBe(true);
+    expect(schema.safeParse({ action: "refine", modeHint: "goals", focusNotes: "Tune the chase.", summary: "s" }).success).toBe(true);
+  });
+
+  test("routes intent and current template to the delegate, then passes its object through verbatim", async () => {
+    let captured: TrackerDelegateInput | null = null;
+    const currentTemplate = delegatedTemplate;
+    const tools = buildCoauthorTools({
+      profileMd: "# PERSONALITY\nVex is a commander.",
+      getCurrentTrackerTemplate: () => currentTemplate,
+      trackerDelegate: async (input) => {
+        captured = input;
+        return { trackerTemplate: delegatedTemplate };
+      },
+    });
+
+    const out = await tools.set_tracker_template.execute(
+      { action: "refine", modeHint: "goals", focusNotes: "Keep the chase tense.", summary: "Refined the chase tracker." },
+      ctx,
+    );
+
+    expect(captured).toEqual({
+      action: "refine",
+      modeHint: "goals",
+      focusNotes: "Keep the chase tense.",
+      characterProfileMd: "# PERSONALITY\nVex is a commander.",
+      currentTemplate,
+    });
+    expect(typeof out).not.toBe("string");
+    if (typeof out === "string") throw new Error(out);
+    expect(out).toEqual({ trackerTemplate: delegatedTemplate, summary: "Refined the chase tracker." });
+    // The tool does not normalize, clone, or otherwise re-emit the delegate result.
+    expect(out.trackerTemplate).toBe(delegatedTemplate);
+  });
+
+  test("returns a clear model-facing error string when delegation fails", async () => {
+    const tools = buildCoauthorTools({
+      trackerDelegate: async () => { throw new Error("union validation failed at objective.state"); },
+    });
+
+    const out = await tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx);
+
+    expect(out).toBe("set_tracker_template: tracker template generation failed: union validation failed at objective.state. Please tell the user and ask whether they want to try again.");
+  });
+
+  test("throws a clear configuration error when no tracker delegate is wired", async () => {
+    const tools = buildCoauthorTools();
+    await expect(tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx)).rejects.toThrow(
+      /tracker template generation is not configured/,
+    );
+  });
+
+  test("gates the tool by toolSet like the other proposal tools", () => {
+    const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } }) as unknown as Record<string, unknown>;
+    expect(on.set_tracker_template).toBeDefined();
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    expect(off.set_tracker_template).toBeUndefined();
+  });
+
+  test("emitted intent schema survives prepareProviderTools: no array-valued type unions", async () => {
+    const { asSchema } = await import("ai");
+    const { prepareProviderTools } = await import("../src/infrastructure/ai/provider-executor-utils.js");
+    const prepared = prepareProviderTools(buildCoauthorTools())?.set_tracker_template;
+    if (!prepared) throw new Error("set_tracker_template missing from the prepared tool set");
+    const json = await asSchema(prepared.inputSchema).jsonSchema as unknown;
+    const offenders: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (Array.isArray(node)) {
+        node.forEach((child, index) => walk(child, `${path}[${index}]`));
+        return;
+      }
+      if (!node || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === "type" && Array.isArray(value)) offenders.push(`${path}.type`);
+        walk(value, `${path}.${key}`);
+      }
+    };
+    walk(json, "$");
+    expect(offenders).toEqual([]);
   });
 });

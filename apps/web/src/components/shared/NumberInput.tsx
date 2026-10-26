@@ -17,7 +17,8 @@ const PlusIcon = () => (
 export interface NumberInputProps {
   value: number;
   onChange: (val: number) => void;
-  onBlur?: () => void;
+  /** Fires after the blur commit; the event tells callers where focus is going (`relatedTarget`). */
+  onBlur?: (event: React.FocusEvent<HTMLInputElement>) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -25,6 +26,12 @@ export interface NumberInputProps {
   className?: string;
   inputClassName?: string;
   hideControls?: boolean;
+  /** Focuses the input and selects its text on mount (inline editors). */
+  autoFocus?: boolean;
+  /** Fires on Escape; the caller decides what cancelling means (the input itself keeps its text). */
+  onEscape?: () => void;
+  /** Test id placed on the real `<input>`, not on the wrapper. */
+  inputTestId?: string;
 }
 
 export function NumberInput({
@@ -38,6 +45,9 @@ export function NumberInput({
   className,
   inputClassName,
   hideControls = false,
+  autoFocus = false,
+  onEscape,
+  inputTestId,
 }: NumberInputProps) {
   const [internalVal, setInternalVal] = useState<string>(String(value));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +57,12 @@ export function NumberInput({
       setInternalVal(String(value));
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [autoFocus]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -64,7 +80,7 @@ export function NumberInput({
     return Math.max(min, Math.min(max, val));
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     let parsed = parseFloat(internalVal);
     if (isNaN(parsed)) {
       setInternalVal(String(value));
@@ -75,7 +91,7 @@ export function NumberInput({
         onChange(parsed);
       }
     }
-    onBlur?.();
+    onBlur?.(e);
   };
 
   const adjustValue = (delta: number) => {
@@ -100,6 +116,8 @@ export function NumberInput({
       adjustValue(-step);
     } else if (e.key === "Enter") {
       e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      onEscape?.();
     }
   };
 
@@ -129,12 +147,13 @@ export function NumberInput({
         className={cn(
           // tabular-nums: digits are equal-width so the value doesn't shift the
           // input width (and surrounding layout) as it changes via +/- buttons.
-          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[13px] tabular-nums text-t1 outline-none",
+          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[calc(var(--ui-fs)-1px)] tabular-nums text-t1 outline-none",
           hideControls ? "px-3 text-left" : "text-center",
           inputClassName
         )}
         value={internalVal}
         disabled={disabled}
+        data-testid={inputTestId}
         onChange={(e) => setInternalVal(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}

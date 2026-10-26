@@ -2,14 +2,37 @@
  * Architecture ratchet gate.
  *
  * This freezes existing architecture debt at its current level: domain code may
- * not acquire new dependencies on the API/runtime layers, and oversized source
- * files may not grow. Baselines only shrink through --update-baseline.
+ * not acquire new dependencies on the API/runtime layers and oversized source
+ * files may not grow (baselines only shrink through --update-baseline).
+ * Fixed font sizes in `apps/web/src` (pixel classes, rem classes, Tailwind
+ * size classes, inline `fontSize`, `styles.css` px rules) are a plain ban
+ * with no baseline — any occurrence fails the gate (FIXED_FONT_SIZE_AUDIT_REPORT
+ * step 9b: the audit converted every fixed size onto the ladder, so the
+ * ratchet had nothing left to count down). Fractional `--ui-fs`/`--mfs`
+ * ladder offsets are a plain ban too (diagnosis 6). dnd-kit imports under
+ * `apps/web/src/components` are a plain ban as well (MASTER_LIST_PRIMITIVE_PLAN
+ * ML-10): a master-detail list renders through the shared master-list
+ * primitive and never wires its own drag — `arrayMove` from
+ * `@dnd-kit/sortable` (a pure array utility, not drag wiring) is the one
+ * tolerated specifier in a list file; the primitive's own folder and three
+ * named non-master-detail drag surfaces are exempt.
  */
 import { API } from "typescript/unstable/async";
 import { isExportDeclaration, isImportDeclaration, isStringLiteral } from "typescript/unstable/ast";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
+import {
+	collectFontSizeTargetFiles,
+	collectFixedFontSizeMatches,
+	cssFontSizeFor,
+	FONT_SIZE_ROOT,
+	inlineFontSizeFor,
+	pixelClassFor,
+	remClassFor,
+	tailwindClassFor,
+	type FontSizeKind,
+} from "./font-size-codemod.js";
 
 export const ARCH_GATE_MAX_LINES = 800;
 
@@ -19,7 +42,25 @@ const API_SOURCE_ROOT = "services/api/src";
 const DOMAIN_ROOT = `${API_SOURCE_ROOT}/domain`;
 const SIZE_ROOTS = new Set(["apps", "services", "packages", "scripts"]);
 const LAYER_IMPORT_HINT = "domain/ must not depend on api/ or runtime/; move the needed code down into domain/ (or packages/*), or take a narrow interface instead of the SessionRuntime coordinator.";
-const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending.";
+const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending. Deleting or compressing existing lines (code, comments, or whitespace) is NOT a remedy: this ratchet exists so budgets shrink by moving code out, never by trimming — if no cohesive part can be extracted, stop and escalate instead.";
+const FRACTIONAL_LADDER_OFFSET_HINT =
+	"ladder offsets are whole pixels only: --ui-fs/--mfs are whole numbers, so a fractional offset always renders between pixels and smears glyph edges; round toward the base — the absolute value of the offset rounds down (-1.5px → -1px, -3.5px → -3px, +1.5px → +1px) (FIXED_FONT_SIZE_AUDIT_REPORT diagnosis 6)";
+
+// ML-10 (MASTER_LIST_PRIMITIVE_PLAN): "master-detail list" is not mechanically
+// identifiable, so the rule covers the whole components tree — every
+// master-detail list is a component — and exempts by path/name instead.
+const DND_KIT_SCOPE_ROOT = "apps/web/src/components";
+const MASTER_LIST_ROOT = "apps/web/src/components/shared/master-list";
+const DND_KIT_DEV_ROOT = "apps/web/src/components/dev";
+const DND_KIT_BANNED_IMPORT_HINT =
+	"master-detail lists render through the shared master-list primitive (apps/web/src/components/shared/master-list/): the row, the drag handle, the overlay and the phone drill-down live there and a list supplies data and slots — never its own dnd-kit wiring (MASTER_LIST_PRIMITIVE_PLAN ML-10). The only dnd-kit import allowed in a list file is `arrayMove` from `@dnd-kit/sortable` — a pure array utility, not drag wiring.";
+const FIXED_FONT_SIZE_HINTS: Record<keyof FixedFontSizeCounts, string> = {
+	pixelClasses: `size chrome text from the --ui-fs ladder instead: text-[11px] → ${pixelClassFor(11)} (text-[Npx] → text-[calc(var(--ui-fs)-Kpx)], K = 14 - N; N = 14 → text-[var(--ui-fs)])`,
+	remClasses: `size chrome text from the --ui-fs ladder instead: text-[0.8rem] → ${remClassFor(0.8)} (rem classes track the 16px browser root, not --ui-fs: map Nrem × 16px onto the ladder, whole-pixel offsets)`,
+	tailwindSizeClasses: `map the class by its px at the 16px root and keep its line height: text-xs → ${tailwindClassFor("xs")}, text-sm → ${tailwindClassFor("sm")}, text-lg → ${tailwindClassFor("lg")}`,
+	inlineFontSizes: `use the ladder value string instead: fontSize: 18 → ${inlineFontSizeFor(18)}`,
+	cssFontSizes: `use the ladder value instead: font-size: 12px → ${cssFontSizeFor(12)} (styles.css only; message rules follow --mfs per FIXED_FONT_SIZE_AUDIT_REPORT)`,
+};
 
 // These are flat catalogs by design: every schema/type addition belongs in the
 // one exhaustive source of truth, so splitting them would make navigation worse.
@@ -27,6 +68,15 @@ export const FILE_SIZE_EXEMPTIONS = {
 	"packages/db/src/db-schema.ts": "Flat database schema catalog; each schema addition belongs in the exhaustive source of truth.",
 	"packages/domain/src/entities.ts": "Flat domain entity catalog; each type addition belongs in the exhaustive source of truth.",
 	"packages/api-contracts/src/schemas/image-gen-schema.ts": "Flat zod wire-schema catalog; each contract-field addition belongs in the exhaustive source of truth.",
+} as const;
+
+/** Non-master-detail drag surfaces that legitimately own their dnd-kit wiring
+ *  (ML-10 exempts the primitive's folder by path; these single files are the
+ *  whole remaining set of drag-runtime importers outside it). */
+export const DND_KIT_EXEMPT_FILES = {
+	"apps/web/src/components/settings/prompt/InjectionTable.tsx": "Prompt-canvas cross-zone drag table (CanvasCard rows over multiple SortableContexts), not a master-detail list.",
+	"apps/web/src/components/build/editors/LoreEntryList.tsx": "Build-panel lore entry cards on useReorderableList, not a master-detail modal list.",
+	"apps/web/src/components/build/editors/ScriptEditor.tsx": "Build-panel script editor with its own drag canvas, not a master-detail modal list.",
 } as const;
 
 export interface LayerImport {
@@ -38,6 +88,43 @@ export interface LayerImport {
 export interface ArchGateBaseline {
 	layerImports: string[];
 	oversizedFiles: Record<string, number>;
+}
+
+/** Fixed font sizes per pattern kind — the counters the baseline freezes. */
+export interface FixedFontSizeCounts {
+	pixelClasses: number;
+	remClasses: number;
+	tailwindSizeClasses: number;
+	inlineFontSizes: number;
+	cssFontSizes: number;
+}
+
+/** A fixed font size in `apps/web/src` — a plain ban, no baseline. */
+export interface BannedFixedFontSize {
+	readonly file: string;
+	readonly line: number;
+	readonly column: number;
+	readonly text: string;
+	readonly pattern: keyof FixedFontSizeCounts;
+}
+
+/** A fractional `--ui-fs`/`--mfs` ladder offset (plain ban, no baseline). */
+export interface FractionalLadderOffset {
+	readonly file: string;
+	readonly line: number;
+	readonly column: number;
+	readonly text: string;
+}
+
+/** A dnd-kit import under the components tree outside the master-list
+ *  primitive and the plan's allowances — a plain ban, no baseline (ML-10). */
+export interface BannedDndKitImport {
+	readonly file: string;
+	readonly line: number;
+	readonly column: number;
+	readonly module: string;
+	/** The reconstructed (whitespace-collapsed) import statement. */
+	readonly statement: string;
 }
 
 export interface OversizedFileChange {
@@ -60,13 +147,30 @@ export interface ArchGateReport {
 	baseline: ArchGateBaseline;
 	layerImports: LayerImport[];
 	oversizedFiles: Record<string, number>;
+	fixedFontSizes: FixedFontSizeCounts;
 	newLayerImports: LayerImport[];
 	removedLayerImportKeys: string[];
 	growingOversizedFiles: OversizedFileChange[];
 	newOversizedFiles: NewOversizedFile[];
 	shrunkOversizedFiles: OversizedFileChange[];
 	removedOversizedFiles: RemovedOversizedFile[];
+	bannedFixedFontSizes: BannedFixedFontSize[];
+	fractionalLadderOffsets: FractionalLadderOffset[];
+	bannedDndKitImports: BannedDndKitImport[];
 }
+
+const FIXED_FONT_SIZE_KIND_KEYS = {
+	"pixel-class": "pixelClasses",
+	"rem-class": "remClasses",
+	"tailwind-size-class": "tailwindSizeClasses",
+	"inline-font-size": "inlineFontSizes",
+	"css-font-size": "cssFontSizes",
+} as const satisfies Record<FontSizeKind, keyof FixedFontSizeCounts>;
+
+/** `var(--ui-fs)`/`var(--mfs)` followed by a fractional ±N.Mpx offset — the
+ *  separators cover the codemod's compact form, Tailwind's `_` escapes and
+ *  plain css spaces. */
+const FRACTIONAL_LADDER_OFFSET_PATTERN = /var\(--(?:ui-fs|mfs)\)[ \t_]*[+-][ \t_]*\d+\.\d+px/g;
 
 function normalizePath(file: string): string {
 	return file.split(path.sep).join("/");
@@ -187,10 +291,143 @@ export function collectOversizedFiles(root: string = ROOT, trackedFiles: readonl
 	return Object.fromEntries(Object.entries(oversized).sort(([left], [right]) => left.localeCompare(right)));
 }
 
+export function emptyFixedFontSizeCounts(): FixedFontSizeCounts {
+	return { pixelClasses: 0, remClasses: 0, tailwindSizeClasses: 0, inlineFontSizes: 0, cssFontSizes: 0 };
+}
+
+export function totalFixedFontSizes(counts: Readonly<FixedFontSizeCounts>): number {
+	return counts.pixelClasses + counts.remClasses + counts.tailwindSizeClasses + counts.inlineFontSizes + counts.cssFontSizes;
+}
+
+/** Current fixed font sizes under `apps/web/src` (walked on disk, so a new
+ *  component fails the gate before it is ever staged; tests, components/dev/
+ *  and the known false positives excluded — see fontSizeScopeRejection). */
+export function collectFixedFontSizes(root: string = ROOT): FixedFontSizeCounts {
+	const counts = emptyFixedFontSizeCounts();
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		const matches = collectFixedFontSizeMatches(file, readFileSync(path.resolve(root, file), "utf8"));
+		for (const match of matches) {
+			counts[FIXED_FONT_SIZE_KIND_KEYS[match.kind]] += 1;
+		}
+	}
+	return counts;
+}
+
+/** Every fixed font size under `apps/web/src` (same scope and exclusions
+ *  as the counters) — a plain ban: any occurrence fails the gate. */
+export function collectBannedFixedFontSizes(root: string = ROOT): BannedFixedFontSize[] {
+	const banned: BannedFixedFontSize[] = [];
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		const source = readFileSync(path.resolve(root, file), "utf8");
+		for (const match of collectFixedFontSizeMatches(file, source)) {
+			banned.push({
+				file,
+				line: match.line,
+				column: match.column,
+				text: match.text,
+				pattern: FIXED_FONT_SIZE_KIND_KEYS[match.kind],
+			});
+		}
+	}
+	return banned;
+}
+
+/** Fractional ladder offsets under `apps/web/src` (same scope and exclusions
+ *  as the fixed-font rule) — a plain ban: any occurrence fails the gate. */
+export function collectFractionalLadderOffsets(root: string = ROOT): FractionalLadderOffset[] {
+	const offsets: FractionalLadderOffset[] = [];
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		const source = readFileSync(path.resolve(root, file), "utf8");
+		for (const match of source.matchAll(FRACTIONAL_LADDER_OFFSET_PATTERN)) {
+			if (match.index === undefined) continue;
+			const before = source.slice(0, match.index);
+			const lineStart = before.lastIndexOf("\n") + 1;
+			offsets.push({ file, line: before.split("\n").length, column: match.index - lineStart + 1, text: match[0] });
+		}
+	}
+	return offsets;
+}
+
+/** `import [type] <clause> from "<module>"` — the clause may span lines and
+ *  never contains a quote or semicolon before its module specifier. */
+const DND_KIT_FROM_IMPORT_PATTERN = /\bimport\s+(type\s+)?([^;'"]*?)\s*from\s*["']([^"']+)["']/g;
+/** Bare side-effect `import "@dnd-kit/…"` — always a value import. */
+const DND_KIT_SIDE_EFFECT_IMPORT_PATTERN = /\bimport\s*["'](@dnd-kit\/[^"']+)["']/g;
+
+function isDndKitScopeFile(file: string): boolean {
+	const normalized = normalizePath(file);
+	if (!/\.(?:ts|tsx)$/.test(normalized)) return false;
+	if (!normalized.startsWith(`${DND_KIT_SCOPE_ROOT}/`)) return false;
+	if (/\.test\.(?:ts|tsx)$/.test(normalized) || normalized.includes("/test/")) return false;
+	if (normalized.startsWith(`${DND_KIT_DEV_ROOT}/`)) return false;
+	if (normalized.startsWith(`${MASTER_LIST_ROOT}/`)) return false;
+	return !(normalized in DND_KIT_EXEMPT_FILES);
+}
+
+function sourceLocation(source: string, index: number): { line: number; column: number } {
+	const before = source.slice(0, index);
+	return { line: before.split("\n").length, column: index - (before.lastIndexOf("\n") + 1) + 1 };
+}
+
+/** A dnd-kit import is tolerated only when it wires nothing: `import type`
+ *  clauses are inert, and `arrayMove` from `@dnd-kit/sortable` is the plan's
+ *  known residue (a pure array utility, not drag wiring). Every other value
+ *  import is drag runtime a master-detail list must get from the primitive. */
+function isAllowedDndKitImport(typeOnly: boolean, clause: string, module: string): boolean {
+	if (typeOnly) return true;
+	const openBrace = clause.indexOf("{");
+	if (openBrace === -1) return false;
+	if (clause.slice(0, openBrace).trim() !== "") return false;
+	const named = clause.slice(openBrace + 1, clause.lastIndexOf("}"));
+	const valueNames = named
+		.split(",")
+		.map((specifier) => specifier.trim())
+		.filter((specifier) => specifier !== "" && !/^type\s/.test(specifier))
+		.map((specifier) => specifier.split(/\s+as\s+/)[0]?.trim() ?? "");
+	return module === "@dnd-kit/sortable" && valueNames.every((name) => name === "arrayMove");
+}
+
+/** dnd-kit imports under the components tree, outside the master-list
+ *  primitive and the plan's allowances — walked on disk (same walker and
+ *  test/dev exclusions as the fixed-font rule), so a new hand-rolled list
+ *  fails the gate before it is ever staged. */
+export function collectBannedDndKitImports(root: string = ROOT): BannedDndKitImport[] {
+	const banned: BannedDndKitImport[] = [];
+	for (const file of collectFontSizeTargetFiles(FONT_SIZE_ROOT, root)) {
+		if (!isDndKitScopeFile(file)) continue;
+		const source = readFileSync(path.resolve(root, file), "utf8");
+		for (const match of source.matchAll(DND_KIT_FROM_IMPORT_PATTERN)) {
+			const typeOnly = match[1] !== undefined;
+			const clause = match[2] ?? "";
+			const module = match[3] ?? "";
+			if (!module.startsWith("@dnd-kit/")) continue;
+			if (isAllowedDndKitImport(typeOnly, clause, module)) continue;
+			const { line, column } = sourceLocation(source, match.index);
+			banned.push({
+				file,
+				line,
+				column,
+				module,
+				statement: `import ${clause.trim().replace(/\s+/g, " ")} from "${module}"`,
+			});
+		}
+		for (const match of source.matchAll(DND_KIT_SIDE_EFFECT_IMPORT_PATTERN)) {
+			const module = match[1] ?? "";
+			const { line, column } = sourceLocation(source, match.index);
+			banned.push({ file, line, column, module, statement: `import "${module}"` });
+		}
+	}
+	return banned;
+}
+
 export function evaluateArchGate(
 	baseline: ArchGateBaseline,
 	layerImports: readonly LayerImport[],
 	oversizedFiles: Readonly<Record<string, number>>,
+	fixedFontSizes: Readonly<FixedFontSizeCounts> = emptyFixedFontSizeCounts(),
+	fractionalLadderOffsets: readonly FractionalLadderOffset[] = [],
+	bannedFixedFontSizes: readonly BannedFixedFontSize[] = [],
+	bannedDndKitImports: readonly BannedDndKitImport[] = [],
 ): ArchGateReport {
 	const baselineLayerImports = new Set(baseline.layerImports);
 	const currentLayerImports = new Set(layerImports.map(toLayerKey));
@@ -201,6 +438,10 @@ export function evaluateArchGate(
 		baseline,
 		layerImports: [...layerImports],
 		oversizedFiles: { ...oversizedFiles },
+		fixedFontSizes: { ...fixedFontSizes },
+		fractionalLadderOffsets: [...fractionalLadderOffsets],
+		bannedFixedFontSizes: [...bannedFixedFontSizes],
+		bannedDndKitImports: [...bannedDndKitImports],
 		newLayerImports: layerImports.filter((entry) => !baselineLayerImports.has(toLayerKey(entry))),
 		removedLayerImportKeys: baseline.layerImports.filter((key) => !currentLayerImports.has(key)).sort(),
 		growingOversizedFiles: currentOversizedFiles.flatMap(([file, current]) => {
@@ -221,17 +462,34 @@ export function evaluateArchGate(
 }
 
 function hasFailures(report: ArchGateReport): boolean {
-	return report.newLayerImports.length > 0 || report.growingOversizedFiles.length > 0 || report.newOversizedFiles.length > 0;
+	return (
+		report.newLayerImports.length > 0 ||
+		report.growingOversizedFiles.length > 0 ||
+		report.newOversizedFiles.length > 0 ||
+		report.bannedFixedFontSizes.length > 0 ||
+		report.fractionalLadderOffsets.length > 0 ||
+		report.bannedDndKitImports.length > 0
+	);
 }
 
 function hasReductions(report: ArchGateReport): boolean {
-	return report.removedLayerImportKeys.length > 0 || report.shrunkOversizedFiles.length > 0 || report.removedOversizedFiles.length > 0;
+	return (
+		report.removedLayerImportKeys.length > 0 ||
+		report.shrunkOversizedFiles.length > 0 ||
+		report.removedOversizedFiles.length > 0
+	);
 }
 
 export function formatArchGateReport(report: ArchGateReport): string {
 	const lines: string[] = [];
 	if (hasFailures(report)) {
-		const failureCount = report.newLayerImports.length + report.growingOversizedFiles.length + report.newOversizedFiles.length;
+		const failureCount =
+			report.newLayerImports.length +
+			report.growingOversizedFiles.length +
+			report.newOversizedFiles.length +
+			report.bannedFixedFontSizes.length +
+			report.fractionalLadderOffsets.length +
+			report.bannedDndKitImports.length;
 		lines.push(`Architecture gate: FAIL — ${failureCount} new architecture violation(s) detected.`);
 		for (const entry of report.newLayerImports) {
 			lines.push(`  [domain-layer-import] services/api/src/${entry.file}:${entry.line}`);
@@ -247,6 +505,21 @@ export function formatArchGateReport(report: ArchGateReport): string {
 			lines.push(`  [file-size-ratchet] ${entry.file}:1`);
 			lines.push(`    ${entry.current} lines > ${ARCH_GATE_MAX_LINES}-line cap; this file is not in the baseline`);
 			lines.push(`    → ${FILE_SIZE_HINT}`);
+		}
+		for (const entry of report.bannedFixedFontSizes) {
+			lines.push(`  [fixed-font-size] ${entry.file}:${entry.line}:${entry.column}`);
+			lines.push(`    ${entry.text}`);
+			lines.push(`    → ${FIXED_FONT_SIZE_HINTS[entry.pattern]}`);
+		}
+		for (const entry of report.fractionalLadderOffsets) {
+			lines.push(`  [fractional-ladder-offset] ${entry.file}:${entry.line}:${entry.column}`);
+			lines.push(`    ${entry.text}`);
+			lines.push(`    → ${FRACTIONAL_LADDER_OFFSET_HINT}`);
+		}
+		for (const entry of report.bannedDndKitImports) {
+			lines.push(`  [dnd-kit-import] ${entry.file}:${entry.line}:${entry.column}`);
+			lines.push(`    ${entry.statement}`);
+			lines.push(`    → ${DND_KIT_BANNED_IMPORT_HINT}`);
 		}
 	} else {
 		lines.push("Architecture gate: OK — all current violations are within baseline.");
@@ -265,7 +538,7 @@ export function formatArchGateReport(report: ArchGateReport): string {
 	}
 
 	lines.push(
-		`  budgets: layer imports ${report.layerImports.length}/${report.baseline.layerImports.length}, oversized files ${Object.keys(report.oversizedFiles).length}/${Object.keys(report.baseline.oversizedFiles).length}, new-file cap ${ARCH_GATE_MAX_LINES} lines`,
+		`  budgets: layer imports ${report.layerImports.length}/${report.baseline.layerImports.length}, oversized files ${Object.keys(report.oversizedFiles).length}/${Object.keys(report.baseline.oversizedFiles).length}, new-file cap ${ARCH_GATE_MAX_LINES} lines, fixed font sizes ${totalFixedFontSizes(report.fixedFontSizes)} (plain ban: any occurrence fails), dnd-kit imports ${report.bannedDndKitImports.length} (plain ban: any occurrence fails)`,
 	);
 	return lines.join("\n");
 }
@@ -300,7 +573,10 @@ async function loadBaseline(): Promise<ArchGateBaseline> {
 	}
 }
 
-function baselineFromCurrent(layerImports: readonly LayerImport[], oversizedFiles: Readonly<Record<string, number>>): ArchGateBaseline {
+function baselineFromCurrent(
+	layerImports: readonly LayerImport[],
+	oversizedFiles: Readonly<Record<string, number>>,
+): ArchGateBaseline {
 	return {
 		layerImports: [...new Set(layerImports.map(toLayerKey))].sort(),
 		oversizedFiles: Object.fromEntries(Object.entries(oversizedFiles).sort(([left], [right]) => left.localeCompare(right))),
@@ -330,16 +606,26 @@ async function main(): Promise<number> {
 
 	const layerImports = await collectLayerImports();
 	const oversizedFiles = collectOversizedFiles();
+	const fixedFontSizes = collectFixedFontSizes();
+	const fractionalLadderOffsets = collectFractionalLadderOffsets();
+	const bannedFixedFontSizes = collectBannedFixedFontSizes();
+	const bannedDndKitImports = collectBannedDndKitImports();
 	if (!existsSync(BASELINE_PATH)) {
 		if (!updateBaseline) {
 			console.error(`arch-gate: no baseline found at ${path.relative(ROOT, BASELINE_PATH)}.`);
-			console.error(`  Found ${layerImports.length} domain layer pair(s) and ${Object.keys(oversizedFiles).length} oversized file(s).`);
+			console.error(
+				`  Found ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s) and ${totalFixedFontSizes(fixedFontSizes)} fixed font size(s).`,
+			);
 			console.error("  Verify these counts, then generate the initial baseline with:");
 			console.error("    bun scripts/arch-gate.ts --update-baseline");
 			return 1;
 		}
 		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles));
-		console.log(`arch-gate: baseline initialized → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s).`);
+		console.log(
+			`arch-gate: baseline initialized → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s), ${totalFixedFontSizes(
+				fixedFontSizes,
+			)} fixed font size(s) (plain ban: any occurrence fails).`,
+		);
 		return 0;
 	}
 
@@ -350,7 +636,15 @@ async function main(): Promise<number> {
 		console.error(`arch-gate: ${error instanceof Error ? error.message : String(error)}`);
 		return 1;
 	}
-	const report = evaluateArchGate(baseline, layerImports, oversizedFiles);
+	const report = evaluateArchGate(
+		baseline,
+		layerImports,
+		oversizedFiles,
+		fixedFontSizes,
+		fractionalLadderOffsets,
+		bannedFixedFontSizes,
+		bannedDndKitImports,
+	);
 
 	if (updateBaseline) {
 		if (hasFailures(report)) {
@@ -359,7 +653,11 @@ async function main(): Promise<number> {
 			return 1;
 		}
 		await writeBaseline(baselineFromCurrent(layerImports, oversizedFiles));
-		console.log(`arch-gate: baseline lowered → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s).`);
+		console.log(
+			`arch-gate: baseline lowered → ${layerImports.length} domain layer pair(s), ${Object.keys(oversizedFiles).length} oversized file(s), ${totalFixedFontSizes(
+				fixedFontSizes,
+			)} fixed font size(s) (plain ban: any occurrence fails).`,
+		);
 		return 0;
 	}
 

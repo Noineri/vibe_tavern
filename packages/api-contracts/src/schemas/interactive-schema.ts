@@ -10,9 +10,10 @@
  * because it came from the VM — every boundary is validated here (and again in
  * the kernel, IR-12) before persistence or visual delivery.
  *
- * The bounded-JSON guard (`jsonBoundsError`) is exported as a standalone pure
- * function so the synchronous kernel (IR-12) can reuse the exact same depth +
- * size + JSON-round-trip enforcement without coupling to Zod.
+ * The bounded-JSON guard (`jsonBoundsError`, in bounded-json.ts) is re-exported
+ * as a standalone pure function so the synchronous kernel (IR-12) can reuse the
+ * exact same depth + size + JSON-round-trip enforcement without coupling to
+ * Zod.
  *
  * Convention follows dice-schema.ts: canonical enum literals mirror
  * platform-constants.ts exactly; request/update schemas carry NO defaults unless
@@ -20,6 +21,7 @@
  */
 
 import { z } from "zod";
+import { boundedJsonValue } from "./bounded-json.js";
 
 // ─── Enums (canonical — mirror packages/domain/src/platform-constants.ts) ────
 
@@ -139,84 +141,11 @@ const boundedRevision = z.number().int().min(0).max(INTERACTIVE_SCHEMA_MAX_REVIS
 
 // ─── Bounded JSON guard ──────────────────────────────────────────────────────
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+// The guard implementation lives in bounded-json.ts (extracted when this
+// file hit the architecture size ratchet); re-exported here so this module's
+// surface — and the package's `./interactive` export — is unchanged.
 
-/**
- * Validate that `value` is JSON-safe, nests no deeper than `maxDepth`, and
- * serializes to no more than `maxBytes`. Returns a stable error reason string,
- * or `null` when valid. Pure (no I/O, no Zod) so the synchronous kernel (IR-12)
- * reuses the exact same enforcement as the wire schema. Rejects `undefined`,
- * functions, symbols, bigints, non-finite numbers, and cyclic structures — none
- * of these round-trip through `JSON.parse(JSON.stringify(…))`.
- */
-export function jsonBoundsError(
-  value: unknown,
-  opts: { maxDepth: number; maxBytes: number },
-): string | null {
-  const { maxDepth, maxBytes } = opts;
-  const stack: Array<{ v: unknown; d: number }> = [{ v: value, d: 0 }];
-  const seen = new Set<unknown>();
-  while (stack.length > 0) {
-    const { v, d } = stack.pop()!;
-    const t = typeof v;
-    if (v === null || t === "boolean") continue;
-    if (t === "number") {
-      if (!Number.isFinite(v)) return "non-finite number is not JSON-safe";
-      continue;
-    }
-    if (t === "string") continue;
-    if (t === "undefined" || t === "function" || t === "symbol" || t === "bigint") {
-      return `value of type ${t} is not JSON-safe`;
-    }
-    // Object or array: enforce depth + cycle guard before descending.
-    if (d + 1 > maxDepth) {
-      return `json nesting depth exceeds ${maxDepth}`;
-    }
-    if (seen.has(v)) {
-      return "cyclic structure is not JSON-safe";
-    }
-    seen.add(v);
-    if (Array.isArray(v)) {
-      for (let i = 0; i < v.length; i += 1) {
-        stack.push({ v: v[i], d: d + 1 });
-      }
-    } else if (isPlainObject(v)) {
-      for (const child of Object.values(v)) {
-        stack.push({ v: child, d: d + 1 });
-      }
-    } else {
-      return "value is not JSON-safe";
-    }
-  }
-  // Size guard via serialization (also catches anything the walk could miss).
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(value);
-  } catch {
-    return "value is not JSON-serializable";
-  }
-  if (serialized.length > maxBytes) {
-    return `json size ${serialized.length} exceeds ${maxBytes} bytes`;
-  }
-  return null;
-}
-
-/**
- * A `z.unknown()` refined by {@link jsonBoundsError}. Use for authoritative
- * state, projected state, action payloads, event details, and effect requests —
- * anywhere untrusted/sandbox-produced JSON must be bounded before persistence or
- * visual delivery.
- */
-export function boundedJsonValue(opts: { maxDepth: number; maxBytes: number }) {
-  return z.unknown().superRefine((value, ctx) => {
-    const err = jsonBoundsError(value, opts);
-    if (err !== null) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
-    }
-  });
-}
+export { jsonBoundsError, boundedJsonValue } from "./bounded-json.js";
 
 const boundedState = boundedJsonValue({
   maxDepth: INTERACTIVE_SCHEMA_MAX_DEPTH,

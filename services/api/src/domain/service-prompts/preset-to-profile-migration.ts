@@ -35,9 +35,8 @@ import type { UiSettingsStore } from "@vibe-tavern/db";
 import { ServicePromptProfileStore } from "@vibe-tavern/db";
 import type { ServicePromptProfile } from "@vibe-tavern/db";
 import type { PromptPreset } from "@vibe-tavern/db";
-import { SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
+import { isRecord, SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
 import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
-import { getAllModeConfigs } from "../ai-assistant/ai-assistant-modes.js";
 
 /** Structural dependency set — the full StoreContainer satisfies it; tests
  *  can pass a three-store literal. */
@@ -59,18 +58,33 @@ export interface PresetMigrationResult {
 	activeProfileId: string | null;
 }
 
-/** The keys the preset editor ever wrote into `aiAssistantPrompts` — the
- *  assistant family, taken from the mode registry (single source of truth). */
-const PRESET_JSON_KEYS: readonly string[] = getAllModeConfigs().map((config) => config.presetKey);
+/** HISTORICAL — the keys old presets may hold in `aiAssistantPrompts`:
+ *  every key the preset editor ever wrote, frozen as a literal in its
+ *  original registry order. Deliberately independent of the live mode
+ *  registry — AS-10g removes assistant modes (script / dice_script first)
+ *  from that registry, but presets saved before the removal keep their JSON
+ *  keys, so the migration must keep reading them even once no mode config
+ *  enumerates them anymore. */
+const PRESET_JSON_KEYS: readonly string[] = [
+	"script",
+	"dice_script",
+	"lore_entry",
+	"message_edit",
+	"message_merge",
+	"message_tts_annotate",
+	"lore_keys",
+	"chat_impersonate",
+	"md_import",
+	"vision_describe",
+	"scene_schema",
+	"scene_rules",
+	"regex",
+];
 
 const FIELD_KEY_SET = new Set<string>(SERVICE_PROMPT_FIELD_KEYS);
 
 function isFieldKey(key: string): key is ServicePromptFieldKey {
 	return FIELD_KEY_SET.has(key);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Extract trim-non-empty overrides from one preset row. Order of precedence

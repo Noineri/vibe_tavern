@@ -73,6 +73,7 @@ import type {
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -144,23 +145,6 @@ function parseConfig(config: ImageGenAdapterConfig): FalImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new FalImageError(
-      `fal ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 /** fal auth headers — `Authorization: Key <key>` (their own format), plus
  *  the privacy opt-out `X-Fal-Store-IO: 0` on every request (opts out of
  *  the 30-day request-payload storage — the google `store:false`
@@ -185,7 +169,7 @@ async function cancelFalRequest(
   await fetchOrWrap(transport, cancelUrl, {
     method: "DELETE",
     headers: falHeaders(apiKey, false),
-  }, "cancel").catch(() => undefined);
+  }, "cancel", "fal", FalImageError).catch(() => undefined);
 }
 
 /** Poll a fal queue request until COMPLETED. Exported as the test seam:
@@ -210,6 +194,8 @@ export async function pollFalRequest(params: {
         signal: params.signal,
       },
       "status poll",
+      "fal",
+      FalImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -256,7 +242,7 @@ async function listFalModels(transport: typeof fetch, signal?: AbortSignal): Pro
       method: "GET",
       headers: { accept: "application/json" },
       signal,
-    }, "model list");
+    }, "model list", "fal", FalImageError);
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
       throw new FalImageError(
@@ -325,6 +311,8 @@ export const falImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend 
           signal: request.signal,
         },
         "generation",
+        "fal",
+        FalImageError,
       );
       if (!submit.ok) {
         const excerpt = await readProviderErrorBody(submit);
@@ -365,6 +353,8 @@ export const falImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend 
             signal: request.signal,
           },
           "result fetch",
+          "fal",
+          FalImageError,
         );
         if (!responseFetch.ok) {
           const excerpt = await readProviderErrorBody(responseFetch);
@@ -414,6 +404,8 @@ export const falImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend 
           url,
           { method: "GET", signal: request.signal },
           "image download",
+          "fal",
+          FalImageError,
         );
         if (!download.ok) {
           throw new FalImageError(`fal image download failed with HTTP ${download.status}`, {

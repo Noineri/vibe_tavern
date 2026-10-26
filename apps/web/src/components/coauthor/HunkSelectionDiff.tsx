@@ -129,15 +129,15 @@ export function HunkSelectionDiff({
   if (diff.tooLarge) {
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12 }}>
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
-        <div className="font-ui text-[12px] leading-relaxed text-t3">{labels.tooLarge}</div>
+        <div className="mb-1 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{labels.tooLarge}</div>
       </div>
     );
   }
   if (total === 0) {
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12 }}>
-        <div className="font-ui text-[12px] text-t3">{labels.noChanges}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{labels.noChanges}</div>
       </div>
     );
   }
@@ -146,14 +146,14 @@ export function HunkSelectionDiff({
     <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-bg" style={{ padding: 12 }}>
       {/* Header: title + count + select-all/none. */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] tabular-nums text-t2">
+          <span className="font-mono text-[calc(var(--ui-fs)-3px)] tabular-nums text-t2">
             {labels.applyingCount.replace("{selected}", String(selectedCount)).replace("{total}", String(total))}
           </span>
           <button
             type="button"
-            className="rounded border border-border/60 px-1.5 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:bg-s2 disabled:opacity-40"
+            className="rounded border border-border/60 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:bg-s2 disabled:opacity-40"
             disabled={allSelected}
             onClick={onSelectAll}
           >
@@ -161,7 +161,7 @@ export function HunkSelectionDiff({
           </button>
           <button
             type="button"
-            className="rounded border border-border/60 px-1.5 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:bg-s2 disabled:opacity-40"
+            className="rounded border border-border/60 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:bg-s2 disabled:opacity-40"
             disabled={noneSelected}
             onClick={onSelectNone}
           >
@@ -170,7 +170,7 @@ export function HunkSelectionDiff({
         </div>
       </div>
 
-      <pre className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
+      <pre className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
         {segments.map((seg, si) => {
           if (seg.type === "context") {
             return (
@@ -202,16 +202,16 @@ export function HunkSelectionDiff({
                   checked={selected}
                   onChange={() => onToggleHunk(hunk.id)}
                   label={
-                    <span className="font-ui text-[10px] font-medium text-t2">
+                    <span className="font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-t2">
                       {labels.hunkN.replace("{n}", String(hunk.id + 1))}
                     </span>
                   }
                 />
                 <div className="flex items-center gap-2">
                   {!selected && (
-                    <span className="font-ui text-[10px] italic text-t4">{labels.skipped}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-4px)] italic text-t4">{labels.skipped}</span>
                   )}
-                  <span className="font-mono text-[10px] tabular-nums">
+                  <span className="font-mono text-[calc(var(--ui-fs)-4px)] tabular-nums">
                     <span className="text-success-text">+{hunk.added}</span>{" "}
                     <span className="text-danger-text">-{hunk.removed}</span>
                   </span>

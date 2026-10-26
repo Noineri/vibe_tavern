@@ -227,7 +227,7 @@ export function mergeAbsentSetupDefaults(
  * modal's roster/phase errors. */
 export function FieldError({ text }: { text: string }) {
   return (
-    <p className="font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+    <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-danger-text" role="alert">
       {text}
     </p>
   );
@@ -249,7 +249,7 @@ export function SetupFieldRow({ field, value, error, t, onText, onNumber, onTogg
   return (
     <div className="flex flex-col gap-1" data-field-id={field.id}>
       <div className="flex items-center gap-1">
-        <label className="font-ui text-[12px] font-medium text-t2">
+        <label className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
           {field.label}
           {requiredMark}
         </label>

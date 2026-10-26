@@ -37,6 +37,11 @@ export const coauthorToolSetSchema = z.object({
   // opt out if they don't need library search.
   search_context: z.boolean().optional(),
   read_context_item: z.boolean().optional(),
+  // CT-7a: propose the character's tracker template (scene + objective
+  // setup). A card-level proposal surface like the lore tools — gated so
+  // voice/prose-focused modules (dialogue-writer, profile-editor) keep their
+  // tool blocks (and prompts) unchanged.
+  set_tracker_template: z.boolean().optional(),
 });
 
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;
@@ -114,3 +119,12 @@ export type CoauthorModuleCreate = z.infer<typeof coauthorModuleCreateSchema>;
 export const coauthorModuleUpdateSchema = coauthorModuleCreateSchema.partial();
 
 export type CoauthorModuleUpdate = z.infer<typeof coauthorModuleUpdateSchema>;
+
+/** Manual list order rewrite (ML-5): one update per user-module row, applied
+ *  in a single transaction. Same shape as `reorderProxiesSchema`. */
+export const reorderCoauthorModulesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

@@ -6,6 +6,7 @@ import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestra
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { PromptPresetService } from "../../domain/prompt/prompt-preset-service.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import type { MobileAccessService } from "../../domain/mobile-access/mobile-access-service.js";
 import { BootstrapAdapter } from "./bootstrap-adapter.js";
 import { ChatAdapter } from "./chat-adapter.js";
@@ -30,8 +31,12 @@ import type { SceneTrackerService } from "../../domain/insights/tracker-service.
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
-import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
+import { CopilotSkillAdapter, createCopilotSkillKindResolver } from "./copilot-skill-adapter.js";
+import type { CopilotSkillsByKindRuntimeApi } from "../contract/runtime-api.js";
+import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
+import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
+import { AgentPlanAdapter } from "./agent-plan-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { AiInstructionTemplateAdapter } from "./ai-instruction-template-adapter.js";
@@ -40,6 +45,8 @@ import { ImagePromptProfileAdapter } from "./image-prompt-profile-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
+import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import type { DiceService } from "../../domain/dice/dice-service.js";
 import type { ExperienceService } from "../../domain/interactive/experience-service.js";
@@ -80,14 +87,16 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
-	readonly copilotSkills: CopilotSkillAdapter;
+	readonly copilotSkills: CopilotSkillsByKindRuntimeApi;
 	readonly copilotProfiles: CopilotProfileAdapter;
+	readonly agentPlan: AgentPlanAdapter;
 	readonly samplerSets: SamplerSetAdapter;
 	readonly formatTemplates: FormatTemplateAdapter;
 	readonly aiInstructionTemplates: AiInstructionTemplateAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
+	readonly agentThreadProposals: AgentThreadProposalAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -109,6 +118,19 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		experienceModelEffectService: ExperienceModelEffectService,
 		experienceContextService: ExperienceContextService,
 		copilotSkillService: SkillLibraryService,
+		/** Script-agent skill library (AS-8d1) — the script kind's own roots
+		 * (`<dataDir>/agent-script/skills` + the built-in asset root). Optional so
+		 * lifecycle-only test harnesses can construct the adapter without it
+		 * (a `?kind=script` request then answers the same unknown-kind 400 as an
+		 * unregistered id). */
+		scriptSkillService?: SkillLibraryService,
+		/** Sidechat skill library (SIDECHAT_PLAN SC-5) — the `sidechat-ooc`
+		 * kind's own roots (`<dataDir>/agent-sidechat/skills` + the built-in
+		 * asset root). Optional for the same reason as the script one (a
+		 * `?kind=sidechat-ooc` request then answers the unknown-kind-shaped
+		 * 400). */
+		sidechatSkillService?: SkillLibraryService,
+		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -151,14 +173,49 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
-		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
-		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
+		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService, stores.skillOrders, COAUTHOR_SKILL_LIBRARY);
+		// AS-8d1/SC-5: the copilot skill adapters keyed by agent kind —
+		// experience keeps the CP-5 copilot library; the script kind gets its
+		// own adapter over the script-agent roots and the sidechat kind over
+		// the sidechat roots (each absent when no service was wired). ML-7: each
+		// adapter's order key is its agent-kind id (the same string the
+		// per-kind routes resolve through the registry) — one stored order per
+		// kind's library.
+		const copilotSkillServices: Array<[AgentKindId, SkillLibraryService]> = [
+			["experience", copilotSkillService],
+		];
+		if (scriptSkillService !== undefined) copilotSkillServices.push(["script", scriptSkillService]);
+		if (sidechatSkillService !== undefined) copilotSkillServices.push(["sidechat-ooc", sidechatSkillService]);
+		this.copilotSkills = createCopilotSkillKindResolver(
+			new Map(
+				copilotSkillServices.map(([kind, service]) => [kind, new CopilotSkillAdapter(service, stores.skillOrders, kind)]),
+			),
+		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
+		this.agentPlan = new AgentPlanAdapter(stores);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
-		this.experienceCopilot = new ExperienceCopilotAdapter(stores, providerProfileService, copilotSkillService);
+		this.experienceCopilot = new ExperienceCopilotAdapter(
+			stores,
+			providerProfileService,
+			copilotSkillService,
+			scriptSkillService,
+			sidechatSkillService,
+			attachmentAssetLoader,
+			(assetId) => assetService.cleanup(assetId),
+		);
+		// SC-11: the thread-proposal apply/reject slice, wired with the REUSED
+		// insights seams — the insights runtime's add-task member (route mode;
+		// wired above, so its bound member is ready here) and the
+		// ObjectiveService's short-term adder (goals mode; the branded id
+		// enters at that adapter edge).
+		this.agentThreadProposals = new AgentThreadProposalAdapter(stores, {
+			addObjectiveTask: (chatId, body) => this.insights.addObjectiveTask(chatId, body),
+			addShortTermGoal: (chatId, description) =>
+				objectiveService.addShortTermGoal(brandId<ChatId>(chatId), description),
+		});
 	}
 }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { ContentStore, createFileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { createDb } from "@vibe-tavern/db";
-import { ProviderStore, TtsStore } from "@vibe-tavern/db";
+import { ProviderStore, TtsListingSnapshotStore, TtsStore } from "@vibe-tavern/db";
 
 import {
   NarrationLibraryService,
@@ -187,7 +187,8 @@ describe("narration library routes (TPE-18c)", () => {
     const db = await createDb(":memory:");
     const store = new TtsStore(db);
     const providers = new ProviderStore(db);
-    const adapter = new TtsAdapter({ tts: store, providers }, service);
+    const ttsListingSnapshots = new TtsListingSnapshotStore(db);
+    const adapter = new TtsAdapter({ tts: store, providers, ttsListingSnapshots }, service);
     return { app: createTtsRoutes(adapter), dataRoot, spawned };
   }
 

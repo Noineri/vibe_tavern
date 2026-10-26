@@ -15,6 +15,7 @@ import {
   createCopilotProfile,
   updateCopilotProfile,
   deleteCopilotProfile,
+  reorderCopilotProfiles,
 } from "../api/copilot-profile-api.js";
 
 export interface CopilotProfileState {
@@ -23,17 +24,26 @@ export interface CopilotProfileState {
   /** True once the first `load()` resolves (distinguishes "loading" from
    *  "loaded an empty list"). */
   hasLoaded: boolean;
+  /** The kind the current list was loaded for (AS-8b — lists are
+   *  kind-filtered server-side; mutations refresh under the SAME kind). */
+  kind: string;
 }
 
 export interface CopilotProfileActions {
-  /** Fetch the full list (built-in seed + user profiles). Safe to call repeatedly. */
-  load: () => Promise<void>;
+  /** Fetch the list for a kind (its built-in seed + its user profiles). Safe
+   *  to call repeatedly. Omitting `kind` re-fetches the last-loaded kind. */
+  load: (kind?: string) => Promise<void>;
   /** Create a user profile and refresh. Returns the created profile. */
   create: (input: CopilotProfileCreate) => Promise<CopilotProfile>;
   /** Update a user profile and refresh. Returns the updated profile. */
   update: (id: string, input: CopilotProfileUpdate) => Promise<CopilotProfile>;
   /** Delete a user profile and refresh. The built-in id is rejected server-side. */
   remove: (id: string) => Promise<void>;
+  /** Rewrite ONE kind's user profiles' manual list order (ML-8) and adopt
+   *  the reorder response (the server returns the refreshed merged list —
+   *  the ServicePromptsPane pattern, no second fetch). The built-in seed
+   *  has no stored record and never appears in `updates`. */
+  reorder: (kind: string, updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 }
 
 export type CopilotProfileStore = CopilotProfileState & CopilotProfileActions;
@@ -42,11 +52,13 @@ export const useCopilotProfileStore = create<CopilotProfileStore>()((set, get) =
   profiles: [],
   isLoading: false,
   hasLoaded: false,
+  kind: "experience",
 
-  load: async () => {
-    set({ isLoading: true });
+  load: async (kind?: string) => {
+    const effectiveKind = kind ?? get().kind;
+    set({ isLoading: true, ...(kind !== undefined ? { kind } : {}) });
     try {
-      const profiles = await listCopilotProfiles();
+      const profiles = await listCopilotProfiles(effectiveKind);
       set({ profiles, isLoading: false, hasLoaded: true });
     } catch {
       // Keep stale profiles on failure rather than blanking the UI; the caller's
@@ -70,6 +82,11 @@ export const useCopilotProfileStore = create<CopilotProfileStore>()((set, get) =
   remove: async (id) => {
     await deleteCopilotProfile(id);
     await get().load();
+  },
+
+  reorder: async (kind, updates) => {
+    const profiles = await reorderCopilotProfiles(kind, updates);
+    set({ profiles });
   },
 }));
 

@@ -48,7 +48,8 @@ export function ImportedScriptWarningModal({ intent, onConfirm, onCancel }: Impo
 
   const handleConfirm = () => {
     if (suppress) {
-      // The checkbox is the only suppression write path (decision 3).
+      // One of the two suppression write paths (decision 3); the other is
+      // the «Script import warnings» settings row (`use-script-warnings-toggle`).
       // Best-effort: a failed PUT never blocks the acknowledged action — the
       // decision was made in THIS modal; only FUTURE warning visibility is at
       // stake, and the failure is surfaced rather than swallowed.

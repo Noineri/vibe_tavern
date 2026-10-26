@@ -90,6 +90,38 @@ describe("useCoauthorTurnStore", () => {
     }]);
   });
 
+  it("CT-7b: recognizes a persisted tracker-template result as a done proposal", () => {
+    const trackerTemplate = {
+      version: 1,
+      scene: { enabled: true, config: { schema: { location: { $type: "string" } } } },
+      objective: null,
+    };
+    const messages = [
+      { id: "user_new", role: "user", content: "draft trackers" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_tracker", name: "set_tracker_template", args: { scene: trackerTemplate.scene } }],
+      },
+      {
+        id: "tool_tracker",
+        role: "tool",
+        toolCallId: "call_tracker",
+        content: JSON.stringify({ trackerTemplate, summary: "Drafted tracker template." }),
+      },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_tracker",
+      toolName: "set_tracker_template",
+      args: { scene: trackerTemplate.scene },
+      status: "done",
+      summary: "Drafted tracker template.",
+      trackerTemplate: expect.objectContaining({ version: 1 }),
+    }]);
+  });
+
   it("CTX-S6: recognizes a read_skill_file result as a done read (not an error card)", () => {
     // A read result is {path, content} — it must NOT fall through the proposal
     // schema (which would flag it error). The extractor keys off the carrier

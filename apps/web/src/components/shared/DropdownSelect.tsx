@@ -4,7 +4,7 @@ import { Command } from "cmdk";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Ic } from "./icons.js";
-import { getModalPortal } from "./modal-helpers.js";
+import { useOverlayPortalSession } from "./modal-helpers.js";
 
 // cmdk (and Radix Select before it) cannot represent an empty-string value as a
 // real selectable item: an empty value is treated as "no value". The sentinel
@@ -98,18 +98,12 @@ export function DropdownSelect({
   const [search, setSearch] = useState("");
   const commandRef = useRef<HTMLDivElement>(null);
 
-  // Popup portal container, frozen per popup-open session
-  // (SHEET_PORTAL_SELF_TARGETING): re-evaluating `getModalPortal()` on every
-  // render meant a stack-top change mid-popup (or a sheet re-render while this
-  // popup is open inside it) re-targeted the portal and tore the popup down.
-  // The rising edge of `open` always goes through handleOpenChange, so the
-  // container is captured in the same event/batch as the open flip — the
-  // first popup render already sees the frozen container, no staging gap.
-  // Kept through close (Radix exit presence — never re-target an exiting
-  // popup); replaced on the next open. `container: null` means "no overlay
-  // host — default body"; the session wrapper distinguishes it from
-  // "not resolved yet".
-  const [portalSession, setPortalSession] = useState<{ container: HTMLElement | null } | null>(null);
+  // Popup portal container, frozen per popup-open session — the shared
+  // `useOverlayPortalSession` (modal-helpers; see the SHEET_PORTAL_SELF_TARGETING
+  // rationale there). The rising edge of `open` always goes through
+  // handleOpenChange, so the container is captured in the same event/batch
+  // as the open flip.
+  const { portalContainer, capturePortalSession } = useOverlayPortalSession();
 
   const selected = (groups ? groups.flatMap((g) => g.options) : options).find((o) => o.id === value);
   // Empty value: a caller's own placeholder wins (sites that pass both a
@@ -124,6 +118,12 @@ export function DropdownSelect({
     // ReactNode labels have no searchable text — keep them visible rather
     // than filtering them out of existence on every query.
     !searchable || (typeof o.label === "string" ? o.label.toLowerCase().includes(search.toLowerCase()) : true);
+
+  // The default row is first in the list and cmdk highlights the first item, so
+  // while a search is typed it must match like any other row — otherwise Enter
+  // after a search picks the (empty) default instead of the first match.
+  const showDefaultRow =
+    !searchable || !search || (defaultOption ?? "").toLowerCase().includes(search.toLowerCase());
 
   const filtered = options
     .filter((o) => o.id !== "") // empty-id options rendered as defaultOption below
@@ -141,7 +141,7 @@ export function DropdownSelect({
   }
 
   function handleOpenChange(isOpen: boolean) {
-    if (isOpen) setPortalSession({ container: getModalPortal() });
+    if (isOpen) capturePortalSession();
     setOpen(isOpen);
     if (isOpen && searchable) setSearch("");
   }
@@ -156,16 +156,10 @@ export function DropdownSelect({
     }
   }
 
-  // When inside an overlay (Modal, BottomSheet), portal into the topmost
-  // overlay's anchor element so the content stays within that overlay's focus
-  // scope AND paints above it (modal-helpers keeps a stack of overlay portal
-  // nodes; D2). When outside any overlay, portal to body. Resolved ONCE per
-  // popup-open session (see portalSession above); the isConnected guard bounds
-  // a stale disconnected container to one frame before the next capture.
-  const portalContainer =
-    portalSession?.container && portalSession.container.isConnected
-      ? portalSession.container
-      : undefined;
+  // When inside an overlay (Modal, BottomSheet), `portalContainer` is the
+  // topmost overlay's anchor so the content stays within that overlay's
+  // focus scope AND paints above it; outside any overlay it is `undefined`
+  // (portal to body). Resolved ONCE per popup-open session by the hook.
 
   function renderOption(o: DropdownOption) {
     return (
@@ -174,7 +168,7 @@ export function DropdownSelect({
         value={o.id}
         onSelect={() => handleSelect(o.id)}
         className={cn(
-          "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+          "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
           // cmdk sets data-selected="true"|"false" on every item, so the
           // selector must pin the value (=true) — bare data-[selected]
           // (presence) matches both and hides the active highlight.
@@ -192,7 +186,7 @@ export function DropdownSelect({
         <div className="flex min-w-0 flex-col gap-[1px]">
           <span className="min-w-0 break-words">{o.label}</span>
           {o.detail && (
-            <span className="min-w-0 break-words text-[11px] text-t2">
+            <span className="min-w-0 break-words text-[calc(var(--ui-fs)-3px)] text-t2">
               {o.detail}
             </span>
           )}
@@ -223,7 +217,7 @@ export function DropdownSelect({
           className={cn(
             "flex items-center justify-between gap-2 font-ui transition-colors duration-150",
             triggerClassName ??
-              "w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] text-[13px] text-t1 hover:border-accent" +
+              "w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] text-[calc(var(--ui-fs)-1px)] text-t1 hover:border-accent" +
                 (open ? " border-accent" : ""),
             disabled && "pointer-events-none opacity-40",
             className,
@@ -234,7 +228,7 @@ export function DropdownSelect({
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
               {display}
               {triggerDetail && selected?.detail ? (
-                <span className="ml-2 text-[11px] font-medium text-t2">
+                <span className="ml-2 text-[calc(var(--ui-fs)-3px)] font-medium text-t2">
                   {selected.detail}
                 </span>
               ) : null}
@@ -269,7 +263,7 @@ export function DropdownSelect({
                   placeholder={searchPlaceholder ?? t("dropdown_search_placeholder")}
                   value={search}
                   onValueChange={setSearch}
-                  className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
+                  className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-accent"
                 />
               </div>
             )}
@@ -279,12 +273,12 @@ export function DropdownSelect({
                 "overflow-y-auto p-1",
               )}
             >
-              {defaultOption && (
+              {defaultOption && showDefaultRow && (
                 <Command.Item
                   value={EMPTY_VALUE}
                   onSelect={() => handleSelect("")}
                   className={cn(
-                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
                     !value
                       ? "bg-accent-dim font-medium text-accent-t"
                       : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
@@ -298,7 +292,7 @@ export function DropdownSelect({
                     g.options.length > 0 ? (
                       <div key={g.id}>
                         {g.label && (
-                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wide text-t3">
                             {g.label}
                           </div>
                         )}
@@ -308,7 +302,7 @@ export function DropdownSelect({
                   )
                 : filtered.map(renderOption)}
               {(filteredGroups ? flatGroupedCount === 0 : filtered.length === 0) && (
-                <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">
+                <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                   —
                 </div>
               )}

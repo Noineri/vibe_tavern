@@ -47,6 +47,8 @@ import type {
   ExperienceRoundModelResponseDto,
   ExperienceSessionResponse,
   ExperienceStartRequest,
+  ExperienceTestDiscoverData,
+  ExperienceTestDiscoverRequest,
   ExperienceTestRunData,
   ExperienceTestRunRequest,
   ExperienceTestSimulateData,
@@ -411,6 +413,16 @@ export async function updateExperienceCharacterOverride(
  *  vm_error + kind) and the captured console in `details.console`. */
 export async function runExperienceTest(body: ExperienceTestRunRequest): Promise<ExperienceTestRunData> {
   const response = await client.api.experience.test.run.$post({ json: body });
+  return unwrapExperience(response);
+}
+
+/** POST /api/experience/test/discover — collect the definition from UNSAVED
+ *  rules source WITHOUT running `create` (no capability grants, no state). The
+ *  Try tab derives its launch context (grants, roster, setup fields) from this,
+ *  so rules whose `create` needs `context.random` / `context.participants` still
+ *  discover. Typed failures surface as {@link ExperienceApiError} like the run. */
+export async function discoverExperience(body: ExperienceTestDiscoverRequest): Promise<ExperienceTestDiscoverData> {
+  const response = await client.api.experience.test.discover.$post({ json: body });
   return unwrapExperience(response);
 }
 

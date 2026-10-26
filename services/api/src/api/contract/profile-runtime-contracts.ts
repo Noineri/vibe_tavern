@@ -98,7 +98,8 @@ export interface SttRuntimeApi {
  *  one-shot generation that persists bytes as flat attachments and appends
  *  the image message slot, and the gallery-promotion mirror. */
 /** IF-20: a saved profile's listing — live, or the last-good snapshot
- *  (`snapshotAt` = its ISO fetch time) when the live fetch failed. */
+ *  (`snapshotAt` = its ISO fetch time) when the live fetch failed; on the
+ *  stored-first open path (step 11) also the stored list itself, unflagged. */
 export interface ImageGenListing<T> {
 	data: T;
 	snapshotAt?: string;
@@ -120,7 +121,7 @@ export interface ImageGenRuntimeApi {
 	/** Model catalog for a saved profile (picker data source): live, or the
 	 *  last-good snapshot flagged with `snapshotAt` when the live fetch
 	 *  failed (IF-20). Null = unknown profile (route → 404). */
-	listImageGenProfileModels: (id: string, signal?: AbortSignal) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[]> | null>;
+	listImageGenProfileModels: (id: string, signal?: AbortSignal, options?: { storedFirst?: boolean }) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[]> | null>;
 	/** Samplers for a saved profile — capability-gated (A1111-compat only in
 	 *  v1). Null = unknown profile (route → 404); `[]`-with-ok-probe is NOT
 	 *  used here — a backend without the surface returns null too (route →

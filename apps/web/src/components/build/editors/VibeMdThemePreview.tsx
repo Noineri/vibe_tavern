@@ -65,10 +65,10 @@ export function VibeMdThemePreview() {
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px 80px" }}>
-      <h1 style={{ fontFamily: "var(--font-ui)", fontSize: 18, color: "var(--t1)", marginBottom: 4 }}>
+      <h1 style={{ fontFamily: "var(--font-ui)", fontSize: "calc(var(--ui-fs)+4px)", color: "var(--t1)", marginBottom: 4 }}>
         Vibe MD — theme preview <span style={{ color: "var(--t3)", fontWeight: 400 }}>(VTF-10/11)</span>
       </h1>
-      <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--t3)", marginBottom: 24 }}>
+      <p style={{ fontFamily: "var(--font-ui)", fontSize: "calc(var(--ui-fs)-1px)", color: "var(--t3)", marginBottom: 24 }}>
         Янтарная тема CodeMirror (шрифт — Inter): H1 светятся акцентом с 🔒, bracket-traits (`[Base: …]`) приглушены, markdown подсвечен. Заголовки залочены от ручного ввода — попробуй стереть `# PERSONALITY` (не дастся), тело текста редактируется свободно.
       </p>
       <div

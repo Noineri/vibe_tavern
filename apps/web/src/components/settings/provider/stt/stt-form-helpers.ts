@@ -7,8 +7,9 @@
   * fork #1 of tts/tts-form-helpers.ts.
 */
 
-import { STT_BACKENDS, STT_PROVIDER_PRESETS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
-import type { useSttProfiles } from "./use-stt-profiles.js";
+import { STT_BACKENDS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
+import { STT_PROVIDER_PRESETS } from "../../../../provider-presets.js";
+import type { useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 /** Config-bag marker distinguishing the Local segment from cloud
  *  OpenAI-compatible rows (SPE-8 — the TTS `localServer` twin: the backend
@@ -81,6 +82,16 @@ export function formDraftConfig(form: {
   const trimmed = form.apiKey.trim();
   if (trimmed === "") return form.config;
   return { ...form.config, apiKey: trimmed };
+}
+
+/** The part of a draft config that decides the model listing (the effect key
+ *  of the editor's catalog fetch): everything except the recognition
+ *  settings the view mode writes — the picked model and the language hint
+ *  never change the catalog, so picking them must not re-run it (the
+ *  catalog does not depend on the pick; the TTS twin is `ttsListingConfig`). */
+export function sttListingConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const { model: _model, language: _language, ...rest } = config;
+  return rest;
 }
 
 /** Reads an optional string/number config key with a display fallback. The

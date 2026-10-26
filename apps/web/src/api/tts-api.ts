@@ -89,7 +89,6 @@ export async function createTtsProfile(body: {
   narratorVoiceId?: string | null;
   lang?: string;
   sortOrder?: number;
-  isDefault?: boolean;
 }): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles.$post({ json: body as never });
   return unwrapRpc(response);
@@ -109,7 +108,6 @@ export async function updateTtsProfile(
     narratorVoiceId: string | null;
     lang: string;
     sortOrder: number;
-    isDefault: boolean;
   }>,
 ): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles[":id"].$patch({ param: { id }, json: body as never });
@@ -131,12 +129,6 @@ export async function reorderTtsProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<TtsProfileRecord[]> {
   const response = await client.api.tts.profiles.reorder.$patch({ json: { updates } as never });
-  return unwrapRpc(response);
-}
-
-export async function getDefaultTtsProfile(): Promise<TtsProfileRecord | null> {
-  const response = await client.api.tts.profiles.default.$get();
-  if (response.status === 404) return null;
   return unwrapRpc(response);
 }
 
@@ -219,11 +211,17 @@ export async function listTtsVoices(profileId: string): Promise<TtsVoiceRecord[]
  *  this form belongs to (same backend/endpoint), the server injects the
  *  STORED key for this one request (strip-on-read UX). Kokoro is rejected
  *  by the server (browser-only) — callers gate on the backend first.
- *  Response envelope carries capabilities for the clone section. */
+ *  Response envelope carries capabilities for the clone section.
+ *  `source: "stored"` = the open path of a saved profile (step 11c, the LLM
+ *  picker pattern): the server answers from the profile's stored voices for
+ *  the config's model with no upstream call, live only when nothing is
+ *  stored. Omit it for the refresh path (always live, and the answer
+ *  replaces the stored list). It goes into the body only when given. */
 export async function listTtsDraftVoices(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
+  source?: "stored";
 }): Promise<TtsDraftVoicesResponse> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/voices`), {
@@ -291,10 +289,16 @@ export async function cloneTtsVoice(body: {
   return (await response.json()) as TtsVoiceRecord;
 }
 
+/** Model catalog for a config straight from the profile-editor form. Same
+ *  transient-config and `source: "stored"` semantics as
+ *  {@link listTtsDraftVoices}: the saved profile's stored list with no
+ *  upstream call on the open path; live (and overwriting the stored list)
+ *  without it. */
 export async function listTtsDraftModels(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
+  source?: "stored";
 }): Promise<TtsModelListEntry[]> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/models`), {

@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { createFullMacroEngine } from "../src/macro-registry.ts";
 import { buildPromptVariableContext } from "../src/prompt-variable-context.ts";
+import { parseVariableValue } from "../src/macro-variable-scope.ts";
 
 /**
  * Tests for macro resolution: {{char}}, {{user}}, <BOT>, <USER>, setvar/getvar, random, roll, if/else, comments.
@@ -284,6 +285,25 @@ describe("DB storage: raw text preserved with macros unresolved", () => {
     expect(resolved).toBe("Tell me about Aria's powers.");
 
     expect(rawUserMessage).toContain("{{char}}");
+  });
+});
+
+// ─── parseVariableValue: the unknown boundary of stored variable values ───
+
+describe("parseVariableValue (SC-5r2 pin: arrays ride the array branch, not the record guard)", () => {
+  it("returns the parsed array for array JSON (array-stored variables are supported)", () => {
+    expect(parseVariableValue('["a","b"]')).toEqual(["a", "b"]);
+  });
+
+  it("returns the parsed object for object JSON", () => {
+    expect(parseVariableValue('{"k":"v"}')).toEqual({ k: "v" });
+  });
+
+  it("returns {} for null, scalars, and malformed JSON", () => {
+    expect(parseVariableValue("null")).toEqual({});
+    expect(parseVariableValue('"text"')).toEqual({});
+    expect(parseVariableValue("42")).toEqual({});
+    expect(parseVariableValue("not json")).toEqual({});
   });
 });
 

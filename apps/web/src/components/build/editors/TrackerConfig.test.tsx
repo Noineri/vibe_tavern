@@ -14,8 +14,9 @@
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { createElement, type ChangeEvent, type ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
-import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
+import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
 useDomEnv();
 const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
@@ -27,9 +28,9 @@ const mocks = {
   findCurrentInsightsCompletionTarget: mock(),
   fetchProviderModelsAction: mock(),
   aiModalProps: null as null | Record<string, unknown>,
+  rulesAiModalProps: null as null | Record<string, unknown>,
 };
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realInsightsCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
@@ -38,10 +39,7 @@ const realProviderActions = await import("../../../stores/api-actions/provider-a
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,
@@ -97,7 +95,11 @@ mock.module("../../shared/Tooltip.js", () => ({
 // modal's own streaming/context internals (those have their own coverage).
 mock.module("../../shared/AiAssistantModal.js", () => ({
   ...realAiAssistantModal,
-  AiAssistantModal: (props: { apiMode?: string }) => { if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>; return null; },
+  AiAssistantModal: (props: { apiMode?: string }) => {
+    if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>;
+    if (props.apiMode === "scene_rules") mocks.rulesAiModalProps = props as Record<string, unknown>;
+    return null;
+  },
 }));
 
 let TrackerConfig: typeof import("./TrackerConfig.js").TrackerConfig;
@@ -143,6 +145,7 @@ afterEach(() => {
   mocks.findCurrentInsightsCompletionTarget.mockReturnValue({ branchId: "b1", messageId: "m1", variantId: "v1" });
   mocks.activeChat = null;
   mocks.aiModalProps = null;
+  mocks.rulesAiModalProps = null;
 });
 
 describe("TrackerConfig (SCN-11)", () => {
@@ -156,6 +159,22 @@ describe("TrackerConfig (SCN-11)", () => {
     // Save is a button — assert it is disabled when not dirty.
     const saveBtn = getByText("scn_save_button").closest("button")!;
     expect(saveBtn.disabled).toBe(true);
+  });
+
+  it("sources render-variant selector options from the implemented-variants list", () => {
+    seed();
+    useSceneRenderStore.setState({ variant: "rich" });
+    const { getAllByRole } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(getAllByRole("radio").map((option) => option.getAttribute("value"))).toEqual([...IMPLEMENTED_SCENE_RENDER_VARIANTS]);
+  });
+
+  it("offers the clean and HUD variants with their own label keys", () => {
+    seed();
+    const { getByRole } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    const clean = getByRole("radio", { name: "scn_preview_mode_clean" });
+    const hud = getByRole("radio", { name: "scn_preview_mode_hud" });
+    expect(clean.getAttribute("value")).toBe("clean");
+    expect(hud.getAttribute("value")).toBe("hud");
   });
 
   it("an invalid DSL shows an inline error and disables Save + Preview", async () => {
@@ -196,6 +215,15 @@ describe("TrackerConfig (SCN-11)", () => {
     // The hint is always visible as the disclosure summary; grammar + example live in the body.
     expect(getByText("scn_schema_hint")).toBeTruthy();
     expect(getByText("scn_schema_grammar")).toBeTruthy();
+  });
+
+  it("mounts the schema DSL reference above the JSON editor when toggled", () => {
+    seed();
+    const { getByText, getByTestId, queryByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(queryByText("scn_ref_title")).toBeNull();
+    fireEvent.click(getByText("scn_ref_toggle"));
+    expect(getByText("scn_ref_title")).toBeTruthy();
+    expect(getByTestId("scn-dsl")).toBeTruthy();
   });
 
   it("shows the Raw XML disclosure under XML format, not under JSON", () => {
@@ -374,6 +402,51 @@ describe("TrackerConfig (SCN-11)", () => {
 // (each DropdownSelect is w-full by default, so it fills its own row); the
 // desktop grids return above the max-md breakpoint (sm:grid-cols-3 on the
 // scalar row). Desktop behavior is unchanged — max-md only ADDS a rule.
+describe("TrackerConfig prompt-field re-seed (AI replace / chat switch)", () => {
+  it("AI rules replace re-seeds the field: new text visible, blur does not clobber it, Save persists it", async () => {
+    seed({ rulesPrompt: "v1 rules" });
+    const { getByPlaceholderText, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(getByText("scn_advanced_label"));
+    expect((getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement).value).toBe("v1 rules");
+    // Applying the AI modal output writes the generated text into the draft.
+    await act(async () => {
+      (mocks.rulesAiModalProps!.onReplace as (text: string) => void)("v2 rules");
+    });
+    // R10: re-query after the replace — the key remount retired the old node.
+    const reseeded = getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement;
+    expect(reseeded.value).toBe("v2 rules");
+    // Blur without editing must not commit the pre-replace text back over the draft.
+    fireEvent.blur(reseeded);
+    expect((getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement).value).toBe("v2 rules");
+    // Save carries the generated rules in the partial tracker PATCH.
+    await act(async () => {
+      fireEvent.click(getByText("scn_save_button").closest("button")!);
+    });
+    await waitFor(() => expect(mocks.updateInsightsConfigAction).toHaveBeenCalledTimes(1));
+    const patch = mocks.updateInsightsConfigAction.mock.calls[0][1] as {
+      insightsConfig: { tracker: { rulesPrompt: string } };
+    };
+    expect(patch.insightsConfig.tracker.rulesPrompt).toBe("v2 rules");
+  });
+
+  it("switching chats re-seeds the prompt fields — no stale cross-chat text left to blur-commit", async () => {
+    seed({ generatePrompt: "chat A prompt" });
+    const { getAllByPlaceholderText, getByText, rerender } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(getByText("scn_advanced_label"));
+    expect((getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement).value).toBe("chat A prompt");
+    // Switch to chat B (stored config differs); the draft is not dirty, so it tracks the stored value.
+    seed({ generatePrompt: "chat B prompt" });
+    await act(async () => {
+      rerender(createElement(TrackerConfig, { chatId: brandId<ChatId>("chat_2") }));
+    });
+    const switched = getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement;
+    expect(switched.value).toBe("chat B prompt");
+    // Blur must not resurrect chat A's text into chat B's draft.
+    fireEvent.blur(switched);
+    expect((getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement).value).toBe("chat B prompt");
+  });
+});
+
 describe("TrackerConfig mobile grid stacking (MUI-W3)", () => {
   it("max-md: the scalar row and the provider/model picker row are single full-width columns", () => {
     seed();

@@ -12,7 +12,7 @@ import { z } from "zod";
  *  family), the A1111-compatible local dialect, ComfyUI (raw API —
  *  COMFYUI_BACKEND_PLAN), and the PE-1 OpenAI-images-family cloud slugs
  *  (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1). */
-export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita', 'krea', 'novelai']);
+export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'openai-images-custom', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita', 'krea', 'novelai']);
 
 /** Krea per-model params (IF-11): the K2 prompt-expansion mode + the
  *  generative sliders (intensity / complexity / movement, −100..100,
@@ -400,9 +400,19 @@ export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>
 
 /** IF-20: response header on a saved profile's listing (`/models`,
  *  `/sidecars`) served from the last-good snapshot because the live fetch
- *  failed — its value is the snapshot's ISO fetch time. Absent = live.
- *  The body keeps the live route's shape either way. */
+ *  failed — its value is the snapshot's ISO fetch time. Absent = live, or
+ *  the stored-first answer of `?source=stored` (an ordinary answer, not a
+ *  failure fallback). The body keeps the live route's shape either way. */
 export const IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER = "X-VT-Listing-Snapshot-At";
+
+/** Query of `GET /api/image-gen/profiles/:id/models`. `source=stored` = the
+ *  open path (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11, the LLM picker
+ *  pattern): the stored list with no upstream call, live only when nothing
+ *  is stored. Absent = the refresh path: live, the IF-20 snapshot when the
+ *  live call fails. */
+export const imageGenModelListQuerySchema = z.object({
+  source: z.literal("stored").optional(),
+});
 
 /** One LoRA list entry (CG-C2, capability-gated backends) — the adapter
  *  interface's `ImageGenLoraInfo` verbatim. `family` is NULL for the
@@ -810,9 +820,9 @@ export type ImageGenSamplerSetImport = z.infer<typeof importImageGenSamplerSetSc
 // ─── IPT-3 (IMAGE_PROMPT_TEMPLATES_PLAN): templates pane + families registry ──
 
 /** The row-key axis of the templates surface: a generation mode OR the
- *  shared negative row (mirrors the db-level ImagePromptVariantKey — the
- *  assist core stays a canon asset, quality rides its own column on the
- *  (mode, family) row). */
+ *  shared negative row (mirrors the db-level ImagePromptVariantKey; the
+ *  assist parts ride the profile overrides map's own `assist` row and the
+ *  catalog's assist block, not the per-cell template surface). */
 export const imagePromptTemplateRowKeySchema = z.enum([
   'scene-background',
   'portrait',

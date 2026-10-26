@@ -1,4 +1,5 @@
 import type { ChatRuntimeApi, SttRuntimeApi } from "../contract/runtime-api.js";
+import type { ChatSendBody } from "../contract/chat-runtime-contracts.js";
 import { brandId, parseStoredAttachments, resolveEffectiveSettings, resolveCoauthorGenerationProfile, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -15,6 +16,9 @@ import { resolveCachedModels } from "../../domain/providers/model-cache-service.
 import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, CoauthorModule } from "@vibe-tavern/api-contracts";
+import { isTextMime } from "@vibe-tavern/domain";
+import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
+import { resolveChatImageRoute } from "./chat-image-route.js";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -29,6 +33,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		 *  acyclic; the voice-message profile pointer resolves from ui_settings
 		 *  with the isDefault fallback. */
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
+		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
 	) {}
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
@@ -99,6 +104,12 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.stores.coauthorModules.delete(id);
 	};
 
+	reorderCoauthorModules = async (updates: Array<{ id: string; sortOrder: number }>): Promise<CoauthorModule[]> => {
+		const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
+		const userModules = await this.stores.coauthorModules.reorder(updates);
+		return getCoauthorModules(userModules);
+	};
+
 	// ─── Branches ───────────────────────────────────────────────────────
 
 	branchChat = (chatId: string, messageId: string) =>
@@ -117,6 +128,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 		this.sessionRuntime.chatRuntime.renameBranch(brandId<ChatId>(chatId), branchId, label);
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
+
+	getImageRoute = (chatId: string) =>
+		resolveChatImageRoute(this.stores, chatId, (id) => this.resolveEffectiveProfileOrThrow({ chatId: id }));
 
 	/** STT_PLAN ST-6: resolve the voice-message transcription seam. Pointer in
 	 *  ui_settings wins; the isDefault STT profile is the fallback (the ST-1
@@ -137,7 +151,19 @@ export class ChatAdapter implements ChatRuntimeApi {
 		};
 	}
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) => {
+	private async resolveReplyMediaAssets(profile: StoredProviderProfileRecord) {
+		return {
+			visionAssets: {
+				cachedModels: await resolveCachedModels(this.stores, profile),
+				visionModel: profile.visionModel,
+				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
+				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
+			},
+			voiceTranscriber: await this.resolveVoiceTranscriber(),
+		};
+	}
+
+	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -161,13 +187,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 			prefill: body.prefill,
 			diceCommit: resolveDiceCommit(body),
 			experienceCommit: resolveExperienceCommit(body),
-			visionAssets: {
-				cachedModels: await resolveCachedModels(this.stores, profile),
-				visionModel: profile.visionModel,
-				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
-				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
-			},
-			voiceTranscriber: await this.resolveVoiceTranscriber(),
+			coauthorEditorState: body.coauthorEditorState,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		logSendDebug("api.runtime.send.success", {
 			chatId,
@@ -178,7 +199,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -193,13 +214,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 				prefill: body.prefill,
 				diceCommit: resolveDiceCommit(body),
 				experienceCommit: resolveExperienceCommit(body),
-				visionAssets: {
-					cachedModels: await resolveCachedModels(this.stores, profile),
-					visionModel: profile.visionModel,
-					assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
-					visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
-				},
-				voiceTranscriber: await this.resolveVoiceTranscriber(),
+				coauthorEditorState: body.coauthorEditorState,
+				...await this.resolveReplyMediaAssets(profile),
 			});
 		} catch (err) {
 			if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
@@ -224,6 +240,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -238,6 +255,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
@@ -269,6 +287,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -294,6 +313,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
@@ -305,6 +325,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
 	};
@@ -317,6 +338,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			...await this.resolveReplyMediaAssets(profile),
 		});
 	};
 
@@ -364,7 +386,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * zero AI calls; assembly backfills the description from it when needed).
 	 * Without either, the non-vision RP path would still fail with
 	 * VisionNotSupportedError. Restricted to image-gen slots: ordinary user
-	 * uploads keep their always-included semantics.
+	 * image uploads keep their always-included semantics; text files use the
+	 * shared attachment-actions service.
 	 */
 	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
 		// MR-4: the merged-set lookup (message row + variant rows — the DTO
@@ -372,6 +395,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 		// swiped-to regenerate slot validates like the original one.
 		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
 		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined && att.type === "file" && isTextMime(att.mimeType)) {
+			return this.attachmentActions.setIncluded(messageId, attachmentId, includeInPrompt);
+		}
 		if (att.imageGen === undefined) {
 			throw validation("Only generated image slots have an include-in-prompt toggle.");
 		}
@@ -381,6 +407,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 		await this.sessionRuntime.chatApp.updateSingleAttachmentIncludeInPrompt(messageId, attachmentId, includeInPrompt);
 		return { ok: true };
 	};
+
+	summarizeAttachment: ChatRuntimeApi["summarizeAttachment"] = (...args) =>
+		this.attachmentActions.summarizeAttachment(...args);
+	clearAttachmentSummary: ChatRuntimeApi["clearAttachmentSummary"] = (...args) =>
+		this.attachmentActions.clearAttachmentSummary(...args);
 
 	/** MR-9: rewrite the generation prompt on a generated-image slot (the
 	 *  accordion editor's save, owner 2026-09-18). Slots only; the new text
@@ -622,6 +653,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	// ─── Private helpers ────────────────────────────────────────────────
+
+	private get attachmentActions() {
+		return createChatAttachmentActions({
+			chatApp: this.sessionRuntime.chatApp, messages: this.stores.messages,
+			resolveProfile: (chatId) => this.resolveEffectiveProfileOrThrow({ chatId }),
+			assetLoader: (assetId) => this.assetService.loadBuffer(assetId), execute: this.executeAttachmentSummary,
+		});
+	}
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
 		return resolveVisionDescribePrompt(this.stores.db);

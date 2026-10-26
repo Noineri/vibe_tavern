@@ -27,6 +27,7 @@
 import type {
   ClientSttProfileRecord,
   CreateSttProfileInput,
+  DraftSttModelsInput,
   UpdateSttProfileInput,
 } from "@vibe-tavern/api-contracts";
 import type { CreateSttProfileData, UpdateSttProfileData, StoreContainer } from "@vibe-tavern/db";
@@ -39,8 +40,9 @@ import {
 } from "@vibe-tavern/domain";
 import type { SttBackendType, SttProfile, SttProfileConfig } from "@vibe-tavern/domain";
 
-import { SttProbeFailedError } from "../../domain/stt/stt-backend.js";
+import { SttProbeFailedError, type SttModelInfo } from "../../domain/stt/stt-backend.js";
 import type { SttRuntimeApi } from "../contract/runtime-api.js";
+import { readStoredSttModels, recordSttModels } from "./stt-listing-snapshot.js";
 
 // Import backend modules for their side-effect registrations (protocol-registry
 // pattern): importing the module makes its slug creatable via the registry.
@@ -214,6 +216,35 @@ async function resolveTranscriptionConfig(
   return (await autoMatchSttKey(stores, profile.backend, config)).config;
 }
 
+// ─── Saved-connection identity (stored-key reuse AND stored-list gating) ─────
+
+/** The saved profile's endpoint as the stored-key rule reads it: the trimmed
+ *  `config.endpoint`, "" when the config carries none. Loose-bag read (house
+ *  style — the union's endpoint lives on the compat arm only; the typeof
+ *  guard narrows). */
+function savedSttEndpoint(profile: SttProfile): string {
+  const bag = profile.config as Record<string, unknown>;
+  return typeof bag.endpoint === "string" ? bag.endpoint.trim() : "";
+}
+
+/** THE derivation of "this draft request is the saved profile's connection":
+ *  the same backend and, for the openai-compat backend, the same non-empty
+ *  endpoint (a stored credential — and a stored list — may only serve the
+ *  server it was saved with). Gemini and the other fixed-host vendors are
+ *  vendor-keyed: the backend IS the connection. Two consumers read this and
+ *  nothing else: the draft stored-key injection and the stored model list
+ *  (read on the open path, written after a live listing). */
+function isSavedSttConnection(
+  profile: SttProfile,
+  backend: SttBackendType,
+  draftConfig: Record<string, unknown>,
+): boolean {
+  if (profile.backend !== backend) return false;
+  if (backend !== STT_BACKENDS.OpenAiCompat) return true;
+  const incomingEndpoint = typeof draftConfig.endpoint === "string" ? draftConfig.endpoint.trim() : "";
+  return incomingEndpoint !== "" && incomingEndpoint === savedSttEndpoint(profile);
+}
+
 // ─── Errors (route → status mapping) ─────────────────────────────────────────
 
 /** The backend runs in the browser (whisper-browser) — the server has no
@@ -230,7 +261,7 @@ export class SttClientSideError extends Error {
 
 /** Deps mirror the tts adapter's store slice plus the TTS store for the
  *  cross-side auto-key reuse. */
-type SttAdapterStores = Pick<StoreContainer, "stt" | "providers" | "tts">;
+type SttAdapterStores = Pick<StoreContainer, "stt" | "providers" | "tts" | "sttListingSnapshots">;
 
 export class SttAdapter implements SttRuntimeApi {
   constructor(private readonly stores: SttAdapterStores) {}
@@ -309,7 +340,9 @@ export class SttAdapter implements SttRuntimeApi {
       config: body.config,
       apiKey: body.apiKey && body.apiKey !== "" ? body.apiKey : undefined,
       emotionAnnotation: emotionCapable && (body.emotionAnnotation ?? false),
-      isDefault: body.isDefault ?? false,
+      // MR-12 single-writer rule: wire-read-only — the row is always born
+      // non-default; the dedicated default route is the only writer.
+      isDefault: false,
     };
     const created = await this.stores.stt.create(input);
     return (await this.decorateAutoKey([toClientSttProfile(created)]))[0];
@@ -333,6 +366,16 @@ export class SttAdapter implements SttRuntimeApi {
       patched.emotionAnnotation = false;
     }
     const updated = await this.stores.stt.update(id, patched);
+    // A different server (backend or endpoint — what the saved-connection rule
+    // compares) lists different models: its predecessor's stored list must
+    // never stand in for it.
+    if (
+      existing !== null &&
+      updated !== null &&
+      (existing.backend !== updated.backend || savedSttEndpoint(existing) !== savedSttEndpoint(updated))
+    ) {
+      await this.stores.sttListingSnapshots.clear(id);
+    }
     return updated ? (await this.decorateAutoKey([toClientSttProfile(updated)]))[0] : null;
   };
 
@@ -403,31 +446,25 @@ export class SttAdapter implements SttRuntimeApi {
    *  so the catalog reflects the credential the profile would use. */
   draftListSttModels: SttRuntimeApi["draftListSttModels"] = async (body) => {
     if (body.backend === STT_BACKENDS.WhisperBrowser) return null;
+    // The saved profile this draft IS (isSavedSttConnection): it lends the
+    // stored key, and it owns the stored model list this request reads on the
+    // open path (`source: "stored"`) and records after a live listing. A
+    // draft pointing elsewhere (unsaved edit, other endpoint) is an ordinary
+    // live request that never touches a profile's stored list.
+    const saved = await this.findSavedConnection(body);
+    if (body.source === "stored" && saved !== null) {
+      const stored = await readStoredSttModels(this.stores.sttListingSnapshots, saved.id);
+      if (stored !== null) return stored;
+    }
     let config: Record<string, unknown> = { ...body.config };
     const formKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
     if (formKey === "") {
       delete config.apiKey;
-      if (body.profileId !== undefined) {
-        const profile = await this.stores.stt.getById(body.profileId);
-        if (profile !== null && profile.backend === body.backend) {
-          // Stored-key reuse is endpoint-guarded for openai-compat (the TTS
-          // draft rule): a saved key may only serve the endpoint it was
-          // saved with; gemini is vendor-keyed (no endpoint to guard).
-          const storedKey = profile.apiKey ?? "";
-          if (storedKey !== "") {
-            if (body.backend === STT_BACKENDS.OpenAiCompat) {
-              // Loose-bag read (house style — the union's endpoint lives on
-              // the compat arm only; the typeof guard narrows).
-              const bag = profile.config as Record<string, unknown>;
-              const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
-              const storedEndpoint = typeof bag.endpoint === "string" ? bag.endpoint.trim() : "";
-              if (incomingEndpoint !== "" && incomingEndpoint === storedEndpoint) config.apiKey = storedKey;
-            } else {
-              config.apiKey = storedKey;
-            }
-          }
-        }
-      }
+      // Stored-key reuse is endpoint-guarded for openai-compat (the TTS draft
+      // rule, inside isSavedSttConnection): a saved key may only serve the
+      // endpoint it was saved with; gemini is vendor-keyed.
+      const storedKey = saved?.apiKey ?? "";
+      if (storedKey !== "") config.apiKey = storedKey;
       if (typeof config.apiKey !== "string" || config.apiKey === "") {
         // Draft auto-match (same cascade transcription uses): endpoint for
         // openai-compat, vendor for gemini.
@@ -435,6 +472,7 @@ export class SttAdapter implements SttRuntimeApi {
       }
     }
     const backend = createSttBackend(body.backend, config as SttProfileConfig);
+    let models: SttModelInfo[];
     if (typeof backend.listModels !== "function") {
       // Probe-only backends (elevenlabs, nvidia — no STT discovery
       // endpoint, SPE-5/SPE-6): the draft route doubles as the
@@ -449,10 +487,24 @@ export class SttAdapter implements SttRuntimeApi {
           { status: probe.status },
         );
       }
-      return [];
+      models = [];
+    } else {
+      models = await backend.listModels();
     }
-    return backend.listModels();
+    // Only a successful live answer is recorded — a thrown failure above
+    // leaves the stored list untouched.
+    if (saved !== null) await recordSttModels(this.stores.sttListingSnapshots, saved.id, models);
+    return models;
   };
+
+  /** The saved profile a draft request IS, or null: needs `profileId`, an
+   *  existing profile, and a config that passes isSavedSttConnection. */
+  private async findSavedConnection(body: DraftSttModelsInput): Promise<SttProfile | null> {
+    if (body.profileId === undefined) return null;
+    const profile = await this.stores.stt.getById(body.profileId);
+    if (profile === null) return null;
+    return isSavedSttConnection(profile, body.backend, body.config) ? profile : null;
+  }
 }
 
 /** Test seam for the STT discovery route — swaps the network fetch the pure

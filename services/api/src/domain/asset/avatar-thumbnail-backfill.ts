@@ -1,4 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
+import { tag } from "@vibe-tavern/domain";
 
 import { AssetService, extToMime } from "./asset-service.js";
 import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
@@ -26,6 +27,13 @@ import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
  * The entity record is re-read right before writing: if `avatarExt` changed
  * since the scan started (the user uploaded meanwhile), the entity is skipped.
  */
+
+// The pass runs on every start, and the per-entity trace says nothing happened
+// in the common case. Routed through the tagged logger so LOG_LEVEL=info
+// (the default) hides all of it; set LOG_LEVEL=debug to bring it back.
+// Replaces raw console.debug calls that bypassed the level gate and printed
+// a line per avatar on every start.
+const logger = tag("avatar-backfill");
 
 export interface AvatarBackfillCounts {
 	scanned: number;
@@ -112,7 +120,7 @@ async function backfillEntity(io: EntityIo, entity: AvatarEntity, counts: Avatar
 	const original = await io.load(entity.id, entity.avatarExt);
 	if (!original) {
 		counts.skipped++;
-		console.debug(`[avatar-backfill] ${entity.kind} ${entity.id}: avatar.${entity.avatarExt} missing on disk, skipped`);
+		logger.debug(`${entity.kind} ${entity.id}: avatar.${entity.avatarExt} missing on disk, skipped`);
 		return;
 	}
 	// Fresh copy: the helper's unchanged path may return the input by
@@ -121,7 +129,6 @@ async function backfillEntity(io: EntityIo, entity: AvatarEntity, counts: Avatar
 	const plan = await normalizeAvatarThumbnail(originalBytes, entity.avatarExt);
 	if (!plan.changed) {
 		counts.skipped++;
-		console.debug(`[avatar-backfill] ${entity.kind} ${entity.id}: already normalized or passthrough (${entity.avatarExt})`);
 		return;
 	}
 	// Re-read right before writing: if the user replaced the avatar while the
@@ -129,7 +136,7 @@ async function backfillEntity(io: EntityIo, entity: AvatarEntity, counts: Avatar
 	const record = await io.get(entity.id);
 	if (!record || record.avatarExt !== entity.avatarExt) {
 		counts.skipped++;
-		console.debug(`[avatar-backfill] ${entity.kind} ${entity.id}: avatarExt changed mid-scan, skipped`);
+		logger.debug(`${entity.kind} ${entity.id}: avatarExt changed mid-scan, skipped`);
 		return;
 	}
 	if (record.avatarFullExt === null) {
@@ -178,11 +185,13 @@ export async function runAvatarThumbnailBackfill(
 		}
 	}
 	const kb = (n: number) => `${Math.round(n / 1024)} KB`;
-	console.log(
-		`[avatar-backfill] ${counts.scanned} scanned, ${counts.normalized} normalized, ` +
-			`${counts.skipped} skipped, ${counts.failed} failed ` +
-			`(${kb(counts.bytesBefore)} → ${kb(counts.bytesAfter)})`,
-	);
+	if (counts.normalized > 0 || counts.failed > 0) {
+		console.log(
+			`[avatar-backfill] ${counts.scanned} scanned, ${counts.normalized} normalized, ` +
+				`${counts.skipped} skipped, ${counts.failed} failed ` +
+				`(${kb(counts.bytesBefore)} → ${kb(counts.bytesAfter)})`,
+		);
+	}
 	return counts;
 }
 

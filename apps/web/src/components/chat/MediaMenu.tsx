@@ -9,9 +9,9 @@ import { toast } from "sonner";
 import { serveCharacterAssetUrl } from "../../api/gallery-api.js";
 import { attachGalleryImageAsFlatAsset } from "../../lib/attach-from-gallery.js";
 import { useGalleryStore } from "../../stores/gallery-store.js";
+import { useFloatingGalleryStore } from "../../stores/floating-gallery-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useNavigationStore } from "../../stores/index.js";
-import { GalleryViewer } from "../build/editors/GalleryViewer.js";
 import { MediaModal } from "./MediaModal.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 
@@ -67,12 +67,15 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
   const draftCount = useChatStore((s) => s.draftAttachments.length);
   const setMode = useNavigationStore((s) => s.setMode);
+  const openGalleryViewer = useFloatingGalleryStore((s) => s.openGalleryViewer);
 
   const [open, setOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
-  // Floating viewers: one GalleryViewer per open tile (mirrors the gallery
-  // grid's open-panels pattern). Tracked by row id.
-  const [openViewers, setOpenViewers] = useState<CharacterAsset[]>([]);
+  // Floating viewers live in the shared floating-gallery store (one home for
+  // the chat menu and the Build grid): each entry pins its own characterId +
+  // asset, so a chat switch neither closes nor re-targets open viewers — the
+  // global host in App renders them. Opening the same image twice keeps one
+  // window (de-dupe by asset id).
 
   // Load the gallery list on first open (idempotent — safe to call every open).
   useEffect(() => {
@@ -97,13 +100,9 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   }, [draftCount, characterId, addDraftAttachment, t]);
 
   const spawnViewer = useCallback((row: CharacterAsset) => {
-    setOpenViewers((prev) => (prev.some((a) => a.id === row.id) ? prev : [...prev, row]));
+    openGalleryViewer(characterId, row);
     setOpen(false);
-  }, []);
-
-  const closeViewer = useCallback((rowId: string) => {
-    setOpenViewers((prev) => prev.filter((a) => a.id !== rowId));
-  }, []);
+  }, [characterId, openGalleryViewer]);
 
   const list = assets ?? [];
 
@@ -131,13 +130,13 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
             className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {loading && list.length === 0 ? (
-              <div className="flex h-20 w-[360px] items-center justify-center text-xs text-t3">…</div>
+              <div className="flex h-20 w-[360px] items-center justify-center text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">…</div>
             ) : list.length === 0 ? (
               <div className="flex w-[220px] flex-col items-center gap-2 px-3 py-4 text-center">
-                <div className="text-xs text-t3">{t("media_empty")}</div>
+                <div className="text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("media_empty")}</div>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-xs font-medium text-accent-t transition-colors hover:bg-accent-hover"
+                  className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-accent-t transition-colors hover:bg-accent-hover"
                   onClick={() => { setOpen(false); setMode("build"); }}
                 >
                   {t("media_open_build")}
@@ -170,7 +169,7 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                         title={t("media_send_to_chat")}
                         aria-label={t("media_send_to_chat")}
                       >
-                        {isSending ? <span className="text-[10px]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
+                        {isSending ? <span className="text-[calc(var(--ui-fs)-4px)]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
                       </button>
                     </div>
                   );
@@ -180,16 +179,6 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-
-      {/* Floating viewers — multiple may be open at once. */}
-      {openViewers.map((asset) => (
-        <GalleryViewer
-          key={asset.id as string}
-          characterId={characterId}
-          asset={asset}
-          onClose={() => closeViewer(asset.id as string)}
-        />
-      ))}
     </>
   );
 }

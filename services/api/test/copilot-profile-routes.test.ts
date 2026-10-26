@@ -3,6 +3,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+// AS-3: profile create/list validate the kind through the registry — the
+// side-effect import registers the real experience kind (production does the
+// same in server-runtime.ts); assertions below are unchanged.
+import "../src/domain/agent/kinds/experience-kind.js";
 import { createCopilotProfileRoutes } from "../src/api/routes/copilot-profile.js";
 import { CopilotProfileAdapter } from "../src/api/adapters/copilot-profile-adapter.js";
 import {
@@ -41,9 +45,7 @@ beforeAll(async () => {
 const createInput = (over: Record<string, unknown> = {}) => ({
   name: "Card games",
   basePrompt: "You help author card-game experiences.",
-  skillIds: ["experience-authoring"],
   toolSet: { write_buffer: true, run_test: true },
-  maxSteps: 20,
   ...over,
 });
 
@@ -90,6 +92,20 @@ describe("POST /api/copilot/profiles", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // PM-8 (owner ruling 2026-10-12): `skillIds` is retired — the wire schemas
+  // are `.strict()`, so a stale client sending it (or the long-retired
+  // `maxSteps`) is rejected with a 400, never silently stripped.
+  test("strict-rejects a retired skillIds / maxSteps body → 400", async () => {
+    for (const over of [{ skillIds: ["experience-authoring"] }, { maxSteps: 12 }]) {
+      const res = await app.request("/api/copilot/profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(createInput(over)),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
 });
 
 describe("PATCH /api/copilot/profiles/:id", () => {
@@ -108,14 +124,15 @@ describe("PATCH /api/copilot/profiles/:id", () => {
     const update = await app.request(`/api/copilot/profiles/${created.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Card games v2", maxSteps: 12 }),
+      body: JSON.stringify({ name: "Card games v2" }),
     });
     expect(update.status).toBe(200);
-    const updated = (await update.json()) as { name: string; maxSteps: number | undefined; basePrompt: string };
+    const updated = (await update.json()) as { name: string; maxSteps: number | undefined; basePrompt: string; skillIds?: string[] };
     expect(updated.name).toBe("Card games v2");
-    // TAG-4: maxSteps is accepted on update (the live column still stores it)
-    // but no longer projected to the wire shape.
+    // TAG-4: maxSteps no longer exists on the wire; PM-8 retired skillIds —
+    // neither is projected to the response shape.
     expect(updated.maxSteps).toBeUndefined();
+    expect(updated.skillIds).toBeUndefined();
     expect(updated.basePrompt).toBe("You help author card-game experiences.");
   });
 });
@@ -136,5 +153,69 @@ describe("DELETE /api/copilot/profiles/:id", () => {
     const list = await app.request("/api/copilot/profiles");
     const body = (await list.json()) as { profiles: Array<{ id: string }> };
     expect(body.profiles.some((p) => p.id === created.id)).toBe(false);
+  });
+});
+
+// ─── ML-6: stored order ─────────────────────────────────────────────────────
+// PATCH /api/copilot/profiles/reorder — the ML-5 coauthor-module reorder
+// route mirrored for profiles, plus the kind dimension: `?kind=` rides the
+// query (validated), positions rewrite in one transaction, and the response
+// is the same merged envelope the GET serves (seed first). The shared
+// container accumulates profiles across this file, so the ordering test
+// asserts the RELATIVE order of freshly created ids.
+
+describe("PATCH /api/copilot/profiles/reorder (ML-6)", () => {
+  test("passes parsed updates through and returns the merged envelope in the new order", async () => {
+    const a = await createProfile({ name: "Order A" });
+    const b = await createProfile({ name: "Order B" });
+    const c = await createProfile({ name: "Order C" });
+
+    const res = await app.request("/api/copilot/profiles/reorder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        updates: [
+          { id: c.id, sortOrder: 0 },
+          { id: a.id, sortOrder: 1 },
+          { id: b.id, sortOrder: 2 },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { profiles: Array<{ id: string; isBuiltIn: boolean }> };
+    // The literal "reorder" segment reached THIS route (not the :profileId
+    // PATCH): the response is the list envelope, not an updated profile.
+    expect(body.profiles[0]?.id).toBe("builtin");
+    expect(body.profiles[0]?.isBuiltIn).toBe(true);
+    // Freshly created ids appear after the seed, in the reordered sequence —
+    // robust to profiles accumulated by earlier tests in the shared container.
+    const created = new Set([a.id, b.id, c.id]);
+    const relative = body.profiles.filter((p) => created.has(p.id)).map((p) => p.id);
+    expect(relative).toEqual([c.id, a.id, b.id]);
+
+    // The order survives a fresh GET (persisted, not response-only).
+    const get = await app.request("/api/copilot/profiles");
+    const getBody = (await get.json()) as { profiles: Array<{ id: string }> };
+    expect(getBody.profiles.filter((p) => created.has(p.id)).map((p) => p.id)).toEqual([c.id, a.id, b.id]);
+  });
+
+  test("rejects a body without the updates array (zValidator 400)", async () => {
+    const res = await app.request("/api/copilot/profiles/reorder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("rejects an unknown kind → 400 carrying UNKNOWN_AGENT_KIND (no silent fallback)", async () => {
+    const res = await app.request("/api/copilot/profiles/reorder?kind=no-such-kind", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates: [] }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { details?: Record<string, unknown> } };
+    expect(body.error.details?.code).toBe("UNKNOWN_AGENT_KIND");
   });
 });

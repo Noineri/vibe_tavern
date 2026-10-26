@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { Text } from "@codemirror/state";
 import type { ScriptSafetyFinding } from "@vibe-tavern/domain/script-safety";
 
@@ -8,18 +9,14 @@ useDomEnv();
 
 // Identity i18n — assertion strings match the i18n keys verbatim (the findings
 // modal is display-only: no settings API seam, so no settings mock is needed).
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 const { cleanup, render, fireEvent } = await import("@testing-library/react");
 const {
   FindingsWarningModal,
   blockingFindings,
-  scriptSafetyRevealPosition,
 } = await import("./FindingsWarningModal.js");
+const { scriptSafetyRevealPosition } = await import("../../../../lib/script-safety-reveal.js");
 
 function finding(overrides: Partial<ScriptSafetyFinding> = {}): ScriptSafetyFinding {
   return { ruleId: "unsafe-eval", severity: "critical", line: 1, ...overrides };

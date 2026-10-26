@@ -3,10 +3,11 @@ import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
-import { CustomTooltip } from "../shared/Tooltip.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AssistantContextHeader } from "./AssistantContextHeader.js";
 import { ImageGenMessageMenu } from "./ImageGenMessageMenu.js";
+import { DiscussInSidechatMenu, DiscussScopeSheet } from "./DiscussInSidechatMenu.js";
+import { DesktopMessageActions, MobileMessageActions } from "./message-shell-actions.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -72,6 +73,9 @@ export interface MessageShellActions {
    *  shells (pending/coauthor) don't offer it. */
   onAiAnnotate?: () => void;
   onNarrate?: () => void;
+  /** SC-18: «Discuss in the sidechat» — attaches the message's variants as
+   *  sidechat composer chips. Optional — sibling shells don't offer it. */
+  onDiscussInSidechat?: (scope: "selected" | "all") => void;
 }
 
 export interface MessageShellProps {
@@ -108,6 +112,10 @@ export interface MessageShellProps {
   canContinue?: boolean;
   /** Whether the message AI editor (Sparkles) affordance is shown. MAE-52. */
   canAiEdit: boolean;
+  /** SC-18: whether the «Discuss in the sidechat» entry is shown — computed
+   *  upstream (assistant messages of chats the sidechat serves, via the
+   *  served-modes selector). Optional — sibling shells pass no callback. */
+  canDiscussInSidechat?: boolean;
   /** TPE-14: whether the greeting-only "prepare for narration" affordance
    *  is shown. Optional — sibling shells don't offer it. */
   canAiAnnotate?: boolean;
@@ -178,6 +186,7 @@ export function MessageShell(props: MessageShellProps) {
     canResend,
     canContinue,
     canAiEdit,
+    canDiscussInSidechat,
     canAiAnnotate,
     selectedVariantIndex,
     variantCount,
@@ -201,6 +210,9 @@ export function MessageShell(props: MessageShellProps) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // SC-18c: the chooser for the sheet discuss item (several variants) —
+  // opened by the sheet item's action AFTER the action sheet closes.
+  const [discussChooserOpen, setDiscussChooserOpen] = useState(false);
 
   // IG-16: the image-generation menu rides both action rows (desktop +
   // mobile) on every message — any message can anchor a generation, and the
@@ -213,6 +225,19 @@ export function MessageShell(props: MessageShellProps) {
       disabled={isBusy}
     />
   );
+
+  // SC-18: «Discuss in the sidechat» rides both action rows next to the
+  // AI-editor button — only on assistant messages the sidechat serves
+  // (canDiscussInSidechat is computed upstream through the served-modes
+  // selector; sibling shells pass no callback and render nothing).
+  const discussMenu = canDiscussInSidechat === true && actions.onDiscussInSidechat !== undefined ? (
+    <DiscussInSidechatMenu
+      variant={isMobile ? "mobile" : "desktop"}
+      variantCount={variantCount}
+      disabled={isBusy}
+      onSelect={actions.onDiscussInSidechat}
+    />
+  ) : null;
 
   // Build slot context
   const slotCtx: MessageSlotContext = {
@@ -231,6 +256,14 @@ export function MessageShell(props: MessageShellProps) {
   const deleteLabel = t("delete");
   const resendLabel = t("resend");
   const continueLabel = t("continue_tooltip");
+  const aiEditTooltip = tDynamic("message_ai_editor_tooltip");
+  const aiAnnotateTooltip = tDynamic("message_ai_editor_mode_annotate");
+  const discussTooltip = t("discuss_in_sidechat_tooltip");
+  // Narrowed once: the sheet items and the chooser share these gates with
+  // the discussMenu trigger above (sibling shells pass no callback).
+  const onDiscussInSidechat = actions.onDiscussInSidechat;
+  const canDiscuss = canDiscussInSidechat === true && onDiscussInSidechat !== undefined;
+  const onAiAnnotate = actions.onAiAnnotate;
 
   // Resolve slots for each position
   const slotsAfterReasoning = resolveMessageSlots("after_reasoning", slotCtx);
@@ -321,6 +354,7 @@ export function MessageShell(props: MessageShellProps) {
             {isMobile && !isEditing && !isGenerating && (
               <div className={cn("relative", isUser ? "mr-auto" : "ml-auto")}>
                 <div
+                  data-testid="mobile-actions-menu-btn"
                   className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded text-t3 transition-colors active:bg-s2"
                   onClick={() => setMobileMenuOpen(v => !v)}
                 >
@@ -350,12 +384,58 @@ export function MessageShell(props: MessageShellProps) {
                   action: actions.onDelete,
                 },
               ] : [
+                // SC-18c (owner 2026-10-21): the mobile row fits the swipe
+                // switcher plus three 44px buttons, so branch / narrate /
+                // AI editor / annotate / discuss live here; continue moved
+                // to the row. Order mirrors the row's natural order.
+                ...(canBranch
+                  ? [
+                      {
+                        icon: <Icons.Branch />,
+                        label: branchLabel,
+                        action: actions.onBranch,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
                 ...(actions.onNarrate
                   ? [
                       {
                         icon: narrating ? <Icons.stopSquare /> : <Icons.speaker />,
                         label: narrating ? t("narrate_stop") : t("narrate_action"),
                         action: actions.onNarrate,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canAiEdit
+                  ? [
+                      {
+                        icon: <Icons.Sparkles />,
+                        label: aiEditTooltip,
+                        action: actions.onAiEdit,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canAiAnnotate && onAiAnnotate
+                  ? [
+                      {
+                        icon: <Icons.Sparkles />,
+                        label: aiAnnotateTooltip,
+                        action: onAiAnnotate,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
+                ...(canDiscuss && onDiscussInSidechat
+                  ? [
+                      {
+                        icon: <Icons.sidechatDiscuss />,
+                        label: discussTooltip,
+                        // The ActionSheet closes first (its onClick runs
+                        // onClose before the action): one variant attaches at
+                        // once, several open the scope chooser below.
+                        action: () => {
+                          if (variantCount <= 1) onDiscussInSidechat("selected");
+                          else setDiscussChooserOpen(true);
+                        },
                       } as ActionSheetItem,
                     ]
                   : []),
@@ -369,19 +449,6 @@ export function MessageShell(props: MessageShellProps) {
                   label: editLabel,
                   action: actions.onEdit,
                 },
-                // LS-4a: Continue lives next to Edit. The mobile three-dot
-                // menu is a labeled ActionSheet (icon-only isn't representable
-                // there) — the owner's icon-only/no-label spec is the desktop
-                // row shape.
-                ...(canContinue && actions.onContinue
-                  ? [
-                      {
-                        icon: <Icons.fastForward />,
-                        label: continueLabel,
-                        action: actions.onContinue,
-                      } as ActionSheetItem,
-                    ]
-                  : []),
                 {
                   icon: <Icons.Trash />,
                   label: deleteLabel,
@@ -389,6 +456,17 @@ export function MessageShell(props: MessageShellProps) {
                   action: actions.onDelete,
                 },
               ]) satisfies ActionSheetItem[]}
+            />
+          )}
+
+          {/* SC-18c: scope chooser for the sheet discuss item (mobile only —
+              desktop keeps the popover trigger in the row). Rendered beside
+              the action sheet, opened after it closes (never stacked). */}
+          {isMobile && canDiscuss && onDiscussInSidechat && (
+            <DiscussScopeSheet
+              open={discussChooserOpen}
+              onClose={() => setDiscussChooserOpen(false)}
+              onSelect={onDiscussInSidechat}
             />
           )}
 
@@ -457,8 +535,8 @@ export function MessageShell(props: MessageShellProps) {
               </DesktopSlotMessageActions>
             ) : (
             <DesktopMessageActions
-              aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
-              aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
+              aiEditTooltip={aiEditTooltip}
+              aiAnnotateTooltip={aiAnnotateTooltip}
               canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canAiEdit={canAiEdit}
@@ -474,6 +552,7 @@ export function MessageShell(props: MessageShellProps) {
               continueTooltip={continueLabel}
               hiddenVariantControls={!!variantControlsOverlay}
               imageMenu={imageMenu}
+              discussMenu={discussMenu}
               isBusy={isBusy}
               isBranching={isBranching}
               isGreeting={isGreeting}
@@ -484,7 +563,7 @@ export function MessageShell(props: MessageShellProps) {
               variantControlsRef={variantControlsRef}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
-              onAiAnnotate={actions.onAiAnnotate}
+              onAiAnnotate={onAiAnnotate}
               onBranch={actions.onBranch}
               onContinue={actions.onContinue}
               onCopy={actions.onCopy}
@@ -518,6 +597,8 @@ export function MessageShell(props: MessageShellProps) {
               canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canBranch={canBranch}
+              canContinue={canContinue}
+              continueTooltip={continueLabel}
               canRegenerate={canRegenerate}
               canResend={canResend}
               canSwitchVariant={canSwitchVariant}
@@ -525,14 +606,16 @@ export function MessageShell(props: MessageShellProps) {
               isBranching={isBranching}
               isGreeting={isGreeting}
               imageMenu={imageMenu}
+              discussMenu={discussMenu}
               isUser={isUser}
               regenLabel={regenLabel}
               resendLabel={resendLabel}
               selectedVariantIndex={selectedVariantIndex}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
-              onAiAnnotate={actions.onAiAnnotate}
+              onAiAnnotate={onAiAnnotate}
               onBranch={actions.onBranch}
+              onContinue={actions.onContinue}
               onNarrate={actions.onNarrate}
               narrating={narrating}
               narrateTooltip={t("narrate_tooltip")}
@@ -595,261 +678,6 @@ function MetaBadgeRenderer({ descriptor, ctx }: {
   ctx: MessageMetaContext;
 }) {
   return <>{descriptor.render(ctx)}</>;
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Desktop Message Actions
-// ────────────────────────────────────────────────────────────────────────────
-
-const desktopActionClass = "flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2";
-
-function DesktopMessageActions(props: {
-  aiEditTooltip: string;
-  canAiEdit: boolean;
-  aiAnnotateTooltip?: string;
-  canAiAnnotate?: boolean;
-  branchLabel: string;
-  canBranch: boolean;
-  canRegenerate: boolean;
-  canResend: boolean;
-  canContinue?: boolean;
-  continueTooltip?: string;
-  canSwitchVariant: boolean;
-  copied: boolean;
-  copiedLabel: string;
-  copyLabel: string;
-  editLabel: string;
-  hiddenVariantControls: boolean;
-  /** IG-16: the image-generation menu (trigger + popover + Stop morph). */
-  imageMenu: ReactNode;
-  isBusy: boolean;
-  isBranching: boolean;
-  isGreeting: boolean;
-  isUser: boolean;
-  regenLabel: string;
-  resendLabel: string;
-  selectedVariantIndex: number;
-  variantControlsRef: React.RefObject<HTMLSpanElement | null>;
-  variantCount: number;
-  variantControls?: ReactNode;
-  onAiEdit: () => void;
-  onAiAnnotate?: () => void;
-  onBranch: () => void;
-  onContinue?: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
-  onEdit: () => void;
-  onNarrate?: () => void;
-  narrating?: boolean;
-  narrateTooltip?: string;
-  narrateStopTooltip?: string;
-  onRegenerate: () => void;
-  onResend: () => void;
-}) {
-  const {
-    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
-    branchLabel, canBranch, canRegenerate, canResend, canContinue, continueTooltip, canSwitchVariant,
-    copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
-    imageMenu,
-    isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
-    variantControlsRef, variantCount,
-    variantControls,
-    onAiEdit, onAiAnnotate, onBranch, onContinue, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
-  } = props;
-
-  return (
-    <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <span
-        className={cn(
-          "flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2",
-          copied && "translate-y-[-1px] bg-success-dim text-success-text",
-        )}
-        onClick={() => { if (!isBusy) onCopy(); }}
-      >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? copiedLabel : copyLabel}</span>
-
-      <span
-        className={desktopActionClass}
-        onClick={() => { if (!isBusy) onEdit(); }}
-      ><Icons.Edit />{editLabel}</span>
-
-      {/* LS-4a: Continue — icon-only, directly next to Edit, last AI reply
-          only (canContinue is gated upstream in MessageBlock), tooltip on
-          hover per the owner spec (fast-forward >>, no caption, tooltip
-          highlight). */}
-      {canContinue && onContinue && (
-        <CustomTooltip content={continueTooltip ?? ""}>
-          <button
-            type="button"
-            aria-label={continueTooltip}
-            aria-disabled={isBusy}
-            disabled={isBusy}
-            data-testid="desktop-continue-btn"
-            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
-            onClick={() => { if (!isBusy) onContinue(); }}
-          ><Icons.fastForward /></button>
-        </CustomTooltip>
-      )}
-
-      {onNarrate && (
-        <CustomTooltip content={narrating ? narrateStopTooltip : narrateTooltip}>
-          <button
-            type="button"
-            aria-label={narrating ? narrateStopTooltip : narrateTooltip}
-            aria-disabled={isBusy}
-            disabled={isBusy}
-            data-testid="desktop-narrate-btn"
-            className={cn(
-              "flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40",
-              narrating ? "text-accent animate-pulse" : "text-t3",
-            )}
-            onClick={() => { if (!isBusy) onNarrate(); }}
-          >{narrating ? <Icons.stopSquare /> : <Icons.speaker />}</button>
-        </CustomTooltip>
-      )}
-
-      {canAiEdit && (
-        <CustomTooltip content={aiEditTooltip}>
-          <button
-            type="button"
-            aria-label={aiEditTooltip}
-            aria-disabled={isBusy}
-            disabled={isBusy}
-            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
-            onClick={() => { if (!isBusy) onAiEdit(); }}
-          ><Icons.Sparkles /></button>
-        </CustomTooltip>
-      )}
-
-      {/* TPE-14: greeting-only "prepare for narration" entry. Same row
-          affordance as the AI-edit button; shown only on greetings, where
-          the edit button is absent by design. */}
-      {canAiAnnotate && onAiAnnotate && (
-        <CustomTooltip content={aiAnnotateTooltip ?? ""}>
-          <button
-            type="button"
-            aria-label={aiAnnotateTooltip}
-            aria-disabled={isBusy}
-            disabled={isBusy}
-            data-testid="desktop-annotate-btn"
-            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
-            onClick={() => { if (!isBusy) onAiAnnotate(); }}
-          ><Icons.Sparkles /></button>
-        </CustomTooltip>
-      )}
-
-      {canResend && <span className={desktopActionClass} onClick={() => { if (!isBusy) onResend(); }}><Icons.Regen />{resendLabel}</span>}
-      {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
-      {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
-
-      {/* IG-16: image generation menu (icon+caret popover; Stop while running). */}
-      {imageMenu}
-
-      {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
-
-      {/* Pre-CF6 affordance: the generic per-message delete. The IG-CF6
-          worker initially tagged it image-slot-delete, which broke the
-          slot-shaped gate tests on text messages — the generic delete is
-          part of the TEXT surface, not slot chrome. The SLOT row's delete
-          keeps image-slot-delete. */}
-      {!isGreeting && (
-        <span
-          data-testid="message-delete"
-          className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-          onClick={() => { if (!isBusy) onDelete(); }}
-        ><Icons.Trash /></span>
-      )}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Mobile Message Actions
-// ────────────────────────────────────────────────────────────────────────────
-
-function MobileMessageActions(props: {
-  aiEditTooltip: string;
-  canAiEdit: boolean;
-  aiAnnotateTooltip?: string;
-  canAiAnnotate?: boolean;
-  branchLabel: string;
-  canBranch: boolean;
-  canRegenerate: boolean;
-  canResend: boolean;
-  canSwitchVariant: boolean;
-  /** IG-16: the image-generation menu (icon button + sheet + Stop morph). */
-  imageMenu: ReactNode;
-  isBusy: boolean;
-  isBranching: boolean;
-  isGreeting: boolean;
-  isUser: boolean;
-  regenLabel: string;
-  resendLabel: string;
-  selectedVariantIndex: number;
-  variantCount: number;
-  variantControls?: ReactNode;
-  onAiEdit: () => void;
-  onAiAnnotate?: () => void;
-  onBranch: () => void;
-  onNarrate?: () => void;
-  narrating?: boolean;
-  narrateTooltip?: string;
-  narrateStopTooltip?: string;
-  onRegenerate: () => void;
-  onResend: () => void;
-}) {
-  const {
-    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
-    branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
-    imageMenu,
-    isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
-    variantControls,
-    onAiEdit, onAiAnnotate, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
-  } = props;
-
-  return (
-    <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2">
-      <div className="flex justify-start">
-        {canBranch && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
-            {isBranching ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icons.Branch />}
-          </button>
-        )}
-      </div>
-      <div className="flex min-w-0 justify-center">
-        {!isUser && !isGreeting && canSwitchVariant && variantControls}
-      </div>
-      <div className="flex justify-end gap-1">
-        {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
-        {imageMenu}
-        {onNarrate && (
-          <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }} title={narrating ? narrateStopTooltip : narrateTooltip}>
-            {narrating ? <Icons.stopSquare /> : <Icons.speaker />}
-          </button>
-        )}
-        {canAiEdit && (
-          <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
-            <Icons.Sparkles />
-          </button>
-        )}
-        {/* TPE-14: greeting-only "prepare for narration" entry (mobile row). */}
-        {canAiAnnotate && onAiAnnotate && (
-          <button type="button" aria-label={aiAnnotateTooltip} data-testid="mobile-annotate-btn" disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiAnnotate(); }} title={aiAnnotateTooltip}>
-            <Icons.Sparkles />
-          </button>
-        )}
-        {canResend && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onResend(); }} title={resendLabel}>
-            <Icons.Regen />
-          </button>
-        )}
-        {canRegenerate && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
-            <Icons.Regen />
-          </button>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -267,7 +267,7 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
               onFiles={(files) => handleFile(files[0])}
             />
             {errorMsg && (
-              <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-center font-ui text-xs text-danger">{errorMsg}</div>
+              <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-danger">{errorMsg}</div>
             )}
           </div>
         )}
@@ -316,7 +316,7 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
             {/* Block list */}
             <div className={cn(!isMobile && "flex-1 overflow-y-auto")}>
               {blockInfos.length === 0 ? (
-                <div className="px-5 py-8 text-center font-ui text-[12px] text-t4">{t("preset_import_no_match")}</div>
+                <div className="px-5 py-8 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("preset_import_no_match")}</div>
               ) : (
                 <div className="flex flex-col">
                   {blockInfos.map((info) => (

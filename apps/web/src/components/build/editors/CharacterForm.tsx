@@ -37,6 +37,9 @@ import { useActiveCharacter, useSnapshotStore } from "../../../stores/snapshot-s
 import { saveCharacterAction } from "../../../stores/api-actions/character-actions.js";
 import { describeCharacterAvatar } from "../../../api/gallery-api.js";
 import { AvatarDescriptionField, type AvatarDescriptionPatch } from "./AvatarDescriptionField.js";
+import { useCharacterTrackerTemplate } from "../../../hooks/use-character-tracker-template.js";
+import { TrackerTemplateSummaryRow } from "./TrackerTemplateSummaryRow.js";
+import { CharacterCoreTextFields } from "./character-core-text-fields.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -94,7 +97,7 @@ function CharacterTitle({ control }: { control: Control<BuildCharacterDraft> }) 
   const { t } = useT();
   const name = useWatch({ control, name: "name" });
   return (
-    <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
+    <div className="font-body text-[calc(var(--ui-fs)+8px)] font-medium text-t1 min-w-0 truncate">
       {name || t("unnamed")}
     </div>
   );
@@ -143,7 +146,7 @@ function TokenSummary({ control }: { control: Control<BuildCharacterDraft> }) {
   ].filter(Boolean).join("\n"));
   const greetingTokens = useTokenCount(firstMessage || "");
   return (
-    <span className="font-ui text-[11px] tabular-nums text-t3">
+    <span className="font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">
       {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
     </span>
   );
@@ -163,30 +166,14 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   // E2: alt-greeting deletion goes through the shared destructive confirm.
   const [pendingGreetingDelete, setPendingGreetingDelete] = useState<number | null>(null);
-  const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
+  const [mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
     control: form.control,
-    name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
+    name: ["mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
   });
   const alternateGreetings = altGreetingsRaw || [];
   return (
     <>
-      {/* Description */}
-      <div className="mb-5">
-        <label className={lblCls}>{t("char_desc_label")}</label>
-        <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
-          <AutoTextarea disabled={isSaving} register={register("description")} minRows={5} />
-        </MobileExpandTextarea>
-        <TokenCounter text={description || ""} />
-      </div>
-
-      {/* First Message */}
-      <div className="mb-5">
-        <label className={lblCls}>{t("first_message_greeting")}</label>
-        <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
-          <AutoTextarea disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
-        </MobileExpandTextarea>
-        <TokenCounter text={firstMessage || ""} />
-      </div>
+      <CharacterCoreTextFields form={form} isSaving={isSaving} />
 
       {/* Alternate Greetings */}
       <div className="mb-5">
@@ -196,7 +183,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
             <span
               key={idx}
               className={cn(
-                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
+                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 cursor-pointer transition-all",
                 idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
                 isMobile && "min-h-9 px-3 py-1",
               )}
@@ -226,7 +213,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
             </span>
           ))}
           <span
-            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-[2px] font-ui text-xs text-t3 cursor-pointer"
+            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-[2px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3 cursor-pointer"
             onClick={() => {
               const next = [...alternateGreetings, ""];
               setValue("alternateGreetings", next, { shouldDirty: true });
@@ -273,7 +260,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
               </CustomTooltip>
             </div>
             <div className={"flex min-h-8 items-center justify-between gap-2 sm:justify-start" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
               <NumberInput
                 className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
                 min={0}
@@ -389,6 +376,7 @@ export function CharacterForm({
   // from the existing avatar (full endpoint) without re-uploading a file.
   // Null when the thumbnail editor is closed.
   const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
+  const { template: trackerTemplate, clear: clearTrackerTemplate, refetch: refetchTrackerTemplate } = useCharacterTrackerTemplate(characterId);
 
   // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
   // (not local) so it survives Build tab switches — CharacterForm unmounts when
@@ -688,7 +676,7 @@ export function CharacterForm({
       {isMobile && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button type="button"
-            className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
+            className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 active:bg-s3"
             style={{ whiteSpace: "nowrap" }}
             onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
             disabled={isSaving}
@@ -752,14 +740,14 @@ export function CharacterForm({
       </div>
 
       {importError && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-danger-text">
           {importError}
         </div>
       )}
 
       {/* Validation error for name */}
       {errors.name && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-danger-text">
           {errors.name.message}
         </div>
       )}
@@ -823,7 +811,7 @@ export function CharacterForm({
           ) : (
             <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
+              <span className="font-ui text-[calc(var(--ui-fs)-4px)] tracking-wide">{t("upload_avatar")}</span>
             </div>
           )}
         </div>
@@ -846,9 +834,9 @@ export function CharacterForm({
         characterId={characterId}
         isDirty={isDirty}
         disabled={isSaving}
-        onAfterActivate={onReset}
+        onAfterActivate={() => { onReset(); void refetchTrackerTemplate(); }}
       />
-
+      {trackerTemplate && <TrackerTemplateSummaryRow template={trackerTemplate} onClear={clearTrackerTemplate} />}
       {/* Avatar-in-prompt — describe via vision + toggle + description.
           Reads from the snapshot character (out-of-band from BuildCharacterDraft
           — see avatar-description-ui-gap.md). Mounted once, shared across

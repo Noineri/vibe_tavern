@@ -8,7 +8,6 @@ describe("prompt assembly registries", () => {
   it("registers an assembler for every AI assistant mode", () => {
     expect(Object.keys(AI_ASSISTANT_ASSEMBLERS).sort()).toEqual([
       "chat_impersonate",
-      "dice_script",
       "lore_entry",
       "lore_keys",
       "md_import",
@@ -18,7 +17,7 @@ describe("prompt assembly registries", () => {
       "regex",
       "scene_rules",
       "scene_schema",
-      "script",
+      "skill",
       "vision_describe",
     ]);
     expect(Object.values(AI_ASSISTANT_ASSEMBLERS).every((assembler) => typeof assembler.assemble === "function")).toBeTrue();

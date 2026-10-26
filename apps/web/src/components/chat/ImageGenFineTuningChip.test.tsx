@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach, afterAll, beforeEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
@@ -8,17 +9,7 @@ import type { AppMessage, ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const realImageGenApi = await import("../../api/image-gen-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
@@ -113,6 +104,8 @@ let modelsSnapshotAtStore: Record<string, string> = {};
 let sidecarsSnapshotAtStore: Record<string, string> = {};
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
+// Step 11: the model-list reads with their options (the stored-first pin).
+const listModelsCalls: Array<{ id: string; options: { storedFirst?: boolean } | undefined }> = [];
 const generateCalls: Array<[string, import("@vibe-tavern/api-contracts").GenerateImageGenInput]> = [];
 const draftPromptCalls: Array<{
   chatId: string;
@@ -156,8 +149,10 @@ mock.module("../../api/image-gen-api.js", () => ({
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   // IF-10: the learned prompt-cap table (advisory counter data).
   listImageGenPromptCaps: () => Promise.resolve([...promptCapsStore]),
-  listImageGenModels: (id: string) =>
-    Promise.resolve({ data: [...(modelsStore[id] ?? [])], snapshotAt: modelsSnapshotAtStore[id] ?? null }),
+  listImageGenModels: (id: string, _signal?: AbortSignal, options?: { storedFirst?: boolean }) => {
+    listModelsCalls.push({ id, options });
+    return Promise.resolve({ data: [...(modelsStore[id] ?? [])], snapshotAt: modelsSnapshotAtStore[id] ?? null });
+  },
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
@@ -296,6 +291,19 @@ async function openAccordion(chatId: string, modelLabel = "SDXL Base") {
     expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
   );
   return view;
+}
+
+// Seam change: the former number-cell id belongs to the inline input only.
+async function openAdetailerSteps(body: HTMLElement): Promise<HTMLInputElement> {
+  const range = within(body).getByTestId("image-gen-ft-range-adetailer-steps");
+  const shell = range.closest("[data-slider-field-shell]");
+  const field = shell?.querySelector("[data-slider-field]");
+  if (!field) throw new Error("no ADetailer slider field");
+  await act(async () => { fireEvent.doubleClick(field); });
+  const editor = within(body).getByTestId("image-gen-ft-adetailer-steps");
+  expect(editor.tagName).toBe("INPUT");
+  expect((editor as HTMLInputElement).type).toBe("text");
+  return editor as HTMLInputElement;
 }
 
 afterEach(() => {
@@ -1566,15 +1574,19 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     expect(upsertCalls[1].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt" });
 
     const range = within(adBody as HTMLElement).getByTestId("image-gen-ft-range-adetailer-steps") as HTMLInputElement;
+    expect(range.tagName).toBe("INPUT");
+    expect(range.type).toBe("range");
+    expect(within(adBody as HTMLElement).getByRole("slider", { name: "image_gen_adetailer_steps_label" })).toBe(range);
     expect(range.value).toBe("31");
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");
     expect(range.getAttribute("step")).toBe("1");
-    // CF13 canon (IMAGEGEN_ADETAILER_CELLS_REPORT): NumberInput cell — the
-    // unset state shows the effective base (31) as the VALUE; the testid sits
-    // on the wrapper div.
-    const stepsInput = within(adBody as HTMLElement).getByTestId("image-gen-ft-adetailer-steps").querySelector("input") as HTMLInputElement;
-    expect(stepsInput.value).toBe("31");
+    // Seam change: was the permanent number box -> now field text; the effective base is still the value.
+    const shell = range.closest("[data-slider-field-shell]");
+    expect(shell?.querySelector("[data-slider-field-value]")?.textContent).toBe("31");
+    expect(shell?.querySelector("[data-slider-field-label]")?.textContent).toBe("image_gen_adetailer_steps_label");
+    expect(within(adBody).getAllByText("image_gen_adetailer_steps_label")).toHaveLength(1);
+    expect(within(adBody).queryByTestId("image-gen-ft-adetailer-steps")).toBeNull();
     await act(async () => {
       fireEvent.change(range, { target: { value: "17" } });
     });
@@ -1583,18 +1595,74 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     // Commit is on blur; blur with an empty box reverts and writes nothing
     // (clear-to-undefined died with the TextInput cell — the same CF13
     // ruling that killed it for the sampler cells).
+    const stepsInput = await openAdetailerSteps(adBody);
     await act(async () => {
       fireEvent.change(stepsInput, { target: { value: "19" } });
+    });
+    await act(async () => {
       fireEvent.blur(stepsInput);
     });
     await waitFor(() => expect(upsertCalls.length).toBe(4));
     expect(upsertCalls[3].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 19 });
     const writesAfter = upsertCalls.length;
+    const emptyInput = await openAdetailerSteps(adBody);
     await act(async () => {
-      fireEvent.change(stepsInput, { target: { value: "" } });
-      fireEvent.blur(stepsInput);
+      fireEvent.change(emptyInput, { target: { value: "" } });
+    });
+    await act(async () => {
+      fireEvent.blur(emptyInput);
     });
     expect(upsertCalls.length).toBe(writesAfter);
+
+    const fractionalInput = await openAdetailerSteps(adBody);
+    await act(async () => { fireEvent.change(fractionalInput, { target: { value: "19.6" } }); });
+    expect(upsertCalls.length).toBe(writesAfter);
+    await act(async () => { fireEvent.keyDown(fractionalInput, { key: "Enter" }); });
+    await waitFor(() => expect(upsertCalls.length).toBe(writesAfter + 1));
+    expect(upsertCalls.at(-1)?.settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 20 });
+
+    act(() => {
+      useImageGenChatStore.setState({
+        runningByChat: {
+          "chat-ms4": {
+            mode: "free",
+            anchorMessageId: "message-1",
+            profileId: "ig2",
+            liveProgress: false,
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(range.disabled).toBe(true));
+    const writesBeforeDisabled = upsertCalls.length;
+    const field = shell?.querySelector("[data-slider-field]");
+    if (!field) throw new Error("no disabled ADetailer field");
+    await act(async () => {
+      fireEvent.doubleClick(field);
+      fireEvent.change(range, { target: { value: "25" } });
+    });
+    expect(within(adBody).queryByTestId("image-gen-ft-adetailer-steps")).toBeNull();
+    expect(upsertCalls.length).toBe(writesBeforeDisabled);
+  });
+
+  it("SL-10: the mobile ADetailer field rounds inline steps and writes the same overlay", async () => {
+    mobileOverride = true;
+    profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
+    modelsStore["ig2"] = [{ id: "sdxl-base", label: "SDXL Base" }];
+    extensionsStore["ig2"] = ["adetailer"];
+    overlayStore["ig2/sdxl-base"] = { steps: 31, adetailer: true };
+    armChat("chat-sl10-mobile");
+    const view = await openAccordion("chat-sl10-mobile");
+    const body = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-adetailer-body"));
+    const range = within(body).getByTestId("image-gen-ft-range-adetailer-steps") as HTMLInputElement;
+    expect(range.value).toBe("31");
+    expect(range.getAttribute("aria-label")).toBe("image_gen_adetailer_steps_label");
+    const editor = await openAdetailerSteps(body);
+    await act(async () => { fireEvent.change(editor, { target: { value: "19.6" } }); });
+    expect(upsertCalls).toHaveLength(0);
+    await act(async () => { fireEvent.keyDown(editor, { key: "Enter" }); });
+    await waitFor(() => expect(upsertCalls).toHaveLength(1));
+    expect(upsertCalls[0].settings).toEqual({ steps: 31, adetailer: true, adetailerSteps: 20 });
   });
 
   it("ICR-5: the sections render in the approved order — LoRA → Hires → ADetailer → Samplers (comfy arm); Krea 2 sits before Samplers (krea arm)", async () => {
@@ -1824,6 +1892,19 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     await waitFor(() => expect(within(live.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy());
     expect(within(live.baseElement).queryByTestId("image-gen-ft-models-snapshot")).toBeNull();
     expect(within(live.baseElement).queryByTestId("image-gen-ft-sidecars-snapshot")).toBeNull();
+  });
+
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11, owner
+  // 2026-10-15): the chip used to list the models live on every open; it
+  // now reads the stored list (the server lists live only when none is
+  // stored) — the settings pane's refresh is the live path.
+  it("step 11: opening the chip reads the stored model list", async () => {
+    armDitChat("chat-stored");
+    listModelsCalls.length = 0;
+    const view = await openAccordion("chat-stored", "Ray DiT");
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy());
+    expect(listModelsCalls.length).toBeGreaterThan(0);
+    expect(listModelsCalls.every((call) => call.options?.storedFirst === true)).toBe(true);
   });
 });
 

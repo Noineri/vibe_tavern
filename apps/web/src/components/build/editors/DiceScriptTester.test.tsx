@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ScriptRecord } from "../../../api/types.js";
 
 useDomEnv();
@@ -24,20 +25,10 @@ const testScript = mock(() => Promise.resolve({
 	sampleRolls: [],
 	discoveryError: null,
 }));
-const realI18nContext = await import("../../../i18n/context.js");
 const realScriptApi = await import("../../../api/script-api.js");
 const realSettingsApi = await import("../../../api/settings-api.js");
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (k: string) => k,
-		tDynamic: (k: string) => k,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam();
 
 mock.module("../../../api/script-api.js", () => ({
 	...realScriptApi,

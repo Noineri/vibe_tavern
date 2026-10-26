@@ -1,13 +1,13 @@
 import type { CharacterRuntimeApi, CharacterAssetRuntimeApi } from "../contract/runtime-api.js";
 import type { CharacterVersionResponse } from "../contract/session-types.js";
-import { brandId, type CharacterId, type ChatId, type CharacterVersion } from "@vibe-tavern/domain";
+import { brandId, readTrackerTemplate, withTrackerTemplate, type CharacterId, type ChatId, type CharacterVersion, type TrackerTemplate } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import { extToMime, mimeToExt } from "../../domain/asset/asset-service.js";
 import { normalizeAvatarThumbnail } from "../../domain/asset/avatar-thumbnail.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import { validation } from "../../shared/errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 
@@ -91,6 +91,31 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			{ ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined },
 			{ rebuildChatOrder: () => this.sessionRuntime.rebuildChatOrder() },
 		);
+	};
+
+	getTrackerTemplate = async (characterId: string): Promise<{ template: TrackerTemplate | null }> => {
+		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
+		if (!character) throw notFound("Character", `Character '${characterId}' was not found.`);
+		return { template: readTrackerTemplate(character.extensions) };
+	};
+
+	updateTrackerTemplate = async (characterId: string, template: TrackerTemplate): Promise<{ template: TrackerTemplate }> => {
+		const id = brandId<CharacterId>(characterId);
+		const character = await this.stores.characters.getById(id);
+		if (!character) throw notFound("Character", `Character '${characterId}' was not found.`);
+		await this.sessionRuntime.character.update(id, {
+			extensions: withTrackerTemplate(character.extensions, template),
+		}, { rebuildChatOrder: () => this.sessionRuntime.rebuildChatOrder() });
+		return { template };
+	};
+
+	deleteTrackerTemplate = async (characterId: string): Promise<void> => {
+		const id = brandId<CharacterId>(characterId);
+		const character = await this.stores.characters.getById(id);
+		if (!character) throw notFound("Character", `Character '${characterId}' was not found.`);
+		await this.sessionRuntime.character.update(id, {
+			extensions: withTrackerTemplate(character.extensions, null),
+		}, { rebuildChatOrder: () => this.sessionRuntime.rebuildChatOrder() });
 	};
 
 	archiveCharacter = (characterId: string) => this.sessionRuntime.character.archive(characterId);

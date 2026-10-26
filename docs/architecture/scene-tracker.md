@@ -120,6 +120,30 @@ Build → Insights → Tracker → History (`SceneHistoryBackfill.tsx`, mounted 
 
 ---
 
+## Character tracker template
+
+A **character tracker template** is the portable tracker setup a character carries so a new chat does not start from a blank tracker: the Scene schema DSL + tracker config and/or the Objective state, captured once and re-usable per chat. It lives in the character's `extensions.vibe_tavern.tracker_template` (`readTrackerTemplate` / `withTrackerTemplate`, `packages/domain/src/tracker-template.ts`), **per character version** — each version snapshot carries its own. A missing or malformed shape reads as `null`: the character is simply template-less, never broken.
+
+The template shape is `{ version, scene: { enabled, config } | null, objective: { enabled, state } | null }`:
+
+- The **scene config** is the tracker config minus its chat-bound fields (`useChatModel` / `providerProfileId` / `model`) and its derived identity (`revision` / `schemaHash`) — the authoring shape only.
+- The **objective state** is a discriminated union on `state.mode` (`"route"` carries `tasks`; `"goals"` carries `shortTermGoals` + `longTermGoal`) — the foreign mode's list is absent, not empty. Capturing a chat resets every task/goal status to `pending`: the template transports setup, never progress.
+
+The template rides VT→VT card export/import inside `extensions` (foreign cards are unaffected). Four surfaces consume it:
+
+1. **Seeding** — creating an RP chat seeds its Scene-tracker config and Objective state from the active character version's template **in the creating transaction** (omitting them keeps the DB default JSON byte-for-byte intact). Seeding happens once at creation; existing chats are never re-seeded.
+2. **Insights panel** (RP chats only) — the top row's two buttons: «Взять из персонажа» (`apply-character-template`) replaces the chat's tracker config + Objective state with the character's template in one transaction; «Сохранить как заготовку персонажа» (`save-as-character-template`) captures the chat's current setup back into the character. Dice and mini-apps are untouched by both.
+3. **Character editor** — a compact read-only row «Заготовка трекеров» under the version switcher (mounted only when the active version has a template), with a «Убрать» remove-confirm. Counts go through CLDR plural keys (`поле/поля/полей`, `цель/цели/целей`).
+4. **The Co-Author tool** `set_tracker_template` — see below.
+
+### The Co-Author tool (delegated authoring)
+
+The Co-Author model **never emits template JSON**. It calls `set_tracker_template` with an *intent*: `action: "create" | "refine"`, an optional `modeHint`, optional `focusNotes`, and a `summary`. A delegate bound to the same Co-Author connection runs a `generateObject` call under the discriminated-union zod schema, taught by the overridable service prompt asset `tracker-template.md` (key `tracker_template`); `action: "refine"` passes the character's current template as the refine base. The validated template passes through to the review card **verbatim** — no post-hoc munging. (This delegation shape was added after the model was asked to emit whole template JSON directly and produced three zod-rejected attempts followed by a valid-but-promptless payload; see the tracker plan's Wave 6.)
+
+The review card (`CoauthorTrackerTemplateReview.tsx`) shows the schema and goals with defaults diffs, the **authored prompts as readable blocks** — scene `generatePrompt` / `rulesPrompt` / inject, objective generate / check / inject, each only when non-empty — and the goals-mode `longTermGoal` after the short-term list. Applying writes the template onto the character on top of the profile merge (a template-only Apply still updates the character).
+
+---
+
 ## Pointers
 
 - Backend lifecycle, job coordination, stale revalidation — [backend.md](backend.md) + Case B in [adding-a-feature.md](../guides/adding-a-feature.md).
@@ -127,3 +151,4 @@ Build → Insights → Tracker → History (`SceneHistoryBackfill.tsx`, mounted 
 - API routes + contracts — [api-reference.md](api-reference.md).
 - Domain types — `packages/domain/src/scene-tracker-constants.ts` (`SCENE_AUTO_MODE`, `SCENE_PROMPT_FORMAT`, `SceneTrackerDsl`, `computeSceneSchemaHash`).
 - Zod contract — `packages/api-contracts/src/schemas/tracker-schema.ts`.
+- Character tracker template — domain shape + `extensions` accessors: `packages/domain/src/tracker-template.ts`; zod: `packages/api-contracts/src/schemas/tracker-template-schema.ts`.

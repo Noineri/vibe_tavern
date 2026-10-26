@@ -1,4 +1,5 @@
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -7,7 +8,6 @@ import React from "react";
 import { SERVICE_PROMPT_FIELD_KEYS } from "@vibe-tavern/domain";
 import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
 
-const realI18n = await import("../../../i18n/context.js");
 const realApi = await import("../../../api/service-prompt-api.js");
 const stableT = (key: string, opts?: Record<string, unknown>) => {
 	if (opts && typeof opts.count === "number") return `${key} ${opts.count}`;
@@ -27,16 +27,12 @@ const deleteMock = mock(async (_id: string) => undefined);
 const setActiveMock = mock(async (_id: string | null) => undefined);
 const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }>) => ({ profiles: [] as ServicePromptProfile[], activeProfileId: null as string | null }));
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({
-		t: stableT,
-		tDynamic: stableTDynamic,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+// Hand port onto the shared seam: the suite's named `stableT`/`stableTDynamic`
+// run verbatim (the pane's callbacks depend on `t`/`tDynamic` identity — the
+// spec's functions are created once, at install time, so identity holds).
+installI18nContextSeam({
+	custom: { t: stableT, tDynamic: stableTDynamic },
+});
 
 mock.module("../../../api/service-prompt-api.js", () => ({
 	...realApi,
@@ -118,6 +114,10 @@ function Harness({ active = true, onClose }: { active?: boolean; onClose?: () =>
 	);
 }
 
+// Row selection rides the primitive's pointer-down (a tap selects; drag starts
+// from the handle only) — fireEvent.click never fires pointerdown, so every row
+// tap below uses pointerDown. Clicks on buttons (edit, retry, confirm, drill)
+// keep fireEvent.click: those are real click handlers.
 async function openAllFamilies(detailEl: HTMLElement) {
 	const buttons = Array.from(detailEl.querySelectorAll("button")) as HTMLButtonElement[];
 	for (const btn of buttons) {
@@ -160,7 +160,7 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(listMock).toHaveBeenCalled());
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
 
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const detail = getByTestId("detail");
 		expect(detail.textContent).toContain("promptManager.servicePrompts.family.assistant");
@@ -208,7 +208,7 @@ describe("ServicePromptsPane", () => {
 
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const detail = getByTestId("detail");
 		await openAllFamilies(detail);
@@ -240,10 +240,10 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
 		expect(getByTestId("master").querySelectorAll('[role="radio"]').length).toBe(0);
 
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith("p2"));
 		setActiveMock.mockClear();
-		await act(async () => { fireEvent.click(getByTestId("service-row-default")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-default")); });
 		await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith(null));
 	});
 
@@ -260,7 +260,7 @@ describe("ServicePromptsPane", () => {
 
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const footer = getByTestId("footer");
 		const dupBtn = Array.from(footer.querySelectorAll("button, span")).find((el) => el.textContent?.includes("promptManager.servicePrompts.duplicateButton"));
@@ -282,7 +282,7 @@ describe("ServicePromptsPane", () => {
 
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const detail = getByTestId("detail");
 		await openAllFamilies(detail);
@@ -412,7 +412,7 @@ describe("ServicePromptsPane", () => {
 		});
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const footer = getByTestId("footer");
 		const mlAuto = footer.querySelector(".ml-auto");
@@ -434,7 +434,7 @@ describe("ServicePromptsPane", () => {
 
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		const detail = getByTestId("detail");
 		expect(SERVICE_PROMPT_FIELD_KEYS.some((key) => key.startsWith("image_"))).toBe(false);
@@ -446,10 +446,10 @@ describe("ServicePromptsPane", () => {
 
 	// Pins the dirty-guard: switching rows with unsaved edits must open the
 	// discard confirm, never silently drop the draft. The TARGET row here is a
-	// memoized SortableServiceRow (not the plain Default row) — this also guards
-	// against memoized rows holding a stale onSelect closure captured before the
-	// edit made the pane dirty; a custom comparator that skips function props
-	// breaks exactly here (silent switch, no confirm).
+	// sortable primitive row (not the pinned Default row) — this also guards
+	// against a row holding a stale onSelect closure captured before the edit
+	// made the pane dirty (the pre-ML-3 memoized row broke exactly here:
+	// silent switch, no confirm).
 	test("switching memoized rows while dirty opens discard confirm, confirm activates target", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: {} });
@@ -462,7 +462,7 @@ describe("ServicePromptsPane", () => {
 		});
 		const { getByTestId, getByText, queryByText } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p2")); });
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
 		setActiveMock.mockClear();
 		getDetailMock.mockClear();
@@ -477,7 +477,7 @@ describe("ServicePromptsPane", () => {
 		await act(async () => { fireEvent.change(ta, { target: { value: "edited draft" } }); });
 
 		// Row switch with a dirty draft → confirm modal, no select yet.
-		await act(async () => { fireEvent.click(getByTestId("service-row-p3")); });
+		await act(async () => { fireEvent.pointerDown(getByTestId("service-row-p3")); });
 		expect(getByText("promptManager.servicePrompts.discardTitle")).toBeTruthy();
 		expect(getDetailMock.mock.calls.every((c) => c[0] !== "p3")).toBe(true);
 
@@ -485,5 +485,34 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p3")).toBe(true));
 		await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith("p3"));
 		await waitFor(() => expect(queryByText("promptManager.servicePrompts.discardTitle")).toBeNull());
+	});
+
+	test("live profile is marked with the status-slot dot (never a whole-row color)", async () => {
+		// Behavior change (was: an active-only 6px dot, then: ★ in the
+		// primitive's status slot; now: the unified green dot — owner
+		// follow-up 2026-10-24, ★ retired. Selection stays the primitive's
+		// accent look).
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: "p2" });
+		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+		const { getByTestId } = render(<Harness active={true} />);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		expect(getByTestId("service-row-p2").querySelector(".bg-success")).toBeTruthy();
+	});
+
+	test("row titles wrap instead of truncating", async () => {
+		// Behavior change (was: `truncate` title in a tooltip; now: `break-words`
+		// wrap per MASTER_LIST_PRIMITIVE_PLAN row rules — authored names are UI
+		// copy, and UI copy is never truncated).
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+		const { getByTestId } = render(<Harness active={true} />);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		const row = getByTestId("service-row-p2");
+		expect(row.querySelector(".truncate")).toBeNull();
+		expect(row.querySelector(".break-words")).toBeTruthy();
 	});
 });

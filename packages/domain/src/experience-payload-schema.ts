@@ -21,9 +21,11 @@
  *   - `minimum` / `maximum`  inclusive numeric bounds
  *   - `minLength` / `maxLength` inclusive string-length bounds
  *
- * Pure (no I/O, no Zod, no imports) so the synchronous kernel reuses it and the
+ * Pure (no I/O, no Zod, no external imports) so the synchronous kernel reuses it and the
  * model-effect path can reuse the exact same validator for model `args`.
  */
+
+import { isRecord } from "./is-record.js";
 
 // ─── Subset vocabulary ───────────────────────────────────────────────────────
 
@@ -67,10 +69,6 @@ export interface ExperiencePayloadSchema {
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-	return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 function jsonEqual(a: unknown, b: unknown): boolean {
 	return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -91,7 +89,7 @@ export function validatePayloadSchemaDefinition(
 }
 
 function checkSchemaNode(node: unknown, path: string): string | null {
-	if (!isPlainObject(node)) {
+	if (!isRecord(node)) {
 		return `${path}: schema must be an object`;
 	}
 	for (const [key, value] of Object.entries(node)) {
@@ -115,7 +113,7 @@ function checkSchemaNode(node: unknown, path: string): string | null {
 				break;
 			}
 			case "properties": {
-				if (!isPlainObject(value)) {
+				if (!isRecord(value)) {
 					return `${path}.properties: must be an object`;
 				}
 				for (const [name, sub] of Object.entries(value)) {
@@ -180,7 +178,7 @@ export function validatePayloadValue(
 	schema: unknown,
 	path: string,
 ): { ok: true } | { ok: false; message: string } {
-	if (!isPlainObject(schema)) {
+	if (!isRecord(schema)) {
 		return { ok: true };
 	}
 	const fail = (message: string): { ok: false; message: string } => ({ ok: false, message: `${path}: ${message}` });
@@ -196,7 +194,7 @@ export function validatePayloadValue(
 	}
 
 	// object keywords (only apply when the payload is an object)
-	if (isPlainObject(payload)) {
+	if (isRecord(payload)) {
 		const required = Array.isArray(schema.required) ? schema.required : [];
 		for (const name of required) {
 			if (typeof name !== "string") continue;
@@ -206,7 +204,7 @@ export function validatePayloadValue(
 		}
 		const additionalAllowed = schema.additionalProperties !== false;
 		for (const [key, value] of Object.entries(payload)) {
-			if (isPlainObject(schema.properties) && key in schema.properties) {
+			if (isRecord(schema.properties) && key in schema.properties) {
 				const result = validatePayloadValue(value, schema.properties[key], `${path}.${key}`);
 				if (!result.ok) return result;
 			} else if (!additionalAllowed) {
@@ -257,7 +255,7 @@ function typeMatches(value: unknown, type: string): boolean {
 		case "boolean":
 			return typeof value === "boolean";
 		case "object":
-			return isPlainObject(value);
+			return isRecord(value);
 		case "array":
 			return Array.isArray(value);
 		case "null":

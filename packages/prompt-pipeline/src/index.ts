@@ -1,4 +1,5 @@
-export { assemblePrompt } from "./assemble.js";
+export { assemblePrompt, resolveHistoryAsModelSees } from "./assemble.js";
+export { transformHistoryMessages, type HistoryMessageTransformInputs } from "./history-message-transform.js";
 export { getSummaryStrategy, SUMMARY_STRATEGIES } from "./summary/summary-strategies.js";
 export { getAiAssistantAssembler, AI_ASSISTANT_ASSEMBLERS } from "./ai-assistant/ai-assistant-assemblers.js";
 export { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "./insights/insights-assemblers.js";
@@ -18,8 +19,9 @@ export {
 export type { MacroCatalogEntry, MacroCategory } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
+export { buildAssemblyVariableContext } from "./assembly-variable-context.js";
 export { MacroVariableScope } from "./macro-variable-scope.js";
-export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY } from "./prompt-layer-constants.js";
+export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, PROMPT_LAYER_SOURCE_TYPE, PROMPT_FORMAT, createLoreLayerId } from "./prompt-layer-constants.js";
 export { formatSceneHistory, escapeXml, type SceneInjectionEntry, type SceneInjectionFormat } from "./scene-injection.js";
 export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens } from "./compaction.js";
 // ─── Experience model-effect prompt (IR-41, Wave 4) ───────────────────────────

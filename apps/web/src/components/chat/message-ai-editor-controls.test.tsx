@@ -6,15 +6,14 @@
  *   - Desktop: rendered in the same action group as Edit, immediately after
  *     it (DOM order Edit → Sparkles); icon-only with an accessible name and
  *     tooltip text from `tDynamic("message_ai_editor_tooltip")`.
- *   - Mobile: a 44px button in the right inline action group, immediately to
- *     the LEFT of Regenerate. The right grid track grows from 44px to auto so
- *     both buttons fit without shifting the centered variant controls or the
- *     branch button on the left track.
+ *   - Mobile (SC-18c, owner 2026-10-21): NO row button — the row fits the
+ *     switcher plus three 44px buttons, so the entry lives in the "..."
+ *     Action Sheet (label = the tooltip key) and opens the editor from there.
  *   - Gates: visible ONLY on committed RP assistant messages. Absent for
  *     user / system / tool roles, during streaming (`isGenerating` hides the
  *     whole action row), and in Co-Author mode. The button is disabled while
  *     `isBusy` (sending or in-flight message action) — same gate as Edit.
- *   - Action Sheet (mobile three-dot menu) must NOT include an AI-editor row.
+ *   - Action Sheet (mobile three-dot menu) carries exactly one AI-editor entry.
  *
  * The mock surface mirrors coauthor-message-controls.test.tsx: STABLE_CONTROLLER
  * for useChatController, useT returning the key string, and useIsMobile as a
@@ -30,6 +29,7 @@ import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 // failOnNetwork: this file used to fire GET /api/tts/{profiles/all,links} and
 // GET /api/regex/resolve-active at the live API port on every test, so the
@@ -62,7 +62,6 @@ const STABLE_CONTROLLER = {
 
 const useIsMobile = mock(() => false);
 const realChatController = await import("../../hooks/use-chat-controller.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
@@ -72,16 +71,7 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: NOOP,
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../hooks/use-mobile.js", () => ({
 	...realMobileHook,
@@ -265,11 +255,14 @@ describe("MAE-52 message AI editor controls", () => {
     expect(target.selectedSourceVariantId).toBe(brandId<MessageVariantId>("m1-v0"));
   });
 
-  test("mobile: Sparkles sits immediately LEFT of Regenerate as a 44px button in a content-sized right track", async () => {
+  // SC-18c (owner 2026-10-21): was a 44px row button immediately LEFT of
+  // Regenerate. Now the mobile row has no Sparkles button — the Action Sheet
+  // entry opens the editor in message_edit mode.
+  test("mobile: no Sparkles button in the row — the sheet entry opens the editor", async () => {
     useIsMobile.mockReturnValue(true);
 
     const { MessageBlock } = await import("./MessageBlock.js");
-    useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1")], false));
+    useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1", "hello")], false));
     useChatStore.getState().setActiveChatId(asChatId(CHAT));
 
     const { container } = render(
@@ -277,26 +270,23 @@ describe("MAE-52 message AI editor controls", () => {
     );
     await act(async () => { await Promise.resolve(); });
 
-    const sparklesBtn = container.querySelector(`button[aria-label="${TOOLTIP_KEY}"]`) as HTMLButtonElement | null;
-    expect(sparklesBtn, "Sparkles button must be present in the mobile right group").not.toBeNull();
-    expect(sparklesBtn!.className).toContain("h-11");
-    expect(sparklesBtn!.className).toContain("w-11");
+    expect(container.querySelector(`button[aria-label="${TOOLTIP_KEY}"]`), "no Sparkles button in the mobile row (SC-18c)").toBeNull();
 
-    const rightGroup = sparklesBtn!.parentElement;
-    expect(rightGroup, "Sparkles must sit in the right inline action group").not.toBeNull();
-    expect(rightGroup!.className).toContain("justify-end");
+    const menuTrigger = container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement | null;
+    expect(menuTrigger, "mobile three-dot menu trigger must be present").not.toBeNull();
+    await act(async () => { menuTrigger!.click(); });
+    await act(async () => { await Promise.resolve(); });
 
-    const rightChildren = Array.from(rightGroup!.children).filter(c => c.tagName === "BUTTON");
-    const sparklesIdx = rightChildren.indexOf(sparklesBtn!);
-    const regenIdx = rightChildren.findIndex(b => b.getAttribute("title") === "regen");
-    expect(regenIdx, "Regenerate button must be present in the mobile right group").toBeGreaterThanOrEqual(0);
-    expect(sparklesIdx, "Sparkles must come before Regenerate (immediately LEFT)").toBeGreaterThanOrEqual(0);
-    expect(regenIdx - sparklesIdx, "Sparkles is immediately LEFT of Regenerate").toBe(1);
-
-    const grid = rightGroup!.parentElement;
-    expect(grid, "right group must be inside the action grid").not.toBeNull();
-    expect(grid!.className, "mobile action grid uses content-sized right track (auto, not fixed 44px)").toContain("_auto]");
-    expect(grid!.className, "must NOT use the legacy fixed 44px right track").not.toContain("_44px]");
+    const popup = document.querySelector(".bs-popup");
+    expect(popup, "Action Sheet popup must be rendered after opening the three-dot menu").not.toBeNull();
+    const sheetSparkles = [...popup!.querySelectorAll("button")].find((b) => b.textContent === TOOLTIP_KEY) as HTMLButtonElement | undefined;
+    expect(sheetSparkles, "the sheet carries the AI-editor entry").toBeTruthy();
+    await act(async () => { sheetSparkles!.click(); });
+    const target = useMessageAiEditorStore.getState().target;
+    expect(target, "the sheet entry opens the editor").not.toBeNull();
+    if (!target) throw new Error("sheet entry did not populate the store target");
+    expect(target.requestedMode).toBe("message_edit");
+    expect(target.targetMessageId).toBe(brandId<MessageId>("m1"));
   });
 
   test("role gate: AI editor is ABSENT for user messages", async () => {
@@ -404,7 +394,9 @@ describe("MAE-52 message AI editor controls", () => {
     expect(container.querySelector(`button[aria-label="${TOOLTIP_KEY}"]`)).toBeNull();
   });
 
-  test("mobile Action Sheet NEVER exposes an AI editor entry", async () => {
+  // SC-18c (owner 2026-10-21): was "no AI-editor item in the sheet". Now
+  // the sheet carries exactly one AI-editor entry (no duplicate rows).
+  test("mobile Action Sheet exposes exactly one AI editor entry", async () => {
     useIsMobile.mockReturnValue(true);
 
     const { MessageBlock } = await import("./MessageBlock.js");
@@ -416,25 +408,14 @@ describe("MAE-52 message AI editor controls", () => {
     );
     await act(async () => { await Promise.resolve(); });
 
-    const ellipsisSvgs = container.querySelectorAll("svg");
-    let menuTrigger: HTMLElement | null = null;
-    for (const svg of Array.from(ellipsisSvgs)) {
-      const parent = svg.parentElement;
-      if (parent && parent.className.includes("min-h-[44px]") && parent.className.includes("cursor-pointer")) {
-        menuTrigger = parent as HTMLElement;
-        break;
-      }
-    }
+    const menuTrigger = container.querySelector('[data-testid="mobile-actions-menu-btn"]') as HTMLElement | null;
     expect(menuTrigger, "mobile three-dot menu trigger must be present").not.toBeNull();
     await act(async () => { menuTrigger!.click(); });
     await act(async () => { await Promise.resolve(); });
 
-    const sheetText = document.body.textContent ?? "";
-    expect(sheetText, "Action Sheet must not surface the tooltip key").not.toContain(TOOLTIP_KEY);
-    expect(sheetText, "Action Sheet must not surface any ai-editor label fragment").not.toContain("ai_editor");
     const popup = document.querySelector(".bs-popup");
     expect(popup, "Action Sheet popup must be rendered after opening the three-dot menu").not.toBeNull();
-    const sheetSparkles = popup!.querySelectorAll(`button[aria-label="${TOOLTIP_KEY}"]`);
-    expect(sheetSparkles.length, "no AI-editor item rendered inside the mobile Action Sheet popup").toBe(0);
+    const sheetSparkles = [...popup!.querySelectorAll("button")].filter((b) => b.textContent === TOOLTIP_KEY);
+    expect(sheetSparkles.length, "exactly one AI-editor item rendered inside the mobile Action Sheet popup").toBe(1);
   });
 });

@@ -1,5 +1,8 @@
+export * from "./agent-plan.js";
+export * from "./agent-thread.js";
 export * from "./api-types.js";
 export * from "./attachment.js";
+export * from "./image-route.js";
 // builtin-experiences.js is deliberately NOT re-exported from this barrel: its
 // source strings are fat HTML/JS blobs (Conversation/Catch visuals) that would
 // land in every consumer of the barrel — most critically the generated
@@ -12,6 +15,7 @@ export * from "./chat-notification.js";
 export * from "./coauthor-generation-settings.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";
+export * from "./digest-boundary.js";
 export * from "./entities.js";
 export * from "./imagegen-capabilities.js";
 export * from "./imagegen-sizes.js";
@@ -28,6 +32,7 @@ export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";
 export * from "./experience-round-limits.js";
 export * from "./ids.js";
+export * from "./is-record.js";
 export * from "./logger.js";
 export * from "./model-mirror.js";
 export * from "./platform-constants.js";
@@ -41,7 +46,7 @@ export * from "./russian-case-forms.js";
 export * from "./sampler-params.js";
 export * from "./scene-tracker-constants.js";
 export * from "./service-prompts.js";
-export * from "./stt-presets.js";
 export * from "./text-exact-edit.js";
+export * from "./tracker-template.js";
 export * from "./tts-server-discovery.js";
 export * from "./whisper-models.js";

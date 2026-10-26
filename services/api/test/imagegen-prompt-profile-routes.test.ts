@@ -250,6 +250,87 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
     expect(blankBody.status).toBe(400);
   });
 
+  // SC-8d (owner option B): the assist row joins the overrides map —
+  // `assist|prose` is the extraction-core override (one per profile, every
+  // family), `assist|<family>` that family's addendum override. The catalog
+  // carries each part's custom tier + is-customized flag like the mode cells.
+  // An emptied part is the key's ABSENCE (the IPT-3 rule): blank bodies 400,
+  // a save without the key is the reset. Assist cells have no quality column
+  // — a stray qualityText normalizes to null.
+  test("SC-8d: assist overrides save, surface their custom tier in the catalog, and reset by absence", async () => {
+    const { app } = await setupAdapter();
+    const created = await app.request("/api/image-gen/prompt-profiles", {
+      method: "POST",
+      ...jsonInit(),
+      body: JSON.stringify({
+        name: "Assist tuned",
+        overrides: {
+          "assist|prose": { body: "MY-CUSTOM-CORE", qualityText: "STRAY" },
+          "assist|pony": { body: "MY-PONY-ADDENDUM" },
+        },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { id: string; overrides: Record<string, unknown> };
+    // The assist row has no quality column — the stray qualityText is cleared.
+    expect(createdBody.overrides["assist|prose"]).toEqual({ body: "MY-CUSTOM-CORE", qualityText: null });
+    expect(createdBody.overrides["assist|pony"]).toEqual({ body: "MY-PONY-ADDENDUM", qualityText: null });
+
+    const detail = await app.request(`/api/image-gen/prompt-profiles/${createdBody.id}`);
+    expect(detail.status).toBe(200);
+    const payload = (await detail.json()) as {
+      catalog: {
+        assist: {
+          core: string;
+          addenda: Record<string, string>;
+          coreCustom: { text: string | null; isCustomized: boolean };
+          addendaCustom: Record<string, { text: string | null; isCustomized: boolean }>;
+        };
+      };
+    };
+    // Canon tier unchanged; the custom tier mirrors the profile's cells.
+    expect(payload.catalog.assist.core).toBe((await loadPromptAsset("image-assist.md")).trim());
+    expect(payload.catalog.assist.coreCustom).toEqual({ text: "MY-CUSTOM-CORE", isCustomized: true });
+    expect(payload.catalog.assist.addendaCustom["pony"]).toEqual({ text: "MY-PONY-ADDENDUM", isCustomized: true });
+    // An untouched addendum family: flag false, canon text still served.
+    expect(payload.catalog.assist.addendaCustom["qwen"]).toEqual({ text: null, isCustomized: false });
+    // No addendum editor where no canon addendum exists (prose — the
+    // quality-layer precedent).
+    expect(payload.catalog.assist.addenda["prose"]).toBeUndefined();
+    expect(payload.catalog.assist.addendaCustom["prose"]).toBeUndefined();
+
+    // RESET (IPT-3 rule): saving without the assist keys returns the canon tier.
+    const reset = await app.request(`/api/image-gen/prompt-profiles/${createdBody.id}`, {
+      method: "PATCH",
+      ...jsonInit(),
+      body: JSON.stringify({ overrides: {} }),
+    });
+    expect(reset.status).toBe(200);
+    const resetDetail = (await (await app.request(`/api/image-gen/prompt-profiles/${createdBody.id}`)).json()) as {
+      profile: { overrides: Record<string, unknown> };
+      catalog: { assist: { coreCustom: { text: string | null; isCustomized: boolean }; addendaCustom: Record<string, { isCustomized: boolean }> } };
+    };
+    expect(resetDetail.profile.overrides["assist|prose"]).toBeUndefined();
+    expect(resetDetail.catalog.assist.coreCustom).toEqual({ text: null, isCustomized: false });
+    expect(Object.values(resetDetail.catalog.assist.addendaCustom).every((part) => !part.isCustomized)).toBe(true);
+
+    // An emptied assist part is a reset, never a blank override (min-1 body).
+    const blankAssist = await app.request(`/api/image-gen/prompt-profiles/${createdBody.id}`, {
+      method: "PATCH",
+      ...jsonInit(),
+      body: JSON.stringify({ overrides: { "assist|pony": { body: "" } } }),
+    });
+    expect(blankAssist.status).toBe(400);
+
+    // The read-only Default keeps refusing assist saves like every other save.
+    const patchDefault = await app.request("/api/image-gen/prompt-profiles/default", {
+      method: "PATCH",
+      ...jsonInit(),
+      body: JSON.stringify({ overrides: { "assist|prose": { body: "X" } } }),
+    });
+    expect(patchDefault.status).toBe(403);
+  });
+
   test("DELETE removes a profile and clears the active pointer when it pointed there", async () => {
     const { app } = await setupAdapter();
     const profile = await createProfile(app, "Temp");

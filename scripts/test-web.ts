@@ -261,7 +261,9 @@ export async function runWebTestCli(
 				(e) =>
 					`  · ${e.name}${e.message === "" ? "" : ` — ${e.message}`}${
 						(() => {
-							const note = junitCrossAttribution(entry.file, e.message);
+							// FULL text, not the 200-char on-screen cut above — long failures
+							// carry their frame at the end (FailingEntry.fullMessage).
+							const note = junitCrossAttribution(entry.file, e.fullMessage);
 							return note === null ? "" : `
   ⚠ ${note}`;
 						})()

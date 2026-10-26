@@ -321,6 +321,21 @@ LorebookEditor
 
 ---
 
+## Agent Plan Mechanic
+
+`EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — the web side of the script-owned agent plan (backend mechanics: [backend doc](./backend.md#agent-plan-mechanic)). One plan per script, shared by the copilot's `plan`/`read_plan` tools and the user-facing editor. PM-7 (owner ruling 2026-10-11) restored the todo mechanic BESIDE it: **todo = the thread's session quick checklist; plan = the script's durable document surviving sessions** — both render in the copilot column, todo ABOVE plan, each hiding itself when its data is empty.
+
+- **One data source** — `useAgentPlan(owner)` (`hooks/use-agent-plan.ts`) is the ONLY web-side plan state: a module-level cache per owner (`kind: "script"`, keyed by scriptId), one lazy GET on the first consumer's mount, `save` (PUT), and `applyToolResult(args, output)` — the live tool-event seam that replaces the cached plan only when the streamed args AND the success envelope both parse. Every consumer (panel, editor modal, the copilot shell's controller) reads this one hook.
+- **Shared UI, no copilot coupling** — `components/shared/agent-plan/AgentPlanPanel.tsx` (the pinned collapsible summary: current task + pulsing live glyph + remaining count; expanded shows every task but only the active task's body) and `AgentPlanEditorModal.tsx` (goal / constraints / task rows with status, reorder, remove; saves through PUT; shows the server's 422 for two active tasks). Both are prop-driven and import nothing from the copilot dirs.
+- **Copilot mount** — `CopilotPlanSection` pins the panel directly below the todo section (never scrolling with the feed) and owns the modal's open state; the shell's controller routes `plan` tool results into the same cache via `applyPlanToolResult`, so the panel updates live during a turn.
+- **Todo twin** — the restored session checklist rides the turn store (`todoByThread`, seeded from the thread wire by the controller, rewritten live by `todo` tool events) and renders through `CopilotTodoSection` → `CopilotTodoPanel` (read-only, objective-tracker glyphs, hidden until the first `todo` call). It never touches the plan cache; the plan cache never touches it.
+- **Locked during streams** — the shell passes `locked={isSending}` down: the panel's editor button disables and the modal locks every field + save (with a visible reason line) while a turn streams, so the model's rewrite and the user's edit can never race. If the modal is open when a turn starts it locks in place.
+- **Tool-activity cards** — a `plan` tool call renders through the ordinary card mechanism labelled by the "Plan updated" i18n key (`agent_plan_updated`); `read_plan` cards read "Plan" (`agent_plan_title`). Raw envelopes/plan JSON never reach a card title.
+
+**Adding a new host**: one owner arm in `AgentPlanOwner` + one column mount (the panel/modal beside the host's surface) + pass `owner` and the host's `locked` flag. Nothing else changes.
+
+---
+
 ## Generation Queue
 
 A per-chat **sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting. The queue lives in `useGenerationQueueStore` (the ordered job list + per-job status); the runner is `use-generation-queue.ts`, registered once in the app shell.
@@ -344,6 +359,19 @@ Each character can have a media gallery (images) used as vision/attachment conte
 The gallery-only toggles (`includeGalleryInPrompt`, `includeAvatarInPrompt`, `avatarDescription`) are character/persona fields and flow through the snapshot store via `updateCharacter`/`updatePersona` — **not** through `useGalleryStore`.
 
 `GalleryViewer`, `GalleryAccordion`, `GalleryGrid`, and `GalleryLightbox` (Build editor) all share the zoom/pan interaction via the `useImageZoomPan` hook (`hooks/use-image-zoom-pan.ts`), extracted from a duplicated implementation across `GalleryViewer` and `AvatarPanel`.
+
+---
+
+## Attachments (composer + message chips)
+
+**One draft path for every composer.** `hooks/use-attachment-draft.ts` is the single picker/paste/drop path (`allowedKinds` gates kinds per surface: RP chat `image|audio|file`, Co-Author and the agent shell `image|file`); it reserves slots before awaiting and queues uploads in input order. Consumers: `chat/use-input-area.ts`, `coauthor/use-coauthor-input-area.ts`, and `agent-shell/use-agent-composer-attachments.ts` (the agent-shell wrapper on top of the shared hook). The upload seam is the external network boundary, not a second implementation.
+
+**Chips and warnings** (all surfaces, desktop + mobile):
+- `file-attachment-chip.tsx` — one chip component for pending and sent files (icon, name, `~N tok.` from the upload-computed `tokenCount`).
+- `attachment-overflow-warning.tsx` + `hooks/attachment-overflow.ts` — the over-budget line above the composer; send stays enabled.
+- `attachment-vision-warning.tsx` + `hooks/use-image-route-warning.ts` — attach-time warning when the active model lacks vision AND no fallback `visionModel` is configured (RP chat + Co-Author); text-only attachments never warn.
+
+**Actions on sent files** ride one surface-independent seam: `sent-file-attachment.tsx` (the ⋯ menu / tap actions: summarize, show summary, restore full text, include/exclude, delete) with three mounts — `chat-file-attachment.tsx` (RP `MessageBlock`), `agent-file-attachment.tsx` (agent shell), and the Co-Author reusing the shared `MessageBlock` → `AttachmentGrid` path (proven by test, no own mount). Lightbox actions split the same way: `chat-lightbox-actions.tsx` / `agent-lightbox-actions.tsx` over the `AttachmentGrid` seam. `lib/send-attachments.ts`'s `toSendAttachment` is the one send-side mapper (typed against the schema-derived `WireAttachment`).
 
 ---
 
@@ -413,6 +441,8 @@ The app has **one shared pool** of provider connection profiles (endpoints, API 
 **`CoauthorProviderModal`** — a `MasterDetailModal` whose master list renders the shared `ProviderProfileList` in `selectionOnly` mode (bound/other profiles with an active marker, no drag/reorder/"+ New"); the detail pane edits the selected connection's own set — connection card, transport card, the `CoauthorModelSelector` fork, and the decoupled `ProviderSamplerPanel` (token padding hidden) — and the footer save action ("Use for Co-Author") persists the row and the binding. A "Manage connections" action hands off to the original `ProviderModal` for connection CRUD.
 
 The original `ProviderModal` has no Co-Author mode flag (the temporary `providerModalMode` was removed). It is RP-only: activation, `defaultModel`, vision, samplers, per-model binding.
+
+**Provider tabs — where things live** — the preset tables for the LLM, image-gen and STT tabs live in `apps/web/src/provider-presets.ts`; the family hooks (`use-image-profiles`, `use-stt-*`, `use-tts-*`, `use-whisper-model`, `use-kokoro-model`, `use-docker-status`) live in `apps/web/src/hooks/`; server-shared probe/discovery code (`packages/domain/src/tts-server-discovery.ts`) and the browser-safe capability tables (`imagegen-capabilities.ts`) stay in the domain leaf.
 
 ---
 
@@ -611,7 +641,7 @@ The sidebar reads persona name/avatar from `snapshot?.persona` with fallback to 
 
 ## Dice System
 
-The Dice System is an opt-in, server-authoritative tabletop-style dice engine. Enabling it (Build → Insights → third toggle) mounts a composer panel and routes rolls through sandboxed `scriptKind: "dice"` scripts whose `resolve()` is the only randomness channel — replacing the legacy prompt-time dice mechanisms (below). The engine is entirely additive: with Dice off, the wire body is byte-identical to a no-Dice send and the composer produces zero DOM, while historical user-message dice metadata stays visible.
+The Dice System is an opt-in, server-authoritative tabletop-style dice engine. Enabling it (Build → Insights → third toggle) mounts a composer panel and routes rolls through server-side `scriptKind: "dice"` scripts whose `resolve()` is the only randomness channel — replacing the legacy prompt-time dice mechanisms (below). The engine is entirely additive: with Dice off, the wire body is byte-identical to a no-Dice send and the composer produces zero DOM, while historical user-message dice metadata stays visible.
 
 **Data layer (server-authoritative by refetch):**
 - `stores/dice-store.ts` is keyed by `${chatId}|${branchId}` (mirroring `generation-queue-store`). State: `definitions`, two lanes `{normal, immersive}` (each `{revision, rolls}`), `rollingRequestIds`, `lastError`. Because the dice mutation routes return `{ok:true}` (not a lane body), every mutation resyncs via `refreshPending()` after the API call — the server is the source of truth; `setIncluded`/`chooseAttempt` flip optimistically then confirm-or-rollback. `roll` mints a `requestId` reused across its own retries so rapid clicks cannot duplicate. Never caches bound message data (`boundMessageId != null`).

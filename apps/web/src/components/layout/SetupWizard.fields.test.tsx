@@ -11,6 +11,7 @@ import { beforeEach, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
 useDomEnv();
@@ -18,7 +19,6 @@ useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
 // TopBar.test.tsx safe pattern: capture real exports first, spread, override.
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 
@@ -26,8 +26,11 @@ const realProviderProfiles = await import("../../hooks/use-provider-profiles.js"
 // so one module mock can serve both the desktop and the mobile case.
 let isMobileViewport = false;
 let wizardProviderProfiles: unknown[] = [];
+// Fresh-profile path: the draft connection test succeeds, the save captures the form the wizard submits.
+const wizardTestDraft = mock(async () => ({ success: true }));
+const wizardSave = mock(async (_form: unknown) => ({ id: "saved-profile" }));
 
-mock.module("../../i18n/context.js", () => ({ ...realI18nContext, useT: () => ({ t: (key: string) => key }) }));
+installI18nContextSeam();
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobileViewport }));
 mock.module("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,
@@ -36,9 +39,9 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 		handleFetchModelsForProfile: async () => [{ id: "wizard-model", label: "wizard-model" }],
 		handleFetchModelsByEndpoint: async () => [{ id: "wizard-model", label: "wizard-model" }],
 		handleTestProfileConnection: mock(),
-		handleTestDraftConnection: mock(),
+		handleTestDraftConnection: wizardTestDraft,
 		handleTestChat: mock(),
-		handleSaveProviderProfileFromForm: mock(),
+		handleSaveProviderProfileFromForm: wizardSave,
 	}),
 }));
 
@@ -150,4 +153,25 @@ test("character step: three fields render and typing works", async () => {
 	const firstMsg = view.getByPlaceholderText("ws_first_msg_label") as HTMLTextAreaElement;
 	fireEvent.change(firstMsg, { target: { value: "Hello!" } });
 	expect(firstMsg.value).toBe("Hello!");
+});
+
+test("a fresh wizard (no existing profile) submits the app-wide generation defaults: maxTokens 2000, temperature 1, reasoningEffort auto (PD-1, PD-2)", async () => {
+	wizardSave.mockClear();
+	const view = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));
+	fireEvent.click(view.getByText("wizard_path_a_title"));
+	fireEvent.change(view.getByPlaceholderText("https://api.openai.com/v1"), { target: { value: "http://localhost:9999/v1" } });
+	fireEvent.change(view.getByPlaceholderText("api_key_placeholder"), { target: { value: "sk-test" } });
+	fireEvent.click(view.getByText("test_connection"));
+	await waitFor(() => {
+		expect((view.getByText("next") as HTMLButtonElement).disabled).toBe(false);
+	});
+	fireEvent.click(view.getByText("next"));
+	await waitFor(() => {
+		expect(wizardSave).toHaveBeenCalledTimes(1);
+	});
+	const submitted = wizardSave.mock.calls[0]![0] as { maxTokens: number; temperature: number; reasoningEffort: string };
+	expect(submitted.maxTokens).toBe(2000);
+	expect(submitted.temperature).toBe(1);
+	expect(submitted.reasoningEffort).toBe("auto");
+	view.unmount();
 });

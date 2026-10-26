@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { wireScript } from "../../../../../test/wire-fixtures.js";
 import type { ScriptRecord } from "../../../../api/types.js";
 import { useScriptSafetySettingsStore } from "../../../../stores/script-safety-settings-store.js";
@@ -10,7 +11,6 @@ useDomEnv();
 // The banner reads `useT` and the settings store (which calls the settings
 // API). Mock both seams; the real Zustand store stays — the test drives its
 // state directly, matching the editor suites' "real store, mocked API" split.
-const realI18n = await import("../../../../i18n/context.js");
 const realSettingsApi = await import("../../../../api/settings-api.js");
 const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
 const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
@@ -18,17 +18,14 @@ const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: 
   updatedAt: "",
 }));
 
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../../../../api/settings-api.js", () => ({
   ...realSettingsApi,
   getScriptSafetySettings,
   updateScriptSafetySettings,
 }));
 
-const { cleanup, render, fireEvent, waitFor } = await import("@testing-library/react");
+const { cleanup, render, waitFor } = await import("@testing-library/react");
 const { ScriptSafetyBanner, isUntrustedImport } = await import("./ScriptSafetyBanner.js");
 
 function script(overrides: Partial<ScriptRecord> = {}): ScriptRecord {
@@ -84,25 +81,30 @@ describe("ScriptSafetyBanner visibility matrix", () => {
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
     expect(view.getByTestId("script-safety-banner")).toBeTruthy();
     expect(view.getByText("script_safety_banner_imported")).toBeTruthy();
-    expect(view.queryByText("script_safety_banner_show_warnings")).toBeNull();
+    expect(view.getByText("script_safety_banner_full_access")).toBeTruthy();
   });
 
-  it("shows the «show warnings again» control for an untrusted import when suppressed", () => {
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 10, owner
+  // ruling 4b): the suppressed state used to collapse the banner to a lone
+  // «Show warnings again» link inside the warning box; it now renders
+  // nothing — the switch lives in settings (use-script-warnings-toggle
+  // tests in settings/popovers/script-warnings-setting.test.tsx).
+  it("renders nothing for an untrusted import when suppressed", () => {
     useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
-    expect(view.getByTestId("script-safety-banner")).toBeTruthy();
-    expect(view.getByText("script_safety_banner_show_warnings")).toBeTruthy();
+    expect(view.queryByTestId("script-safety-banner")).toBeNull();
     expect(view.queryByText("script_safety_banner_imported")).toBeNull();
   });
-});
 
-describe("ScriptSafetyBanner «show warnings again» control", () => {
-  it("PUTs suppressImportWarnings=false when clicked", async () => {
-    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+  it("fails open: shows the warning while the flag is not loaded yet", async () => {
+    // A GET that never settles keeps the sentinel null for the whole test.
+    getScriptSafetySettings.mockImplementationOnce(() => new Promise(() => {}));
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: null });
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
-    fireEvent.click(view.getByText("script_safety_banner_show_warnings"));
     await waitFor(() => {
-      expect(updateScriptSafetySettings).toHaveBeenCalledWith({ suppressImportWarnings: false });
+      expect(getScriptSafetySettings).toHaveBeenCalledTimes(1);
     });
+    expect(view.getByTestId("script-safety-banner")).toBeTruthy();
+    expect(view.getByText("script_safety_banner_imported")).toBeTruthy();
   });
 });

@@ -28,6 +28,8 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -133,37 +135,37 @@ const storeMocks = {
 };
 
 // ─── module mocks ───────────────────────────────────────────────────────────
-const realI18n = await import("../../i18n/context.js");
 const realStore = await import("../../stores/experience-store.js");
-const realSnapshot = await import("../../stores/snapshot-store.js");
 const realMobile = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
 const realDetached = await import("./ExperienceDetachedWindow.js");
 
-const stableT = {
-  // Keys WITHOUT interpolation params are returned verbatim (preserving every
-  // existing assertion). Keys WITH params append the opts JSON so the
-  // report-control integration test can verify exact server-supplied counts /
-  // revisions without local arithmetic.
-  t: (k: string, opts?: Record<string, unknown>) =>
-    opts && Object.keys(opts).length > 0 ? `${k}:${JSON.stringify(opts)}` : k,
-  tDynamic: (k: string) => k,
-  locale: "en",
-  setLocale: () => {},
-  ready: true,
-};
-
-mock.module("../../i18n/context.js", () => ({ ...realI18n, useT: () => stableT }));
+// Hand port onto the shared seam (stable-identity family): the suite's own
+// `t` runs verbatim; `stable: true` keeps the old mock's whole-value identity
+// (`useT()` returned this exact object every render). Keys WITHOUT params are
+// returned verbatim (preserving every existing assertion); keys WITH params
+// append the opts JSON so the report-control integration test can verify exact
+// server-supplied counts / revisions without local arithmetic.
+installI18nContextSeam({
+  custom: {
+    t: (k, opts?) => (opts && Object.keys(opts).length > 0 ? `${k}:${JSON.stringify(opts)}` : k),
+    tDynamic: (k: string) => k,
+    stable: true,
+  },
+});
 
 // Snapshot store: returns the active chat/branch.
 let snapshotChat: { id: string } | null = { id: CHAT_ID };
 let snapshotBranch: { id: string } | null = { id: BRANCH_ID };
-mock.module("../../stores/snapshot-store.js", () => ({
-  ...realSnapshot,
+// CO-LOAD CONTRACT (snapshot-store seam): the former inline R4 narrow
+// (`useSnapshotStore` as a plain selector fn) stayed live process-globally in
+// a hand-bundled run — register through the shared seam so real-store riders
+// after the next registration get the REAL hook back.
+installSnapshotStoreSeam({
   useSnapshotStore: (selector: (s: { activeChat: typeof snapshotChat; activeBranch: typeof snapshotBranch }) => unknown) =>
     selector({ activeChat: snapshotChat, activeBranch: snapshotBranch }),
-}));
+});
 
 mock.module("../../stores/experience-store.js", () => ({
   ...realStore,

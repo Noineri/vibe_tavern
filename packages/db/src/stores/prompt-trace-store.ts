@@ -16,6 +16,10 @@ export interface PromptTrace {
   chatId: string;
   branchId: string;
   messageId: string;
+  /** SC-23b: the swipe (message_variants row) this trace produced. Null =
+   *  unknown producer (greeting traces, unresolved legacy traces, deleted
+   *  variant — see the schema column comment). */
+  variantId: string | null;
   model: string;
   presetName: string;
   assembledLayers: unknown[];
@@ -50,6 +54,10 @@ export interface SaveTraceData {
   chatId: string;
   branchId: string;
   messageId: string;
+  /** SC-23b: the swipe this trace produced — the selected variant of the
+   *  appended reply, or the newly added swipe variant. Null/undefined = the
+   *  producing swipe is unknown (greeting traces). */
+  variantId?: string | null;
   model: string;
   presetName: string;
   assembledLayers: unknown[];
@@ -137,6 +145,7 @@ export class PromptTraceStore {
           chatId: data.chatId,
           branchId: data.branchId,
           messageId: data.messageId,
+          variantId: data.variantId ?? null,
           model: data.model,
           presetName: data.presetName,
           assembledLayersJson: JSON.stringify(layers.skeleton),
@@ -193,6 +202,28 @@ export class PromptTraceStore {
       .all();
     const chunkMap = await this.hydrateChunkMap(rows);
     return rows.map((row) => this.mapRowTrace(row, chunkMap));
+  }
+
+  /** SC-23e: the trace that PRODUCED one swipe — the newest row whose
+   *  `variantId` link matches in this chat + branch (rows that predate
+   *  SC-23b carry NULL and never match). Newest-first with the same id
+   *  tie-break as `getTracesByChat`, so a re-swiped variant resolves to the
+   *  most recent send that produced it. */
+  async getTraceByVariant(chatId: string, branchId: string, variantId: string): Promise<PromptTrace | null> {
+    const row = await this.db
+      .select()
+      .from(promptTraces)
+      .where(
+        and(
+          eq(promptTraces.chatId, chatId),
+          eq(promptTraces.branchId, branchId),
+          eq(promptTraces.variantId, variantId),
+        ),
+      )
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
+      .get();
+    if (!row) return null;
+    return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
   // ─── Chunk maintenance ────────────────────────────────────────────────
@@ -261,6 +292,7 @@ export class PromptTraceStore {
       chatId: row.chatId,
       branchId: row.branchId,
       messageId: row.messageId,
+      variantId: row.variantId ?? null,
       model: row.model,
       presetName: row.presetName,
       assembledLayers: inflateTraceValue(JSON.parse(row.assembledLayersJson), lookup),

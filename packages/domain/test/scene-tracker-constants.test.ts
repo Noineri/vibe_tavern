@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { synthesizeSceneSample, stripLabels, computeSceneSchemaHash, findInvalidXmlKeys } from "../src/scene-tracker-constants.js";
+import {
+  computeSceneSchemaHash,
+  findInvalidXmlKeys,
+  normalizeSceneTrackerConfig,
+  stripLabels,
+  synthesizeSceneSample,
+} from "../src/scene-tracker-constants.js";
 import type { SceneTrackerDsl } from "../src/scene-tracker-constants.js";
 
 describe("synthesizeSceneSample", () => {
@@ -52,6 +58,15 @@ describe("synthesizeSceneSample", () => {
     expect(synthesizeSceneSample({})).toEqual({});
   });
 
+  it("ignores tone fields (sample values depend only on the structure)", () => {
+    const toneFree: SceneTrackerDsl = { gate: { $type: "string" }, hp: { $type: "number", min: 0, max: 100 } };
+    const toneBearing: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+    };
+    expect(synthesizeSceneSample(toneBearing)).toEqual(synthesizeSceneSample(toneFree));
+  });
+
   it("caps pathological nesting at SAMPLE_MAX_DEPTH with null (insurance, not a real limit)", () => {
     // A schema nested deeper than the cap cannot be authored meaningfully, but
     // the synthesizer must still terminate — it returns null past the cap.
@@ -93,6 +108,39 @@ describe("stripLabels", () => {
     stripLabels(dsl);
     expect(dsl.mood.label).toBe("Mood");
   });
+
+  it("removes tones and value-tone maps alongside labels at every level", () => {
+    const dsl: SceneTrackerDsl = {
+      gate: { $type: "string", label: "Gate", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      ready: { $type: "boolean", tone: "warning" },
+      crew: { $type: "array", tone: "accent", items: { $type: "string", tone: "danger" } },
+      npc: { $type: "object", tone: "accent", properties: { trust: { $type: "number", min: 0, max: 10, tone: "warning" } } },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      gate: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+      ready: { $type: "boolean" },
+      crew: { $type: "array", items: { $type: "string" } },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+  });
+
+  it("projects a tone-bearing schema byte-identically to the tone-free one (prompt serialization)", () => {
+    const toneFree: SceneTrackerDsl = { gate: { $type: "string" }, hp: { $type: "number", min: 0, max: 100 } };
+    const toneBearing: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+    };
+    expect(JSON.stringify(stripLabels(toneBearing))).toBe(JSON.stringify(stripLabels(toneFree)));
+  });
+
+  it("does not mutate the input DSL's tone fields", () => {
+    const dsl: SceneTrackerDsl = { gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger" } } };
+    stripLabels(dsl);
+    expect(dsl.gate.tone).toBe("danger");
+    expect(dsl.gate.toneBy).toEqual({ Ruined: "danger" });
+  });
 });
 
 describe("computeSceneSchemaHash (label invariance)", () => {
@@ -126,6 +174,53 @@ describe("computeSceneSchemaHash (label invariance)", () => {
       npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 5 } } }, // bounds changed
     });
     expect(after).not.toBe(before);
+  });
+});
+
+describe("computeSceneSchemaHash (tone invariance)", () => {
+  const toneFree: SceneTrackerDsl = {
+    gate: { $type: "string" },
+    hp: { $type: "number", min: 0, max: 100 },
+    ready: { $type: "boolean" },
+    crew: { $type: "array", items: { $type: "string" } },
+    npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+  };
+
+  it("is unchanged when tones or value-tone maps are added anywhere (recoloring never dims records)", () => {
+    const toneBearing: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      ready: { $type: "boolean", tone: "warning" },
+      crew: { $type: "array", tone: "accent", items: { $type: "string", tone: "danger" } },
+      npc: { $type: "object", tone: "accent", properties: { trust: { $type: "number", min: 0, max: 10, tone: "warning" } } },
+    };
+    expect(computeSceneSchemaHash(toneBearing)).toBe(computeSceneSchemaHash(toneFree));
+  });
+
+  it("is unchanged when an existing tone is recolored or removed", () => {
+    const bare = computeSceneSchemaHash({ gate: { $type: "string" } });
+    expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger" } } })).toBe(bare);
+    expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "success", toneBy: { Ruined: "warning" } } })).toBe(bare);
+  });
+});
+
+describe("normalizeSceneTrackerConfig (tone round-trip)", () => {
+  it("preserves tone fields verbatim — no defaults injected, nothing dropped", () => {
+    const schema: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10, tone: "warning" } } },
+    };
+    const normalized = normalizeSceneTrackerConfig({ schema, contextWindow: 6 });
+    expect(normalized.schema).toEqual(schema);
+    // The recomputed hash is the tone-free identity: the recolor did not dim the records.
+    expect(normalized.schemaHash).toBe(
+      computeSceneSchemaHash({
+        gate: { $type: "string" },
+        hp: { $type: "number", min: 0, max: 100 },
+        npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+      }),
+    );
   });
 });
 

@@ -125,7 +125,7 @@ function EntryCardVisual({
 					onClick={(e) => e.stopPropagation()}
 					{...mobileHandleProps}
 				>
-					<span className="text-xl leading-none">≡</span>
+					<span className="text-[calc(var(--ui-fs)+6px)] leading-none">≡</span>
 				</div>
 			)}
 
@@ -134,7 +134,7 @@ function EntryCardVisual({
 				<div className="flex items-center gap-2">
 					<span
 						className={cn(
-							"flex-1 truncate text-[13px] font-medium",
+							"flex-1 truncate text-[calc(var(--ui-fs)-1px)] font-medium",
 							entry.enabled ? "text-t1" : "text-t3 line-through"
 						)}
 						onClick={(e) => {
@@ -148,17 +148,17 @@ function EntryCardVisual({
 					{/* ── Status badges (only the non-default flags) ── */}
 					{entry.constant && (
 						<CustomTooltip content={t("constant_hint")} align="start">
-							<span className="flex h-5 shrink-0 items-center rounded bg-accent-dim px-1.5 text-[10px] font-bold uppercase leading-none text-accent-t">C</span>
+							<span className="flex h-5 shrink-0 items-center rounded bg-accent-dim px-1.5 text-[calc(var(--ui-fs)-4px)] font-bold uppercase leading-none text-accent-t">C</span>
 						</CustomTooltip>
 					)}
 					{entry.ignoreBudget && (
 						<CustomTooltip content={t("ignore_budget_hint")} align="start">
-							<span className="flex h-5 shrink-0 items-center rounded bg-warning-dim px-1.5 text-[10px] font-bold leading-none text-warning-text">∞</span>
+							<span className="flex h-5 shrink-0 items-center rounded bg-warning-dim px-1.5 text-[calc(var(--ui-fs)-4px)] font-bold leading-none text-warning-text">∞</span>
 						</CustomTooltip>
 					)}
 					{entry.groupName && (
 						<CustomTooltip content={`${t("lore_group_name")}: ${entry.groupName}`} align="start">
-							<span className="flex h-5 max-w-[80px] shrink-0 items-center truncate rounded bg-s3 px-1.5 text-[10px] leading-none text-t3">{entry.groupName}</span>
+							<span className="flex h-5 max-w-[80px] shrink-0 items-center truncate rounded bg-s3 px-1.5 text-[calc(var(--ui-fs)-4px)] leading-none text-t3">{entry.groupName}</span>
 						</CustomTooltip>
 					)}
 
@@ -202,7 +202,7 @@ function EntryCardVisual({
 					{entry.content && (
 						<TokenCounter
 							text={entry.content}
-							className="mt-1 flex justify-end font-ui text-[11px] tabular-nums text-t3/50"
+							className="mt-1 flex justify-end font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3/50"
 						/>
 					)}
 				</div>
@@ -382,7 +382,7 @@ export function LoreEntryList({
 							{/* Section divider */}
 							<div className="mb-1.5 flex items-center gap-2 px-1">
 								<div className="h-px flex-1 bg-border" />
-								<span className="shrink-0 font-ui text-[11px] uppercase tracking-wider text-t3/60">
+								<span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] uppercase tracking-wider text-t3/60">
 									{tDynamic("pos_" + sec)}
 								</span>
 								<div className="h-px flex-1 bg-border" />

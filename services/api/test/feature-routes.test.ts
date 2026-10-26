@@ -24,7 +24,7 @@ describe("feature routes", () => {
 
     const response = await app.request("/api/ai-assistant", {
       method: "POST",
-      body: JSON.stringify({ mode: "script", instruction: "test", providerProfileId: "profile-1", enabledLayers: [] }),
+      body: JSON.stringify({ mode: "lore_entry", instruction: "test", providerProfileId: "profile-1", enabledLayers: [] }),
       headers: { "Content-Type": "application/json" },
     });
 
@@ -62,7 +62,7 @@ describe("feature routes", () => {
 
     const request = new Request("http://localhost/api/ai-assistant", {
       method: "POST",
-      body: JSON.stringify({ mode: "script", instruction: "test", providerProfileId: "profile-1", enabledLayers: [] }),
+      body: JSON.stringify({ mode: "lore_entry", instruction: "test", providerProfileId: "profile-1", enabledLayers: [] }),
       headers: { "Content-Type": "application/json" },
       signal: clientController.signal,
     });

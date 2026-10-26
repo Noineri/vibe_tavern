@@ -3,8 +3,9 @@
  *
  * OpenAI Images backend adapter (IMAGE_GENERATION_PLAN IG-6) — the
  * `/v1/images/generations` arm. Serves the OpenAI protocol proper (the VT
- * `openai` preset baseUrl matches directly) and Custom cloud endpoints that
- * implement the OpenAI-images shape.
+ * `openai` preset baseUrl matches directly) and — under its own
+ * `openai-images-custom` slug — Custom cloud endpoints that implement the
+ * OpenAI-images shape (free W×H, nothing OpenAI-specific assumed).
  *
  * FAMILY PARAMETERIZATION (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1): the
  * same transport serves every OpenAI-images-shaped cloud provider — the
@@ -24,22 +25,23 @@
  * - request: `prompt`, `model` (required — the card documents no default),
  *   `size` — GPT Image grid `1024x1024` / `1536x1024` / `1024x1536` (plus
  *   vendor `auto`; a request without a complete W×H omits the field and the
- *   vendor default applies — no invented defaults). `response_format:
- *   "b64_json"` is DALL-E-ONLY (the card: GPT Image models ALWAYS return
- *   `data[].b64_json` regardless), so the adapter sends it only for
- *   `dall-e*` models and never for `gpt-image*`;
+ *   vendor default applies — no invented defaults). `response_format` is
+ *   never sent: the card documents it as DALL-E-only (GPT Image models
+ *   ALWAYS return `data[].b64_json`), and DALL-E is retired (owner
+ *   2026-10-15) — the former dall-e-only gate is gone;
  * - response: `{created, data[]}` where each entry carries `b64_json`
- *   (GPT Image always; DALL-E when asked for it) or `url` (DALL-E-only
- *   surface, URLs valid 60 min). Bytes from `b64_json` decode in-process —
- *   NO second HTTP request; a `url` entry (defensive: only reachable when
- *   a DALL-E server ignores the requested format) downloads server-side
- *   through the injected fetch seam — the cloud-URL-expiry rule: adapters
- *   never hand remote URLs upward;
+ *   (GPT Image always) or `url` (Custom endpoints that answer with hosted
+ *   URLs). Bytes from `b64_json` decode in-process — NO second HTTP
+ *   request; a `url` entry downloads server-side through the injected
+ *   fetch seam — the cloud-URL-expiry rule: adapters never hand remote
+ *   URLs upward;
  * - no negative prompt, no steps/seed/sampler — per the card, silently
  *   ignored (capability flags off in the registry);
- * - model discovery: image models are enumerable via `GET /v1/models`
- *   filtering — the image families on the card are `gpt-image*` and
- *   `dall-e*`.
+ * - model discovery: `GET /v1/models`, listed UNFILTERED. The former
+ *   `gpt-image`/`dall-e` prefix filter emptied every Custom aggregator's
+ *   catalog (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT); owner 2026-10-15:
+ *   nobody asked for this filter and it would need constant upkeep — the
+ *   picker is searchable, the catalog is truth.
  *
  * House deltas from the STT/TTS adapters (per the IG-4 contract):
  * - NO timeout constants anywhere (owner's hardcoded-parameters ban) — the
@@ -71,6 +73,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap, sniffImageMime } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -138,13 +141,11 @@ export type OpenAiImagesFamilySizeMode =
   | { kind: "verbatim"; param: "size" }
   | { kind: "width-height" };
 
-/** `response_format` policy: DALL-E-only (OpenAI proper — GPT Image models
- *  always return b64_json without the field), always-send a documented
- *  value (the card enumerates the enum; bytes-preferred where URL lifetime
- *  is unstated), or never (the provider's endpoint documents no such
- *  field). */
+/** `response_format` policy: always-send a documented value (the card
+ *  enumerates the enum; bytes-preferred where URL lifetime is unstated), or
+ *  never (the provider's endpoint documents no such field, or — OpenAI
+ *  proper — documents it only for the retired DALL-E models). */
 export type OpenAiImagesFamilyResponseFormat =
-  | { kind: "dalle-only" }
   | { kind: "always"; value: string }
   | { kind: "never" };
 
@@ -237,46 +238,6 @@ function mapSizeToString(
   );
 }
 
-// ─── MIME sniffing ───────────────────────────────────────────────────────────
-
-/** Sniff the MIME type from image bytes by format signature. The card's
- *  `output_format` surface is png|jpeg|webp and `b64_json` entries carry no
- *  content type — the bytes themselves are the only source. Returns null
- *  when no signature matches (caller falls back to content-type /
- *  octet-stream). These are format parsers, not tunable parameters. */
-function sniffImageMime(bytes: Buffer): string | null {
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  // JPEG: FF D8 FF
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  // WebP: "RIFF" <4-byte size> "WEBP"
-  if (
-    bytes.length >= 12 &&
-    bytes.toString("latin1", 0, 4) === "RIFF" &&
-    bytes.toString("latin1", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
-/** The card's DALL-E model family prefix — `response_format` is
- *  DALL-E-only on the card, so this prefix is what gates sending it. */
-const DALL_E_MODEL_PREFIX = "dall-e";
-
-/** Model-family prefixes of the image catalog per the card (gpt-image-2,
- *  gpt-image-1.5, gpt-image-1, gpt-image-1-mini, dall-e-3, dall-e-2) —
- *  `GET /v1/models` filtering starts from these families. */
-const IMAGE_MODEL_PREFIXES = ["gpt-image", "dall-e"] as const;
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 interface OpenAiImagesConfig {
@@ -312,30 +273,6 @@ function parseConfig(label: string, config: ImageGenAdapterConfig): OpenAiImages
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
-/** Await a fetch call through the injected seam. Transport-level failures
- *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
- *  which is rethrown untouched so cancellation stays distinguishable from
- *  a transport failure (the abort contract of the ai-assistant abort fix). */
-async function fetchOrWrap(
-  label: string,
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new OpenAiImagesError(
-      `${label} ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
-
 // ─── Response parsing ────────────────────────────────────────────────────────
 
 /** One image entry after shape validation: decoded base64 bytes, or a
@@ -348,7 +285,7 @@ interface ParsedImageEntry {
 /** Pull the image array out of the documented envelope (`data[]` OpenAI
  *  shape, `images[]` SiliconFlow shape), then validate each entry: a
  *  `b64_json` string (the GPT Image shape — always present per the card)
- *  or a `url` string (the DALL-E / hosted-URL surface). Fails closed with a
+ *  or a `url` string (the hosted-URL surface). Fails closed with a
  *  typed error on absent/malformed containers. The SiliconFlow envelope
  *  additionally reports the effective `seed` — carried onto the generate
  *  result (the contract's "seed the backend actually used"). */
@@ -490,15 +427,10 @@ export function makeOpenAiImagesFamilyBackend(
         }
       }
 
-      // `response_format` per policy — DALL-E-only on the OpenAI card (GPT
-      // Image models always return b64_json without it), or a documented
-      // always-value for the family rows that enumerate the field.
-      let responseFormat: string | undefined;
-      if (options.responseFormat.kind === "dalle-only") {
-        responseFormat = model.startsWith(DALL_E_MODEL_PREFIX) ? "b64_json" : undefined;
-      } else if (options.responseFormat.kind === "always") {
-        responseFormat = options.responseFormat.value;
-      }
+      // `response_format` per policy — a documented always-value for the
+      // family rows that enumerate the field, otherwise never sent.
+      const responseFormat =
+        options.responseFormat.kind === "always" ? options.responseFormat.value : undefined;
 
       const body: Record<string, unknown> = {
         model,
@@ -543,7 +475,6 @@ export function makeOpenAiImagesFamilyBackend(
       }
 
       const response = await fetchOrWrap(
-        label,
         cfg.fetch,
         `${cfg.endpoint}/images/generations`,
         {
@@ -553,6 +484,8 @@ export function makeOpenAiImagesFamilyBackend(
           signal: request.signal,
         },
         "generation",
+        label,
+        OpenAiImagesError,
       );
 
       if (!response.ok) {
@@ -569,7 +502,10 @@ export function makeOpenAiImagesFamilyBackend(
       for (const entry of entries) {
         if (entry.data !== undefined) {
           // b64_json decodes in-process — no second HTTP request (the card:
-          // GPT Image always delivers bytes inline).
+          // GPT Image always delivers bytes inline). The output_format
+          // surface is png|jpeg|webp and the entries carry no content type —
+          // the bytes themselves are the only source; null falls back to
+          // octet-stream.
           images.push({
             data: entry.data,
             mimeType: sniffImageMime(entry.data) ?? "application/octet-stream",
@@ -582,11 +518,12 @@ export function makeOpenAiImagesFamilyBackend(
         // or short across the family). Bun's fetch resolves data: URLs
         // natively, same path.
         const download = await fetchOrWrap(
-          label,
           cfg.fetch,
           entry.url ?? "",
           { method: "GET", signal: request.signal },
           "image download",
+          label,
+          OpenAiImagesError,
         );
         if (!download.ok) {
           throw new OpenAiImagesError(
@@ -621,7 +558,6 @@ export function makeOpenAiImagesFamilyBackend(
         return options.staticModels.map((m) => ({ ...m }));
       }
       const response = await fetchOrWrap(
-        label,
         cfg.fetch,
         `${cfg.endpoint}/${modelsPath}`,
         {
@@ -630,6 +566,8 @@ export function makeOpenAiImagesFamilyBackend(
           signal,
         },
         "model list",
+        label,
+        OpenAiImagesError,
       );
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
@@ -720,24 +658,47 @@ export function makeOpenAiImagesFamilyBackend(
   return backend;
 }
 
-/** The OpenAI-proper OPTIONS row — the historical openAiImagesFactory
- *  behavior exactly (GPT Image size grid, DALL-E-gated response_format,
- *  image-family model filter, OpenAI data[] envelope). */
+/** The OpenAI-proper OPTIONS row (GPT Image size grid, OpenAI data[]
+ *  envelope). The model catalog is UNFILTERED and `response_format` is
+ *  never sent — the former `gpt-image`/`dall-e` prefix filter and the
+ *  DALL-E-only format gate were removed by owner ruling 2026-10-15
+ *  (remove it from the OpenAI adapter too — DALL-E died years ago): the
+ *  filter emptied every Custom endpoint's
+ *  catalog, and a maintained prefix list goes stale with every release. */
 const OPENAI_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
   label: "OpenAI Images",
   size: { kind: "grid", param: "size", sizes: OPENAI_IMAGES_SIZES },
-  responseFormat: { kind: "dalle-only" },
+  responseFormat: { kind: "never" },
   envelope: "openai-data",
   modelsPath: "models",
-  modelFilter: (id) => IMAGE_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix)),
-  probeModelNoun: "image models",
+  probeModelNoun: "models",
 };
 
 export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
   makeOpenAiImagesFamilyBackend(OPENAI_FAMILY_OPTIONS, config);
 
+/** The Custom OPTIONS row (`openai-images-custom`, owner ruling 2026-10-15):
+ *  a bare user endpoint speaking the OpenAI-images dialect. It has no card,
+ *  so nothing OpenAI-specific is assumed — the user's complete W×H rides
+ *  verbatim as the `size` string (no grid, no fail-closed mapping), no
+ *  `response_format`, the catalog unfiltered. Same envelope and transport
+ *  as the OpenAI row; a hosted-URL answer downloads server-side. */
+const CUSTOM_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Custom (OpenAI Images)",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "never" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  probeModelNoun: "models",
+};
+
+export const openAiImagesCustomFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeOpenAiImagesFamilyBackend(CUSTOM_FAMILY_OPTIONS, config);
+
 // Module-scope registration (protocol-registry pattern, the STT/TTS twins):
-// importing this module makes the 'openai-images' image-gen slug creatable
-// via the image-gen registry. The route layer (IG-8) imports this module for
-// the side effect, exactly like stt-adapter.ts imports the STT backends.
+// importing this module makes the 'openai-images' and 'openai-images-custom'
+// image-gen slugs creatable via the image-gen registry. The route layer
+// (IG-8) imports this module for the side effect, exactly like
+// stt-adapter.ts imports the STT backends.
 registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImages, openAiImagesFactory);
+registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImagesCustom, openAiImagesCustomFactory);

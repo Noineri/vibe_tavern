@@ -31,12 +31,13 @@ import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
-import { formatShortDate } from "../sidebar-utils.js";
+import { canDeleteActiveBranch, formatShortDate } from "../sidebar-utils.js";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import { SidebarBranchRename } from "./SidebarBranchRename.js";
 import { SidebarChatRename } from "./SidebarChatRename.js";
+import { openDeleteBranchConfirm } from "../../../lib/branch-sidechat-confirm.js";
 
 export interface RichChatRowProps {
   chatItem: ChatListItem;
@@ -201,7 +202,7 @@ export function RichChatRow({
 
       {branchPopOpen && isActive && (
         <div className="mt-1.5 flex cursor-default flex-col border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
-          <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
+          <div className="mb-1 pl-1 text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.05em] text-t3">
             {t("sidebar_timeline_branches")}
           </div>
           <div className="ml-2 flex flex-col border-l-2 border-border pl-3">
@@ -245,9 +246,7 @@ export function RichChatRow({
               <Icons.Branch /> {t("sidebar_fork_short")}
             </button>
             {(() => {
-              const rootBranch = branches.find((b) => b.parentBranchId === null);
-              const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
-              const canAct = !activeIsRoot && branches.length > 1;
+              const canAct = canDeleteActiveBranch(branches, activeBranchId);
               return (
                 <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
                   <button className={cn(
@@ -258,10 +257,15 @@ export function RichChatRow({
                     onClick={(event) => {
                       if (!canAct) return;
                       event.stopPropagation();
-                      setConfirmDestroy({
-                        title: t("sidebar_delete_branch"),
-                        body: t("sidebar_delete_branch_body"),
-                        confirmLabel: t("sidebar_delete_branch"),
+                      // SC-21: the summary is fetched when the confirm opens;
+                      // on any failure the confirm opens without the append.
+                      // chatItem is the ACTIVE chat here (this popover renders
+                      // only when isActive), so its id names the chat being deleted from.
+                      void openDeleteBranchConfirm({
+                        t,
+                        chatId: chatItem.id,
+                        branchId: activeBranchId,
+                        setConfirmDestroy,
                         onConfirm: () => void chat.handleDeleteActiveBranch(),
                       });
                     }}

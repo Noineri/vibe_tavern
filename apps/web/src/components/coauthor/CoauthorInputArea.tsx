@@ -11,12 +11,15 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { CoauthorMobileInputArea } from "./CoauthorMobileInputArea.js";
 import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area.js";
+import { AttachmentPreview } from "../chat/AttachmentPreview.js";
+import { AttachmentOverflowWarning } from "../chat/attachment-overflow-warning.js";
+import { AttachmentVisionWarning } from "../chat/attachment-vision-warning.js";
 
 /**
  * Co-Author message box (CS-22). A parallel input surface to the RP
  * {@link InputArea}, intentionally leaner: co-author edits a card template,
  * not a roleplay, so the RP-only persona switch, AI-impersonation pill, prompt
- * preset switcher, and image attachments are all absent here.
+ * preset switcher are absent here; images and text files share the RP path.
  *
  * What it keeps:
  * - the message box itself (shared `AutoTextarea`, §9 — no hand-rolled textarea)
@@ -54,6 +57,8 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 		draft, setDraft, isSending, activeChatId, canSend, canUseLiveApi,
 		activeModelId, favorites, handleSelectModel,
 		sendLabel, sendButtonText,
+		fileInputRef, accept, draftAttachments, onFileInputChange, handlePaste,
+		isDragOver, handleDragOver, handleDragLeave, handleDrop,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	} = data;
 
@@ -66,17 +71,31 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 				"relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200",
 				!activeChatId && "pointer-events-none opacity-45",
 			)}
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={handleDrop}
 		>
+			{data.attachmentVisionWarning && <AttachmentVisionWarning />}
+			{data.attachmentOverflow?.overflow && <AttachmentOverflowWarning {...data.attachmentOverflow} />}
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+				{isDragOver && (
+					<div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
+						<span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)+1px)] font-medium text-accent">
+							<Icons.target /> {t("drop_image_here")}
+						</span>
+					</div>
+				)}
+				<input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
 				<AutoTextarea
 					bare
 					data-testid="coauthor-input-textarea"
-					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
+					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
 					maxRows={12}
 					minRows={3}
 					placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
+					onPaste={handlePaste}
 					onKeyDown={(e) => {
 						if (e.key === "Enter" && !e.shiftKey) {
 							e.preventDefault();
@@ -84,6 +103,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						}
 					}}
 				/>
+				{draftAttachments.length > 0 && <AttachmentPreview attachments={draftAttachments} onRemove={data.remove} />}
 
 				<div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
 					{/* Quick module switch — desktop Select / mobile BottomSheet (ToolbarSelect). */}
@@ -115,7 +135,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 							<button
 								type="button"
 								data-testid="coauthor-module-switch"
-								className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
+								className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:bg-s3"
 							>
 								<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
 								<span className="min-w-0 truncate">{moduleSwitch.activeLabel}</span>
@@ -125,6 +145,17 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 					/>
 
 					<div className="ml-auto flex items-center gap-[9px]">
+						<CustomTooltip content={t("attach_image")}>
+							<button
+								type="button"
+								aria-label={t("attach_image")}
+								className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-45"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={draftAttachments.length >= 5}
+							>
+								<Icons.paperclip />
+							</button>
+						</CustomTooltip>
 						{/* Context Counter — shared TokenCounterPopover (Radix Popover flyout). */}
 						<TokenCounterPopover
 							permanent={permanent}
@@ -170,7 +201,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						{isSending ? (
 							<button
 								type="button"
-								className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+								className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
 								onClick={chat.handleCancelGeneration}
 							>
 								{t("cancel")}

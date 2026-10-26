@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 /**
  * BoundResourcesField — regex preset group (RX-12).
@@ -17,7 +18,6 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv();
 const { render, screen } = await import("@testing-library/react");
 
-const realI18nContext = await import("../../i18n/context.js");
 const realTooltip = await import("./Tooltip.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
 const realCharacterApi = await import("../../api/character-api.js");
@@ -28,16 +28,7 @@ const realRegexApi = await import("../../api/regex-api.js");
 const listAllRegexPresetsMock = mock(() => Promise.resolve([] as unknown[]));
 const getRegexLinksMock = mock((_id: string) => Promise.resolve([] as Array<{ regexPresetId: string; targetType: "character" | "preset"; targetId: string }>));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("./Tooltip.js", () => ({
   ...realTooltip,

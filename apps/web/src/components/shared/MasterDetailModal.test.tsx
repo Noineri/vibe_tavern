@@ -12,6 +12,9 @@
  *   - The master column follows `masterClassName` on desktop, "w-full" on mobile.
  *   - `scrollbar-hide` works as a plain CSS class passed through — it does
  *     not disable overflow scrolling (the overflow-y-auto is always present).
+ *   - `parentBack` (AP-3): absent → no link; present → desktop quiet link
+ *     calls `onBack`; on phones the chevron shows only on the MAIN header —
+ *     while a drill-down is open the drill-down back keeps priority.
  *
  * Runner: bun:test + happy-dom.
  */
@@ -370,8 +373,113 @@ describe("MasterDetailModal — header tabs", () => {
   });
 });
 
-// ── MasterDetailFooter (SP-11) ──────────────────────────────────────────
+// ── parentBack (AP-3) ───────────────────────────────────────────────────
+// Optional parent-level back: desktop renders a quiet «‹ {label}» link above
+// the title; phones render a back chevron before the MAIN-header title.
+// While a detail drill-down is open the drill-down back keeps priority —
+// the parent chevron shows only on the main header.
+describe("MasterDetailModal — parentBack", () => {
+  it("absent → no parent link on desktop, no parent chevron on the phone main header", () => {
+    isMobile = false;
+    const desktop = render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+      />,
+    );
+    expect(desktop.queryByText("Parent")).toBeNull();
+    desktop.unmount();
 
+    isMobile = true;
+    const { getAllByRole } = render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+      />,
+    );
+    // Phone main header without parentBack: only the close button.
+    const buttons = getAllByRole("button");
+    expect(buttons.length).toBe(1);
+    expect(buttons[0]!.getAttribute("aria-label")).toBe("close");
+  });
+
+  it("present → desktop quiet link above the title calls onBack", () => {
+    isMobile = false;
+    let calls = 0;
+    const { getByRole, getByText } = render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+        parentBack={{ label: "Parent", onBack: () => { calls += 1; } }}
+      />,
+    );
+
+    const link = getByRole("button", { name: "Parent" });
+    // Quiet link chrome (mockup §5): secondary text, no button chrome.
+    expect(link.className).toContain("text-t3");
+    expect(link.className).toContain("hover:text-t1");
+    expect(link.className).toContain("text-[calc(var(--ui-fs)-2px)]");
+    expect(link.className).not.toContain("border");
+    // Above the title: the link precedes it in DOM order.
+    expect(link.compareDocumentPosition(getByText("Test")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(link);
+    expect(calls).toBe(1);
+  });
+
+  it("mobile order: drill-down back closes the detail first, parent chevron only on the main header", () => {
+    isMobile = true;
+    let parentCalls = 0;
+    let drillCalls = 0;
+    const { getByRole, getByTestId, getAllByRole, queryByRole, queryByTestId } = render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={({ openDetail }) => (
+          <button data-testid="drill-btn" onClick={openDetail}>Drill</button>
+        )}
+        detailContent={detail()}
+        onBack={() => { drillCalls += 1; }}
+        parentBack={{ label: "Parent", onBack: () => { parentCalls += 1; } }}
+      />,
+    );
+
+    // Main header: parent chevron present, fires only the parent hook.
+    const chevron = getByRole("button", { name: "Parent" });
+    fireEvent.click(chevron);
+    expect(parentCalls).toBe(1);
+    expect(drillCalls).toBe(0);
+
+    // Open the drill-down: parent chevron is replaced by the drill header.
+    fireEvent.click(getByTestId("drill-btn"));
+    expect(getByTestId("detail")).toBeTruthy();
+    expect(queryByRole("button", { name: "Parent" })).toBeNull();
+
+    // The visible back is the drill-down one (no aria-label): it closes the
+    // detail and fires the drill-down hook, NOT the parent hook.
+    const drillBack = getAllByRole("button").find((b) => !b.getAttribute("aria-label"));
+    expect(drillBack).toBeTruthy();
+    fireEvent.click(drillBack!);
+    expect(drillCalls).toBe(1);
+    expect(parentCalls).toBe(1);
+    expect(queryByTestId("detail")).toBeNull();
+
+    // Back on the main header: parent chevron is visible again.
+    expect(getByRole("button", { name: "Parent" })).toBeTruthy();
+  });
+});
+
+// ── MasterDetailFooter (SP-11) ──────────────────────────────────────────
 describe("MasterDetailFooter — footer chrome primitive", () => {
   it("preserves the complete default action DOM and composed class strings", () => {
     isMobile = false;

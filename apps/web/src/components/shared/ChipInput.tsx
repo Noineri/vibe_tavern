@@ -41,21 +41,21 @@ function renderChipContent(value: string): React.ReactNode[] {
     if (ch === "\n") {
       flush();
       parts.push(
-        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[9px] font-mono text-accent-t leading-none">
+        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[calc(var(--ui-fs)-5px)] font-mono text-accent-t leading-none">
           ⏎
         </span>
       );
     } else if (ch === "\t") {
       flush();
       parts.push(
-        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[9px] font-mono text-accent-t leading-none">
+        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[calc(var(--ui-fs)-5px)] font-mono text-accent-t leading-none">
           ⇥
         </span>
       );
     } else if (ch === " " && (i === 0 || i === value.length - 1)) {
       flush();
       parts.push(
-        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[9px] font-mono text-accent-t leading-none">
+        <span key={key++} className="inline-flex items-center justify-center rounded bg-s3 px-1 text-[calc(var(--ui-fs)-5px)] font-mono text-accent-t leading-none">
           ␣
         </span>
       );
@@ -301,8 +301,8 @@ export function ChipInput({
             className={cn(
               "group inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors select-none",
               mode === "words"
-                ? "font-ui text-[12px]"
-                : "font-mono text-[11px]",
+                ? "font-ui text-[calc(var(--ui-fs)-2px)]"
+                : "font-mono text-[calc(var(--ui-fs)-3px)]",
               disabled
                 ? "border-border bg-s3 text-t3"
                 : "border-accent/30 bg-accent/10 text-accent-t hover:border-danger/50 hover:bg-danger/10 hover:text-danger",
@@ -341,7 +341,7 @@ export function ChipInput({
           placeholder={values.length === 0 ? placeholder : ""}
           className={cn(
             "min-w-[80px] flex-1 bg-transparent text-t1 outline-none placeholder:text-t3/50",
-            mode === "words" ? "font-ui text-[13px]" : "font-mono text-[12px]",
+            mode === "words" ? "font-ui text-[calc(var(--ui-fs)-1px)]" : "font-mono text-[calc(var(--ui-fs)-2px)]",
             disabled && "pointer-events-none",
           )}
         />
@@ -349,7 +349,7 @@ export function ChipInput({
           <button
             type="button"
             onClick={() => addChip(inputValue)}
-            className="flex-shrink-0 rounded border border-accent/40 px-1.5 py-0.5 font-ui text-[10px] text-accent-t transition-colors hover:border-accent hover:bg-accent/10"
+            className="flex-shrink-0 rounded border border-accent/40 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent-t transition-colors hover:border-accent hover:bg-accent/10"
             title={showPresets ? "Shift+Enter" : undefined}
           >
             ✓
@@ -362,7 +362,7 @@ export function ChipInput({
         <div className="mt-1.5 flex items-center gap-1.5">
           {tooltip && (
             <CustomTooltip content={tooltip}>
-              <span className="cursor-help font-ui text-[10px] uppercase tracking-wider text-t3/60 transition-colors hover:text-t3">
+              <span className="cursor-help font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wider text-t3/60 transition-colors hover:text-t3">
                 {presetsLabel || "?"}
               </span>
             </CustomTooltip>
@@ -373,7 +373,7 @@ export function ChipInput({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => insertPreset(preset)}
-                className="rounded border border-border2 bg-s3 px-2 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
+                className="rounded border border-border2 bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent hover:text-accent-t"
               >
                 {preset.label}
               </button>

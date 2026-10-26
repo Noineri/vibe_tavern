@@ -1,0 +1,1135 @@
+/**
+ * ExperienceCopilotMessageBlock digest-card tests (CM-9) — pins the collapsed
+ * compaction-digest card: collapsed by default, expands on click, and derives
+ * its caption count from `coveredCount`. The user/assistant bubble path is
+ * covered by the message-list test; this file isolates the role-dispatch.
+ */
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import type { ReactNode } from "react";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
+import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
+
+useDomEnv();
+
+// Markdown is heavy and pinned elsewhere; the digest card renders the raw
+// summary text (not through Markdown), but the block still imports it — stub it
+// so the digest path has a deterministic DOM. The stub surfaces the variant
+// prop as `data-variant` so the AP-2 markup tests pin the block→variant map.
+// CO-LOAD CONTRACT (react-markdown-seam discipline): this file and
+// AgentMessageList.test.tsx register the SAME shared seam factory — the list
+// suite's AP-2 pair pins the REAL variant classes (`.md-agent`/`.md-agent-plain`),
+// which a file-private stub would strip from its renders in a hand-bundled
+// co-load (mock.module is process-global, last-write-wins). The seam derives
+// the class from the real VARIANT_DEFAULT_CLASS, so both halves stay green in
+// any order.
+installAgentMessageMarkdownSeam();
+
+// Mutable viewport override (the SC-16 row branches on it) — same pattern as
+// sidechat-host.test.tsx so both halves agree.
+let mobileOverride = false;
+const realMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realMobile,
+  useIsMobile: () => mobileOverride,
+}));
+
+// Radix Tooltip never anchors under happy-dom — render children inline (the
+// same mock the message-list test uses; this file pins the row, not tooltips).
+const realTooltip = await import("../Tooltip.js");
+mock.module("../Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+let AgentMessageBlock: typeof import("./AgentMessageBlock.js").AgentMessageBlock;
+
+beforeAll(async () => {
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+  ({ AgentMessageBlock } = await import("./AgentMessageBlock.js"));
+  // The sidechat host self-registers on import (module-load registration) —
+  // the wiring test below resolves its declared action by kind.
+  await import("../../chat/sidechat/sidechat-host.js");
+});
+
+beforeEach(() => {
+  mobileOverride = false;
+});
+
+function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+  return {
+    id: "d1",
+    threadId: "thread-1",
+    role: "digest",
+    content: "Earlier context was compacted: the rules buffer gained a `score` action.",
+    toolCallsJson: null,
+    toolCallId: "u3",
+    reasoning: null,
+    reasoningDurationMs: null,
+    createdAt: "2026-08-15T10:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — digest separator (AP-34)", () => {
+  // WAS (characterized pre-change, basis: the CM-9 card above): the digest
+  // rendered as a dark bordered card — `copilot-digest-card` with a title +
+  // caption + relative-time header, sync expand/collapse, the covered count
+  // on `data-covered-count`. NOW (AP-34): the digest renders through the
+  // SHARED `TimelineSeparatorFrame` the RP event separators use — one
+  // centered muted line «── … ──» with a caret, expanding through the
+  // shared `AnimatedDisclosure` to the full summary text. Every fact the old
+  // pins held that survives — collapsed default, expansion, count, full
+  // text — is still pinned below, against the new chrome.
+  it("renders a collapsed digest separator by default (summary hidden, no card)", () => {
+    const { getByTestId, queryByTestId, getByText } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    expect(queryByTestId("copilot-digest-card")).toBeNull();
+    expect(getByTestId("timeline-separator")).toBeDefined();
+    expect(getByTestId("timeline-separator").getAttribute("data-kind")).toBe("digest");
+    expect(getByTestId("timeline-separator").getAttribute("data-role")).toBe("digest");
+    // Identity i18n: the label composes the title + caption keys with the
+    // separator's `──` runs (the real 1/3/5 declension is pinned under real
+    // RU in the separator suite + i18n.test.ts).
+    expect(getByText("── copilot_context_digest_title: copilot_context_digest_caption ──")).toBeDefined();
+    // Collapsed → summary body absent.
+    expect(queryByTestId("timeline-separator-body")).toBeNull();
+  });
+
+  it("expands on click to reveal the summary text and collapses again", async () => {
+    const { getByTestId, queryByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    expect(queryByTestId("timeline-separator-body")).not.toBeNull();
+    expect(getByTestId("timeline-separator-body").textContent).toContain("rules buffer");
+
+    // BEHAVIOR CHANGE was → now, basis AP-34: the shared AnimatedDisclosure
+    // exits through AnimatePresence (~250ms), so the collapse is async —
+    // the test WAITS for the removal (the separator suite's own precedent),
+    // never weakened to keepMounted.
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    await waitFor(() => expect(queryByTestId("timeline-separator-body")).toBeNull());
+  });
+
+  it("carries the covered count in the label (no card, no data-covered-count)", () => {
+    const { getByTestId, queryByText } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={12} />,
+    );
+
+    // WAS `data-covered-count="12"` on the card toggle → NOW the count
+    // rides the label copy (identity: the caption key; the real number lands
+    // under real i18n, pinned in the separator suite + i18n.test.ts).
+    expect(getByTestId("timeline-separator-toggle").getAttribute("data-covered-count")).toBeNull();
+    expect(queryByText("── copilot_context_digest_title: copilot_context_digest_caption ──")).not.toBeNull();
+  });
+
+  it("the expanded body scrolls internally (long summaries never stretch the feed)", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    const body = getByTestId("timeline-separator-body");
+    expect(body.className).toContain("max-h-64");
+    expect(body.className).toContain("overflow-y-auto");
+  });
+
+  it("renders an assistant bubble for a normal assistant message (no separator)", () => {
+    const { queryByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={{ ...digestMsg(), id: "a1", role: "assistant", toolCallId: null }}
+      />,
+    );
+
+    expect(queryByTestId("timeline-separator")).toBeNull();
+    expect(getByText("Earlier context was compacted: the rules buffer gained a `score` action.")).toBeDefined();
+  });
+
+  it("returns nothing for an empty assistant tool-call carrier turn", () => {
+    const { container } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={{ ...digestMsg(), id: "a2", role: "assistant", content: "" }}
+      />,
+    );
+
+    expect(container.innerHTML).toBe("");
+  });
+});
+
+// ─── SC-16: the host's message-action row ───────────────────────────────────
+// A host-declared action renders under ASSISTANT bubbles only (desktop:
+// hover/focus-within reveal, cloned from the RP row; mobile: always-visible
+// 44px button). Hosts that declare none render byte-identically.
+
+function assistantMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+  return {
+    id: "a1",
+    threadId: "thread-1",
+    role: "assistant",
+    content: "Consider asking about her brother",
+    toolCallsJson: null,
+    toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
+    createdAt: "",
+    ...over,
+  };
+}
+
+function fixtureAction(onSelect: (text: string) => void): AgentMessageAction {
+  return {
+    labelKey: "copy",
+    icon: () => (
+      <svg data-testid="fixture-action-icon" />
+    ),
+    onSelect,
+    testId: "fixture-action",
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — message actions (SC-16)", () => {
+  it("renders the action row under an assistant bubble (desktop hover/focus reveal chrome)", () => {
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    const row = getByTestId("copilot-message-actions");
+    expect(row).toBeDefined();
+    // The reveal row clones the RP desktop container + the focus-within arm
+    // the owner quote settles (hover AND keyboard focus).
+    const reveal = row.firstElementChild!;
+    expect(reveal.className).toContain("opacity-0");
+    expect(reveal.className).toContain("group-hover:opacity-100");
+    expect(reveal.className).toContain("focus-within:opacity-100");
+    // Icon-only button with the label as its accessible name (the tooltip
+    // content is mocked to children — the aria-label carries the assertion).
+    const button = getByTestId("fixture-action");
+    expect(button.getAttribute("aria-label")).toBe("copy");
+    expect(button.className).toContain("px-[7px]");
+    expect(getByTestId("fixture-action-icon")).toBeDefined();
+  });
+
+  it("action row sits INSIDE the .group message row so desktop group-hover fires", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+
+    const row = container.querySelector("[data-role='assistant']");
+    expect(row).not.toBeNull();
+    // The row carries .group exactly when actions exist.
+    expect(row!.className).toContain("group");
+    // The action row is a DESCENDANT of the .group row (group-hover matches
+    // descendants only — as a sibling the desktop reveal never fired).
+    const actionsEl = getByTestId("copilot-message-actions");
+    expect(row!.contains(actionsEl)).toBe(true);
+    expect(actionsEl.firstElementChild!.className).toContain("group-hover:opacity-100");
+  });
+
+  it("clicking the action forwards the message text", () => {
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    fireEvent.click(getByTestId("fixture-action"));
+    expect(seen).toEqual(["Consider asking about her brother"]);
+  });
+
+  it("renders no row for a user message even when actions are declared", () => {
+    const { queryByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(getByText("What should I say?")).toBeDefined();
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("renders no row (byte-identical) when actions are absent or empty", () => {
+    const bare = render(<AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />);
+    const empty = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[]} />,
+    );
+    const userShaped = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(bare.queryByTestId("copilot-message-actions")).toBeNull();
+    expect(empty.container.innerHTML).toBe(bare.container.innerHTML);
+    expect(userShaped.queryByTestId("copilot-message-actions")).toBeNull();
+  });
+
+  it("mobile renders an always-visible 44px button (no opacity gate)", () => {
+    mobileOverride = true;
+    const seen: string[] = [];
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction((text) => seen.push(text))]} />,
+    );
+
+    const row = getByTestId("copilot-message-actions");
+    const reveal = row.firstElementChild!;
+    expect(reveal.className).not.toContain("opacity-0");
+    const button = getByTestId("fixture-action");
+    expect(button.className).toContain("h-11");
+    expect(button.className).toContain("w-11");
+    expect(button.getAttribute("aria-label")).toBe("copy");
+    fireEvent.click(button);
+    expect(seen).toEqual(["Consider asking about her brother"]);
+  });
+
+  it("the sidechat host's declared action renders and copies the reply into the RP draft", async () => {
+    const { getAgentHost } = await import("../../../lib/agent-host-registry.js");
+    const { SIDECHAT_AGENT_KIND } = await import("../../../api/agent-kind-served-modes.js");
+    const { useChatStore } = await import("../../../stores/chat-store.js");
+    const { useSidechatMobileStore } = await import("../../../stores/sidechat-mobile-store.js");
+    const host = getAgentHost(SIDECHAT_AGENT_KIND);
+    expect(host.messageActions).toHaveLength(1);
+    expect(host.messageActions![0]!.labelKey).toBe("sidechat_copy_to_composer");
+    expect(host.messageActions![0]!.testId).toBe("sidechat-copy-to-composer");
+
+    // Non-empty draft: the user is mid-typing — the reply lands on a new line.
+    useChatStore.setState({ draft: "Already typed" });
+    useSidechatMobileStore.setState({ tab: "sidechat" });
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={host.messageActions} />,
+    );
+    fireEvent.click(getByTestId("sidechat-copy-to-composer"));
+    expect(useChatStore.getState().draft).toBe("Already typed\nConsider asking about her brother");
+    expect(useSidechatMobileStore.getState().tab).toBe("chat");
+    useChatStore.setState({ draft: "" });
+    useSidechatMobileStore.setState({ tab: "chat" });
+  });
+});
+
+// ─── AP-11: turn actions (copy / regenerate / delete) ─────────────────────
+// WAS (characterized pre-change, basis: SC-16 + the AP-11 contract): user
+// bubbles NEVER carried an action row (`messageActions` were assistant-only
+// and the user branch ignored them); the assistant row held host actions
+// only. NOW: a second, role-agnostic `turnActions` prop carries the turn
+// actions — user bubbles render them under the bubble (right-aligned),
+// assistant bubbles merge them with the host actions in the SAME row
+// (host first). Absent/empty = byte-identical to before.
+
+describe("ExperienceCopilotMessageBlock — turn actions (AP-11)", () => {
+  it("renders the turn row under a user bubble (right-aligned column, .group for hover reveal)", () => {
+    const { container, getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        turnActions={[fixtureAction(() => {})]}
+      />,
+    );
+
+    expect(getByText("What should I say?")).toBeDefined();
+    const row = container.querySelector("[data-role='user']");
+    expect(row).not.toBeNull();
+    // WAS flex-row-reverse (bubble-only) → NOW the column stacks the bubble
+    // above the row; items-end keeps both right-aligned (mockup §1).
+    expect(row!.className).toContain("flex-col");
+    expect(row!.className).toContain("items-end");
+    expect(row!.className).toContain("group");
+    // The bubble stays the first child (bg-user-bg, max-w-[85%]).
+    expect(row!.firstElementChild!.className).toContain("bg-user-bg");
+    expect(getByTestId("copilot-message-actions")).toBeDefined();
+    expect(row!.contains(getByTestId("copilot-message-actions"))).toBe(true);
+  });
+
+  it("merges host and turn actions in ONE assistant row (host first)", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        messageActions={[fixtureAction(() => {})]}
+        turnActions={[{ ...fixtureAction(() => {}), testId: "turn-action" }]}
+      />,
+    );
+
+    const rows = container.querySelectorAll('[data-testid="copilot-message-actions"]');
+    expect(rows.length).toBe(1);
+    const rowHtml = rows[0]!.innerHTML;
+    expect(getByTestId("fixture-action")).toBeDefined();
+    expect(getByTestId("turn-action")).toBeDefined();
+    // Host actions (the sidechat copy-to-composer family) lead; turn actions follow.
+    expect(rowHtml.indexOf("fixture-action")).toBeLessThan(rowHtml.indexOf("turn-action"));
+  });
+
+  it("user bubbles ignore host actions but render turn actions", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        messageActions={[fixtureAction(() => {})]}
+        turnActions={[{ ...fixtureAction(() => {}), testId: "turn-action" }]}
+      />,
+    );
+
+    expect(queryByTestId("fixture-action")).toBeNull();
+    expect(getByTestId("turn-action")).toBeDefined();
+  });
+
+  it("absent/empty turn actions render byte-identically (no row, old user shape)", () => {
+    const bare = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+      />,
+    );
+    const empty = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+        turnActions={[]}
+      />,
+    );
+
+    expect(bare.queryByTestId("copilot-message-actions")).toBeNull();
+    expect(empty.container.innerHTML).toBe(bare.container.innerHTML);
+    // The bubble-only shape keeps the old row-reverse row (no column wrapper).
+    expect(bare.container.querySelector("[data-role='user']")!.className).toContain("flex-row-reverse");
+  });
+});
+
+// ─── AP-12: inline edit of the last own message ─────────────────────────
+// WAS (characterized at AP-11, basis: the turn-actions describe above):
+// user bubbles carried turn actions but no edit affordance — the row was
+// delete-only. NOW: with `canEditLast` (the builder's last-user-row signal)
+// plus an `onEditLast` submit path the block prepends an «Изменить» opener;
+// clicking it swaps the WHOLE user arm (bubble + row) for the inline editor
+// in place, Esc/cancel closes without submitting, submit forwards the draft
+// and closes. Absent either prop = exactly as before (no edit button).
+
+function userMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+  return assistantMsg({ id: "u1", role: "user", content: "What should I say?", ...over });
+}
+
+function deleteTurnAction(onSelect: (text: string) => void): AgentMessageAction {
+  return {
+    labelKey: "delete",
+    icon: () => (
+      <svg data-testid="turn-delete-icon" />
+    ),
+    onSelect,
+    testId: "copilot-turn-delete",
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — inline edit (AP-12)", () => {
+  it("renders the edit opener FIRST in the last user row (edit before delete)", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    const edit = getByTestId("copilot-turn-edit");
+    expect(edit.getAttribute("aria-label")).toBe("edit");
+    // The opener joins the row ahead of delete (mockup: «Изменить» first).
+    const rowHtml = container.querySelector('[data-testid="copilot-message-actions"]')!.innerHTML;
+    expect(rowHtml.indexOf("copilot-turn-edit")).toBeLessThan(rowHtml.indexOf("copilot-turn-delete"));
+  });
+
+  it("no edit affordance without canEditLast (earlier user rows)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        onEditLast={() => {}}
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit affordance without onEditLast (no submit path)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+      />,
+    );
+
+    expect(queryByTestId("copilot-turn-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("clicking edit swaps the bubble for the editor in place (the row hides)", () => {
+    const { container, getByTestId, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    // The editor renders in the user row's slot (data-role=user stays —
+    // nothing else in the feed moves); the bubble AND the action row hide.
+    const row = container.querySelector("[data-role='user']");
+    expect(row).not.toBeNull();
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    expect(row!.contains(getByTestId("copilot-edit-message"))).toBe(true);
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+    // The user bubble chrome is gone (its text now lives in the editor's
+    // textarea — a text query would match there, so pin the bubble's absence
+    // by its bg-user-bg box).
+    expect(row!.querySelector(".bg-user-bg")).toBeNull();
+    expect((getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("What should I say?");
+  });
+
+  it("Escape closes the editor without submitting (the bubble returns)", () => {
+    const seen: string[] = [];
+    const { getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={(content) => seen.push(content)}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    const box = getByTestId("copilot-edit-message").querySelector("textarea")!;
+    fireEvent.change(box, { target: { value: "changed my mind" } });
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(seen).toEqual([]);
+    expect(getByText("What should I say?")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("submit forwards the edited draft and closes the editor", () => {
+    const seen: string[] = [];
+    const { getByTestId, getByText, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={(content) => seen.push(content)}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "revised question" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    expect(seen).toEqual(["revised question"]);
+    // Closed: the bubble and its row return, the editor is gone.
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+    expect(getByText("What should I say?")).toBeDefined();
+  });
+
+  it("a stream started elsewhere closes an open editor (no editing while streaming)", () => {
+    const { getByTestId, queryByTestId, getByText, rerender } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-turn-edit"));
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    rerender(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={userMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditLast
+        onEditLast={() => {}}
+        isBusy
+      />,
+    );
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+    expect(getByText("What should I say?")).toBeDefined();
+  });
+});
+
+// ─── AP-4: flat assistant feed ────────────────────────────────────────────
+// WAS (characterized pre-restyling, basis: mockup §1 + unit contract): a
+// two-column avatar+bubble row — avatar div (h-7 w-7 rounded-full bg-s3) +
+// bubble (max-w-[80%] rounded-lg px-3.5 py-2.5, bg-s2 assistant / bg-user-bg
+// user), action row offset by the avatar column (pl-[38px]). NOW: the
+// assistant renders flat (no avatar, no bubble chrome, full width), the user
+// keeps the right-aligned bubble without avatar at max-w-[85%], and the
+// action row aligns to the text edge (no offset). Role attributes, the min-w-0
+// overflow fix, and the AP-2 Markdown variant mapping are unchanged.
+
+describe("ExperienceCopilotMessageBlock — flat feed shape (AP-4)", () => {
+  it("assistant renders flat: no avatar, no bubble chrome, full width (data-role=assistant)", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />,
+    );
+
+    const row = container.querySelector("[data-role='assistant']");
+    expect(row).not.toBeNull();
+    // WAS two-column flex row (flex-row + gap-2.5) → NOW full-width flat.
+    expect(row!.className).not.toContain("flex-row");
+    expect(row!.className).not.toContain("gap-2.5");
+    expect(row!.className).toContain("min-w-0");
+    // WAS avatar div (h-7 w-7 rounded-full bg-s3) → NOW gone.
+    expect(row!.querySelector("div.bg-s3")).toBeNull();
+    // WAS bubble chrome (bg-s2, max-w-[80%], rounded-lg, px-3.5 py-2.5) → NOW gone.
+    expect(row!.querySelector("div.bg-s2")).toBeNull();
+    expect(row!.innerHTML).not.toContain("max-w-[80%]");
+    expect(row!.innerHTML).not.toContain("rounded-lg");
+    // The text keeps the overflow-wrap rules + the AP-2 Markdown variant.
+    const text = row!.querySelector("div[class*=\"[overflow-wrap\"]");
+    expect(text).not.toBeNull();
+    expect(text!.className).toContain("[overflow-wrap:anywhere]");
+    expect(container.querySelector("[data-variant]")?.getAttribute("data-variant")).toBe("agent-plain");
+  });
+
+  it("user keeps the right-aligned bubble without avatar, max-w-[85%] (data-role=user)", () => {
+    const { container } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+      />,
+    );
+
+    const row = container.querySelector("[data-role='user']");
+    expect(row).not.toBeNull();
+    expect(row!.className).toContain("flex-row-reverse");
+    // WAS avatar div → NOW gone.
+    expect(row!.querySelector("div.bg-s3")).toBeNull();
+    // Bubble stays (bg-user-bg, rounded, padded) — WAS max-w-[80%] → NOW max-w-[85%].
+    const bubble = row!.firstElementChild;
+    expect(bubble).not.toBeNull();
+    expect(bubble!.className).toContain("bg-user-bg");
+    expect(bubble!.className).toContain("max-w-[85%]");
+    expect(bubble!.className).not.toContain("max-w-[80%]");
+    expect(bubble!.className).toContain("rounded-lg");
+    expect(bubble!.className).toContain("px-3.5");
+  });
+
+  it("action row aligns to the text edge: no avatar-column offset (desktop arm)", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+
+    // WAS pl-[38px] (avatar column) → NOW no left offset.
+    expect(getByTestId("copilot-message-actions").className).not.toContain("pl-[38px]");
+    expect(getByTestId("copilot-message-actions")).toBeDefined();
+  });
+
+  it("action row aligns to the text edge: no avatar-column offset (mobile arm)", () => {
+    mobileOverride = true;
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+
+    expect(getByTestId("copilot-message-actions").className).not.toContain("pl-[38px]");
+    expect(getByTestId("copilot-message-actions")).toBeDefined();
+  });
+});
+
+// ─── AP-2: per-host message markup ──────────────────────────────────────────
+// Each assistant host declares its markup; the block renders the matching
+// Markdown variant (`rp-colors` → `agent-rp`, `plain` → `agent-plain`). The
+// block's own `em` override is gone — the variants own `em` now — while the
+// bubble's overflow-wrap rules stay.
+
+describe("ExperienceCopilotMessageBlock — message markup (AP-2)", () => {
+  it("renders the agent-rp variant for rp-colors markup", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="rp-colors" message={assistantMsg()} />,
+    );
+
+    expect(container.querySelector("[data-variant]")?.getAttribute("data-variant")).toBe("agent-rp");
+  });
+
+  it("renders the agent-plain variant for plain markup", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />,
+    );
+
+    expect(container.querySelector("[data-variant]")?.getAttribute("data-variant")).toBe("agent-plain");
+  });
+
+  it("owns no em override on the bubble text (the variants own em) but keeps the overflow-wrap rules", () => {
+    const { container } = render(
+      <AgentMessageBlock messageMarkup="rp-colors" message={assistantMsg()} />,
+    );
+
+    const bubble = container.querySelector("div[class*=\"[overflow-wrap\"]");
+    expect(bubble).not.toBeNull();
+    expect(bubble!.className).toContain("[overflow-wrap:anywhere]");
+    expect(bubble!.className).toContain("[&_.md-pre]:[overflow-wrap:normal]");
+    expect(bubble!.className).not.toContain("[&_em]");
+  });
+});
+
+// ─── Page translation (owner follow-up 2026-10-24) ───────────────────────
+// behavior change: was → now, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+// 2026-10-24 (page translation). The page opts out in `index.html`
+// (`translate="no"`); every model/user text element in the shell opts back in
+// with `translate="yes"`. Chrome (action buttons, digest header) stays out.
+describe("ExperienceCopilotMessageBlock — page translation (follow-up 2026-10-24)", () => {
+  it("assistant body carries translate=yes (the streaming reply goes through the same block)", () => {
+    const { getByText } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} />,
+    );
+
+    expect(getByText("Consider asking about her brother").parentElement!.getAttribute("translate")).toBe("yes");
+  });
+
+  it("user body carries translate=yes", () => {
+    const { getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({ id: "u1", role: "user", content: "What should I say?" })}
+      />,
+    );
+
+    expect(getByText("What should I say?").parentElement!.getAttribute("translate")).toBe("yes");
+  });
+
+  it("expanded digest body carries translate=yes on the summary (model text)", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+
+    fireEvent.click(getByTestId("timeline-separator-toggle"));
+    // The shared frame's body is chrome-neutral like the event separators':
+    // only the model text opts in — the summary div carries it, the body
+    // container and the toggle stay out.
+    const body = getByTestId("timeline-separator-body");
+    expect(body.getAttribute("translate")).toBeNull();
+    const summary = body.querySelector('[translate="yes"]');
+    expect(summary).not.toBeNull();
+    expect(summary!.textContent).toContain("rules buffer");
+  });
+
+  it("chrome carries no opt-in: action button and digest toggle stay untranslated", () => {
+    const { getByTestId } = render(
+      <AgentMessageBlock messageMarkup="plain" message={assistantMsg()} messageActions={[fixtureAction(() => {})]} />,
+    );
+    expect(getByTestId("fixture-action").getAttribute("translate")).toBeNull();
+
+    const digest = render(
+      <AgentMessageBlock messageMarkup="plain" message={digestMsg()} coveredCount={3} />,
+    );
+    expect(digest.getByTestId("timeline-separator-toggle").getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── AP-32: «Изменить» on the assistant's text rows ────────────────────────
+// WAS (characterized at AP-12, basis: the inline-edit describe above): only
+// the LAST user row carried an edit opener (`canEditLast`); assistant rows
+// carried copy / regenerate / delete only. NOW: every editable assistant
+// text row (the builder's `canEditAssistant` — the AP-30 rule derived once
+// from the delete boundaries) shows the opener in its action row; clicking
+// it swaps the message body for the SHARED editor in the assistant's flat
+// full-width shape («Сохранить» reuses `save`, «Отмена» reuses
+// `cancel_edit`), while «Сохранить» awaits the AP-31 handler — success
+// closes, failure keeps the draft open (the error toast is the handler's).
+// The opener reuses the `edit` key (the concept's one spelling — RU renders
+// the shared «Редактировать», the AP-12 wording note).
+
+function assistantEditStubs(ok: boolean) {
+  const seen: Array<{ messageId: string; content: string }> = [];
+  return {
+    seen,
+    onEditAssistant: async (messageId: string, content: string): Promise<boolean> => {
+      seen.push({ messageId, content });
+      return ok;
+    },
+  };
+}
+
+describe("ExperienceCopilotMessageBlock — assistant edit (AP-32)", () => {
+  it("renders the edit opener FIRST in an editable assistant row", () => {
+    const { container, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    const edit = getByTestId("copilot-assistant-edit");
+    expect(edit.getAttribute("aria-label")).toBe("edit");
+    const rowHtml = container.querySelector('[data-testid="copilot-message-actions"]')!.innerHTML;
+    expect(rowHtml.indexOf("copilot-assistant-edit")).toBeLessThan(rowHtml.indexOf("copilot-turn-delete"));
+  });
+
+  it("no edit opener without canEditLast's assistant twin (folded rows)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit opener without onEditAssistant (no submit path)", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+      />,
+    );
+
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("no edit opener on a tool-call carrier (empty content renders nothing)", () => {
+    const { container, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg({
+          id: "c1",
+          content: "",
+          toolCallsJson: JSON.stringify([{ id: "tc-1", name: "plan", arguments: {} }]),
+        })}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    expect(container.innerHTML).toBe("");
+    expect(queryByTestId("copilot-assistant-edit")).toBeNull();
+  });
+
+  it("clicking edit swaps the body for the flat full-width editor (the row hides)", () => {
+    const { container, getByTestId, queryByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    const row = container.querySelector("[data-role='assistant']");
+    expect(row).not.toBeNull();
+    const editor = getByTestId("copilot-edit-message");
+    expect(row!.contains(editor)).toBe(true);
+    // Flat, not the user bubble: full width, no bubble chrome, the AP-2
+    // Markdown gone with the body, the action row hidden.
+    expect(editor.className).toContain("w-full");
+    expect(editor.className).not.toContain("max-w-[85%]");
+    expect(row!.querySelector(".bg-user-bg")).toBeNull();
+    expect(queryByTestId("copilot-message-actions")).toBeNull();
+    expect((editor.querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("Consider asking about her brother");
+    // The assistant pair: «Сохранить» (save) + «Отмена» (cancel_edit).
+    expect(getByTestId("copilot-edit-send").textContent).toBe("save");
+    expect(getByTestId("copilot-edit-cancel").textContent).toBe("cancel_edit");
+  });
+
+  it("save forwards (messageId, newText) and closes on success", async () => {
+    const stubs = assistantEditStubs(true);
+    const { getByTestId, queryByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(queryByTestId("copilot-edit-message")).toBeNull());
+    expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed answer" }]);
+    // Closed: the body (with the AP-2 variant) and its row return.
+    expect(getByText("Consider asking about her brother")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("a failed save keeps the editor open with the typed text", async () => {
+    const stubs = assistantEditStubs(false);
+    const { getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "fixed answer" } });
+    fireEvent.click(getByTestId("copilot-edit-send"));
+    await waitFor(() => expect(stubs.seen).toEqual([{ messageId: "a1", content: "fixed answer" }]));
+    // Still open, draft intact — the handler's error toast is the surface.
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    expect((getByTestId("copilot-edit-message").querySelector("textarea") as HTMLTextAreaElement).value)
+      .toBe("fixed answer");
+  });
+
+  it("cancel restores the body without submitting", () => {
+    const stubs = assistantEditStubs(true);
+    const { getByTestId, getByText } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={stubs.onEditAssistant}
+      />,
+    );
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    fireEvent.change(getByTestId("copilot-edit-message").querySelector("textarea")!, { target: { value: "changed my mind" } });
+    fireEvent.click(getByTestId("copilot-edit-cancel"));
+    expect(stubs.seen).toEqual([]);
+    expect(getByText("Consider asking about her brother")).toBeDefined();
+    expect(getByTestId("copilot-turn-delete")).toBeDefined();
+  });
+
+  it("a stream started elsewhere closes an open editor (no editing while streaming)", () => {
+    const stubs = assistantEditStubs(true);
+    const props = {
+      messageMarkup: "plain" as const,
+      message: assistantMsg(),
+      turnActions: [deleteTurnAction(() => {})],
+      canEditAssistant: true as const,
+      onEditAssistant: stubs.onEditAssistant,
+    };
+    const { getByTestId, queryByTestId, rerender } = render(<AgentMessageBlock {...props} />);
+
+    fireEvent.click(getByTestId("copilot-assistant-edit"));
+    expect(getByTestId("copilot-edit-message")).toBeDefined();
+    rerender(<AgentMessageBlock {...props} isBusy />);
+    expect(queryByTestId("copilot-edit-message")).toBeNull();
+  });
+
+  it("mobile renders the opener as an always-visible 44px button", () => {
+    mobileOverride = true;
+    const { getByTestId } = render(
+      <AgentMessageBlock
+        messageMarkup="plain"
+        message={assistantMsg()}
+        turnActions={[deleteTurnAction(() => {})]}
+        canEditAssistant
+        onEditAssistant={assistantEditStubs(true).onEditAssistant}
+      />,
+    );
+
+    const button = getByTestId("copilot-assistant-edit");
+    expect(button.className).toContain("h-11");
+    expect(button.className).toContain("w-11");
+    expect(button.getAttribute("aria-label")).toBe("edit");
+  });
+});
+
+// ─── CA-4f: sent shell attachments — chips, menu, view-only lightbox ────────
+
+const client = await import("../../../api/agent-attachment-actions-api.js");
+const { AgentAttachmentActionsContext } = await import("./agent-attachment-actions-context.js");
+
+describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
+  const spies: Array<{ mockRestore(): void }> = [];
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
+  });
+
+  const textFile: import("@vibe-tavern/domain").Attachment = {
+    id: "att1", assetId: "asset-1", name: "notes.md", type: "file",
+    mimeType: "text/markdown", sizeBytes: 12, tokenCount: 42,
+  };
+  const image: import("@vibe-tavern/domain").Attachment = {
+    id: "img1", assetId: "asset-2", name: "capture.png", type: "image",
+    mimeType: "image/png", sizeBytes: 34,
+  };
+
+  function userMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
+    return {
+      id: "u1",
+      threadId: "thread-1",
+      role: "user",
+      content: "Read this",
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
+      createdAt: "2026-10-24T00:00:00.000Z",
+      ...over,
+    };
+  }
+
+  function renderWithActions(node: ReactNode) {
+    return render(
+      <AgentAttachmentActionsContext.Provider
+        value={{ threadId: "thread-1", providerProfileId: "p1", model: "m1", refreshMessages: () => {} }}
+      >
+        {node}
+      </AgentAttachmentActionsContext.Provider>,
+    );
+  }
+
+  it("a user message with a text file shows the chip and its «⋯» menu", async () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [textFile] })} />);
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+    expect(view.getByTitle("notes.md")).toBeDefined();
+    // The menu trigger mounts (desktop — the mobile override is false here).
+    expect(view.getByRole("button", { name: "attachment_file_actions" })).toBeDefined();
+  });
+
+  it("an attachment-only user message renders (empty content no longer hides it)", () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ content: "   ", attachments: [textFile] })} />);
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+  });
+
+  it("the pending bubble shows the chips WITHOUT the menu", () => {
+    const view = renderWithActions(
+      <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", attachments: [textFile] })} />,
+    );
+    expect(view.getByTestId("file-attachment-chip")).toBeDefined();
+    expect(view.queryByRole("button", { name: "attachment_file_actions" })).toBeNull();
+  });
+
+  it("a persisted image's lightbox shows the RP action set (behavior change: view-only → RP actions, basis owner 2026-10-24)", async () => {
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
+    // WAS (CA-4f): view-only — no edit / regenerate / delete control. NOW:
+    // the shell's action seam supplies the RP lightbox's three controls.
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).not.toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull();
+  });
+
+  it("regenerate calls the agent client with the picker's profile + model", async () => {
+    const regenerate = spyOn(client, "regenerateAgentAttachmentDescription").mockResolvedValue({ description: "Fresh." });
+    spies.push(regenerate);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="regenerate_description_title"]')!);
+    await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1));
+    const call = regenerate.mock.calls[0]!;
+    expect(call.slice(0, 4)).toEqual(["thread-1", "u1", "img1", { providerProfileId: "p1", model: "m1" }]);
+    expect(call[4]).toBeInstanceOf(AbortSignal);
+    await waitFor(() => expect(document.body.textContent).toContain("Fresh."));
+  });
+
+  it("edit and delete call the agent description/remove clients", async () => {
+    const update = spyOn(client, "updateAgentAttachmentDescription").mockResolvedValue({ ok: true });
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(update, remove);
+    // Two images: the pinned RP delete path short-circuits (closes, no API
+    // call) when the deleted image was the message's LAST attachment, so the
+    // client call is only reachable with a surviving sibling.
+    const second = { ...image, id: "img2", assetId: "asset-3", name: "b.png" };
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image, second] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="Add description"], [title="Edit description"]')).not.toBeNull());
+    // Edit: open the editor, type, save.
+    fireEvent.click(document.querySelector('[title="Add description"], [title="Edit description"]')!);
+    fireEvent.change(document.querySelector("textarea")!, { target: { value: "Hand-written." } });
+    fireEvent.click([...document.querySelectorAll("button")].find((b) => b.textContent === "Save")!);
+    await waitFor(() => expect(update).toHaveBeenCalledWith("thread-1", "u1", "img1", "Hand-written."));
+    // Delete: confirm through the destructive modal.
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    const confirm = await waitFor(() => {
+      const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
+      expect(found).toBeDefined();
+      return found!;
+    });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+  });
+
+  it("deleting a persisted user message's ONLY image calls the agent delete client (CA-4h)", async () => {
+    const remove = spyOn(client, "removeAgentAttachment").mockResolvedValue({ ok: true });
+    spies.push(remove);
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
+    fireEvent.click(view.getByAltText("capture.png"));
+    await waitFor(() => expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    // The confirm button is located by its label text (the sibling CA-4g2
+    // test's idiom), not by the real modal's chrome classes: in a hand-bundled
+    // co-load the `destructive-confirm-modal` mock another suite registers
+    // (AgentChatPane / AgentProfileModal / skill-library) rewrites the module
+    // in place and its inline stub carries no `bg-danger` classes — the
+    // checked fact (confirm clicked → the agent delete client called) is
+    // identical under the real modal and every stub.
+    fireEvent.click(await waitFor(() => {
+      const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
+      expect(found).toBeDefined();
+      return found!;
+    }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("thread-1", "u1", "img1"));
+    await waitFor(() => expect(document.querySelector(".fixed.inset-0")).toBeNull());
+  });
+
+  it("the PENDING bubble's lightbox still has no controls", async () => {
+    const view = renderWithActions(
+      <AgentMessageBlock messageMarkup="plain" message={userMsg({ id: "__pending-user", content: "sending", attachments: [image] })} />,
+    );
+    fireEvent.click(view.getByRole("button"));
+    await waitFor(() => {
+      expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
+    });
+    expect(document.querySelector("img")).not.toBeNull();
+    expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
+    expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
+    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();
+  });
+
+  it("summarize calls the agent client with the picker's profile + model", async () => {
+    const summarize = spyOn(client, "summarizeAgentAttachment").mockResolvedValue({ ...textFile, description: "Short." });
+    spies.push(summarize);
+    const userEvent = (await import("@testing-library/user-event")).default;
+    const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [textFile] })} />);
+    await userEvent.setup().click(view.getByRole("button", { name: "attachment_file_actions" }));
+    await waitFor(() => expect(view.getByRole("menuitem", { name: "attachment_summarize" })).toBeDefined());
+    await userEvent.setup().click(view.getByRole("menuitem", { name: "attachment_summarize" }));
+    await waitFor(() => expect(summarize).toHaveBeenCalledTimes(1));
+    expect(summarize.mock.calls[0]!.slice(0, 4)).toEqual(["thread-1", "u1", "att1", { providerProfileId: "p1", model: "m1" }]);
+  });
+});

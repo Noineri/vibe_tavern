@@ -292,8 +292,11 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
         const raw = (entry as Record<string, unknown>).name;
         if (typeof raw !== "string" || raw.length === 0) continue;
         const id = raw.replace(/^models\//, "").trim();
+        // Listed UNFILTERED: the `tts` name check is gone (owner ruling
+        // 2026-10-15, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 8 — a name
+        // guess silently hides every model outside it, and the picker is
+        // searchable).
         if (id.length === 0) continue;
-        if (!id.includes("tts")) continue;
         out.push({ id, label: id });
       }
       return out;
@@ -304,7 +307,8 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
       // `{ models: [{ name: "models/<id>", ... }] }` — NOT an OpenAI-style
       // `{ data: [{ id }] }`. The repo's chat-side `listGoogleModels` cannot
       // be reused here because it deliberately FILTERS OUT TTS models
-      // (NON_CHAT_MODEL_PATTERNS) — the TTS probe counts exactly those.
+      // (NON_CHAT_MODEL_PATTERNS) — the TTS probe counts the whole catalogue,
+      // exactly what listModels returns (no name filter — see listModels).
       const response = await fetch(MODELS_URL, {
         headers: { "x-goog-api-key": apiKey },
       });
@@ -318,8 +322,7 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
         };
       }
       const payload: unknown = await response.json().catch(() => null);
-      const ttsCount = countTtsModels(payload);
-      return { ok: true, detail: `${ttsCount} TTS models` };
+      return { ok: true, detail: `${countModels(payload)} models` };
     },
 
     async dispose(): Promise<void> {
@@ -334,9 +337,10 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
   return backend;
 };
 
-/** Count catalogue entries whose model name contains "-tts" (the TTS family).
+/** Count catalogue entries carrying a model name — unfiltered, like
+ *  listModels (the `-tts` name count is gone, owner ruling 2026-10-15).
  *  Reads the real /v1beta/models shape: `{ models: [{ name }] }`. */
-function countTtsModels(payload: unknown): number {
+function countModels(payload: unknown): number {
   if (typeof payload !== "object" || payload === null) return 0;
   const models = (payload as Record<string, unknown>).models;
   if (!Array.isArray(models)) return 0;
@@ -344,7 +348,7 @@ function countTtsModels(payload: unknown): number {
   for (const entry of models) {
     if (typeof entry !== "object" || entry === null) continue;
     const name = (entry as Record<string, unknown>).name;
-    if (typeof name === "string" && name.includes("-tts")) count += 1;
+    if (typeof name === "string" && name.length > 0) count += 1;
   }
   return count;
 }

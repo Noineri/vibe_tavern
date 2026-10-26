@@ -17,6 +17,7 @@ import {
   updateTrackerConfigSchema,
   validateSceneData,
 } from "../src/schemas/tracker-schema.js";
+import { trackerTemplateSchema } from "../src/schemas/tracker-template-schema.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -171,6 +172,94 @@ describe("sceneTrackerDslSchema", () => {
       dsl[`k${i}`] = { $type: "object", properties };
     }
     expect(sceneTrackerDslSchema.safeParse(dsl).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tone DSL (semantic color tokens)
+// ---------------------------------------------------------------------------
+
+describe("tone DSL (semantic color tokens)", () => {
+  it("accepts `tone` on every node kind and round-trips it", () => {
+    expect(sceneTrackerNodeSchema.parse({ $type: "string", tone: "danger" })).toEqual({ $type: "string", tone: "danger" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "number", min: 0, max: 100, tone: "success" })).toEqual({ $type: "number", min: 0, max: 100, tone: "success" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "boolean", tone: "warning" })).toEqual({ $type: "boolean", tone: "warning" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "object", properties: { a: { $type: "string" } }, tone: "accent" })).toEqual({ $type: "object", properties: { a: { $type: "string" } }, tone: "accent" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "array", items: { $type: "string" }, tone: "danger" })).toEqual({ $type: "array", items: { $type: "string" }, tone: "danger" });
+    // A tone-free node still validates (backward compatible).
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string" }).success).toBe(true);
+  });
+
+  it("accepts `toneBy` on a string node (value → tone map)", () => {
+    const node: SceneTrackerSchemaNode = { $type: "string", toneBy: { Ruined: "danger", Repaired: "success", Untouched: "accent" } };
+    expect(sceneTrackerNodeSchema.parse(node)).toEqual(node);
+  });
+
+  it("rejects `toneBy` on non-string nodes with an error naming the field", () => {
+    const offenders = [
+      { $type: "number", min: 0, max: 10, toneBy: { low: "danger" } },
+      { $type: "boolean", toneBy: { on: "success" } },
+      { $type: "object", properties: {}, toneBy: { nested: "warning" } },
+      { $type: "array", items: { $type: "string" }, toneBy: { first: "accent" } },
+    ];
+    for (const node of offenders) {
+      const result = sceneTrackerNodeSchema.safeParse(node);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(JSON.stringify(result.error.issues)).toContain("toneBy");
+      }
+    }
+  });
+
+  it("rejects a raw hex or unknown token in `tone`, naming the allowed set", () => {
+    for (const bad of ["#ff0000", "red", "ACCENT", "", "primary"]) {
+      const result = sceneTrackerNodeSchema.safeParse({ $type: "string", tone: bad });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const message = result.error.issues.map((issue) => issue.message).join(" ");
+        for (const token of ["accent", "success", "warning", "danger"]) {
+          expect(message).toContain(token);
+        }
+      }
+    }
+  });
+
+  it("rejects a raw hex or unknown token in `toneBy` values, naming the allowed set", () => {
+    const result = sceneTrackerNodeSchema.safeParse({ $type: "string", toneBy: { Ruined: "#00ff00", Stable: "info" } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const message = result.error.issues.map((issue) => issue.message).join(" ");
+      for (const token of ["accent", "success", "warning", "danger"]) {
+        expect(message).toContain(token);
+      }
+    }
+  });
+
+  it("keeps strict unknown-key rejection around the tone fields", () => {
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", tones: "accent" }).success).toBe(false);
+    expect(sceneTrackerDslSchema.safeParse({ a: { $type: "string", toneHex: "#ffffff" } }).success).toBe(false);
+  });
+
+  it("accepts a tone-bearing schema at the DSL root", () => {
+    const schema: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      crew: { $type: "array", items: { $type: "string", tone: "accent" } },
+    };
+    expect(sceneTrackerDslSchema.parse(schema)).toEqual(schema);
+  });
+
+  it("carries tone fields through the tracker template schema (portable presentation metadata)", () => {
+    const schema: SceneTrackerDsl = {
+      gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger", Repaired: "success" } },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+    };
+    const template = trackerTemplateSchema.parse({
+      version: 1,
+      scene: { enabled: true, config: { schema } },
+      objective: null,
+    });
+    expect(template.scene?.config.schema).toEqual(schema);
   });
 });
 

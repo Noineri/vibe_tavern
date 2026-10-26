@@ -13,37 +13,33 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 // Same i18n fake as KokoroModelPanel.test.tsx: the panel renders under a
 // raw-key t (interpolated params appended after ":"). Registered BEFORE the
 // component import so the panel picks up the mocked context.
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) => {
       if (params && typeof params === "object") {
         return `${key}:${Object.values(params).map(String).join(":")}`;
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 import {
   __setWhisperModelDepsForTests,
   type WhisperModelClient,
   type WhisperModelDeps,
-} from "./use-whisper-model.js";
+} from "../../../../hooks/use-whisper-model.js";
 import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS } from "@vibe-tavern/domain";
-import type { SttProfileForm } from "./use-stt-profiles.js";
+import type { SttProfileForm } from "../../../../hooks/use-stt-profiles.js";
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { WhisperModelPanel } = await import("./WhisperModelPanel.js");

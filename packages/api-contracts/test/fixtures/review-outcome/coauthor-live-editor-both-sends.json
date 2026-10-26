@@ -1,0 +1,44 @@
+{
+  "surface": "coauthor",
+  "scenario": "unsaved live editor edit on the non-stream and stream sends",
+  "requests": [
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "normal",
+        "coauthorEditorState": {
+          "card": {
+            "name": "",
+            "body": "# PERSONALITY\nLive editor body\n\n# SCENARIO\nA forest cave.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\n",
+            "greetings": [
+              ""
+            ],
+            "cardClean": false
+          },
+          "review": {
+            "targets": []
+          }
+        }
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "stream",
+        "coauthorEditorState": {
+          "card": {
+            "name": "",
+            "body": "# PERSONALITY\nLive editor body\n\n# SCENARIO\nA forest cave.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\n",
+            "greetings": [
+              ""
+            ],
+            "cardClean": false
+          },
+          "review": {
+            "targets": []
+          }
+        }
+      }
+    }
+  ]
+}

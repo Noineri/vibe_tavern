@@ -108,6 +108,44 @@ describe("service-prompt resolver", () => {
     expect(preview).not.toBe("OVERRIDE SUMMARY");
   });
 
+  test("tracker_template resolves to the teaching-prompt asset; override wins over the default file", async () => {
+    expect(getServicePromptAssetFile("tracker_template")).toBe("tracker-template.md");
+    const { db, profileStore, uiSettings } = await setup();
+    const asset = await loadPromptAsset("tracker-template.md");
+    expect(asset.length).toBeGreaterThan(0);
+    const def = await resolveServicePrompt(db, "tracker_template");
+    expect(def).toEqual({ text: asset, source: "default" });
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Tracker Override",
+      overrides: { tracker_template: "CUSTOM TRACKER TEMPLATE PROMPT" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    expect(await resolveServicePrompt(db, "tracker_template")).toEqual({
+      text: "CUSTOM TRACKER TEMPLATE PROMPT",
+      source: "override",
+    });
+  });
+
+  test("skill maps to the skill-drafting asset; default resolves, override wins (AP-23b)", async () => {
+    expect(getServicePromptAssetFile("skill")).toBe("skill-ai-prompt.md");
+    const { db, profileStore, uiSettings } = await setup();
+    const asset = await loadPromptAsset("skill-ai-prompt.md");
+    expect(asset.length).toBeGreaterThan(0);
+    const def = await resolveServicePrompt(db, "skill");
+    expect(def).toEqual({ text: asset, source: "default" });
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Skill Override",
+      overrides: { skill: "CUSTOM SKILL PROMPT" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    expect(await resolveServicePrompt(db, "skill")).toEqual({
+      text: "CUSTOM SKILL PROMPT",
+      source: "override",
+    });
+  });
+
   test("registry: keys === SERVICE_PROMPT_FIELD_KEYS, excludes retired image rows, and every mapped file exists on disk", async () => {
     const registryKeys = Object.keys(SERVICE_PROMPT_ASSET_FILES).sort();
     const domainKeys = [...SERVICE_PROMPT_FIELD_KEYS].sort();

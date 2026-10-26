@@ -36,7 +36,7 @@
  * automatically.
  */
 
-import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFamily, type ImageGenerationMode, type ImagePromptFamilyId, type ImagePromptOverridesMap } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFamily, makeImagePromptCellKey, type ImageGenerationMode, type ImagePromptFamilyId, type ImagePromptOverridesMap } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { resolveActiveImagePromptOverrides, resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
@@ -76,13 +76,23 @@ const ASSIST_REFUSAL_RETRY_APPENDIX =
 /** The IG-15 assist system prompt: the extraction core plus the resolved
  *  family's dialect addendum (`image-assist.{family}.md`; prose IS the base
  *  dialect and has no addendum). Unpinned profiles get the core alone —
- *  byte-identical to the interim service-prompt resolution. The images
- *  family's service-prompt rows are unread legacy from here on (IPT Waves
- *  1–2; pane swap Wave 4, field retirement Wave 6). */
-export async function composeAssistInstruction(family: ImagePromptFamilyId): Promise<string> {
-  const core = await loadPromptAsset("image-assist.md");
+ *  byte-identical to the interim service-prompt resolution.
+ *
+ *  SC-8d (owner option B): the ACTIVE image prompt profile's assist row is
+ *  consulted FIRST — `assist|prose` overrides the extraction core for EVERY
+ *  family (one override per profile), `assist|<family>` overrides that
+ *  family's addendum alone. No override for a part → that part's canon asset
+ *  (byte-identical to the pre-SC-8d composition). Absent map (the read-only
+ *  Default, no active profile) → pure canon everywhere. */
+export async function composeAssistInstruction(
+  family: ImagePromptFamilyId,
+  overrides: ImagePromptOverridesMap = {},
+): Promise<string> {
+  const coreOverride = overrides[makeImagePromptCellKey("assist", IMAGE_PROMPT_DEFAULT_FAMILY)]?.body;
+  const core = coreOverride ?? (await loadPromptAsset("image-assist.md"));
   if (family === IMAGE_PROMPT_DEFAULT_FAMILY) return core;
-  const addendum = await loadPromptAsset(`image-assist.${family}.md`);
+  const addendumOverride = overrides[makeImagePromptCellKey("assist", family)]?.body;
+  const addendum = addendumOverride ?? (await loadPromptAsset(`image-assist.${family}.md`));
   // Both parts trimmed: asset files carry trailing newlines, and the mode
   // module's end-trim would otherwise leave a triple break between them.
   return `${core.trim()}\n\n${addendum.trim()}`;
@@ -248,7 +258,7 @@ export async function buildImageGenPrompts(
   // is configured. The explicit prompt-draft route still opts into assist
   // through assistHint (including an empty hint).
   if (assist !== undefined && (mode !== IMAGE_GENERATION_MODES.Free || options?.assistHint !== undefined)) {
-    const instruction = await composeAssistInstruction(family);
+    const instruction = await composeAssistInstruction(family, overrides);
     // IF-10: with a learned provider cap, the assist gets a HARD character
     // budget for its output — cap minus the already-resolved quality block
     // and a slack for separators/macro expansion. The budget rides the

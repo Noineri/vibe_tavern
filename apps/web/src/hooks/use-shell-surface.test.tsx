@@ -76,6 +76,8 @@ describe("useShellSurface", () => {
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.PlayMode);
 			expect(result.current.leftChrome.type).toBe(SURFACE_LEFT_CHROME.default.desktop);
 			expect(result.current.topBar.type).toBe(SURFACE_TOP_BARS.default);
+			// SC-14: the rp play slot owns the desktop sidechat panel.
+			expect(result.current.rightPanel?.type).toBe(SURFACE_RIGHT_PANELS.Sidechat);
 		});
 
 		it("build axis on desktop → BuildMode (same chrome + top bar)", () => {

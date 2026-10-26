@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, mock } from "bun:test";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -9,11 +10,7 @@ const { render } = await import("@testing-library/react");
 // Mock the i18n context so `t` returns keys verbatim (stable labels). The
 // `...real` spread keeps every other export intact (AGENTS.md mock.module
 // gotcha — the mock is process-global in a shared bun test process).
-const realI18n = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // Tooltip passthrough (CustomTooltip needs a TooltipProvider at runtime —
 // irrelevant to these class pins). Same pattern as ExperienceEditor.test.tsx.

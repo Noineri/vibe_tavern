@@ -135,7 +135,7 @@ export function CoauthorSidebarFlyout({
               style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
             />
             <div className="relative flex items-center gap-1 px-2 py-2">
-              <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
+              <div className="min-w-0 flex-1 truncate px-1 font-ui text-[var(--ui-fs)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
               <CustomTooltip content={t("new_chat")}>
                 <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { if (flyoutCharId) void character.handleCreateChat(flyoutCharId, createChatMode); }}><Icons.Plus /></button>
               </CustomTooltip>

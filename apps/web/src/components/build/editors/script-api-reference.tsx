@@ -41,7 +41,7 @@ export function ScriptApiReference({ kind }: { kind: ScriptKind }) {
     constraint: "..."    // optional narrative constraint
   }
 };`}</ApiRefCode>
-          <div className="mt-1 rounded border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[10px] leading-[1.4] text-t3">
+          <div className="mt-1 rounded border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[calc(var(--ui-fs)-4px)] leading-[1.4] text-t3">
             {tDynamic("script_api_dice_warning") || "Do not call injectMessage, parse /roll, or use Math.random / Date.now — context.dice.roll is the only randomness channel."}
           </div>
         </ApiRefSection>
@@ -73,7 +73,7 @@ export function ScriptApiReference({ kind }: { kind: ScriptKind }) {
         <ApiRefRow code="context.shared.set(key, value)">— {t("script_api_shared_set")}</ApiRefRow>
       </ApiRefSection>
       <ApiRefSection heading={t("script_api_random")}>
-        <div className="mb-1.5 text-[11px] leading-[1.5] text-t3">{t("script_api_random_hint")}</div>
+        <div className="mb-1.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">{t("script_api_random_hint")}</div>
         <ApiRefRow code="context.random()">— {t("script_api_random_fn")}</ApiRefRow>
         <ApiRefRow code="context.randomInt(min, max)">— {t("script_api_randomInt")}</ApiRefRow>
         <ApiRefRow code="context.pick(arr)">— {t("script_api_pick")}</ApiRefRow>

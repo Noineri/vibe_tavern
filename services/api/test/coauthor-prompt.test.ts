@@ -1,8 +1,11 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { createHash } from "node:crypto";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 import { serializeProfileMd } from "@vibe-tavern/db";
+import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
+import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -19,7 +22,8 @@ function makeLoaders(overrides?: Partial<{
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
   contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
-  boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
+   boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
+   branchSummaries: Array<{ includeInContext: boolean; source: string; content: string }>;
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -59,7 +63,7 @@ function makeLoaders(overrides?: Partial<{
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
     getCoauthorContextItems: async () => overrides?.contextItems ?? (overrides?.loreEntries ?? []).map((e) => ({ type: "lorebook" as const, ...e })),
     getCoauthorBoundResources: async () => overrides?.boundResources ?? { lorebooks: [], scripts: [] },
-    getChatSummaries: async () => [],
+    getChatSummaries: async () => overrides?.branchSummaries ?? [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
     getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
   };
@@ -192,6 +196,94 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT ONE");
     expect(system).toContain("PRIMARY (firstMessage)");
     expect(system).toContain("ALT 1");
+  });
+
+  test("RO-3b legacy byte pin: parent 8f55583f assembler output stays unchanged without an editor snapshot", async () => {
+    // Captured from git object 8f55583f:services/api/src/domain/chat/coauthor-prompt.ts.
+    // The capture ran that parent source in an approved temp artifact with this
+    // exact fixture; the noncanonical saved profile exercises the no-snapshot
+    // path's byte preservation rather than canonicalizing it through the codec.
+    const profileMd = [
+      "---", "name: Saved Name", "tags: [saved, \"two words\"]", "creator: Server Creator", "character_version: v9",
+      "vt:", "  storage_id: char_saved", "  mes_example_mode: depth", "  mes_example_depth: 6", "  unknown_server_flag: retain",
+      "custom_key: custom-value", "---", "# PERSONALITY", "Saved personality.", "", "# SCENARIO", "Saved scenario.", "", "# EXAMPLES", "Saved example.",
+    ].join("\n");
+    const result = await assembleCoauthorPrompt(makeInput(makeLoaders({
+      profileMd,
+      chat: { id: "chat_legacy", activeBranchId: "branch_legacy", coauthorModuleId: null, summary: "Fallback summary must lose to branch summary." },
+      character: { id: "char_legacy", name: "Saved Name", firstMessage: "Saved primary", alternateGreetings: ["Saved alternate"], extensions: {} },
+      contextItems: [{ type: "lorebook", id: "ctx_1", title: "Pinned lore", content: "Pinned context content." }],
+      boundResources: {
+        lorebooks: [{ id: "lb_1", name: "Bound lore", entries: [{ id: "entry_1", title: "Bound entry" }] }],
+        scripts: [{ id: "script_1", name: "bound.js", summary: "Bound script summary." }],
+      },
+      branchSummaries: [{ includeInContext: true, source: "branch", content: "Branch summary content." }],
+      skillCatalog: [{
+        id: "legacy-skill", source: "builtin", name: "legacy-skill", description: "Legacy catalog entry.",
+        skillDir: "/skills/legacy-skill", manifestPath: "/skills/legacy-skill/SKILL.md", rootRelativeManifestPath: "legacy-skill/SKILL.md", shadowsBuiltin: false,
+      }],
+    })));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toHaveLength(8511);
+    expect(createHash("sha256").update(system).digest("hex")).toBe("17dafc1f03ba1e163a8ebe1faad90e24a0136d308d168c078f9a8679a31b6ca1");
+  });
+
+  test("uses a supplied editor document for the current card, tool base, and authoritative review state", async () => {
+    const editorState = {
+      card: {
+        name: "Live editor name",
+        body: "# PERSONALITY\nLive personality only.\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES\nLive example.\n\n# GREETINGS\nSynthetic editor view.",
+        greetings: ["Live primary", "Live alternate"],
+        cardClean: false,
+      },
+      review: {
+        targets: [
+          { target: "card", roundId: "abcdef123456", outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 3 }, supersededByRound: "fedcba654321" },
+          { target: "lore", roundId: "123456abcdef", outcome: "rejected", items: { offered: 4, selected: 3, applied: 0 } },
+          { target: "tracker_template", roundId: "a1b2c3d4e5f6", outcome: "awaiting", selected: true },
+        ],
+      },
+    } satisfies CoauthorEditorState;
+    const result = await assembleCoauthorPrompt(makeInput(makeLoaders({
+      profileMd: "---\nname: Saved\ncreator: Server\nvt:\n  storage_id: char_saved\n  mes_example_mode: always\n  mes_example_depth: 4\n---\n# PERSONALITY\nSaved personality.",
+      character: { firstMessage: "Saved primary", alternateGreetings: ["Saved alternate"] },
+    }), { coauthorEditorState: editorState }));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toContain("name: Live editor name");
+    expect(system).toContain("Live personality only.");
+    expect(system).not.toContain("Saved personality.");
+    expect(system).toContain("Live primary");
+    expect(system).toContain("Live alternate");
+    expect(system).not.toContain("Saved primary");
+    expect(system).toContain("# Editor review and save state\n- card buffer: unsaved");
+    expect(system).toContain("- card round `abcdef123456`: **applied-partial** (hunks: accepted 1, rejected 2, pending 3; superseded by round `fedcba654321`)");
+    expect(system).toContain("- lore round `123456abcdef`: **rejected** (items: offered 4, selected 3, applied 0)");
+    expect(system).toContain("- tracker_template round `a1b2c3d4e5f6`: **awaiting** (selected: yes)");
+    expect(result.prompt.layers.find((layer) => layer.id === "current_card")?.text).toContain("Live editor name");
+  });
+
+  test("keeps legacy prompt bytes when the editor snapshot is absent and renders explicit empty snapshot state", async () => {
+    const loaders = makeLoaders();
+    const legacy = await assembleCoauthorPrompt(makeInput(loaders));
+    const explicitUndefined = await assembleCoauthorPrompt(makeInput(loaders, { coauthorEditorState: undefined }));
+    const emptyState = {
+      card: { name: "", body: "", greetings: [], cardClean: true },
+      review: { targets: [] },
+    } satisfies CoauthorEditorState;
+    const live = await assembleCoauthorPrompt(makeInput(loaders, { coauthorEditorState: emptyState }));
+    const legacySystem = (legacy.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    const undefinedSystem = (explicitUndefined.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    const liveSystem = (live.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(undefinedSystem).toBe(legacySystem);
+    expect(legacySystem).not.toContain("# Editor review and save state");
+    expect(liveSystem).toContain("name: \"\"");
+    expect(liveSystem).toContain("### Greeting PRIMARY (firstMessage)\n(empty)");
+    expect(liveSystem).not.toContain("The opener.");
+    expect(liveSystem).toContain("- card buffer: saved");
+    expect(liveSystem).toContain("no unreviewed proposals and no recorded outcomes");
   });
 
   test("CED-1: model-facing profile exposes the stable three-heading skeleton even when SCENARIO/EXAMPLES are empty", async () => {
@@ -781,5 +873,123 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
     expect(system).toContain("read_context_item");
     // Binding is the author's action, not the model's.
     expect(system).toMatch(/Binding is the author's action/);
+  });
+});
+
+/**
+ * CT-7a — current tracker template prompt section.
+ *
+ * Pinned BEFORE the source edit (characterization): a character without a
+ * tracker template (`extensions` empty) had no tracker section, and the
+ * assembled skeleton kept its canonical order (base → skills → profile →
+ * greetings; greetings last when nothing else is bound). WAS → NOW (basis:
+ * CT-7a enables `set_tracker_template` in the two card-building seed modules
+ * — default + quick-draft, mirroring the lore tools): those two modules gain
+ * exactly the new section (present/`none`); the tool-off modules
+ * (profile-editor, dialogue-writer) keep the zero-template prompt
+ * BYTE-IDENTICAL — pinned below.
+ */
+describe("assembleCoauthorPrompt — current tracker template section (CT-7a)", () => {
+  /** A canonical template fixture (parsed through the wire schema so defaults
+   *  are resolved — the exact JSON the section must embed). */
+  const template = trackerTemplateSchema.parse({
+    version: 1,
+    scene: {
+      enabled: true,
+      config: { schema: { location: { $type: "string" } }, contextWindow: 12 },
+    },
+    objective: {
+      enabled: true,
+      state: {
+        mode: "goals",
+        objectiveDescription: "Escape the city",
+        shortTermGoals: [{ id: "goal_escape", description: "Reach the gate", status: "pending" }],
+      },
+    },
+  });
+
+  /** Assemble with an explicit character `extensions` override. */
+  async function assembleWithExtensions(extensions: Record<string, unknown>, moduleId: string): Promise<string> {
+    const loaders = makeLoaders({
+      character: { extensions },
+      chat: { id: "chat_test", coauthorModuleId: moduleId },
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+  }
+
+  test("tool-off modules: zero-template prompt carries NO tracker section and keeps the canonical skeleton (pre-CT-7a pin, byte-identical)", async () => {
+    for (const id of ["profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      // No tracker section for a character without a template.
+      expect(system, id).not.toContain("# Current tracker template");
+      // Skeleton order unchanged: skills → profile → greetings, greetings last
+      // (no bound resources / pinned context / memory in this fixture).
+      const skillsIdx = system.indexOf("# Available skills");
+      const profileIdx = system.indexOf("# Current profile.md");
+      const greetingsIdx = system.indexOf("# Current greetings");
+      expect(skillsIdx, id).toBeGreaterThan(0);
+      expect(profileIdx, id).toBeGreaterThan(skillsIdx);
+      expect(greetingsIdx, id).toBeGreaterThan(profileIdx);
+      expect(system.slice(greetingsIdx), id).toContain("### Greeting PRIMARY (firstMessage)");
+    }
+  });
+
+  test("tool-off module: the section is omitted ENTIRELY even when the character HAS a template (the toolSet gates it)", async () => {
+    const system = await assembleWithExtensions(
+      { vibe_tavern: { tracker_template: template } },
+      "dialogue-writer",
+    );
+    expect(system).not.toContain("# Current tracker template");
+    expect(system).not.toContain("Escape the city");
+  });
+
+  test("default module (tool on), zero template: the section shows `none` right after the card — nothing else changes", async () => {
+    const system = await assembleForModule("default");
+    const greetingsIdx = system.indexOf("# Current greetings");
+    const trackerIdx = system.indexOf("# Current tracker template");
+    expect(trackerIdx).toBeGreaterThan(greetingsIdx);
+    // The zero-template section frames delegation while retaining literal `none`.
+    expect(system.slice(trackerIdx)).toBe([
+      "# Current tracker template",
+      "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
+      "none",
+    ].join("\n"));
+    // The card above the section is untouched.
+    expect(system.slice(0, greetingsIdx)).toContain("# Current profile.md");
+  });
+
+  test("default module (tool on), template present: the section embeds the canonical template as fenced JSON", async () => {
+    const system = await assembleWithExtensions(
+      { vibe_tavern: { tracker_template: template } },
+      "default",
+    );
+    const trackerIdx = system.indexOf("# Current tracker template");
+    const greetingsIdx = system.indexOf("# Current greetings");
+    expect(trackerIdx).toBeGreaterThan(greetingsIdx);
+    const expected = [
+      "# Current tracker template",
+      "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
+      "```json",
+      JSON.stringify(template, null, 2),
+      "```",
+    ].join("\n");
+    expect(system.slice(trackerIdx, trackerIdx + expected.length)).toBe(expected);
+    // The embedded template is the model-readable content.
+    expect(system).toContain("Escape the city");
+    expect(system).toContain('"location"');
+  });
+
+  test("quick-draft (tool on) gains the section too; the tool is exposed exactly in the tool-on modules", async () => {
+    const system = await assembleForModule("quick-draft");
+    expect(system).toContain("# Current tracker template\nThe tracker-template delegate uses this as the refine base");
+    // The tool rides the assembled tool set for tool-on modules...
+    const toolOn = await assembleCoauthorPrompt(makeInput(makeLoaders()));
+    expect(Object.keys(toolOn.tools)).toContain("set_tracker_template");
+    // ...and is absent for a tool-off module (dialogue-writer).
+    const toolOff = await assembleCoauthorPrompt(
+      makeInput(makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "dialogue-writer" } })),
+    );
+    expect(Object.keys(toolOff.tools)).not.toContain("set_tracker_template");
   });
 });

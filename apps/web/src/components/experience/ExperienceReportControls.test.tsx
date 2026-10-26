@@ -21,6 +21,7 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -28,17 +29,7 @@ const { render, fireEvent, act } = await import("@testing-library/react");
 
 // ─── i18n mock (returns keys verbatim; interpolation params are ignored so the
 //     test asserts on stable key text, matching the rest of the experience tests) ─
-const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 const { ExperienceReportControls, computeReportActionState } = await import("./ExperienceReportControls.js");
 import type {

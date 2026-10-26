@@ -5,6 +5,7 @@ import {
   setCoauthorModuleSchema,
   coauthorModuleCreateSchema,
   coauthorModuleUpdateSchema,
+  reorderCoauthorModulesSchema,
 } from "../src/schemas/coauthor-module.js";
 
 describe("coauthorModuleSchema", () => {
@@ -158,5 +159,24 @@ describe("coauthorModuleUpdateSchema", () => {
 
   test("accepts an empty object (no-op update)", () => {
     expect(coauthorModuleUpdateSchema.parse({})).toEqual({});
+  });
+});
+
+describe("reorderCoauthorModulesSchema (ML-5)", () => {
+  test("accepts an id + sortOrder update list", () => {
+    const payload = { updates: [{ id: "m2", sortOrder: 0 }, { id: "m1", sortOrder: 1 }] };
+    expect(reorderCoauthorModulesSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts an empty updates array (no-op reorder)", () => {
+    expect(reorderCoauthorModulesSchema.parse({ updates: [] })).toEqual({ updates: [] });
+  });
+
+  test("rejects a body without the updates array", () => {
+    expect(() => reorderCoauthorModulesSchema.parse({})).toThrow();
+  });
+
+  test("rejects an update entry missing sortOrder", () => {
+    expect(() => reorderCoauthorModulesSchema.parse({ updates: [{ id: "m1" }] })).toThrow();
   });
 });

@@ -17,21 +17,16 @@ import { describe, it, expect, mock } from "bun:test";
 import * as Popover from "@radix-ui/react-popover";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const { render } = await import("@testing-library/react");
 
-const realI18n = await import("../../i18n/context.js");
 const realChatSelectors = await import("../../stores/chat-selectors.js");
 const realBinding = await import("../../hooks/use-coauthor-provider-binding.js");
 const realTooltip = await import("../shared/Tooltip.js");
-mock.module("../../i18n/context.js", () => {
-  return {
-    ...realI18n,
-    useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-  };
-});
+installI18nContextSeam();
 
 mock.module("../../stores/chat-selectors.js", () => {
   return {

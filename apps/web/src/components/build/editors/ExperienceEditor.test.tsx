@@ -31,7 +31,7 @@
  * Runner: bun:test with scoped happy-dom (one file per process —
  * mock.module() is process-global).
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
@@ -40,6 +40,8 @@ import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { getAgentHost } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
 
@@ -141,7 +143,6 @@ const testScript = mock((_id: string, _body: { code: string; warningAcknowledged
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
-const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realSettingsApi = await import("../../../api/settings-api.js");
@@ -188,16 +189,7 @@ mock.module("../../../api/experience-api.js", () => ({
   runExperienceTest,
 }));
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
@@ -288,11 +280,26 @@ let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let EditorView: typeof import("@codemirror/view").EditorView;
+let originalExperiencePane: ReturnType<typeof getAgentHost>["renderEditorPane"];
+const observedExperienceHostProps: unknown[] = [];
 
 beforeAll(async () => {
   ({ act, fireEvent, render, waitFor } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
   ({ ExperienceEditor } = await import("./ExperienceEditor.js"));
+  const host = getAgentHost("experience");
+  originalExperiencePane = host.renderEditorPane;
+  if (!originalExperiencePane) throw new Error("experience host has no editor pane");
+  const renderExperiencePane = originalExperiencePane;
+  host.renderEditorPane = (ctx) => {
+    observedExperienceHostProps.push(ctx.hostProps);
+    return renderExperiencePane(ctx);
+  };
+});
+
+afterAll(() => {
+  const host = getAgentHost("experience");
+  host.renderEditorPane = originalExperiencePane;
 });
 
 let serverScripts: ScriptRecord[];
@@ -344,6 +351,7 @@ beforeEach(() => {
   serverVisuals = [];
   createGate = null;
   updateGate = null;
+  observedExperienceHostProps.length = 0;
   listAllScripts.mockImplementation(async () => serverScripts.map((s) => ({ ...s })));
   listExperienceVisuals.mockImplementation(async () => serverVisuals.map((v) => ({ ...v, compatibleManifestIds: [...v.compatibleManifestIds] })));
   createScript.mockImplementation(async (body) => {
@@ -512,6 +520,18 @@ function experienceDeleteButton(container: HTMLElement): HTMLElement {
   return btn;
 }
 
+/** Open a card "..." menu via keyboard (see the export test's note on the
+ *  happy-dom pointer-event gap) and click one of its dropdown items. */
+async function clickCardMenuItem(
+  menu: HTMLElement,
+  findByTestId: (testId: string) => Promise<HTMLElement>,
+  itemTestId: string,
+): Promise<void> {
+  menu.focus();
+  fireEvent.keyDown(menu, { key: "Enter", code: "Enter" });
+  fireEvent.click(await findByTestId(itemTestId));
+}
+
 /** The open experience-delete confirm's primary (full) button (bg-danger). */
 async function waitForExperienceDeleteConfirm(): Promise<HTMLElement> {
   let confirm: HTMLElement | undefined;
@@ -576,9 +596,9 @@ describe("ExperienceEditor", () => {
     // The editor view mounted in creation mode: the shell's 3-position toggle
     // includes the sandbox position (i18n-labelled).
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_rules" })).toBeDefined();
-      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_rules" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_visual" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
   });
 
@@ -641,30 +661,42 @@ describe("ExperienceEditor", () => {
     expect(getAllByTestId("card-description")).toHaveLength(2);
   });
 
-  // ── Follow-up round 3: mobile script header compaction ──────────────────
-  // The header action cluster must compose into ONE tight mobile row:
-  // [вкл/выкл pill][toggle][floppy save][duplicate][delete] — hence the short
-  // status keys and the icon-only SaveButton below 768px. Desktop (and every
-  // non-mobile test above) keeps the full word + text save label.
-  it("mobile: the status pill uses the short form and save collapses to a floppy icon", async () => {
+  // ── AS-8c4f2: the mini-app mobile bar is the shared ManagementMobileRow ──
+  // One row (name, toggle, floppy save, ...) — no status pill (the toggle
+  // carries the state); duplicate and delete live in the more-actions sheet.
+  // Desktop (and every non-mobile test above) keeps the full word + text
+  // save label.
+  it("mobile: mini-apps use the shared management row with duplicate and delete in the sheet", async () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
 
-    const { findByText, queryByText, findByRole, getByRole } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, findByRole, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("experience_editor_create_new"));
-    // E6: the management cluster lives in the mobile Правка tab — role queries
+    // E6: the management cluster lives in the mobile edit tab — role queries
     // skip the display:none-hidden pane, so switch tabs before querying the
-    // save button (text queries below match hidden nodes fine).
-    fireEvent.click(await findByRole("tab", { name: "experience_copilot_tab_edit" }));
+    // row's buttons (text queries below match hidden nodes fine).
+    fireEvent.click(await findByRole("tab", { name: "agent_tab_edit" }));
 
-    // Fresh script is disabled → short pill key, never the full word.
-    expect(await findByText("experience_editor_disabled_short")).toBeTruthy();
-    expect(queryByText("experience_editor_disabled")).toBeNull();
-
-    // Save is icon-only: a floppy svg, no visible text, state via aria-label.
+    // Shared row: name, unchecked toggle (fresh script is disabled), floppy
+    // save, `...` — and no status pill in either the short or full form.
+    const header = container.querySelector('[data-testid="copilot-edit-tab-header"]');
+    if (!(header instanceof HTMLElement)) throw new Error("edit-tab header missing");
+    if (!(header.querySelector('input[placeholder="script_name"]') instanceof HTMLInputElement)) throw new Error("name input missing");
+    const toggle = header.querySelector('[role="switch"]');
+    if (!(toggle instanceof HTMLElement)) throw new Error("toggle missing");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     const save = getByRole("button", { name: "save" });
     expect(save.querySelector("svg")).toBeTruthy();
     expect(save.textContent).toBe("");
+    getByRole("button", { name: "management_more_actions" });
+    expect(queryByText("experience_editor_disabled_short")).toBeNull();
+    expect(queryByText("experience_editor_disabled")).toBeNull();
+
+    // The sheet carries duplicate + delete (persist-on-create gives the fresh
+    // script a server id, so delete is present from the start).
+    fireEvent.click(getByRole("button", { name: "management_more_actions" }));
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    expect(await findByText("experience_editor_delete")).toBeTruthy();
   });
 
   it("desktop: the full status word and the text save label are unchanged", async () => {
@@ -690,9 +722,9 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     // XU-5: the bound visual (non-empty source) defaults the editor to the
     // Preview tab — switch to Code first, then to the Visual buffer.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Auto-select: the dropdown trigger shows the bound visual, not the placeholder.
     await waitFor(() => {
@@ -744,7 +776,7 @@ describe("ExperienceEditor", () => {
     const { findByText, getByRole, findByDisplayValue } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("experience_editor_create_new"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_visual" })).toBeDefined();
     });
 
     // A pending (local-id) visual draft exists, seeded empty with the default name.
@@ -755,7 +787,7 @@ describe("ExperienceEditor", () => {
 
     // And it is SELECTED: opening the Visual tab shows the draft's name in the
     // visual-name input — a live editable buffer, not a "no visual" dead end.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(await findByDisplayValue("experience_editor_new_visual_name")).toBeDefined();
   });
 
@@ -765,7 +797,7 @@ describe("ExperienceEditor", () => {
     // Blank create → creation mode.
     fireEvent.click(await findByText("experience_editor_create_new"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
 
     // The rules template picker renders in step 1 (creation only).
@@ -791,20 +823,20 @@ describe("ExperienceEditor", () => {
     // Blank create → creation mode.
     fireEvent.click(await findByText("experience_editor_create_new"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
 
     // Switch to the Visual buffer before choosing a rules starter: no paired
     // highlight (nothing chosen yet).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(container.querySelector('button[aria-label="experience_editor_visual_paired"]')).toBeNull();
 
     // Back to Rules, choose the board starter (paired visual = Grid / Board).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(getByRole("radio", { name: "agent_rules" }));
     fireEvent.click(await findByText("Board"));
 
     // Switch to Visual: the paired starter is highlighted + badged.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     const paired = container.querySelector('button[aria-label="experience_editor_visual_paired"]');
     expect(paired).toBeTruthy();
     expect(paired?.textContent).toContain("Grid / Board");
@@ -827,7 +859,7 @@ describe("ExperienceEditor", () => {
     });
     expect(createScript).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
   });
 
@@ -853,9 +885,9 @@ describe("ExperienceEditor", () => {
 
     // The three steps render (Rules / Appearance / Try it).
     const stepper = getByTestId("experience-creation-stepper");
-    expect(stepper.textContent).toContain("experience_copilot_rules");
+    expect(stepper.textContent).toContain("agent_rules");
     expect(stepper.textContent).toContain("experience_editor_step_appearance");
-    expect(stepper.textContent).toContain("experience_copilot_try_it");
+    expect(stepper.textContent).toContain("agent_try_it");
   });
 
   it("navigating back to the picker and re-opening shows the SAME unified 3-position toggle (XU-6)", async () => {
@@ -864,7 +896,7 @@ describe("ExperienceEditor", () => {
     // Create via the blank button → the unified 3-position toggle.
     fireEvent.click(await findByText("experience_editor_create_new"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
 
     // Navigate back to the picker.
@@ -879,8 +911,8 @@ describe("ExperienceEditor", () => {
     // creation/editing tab distinction — the Try tab is always present).
     fireEvent.click(await findByText("experience_editor_new_experience_name"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_visual" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
   });
 
@@ -898,9 +930,9 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     // XU-5: the bound visual (non-empty source) defaults the editor to the
     // Preview tab — switch to Code first, then to the Visual buffer.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await waitFor(() => {
       const trigger = [...container.querySelectorAll("button")].find((b) =>
         (b.textContent ?? "").includes("Existing Visual"),
@@ -916,14 +948,14 @@ describe("ExperienceEditor", () => {
     fireEvent.click(backButton);
     fireEvent.click(await findByText("experience_editor_create_new"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+      expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     });
 
     // Creation mode's Visual buffer must NOT carry the previous experience's
     // visual — and since 2026-08-17 it carries its OWN fresh draft instead:
     // the dropdown shows the new draft's name (not "Existing Visual", not the
     // empty placeholder — the tab is a live editable buffer from the start).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await waitFor(() => {
       const trigger = [...container.querySelectorAll("button")].find((b) =>
         (b.textContent ?? "").includes("experience_editor_new_visual_name"),
@@ -979,6 +1011,23 @@ describe("ExperienceEditor", () => {
     expect(await findByText("saved_state")).toBeTruthy();
   });
 
+  it("derives independent copilot saved flags from the real rules and visual drafts", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: true }));
+    replaceCode(rulesView, "// independently dirty rules");
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: false, visualSaved: true }));
+    fireEvent.click(getByRole("button", { name: "save" }));
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: true }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
+    fireEvent.click(await findByText("Choice"));
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: false }));
+  });
+
   it("preserves edits made during an in-flight create (duplicate path — the remaining local-id create)", async () => {
     // ER-13d-2a: persist-on-create gives the starter path a SERVER id (no local
     // draft), so the mid-flight-edit boundary now lives ONLY on the duplicate
@@ -1031,7 +1080,7 @@ describe("ExperienceEditor", () => {
 
     // The visual starter picker lives in the Visual buffer's contextual
     // toolbar, so switch the shell to the Visual tab first.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Create a pending visual from the Choice starter (the editor's visual
     // starter picker, not the rules starter picker).
@@ -1068,7 +1117,7 @@ describe("ExperienceEditor", () => {
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // The '+ Blank' chip creates a pending visual with an EMPTY name + source
     // (no starter skeleton) — the blank visual the copilot/user fills by hand.
@@ -1216,7 +1265,7 @@ describe("ExperienceEditor", () => {
 
     // Switch to the Visual tab (the dropdown + duplicate button live in the
     // visual toolbar slot).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Select the saved visual so it is active (the duplicate targets it).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -1252,7 +1301,7 @@ describe("ExperienceEditor", () => {
     serverScripts = [{ ...baseScript }];
     const { findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     fireEvent.click(getByRole("button", { name: "script_api_reference" }));
 
     expect(await findByText("experience_visual_api_title")).toBeTruthy();
@@ -1271,7 +1320,7 @@ describe("ExperienceEditor", () => {
     // inline Try tab. None is mounted until that tab is opened.
     expect(playgroundInstanceCount()).toBe(0);
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     // The inline Try tab mounted with the SAME draft-bound playground.
     await waitFor(() => {
@@ -1282,7 +1331,7 @@ describe("ExperienceEditor", () => {
     // Switching away unmounts the playground and writes nothing — no
     // create/update/delete API call fires (the playground never persists and
     // never creates an API session).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await waitFor(() => expect(playgroundInstanceCount()).toBe(0));
     expect(createScript).not.toHaveBeenCalled();
     expect(updateScript).not.toHaveBeenCalled();
@@ -1296,7 +1345,7 @@ describe("ExperienceEditor", () => {
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Select the saved visual from the visual dropdown.
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -1320,7 +1369,7 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Create a pending visual from the Choice starter.
     fireEvent.click(await findByText("Choice"));
@@ -1339,7 +1388,7 @@ describe("ExperienceEditor", () => {
     deleteExperienceVisual.mockImplementationOnce(async () => { throw new Error("network down"); });
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -1360,7 +1409,7 @@ describe("ExperienceEditor", () => {
 
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -1436,7 +1485,7 @@ describe("ExperienceEditor", () => {
     // XU-4/XU-6: the tester modal and the sandbox modal are gone — the single
     // Try tab hosts the merged tester capabilities inline. Same boundary as the
     // retired InteractiveTester test: editor → shell tabs → test surface.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     expect(await findByTestId("experience-playground")).toBeTruthy();
   });
@@ -1517,7 +1566,7 @@ describe("ExperienceEditor", () => {
     serverVisuals = [{ ...baseVisual }];
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -1538,7 +1587,7 @@ describe("ExperienceEditor", () => {
     serverVisuals = [{ ...baseVisual }];
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -1607,7 +1656,7 @@ describe("ExperienceEditor", () => {
     await codeViews(container);
 
     // Switch to the Visual buffer (the dropdown + source editor live there).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Select vis_1 (the dropdown shows its placeholder while none is active).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -1639,7 +1688,7 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
@@ -1717,7 +1766,7 @@ describe("ExperienceEditor", () => {
   it("script header (E6): mobile management cluster lives in the Правка tab; back folds into the tab-bar row", async () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
-    const { container, findByText, findByRole } = render(<ExperienceEditor />);
+    const { container, findByText, findByRole, getByRole, queryByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
     // The cluster renders at the top of the Правка tab (inside the edit pane),
@@ -1735,34 +1784,51 @@ describe("ExperienceEditor", () => {
     expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
     expect(chevron.nextElementSibling?.getAttribute("role")).toBe("tablist");
 
-    // The composition contracts survive the move: name input flex-1 (no
-    // basis-full), action cluster is display:contents on desktop / nested flex
-    // row on mobile.
+    // AS-8c4f2: the row is the shared ManagementMobileRow — name input
+    // flex-1 (no basis-full), toggle, icon-only floppy save, `...`. No status
+    // pill and no save-state text (the toggle and the save button carry the
+    // state); the old display:contents cluster is gone with them.
     const nameInput = header.querySelector('input[placeholder="script_name"]');
     if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
     expect(nameInput.classList.contains("max-md:basis-full")).toBe(false);
     expect(nameInput.classList.contains("flex-1")).toBe(true);
-    const pill = header.querySelector("span.cursor-help");
-    if (!(pill instanceof HTMLElement)) throw new Error("status pill missing");
-    const cluster = pill.closest("div");
-    if (!(cluster instanceof HTMLElement)) throw new Error("action cluster missing");
-    expect(cluster.classList.contains("contents")).toBe(true);
-    expect(cluster.classList.contains("max-md:flex")).toBe(true);
-    expect(cluster.classList.contains("max-md:flex-wrap")).toBe(true);
+    if (!(header.querySelector('[role="switch"]') instanceof HTMLElement)) throw new Error("toggle missing");
+    expect(header.querySelector("span.cursor-help")).toBeNull();
+    expect(header.querySelector("div.contents")).toBeNull();
+    expect(header.textContent).not.toContain("saved_state");
 
-    // The save-state label stays hidden on mobile; the save button is an
-    // icon-only floppy (36px touch square).
-    const stateLabel = await findByText("saved_state");
-    expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
-    const saveBtn = header.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
+    // The save button is an icon-only floppy (36px touch square).
+    const saveBtn = header.querySelector('button[aria-label="save"]');
     if (!(saveBtn instanceof HTMLElement)) throw new Error("save button missing");
     expect(saveBtn.classList.contains("h-9")).toBe(true);
     expect(saveBtn.classList.contains("w-9")).toBe(true);
     expect(saveBtn.querySelector("svg")).toBeTruthy();
+    expect(saveBtn.textContent).toBe("");
+    const moreBtn = header.querySelector('button[aria-label="management_more_actions"]');
+    if (!(moreBtn instanceof HTMLElement)) throw new Error("more-actions button missing");
 
-    const dupBtn = header.querySelector('button[aria-label="experience_editor_duplicate"]');
-    if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");
-    expect(dupBtn.classList.contains("max-md:h-9")).toBe(true);
+    // The sheet carries duplicate + delete (the sheet portals to the body,
+    // so its items are queried from the whole tree, not the header). The
+    // delete opens the same destructive confirm the desktop icon did; the
+    // duplicate routes through the same onDuplicate and closes the sheet.
+    fireEvent.click(moreBtn);
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    fireEvent.click(await findByText("experience_editor_delete"));
+    expect(await findByText("experience_editor_delete_title")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "cancel" }));
+    expect(queryByText("experience_editor_delete_title")).toBeNull();
+    const moreBtnAgain = header.querySelector('button[aria-label="management_more_actions"]');
+    if (!(moreBtnAgain instanceof HTMLElement)) throw new Error("more-actions button missing");
+    fireEvent.click(moreBtnAgain);
+    fireEvent.click(await findByText("experience_editor_duplicate"));
+    // The duplicate routed through the same onDuplicate: the fresh pending
+    // draft is unsaved, so delete drops out of the sheet on reopen (unsaved
+    // drafts are discarded via back, never deleted).
+    const moreBtnFinal = container.querySelector('[data-testid="copilot-edit-tab-header"] button[aria-label="management_more_actions"]');
+    if (!(moreBtnFinal instanceof HTMLElement)) throw new Error("more-actions button missing");
+    fireEvent.click(moreBtnFinal);
+    expect(await findByText("experience_editor_duplicate")).toBeTruthy();
+    expect(queryByText("experience_editor_delete")).toBeNull();
 
     // The desktop back TEXT button is absent on mobile (no node carries the
     // label as text anywhere in the tree).
@@ -1779,7 +1845,7 @@ describe("ExperienceEditor", () => {
     const { container, findByText, findByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
-    const editTab = await findByRole("tab", { name: "experience_copilot_tab_edit" });
+    const editTab = await findByRole("tab", { name: "agent_tab_edit" });
     // Clean draft → no dot, and the surface stays on Чат (no auto-switch).
     expect(editTab.querySelector("span[aria-hidden]")).toBeNull();
     expect(container.querySelector('[data-testid="copilot-pane-chat"]')?.classList.contains("hidden")).toBe(false);
@@ -1822,8 +1888,8 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     // XU-5: a bound visual defaults to Preview — switch to Code → Visual buffer
     // so the visual toolbar (dropdown/starter chips/name+save row) mounts.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     const nameField = await getByDisplayValue("Existing Visual");
 
     // Row 3 (name + save): wraps on mobile; the save button owns a full row.
@@ -1865,9 +1931,9 @@ describe("ExperienceEditor — in-editor visual binding", () => {
 
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Auto-selected visual is the bound vis_1 → the pill shows the BOUND state.
     const pill = await waitFor(() => {
@@ -1890,9 +1956,9 @@ describe("ExperienceEditor — in-editor visual binding", () => {
 
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Nothing is bound → no auto-select: pick the loose visual in the dropdown.
     const trigger = await waitFor(() => {
@@ -1927,9 +1993,9 @@ describe("ExperienceEditor — in-editor visual binding", () => {
 
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     await codeViews(container);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // Open a starter chip → pending visual selected.
     const chip = [...container.querySelectorAll("button")].find(
@@ -2018,6 +2084,14 @@ describe("ExperienceEditor — mini-app import/export", () => {
   });
 
   it("exports the card as a bundle download (script + bound visuals)", async () => {
+    // Behavior change (owner 2026-10-18 option A): was — the card's lone
+    // download arrow (experience_export_button); now — the card's "..." menu
+    // (experience_card_menu) holding the Export item (experience_card_export).
+    // The menu is a Radix DropdownMenu whose Content does not open on mouse
+    // clicks under happy-dom (pointer-event gap; same family as the limitation
+    // documented in RichChatRow.test.tsx), so the test opens it via keyboard
+    // (focus + Enter) — the same Root/Content/Item tree production mouse
+    // users get — then clicks the item.
     serverScripts = [{ ...baseScript, defaultVisualId: "vis_1" }];
     getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
     const createObjectURL = mock((_blob: Blob) => "blob:mock");
@@ -2030,7 +2104,10 @@ describe("ExperienceEditor — mini-app import/export", () => {
     try {
       const { findByTestId, findByText } = render(<ExperienceEditor />);
       await findByText("Existing Rules");
-      fireEvent.click(await findByTestId("experience_export_button"));
+      const menu = await findByTestId("experience_card_menu");
+      menu.focus();
+      fireEvent.keyDown(menu, { key: "Enter", code: "Enter" });
+      fireEvent.click(await findByTestId("experience_card_export"));
       await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
       expect(getScriptVisuals).toHaveBeenCalledWith("srv_1");
       const blob = createObjectURL.mock.calls[0][0] as Blob;
@@ -2045,6 +2122,81 @@ describe("ExperienceEditor — mini-app import/export", () => {
       if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
       if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
     }
+  });
+
+  it("card menu Delete opens the confirm; confirm deletes the script and the card's first bound visual", async () => {
+    serverScripts = [{ ...baseScript }, { ...baseScript, id: "srv_2", name: "Second Rules" }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockImplementation(async (id) =>
+      id === "srv_1" ? [{ ...baseVisual }] : [],
+    );
+    const { findAllByTestId, findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+    await findByText("Second Rules");
+
+    await clickCardMenuItem((await findAllByTestId("experience_card_menu"))[0]!, findByTestId, "experience_card_delete");
+    fireEvent.click(await waitForExperienceDeleteConfirm());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    // The deleted card is gone; the gallery otherwise stands as it was.
+    await waitFor(() => expect(queryByText("Existing Rules")).toBeNull());
+    expect(queryByText("Second Rules")).toBeTruthy();
+    expect(deleteScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("card menu Delete with \"rules only\" deletes the script but keeps the card's visual", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
+    const { findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+
+    await clickCardMenuItem(await findByTestId("experience_card_menu"), findByTestId, "experience_card_delete");
+    fireEvent.click(await waitForExperienceDeleteSecondary());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+    expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
+    await waitFor(() => expect(queryByText("Existing Rules")).toBeNull());
+  });
+
+  it("card menu Duplicate opens the editor on a pending copy", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { findByTestId, findByText, queryByText } = render(<ExperienceEditor />);
+    await findByText("Existing Rules");
+
+    await clickCardMenuItem(await findByTestId("experience_card_menu"), findByTestId, "experience_card_duplicate");
+
+    // The copy opens in the editor exactly like the bar's duplicate: a fresh
+    // pending local-id draft carrying the card display's values, editor view
+    // mounted (the picker is gone).
+    const dup = rulesDraftEntries().find(([id, entry]) => id.startsWith("local:") && entry.values.code === EXISTING_CODE);
+    expect(dup).toBeTruthy();
+    expect(dup?.[1].values.name).toBe("Existing Rules");
+    expect(dup?.[1].values.enabled).toBe(false);
+    await waitFor(() => expect(queryByText("experience_editor_create_new")).toBeNull());
+  });
+
+  it("the bar's delete still targets the active script and visual", async () => {
+    // Covered in part by the IR-90A bar tests above; this pins the TARGET:
+    // with two cards in the gallery and the first open, the bar deletes the
+    // ACTIVE pair and leaves the other card standing.
+    serverScripts = [{ ...baseScript }, { ...baseScript, id: "srv_2", name: "Second Rules" }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockImplementation(async (id) =>
+      id === "srv_1" ? [{ ...baseVisual }] : [],
+    );
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    fireEvent.click(experienceDeleteButton(container));
+    fireEvent.click(await waitForExperienceDeleteConfirm());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    await waitFor(() => expect(queryByText("Second Rules")).toBeTruthy());
+    expect(queryByText("Existing Rules")).toBeNull();
   });
 });
 

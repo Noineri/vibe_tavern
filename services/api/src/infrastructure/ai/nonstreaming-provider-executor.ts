@@ -18,6 +18,7 @@ import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
+import { prepareAttachmentMedia } from "./attachment-media.js";
 
 /** Loose `step.content` part shape — we only consume `tool-error` parts. */
 type NonstreamingToolContentPart = {
@@ -114,99 +115,11 @@ export async function nonstreamingProviderExecute(
     // protocol capability (backend template on llama-server, default else).
     const format = resolveCompletionFormatHandoff(input.profile, input.prompt.completionFormat);
     const model = resolveModel(input.profile, input.model, input.transport, providerFetch, format);
-    let messages = toSdkMessages(input.prompt);
-    const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
-    const hasVision = activeModel?.capabilities?.vision ?? false;
-    const visionModelSlug = input.visionModel ?? null;
-    const hasAttachments = messages.some((m) => m.attachments?.length);
-
-    let visionDescriptions: Array<{ attachmentId: string; name: string; type: "image" | "video"; description: string }> | undefined;
-    const shouldDescribe = hasAttachments && visionModelSlug;
-
-    if (shouldDescribe) {
-      const allAttachments = messages
-        .filter((m) => m.role === "user")
-        .flatMap((m) => m.attachments ?? [])
-        .filter((a) => (a.type === "image" || a.type === "video") && !a.description?.trim());
-      if (allAttachments.length > 0 && input.assetLoader) {
-        const { describeAttachments } = await import("./vision-gate.js");
-        const descriptions = await describeAttachments(
-          allAttachments,
-          visionModelSlug,
-          input.profile,
-          input.assetLoader,
-          input.visionDescribePrompt,
-          input.signal,
-          providerFetch,
-        );
-        visionDescriptions = allAttachments
-          .map((att) => {
-            const description = descriptions.get(att.id);
-            return description
-              ? { attachmentId: att.id, name: att.name, type: att.type, description }
-              : null;
-          })
-          .filter((item): item is { attachmentId: string; name: string; type: "image" | "video"; description: string } => item !== null);
-
-        // Always persist descriptions back to the message
-        if (input.onAttachmentDescriptions && visionDescriptions.length > 0) {
-          await input.onAttachmentDescriptions(visionDescriptions.map(d => ({ attachmentId: d.attachmentId, description: d.description })));
-        }
-
-        // Only replace image attachments with text when the model lacks native vision
-        if (!hasVision) {
-          messages = messages.map((m) => ({
-            ...m,
-            attachments: m.attachments?.map((att) => {
-              const desc = descriptions.get(att.id);
-              if (desc) {
-                return { ...att, type: "file" as const, description: desc };
-              }
-              return att;
-            }),
-          }));
-        }
-      }
-    }
-
-    const visionGate = { hasVision, visionModel: visionModelSlug };
-
-    // --- Voice-note transcription (STT_PLAN ST-6) --- streaming executor's
-    // twin block: always transcribe voice notes before assembly; music/
-    // ambient skipped (playback-only); absent transcriber → the honest
-    // VoiceTranscribeUnavailableError at assembly.
-    const voiceNotes = messages
-      .filter((m) => m.role === "user")
-      .flatMap((m) => m.attachments ?? [])
-      .filter((a) => a.type === "audio" && (a.purpose ?? "voice") === "voice" && !a.description?.trim());
-
-    if (voiceNotes.length > 0 && input.voiceTranscriber && input.assetLoader) {
-      const { transcribeAttachments } = await import("./stt-gate.js");
-      const transcripts = await transcribeAttachments(voiceNotes, input.voiceTranscriber, input.assetLoader, input.signal);
-      const audioDescriptions = voiceNotes
-        .map((att) => {
-          const transcript = transcripts.get(att.id);
-          return transcript !== undefined && transcript !== ""
-            ? { attachmentId: att.id, name: att.name, type: "audio" as const, description: transcript }
-            : null;
-        })
-        .filter((item): item is { attachmentId: string; name: string; type: "audio"; description: string } => item !== null);
-
-      if (input.onAttachmentDescriptions && audioDescriptions.length > 0) {
-        await input.onAttachmentDescriptions(audioDescriptions.map((d) => ({ attachmentId: d.attachmentId, description: d.description })));
-      }
-
-      messages = messages.map((m) => ({
-        ...m,
-        attachments: m.attachments?.map((att) => {
-          const transcript = transcripts.get(att.id);
-          return transcript !== undefined ? { ...att, description: transcript } : att;
-        }),
-      }));
-    }
+    const { messages, visionGate, hasAttachments, visionDescriptions } = await prepareAttachmentMedia(toSdkMessages(input.prompt), input, providerFetch);
 
     const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
+      continuationFallback: input.continuationFallback,
       providerType: normalizeProviderType(input.profile.providerPreset),
       ...(hasAttachments ? { visionGate, assetLoader: input.assetLoader } : {}),
     });

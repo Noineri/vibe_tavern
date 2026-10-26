@@ -81,7 +81,7 @@ function DroppableDepthContainer({ id, depth, children, label, className }: { id
         className
       )}
     >
-      {label && <div className="mb-0.5 px-1 font-mono text-[10px] text-t4 uppercase tracking-wider">{label}</div>}
+      {label && <div className="mb-0.5 px-1 font-mono text-[calc(var(--ui-fs)-4px)] text-t4 uppercase tracking-wider">{label}</div>}
       {children}
     </div>
   );
@@ -513,7 +513,7 @@ export function PromptOrderCanvas({
     <DragOverlay dropAnimation={null} zIndex={700}>
       {activeDragItem ? (
         <div className="pointer-events-none flex w-full items-stretch gap-1 rounded-md shadow-theme-md">
-          <div className="flex w-6 shrink-0 items-center justify-center rounded border border-border bg-s2 font-mono text-[13px] text-t4">⋮⋮</div>
+          <div className="flex w-6 shrink-0 items-center justify-center rounded border border-border bg-s2 font-mono text-[calc(var(--ui-fs)-1px)] text-t4">⋮⋮</div>
           <div className="min-w-0 flex-1">{activeDragItem.render()}</div>
         </div>
       ) : null}
@@ -525,7 +525,7 @@ export function PromptOrderCanvas({
       <div data-testid="prompt-canvas-header" className="mb-3 flex flex-col items-stretch gap-3 px-1.5 sm:flex-row sm:items-start sm:justify-between sm:px-0">
         <div className="min-w-0">
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
-          <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
+          <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
         </div>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
           <CustomTooltip content={t("merge_consecutive_roles_hint")}>
@@ -533,7 +533,7 @@ export function PromptOrderCanvas({
               checked={draft?.mergeConsecutiveRoles ?? false}
               disabled={!draft || !onUpdateField}
               onChange={(checked) => onUpdateField?.("mergeConsecutiveRoles", checked)}
-              label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
+              label={<span className="font-ui text-[calc(var(--ui-fs)-3px)]">{t("merge_consecutive_roles")}</span>}
             />
           </CustomTooltip>
         </div>
@@ -567,16 +567,16 @@ export function PromptOrderCanvas({
           <div className="mx-1.5 rounded-md border border-accent/35 bg-accent/10 sm:mx-0">
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
               onClick={() => setAccordionOpen(!accordionOpen)}
             >
               <span className="min-w-0">{t("prompt_slot_chat_history")}</span>
 
               <span className="flex shrink-0 items-center gap-2">
-                <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
+                <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-accent-t">
                   {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} {t("injection_items_label")}
                 </span>
-                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")} aria-hidden="true">
+                <span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")} aria-hidden="true">
                   ▶
                 </span>
               </span>

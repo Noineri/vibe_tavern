@@ -145,11 +145,11 @@ function ArrayEditor({ label, items, value, onChange, t }: {
     <div className="flex flex-col">
       <div className="flex items-center justify-between">
         <label className={lblCls}>{label}</label>
-        <button type="button" onClick={add} className="rounded px-2 py-0.5 text-[11px] text-accent transition-colors hover:bg-s2">
+        <button type="button" onClick={add} className="rounded px-2 py-0.5 text-[calc(var(--ui-fs)-3px)] text-accent transition-colors hover:bg-s2">
           + {t("scn_edit_add_item")}
         </button>
       </div>
-      {arr.length === 0 && <p className="text-[11px] text-t4">[]</p>}
+      {arr.length === 0 && <p className="text-[calc(var(--ui-fs)-3px)] text-t4">[]</p>}
       <div className="flex flex-col gap-1.5">
         {arr.map((item, i) => (
           <div key={i} className="flex items-center gap-1.5">
@@ -159,7 +159,7 @@ function ArrayEditor({ label, items, value, onChange, t }: {
               ) : items.$type === "object" ? (
                 <FieldsEditor schema={(items as { properties: SceneTrackerDsl }).properties} value={(item && typeof item === "object" ? item : {}) as Record<string, unknown>} onChange={(v) => updateAt(i, v)} t={t} />
               ) : (
-                <span className="text-[11px] text-t4">{t("scn_edit_nested_array_unsupported")}</span>
+                <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("scn_edit_nested_array_unsupported")}</span>
               )}
             </div>
             <button type="button" onClick={() => removeAt(i)} className="shrink-0 rounded px-1.5 py-1 text-t4 transition-colors hover:bg-s2 hover:text-danger" aria-label={t("scn_edit_remove_item")}>

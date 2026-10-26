@@ -17,21 +17,23 @@ interface ScriptSafetyBannerProps {
  * Imported-script banner (decision 5), rendered near the enable toggle in BOTH
  * editors. Shows for UNTRUSTED scripts only (imported + never enabled); it
  * never renders for in-app or trusted scripts, so there is no layout shift for
- * them. When the server `suppressImportWarnings` flag is set, the same line
- * collapses to a single «Show warnings again» control that flips the flag back
- * off via PUT.
+ * them. When the server `suppressImportWarnings` flag is set, it renders
+ * NOTHING — the flag is switched back on from settings («Script import
+ * warnings» row in TweaksPanel / MobileSettings). The former lone «Show
+ * warnings again» link inside the warning box was removed by owner ruling
+ * 4b (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 10): it cost the editor a
+ * full banner's height for one link.
  */
 export function ScriptSafetyBanner({ script, className }: ScriptSafetyBannerProps) {
   const { t } = useT();
   const suppress = useScriptSafetySettingsStore((s) => s.suppressImportWarnings);
   const load = useScriptSafetySettingsStore((s) => s.load);
-  const setSuppress = useScriptSafetySettingsStore((s) => s.setSuppress);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  if (!isUntrustedImport(script)) return null;
+  if (!isUntrustedImport(script) || suppress === true) return null;
 
   return (
     <div
@@ -41,17 +43,8 @@ export function ScriptSafetyBanner({ script, className }: ScriptSafetyBannerProp
         className,
       )}
     >
-      {suppress === true ? (
-        <button
-          type="button"
-          className="cursor-pointer underline underline-offset-2 transition-colors hover:text-t1"
-          onClick={() => void setSuppress(false)}
-        >
-          {t("script_safety_banner_show_warnings")}
-        </button>
-      ) : (
-        <span>{t("script_safety_banner_imported")}</span>
-      )}
+      <span>{t("script_safety_banner_imported")}</span>
+      <span className="block">{t("script_safety_banner_full_access")}</span>
     </div>
   );
 }

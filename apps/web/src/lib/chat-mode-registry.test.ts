@@ -20,7 +20,8 @@ describe("chat-mode-registry", () => {
 		it("returns the rp package with play + build slots", () => {
 			const rp = getChatModePackage("rp");
 			expect(rp.chatMode).toBe("rp");
-			expect(rp.play).toEqual({ surface: "PlayMode", leftChrome: "default", topBar: "default" });
+			// SC-14: the rp play slot owns the desktop sidechat panel.
+			expect(rp.play).toEqual({ surface: "PlayMode", leftChrome: "default", topBar: "default", rightPanel: "Sidechat" });
 			expect(rp.build).toEqual({ surface: "BuildMode", leftChrome: "default", topBar: "default" });
 			expect(rp.routes).toEqual({ play: "/play", build: "/build" });
 		});
@@ -71,11 +72,12 @@ describe("chat-mode-registry", () => {
 			}
 		});
 
-		it("rightPanel is declared ONLY by modes that own a desktop side column (coauthor)", () => {
+		it("rightPanel is declared ONLY by modes that own a desktop side column (rp + coauthor)", () => {
 			const withPanel = CHAT_MODE_PACKAGES.filter((p) => p.play.rightPanel);
-			expect(withPanel.map((p) => p.chatMode)).toEqual(["coauthor"]);
+			expect(withPanel.map((p) => p.chatMode)).toEqual(["rp", "coauthor"]);
 			expect(getChatModePackage("coauthor").play.rightPanel).toBe("CoauthorEditor");
-			expect(getChatModePackage("rp").play.rightPanel).toBeUndefined();
+			// SC-14: the rp play slot owns the desktop sidechat panel.
+			expect(getChatModePackage("rp").play.rightPanel).toBe("Sidechat");
 		});
 
 		it("every build slot (when present) names all three parts", () => {

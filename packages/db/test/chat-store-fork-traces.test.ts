@@ -35,11 +35,13 @@ function makeTraceData(
 	branchId: string,
 	messageId: string,
 	tag: string,
+	variantId?: string | null,
 ): SaveTraceData {
 	return {
 		chatId,
 		branchId,
 		messageId,
+		variantId: variantId ?? null,
 		model: `model-${tag}`,
 		presetName: `preset-${tag}`,
 		assembledLayers: [{ layer: tag }],
@@ -247,5 +249,58 @@ describe("ChatStore.forkBranch — trace inheritance (Defect C)", () => {
 		expect(forkTraces.map((t) => t.model).sort()).toEqual(
 			["model-T0a", "model-T0b", "model-T1"],
 		);
+	});
+
+	test("fork remaps a trace's variant link onto the fork's own variant (SC-23b)", async () => {
+		// Message with two swipes; a trace linked to the SECOND swipe.
+		const msg0 = await messageStore.addMessage({
+			chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant",
+			content: "first", variants: ["first", "second"],
+		});
+		const variants = await messageStore.getVariants(msg0.id);
+		expect(variants).toHaveLength(2);
+		const swipeTwo = variants.find((v) => v.variantIndex === 1)!;
+		const saved = await traceStore.saveTrace(makeTraceData("chat_1", "brnch_1", msg0.id, "T0", swipeTwo.id));
+		expect(saved.variantId).toBe(swipeTwo.id);
+
+		const forkedBranch = await store.forkBranch("chat_1", msg0.id, "variant link fork");
+
+		// The copied trace points at the COPY's variant at the same index —
+		// never the parent branch's variant row.
+		const forkTraces = await traceStore.getTracesByChat("chat_1", forkedBranch.id);
+		expect(forkTraces).toHaveLength(1);
+		const forkMsg = (await messageStore.getMessages(forkedBranch.id))[0]!;
+		const forkVariants = await messageStore.getVariants(forkMsg.id);
+		const forkSwipeTwo = forkVariants.find((v) => v.variantIndex === 1)!;
+		expect(forkSwipeTwo.id).not.toBe(swipeTwo.id);
+		expect(forkTraces[0]!.variantId).toBe(forkSwipeTwo.id);
+
+		// A trace with no variant link (greeting/legacy) copies as null.
+		const msg1 = await messageStore.addMessage({
+			chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "M1",
+		});
+		await traceStore.saveTrace(makeTraceData("chat_1", "brnch_1", msg1.id, "T1"));
+		const fork2 = await store.forkBranch("chat_1", msg1.id, "null link fork");
+		const nullCopy = (await traceStore.getTracesByChat("chat_1", fork2.id)).find((t) => t.model === "model-T1")!;
+		expect(nullCopy.variantId).toBeNull();
+	});
+
+	test("deleting a variant SET NULLs its linked trace — the trace row survives (SC-23b FK action)", async () => {
+		const msg0 = await messageStore.addMessage({
+			chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant",
+			content: "first", variants: ["first", "second"],
+		});
+		const variants = await messageStore.getVariants(msg0.id);
+		const swipeTwo = variants.find((v) => v.variantIndex === 1)!;
+		const saved = await traceStore.saveTrace(makeTraceData("chat_1", "brnch_1", msg0.id, "T0", swipeTwo.id));
+
+		await messageStore.deleteVariant(msg0.id, 1);
+
+		// The trace row is history — deleting a swipe must not delete it; the
+		// FK action (ON DELETE SET NULL, migration 0120) only drops the link.
+		const after = await traceStore.getTrace(saved.id);
+		expect(after).not.toBeNull();
+		expect(after!.variantId).toBeNull();
+		expect((await messageStore.getVariants(msg0.id))).toHaveLength(1);
 	});
 });

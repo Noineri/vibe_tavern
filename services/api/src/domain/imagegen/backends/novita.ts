@@ -63,6 +63,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -137,25 +138,6 @@ function parseConfig(config: ImageGenAdapterConfig): NovitaImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new NovitaImageError(
-      `Novita ${operation} network error: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-      { cause },
-    );
-  }
-}
-
 /** Poll a Novita task until SUCCEED; resolves with the COMPLETED result
  *  root. Exported as the test seam: `wait` defaults to the real sleep;
  *  tests inject an instant resolver and a scripted fetch (no sleeps in
@@ -180,6 +162,8 @@ export async function pollNovitaTask(params: {
         signal: params.signal,
       },
       "task poll",
+      "Novita",
+      NovitaImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -255,6 +239,8 @@ export const novitaImageFactory = (config: ImageGenAdapterConfig): ImageGenBacke
           signal: request.signal,
         },
         "generation",
+        "Novita",
+        NovitaImageError,
       );
       if (!submit.ok) {
         const excerpt = await readProviderErrorBody(submit);
@@ -321,6 +307,8 @@ export const novitaImageFactory = (config: ImageGenAdapterConfig): ImageGenBacke
         url,
         { method: "GET", signal: request.signal },
         "image download",
+        "Novita",
+        NovitaImageError,
       );
       if (!download.ok) {
         throw new NovitaImageError(`Novita image download failed with HTTP ${download.status}`, {

@@ -12,7 +12,15 @@ import { describe, expect, it } from "bun:test";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 
-import { TTS_LOCAL_SERVER_FLAG, backendForVariant, ttsUiSpecFor, ttsUiVariantOf } from "./tts-backend-ui.js";
+import {
+  TTS_LOCAL_SERVER_FLAG,
+  backendForVariant,
+  ttsFetchedModelSpec,
+  ttsListingConfig,
+  ttsUiSpecFor,
+  ttsUiVariantOf,
+  type TtsUiVariant,
+} from "./tts-backend-ui.js";
 
 describe("ttsUiVariantOf", () => {
   it("openai-compatible + localServer flag → the local variant", () => {
@@ -406,5 +414,79 @@ describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");
     }
+  });
+});
+
+// IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c: the editor lists models for
+// every variant whose spec says so, and re-lists only when a listing input
+// changes - both derived from the one spec, never from a second hand-written
+// backend list.
+const ALL_VARIANTS: TtsUiVariant[] = ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai", "mistral"];
+
+describe("ttsFetchedModelSpec - the one gate of the editor's model listing", () => {
+  it("every variant whose spec model is fetch-mode is gated IN, and only those (derived from the spec, not a second list)", () => {
+    for (const variant of ALL_VARIANTS) {
+      const backend = backendForVariant(variant);
+      const config = variant === "local" ? { [TTS_LOCAL_SERVER_FLAG]: true } : {};
+      const modelSpec = ttsUiSpecFor(variant).connection.model;
+      const gated = ttsFetchedModelSpec(backend, config);
+      if (modelSpec !== undefined && modelSpec.mode === "fetch") expect(gated).toBe(modelSpec);
+      else expect(gated).toBeNull();
+    }
+  });
+
+  it("Inworld and MiniMax (fetch-mode, key modelId) are in - they were never listed before - next to Gemini and OpenAI-compatible", () => {
+    expect(ttsFetchedModelSpec(TTS_BACKEND.Inworld, {})?.key).toBe("modelId");
+    expect(ttsFetchedModelSpec(TTS_BACKEND.MiniMax, {})?.key).toBe("modelId");
+    expect(ttsFetchedModelSpec(TTS_BACKEND.Gemini, {})?.key).toBe("model");
+    expect(ttsFetchedModelSpec(TTS_BACKEND.OpenAiCompatible, {})?.key).toBe("model");
+    expect(ttsFetchedModelSpec(TTS_BACKEND.OpenAiCompatible, { [TTS_LOCAL_SERVER_FLAG]: true })?.key).toBe("model");
+  });
+
+  it("input-mode vendors and kokoro are out (no models endpoint to list)", () => {
+    for (const backend of [TTS_BACKEND.Kokoro, TTS_BACKEND.ElevenLabs, TTS_BACKEND.Cartesia, TTS_BACKEND.Lmnt, TTS_BACKEND.Volcengine, TTS_BACKEND.Azure, TTS_BACKEND.Polly]) {
+      expect(ttsFetchedModelSpec(backend, {})).toBeNull();
+    }
+  });
+});
+
+describe("ttsListingConfig - what re-runs a listing", () => {
+  const openai = {
+    endpoint: "https://x/v1",
+    apiKey: "k",
+    preset: "openrouter",
+    modelFilter: "modality",
+    model: "m1",
+    responseFormat: "wav",
+    speed: 1.2,
+    waitForFullGeneration: true,
+  };
+
+  it("tuning knobs and the playback flag never reach either key", () => {
+    for (const list of ["models", "voices"] as const) {
+      const key = ttsListingConfig(TTS_BACKEND.OpenAiCompatible, openai, list);
+      expect("responseFormat" in key).toBe(false);
+      expect("speed" in key).toBe(false);
+      expect("waitForFullGeneration" in key).toBe(false);
+      expect(key.endpoint).toBe("https://x/v1");
+      expect(key.apiKey).toBe("k");
+      expect(key.preset).toBe("openrouter");
+      expect(key.modelFilter).toBe("modality");
+    }
+  });
+
+  it("the picked model re-lists the VOICES (rosters can be model-scoped) but never the MODELS", () => {
+    expect(ttsListingConfig(TTS_BACKEND.OpenAiCompatible, openai, "voices").model).toBe("m1");
+    expect("model" in ttsListingConfig(TTS_BACKEND.OpenAiCompatible, openai, "models")).toBe(false);
+  });
+
+  it("reads the model under the spec key of the backend (modelId for Inworld)", () => {
+    const inworld = { modelId: "inworld-tts-2", speed: 1, deliveryMode: "STABLE" };
+    expect(ttsListingConfig(TTS_BACKEND.Inworld, inworld, "voices")).toEqual({ modelId: "inworld-tts-2" });
+    expect(ttsListingConfig(TTS_BACKEND.Inworld, inworld, "models")).toEqual({});
+  });
+
+  it("an unclassified config key stays in (a cheap stored re-read at worst, never a stale list)", () => {
+    expect(ttsListingConfig(TTS_BACKEND.Azure, { region: "westeurope", somethingNew: 1 }, "voices")).toEqual({ region: "westeurope", somethingNew: 1 });
   });
 });

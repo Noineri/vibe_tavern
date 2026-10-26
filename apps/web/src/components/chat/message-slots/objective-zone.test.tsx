@@ -18,6 +18,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { type ReactNode } from "react";
 
 useDomEnv();
@@ -36,17 +37,13 @@ const mocks = {
   refreshInsightsCompletion: mock(),
   toastError: mock(),
 };
-const realI18nContext = await import("../../../i18n/context.js");
 const realChatApi = await import("../../../api/chat-api.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
 mock.module("sonner", () => ({ toast: { error: mocks.toastError } }));
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../api/chat-api.js", () => ({
 	...realChatApi,

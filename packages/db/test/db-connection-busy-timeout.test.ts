@@ -52,7 +52,12 @@ describe("createDb: busy_timeout", () => {
 		expect(() => patient.prepare("INSERT INTO t VALUES (3)").run()).toThrow();
 		const patientElapsed = performance.now() - patientStart;
 
-		expect(instantElapsed).toBeLessThan(100);
+		// The load-invariant observable is the CONTRAST, not absolute windows:
+		// the instant path does real syscalls, so under a full parallel suite run
+		// it can take hundreds of ms (observed 218ms on Windows, 2026-10-12),
+		// while the busy handler always waits out its full 250ms budget before
+		// giving up. Patient minus impatient stays ≈250ms at any load.
+		expect(patientElapsed - instantElapsed).toBeGreaterThanOrEqual(150);
 		expect(patientElapsed).toBeGreaterThanOrEqual(200);
 
 		writer.exec("COMMIT");

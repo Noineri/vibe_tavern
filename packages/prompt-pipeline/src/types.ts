@@ -9,7 +9,7 @@ export type { PromptLayerPosition };
  * Each mode determines the system prompt, user message format, output parsing,
  * and which context layers are available.
  */
-export type AiAssistantMode = "script" | "dice_script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "regex";
+export type AiAssistantMode = "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "regex" | "skill";
 
 export interface PromptLayer {
   id: string;

@@ -1,6 +1,6 @@
 import type { UiSettingsRecord, AppSnapshot, AppCharacterEntry } from "./types.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
-import type { ScriptSafetySettings } from "@vibe-tavern/api-contracts";
+import type { AgentKindSettingsWire, ScriptSafetySettings } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -11,6 +11,10 @@ export async function bootstrapApp(): Promise<{
   allCharacters: AppCharacterEntry[];
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
+  /** Per-kind remembered model settings (SIDECHAT_PLAN SC-0d) — one entry
+   *  per REGISTERED kind (the kind's row, or the legacy copilot pair for
+   *  kinds without a row yet). SC-0e's binding hook reads its kind here. */
+  agentKindSettings: Record<string, AgentKindSettingsWire>;
   isArmServer: boolean;
 }> {
   return unwrapRpc(await client.api.bootstrap.$get());

@@ -19,6 +19,7 @@ import { unwrapRpc } from "./unwrap.js";
 import type {
   ExperienceCopilotStreamRequest,
   ExperienceCopilotStreamAnswer,
+  ExperienceCopilotStreamAskAnswer,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
   ExperienceCopilotContextMetrics,
@@ -39,8 +40,29 @@ export const streamExperienceCopilot = (
 
 /** TAG-9: the answer payload for a pending `ask_user` question (TAG-5
  *  split-turn), minus the `toolCallId` the caller supplies — either `text`
- *  (a tapped chip's label or free text) or `skipped: true`, never both. */
-export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAnswer, "toolCallId">;
+ *  (a tapped chip's label or free text) or `skipped: true`, never both.
+ *  Pinned to the ask MEMBER since SC-23e (the wire answer type became a
+ *  union with the permission decision — this card's input stays the ask
+ *  family; the permission sender is SC-23f's). */
+export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAskAnswer, "toolCallId">;
+
+/** SC-23f: the permission decision for a pending `read_message_prompt`
+ *  request (SC-23e split-turn), minus the `toolCallId` the caller supplies —
+ *  `decision: "allow"` lets the model read the reply's exact prompt,
+ *  `"deny"` continues the turn without it. The permission MEMBER of the
+ *  wire answer union (narrowed by shape — the contracts package exports the
+ *  union, not the member, so this derives it here and stays web-local). */
+export type CopilotPermissionAnswerInput = Omit<
+  Extract<ExperienceCopilotStreamAnswer, { decision: unknown }>,
+  "toolCallId"
+>;
+
+/** SC-23f: either split-turn answer family — the ask input or the permission
+ *  decision. The controller's answer path and the message list's `onAnswer`
+ *  take this union (one path, no transport fork — `answerCopilotAsk` already
+ *  carries the wire union); each card's submitter stays narrowed to its own
+ *  family. */
+export type CopilotAnswerInput = CopilotAskAnswerInput | CopilotPermissionAnswerInput;
 
 /** Answer a pending `ask_user` question (TAG-5 split-turn, style B): POSTs
  *  the SAME stream endpoint with the `answer` body instead of `content` —
@@ -205,6 +227,61 @@ export async function compactExperienceCopilot(
   const response = await client.api["experience-copilot"][":threadId"].compact.$post({
     param: { threadId },
     json: body ?? {},
+  });
+  return unwrapRpc(response);
+}
+
+// ─── Turn delete (AP-10) ────────────────────────────────────────────────────
+
+/** POST `/turns/delete` response (AP-8): every deleted row id in timeline
+ *  order (the user row included when it was deleted), plus which of them was
+ *  the user row. Mirrors the backend's `ExperienceCopilotTurnDeleteResult`
+ *  (services/api contract — the backend-local twin, not an api-contracts
+ *  wire type, so it is spelled here like `ExperienceCopilotCompactResult`). */
+export interface ExperienceCopilotTurnDeleteResult {
+  deletedMessageIds: string[];
+  deletedUserMessageId: string | null;
+}
+
+/** Delete the turn resolved around `messageId` (AP-8 route, AP-10 client).
+ *  The server resolves the ENCLOSING turn; `messageId` may point at any row
+ *  of that turn, or at the user row itself (then only with
+ *  `includeUserMessage: true`). The caller refetches messages on settle —
+ *  there is no optimistic removal (the server owns the turn resolution).
+ *  Rejects with a 400 on user-row semantics, 404 on an unknown thread or
+ *  message, 409 at/below the digest floor. `keepAttachmentFiles` (CA-4e1,
+ *  edit-last's delete-before-resend) keeps the deleted rows' physical files. */
+export async function deleteCopilotTurn(
+  threadId: string,
+  body: { messageId: string; includeUserMessage: boolean; keepAttachmentFiles?: boolean },
+): Promise<ExperienceCopilotTurnDeleteResult> {
+  const response = await client.api["experience-copilot"][":threadId"].turns.delete.$post({
+    param: { threadId },
+    json: body,
+  });
+  return unwrapRpc(response);
+}
+
+// ─── Assistant message edit (AP-30 route / AP-31 client) ──────────────────
+
+/** Edit ONE assistant text row in place (AP-30 route, AP-31 client):
+ *  PATCHes the addressed message's stored `content` with the replacement
+ *  text — nothing regenerates (no model call), the row's id, createdAt, seq,
+ *  and reasoning pair stay, every other row stays, and the updated message
+ *  wire comes back. The caller refetches messages on settle (the delete's
+ *  contract — no optimistic rewrite). Rejects with a typed 400
+ *  (`not_assistant_row` / `tool_call_row` / `folded_row` / `empty_content` /
+ *  `empty_row`) on an ineligible row and a 404 on an unknown thread or
+ *  another thread's message — every agent kind calls the same route (no
+ *  kind dispatch, like the delete above). */
+export async function editCopilotMessage(
+  threadId: string,
+  messageId: string,
+  content: string,
+): Promise<ExperienceCopilotMessageWire> {
+  const response = await client.api["experience-copilot"][":threadId"].messages[":messageId"].$patch({
+    param: { threadId, messageId },
+    json: { content },
   });
   return unwrapRpc(response);
 }

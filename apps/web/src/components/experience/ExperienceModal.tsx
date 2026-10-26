@@ -123,25 +123,25 @@ export function ExperienceRoundFinishedPanel(props: {
       data-testid={props.testId}
     >
       <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
-        <p className="mb-2 text-sm font-medium text-neutral-100" data-testid={`${props.testId}-status`}>
+        <p className="mb-2 text-[var(--ui-fs)] leading-5 font-medium text-neutral-100" data-testid={`${props.testId}-status`}>
           {claim.status === "interrupted"
             ? t("experience_round_interrupted")
             : t("experience_round_finished")}
         </p>
         {claim.score !== undefined && (
-          <p className="mb-1 text-sm text-neutral-200" data-testid={`${props.testId}-score`}>
+          <p className="mb-1 text-[var(--ui-fs)] leading-5 text-neutral-200" data-testid={`${props.testId}-score`}>
             {t("experience_round_score")}: {claim.score}
           </p>
         )}
         {claim.summary !== undefined && (
-          <p className="mb-4 text-sm text-neutral-300" data-testid={`${props.testId}-summary`}>
+          <p className="mb-4 text-[var(--ui-fs)] leading-5 text-neutral-300" data-testid={`${props.testId}-summary`}>
             {claim.summary}
           </p>
         )}
         <div className="flex justify-end">
           <button
             type="button"
-            className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+            className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
             onClick={props.onClose}
             data-testid={`${props.testId}-close`}
           >
@@ -446,12 +446,12 @@ export function ExperienceModal(props: ExperienceModalProps) {
       <div className="flex h-full max-h-[85vh] w-[min(720px,92vw)] flex-col rounded-lg border border-neutral-700 bg-neutral-900 shadow-xl">
         {/* Trusted chrome — never rendered by the visual. */}
         <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">
+          <h2 className="min-w-0 flex-1 truncate text-[var(--ui-fs)] leading-5 font-semibold text-neutral-100">
             {title}
           </h2>
           {pendingPhase && pendingPhase !== "idle" && (
             <span
-              className="inline-flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300"
+              className="inline-flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300"
               data-testid="experience-pending"
             >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
@@ -468,14 +468,14 @@ export function ExperienceModal(props: ExperienceModalProps) {
             </span>
           )}
           {statusLabel && (
-            <span className="truncate text-xs text-neutral-400" data-testid="experience-status">
+            <span className="truncate text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-400" data-testid="experience-status">
               {statusLabel}
             </span>
           )}
           {onDetach && (
             <button
               type="button"
-              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9 max-md:min-w-9"
+              className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9 max-md:min-w-9"
               onClick={onDetach}
               data-testid="experience-detach"
               title={t("experience_detach_title")}
@@ -486,7 +486,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           {onFinishExperience && !confirmingFinish && (
             <button
               type="button"
-              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+              className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
               onClick={() => setConfirmingFinish(true)}
               data-testid="experience-finish"
             >
@@ -496,7 +496,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           {onOpenSessionSettings && !confirmingSettings && (
             <button
               type="button"
-              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+              className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
               onClick={() => setConfirmingSettings(true)}
               data-testid="experience-session-settings"
             >
@@ -505,7 +505,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           )}
           <button
             type="button"
-            className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
+            className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
             onClick={onClose}
             aria-label={t("experience_close")}
             data-testid="experience-close"
@@ -548,11 +548,11 @@ export function ExperienceModal(props: ExperienceModalProps) {
               data-testid="experience-finish-confirm"
             >
               <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
-                <p className="mb-4 text-sm text-neutral-200">{t("experience_finish_confirm")}</p>
+                <p className="mb-4 text-[var(--ui-fs)] leading-5 text-neutral-200">{t("experience_finish_confirm")}</p>
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                    className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
                     onClick={() => setConfirmingFinish(false)}
                     data-testid="experience-finish-cancel"
                   >
@@ -561,7 +561,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   {onEndSessionQuiet && (
                     <button
                       type="button"
-                      className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                      className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
                       onClick={confirmQuietFinish}
                       data-testid="experience-finish-quiet"
                     >
@@ -570,7 +570,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   )}
                   <button
                     type="button"
-                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
+                    className="rounded bg-amber-600 px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-white hover:bg-amber-500 max-md:min-h-9"
                     onClick={confirmFinish}
                     data-testid="experience-finish-confirm-btn"
                   >
@@ -589,11 +589,11 @@ export function ExperienceModal(props: ExperienceModalProps) {
               data-testid="experience-settings-confirm"
             >
               <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
-                <p className="mb-4 text-sm text-neutral-200">{t("experience_session_settings_confirm")}</p>
+                <p className="mb-4 text-[var(--ui-fs)] leading-5 text-neutral-200">{t("experience_session_settings_confirm")}</p>
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                    className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
                     onClick={() => setConfirmingSettings(false)}
                     data-testid="experience-settings-cancel"
                   >
@@ -601,7 +601,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   </button>
                   <button
                     type="button"
-                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
+                    className="rounded bg-amber-600 px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-white hover:bg-amber-500 max-md:min-h-9"
                     onClick={confirmSettings}
                     data-testid="experience-settings-confirm-btn"
                   >

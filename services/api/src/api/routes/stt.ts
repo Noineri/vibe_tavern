@@ -57,6 +57,14 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
     .patch("/api/stt/profiles/reorder", zValidator("json", schemas.reorderSttProfilesSchema), async (c) => {
       return c.json(await runtime.reorderSttProfiles(c.req.valid("json").updates));
     })
+    // Literal routes register BEFORE /:id (Hono matches by registration
+    // order — a GET /default registered after /:id was shadowed into the
+    // :id handler with id="default" → 404 "profile not found").
+    .get("/api/stt/profiles/default", async (c) => {
+      const profile = await runtime.getDefaultSttProfile();
+      if (!profile) return c.json({ error: "No default STT profile" }, 404);
+      return c.json(profile);
+    })
     .get("/api/stt/profiles/:id", async (c) => {
       const profile = await runtime.getSttProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "STT profile not found" }, 404);
@@ -80,11 +88,6 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
       const updated = await runtime.setSttDefault(c.req.param("id"));
       if (!updated) return c.json({ error: "STT profile not found" }, 404);
       return c.json(updated);
-    })
-    .get("/api/stt/profiles/default", async (c) => {
-      const profile = await runtime.getDefaultSttProfile();
-      if (!profile) return c.json({ error: "No default STT profile" }, 404);
-      return c.json(profile);
     })
     // ── Transcription (multipart) ────────────────────────────────────────
     .post("/api/stt/transcribe", async (c) => {

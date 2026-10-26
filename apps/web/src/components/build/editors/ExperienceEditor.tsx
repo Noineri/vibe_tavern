@@ -85,10 +85,10 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
+import { ExperienceCreationStepper } from "./experience-creation-stepper.js";
 import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
 import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
-import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
-import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
+import { ExperienceGalleryCard, firstExistingBoundVisual } from "./experience-gallery-card.js";
 import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
 import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
@@ -154,13 +154,15 @@ export function ExperienceEditor() {
   const [visualDeleteId, setVisualDeleteId] = useState<string | null>(null);
   const [visualDeleteError, setVisualDeleteError] = useState<string | null>(null);
 
-  // IR-90A: explicit destructive delete for the ACTIVE rules script (the
-  // experience's identity). Dual-action confirm mirrors chat message deletion:
-  // the primary deletes BOTH the script and the active visual; the secondary
+  // IR-90A: explicit destructive delete for a rules script (the
+  // experience's identity), targeted by id — the editor bar targets the ACTIVE
+  // script + visual, a gallery card targets its own script + first bound
+  // visual. Dual-action confirm mirrors chat message deletion:
+  // the primary deletes BOTH the script and the targeted visual; the secondary
   // ("rules only") deletes just the script. A failed delete surfaces the error
   // and keeps what it can (never silently dropped). Reachable only for a saved
   // (non-local) script — an unsaved draft is discarded by navigating back.
-  const [experienceDeleteOpen, setExperienceDeleteOpen] = useState(false);
+  const [experienceDeleteTarget, setExperienceDeleteTarget] = useState<{ scriptId: string; visualId: string | null } | null>(null);
 
   // ER-13d-2a: persist-on-create. The "create" entry persists a fresh script
   // (enabled=false) immediately, so a server id exists from step 1 and the
@@ -252,7 +254,7 @@ export function ExperienceEditor() {
   const openScript = useCallback((scriptId: string) => {
     setActiveScriptId(scriptId);
     const bound = boundVisuals[scriptId] ?? [];
-    const firstExisting = bound.find((v) => visuals.some((av) => av.id === v.id));
+    const firstExisting = firstExistingBoundVisual(bound, visuals);
     setActiveVisualId(firstExisting?.id ?? null);
   }, [boundVisuals, visuals]);
 
@@ -264,7 +266,7 @@ export function ExperienceEditor() {
     if (activeVisualId !== null) return;
     const bound = boundVisuals[activeScriptId];
     if (!bound || bound.length === 0) return;
-    const first = bound.find((v) => visuals.some((av) => av.id === v.id));
+    const first = firstExistingBoundVisual(bound, visuals);
     if (first) setActiveVisualId(first.id);
   }, [activeScriptId, activeVisualId, boundVisuals, visuals]);
 
@@ -525,13 +527,12 @@ export function ExperienceEditor() {
   };
 
   /** Duplicate the rules buffer as a fresh untrusted draft inheriting the source's origin (decision 9). */
-  const handleDuplicateScript = () => {
-    if (!activeScript) return;
+  const handleDuplicateScript = (source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code" | "origin">) => {
     const values = duplicateRulesValues({
-      name: activeScript.name,
-      description: activeScript.description,
-      code: activeScript.code,
-      origin: activeScript.origin,
+      name: source.name,
+      description: source.description,
+      code: source.code,
+      origin: source.origin,
     });
     setActiveScriptId(createPendingRules(values));
   };
@@ -581,7 +582,7 @@ export function ExperienceEditor() {
     }
   }, [activeVisualId, allVisuals, removeVisualDraft]);
 
-  /** IR-90A: delete the active rules script (and optionally the active visual).
+  /** IR-90A: delete the targeted rules script (and optionally the targeted visual).
    *  The script is the experience's identity at the asset level; deleting it
    *  makes every chat config referencing it scriptless automatically (the DB
    *  FK is `onDelete: set null`, and `ExperienceAssignment` detects the stale
@@ -596,12 +597,12 @@ export function ExperienceEditor() {
    *  surviving resource is kept and the error is surfaced (same pattern as
    *  the visual delete). */
   const handleDeleteExperience = useCallback(async (mode: "full" | "rules") => {
-    if (!activeScriptId || isLocalId(activeScriptId)) return;
-    setExperienceDeleteOpen(false);
+    if (!experienceDeleteTarget || isLocalId(experienceDeleteTarget.scriptId)) return;
+    setExperienceDeleteTarget(null);
     setVisualDeleteError(null);
-    const scriptId = activeScriptId;
-    const visualId = mode === "full" && activeVisualId !== null && !isLocalId(activeVisualId)
-      ? activeVisualId
+    const scriptId = experienceDeleteTarget.scriptId;
+    const visualId = mode === "full" && experienceDeleteTarget.visualId !== null && !isLocalId(experienceDeleteTarget.visualId)
+      ? experienceDeleteTarget.visualId
       : null;
 
     try {
@@ -624,11 +625,15 @@ export function ExperienceEditor() {
         setVisualDeleteError(errorMessage(error));
       }
     }
-    setActiveScriptId(null);
-    setActiveVisualId(null);
-    setCreatingScriptId(null);
-    setChosenRulesStarterId(null);
-  }, [activeScriptId, activeVisualId, removeScriptDraft, removeVisualDraft]);
+    // A card delete from the gallery leaves the gallery as it is — the active
+    // selection clears only when the deleted script was the active one.
+    if (scriptId === activeScriptId) {
+      setActiveScriptId(null);
+      setActiveVisualId(null);
+      setCreatingScriptId(null);
+      setChosenRulesStarterId(null);
+    }
+  }, [experienceDeleteTarget, activeScriptId, removeScriptDraft, removeVisualDraft]);
 
   // ── Saves ────────────────────────────────────────────────────────────────
   const handleSaveRules = useCallback(async () => {
@@ -716,24 +721,39 @@ export function ExperienceEditor() {
   }, { enabled: !!activeScriptId && scriptDirty && scriptSaveState !== "saving" });
 
   // ── Picker / list view ───────────────────────────────────────────────────
+  // IR-90A: dual-action destructive delete for an experience (its rules
+  // script). Shared by the editor bar (targets the ACTIVE pair) and the
+  // gallery cards (each targets its own script + first bound visual), so the
+  // confirm mounts in BOTH the picker and editor views below.
+  const deleteConfirmModal = experienceDeleteTarget && (
+    <DestructiveConfirmModal
+      title={t("experience_editor_delete_title")}
+      body={t("experience_editor_delete_body")}
+      confirmLabel={t("experience_editor_delete_full")}
+      onConfirm={() => void handleDeleteExperience("full")}
+      onCancel={() => setExperienceDeleteTarget(null)}
+      secondaryLabel={experienceDeleteTarget.visualId ? t("experience_editor_delete_rules_only") : undefined}
+      onSecondary={experienceDeleteTarget.visualId ? () => void handleDeleteExperience("rules") : undefined}
+    />
+  );
   if (!activeScript) {
     return (
       <>
       <div data-testid="experience-picker-scroll" className="mx-auto max-w-[860px] px-6 py-5 max-md:h-full max-md:overflow-y-auto">
         {listsFailed && (
-          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
             {t("experience_editor_load_error")}
           </div>
         )}
         {createError && (
-          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
             {t("experience_editor_create_error")}: {createError}
           </div>
         )}
         {importError && (
           <div
             data-testid="experience_import_error"
-            className="mb-3 flex items-start justify-between gap-2 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text"
+            className="mb-3 flex items-start justify-between gap-2 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text"
           >
             <span>{t("experience_editor_import_error")}: {importError}</span>
             <button type="button" aria-label={t("close")} className="shrink-0 cursor-pointer text-t3 hover:text-t1" onClick={() => setImportError(null)}>
@@ -747,7 +767,7 @@ export function ExperienceEditor() {
           onClick={() => void handleCreateExperience()}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent"><Ic.plus /></div>
-          <span className="flex-1 text-[14px] font-semibold text-t1">{t("experience_editor_create_new")}</span>
+          <span className="flex-1 text-[var(--ui-fs)] font-semibold text-t1">{t("experience_editor_create_new")}</span>
         </button>
         {/* Mini-app import (.vtapp.json): hidden file input + slim ghost
             button under the prominent create. The bundle format is validated
@@ -771,12 +791,12 @@ export function ExperienceEditor() {
           onClick={() => importFileRef.current?.click()}
         >
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-s2 text-t2"><Ic.import /></div>
-          <span className="flex-1 text-[13px] font-medium text-t2">
+          <span className="flex-1 text-[calc(var(--ui-fs)-1px)] font-medium text-t2">
             {importing ? t("experience_editor_importing") : t("experience_editor_import")}
           </span>
         </button>
 
-        <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
+        <div className="mb-2 text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.06em] text-accent-t">
           {t("experience_editor_existing_label")}
         </div>
         {allScripts.length === 0 ? (
@@ -790,7 +810,6 @@ export function ExperienceEditor() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
-              const firstBoundVisual = (boundVisuals[script.id] ?? [])[0] ?? null;
               const isDraft = isLocalId(script.id);
               const statusKey = isDraft
                 ? "experience_editor_card_draft_tooltip"
@@ -803,67 +822,28 @@ export function ExperienceEditor() {
                   ? "bg-success"
                   : "bg-t4";
               return (
-                <div
+                <ExperienceGalleryCard
                   key={script.id}
-                  className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
-                >
-                  <button
-                    type="button"
-                    className="flex w-full cursor-pointer flex-col text-left"
-                    onClick={() => openScript(script.id)}
-                  >
-                    <ExperienceCardPreview visualSource={firstBoundVisual?.source ?? null} />
-                    <div className="p-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <CustomTooltip content={t(statusKey)}>
-                          <span
-                            aria-label={t(statusKey)}
-                            data-testid="card-status-dot"
-                            className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
-                          />
-                        </CustomTooltip>
-                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                      </div>
-                      <div
-                        data-testid="card-description"
-                        className="mt-2 min-h-[3.25em] font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
-                      >
-                        {display.description && <div className="line-clamp-2">{display.description}</div>}
-                      </div>
-                    </div>
-                  </button>
-                  {!isLocalId(script.id) && (
-                    <div className="flex items-stretch border-t border-border">
-                      <div className="min-w-0 flex-1 px-3 py-2">
-                        <ExperienceVisualBinding
-                          bound={boundVisuals[script.id] ?? []}
-                          available={visuals}
-                          onToggle={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
-                        />
-                      </div>
-                      {/* Mini-app export: the same card payload the binding
-                          strip shows — script + bound visuals + primary. */}
-                      <div className="flex shrink-0 items-center border-l border-border px-2">
-                        <CustomTooltip content={t("experience_editor_export")}>
-                          <button
-                            type="button"
-                            aria-label={t("experience_editor_export")}
-                            data-testid="experience_export_button"
-                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                            onClick={() => void handleExportMiniApp(script)}
-                          >
-                            <Ic.download />
-                          </button>
-                        </CustomTooltip>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  script={script}
+                  display={display}
+                  isDraft={isDraft}
+                  statusKey={statusKey}
+                  dotClass={dotClass}
+                  bound={boundVisuals[script.id] ?? []}
+                  available={visuals}
+                  isMobile={isMobile}
+                  onOpen={openScript}
+                  onToggleVisual={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
+                  onExport={() => void handleExportMiniApp(script)}
+                  onDuplicate={() => handleDuplicateScript(display)}
+                  onDelete={(target) => setExperienceDeleteTarget(target)}
+                />
               );
             })}
           </div>
         )}
       </div>
+      {deleteConfirmModal}
       </>
     );
   }
@@ -887,7 +867,7 @@ export function ExperienceEditor() {
   // E6: the trust-blocked hint renders below the bar on desktop and inside
   // the mobile Edit-tab header — one definition, two placements.
   const trustBlockedHint = enableLocked && (
-    <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
+    <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[calc(var(--ui-fs)-3px)] leading-[1.4] text-t3">
       {t("experience_editor_trust_blocked_hint")}
     </div>
   );
@@ -907,8 +887,8 @@ export function ExperienceEditor() {
       isMobile={isMobile}
       resetKey={activeScriptId}
       onSave={() => void handleSaveRules()}
-      onDuplicate={handleDuplicateScript}
-      onDelete={() => setExperienceDeleteOpen(true)}
+      onDuplicate={() => { if (activeScript) handleDuplicateScript(activeScript); }}
+      onDelete={() => { if (activeScriptId) setExperienceDeleteTarget({ scriptId: activeScriptId, visualId: activeVisualId }); }}
       canDelete={!isNewScript}
     />
   );
@@ -923,7 +903,7 @@ export function ExperienceEditor() {
           <button
             type="button"
             aria-label={t("experience_editor_back")}
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s2 hover:text-t1"
             onClick={handleBackFromEditor}
           >
             {Ic.caret("l")} {t("experience_editor_back")}
@@ -938,42 +918,7 @@ export function ExperienceEditor() {
           pane. The active step mirrors the shell's current position (reported
           via onStepChange); completed steps get a check. */}
       {creationMode && (
-        <div
-          className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface px-3 py-1.5"
-          data-testid="experience-creation-stepper"
-        >
-          {CREATION_STEP_ORDER.map((step, index) => {
-            const isActive = activeStep === step;
-            const isDone = CREATION_STEP_ORDER.indexOf(activeStep) > index;
-            const label =
-              step === "rules"
-                ? t("experience_copilot_rules")
-                : step === "appearance"
-                  ? t("experience_editor_step_appearance")
-                  : t("experience_copilot_try_it");
-            return (
-              <div key={step} className="flex items-center gap-1.5">
-                {index > 0 && <span className="text-t4">{Ic.caret("r")}</span>}
-                <span
-                  className={cn(
-                    "flex items-center gap-1.5 font-ui text-[11px] font-medium",
-                    isActive ? "text-accent-t" : isDone ? "text-t2" : "text-t3",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex h-4 w-4 items-center justify-center rounded-full text-[9px]",
-                      isDone ? "bg-accent text-on-accent" : "bg-s3 text-t3",
-                    )}
-                  >
-                    {isDone ? Ic.check() : index + 1}
-                  </span>
-                  {label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <ExperienceCreationStepper activeStep={activeStep} steps={CREATION_STEP_ORDER} />
       )}
 
       {/* Body: the 2-pane copilot shell hosts both editors + top-button modals. */}
@@ -995,6 +940,8 @@ export function ExperienceEditor() {
             ) : undefined
           }
           editTabDirty={scriptDirty}
+          rulesSaved={!scriptDirty}
+          visualSaved={!visualDirty}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
           revealRulesLine={revealRulesLine}
@@ -1013,7 +960,7 @@ export function ExperienceEditor() {
                           type="button"
                           key={starter.id}
                           className={cn(
-                            "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                            "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                             active
                               ? "border-accent bg-accent/10 text-accent-t"
                               : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1036,14 +983,14 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
                   onClick={() => runExplicitScriptAction("test", (warningAcknowledged) => { void handleValidateRules(warningAcknowledged); })}
                 >
@@ -1051,10 +998,10 @@ export function ExperienceEditor() {
                   {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
                 </button>
                 {rulesValid === true && (
-                  <span className="font-ui text-[11px] text-success">{t("experience_wizard_rules_valid")}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-success">{t("experience_wizard_rules_valid")}</span>
                 )}
                 {rulesValid === false && (
-                  <span className="font-ui text-[11px] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
+                  <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
                 )}
               </div>
               {apiRefOpen && <InteractiveApiReference />}
@@ -1063,7 +1010,7 @@ export function ExperienceEditor() {
           visualToolbar={
             <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
               {visualDeleteError && (
-                <div className="rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+                <div className="rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">
                   {t("experience_editor_visual_delete_error")}: {visualDeleteError}
                 </div>
               )}
@@ -1109,7 +1056,7 @@ export function ExperienceEditor() {
                           data-testid="experience_bind_visual_button"
                           aria-label={boundNow ? t("experience_editor_unbind_visual") : t("experience_editor_bind_visual")}
                           className={cn(
-                            "flex h-9 max-md:min-h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-3 font-ui text-[11px] transition-all",
+                            "flex h-9 max-md:min-h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-3 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                             boundNow
                               ? "border-accent bg-accent-dim text-accent-t hover:bg-accent/20"
                               : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1123,7 +1070,7 @@ export function ExperienceEditor() {
                   })()
                 ) : activeVisual ? (
                   <CustomTooltip content={t("experience_editor_bind_disabled_hint")}>
-                    <span className="flex h-9 max-md:min-h-[44px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[11px] text-t4">
+                    <span className="flex h-9 max-md:min-h-[44px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                       <Ic.plug /> {t("experience_editor_bind_visual_short")}
                     </span>
                   </CustomTooltip>
@@ -1162,7 +1109,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
                   onClick={handleNewBlankVisual}
                 >
                   <Ic.plus /> {t("experience_editor_visual_blank")}
@@ -1177,7 +1124,7 @@ export function ExperienceEditor() {
                       key={starter.id}
                       aria-label={isPaired ? t("experience_editor_visual_paired") : undefined}
                       className={cn(
-                        "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                        "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all",
                         isPaired
                           ? "border-accent bg-accent/10 text-accent-t ring-2 ring-accent/40"
                           : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1186,7 +1133,7 @@ export function ExperienceEditor() {
                     >
                       {starter.label}
                       {isPaired && (
-                        <span className="rounded bg-accent-dim px-1 py-0.5 font-ui text-[9px] font-semibold uppercase tracking-wide text-accent-t">
+                        <span className="rounded bg-accent-dim px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-5px)] font-semibold uppercase tracking-wide text-accent-t">
                           {t("experience_editor_visual_paired")}
                         </span>
                       )}
@@ -1207,7 +1154,7 @@ export function ExperienceEditor() {
                       title={activeVisualDraft?.error ?? undefined}
                     />
                     {visualDirty && (
-                      <span className="shrink-0 max-md:hidden whitespace-nowrap font-ui text-[12px] text-t3">{t("unsaved_changes")}</span>
+                      <span className="shrink-0 max-md:hidden whitespace-nowrap font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("unsaved_changes")}</span>
                     )}
                     <SaveButton
                       className="shrink-0 max-md:min-h-[44px] max-md:w-full"
@@ -1231,12 +1178,12 @@ export function ExperienceEditor() {
                       >
                         {Ic.caret("r")}
                       </span>
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                      <span className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
                         {t("experience_editor_visual_technical_details")}
                       </span>
                     </button>
                     <AnimatedDisclosure open={visualTechOpen} className="px-2.5 pb-2">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                         <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
                         <span>
                           {t("experience_editor_visual_hash")}:{" "}
@@ -1253,7 +1200,7 @@ export function ExperienceEditor() {
                   </div>
                 </>
               ) : (
-                <div className="py-2 text-center font-ui text-[12px] italic text-t3">
+                <div className="py-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] italic text-t3">
                   {t("experience_editor_visual_none")}
                 </div>
               )}
@@ -1261,7 +1208,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setVisualApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}
@@ -1286,17 +1233,7 @@ export function ExperienceEditor() {
 
       {/* IR-90A: dual-action destructive delete for the active experience (its
           rules script). */}
-      {experienceDeleteOpen && (
-        <DestructiveConfirmModal
-          title={t("experience_editor_delete_title")}
-          body={t("experience_editor_delete_body")}
-          confirmLabel={t("experience_editor_delete_full")}
-          onConfirm={() => void handleDeleteExperience("full")}
-          onCancel={() => setExperienceDeleteOpen(false)}
-          secondaryLabel={activeVisualId ? t("experience_editor_delete_rules_only") : undefined}
-          onSecondary={activeVisualId ? () => void handleDeleteExperience("rules") : undefined}
-        />
-      )}
+      {deleteConfirmModal}
 
       {/* SS-7/7B4: explicit enable and validation warnings. Only one can be
           open — the discriminated flow renders plain when there are no blocking

@@ -4,6 +4,8 @@
 >
 > Field shapes come from the **field canon** (`lib/field-tokens.ts` — bases + modifiers, one home for the whole app), enforced by the field primitives below. The decision table for "which primitive do I need" lives in the `vibe-tavern-frontend` skill (`.agents/skills/vibe-tavern-frontend/SKILL.md`); this file is the full per-component reference.
 >
+> Text sizing follows the **UI font ladder**: size text only through `calc(var(--ui-fs)±Kpx)` (or `var(--ui-fs)` itself) — never fixed pixel classes (`text-[11px]`), Tailwind size classes (`text-xs` … `text-2xl`), or inline `fontSize` values; those ignore the Tweaks «UI font size» setting and render ~3px smaller than ladder-sized neighbours at the default 17px. `scripts/arch-gate.ts` bans every fixed size under `apps/web/src` outright — any occurrence fails the gate (the audit converted them all, so there is no baseline left to count down) — and `scripts/font-size-codemod.ts` converts fixed sizes onto the ladder mechanically (`--dry-run` lists per-area counts and the flagged places). The one exception is roleplay message content, which follows the chat font size `--mfs` instead (FIXED_FONT_SIZE_AUDIT_REPORT).
+>
 > Verified against live code 2026-09-11 (full rewrite; field canon = FIELD_SYSTEM_UNIFICATION_REPORT FS-2..FS-10).
 
 ---
@@ -24,13 +26,15 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
-| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
+| `<Slider>` | `<input type="range">` | `slider.tsx` | Base UI slider: `field` scrubber for parameters or glowing `rail` for media |
+| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting rendered as the `Slider appearance="field"` scrubber: label inside the field, value on the right, typing through the inline number editor (double-click / Enter); optional `help` node (the «?» tooltip) inside the field; optional `onCommit` = persist on release, keyboard commit and inline commit (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
 | `<MasterDetailModal>` | Custom two-pane modals | `MasterDetailModal.tsx` | Two-pane on desktop, drill-down stack on mobile |
 | `<MasterDetailFooter>` | Custom editor footers | `MasterDetailModal.tsx` | Canonical desktop/mobile actions with disabled and destructive states |
+| `<MasterList>` + `<SortableMasterListRow>` / `<MasterListPhoneRow>` + `<MasterListDragOverlayRow>` | Hand-rolled master-list rows + `@dnd-kit/*` per list | `master-list/master-list.tsx` + `master-list-row.tsx` + `master-list-phone-row.tsx` + `master-list-overlay-row.tsx` | The ONE master-detail list primitive: header/search/sortable/empty-state/footer slots, wrapping title (`rowTitleCls`), second line (`rowSecondCls`), status slot with ★ active marker, handle-only drag, pinned rows without handles |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions (+ optional secondary) |
 | `<ActionSheet>` | Mobile action menus | `ActionSheet.tsx` | Mobile bottom-sheet action menu (portaled) |
@@ -49,6 +53,7 @@
 | `<AiAssistantShell>` | Hand-built assistant modal chrome | `ai-assistant/AiAssistantShell.tsx` | Shared header/content/footer shell with responsive structured actions |
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
+| `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
 
 ---
 
@@ -419,11 +424,54 @@ JSON-array paste inserts every element at once in both modes.
 | `value` / `onChange` | `number` / `(val: number) => void` | Controlled value |
 | `min` / `max` / `step` | `number?` | Bounds and increment |
 | `hideControls` | `boolean?` | Hide the +/- stepper buttons (plain input) |
-| `onBlur` | `() => void?` | Blur handler |
+| `onBlur` | `((event: FocusEvent<HTMLInputElement>) => void)?` | Fires after the blur commit; the event's `relatedTarget` shows where focus is going |
+| `autoFocus` | `boolean?` | Focuses the input and selects its text on mount (inline editors) |
+| `onEscape` | `(() => void)?` | Fires on Escape; the caller decides what cancelling means |
+| `inputTestId` | `string?` | Test id on the real `<input>`, not on the wrapper |
 | `disabled` | `boolean?` | Disables editing |
-| `className` / `inputClassName` | `string?` | Classes on wrapper / input |
+| `className` / `inputClassName` | `string?` | Classes on wrapper / input (a conflicting base utility needs the `!` modifier) |
 
 Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
+
+---
+
+## Slider
+
+**File:** `slider.tsx`
+**Replaces:** raw `<input type="range">` controls
+
+```tsx
+<Slider value={volume} min={0} max={100} step={1} aria-label="Volume" onValueChange={setVolume} />
+```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `value` / `onValueChange` | `number` or `[number, number]` / matching callback value | Controlled scalar or two-thumb range value |
+| `min` / `max` / `step` | `number` | Bounds and increment |
+| `onValueCommitted` | `((value: number \| [number, number]) => void)?` | Fires once when Base UI commits an interaction |
+| `size` | `"md" \| "sm" \| "xs"?` | Visual density; defaults to `md` |
+| `orientation` | `"horizontal" \| "vertical"?` | Rail direction; defaults to `horizontal` |
+| `appearance` | `"rail" \| "field"?` | Visual interaction mode; defaults to `rail` so existing callers retain media-rail behavior |
+| `formatValue` | `((value: Value) => string)?` | Formats the complete scalar or tuple value for a rail bubble or field value text |
+| `valueClassName` | `string?` | Field-only value-span classes replacing the default `text-t1` color; ignored by the rail |
+| `label` / `help` | `ReactNode?` | Field-only left-side label and caller-owned help node; long labels move above rather than truncate |
+| `aria-label` | `string?` | Accessible label for a scalar thumb |
+| `getAriaLabel` | `((index: number) => string)?` | Accessible label for each range thumb |
+| `inputTestId` | `string` or `[string, string]?` | Test id placed on Base UI's nested range input(s) |
+| `numberTestId` | `string?` | Field-only inline number editor test id |
+| `disabled` / `className` | `boolean?` / `string?` | Disables interaction / extends the primitive base |
+
+Built on Base UI Slider with its hidden native range input and keyboard semantics.
+Range thumbs use Base UI's non-crossing collision behavior.
+`appearance="rail"` is for media timelines, volume, and zoom: it has the gradient accent fill, near-white accent-ringed thumb, focus/drag halo, and an optional formatted value bubble owned by the active thumb.
+`appearance="field"` is for parameters and `SliderField`: it uses the canon field box, supports press-to-set/scrubbing, exact ten-step Shift+arrow large steps, inline number editing, and two-value window dragging.
+On touch it defers horizontal scrubbing until 4 px and leaves vertical swipes to scroll.
+The inline editor (`slider-field-editor.tsx`) is a `NumberInput`: Enter or blur commits once only if the clamped number differs from the value the editor opened with (untouched, empty/reverted or same-value edits emit neither `onValueChange` nor `onValueCommitted`; changed numbers stay exact, never snapped to the step grid), Escape cancels, and keyboard focus returns to the field's thumb input afterwards.
+The field fill (single value or two-value window) is a theme-independent translucent accent, 16 % of `--accent`, never `--accent-hover`, which is opaque in some themes; label, help and value always paint above it.
+Field labels remain authored in full; when label and value do not fit, the label moves above using `lblCls` spacing.
+Both appearances keep disabled opacity and the 44 px coarse-pointer hit area without inflating the visible rail thumb.
+
+**When to use:** Parameters use `Slider appearance="field"` (or `SliderField`); media timeline, volume, and zoom use `Slider appearance="rail"`.
 
 ---
 
@@ -871,7 +919,7 @@ The Regex AI assistant is the reference consumer.
 
 **File:** `AiAssistantModal.tsx` — the frontend of the [AI Assistant backend subsystem](./backend.md#ai-assistant). One modal with two shapes:
 
-- **Full mode** (`mode="full"`) — the lightbulb "assist" generator. `apiMode` selects what to generate: `"script"`, `"lore_entry"`, or `"md_import"` (the markdown-card importer). Lets the user pick a provider/model, feeds the relevant context (character/persona via `scopeContext`), and returns the result via `onInsert` / `onReplace` (text modes) or `onMdImportApply` (the structured `md_import` fields). Maps to the backend modes in `MODE_CONFIGS`.
+- **Full mode** (`mode="full"`) — the lightbulb "assist" generator. `apiMode` selects what to generate: `"lore_entry"`, `"md_import"` (the markdown-card importer), `"scene_schema"`, or `"scene_rules"`. Lets the user pick a provider/model, feeds the relevant context (character/persona via `scopeContext`), and returns the result via `onInsert` / `onReplace` (text modes) or `onMdImportApply` (the structured `md_import` fields). Maps to the backend modes in `MODE_CONFIGS`.
 - **QuickPill mode** (`mode="quickpill"`) — the settings editor behind `<AiQuickPill>`: pick the quick-action model and toggle which options it shows (append toggle, key target, message count).
 
 The modal persists the last-used model per mode in `localStorage` so the lightbulb actions remember their model across sessions.
@@ -916,16 +964,65 @@ The modal persists the last-used model per mode in `localStorage` so the lightbu
 
 ---
 
-## CopilotTodoPanel
+## ResizableSidePane
 
-**File:** `build/editors/copilot/CopilotTodoPanel.tsx` — the Experience Copilot's step-plan panel, part of the [copilot subsystem](./experience-copilot.md). Mounted in the shell's chat tab as the context meter's immediate next sibling (pinned stack: header → meter → panel → scrolling feed — it does not scroll with the feed).
+**File:** `resizable-side-pane.tsx` — the ONE home of side-column behaviour (SC-16b). First consumer: the desktop sidechat panel; SC-16c reuses it for scripts, mini-apps and the co-author editor. Never copy its drag/clamp/glide logic into a panel — wire this instead.
 
-- **Read-only by contract** — the plan is model-owned; the expanded tree contains exactly one button (the collapse chevron). No user editing controls exist.
-- **Hidden until the first `todo` call ever happens** on the thread (`items.length === 0` → `null`).
-- **Collapsed:** `[status glyph] current-title · N` + chevron; the whole row is the expand button. Current = first `active` item, falling back to first `pending` (mirrors the objective tracker's `pickActiveTask`); a fully-resolved plan shows the done label. N = remaining = `pending + active` (abandoned goals are given up, not remaining). The active glyph's dot pulses — the "live" indicator.
+```tsx
+<ResizableSidePane
+  open={open}
+  storageKey="vt.sidechat.width"
+  defaultWidth={400}
+  minWidth={320}
+  resizeEdge="left"
+  className="border-l border-border/50 bg-surface"
+  panelTestId="sidechat-panel"
+  resizeHandleTestId="sidechat-resize"
+  closedView={<SidechatHandle variant="desktop" label={label} onOpen={() => setOpen(true)} />}
+>
+  {content}
+</ResizableSidePane>
+```
+
+Pane-edge toggles come only from `SidechatHandle` (`chat/sidechat/SidechatHandle.tsx`): a closed pane shows a half-opacity capsule (full on hover or keyboard focus); an open pane shows a thin line that grows into the capsule while the pointer is anywhere over the pane — the pane adds `EDGE_PANE_GROUP` to its `className` for that. Each button keeps a 24 × 48 px hit area.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `open` | `boolean` | Presence: false starts the close glide, true mounts and opens |
+| `storageKey` | `string` | `usePersistedNumber` key for the one shared width preference |
+| `defaultWidth` | `number` | Resting width (px) — also the double-click reset target |
+| `minWidth` | `number` | Static floor (px) — enforced on read, write, drag and reset |
+| `resizeEdge` | `"left" \| "right"` | Which pane edge carries the drag line (drag sign follows the edge) |
+| `children` | `ReactNode` | Pane content — squeezing content must carry its own `overflow-hidden` + `min-w-0` (the pane never clips: edge chrome outset shadows must survive) |
+| `closedView` | `ReactNode?` | Rendered instead of the pane once the close glide ends (default: nothing) |
+| `className` | `string?` | Extends the pane chrome (`cn` is join-only — appended, never replaced) |
+| `panelTestId` / `resizeHandleTestId` | `string?` | Test hooks for the pane element and the drag line |
+
+Owns the 6 px `col-resize` drag line (GalleryViewer mousedown → window mousemove/mouseup pattern), the clamp (static min, max = half the live window, resize re-clamps without touching stored intent), the persisted width, the double-click reset, and the open/close width glide (`transition-[width_0.18s_ease-out]` — the rail flyouts' `flyoutIn` curve; off while held; `motion-reduce:transition-none` + instant mount logic under `prefers-reduced-motion`). Close keeps the pane mounted until its own width `transitionend` (child transitions filtered by target + property; 200 ms timeout fallback), then unmounts.
+
+**When to use:** any side column that resizes and glides (sidechat, SC-16c panes). NOT for overlays/popovers (use `Modal`/Radix) or mobile sheets (use `BottomSheet`/`ActionSheet`).
+
+---
+
+## CopilotPlanSection
+
+**File:** `build/editors/copilot/CopilotPlanSection.tsx` — the Experience Copilot's mount of the shared agent-plan mechanic (see [Agent plan mechanic](./frontend.md#agent-plan-mechanic)), part of the [copilot subsystem](./experience-copilot.md). Mounted in the shell's chat tab directly below the todo section (pinned stack: header → meter → todo panel → plan section → scrolling feed — it does not scroll with the feed); the plan is the durable script document living beside the session-scoped todo panel (PM-7).
+
+- Owns one `useAgentPlan(owner)` subscription for the script plus the editor modal's local open state; renders `AgentPlanPanel` + `AgentPlanEditorModal` (both in `shared/agent-plan/`).
+- The shell passes `locked={ctrl.isSending}` — the panel's editor button and every modal field lock while a turn streams, so the model's rewrite and the user's edit can never race.
+- Props are prop-driven by contract (`owner`, `locked`); nothing imports from the copilot dir in the shared components.
+
+---
+
+## CopilotTodoSection
+
+**File:** `build/editors/copilot/CopilotTodoSection.tsx` + `CopilotTodoPanel.tsx` — the Experience Copilot's mount of the session-scoped todo mechanic (restored PM-7, owner ruling 2026-10-11: todo = the thread's session; plan = the script), part of the [copilot subsystem](./experience-copilot.md). Pinned directly below the context meter and directly ABOVE `CopilotPlanSection` — it does not scroll with the feed.
+
+- The section owns the turn-store subscription (`todoByThread[threadId]`, seeded from the thread wire by the controller, rewritten live by `todo` tool events); the panel is strictly read-only (model-owned).
+- **Hidden until the first `todo` call ever happens** on the thread (`items.length === 0` → `null`) — each pinned panel hides itself independently of the other.
+- **Collapsed:** `[status glyph] current-title · N` + chevron; the whole row is the expand button. Current = first `active` item, falling back to first `pending` (mirrors the objective tracker's `pickActiveTask`); a fully-resolved list shows the done label. N = remaining = `pending + active`. The active glyph's dot pulses — the "live" indicator.
 - **Expanded:** `Ic.target` header + i18n title + remaining count, then the full ordered list with per-status glyphs (status classes/NodeGlyph styling borrowed verbatim from `chat/message-slots/objective-zone.tsx`).
 - Collapse/expand is per-mount local state (a UI toggle, deliberately NOT persisted to the store).
-- Data: the shell subscribes to the turn store's `todoByThread[threadId]`; the controller seeds it from the thread wire (`todo`) on mount/switch/refetch, and live `todo` tool calls rewrite it optimistically (full-list semantics).
 
 ---
 

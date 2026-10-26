@@ -31,12 +31,14 @@ import {
   coauthorSectionWriteInputSchema,
   type CoauthorTarget,
   type CoauthorToolOutput,
+  type CoauthorTrackerTemplateOutput,
 } from "@vibe-tavern/api-contracts";
-import { applyExactEditsToBody, log } from "@vibe-tavern/domain";
+import { applyExactEditsToBody, log, type TrackerTemplate } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 import { buildLoreTools, type LoreEntityLookup } from "../coauthor/lore/lore-tools.js";
 import type { LoreDraftIdGen } from "../coauthor/lore/lore-draft-state.js";
 import type { LoreDelegate } from "../coauthor/lore/lore-delegate.js";
+import type { TrackerDelegate } from "../coauthor/tracker/tracker-delegate.js";
 
 // Re-export so existing import sites (chat-mode-strategy, lore-entity-lookup)
 // keep resolving the seam type from this module after the lore tools moved
@@ -225,15 +227,16 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; loreWorkActive?: boolean; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
-  const { toolSet, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession } = opts;
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; trackerDelegate?: TrackerDelegate; getCurrentTrackerTemplate?: () => TrackerTemplate | null; loreEntityLookup?: LoreEntityLookup; loreWorkActive?: boolean; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
+  const { toolSet, skillRoots, loreDelegate, trackerDelegate, getCurrentTrackerTemplate, loreEntityLookup, contextSearchSession } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
   // Every successful profile mutation in one assembled turn — write_profile,
   // edit_personality/scenario/examples, write_personality/scenario/examples —
   // shares this single working profile and a single serialized, non-poisoning
-  // queue. The working profile starts from the canonical storage profile.md
-  // captured at turn start; each successful call advances it, so a later call
+  // queue. The working profile starts from the canonical turn document
+  // captured at turn start (the supplied editor snapshot when present, storage
+  // otherwise); each successful call advances it, so a later call
   // sees earlier mutations (composition). A rejected call cannot poison the
   // queue or corrupt the working profile — its change is discarded and the next
   // call proceeds against the last good state.
@@ -520,7 +523,46 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     // assembler from lore-work-trigger.ts.
     ...buildLoreTools({ idGen: opts.loreIdGen, loreDelegate, loreEntityLookup, loreWorkActive: opts.loreWorkActive, getWorkingProfileMd: () => workingProfileMd }),
 
-    // ── CE-D2: indexed two-step context search ──────────────────────────────
+    // ── CT-11: tracker-template proposal tool ───────────────────────────────
+    // The Co-Author supplies intent only. A focused background delegate authors
+    // and validates the full portable template; Apply remains the sole write.
+    set_tracker_template: tool({
+      description:
+        "Propose the character's tracker template — the Scene Tracker and Objective Tracker setup that new RP chats with this character start from. " +
+        "Generation is delegated to a background assistant: describe WHAT you want, never template JSON. Use `create` for a new setup or `refine` to adjust the current template shown in this prompt; carry the user's request in focusNotes, including scene-only/objective-only preferences, tone, and what to adjust. " +
+        "Nothing is persisted until the user reviews and applies the proposal.",
+      inputSchema: z.object({
+        action: z.enum(["create", "refine"]).describe("Whether to create a new template or refine the current template shown in the prompt."),
+        modeHint: z.enum(["route", "goals"]).optional().describe("Use only when the user expressed an objective-mode preference."),
+        focusNotes: z.string().max(2000).optional().describe("The self-contained authoring brief for the background assistant: desired tracker focus, tone, scene/objective scope, or requested refinements."),
+        summary: z.string().max(200).describe("One-line description of the proposed template change, shown above the Apply button."),
+      }),
+      execute: async ({ action, modeHint, focusNotes, summary }): Promise<CoauthorTrackerTemplateOutput | string> => {
+        if (!trackerDelegate) {
+          throw new Error("set_tracker_template: tracker template generation is not configured");
+        }
+        logger.info("set_tracker_template IN action=%s modeHint=%s focusNotesLen=%d summary=%s", action, modeHint ?? "(none)", focusNotes?.length ?? 0, summary);
+        try {
+          const result = await trackerDelegate({
+            action,
+            modeHint,
+            focusNotes,
+            characterProfileMd: workingProfileMd ?? "",
+            currentTemplate: getCurrentTrackerTemplate?.() ?? null,
+          });
+          logger.info("set_tracker_template OK scene=%s objective=%s", result.trackerTemplate.scene === null ? "absent" : result.trackerTemplate.scene.enabled ? "on" : "off", result.trackerTemplate.objective === null ? "absent" : result.trackerTemplate.objective.enabled ? "on" : "off");
+          return { trackerTemplate: result.trackerTemplate, summary };
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          logger.warn("set_tracker_template FAILED reason=%s", reason);
+          return `set_tracker_template: tracker template generation failed: ${reason}. Please tell the user and ask whether they want to try again.`;
+        }
+      },
+    }),
+
+    // ── CE-D2: indexed two-step context search ────────────────────────────
+    // forks: 1 — kinds/sidechat/sidechat-search-tools.ts (the sidechat's
+    // twin: sidechat descriptions, `rp-message` type, no skill channel).
     // search_context returns compact locator metadata only (no body);
     // read_context_item returns canonical full content for one chosen item.
     // Both are read-only and never mutate state. The session lazily projects

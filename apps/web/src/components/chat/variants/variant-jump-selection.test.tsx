@@ -28,22 +28,13 @@ import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "
 import { brandId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useMessageAiEditorStore } from "../../../stores/message-ai-editor-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const NOOP = () => {};
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: NOOP,
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 let VariantControls: typeof import("./variant-controls.js").VariantControls;
 let VariantJump: typeof import("./variant-jump.js").VariantJump;

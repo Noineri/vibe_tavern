@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "manual edit after a partial accept, then cancel keeps the surviving hunk",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain partial cancellation",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "start\nA: drift\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: old\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: old\nend",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "f4696c4268e1",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain partial cancellation again",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "start\nA: drift\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: old\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: old\nend",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "f4696c4268e1",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

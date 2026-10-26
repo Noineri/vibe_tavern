@@ -15,6 +15,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -23,27 +24,29 @@ let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 
-const realI18nContext = await import("../../i18n/context.js");
 const realSkillApi = await import("../../api/skill-api.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
 
-mock.module("../../i18n/context.js", () => ({
-		...realI18nContext,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // ─── skill-api mock: the catalog the store loads + the delete/import fns ──
 const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
+const readContentMock = mock();
+const createSkillMock = mock();
+const updateSkillMock = mock();
 mock.module("../../api/skill-api.js", () => ({
 	...realSkillApi,
 	listCoauthorSkills: listSkillsMock,
 	readCoauthorSkill: mock(),
 	deleteCoauthorSkill: deleteSkillMock,
 	importCoauthorSkills: importSkillsMock,
+	readCoauthorSkillContent: readContentMock,
+	createCoauthorSkill: createSkillMock,
+	updateCoauthorSkill: updateSkillMock,
 }));
 
 // ─── api-actions mock: the module list the reference guard consults ──────
@@ -119,6 +122,32 @@ beforeEach(() => {
 	listSkillsMock.mockResolvedValue(CATALOG);
 	deleteSkillMock.mockResolvedValue({ id: "x" });
 	importSkillsMock.mockResolvedValue({ importedSkillIds: [], importedTopLevelDirs: [] });
+	readContentMock.mockReset();
+	readContentMock.mockResolvedValue({
+		id: "janitor-modern-botmaking",
+		path: "janitor-modern-botmaking/SKILL.md",
+		content: "# Modern Botmaking\n\nUser-imported card skill.",
+		body: "User-imported card skill.",
+		files: ["references/notes.md"],
+	});
+	createSkillMock.mockReset();
+	createSkillMock.mockResolvedValue({
+		id: "fresh-skill",
+		source: "user",
+		name: "Fresh Skill",
+		description: "Fresh.",
+		manifestPath: "fresh-skill/SKILL.md",
+		shadowsBuiltin: false,
+	});
+	updateSkillMock.mockReset();
+	updateSkillMock.mockResolvedValue({
+		id: "janitor-modern-botmaking",
+		source: "user",
+		name: "Modern Botmaking",
+		description: "User-imported card skill.",
+		manifestPath: "janitor-modern-botmaking/SKILL.md",
+		shadowsBuiltin: false,
+	});
 	listModulesMock.mockResolvedValue([]);
 	useCoauthorSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
 	useModalStore.setState({ isCoauthorSkillModalOpen: true });
@@ -126,17 +155,30 @@ beforeEach(() => {
 
 describe("CoauthorSkillModal — catalog list + read-only built-ins (CTX-S7)", () => {
 	it("lists every catalog entry (built-in + user) on open", async () => {
-		const { getByText, queryAllByTestId } = render(<CoauthorSkillModal />);
+		const { getByText, queryByText } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
 		expect(getByText("General Writing")).toBeDefined();
-		// Only user-source rows render a delete button (built-ins are read-only).
-		expect(queryAllByTestId(/skill-delete-btn-/)).toHaveLength(2);
+		// Rows show the description, not the id (AP-23).
+		expect(getByText("User-imported card skill.")).toBeDefined();
+		expect(queryByText("janitor-modern-botmaking")).toBeNull();
 	});
 
 	it("a pure built-in skill has no delete affordance (delete is rejected at the UI)", async () => {
-		const { getByText, queryByTestId } = render(<CoauthorSkillModal />);
+		const { getByText, queryByText } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("General Writing")).toBeDefined());
-		expect(queryByTestId("skill-delete-btn-general-writing")).toBeNull();
+		// The Co-Author rows carry no testid — the row click bubbles from the name.
+		fireEvent.pointerDown(getByText("General Writing"));
+		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("general-writing"));
+		expect(queryByText("coauthor.skill.delete")).toBeNull();
+	});
+
+	it("selecting a skill lazily reads its content (AP-23)", async () => {
+		const { getByText } = render(<CoauthorSkillModal />);
+		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
+		expect(readContentMock).not.toHaveBeenCalled();
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("janitor-modern-botmaking"));
+		expect(getByText("coauthor.skill.body_label")).toBeDefined();
 	});
 });
 
@@ -147,11 +189,13 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 			{ id: "cmod_a", name: "My Card Module", skillIds: ["janitor-modern-botmaking", "general-writing"] },
 			{ id: "cmod_b", name: "Dialogue Only", skillIds: ["dialogue-generation"] },
 		]);
-		const { getByText, getByTestId, queryByTestId } = render(<CoauthorSkillModal />);
+		const { getByText, queryByTestId } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
 
-		// Click delete on the user skill that is referenced.
-		fireEvent.click(getByTestId("skill-delete-btn-janitor-modern-botmaking"));
+		// Select the user skill that is referenced, then the footer delete.
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(getByText("coauthor.skill.delete")).toBeDefined());
+		fireEvent.click(getByText("coauthor.skill.delete"));
 
 		// The reference guard resolves modules, then opens a confirm that NAMES
 		// the referencing module — not a silent plain confirm.
@@ -167,7 +211,9 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		]);
 		const { getByText, getByTestId, queryByTestId } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
-		fireEvent.click(getByTestId("skill-delete-btn-janitor-modern-botmaking"));
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(getByText("coauthor.skill.delete")).toBeDefined());
+		fireEvent.click(getByText("coauthor.skill.delete"));
 		await waitFor(() => expect(queryByTestId("confirm-modal")).not.toBeNull());
 
 		fireEvent.click(getByTestId("confirm-ok"));
@@ -179,10 +225,39 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		listModulesMock.mockResolvedValue([{ id: "cmod_b", name: "Other", skillIds: ["dialogue-generation"] }]);
 		const { getByText, getByTestId, queryByTestId } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
-		fireEvent.click(getByTestId("skill-delete-btn-janitor-modern-botmaking"));
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(getByText("coauthor.skill.delete")).toBeDefined());
+		fireEvent.click(getByText("coauthor.skill.delete"));
 		await waitFor(() => expect(queryByTestId("confirm-modal")).not.toBeNull());
 		// Plain body (no referencing module name rendered).
 		expect(getByTestId("confirm-body").textContent).toBe("coauthor.skill.delete_confirm_body");
 		expect(queryByTestId("Other" as never)).toBeNull();
+	});
+});
+
+describe("CoauthorSkillModal — editor save seam (AP-23d)", () => {
+	it("creates a new skill through createCoauthorSkill (no kind — one Co-Author library)", async () => {
+		const { getByText, getByTestId } = render(<CoauthorSkillModal />);
+		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
+		fireEvent.click(getByTestId("skill-new-btn"));
+		fireEvent.change(getByTestId("skill-editor-name"), { target: { value: "Fresh Skill" } });
+		fireEvent.change(getByTestId("skill-editor-when"), { target: { value: "Fresh." } });
+		fireEvent.change(getByTestId("skill-editor-body"), { target: { value: "Fresh body." } });
+		fireEvent.click(getByText("coauthor.skill.save"));
+		// (was: no create path existed — the library was import-only.)
+		await waitFor(() => expect(createSkillMock).toHaveBeenCalledWith({ name: "Fresh Skill", description: "Fresh.", body: "Fresh body." }));
+		expect(updateSkillMock).not.toHaveBeenCalled();
+	});
+
+	it("updates an edited skill through updateCoauthorSkill", async () => {
+		const { getByText, getByTestId } = render(<CoauthorSkillModal />);
+		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
+		fireEvent.pointerDown(getByText("Modern Botmaking"));
+		await waitFor(() => expect(getByText("coauthor.skill.edit")).toBeDefined());
+		fireEvent.click(getByText("coauthor.skill.edit"));
+		fireEvent.change(getByTestId("skill-editor-body"), { target: { value: "Edited body." } });
+		fireEvent.click(getByText("coauthor.skill.save"));
+		await waitFor(() => expect(updateSkillMock).toHaveBeenCalledWith("janitor-modern-botmaking", { name: "Modern Botmaking", description: "User-imported card skill.", body: "Edited body." }));
+		expect(createSkillMock).not.toHaveBeenCalled();
 	});
 });

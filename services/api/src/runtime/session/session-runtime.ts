@@ -1,4 +1,4 @@
-import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
+import { type StoreContainer, type PromptPreset, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
@@ -9,28 +9,33 @@ import {
 	type MessageId,
 	type PromptPresetId,
 	type StoredProviderProfileRecord,
-	SYSTEM_RESOURCE_ID,
 	tag,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import { findBranchOfChat } from "../../domain/chat/chat-branch-ownership.js";
 import { getChatModeStrategy, type ChatModeStrategy, type ChatModeAssembleLoaders } from "../../domain/chat/chat-mode-strategy.js";
 import {
 	internal,
 	notFound,
 	validation,
 } from "../../shared/errors.js";
-import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
+import { createTrackerDelegate } from "../../domain/coauthor/tracker/tracker-delegate.js";
 import { createSessionLoreDelegate } from "./session-runtime-lore-delegate.js";
-import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
+import { createSessionTrackerDelegate } from "./session-runtime-tracker-delegate.js";
+import { buildChatModeLoaders } from "./session-runtime-chat-mode-loaders.js";
+import { applyCoauthorDraft } from "./session-runtime-coauthor-apply.js";
 export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
-import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
-import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
+import { buildBootstrapState } from "./session-runtime-bootstrap.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
+import { buildContextSearchStoreReads } from "../../domain/context/context-search-store-reads.js";
+import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
+import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
 import {
 	mapChatBranch,
 	mapChatDto,
@@ -116,6 +121,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	private defaultsEnsured = false;
 	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
 	private readonly buildLoreDelegate: typeof createLoreDelegate;
+	private readonly buildTrackerDelegate: typeof createTrackerDelegate;
 	private readonly getSkillCatalog: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 
 	readonly chatRuntime: ChatRuntime;
@@ -128,6 +134,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		options?: {
 			getActiveProviderProfile?: () => Promise<StoredProviderProfileRecord | null>;
 			createLoreDelegate?: typeof createLoreDelegate;
+			createTrackerDelegate?: typeof createTrackerDelegate;
 			dataDir?: string;
 			getSkillCatalog?: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 		},
@@ -139,6 +146,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
 		this.buildLoreDelegate = options?.createLoreDelegate ?? createLoreDelegate;
+		this.buildTrackerDelegate = options?.createTrackerDelegate ?? createTrackerDelegate;
 		this.getSkillCatalog =
 			options?.getSkillCatalog ?? (async () => []);
 		this.chatOrder = new ChatOrderService(stores.chats);
@@ -213,38 +221,12 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	// ─── Bootstrap & Snapshot ───────────────────────────────────────────
 
 	async getBootstrapState(): Promise<BootstrapState> {
-		const [userChars, allChats, promptPresets, uiSettings] = await Promise.all([
-			this.stores.characters.listAll(),
-			this.stores.chats.listAll(),
-			this.stores.presets.listAll(),
-			this.stores.uiSettings.get(),
-		]);
-		// Boot into the most-recent NON-coauthor chat so a reload never drops the
-		// user into the co-author surface (F-7). Falls back to the overall
-		// most-recent chat only when no RP chat exists at all.
-		const coauthorIds = new Set(allChats.filter((c) => c.mode === 'coauthor').map((c) => c.id));
-		const initialChatId = pickBootstrapChatId(this.chatOrder.items, (id) => coauthorIds.has(id));
-		const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
-		return {
-			initialChatId,
-			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
-			isFirstRun: allChats.length === 0 && userChars.length === 0,
-			allCharacters: userChars.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				tags: c.tags,
-				avatarAssetId: c.avatarAssetId,
-				avatarFullAssetId: c.avatarFullAssetId,
-				avatarCropJson: c.avatarCropJson,
-				avatarExt: c.avatarExt,
-				avatarFullExt: c.avatarFullExt,
-				updatedAt: c.updatedAt,
-			})),
-			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
-			uiSettings,
-			isArmServer,
-		};
+		return buildBootstrapState({
+			stores: this.stores,
+			chatOrderItems: this.chatOrder.items,
+			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			mapPresetToDto: (p) => this.mapPresetToDto(p),
+		});
 	}
 
 	/**
@@ -302,8 +284,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	 *  OUTSIDE the try/catch so a NotFound propagates to the route; the catch
 	 *  only masks assembly failures (returning null) as before. */
 	async getContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
-		const branches = await this.stores.chats.getBranches(chatId);
-		if (!branches.some((b) => b.id === branchId)) {
+		if (!(await findBranchOfChat(this.stores.chats, chatId, branchId))) {
 			throw notFound("Branch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
 		}
 		try {
@@ -730,114 +711,16 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
 	/**
 	 * Apply a co-author turn's aggregated proposed state to the underlying
-	 * character card (CA-7). Does NOT touch chat messages — it parses the
-	 * proposed `profile.md` into the canonical character fields and persists
-	 * them via the normal character-update dual-write, then returns a
-	 * config-patch snapshot.
-	 *
-	 * R3 (data-loss guard): an empty `name` is restored from the current card
-	 * rather than throwing — the omission is surfaced to the user via a
-	 * `correction` so it is not silently masked. Section/greeting emptiness is
-	 * intentional-or-loss and is handled upstream (tool guard CA-17) or on the
-	 * diff (CA-10), not here.
+	 * character card (CA-7). Thin delegation — the implementation lives in
+	 * `session-runtime-coauthor-apply.ts` (extracted when the tracker-template
+	 * Apply branch CT-7a needed headroom on this file's arch-gate budget).
 	 */
 	async applyCoauthorDraft(chatId: ChatId, body: CoauthorApplyRequest): Promise<CoauthorApplyResponse> {
-		const chat = await this.stores.chats.getById(chatId);
-		if (!chat) {
-			throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		}
-		const characterId = chat.characterId as CharacterId;
-
-		const corrections: CoauthorCorrection[] = [];
-		const updateInput: Parameters<CharacterRuntime["update"]>[1] = { chatId };
-
-		if (body.profileMd !== undefined) {
-			const { profile } = parseProfileMd(body.profileMd);
-			const current = await this.stores.characters.getById(characterId);
-			// R3: empty name → omit (character.update keeps current) + notify user.
-			const proposedName = profile.name.trim();
-			if (proposedName) {
-				updateInput.name = proposedName;
-			} else {
-				corrections.push({
-					field: "name",
-					action: "restored",
-					reason: `Model returned an empty name; restored "${current?.name ?? ""}" from the card.`,
-				});
-			}
-			updateInput.tags = profile.tags;
-			updateInput.creatorNotes = profile.creatorNotes;
-			updateInput.description = profile.description;
-			updateInput.scenario = profile.scenario ?? "";
-			updateInput.mesExample = profile.mesExample;
-			updateInput.mesExampleMode = profile.mesExampleMode;
-			updateInput.mesExampleDepth = profile.mesExampleDepth;
-			// Lossless frontmatter round-trip: creator / character_version live in
-			// `extensions` (not top-level update fields). Merge over current so a
-			// model edit to either is honored; omitting would preserve current.
-			const baseExtensions = (current?.extensions ?? {}) as Record<string, unknown>;
-			updateInput.extensions = {
-				...baseExtensions,
-				...(profile.creator !== null ? { creator: profile.creator } : {}),
-				...(profile.characterVersion !== null ? { character_version: profile.characterVersion } : {}),
-			};
-		}
-
-		if (body.firstMessage !== undefined) {
-			updateInput.firstMessage = body.firstMessage;
-		}
-		if (body.alternateGreetings !== undefined) {
-			updateInput.alternateGreetings = body.alternateGreetings;
-		}
-
-		// B5: flag macros the model emitted outside the safe reusable subset
-		// (identity + pronouns). The prose is preserved as-is — these are warnings,
-		// not silent edits; the user decides whether to keep each token. One
-		// correction per (field, distinct macro) so the toast names exactly what
-		// to review and where.
-		const proseFields: Array<[string, string | string[] | null | undefined]> = [
-			["name", updateInput.name],
-			["description", updateInput.description],
-			["scenario", updateInput.scenario],
-			["mesExample", updateInput.mesExample],
-			["creatorNotes", updateInput.creatorNotes],
-			["firstMessage", updateInput.firstMessage],
-			["alternateGreetings", updateInput.alternateGreetings],
-		];
-		for (const [field, value] of proseFields) {
-			if (value === null || value === undefined) continue;
-			const texts = Array.isArray(value) ? value : [value];
-			const unsafe = new Set<string>();
-			for (const text of texts) {
-				for (const name of findUnsafeMacros(text)) unsafe.add(name);
-			}
-			for (const name of unsafe) {
-				corrections.push({
-					field,
-					action: "warned",
-					reason: `Model used {{${name}}}, which is outside the reusable macro set ({{user}}, {{char}}, pronouns) and may not resolve as intended; left as-is for review.`,
-				});
-			}
-		}
-
-		const patch = await this.character.update(characterId, updateInput, {
-			rebuildChatOrder: () => this.rebuildChatOrder(),
-		});
-
-		// CTX-L2 (Wave 4): lore-bundle Apply branch. The accepted cumulative draft
-		// is persisted idempotently (preallocated ids upsert the same rows) in one
-		// transaction. Character-scoped draft books are written with characterId so
-		// the activation engine discovers them. Absent/empty bundle = no-op (the
-		// common profile/greeting-only Apply path is unchanged).
-		let lore: { lorebookIds: string[]; entryIds: string[] } | undefined;
-		if (body.loreBundle && (body.loreBundle.lorebooks.length > 0 || body.loreBundle.entries.length > 0)) {
-			lore = await this.stores.lorebooks.applyCoauthorLoreDraft(
-				characterId as unknown as string,
-				body.loreBundle,
-			);
-		}
-
-		return { ...patch, corrections, ...(lore ? { lore } : {}) };
+		return applyCoauthorDraft(
+			{ stores: this.stores, character: this.character, rebuildChatOrder: () => this.rebuildChatOrder() },
+			chatId,
+			body,
+		);
 	}
 
 	/**
@@ -849,211 +732,44 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; dryRun?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
+		options?: SessionPromptAssemblyOptions,
 	) {
-		const strategy = await this.resolveChatModeStrategy(chatId);
-		const profile = strategy.mode === "rp" ? await this.getActiveProviderProfile() : null;
-		const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
-		// Construct the lore AI-delegation callback (CTX-L2b) from Co-Author's
-		// connection settings. A complete lore pair selects that connection; an
-		// absent or dangling lore profile falls back to the Co-Author connection,
-		// never the RP active profile.
-		const loreDelegate = await createSessionLoreDelegate({
+		return assembleSessionPrompt({
 			stores: this.stores,
-			buildDelegate: this.buildLoreDelegate,
-		});
-		// CE-B1: lore entity lookup lets the edit / re-delegation tools target
-		// previously-created (persisted) lore entities across turns, not just
-		// ones drafted this turn. Built when a lorebook store is wired (production
-		// always wires it); absent in minimal/test contexts — edit tools that need
-		// it then throw a clear "no lookup configured" error.
-		const loreEntityLookup = this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined;
-		// CE-D2: context-search session for indexed entity discovery.
-		// Lazily projects all canonical entities into FTS5 on first search.
-		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
-		return strategy.assemble({
 			promptService: this.promptService,
-			// SP-5: co-author base resolves through the active service-prompt profile
-			// when a db handle is reachable; `stores` is absent in minimal/test contexts
-			// (same defensiveness as contextSearchSession above) — the base then
-			// falls back to the bundled asset inside coauthor-prompt.
-			db: this.stores?.db,
-			loaders: this.buildChatModeLoaders(),
-			loreDelegate,
-			loreEntityLookup,
-			contextSearchSession,
-			chatId,
-			branchId,
-			model,
-			excludeMessageIds: options?.excludeMessageIds,
-			recentMessageLimit: options?.recentMessageLimit,
-			summary: options?.summary,
-			dryRun: options?.dryRun,
-			contextBudget: options?.contextBudget ?? null,
-			responseReserve: options?.responseReserve,
-			presetId: options?.presetId,
-			priorSummaries: options?.priorSummaries,
-			// LS-10: the ACTIVE profile's stored generation format — the assembly
-			// applies the decision-(c) resolution (profile wins when set, else the
-			// preset fallback) and inlines custom-template selections.
-			providerGenerationFormat: profile?.generationFormat ?? null,
-		});
+			resolveChatModeStrategy: (id) => this.resolveChatModeStrategy(id),
+			getActiveProviderProfile: this.getActiveProviderProfile,
+			buildChatModeLoaders: () => this.buildChatModeLoaders(),
+			buildLoreDelegate: async () => createSessionLoreDelegate({
+				stores: this.stores,
+				buildDelegate: this.buildLoreDelegate,
+			}),
+			buildTrackerDelegate: async () => createSessionTrackerDelegate({
+				stores: this.stores,
+				buildDelegate: this.buildTrackerDelegate,
+			}),
+			createLoreEntityLookup: () => this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined,
+			buildContextSearchSession: (id) => this.stores ? this.buildContextSearchSession(id) : undefined,
+		}, chatId, branchId, options);
 	}
 
-	/**
-	 * Raw state access handed to non-RP chat-mode strategies (co-author) so they
-	 * can build their own prompt without going through the RP assembly pipeline.
-	 * Stateless closures over `this.stores`; RP ignores the handle entirely.
-	 */
+	/** Build raw state access for non-RP chat-mode strategies. */
 	private buildChatModeLoaders(): ChatModeAssembleLoaders {
-		return {
-			getMessages: async (chatId, branchId, limit) => {
-				const chat = await this.stores.chats.getById(chatId);
-				if (!chat) return [];
-				const branch = branchId ?? (chat.activeBranchId as ChatBranchId | null);
-				if (!branch) return [];
-				const msgs = await this.stores.messages.getMessages(branch);
-				return limit && limit > 0 ? msgs.slice(-limit) : msgs;
-			},
-			getChat: async (chatId) => {
-				const chat = await this.stores.chats.getById(chatId);
-				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
-				return chat;
-			},
-			getCharacter: async (chatId) => {
-				const chat = await this.stores.chats.getById(chatId);
-				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
-				const char = await this.stores.characters.getById(chat.characterId);
-				if (!char) throw new Error(`Character '${chat.characterId}' was not found.`);
-				return char;
-			},
-			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
-			getCoauthorContextItems: async (chatId) => {
-				// CE-C1: resolve the entities the user EXPLICITLY pinned to this chat
-				// (right-panel picker → chats.coauthorContextLinks) into read-only
-				// reference blocks. Generalizes CA-13 (lorebook-only) to
-				// character/persona/lorebook/script. NOT RP keyword activation.
-				const chat = await this.stores.chats.getById(chatId);
-				if (!chat || chat.coauthorContextLinks.length === 0) return [];
-				// The active character is already rendered as `currentCard`; skip a
-				// pinned link to it to avoid 2x-token duplication.
-				const out: import("../../domain/chat/chat-mode-strategy.js").CoauthorContextItem[] = [];
-				for (const link of chat.coauthorContextLinks) {
-					if (link.targetType === 'character') {
-						if (link.targetId === chat.characterId) continue;
-						const c = await this.stores.characters.getById(link.targetId);
-						if (!c) continue;
-						const profile = await this.stores.characters.getProfileMdText(c.id as unknown as import("@vibe-tavern/domain").CharacterId);
-						out.push({ type: 'character', id: c.id, title: c.name, content: profile });
-					} else if (link.targetType === 'persona') {
-						const p = await this.stores.personas.getById(link.targetId);
-						if (!p) continue;
-						out.push({ type: 'persona', id: p.id, title: p.name, content: p.description });
-					} else if (link.targetType === 'lorebook') {
-						const lb = await this.stores.lorebooks.getLorebook(link.targetId);
-						if (!lb?.enabled) continue;
-						const entries = await this.stores.lorebooks.listEntries(link.targetId);
-						for (const e of entries.filter((e) => e.enabled)) {
-							out.push({ type: 'lorebook', id: e.id, title: e.title, content: e.content });
-						}
-					} else {
-						// script
-						const sc = await this.stores.scripts.getById(link.targetId);
-						if (!sc) continue;
-						const body = sc.description.trim()
-							? `${sc.description.trim()}\n\n\`\`\`js\n${sc.code}\n\`\`\``
-							: `\`\`\`js\n${sc.code}\n\`\`\``;
-						out.push({ type: 'script', id: sc.id, title: sc.name, content: body });
-					}
-				}
-				// Dedupe by type+id (a book bound twice shouldn't double-inject).
-				const seen = new Set<string>();
-				return out.filter((it) => {
-					const key = `${it.type}:${it.id}`;
-					if (seen.has(key)) return false;
-					seen.add(key);
-					return true;
-				});
-			},
-			getChatSummaries: async (chatId, branchId) => {
-				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
-			},
-			getCoauthorBoundResources: async (characterId) => {
-				// CE-C2/C3: the character's M:N-bound lorebooks + scripts as awareness
-				// metadata (name + entry titles / name + description) — NOT full
-				// content (Level 1) and NOT RP keyword activation. Mirrors exactly
-				// what BoundResourcesField shows the user as 'bound' (links-only via
-				// listLorebooksLinkedToTarget / listScriptsLinkedToTarget).
-				const [boundLorebooks, boundScripts] = await Promise.all([
-					this.stores.lorebooks.listLorebooksLinkedToTarget('character', characterId as string),
-					this.stores.scripts.listScriptsLinkedToTarget('character', characterId as string),
-				]);
-				const lorebookItems = await Promise.all(
-					boundLorebooks.map(async (lb) => ({
-						id: lb.id,
-						name: lb.name,
-						// Level-2 metadata only: title + stable id, never content. The id
-						// lets CE-B1's cross-turn tools target this persisted entry.
-						entries: (await this.stores.lorebooks.listEntries(lb.id))
-							.filter((e) => e.enabled)
-							.map((e) => ({ id: e.id, title: e.title })),
-					})),
-				);
-				const scriptItems = boundScripts.map((sc) => ({
-					id: sc.id,
-					name: sc.name,
-					// Description is the human-written summary; the CODE stays out.
-					summary: sc.description.trim(),
-				}));
-				return { lorebooks: lorebookItems, scripts: scriptItems };
-			},
-			getCoauthorUserModules: async () => {
-				// CS-24: user-created modules (editable). Seed modules never come from
-				// here — the registry loads those from disk. The row carries
-				// createdAt/updatedAt which the registry's toUserModule drops.
-				return this.stores.coauthorModules.list();
-			},
-			getSkillCatalog: () => this.getSkillCatalog(),
-		};
+		return buildChatModeLoaders(this.stores, this.getSkillCatalog);
 	}
 
 	/**
 	 * Build a lazy per-turn context-search session (CE-D2) for the co-author's
 	 * search_context / read_context_item tools. Projects all canonical entities
-	 * into FTS5 on the first search; the next turn rebuilds from stores.
+	 * into FTS5 on the first search; the next turn rebuilds from stores. Since
+	 * SC-10 the store-reads mapping comes from the ONE shared extractor
+	 * (context-search-store-reads.ts) with the Co-Author skill catalog wired —
+	 * the sidechat's session reads the same mapping without a catalog.
 	 */
 	private buildContextSearchSession(chatId: ChatId): import("../../domain/context/context-search-service.js").ContextSearchSession {
 		const stores = this.stores;
 		return createContextSearchSession(
-			{
-				listAllCharacters: () => stores.characters.listAll(),
-				listAllPersonas: () => stores.personas.listAll(),
-				listAllLorebooks: () => stores.lorebooks.listAllLorebooks(),
-				listEntries: (lorebookId: string) => stores.lorebooks.listEntries(lorebookId),
-				listAllScripts: () => stores.scripts.listAll(),
-				listLorebooksLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
-					stores.lorebooks.listLorebooksLinkedToTarget(targetType, targetId),
-				listScriptsLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
-					stores.scripts.listScriptsLinkedToTarget(targetType, targetId),
-				getCharacter: (id: string) => stores.characters.getById(id),
-				getPersona: (id: string) => stores.personas.getById(id),
-				getLorebook: (id: string) => stores.lorebooks.getLorebook(id),
-				getEntry: (id: string) => stores.lorebooks.getEntry(id),
-				getScript: (id: string) => stores.scripts.getById(id),
-				listSkills: async () => {
-					// CE-D3: project the skill catalog into the search index's skill channel.
-					// getSkillCatalog returns SkillCatalogEntry[] (already user>builtin merged);
-					// map to the narrow ContextSearchSkillView the session expects.
-					const entries = await this.getSkillCatalog();
-					return entries.map((s) => ({
-						id: s.id,
-						name: s.name,
-						description: s.description,
-						manifestPath: s.rootRelativeManifestPath,
-						source: s.source,
-					}));
-				},
-			},
+			buildContextSearchStoreReads(stores, this.getSkillCatalog),
 			async () => {
 				const chat = await stores.chats.getById(chatId);
 				return {

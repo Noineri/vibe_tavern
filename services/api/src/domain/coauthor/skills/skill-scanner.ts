@@ -78,6 +78,29 @@ const BUILTIN_LOCATOR_MANIFEST = `${SKILLS_ASSET_DIR}/character-workshop/${MANIF
 // ─── Manifest parsing (read-only) ────────────────────────────────────────────
 
 /**
+ * Split a manifest into its YAML frontmatter block and the BODY after the
+ * closing fence, using the ONE fence convention this module owns (see
+ * {@link extractFrontmatter}). Returns `null` when the document does not start
+ * with a frontmatter fence or the closing fence is missing. Exported for the
+ * skill-library's save operation (AP-23a), which rebuilds an existing
+ * frontmatter block — one fence convention, no second parser (still no write
+ * from THIS module: discovery stays read-only).
+ */
+export function locateFrontmatter(text: string): { frontmatter: string; body: string } | null {
+  // The opening fence must be the very first line (no leading blank/byte-order mark).
+  const opening = text.match(/^---\r?\n/);
+  if (!opening) return null;
+  const after = text.slice(opening[0].length);
+  const lines = after.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "---") {
+      return { frontmatter: lines.slice(0, i).join("\n"), body: lines.slice(i + 1).join("\n") };
+    }
+  }
+  return null;
+}
+
+/**
  * Extract the YAML frontmatter block (the text between the opening and closing
  * `---` fences) from a manifest. Returns `null` when the document does not
  * start with a frontmatter fence or the closing fence is missing.
@@ -88,17 +111,20 @@ const BUILTIN_LOCATOR_MANIFEST = `${SKILLS_ASSET_DIR}/character-workshop/${MANIF
  * line, so this does not truncate real values.
  */
 function extractFrontmatter(text: string): string | null {
-  // The opening fence must be the very first line (no leading blank/byte-order mark).
-  const opening = text.match(/^---\r?\n/);
-  if (!opening) return null;
-  const after = text.slice(opening[0].length);
-  const lines = after.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === "---") {
-      return lines.slice(0, i).join("\n");
-    }
-  }
-  return null;
+  return locateFrontmatter(text)?.frontmatter ?? null;
+}
+
+/**
+ * The manifest text WITHOUT its YAML frontmatter block (the closing fence
+ * included), leading blank lines trimmed — the skill-content route's `body`
+ * (AP-21), i.e. what the skill editor shows as the skill text. Built on the
+ * same {@link locateFrontmatter} fence parser the discovery metadata uses —
+ * one fence convention, no second parser. Returns `null` when the document
+ * has no frontmatter block (callers fall back to the raw text).
+ */
+export function skillManifestBody(text: string): string | null {
+  const split = locateFrontmatter(text);
+  return split === null ? null : split.body.replace(/^(?:\r?\n)+/, "");
 }
 
 /** Outcome of parsing a manifest's discovery metadata. */

@@ -15,15 +15,15 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart } from "ai";
+import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import {
-  assembleExperienceCopilotPrompt,
   estimateHistoryTokens,
   stubHistoricalToolEchoes,
   BUFFER_ECHO_STUB,
   SKILL_READ_STUB,
-  type ExperienceCopilotHistoryMessage,
-  type ExperienceCopilotFlowMessage,
-} from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+  type AgentHistoryMessage as ExperienceCopilotHistoryMessage,
+  type AgentFlowMessage as ExperienceCopilotFlowMessage,
+} from "../src/domain/agent/agent-prompt.js";
 
 beforeEach(() => {
   // Char-length heuristic so estimateTokens returns a realistic number.
@@ -198,7 +198,11 @@ describe("assembleExperienceCopilotPrompt — echo stubs in the model window (#1
       history: sessionHistory(), // Cyrillic present → RU map rendered
       rules: "var ok = 1;",
       step: "rules",
-      todo: [{ title: "t", status: "active" }],
+      plan: {
+        goal: "Keep cache order stable",
+        constraints: [],
+        tasks: [{ id: "cache", title: "Check cache order", body: "Compare the volatile tail.", status: "active" }],
+      },
     });
     const sys = result.systemMessage;
     const ctxIdx = sys.indexOf("# Current working context");
@@ -214,10 +218,10 @@ describe("assembleExperienceCopilotPrompt — echo stubs in the model window (#1
     ]) {
       if (marker) expect(sys.indexOf(marker)).toBeLessThan(ctxIdx);
     }
-    // …and the volatile order is digest → todo → context (rarest-change first).
-    const todoIdx = sys.indexOf("# Current step plan");
-    expect(todoIdx).toBeGreaterThan(-1);
-    expect(todoIdx).toBeLessThan(ctxIdx);
+    // …and the volatile order is digest → plan → context (rarest-change first).
+    const planIdx = sys.indexOf("# Plan");
+    expect(planIdx).toBeGreaterThan(-1);
+    expect(planIdx).toBeLessThan(ctxIdx);
     // The context package sits in the tail of the system message (max
     // recency, and everything before it is cache-stable).
     expect(ctxIdx).toBeGreaterThan(sys.length * 0.8);

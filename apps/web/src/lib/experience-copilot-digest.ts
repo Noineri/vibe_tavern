@@ -1,6 +1,6 @@
 /**
  * Copilot test-feedback digest builders (EXPERIENCE_EDITOR_REFACTOR_PLAN,
- * Wave 5 / ER-14).
+ * Wave 5 / ER-14; uncapped per owner decision 2026-10-18, AS-8e7c).
  *
  * The copilot backend renders `testFeedback` (POST body field on the copilot
  * stream endpoint) as a raw-JSON context section for the model — so the object
@@ -17,10 +17,20 @@
  *     ok path:  { ok:true, stopReason, iterations, status, revision, consoleTail }
  *     fail path:{ ok:false, errorCode, errorKind?, errorMessage, consoleTail }
  *
- * The capping rules MUST match the backend EXACTLY (the model parses these two
- * sources uniformly): `consoleTail` keeps the last 20 entries, each formatted
- * `"level: args.join(' ')"`; `stateSummary` is `JSON.stringify(state)` capped at
- * 1500 chars with a trailing `\u2026` ellipsis when truncated.
+ * There are NO caps (owner decision 2026-10-18, AS-8e7c): the tool and UI
+ * digests agree field-for-field, but the UI-sent `feedback` attaches the
+ * WHOLE session — `consoleTail` carries EVERY console entry formatted
+ * `"level: args.join(' ')"`, `stateSummary` is the FULL `JSON.stringify(state)`
+ * (with an `(unserializable state)` fallback), and the playground-log /
+ * realtime feedbacks carry EVERY event, effect, and error line plus their
+ * totals (`eventsTotal`, `consoleTotal`).
+ *
+ * The chat-message `text` stays small enough for the stream request's
+ * 50 000-char cap
+ * (`packages/api-contracts/src/schemas/experience-copilot-schema.ts`) by showing
+ * COUNTS instead of lines (`Events: 250 (attached)`); the `fullText` sibling
+ * on the log digests carries the same header lines plus every event, effect,
+ * and console line for the «Copy log» clipboard path, which must lose nothing.
  *
  * Pure — no React, no I/O, no store access. The two editor panels
  * (InteractiveTester, ExperiencePlayground) and the copilot shell compose these
@@ -43,7 +53,9 @@ import type { LoopDiagSample } from "./experience-bridge.js";
  *  summary posted as the user message. */
 export interface CopilotDigest {
   /** Human-readable summary posted as the user message. Plain data text (not
-   *  localized prose) so the model reads it identically regardless of UI locale. */
+   *  localized prose) so the model reads it identically regardless of UI locale.
+   *  For the log digests this shows COUNTS instead of lines (see
+   *  {@link CopilotLogDigest.fullText} for the copy-paste text). */
   readonly text: string;
   /** Structured digest matching `ExperienceCopilotRunTestDigest` |
    *  `ExperienceCopilotRunSimulateDigest`, sent as `testFeedback` (rendered as
@@ -67,42 +79,45 @@ export interface CopilotErrorInput {
  *  digest is shaped like the simulate digest (the closest backend match); an
  *  `error` flips it to the fail-path shape. Fields are picked defensively
  *  (optional chaining) so a partial envelope never throws. */
+/** A digest that ALSO carries the full copy-paste text: the same header lines
+ *  as {@link CopilotDigest.text} plus every event, effect, and console line
+ *  (the pre-AS-8e7c line formats, uncapped). The chat-message `text` shows
+ *  counts only so a long session never pushes the message past the stream
+ *  request's 50 000-char cap; `fullText` feeds the «Copy log» clipboard path
+ *  so the copy loses nothing. Never sent to the model. */
+export interface CopilotLogDigest extends CopilotDigest {
+  /** Full copy text: headers + every line. */
+  readonly fullText: string;
+}
+
 export interface CopilotPlaygroundDigestInput {
   readonly session: ExperiencePlaygroundData;
   readonly definition?: ExperienceTestRunData["definition"] | null;
   readonly error?: CopilotErrorInput | null;
 }
 
-// ─── Capping (MUST match the backend EXACTLY) ───────────────────────────────
+// ─── No caps (owner decision 2026-10-18, AS-8e7c) ────────────────────────────
+// These builders formerly mirrored the backend `CONSOLE_TAIL_MAX` /
+// `STATE_SUMMARY_MAX` bounds; the UI-sent digests now attach the WHOLE session,
+// so every entry and the full state JSON ride the feedback. Field names stay
+// identical so the model parses them uniformly with the tools' own digests.
 
-/** Max entries retained in a digest's `consoleTail` (the model needs recent
- *  output, not the full trace). Mirrors `CONSOLE_TAIL_MAX` in
- *  experience-copilot-tools.ts. */
-const CONSOLE_TAIL_MAX = 20;
-/** Max chars of the projected state kept in `stateSummary` (avoids dumping the
- *  whole 256KB state into the model context). Mirrors `STATE_SUMMARY_MAX`. */
-const STATE_SUMMARY_MAX = 1500;
-
-/** Flatten the last {@link CONSOLE_TAIL_MAX} console entries to `level: args`
- *  strings. Structural typing on the entry shape avoids importing the sandbox
- *  type transitively. Mirrors `consoleTail` in experience-copilot-tools.ts. */
+/** Flatten EVERY console entry to `level: args` strings. Structural typing on
+ *  the entry shape avoids importing the sandbox type transitively. Mirrors
+ *  `consoleTail` in experience-copilot-tools.ts, minus the backend's cap. */
 function consoleTail(entries: ReadonlyArray<ExperienceTestConsoleEntry>): string[] {
-  return entries.slice(-CONSOLE_TAIL_MAX).map((e) => `${e.level}: ${e.args.join(" ")}`);
+  return entries.map((e) => `${e.level}: ${e.args.join(" ")}`);
 }
 
-/** Compact JSON snapshot of an unknown projected state, capped to keep the
- *  model context bounded. Falls back to a placeholder for unserializable state.
- *  Mirrors `summarizeState` in experience-copilot-tools.ts (the default cap MUST
- *  match the backend exactly; the playground log channel passes its own larger
- *  cap — see `PLAYGROUND_LOG_STATE_MAX`). */
-function summarizeState(state: unknown, max = STATE_SUMMARY_MAX): string {
-  let s: string;
+/** Full JSON snapshot of an unknown projected state. Falls back to a
+ *  placeholder for unserializable state. Mirrors `summarizeState` in
+ *  experience-copilot-tools.ts, minus the backend's cap. */
+function serializeState(state: unknown): string {
   try {
-    s = JSON.stringify(state) ?? String(state);
+    return JSON.stringify(state) ?? String(state);
   } catch {
     return "(unserializable state)";
   }
-  return s.length > max ? `${s.slice(0, max)}\u2026` : s;
 }
 
 /** Standard footer appended to every digest's human-readable `text` so the
@@ -140,8 +155,8 @@ function seatLegalityLines(matrix: ExperienceTestRunData["seatLegality"], status
 
 /** A create-only test digest from a successful run. The feedback is the ok-path
  *  `ExperienceCopilotRunTestDigest` (`status`, `revision`, `legalActionTypes`,
- *  capped `stateSummary`, `consoleTail`) — plus `seatLegality` (per-seat matrix +
- *  turn owners; empty seats when the run carried no roster). */
+ *  full `stateSummary`, full `consoleTail`) — plus `seatLegality` (per-seat
+ *  matrix + turn owners; empty seats when the run carried no roster). */
 export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest {
   const seatLines = seatLegalityLines(result.seatLegality, result.status);
   const feedback: Record<string, unknown> = {
@@ -149,7 +164,7 @@ export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest
     status: result.status,
     revision: result.revision,
     legalActionTypes: result.projection.actions.map((a) => a.type),
-    stateSummary: summarizeState(result.projection.state),
+    stateSummary: serializeState(result.projection.state),
     consoleTail: consoleTail(result.console),
     seatLegality: result.seatLegality,
   };
@@ -257,14 +272,9 @@ export function buildPlaygroundDigest(args: CopilotPlaygroundDigestInput): Copil
 
 // ─── Playground full-session log digest (grounding step 6) ──────────────────
 
-/** Caps for the playground LOG channel. Deliberately NOT the mirrored tool
- *  caps above (`CONSOLE_TAIL_MAX` / `STATE_SUMMARY_MAX` stay byte-identical to
- *  the backend tools so a UI-sent tool digest equals the tool's own): the log
- *  channel exists so the model can read the WHOLE session, so it keeps its own
- *  larger bounds (EXPERIENCE_COPILOT_GROUNDING_REPORT step 6 / D5.4). */
-const PLAYGROUND_LOG_EVENTS_MAX = 200;
-const PLAYGROUND_LOG_CONSOLE_MAX = 100;
-const PLAYGROUND_LOG_STATE_MAX = 8000;
+// The playground LOG channel carries the WHOLE session in `feedback` (no caps
+// — owner decision 2026-10-18, AS-8e7c); the chat-message `text` shows counts
+// only, and `fullText` carries every line for the «Copy log» clipboard path.
 
 /** The client-side whole-session accumulator (component state in
  *  ExperiencePlayground): the server returns every event on START but only the
@@ -294,22 +304,20 @@ export interface CopilotPlaygroundLogDigestInput {
 }
 
 /** The WHOLE-session playground log digest (grounding step 6): unlike the
- *  mirrored tool digests, this carries the full accumulated session — every
- *  event (last {@link PLAYGROUND_LOG_EVENTS_MAX} + total count), the effects,
- *  the console (last {@link PLAYGROUND_LOG_CONSOLE_MAX} + total count), the
- *  authoritative final state (capped at {@link PLAYGROUND_LOG_STATE_MAX} — the
- *  projected view may hide the very fields turn bugs hinge on), the projected
- *  seat's legal actions (+ the per-seat matrix where present), and the launch
- *  roster/grants/seed. An `error` flips it to the fail-path fields. */
-export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput): CopilotDigest {
+ *  mirrored tool digests, this carries the full accumulated session — EVERY
+ *  event (+ total count), the effects, EVERY console line (+ total count), the
+ *  authoritative final state in full (the projected view may hide the very
+ *  fields turn bugs hinge on), the projected seat's legal actions (+ the
+ *  per-seat matrix where present), and the launch roster/grants/seed.
+ *  An `error` flips it to the fail-path fields. The chat-message `text` shows
+ *  counts only; `fullText` carries every line for the «Copy log» path. */
+export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput): CopilotLogDigest {
   const { session, sessionLog, error, launchContext, seatLegality } = args;
   const defName = args.definition?.manifest.name ?? "(unknown)";
   const defId = args.definition?.manifest.id ?? "(unknown)";
 
-  const events = sessionLog.events.slice(-PLAYGROUND_LOG_EVENTS_MAX);
-  const consoleLines = sessionLog.console
-    .slice(-PLAYGROUND_LOG_CONSOLE_MAX)
-    .map((e) => `${e.level}: ${e.args.join(" ")}`);
+  const events = [...sessionLog.events];
+  const consoleLines = sessionLog.console.map((e) => `${e.level}: ${e.args.join(" ")}`);
   const legalTypes = session.projection.actions.map((a) => a.type);
 
   const feedback: Record<string, unknown> = {
@@ -330,7 +338,7 @@ export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput):
           },
         }
       : {}),
-    stateSummary: summarizeState(session.state, PLAYGROUND_LOG_STATE_MAX),
+    stateSummary: serializeState(session.state),
     effects: [...sessionLog.effects],
     events,
     eventsTotal: sessionLog.events.length,
@@ -349,7 +357,8 @@ export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput):
     seatLegality !== null && seatLegality !== undefined
       ? seatLegalityLines(seatLegality, session.status)
       : [];
-  const lines = [
+  const errorLines = error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : [];
+  const headerLines = [
     "## Playground session log",
     `Definition: ${defName} (${defId})`,
     `Status: ${session.status} · Revision ${session.revision} · Stop reason: ${session.stopReason}`,
@@ -365,6 +374,22 @@ export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput):
           }${launchContext.seed !== undefined ? ` · Seed: ${launchContext.seed}` : ""}`,
         ]
       : []),
+  ];
+  // Chat message: counts only, so a long session never pushes the message
+  // past the stream request's 50 000-char cap.
+  const text = [
+    ...headerLines,
+    "State: (attached in stateSummary)",
+    `Effects: ${sessionLog.effects.length} (attached)`,
+    `Events: ${sessionLog.events.length} (attached)`,
+    `Console: ${sessionLog.console.length} lines (attached)`,
+    ...errorLines,
+    ATTACHED_NOTE,
+  ].join("\n");
+  // Clipboard copy: the same headers plus EVERY line (the old line formats,
+  // no caps) — the copy must lose nothing.
+  const fullText = [
+    ...headerLines,
     "State: (attached in stateSummary)",
     `Effects: ${
       sessionLog.effects.length > 0
@@ -377,22 +402,17 @@ export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput):
     `Console (${sessionLog.console.length} total, last ${consoleLines.length}): ${
       consoleLines.length > 0 ? consoleLines.join(" ⏎ ") : "silent"
     }`,
-    ...(error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : []),
+    ...errorLines,
     ATTACHED_NOTE,
-  ];
-  return { text: lines.join("\n"), feedback };
+  ].join("\n");
+  return { text, fullText, feedback };
 }
 
 // ─── Realtime digest (RM-13) ───────────────────────────────────────────────
-
-/** Bounds for the realtime digest tails (the SDK sample is already bounded;
- *  these caps keep the MODEL context lean — tails, not transcripts). Raised
- *  12/6/12 → 100/50/100 by EXPERIENCE_COPILOT_GROUNDING_REPORT step 6: the
- *  realtime digest doubles as the sandbox LOG channel for realtime rounds, so
- *  the tails must carry a playable round, not a glimpse. */
-const RT_EVENT_TAIL_MAX = 100;
-const RT_ERROR_TAIL_MAX = 50;
-const RT_CONSOLE_TAIL_MAX = 100;
+// No caps (owner decision 2026-10-18, AS-8e7c): the realtime digest doubles as
+// the sandbox LOG channel for realtime rounds, so the feedback carries EVERY
+// loop event, error, and frame-console line; the chat-message `text` shows
+// counts only, and `fullText` carries every line for the «Copy log» path.
 
 /** Compact `kind: …` rendering of a round-log event for the model. */
 function rtEventLine(event: unknown): string {
@@ -434,18 +454,20 @@ export interface CopilotRealtimeDigestInput {
 /** A REALTIME playground digest (RM-13). The realtime round's authority lives
  *  inside the sandbox frame — the turn-session shape (stopReason/revision of
  *  the server sim) is a LIE for realtime rounds, so this builder reports the
- *  loop's own observability sample instead: liveness (event tail incl.
+ *  loop's own observability sample instead: liveness (every event incl.
  *  round_started), the latest projection sample, loop errors, and the frame
- *  console. Matches `ExperienceCopilotRealtimeDigest` in the backend tools. */
-export function buildRealtimeLoopDigest(args: CopilotRealtimeDigestInput): CopilotDigest {
+ *  console. Matches `ExperienceCopilotRealtimeDigest` in the backend tools
+ *  field-for-field, minus the backend's caps. The chat-message `text` shows
+ *  counts only; `fullText` carries every line for the «Copy log» path. */
+export function buildRealtimeLoopDigest(args: CopilotRealtimeDigestInput): CopilotLogDigest {
   const { realtime, diag, claim, error } = args;
   const booted = diag !== null;
   const status = claim !== null && claim !== undefined ? claim.status : booted ? "running" : "not_booted";
 
-  const eventTail = diag ? diag.events.slice(-RT_EVENT_TAIL_MAX).map(rtEventLine) : [];
-  const errorTail = diag ? diag.errors.slice(-RT_ERROR_TAIL_MAX).map(rtErrorLine) : [];
-  const consoleTail = diag
-    ? diag.console.slice(-RT_CONSOLE_TAIL_MAX).map((c) => `${c.level}: ${c.text}`)
+  const eventLines = diag ? diag.events.map(rtEventLine) : [];
+  const errorLines = diag ? diag.errors.map(rtErrorLine) : [];
+  const frameConsoleLines = diag
+    ? diag.console.map((c) => `${c.level}: ${c.text}`)
     : [];
 
   const feedback: Record<string, unknown> = {
@@ -454,10 +476,10 @@ export function buildRealtimeLoopDigest(args: CopilotRealtimeDigestInput): Copil
     tickMs: realtime.tickMs,
     seed: realtime.seed,
     status,
-    ...(diag?.view !== undefined ? { stateSummary: summarizeState(diag.view) } : {}),
-    ...(eventTail.length > 0 ? { eventTail } : {}),
-    ...(errorTail.length > 0 ? { errorTail } : {}),
-    ...(consoleTail.length > 0 ? { consoleTail } : {}),
+    ...(diag?.view !== undefined ? { stateSummary: serializeState(diag.view) } : {}),
+    ...(eventLines.length > 0 ? { eventTail: eventLines } : {}),
+    ...(errorLines.length > 0 ? { errorTail: errorLines } : {}),
+    ...(frameConsoleLines.length > 0 ? { consoleTail: frameConsoleLines } : {}),
     ...(error
       ? {
           errorCode: error.code ?? "error",
@@ -469,17 +491,33 @@ export function buildRealtimeLoopDigest(args: CopilotRealtimeDigestInput): Copil
 
   const defName = args.definition?.manifest.name ?? "(unknown)";
   const defId = args.definition?.manifest.id ?? "(unknown)";
-  const lines = [
+  const errorTextLines = error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : [];
+  const headerLines = [
     "## Playground diagnostics (realtime loop)",
     `Definition: ${defName} (${defId})`,
     `Mode: realtime · tick ${realtime.tickMs}ms · seed ${realtime.seed}`,
     `Loop status: ${status}`,
     diag?.view !== undefined ? "State sample: (attached in stateSummary)" : "State sample: none (loop never posted a view)",
-    `Loop events (tail ${eventTail.length}): ${eventTail.length > 0 ? eventTail.join(" | ") : "none"}`,
-    `Loop errors (tail ${errorTail.length}): ${errorTail.length > 0 ? errorTail.join(" | ") : "none"}`,
-    `Frame console (tail ${consoleTail.length}): ${consoleTail.length > 0 ? consoleTail.join(" ⏎ ") : "silent"}`,
-    ...(error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : []),
-    ATTACHED_NOTE,
   ];
-  return { text: lines.join("\n"), feedback };
+  // Chat message: counts only, so a long round never pushes the message past
+  // the stream request's 50 000-char cap.
+  const text = [
+    ...headerLines,
+    `Loop events: ${eventLines.length} (attached)`,
+    `Loop errors: ${errorLines.length} (attached)`,
+    `Frame console: ${frameConsoleLines.length} lines (attached)`,
+    ...errorTextLines,
+    ATTACHED_NOTE,
+  ].join("\n");
+  // Clipboard copy: the same headers plus EVERY line — the copy must lose
+  // nothing.
+  const fullText = [
+    ...headerLines,
+    `Loop events (${eventLines.length} total): ${eventLines.length > 0 ? eventLines.join(" | ") : "none"}`,
+    `Loop errors (${errorLines.length} total): ${errorLines.length > 0 ? errorLines.join(" | ") : "none"}`,
+    `Frame console (${frameConsoleLines.length} total): ${frameConsoleLines.length > 0 ? frameConsoleLines.join(" ⏎ ") : "silent"}`,
+    ...errorTextLines,
+    ATTACHED_NOTE,
+  ].join("\n");
+  return { text, fullText, feedback };
 }

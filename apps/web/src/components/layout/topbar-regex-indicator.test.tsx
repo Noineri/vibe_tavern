@@ -1,5 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installRadixPopoverSeam } from "../../../test/radix-popover-seam.js";
+import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
@@ -21,26 +24,12 @@ const { render } = await import("@testing-library/react");
 
 const NOOP = () => {};
 
-const realI18nContext = await import("../../i18n/context.js");
 const realRegexApi = await import("../../api/regex-api.js");
 const realUsePresetController = await import("../../hooks/use-preset-controller.js");
 const realUseProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realTooltip = await import("../shared/Tooltip.js");
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string, opts?: Record<string, unknown>) => {
-    // Minimal interpolation so assertions can match rendered tooltip text.
-    const params = opts ?? {};
-    const raw = {
-      topbar_regex_active_one: "Regex active: {{name}}",
-      topbar_regex_active_many: "Regex active: {{n}}",
-    } as Record<string, string>;
-    let out = raw[key] ?? key;
-    for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{{${k}}}`, String(v));
-    return out;
-  }, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
-}));
+installI18nContextSeam({ interpolateKeys: ["topbar_regex_active_one", "topbar_regex_active_many"] });
 
 mock.module("../../hooks/use-preset-controller.js", () => ({
   ...realUsePresetController,
@@ -60,15 +49,19 @@ mock.module("../shared/Tooltip.js", () => ({
 }));
 
 // The interface-settings popover trigger renders inside Popover.Root far
-// below in TopBar — stub the Radix surface to plain passthrough divs.
-const realPopover = await import("@radix-ui/react-popover");
-mock.module("@radix-ui/react-popover", () => ({
-  ...realPopover,
-  Root: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Trigger: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Portal: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Content: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
+// below in TopBar — the shared radix-popover seam keeps the real export
+// surface alive for every co-loaded file and stubs only the (single,
+// uncontrolled) Root arm deterministically (CO-LOAD CONTRACT: the former
+// inline passthrough stayed live process-globally and rendered closed
+// controlled popovers' content at rest — e.g. AgentContextRing's meter —
+// breaking real-arm riders in a hand-bundled run).
+installRadixPopoverSeam();
+
+// CO-LOAD CONTRACT (snapshot-store seam): the harness seeds the REAL store
+// (`useSnapshotStore.getState().ingestSnapshot(...)` in mountTopBar) — register
+// the real arm so a co-loaded narrow-store mock cannot leave a plain function
+// live for it in a hand-bundled run.
+installSnapshotStoreSeam();
 
 // RX-14 seam under test — what the indicator counts. Overridden per test.
 let mockResolvedPresets: Array<Record<string, unknown>> = [];

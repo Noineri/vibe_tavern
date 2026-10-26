@@ -59,9 +59,9 @@ export function ChatListSection({
 		<section className={sectionClassName}>
 			{header}
 			{chats.length === 0 ? (
-				<div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">{t(emptyAllKey)}</div>
+				<div className="px-[14px] py-5 text-center text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{t(emptyAllKey)}</div>
 			) : sectionChats.length === 0 ? (
-				<div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">{t(emptyFilteredKey)}</div>
+				<div className="px-[14px] py-5 text-center text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{t(emptyFilteredKey)}</div>
 			) : (
 				sectionChats.map((chatItem) => renderRow(chatItem, chatItem.id === activeChatId))
 			)}

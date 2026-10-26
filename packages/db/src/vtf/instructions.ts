@@ -20,6 +20,8 @@
  *  - Malformed/missing JSON reads back as all-null fields (never throws).
  */
 
+import { isRecord } from "@vibe-tavern/domain";
+
 /** The functional instruction fields sourced from `instructions.json`. */
 export interface VtfInstructions {
   /** `system_prompt`. */
@@ -76,10 +78,6 @@ export function readInstructions(jsonText: string): VtfInstructions {
 // ───────────────────────────────────────────────────────────────────────────
 // Internals
 // ───────────────────────────────────────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** True for a non-empty trimmed string (drives field omission on write). */
 function nonEmpty(value: string | null): value is string {

@@ -11,30 +11,44 @@
  *    affordance shows — the turn-taking concurrency control;
  *  - falls back to the placeholder when there is no active character.
  *
- * Uses the REAL snapshot-store (setState + clear in afterEach) to avoid a
- * process-global mock.module leak; `useIsSending` is overridden via the
- * spread-real pattern (no other test file consumes it, so zero leak). CM6
- * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
- * header affordance text is the always-present primary assertion.
+ * Uses the real snapshot store to avoid a process-global mock.module leak.
+ * Module-held editor maps and Zustand stores are restored after the suite;
+ * per-case cleanup prevents state from crossing assertions. `useIsSending` is
+ * overridden via the spread-real pattern (no other test file consumes it, so
+ * zero leak). CM6 mounting in happy-dom is graceful-skip (mirrors
+ * VibeMdView.test.tsx); the header affordance text is the always-present
+ * primary assertion.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutcomeFixtureRequest } from "../../../test/review-outcome-fixtures.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppCharacter, LorebookRecord } from "../../api/types.js";
 import type { BootstrapData } from "../../stores/api-actions/bootstrap-actions.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorApplySchema, coauthorToolOutputSchema, sendMessageSchema } from "@vibe-tavern/api-contracts";
+import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
+import { EditorView } from "@codemirror/view";
+import { sendChatMessage } from "../../api/chat-api.js";
+import { sendStream } from "../../api/stream.js";
+import {
+	clearCoauthorEditorSnapshotStateForTests,
+	readCoauthorEditorState,
+	restoreCoauthorEditorSnapshotStateForTests,
+	snapshotCoauthorEditorSnapshotStateForTests,
+} from "../../lib/coauthor-editor-snapshot.js";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 const handleSaveCharacter = mock(async () => undefined);
-const realI18nContext = await import("../../i18n/context.js");
 const realCharacterController = await import("../../hooks/use-character-controller.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
@@ -43,17 +57,16 @@ const realScriptApi = await import("../../api/script-api.js");
 const realCharacterApi = await import("../../api/character-api.js");
 const realRegexApi = await import("../../api/regex-api.js");
 const realChatStore = await import("../../stores/chat-store.js");
+const realCharacterTrackerTemplate = await import("../../hooks/use-character-tracker-template.js");
 const listAllLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
 const listCharacterLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
+const refetchTrackerTemplateMock = mock(async () => undefined);
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.
@@ -85,6 +98,17 @@ mock.module("../../api/character-api.js", () => ({
 	...realCharacterApi,
 	listCharacterLorebooks: listCharacterLorebooksMock,
 	listCharacterScripts: () => Promise.resolve([]),
+}));
+mock.module("../../hooks/use-character-tracker-template.js", () => ({
+	...realCharacterTrackerTemplate,
+	useCharacterTrackerTemplate: () => ({
+		template: null,
+		loading: false,
+		error: null,
+		save: mock(),
+		clear: mock(),
+		refetch: refetchTrackerTemplateMock,
+	}),
 }));
 mock.module("../../api/persona-api.js", () => ({
 	...realPersonaApi,
@@ -190,17 +214,39 @@ describe("CoauthorCharacterForm", () => {
 	const realFetch = globalThis.fetch;
 	/** Original toast.warning — spied by mutation (no mock.module → no sonner collision). */
 	const realToastWarning = toast.warning;
+	const originalSnapshotState = snapshotCoauthorEditorSnapshotStateForTests();
+	const originalAppSnapshotState = useSnapshotStore.getState();
+	const originalBootstrapState = useBootstrapStore.getState();
+	const originalTurnState = useCoauthorTurnStore.getState();
+	/** RO-6: raw chat-send bodies with their transport, in send order — the exact
+	 *  wire the server receives, pinned against the shared fixture that the server
+	 *  suite replays into the provider prompt and tool base. */
+	const sentRequests: ReviewOutcomeFixtureRequest[] = [];
+	function recordSend(input: unknown, init: RequestInit | undefined): void {
+		sentRequests.push({
+			mode: String(input).endsWith("/messages/stream") ? "stream" : "nonstream",
+			body: JSON.parse(String(init?.body)),
+		});
+	}
+	function sentCoauthorRequests(scenario: string): ReviewOutcomeFixture {
+		return { surface: "coauthor", scenario, requests: [...sentRequests] };
+	}
 
 	beforeEach(() => {
+		sentRequests.length = 0;
+		clearCoauthorEditorSnapshotStateForTests();
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
 		listAllLorebooksMock.mockReset();
 		listAllLorebooksMock.mockResolvedValue([]);
 		listCharacterLorebooksMock.mockReset();
 		listCharacterLorebooksMock.mockResolvedValue([]);
+		refetchTrackerTemplateMock.mockReset();
+		refetchTrackerTemplateMock.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
+		clearCoauthorEditorSnapshotStateForTests();
 		__isSending = false;
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
@@ -453,7 +499,7 @@ describe("CoauthorCharacterForm", () => {
 	/** Seed the snapshot with a character + an active co-author chat (for chatId). */
 	function seedReviewing(characterOver: Partial<AppCharacter> = {}): AppCharacter {
 		const character = makeCharacter(characterOver);
-		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT } as never });
+		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat });
 		return character;
 	}
 
@@ -573,11 +619,115 @@ describe("CoauthorCharacterForm", () => {
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
 
+	afterAll(() => {
+		restoreCoauthorEditorSnapshotStateForTests(originalSnapshotState);
+		useSnapshotStore.setState(originalAppSnapshotState, true);
+		useBootstrapStore.setState(originalBootstrapState, true);
+		useCoauthorTurnStore.setState(originalTurnState, true);
+		globalThis.fetch = realFetch;
+		toast.warning = realToastWarning;
+	});
+
+	it("RO-5: mounted live editor state rides the actual non-stream and stream HTTP bodies", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter({ name: "", firstMessage: "", alternateGreetings: [""] }),
+			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+		});
+		const requests: string[] = [];
+		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
+			requests.push(String(init?.body ?? ""));
+			recordSend(url, init);
+			if (requests.length === 1) {
+				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
+			}
+			return new Response('data: {"finishReason":"stop"}\n\n', { status: 200 });
+		});
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const content = container.querySelector(".cm-content") as HTMLElement | null;
+		expect(content).toBeTruthy();
+		const view = content ? EditorView.findFromDOM(content) : null;
+		expect(view).toBeTruthy();
+		const initialBody = view?.state.doc.toString() ?? "";
+		const from = initialBody.indexOf("A reserved arachnid weaver.");
+		expect(from).toBeGreaterThanOrEqual(0);
+		view?.dispatch({ changes: { from, to: from + "A reserved arachnid weaver.".length, insert: "Live editor body" } });
+		await waitFor(() => expect(getByText("unsaved_changes")).toBeTruthy());
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "normal" });
+		await sendStream(TEST_CHAT, { content: "stream" }, {
+			onStatus: () => {}, onChunk: () => {},
+		});
+
+		expect(requests).toHaveLength(2);
+		for (const raw of requests) {
+			const body = JSON.parse(raw);
+			expect(body.coauthorEditorState.card.name).toBe("");
+			expect(body.coauthorEditorState.card.body).toContain("Live editor body");
+			expect(body.coauthorEditorState.card.greetings).toEqual([""]);
+			expect(body.coauthorEditorState.card.cardClean).toBe(false);
+			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
+		}
+		await expectReviewOutcomeFixture("coauthor-live-editor-both-sends", sentCoauthorRequests("unsaved live editor edit on the non-stream and stream sends"));
+	});
+
+	it("RO-5: mounted empty editor values ride the actual non-stream and stream HTTP bodies", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter({ name: "", description: "", scenario: "", mesExample: "", firstMessage: "", alternateGreetings: [] }),
+			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+		});
+		const requests: string[] = [];
+		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
+			requests.push(String(init?.body ?? ""));
+			recordSend(url, init);
+			if (requests.length === 1) {
+				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
+			}
+			return new Response('data: {"finishReason":"stop"}\n\n', { status: 200 });
+		});
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(readCoauthorEditorState(TEST_CHAT, "char_test")).toBeDefined());
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "normal empty" });
+		await sendStream(TEST_CHAT, { content: "stream empty" }, {
+			onStatus: () => {}, onChunk: () => {},
+		});
+
+		expect(requests).toHaveLength(2);
+		for (const raw of requests) {
+			const body = JSON.parse(raw);
+			expect(body.coauthorEditorState.card.name).toBe("");
+			expect(body.coauthorEditorState.card.body).toContain("# PERSONALITY");
+			expect(body.coauthorEditorState.card.body).not.toContain("A reserved arachnid weaver.");
+			expect(body.coauthorEditorState.card.greetings).toEqual([""]);
+			expect(body.coauthorEditorState.card.cardClean).toBe(true);
+			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
+		}
+		await expectReviewOutcomeFixture("coauthor-empty-editor-both-sends", sentCoauthorRequests("empty editor buffers on the non-stream and stream sends"));
+	});
+
 	// ── CTX-L3: lore proposal reviewing + Apply / Reject ───────────────────────
 	// A lore-only turn (no profile/greeting) must still enter Reviewing, render the
 	// structured lore surface, and commit the user's per-item selection via Apply.
 	// Parent-dependency is enforced at the Apply boundary: deselecting a lorebook
 	// drops its entries from the shipped bundle (selectLoreBundle).
+
+	function makeTrackerTemplateActivity(): CoauthorToolActivity {
+		const trackerTemplate = normalizeTrackerTemplate({
+			version: 1,
+			scene: { enabled: true, config: { schema: { location: { $type: "string" } } } },
+		});
+		if (!trackerTemplate) throw new Error("Expected fixture tracker template to normalize");
+		return {
+			toolCallId: "tracker-1",
+			toolName: "set_tracker_template",
+			status: "done",
+			summary: "Drafted detective trackers.",
+			trackerTemplate,
+		};
+	}
 
 	function makeLoreActivity(): CoauthorToolActivity {
 		return {
@@ -597,6 +747,464 @@ describe("CoauthorCharacterForm", () => {
 			},
 		};
 	}
+
+	it("CT-7b: a tracker-template card applies only when included and refreshes its character-template hook", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const fetchMock = mock((_u: RequestInfo | URL, _i?: RequestInit) =>
+			Promise.resolve(new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 })),
+		);
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		const { getByRole, getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("coauthor.tracker_template.review.title")).toBeTruthy();
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			expect(body.trackerTemplate.scene.config.schema.location.$type).toBe("string");
+			expect(refetchTrackerTemplateMock).toHaveBeenCalledTimes(1);
+		});
+
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		await waitFor(() => expect(getByText("coauthor.tracker_template.review.title")).toBeTruthy());
+		fireEvent.click(getByRole("checkbox"));
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			const call = fetchMock.mock.calls[1] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			expect(body.trackerTemplate).toBeUndefined();
+		});
+	});
+
+	it("RO-5 supervisor: Reject leaves no card hunks pending in two following HTTP requests", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		const requests: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")).not.toBeNull());
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")).toBeNull());
+
+		for (const content of ["first after rejection", "second after rejection"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			const card = requests.at(-1)?.coauthorEditorState?.review.targets.find((target) => target.target === "card");
+			expect(card).toMatchObject({ outcome: "rejected", hunks: { accepted: 0, rejected: 2, pending: 0 } });
+		}
+	});
+
+	it("RO-5 supervisor: unresolved review survives the real turn-store clear boundary before HTTP send", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		const requests: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")).not.toBeNull());
+		const before = readCoauthorEditorState(TEST_CHAT, "char_test")?.review;
+		expect(before?.targets.find((target) => target.target === "card")?.outcome).toBe("awaiting");
+
+		// Both production send modes clear this exact ephemeral store before their HTTP call.
+		await act(async () => {
+			__isSending = true;
+			useCoauthorTurnStore.getState().clearTurn(TEST_CHAT);
+			utils.rerender(<CoauthorCharacterForm />);
+		});
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "keep unfinished changes" });
+		expect(requests.at(-1)?.coauthorEditorState?.review).toEqual(before);
+
+		await act(async () => {
+			__isSending = false;
+			utils.rerender(<CoauthorCharacterForm />);
+		});
+		expect(utils.queryByText("coauthor.review.reject")).not.toBeNull();
+	});
+
+	it("RO-5: mounted selections survive clear and remount, then drive Apply and the following review snapshot", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		let applyRequest: ReturnType<typeof coauthorApplySchema.parse> | undefined;
+		const fetchHandler = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				applyRequest = coauthorApplySchema.parse(JSON.parse(String(init?.body)));
+				return new Response(JSON.stringify({ character: makeCharacter({ scenario: "A forest cave at dusk." }), corrections: [] }), { status: 200 });
+			}
+			recordSend(input, init);
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		globalThis.fetch = fetchHandler;
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
+		const initial = utils.getAllByRole("checkbox");
+		fireEvent.click(initial[1]!); // Keep only the first card hunk.
+		fireEvent.click(initial[2]!); // Reject the tracker wholesale.
+		fireEvent.click(initial[3]!); // Reject the first lorebook and its entry.
+		await act(async () => {
+			__isSending = true;
+			useCoauthorTurnStore.getState().clearTurn(TEST_CHAT);
+			utils.rerender(<CoauthorCharacterForm />);
+			__isSending = false;
+			utils.rerender(<CoauthorCharacterForm />);
+		});
+		utils.unmount();
+		const remounted = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(remounted.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, false, false, false, true, true, true]));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "preserved choices" });
+		const awaiting = sent.at(-1)?.coauthorEditorState?.review.targets;
+		expect(awaiting).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", hunks: { accepted: 0, rejected: 1, pending: 1 } }),
+			expect.objectContaining({ target: "lore", items: { offered: 4, selected: 2, applied: 0 } }),
+			expect.objectContaining({ target: "tracker_template", selected: false }),
+		]));
+		fireEvent.click(remounted.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(remounted.queryByText("coauthor.review.apply")).toBeNull());
+		expect(applyRequest?.profileMd).toContain("Bold and direct.");
+		expect(applyRequest?.profileMd).not.toContain("A forest cave at dusk.");
+		expect(applyRequest?.loreBundle?.lorebooks.map((item) => item.id)).toEqual(["lb2"]);
+		expect(applyRequest?.loreBundle?.entries.map((item) => item.id)).toEqual(["e2"]);
+		expect(applyRequest?.trackerTemplate).toBeUndefined();
+		expect(readCoauthorEditorState(TEST_CHAT, "char_test")?.card.body).toContain("A forest cave at dusk.");
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "applied choices" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "applied-partial" }),
+			expect.objectContaining({ target: "lore", outcome: "applied-partial", items: expect.objectContaining({ applied: 2 }) }),
+			expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: false }),
+		]));
+		await expectReviewOutcomeFixture("coauthor-selections-remount-apply", sentCoauthorRequests("mixed selections survive clear and remount, then a partial Apply"));
+	});
+
+	it("RO-5: same-character chat scopes isolate selections and reset only a replaced target", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
+		fireEvent.click(utils.getAllByRole("checkbox")[1]!);
+		fireEvent.click(utils.getAllByRole("checkbox")[2]!);
+		await act(async () => {
+			useSnapshotStore.setState({ activeChat: { id: "chat_other", mode: "coauthor" } as unknown as ActiveChat });
+			useCoauthorTurnStore.getState().upsertActivity("chat_other", twoHunkProfileActivity());
+		});
+		await waitFor(() => expect(utils.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, true]));
+		await act(async () => {
+			useSnapshotStore.setState({ activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat });
+		});
+		await waitFor(() => expect(utils.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, false, false, true, true, true, true]));
+		const replacementLore = makeLoreActivity();
+		const replacementBundle = replacementLore.loreBundle!;
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, {
+			...replacementLore,
+			loreBundle: { ...replacementBundle, entries: replacementBundle.entries.map((entry) => ({ ...entry, content: `${entry.content} New.` })) },
+		});
+		await waitFor(() => expect(utils.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, false, false, true, true, true, true]));
+	});
+
+	it("RO-5: full Apply records all three targets only after the parked RPC resolves", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		let resolveResponse: ((response: Response) => void) | undefined;
+		const fetchMock = mock(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) return fetchMock();
+			recordSend(input, init);
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		const pending = readCoauthorEditorState(TEST_CHAT, "char_test")?.review.targets;
+		expect(pending).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting", hunks: expect.objectContaining({ accepted: 0 }) }),
+			expect.objectContaining({ target: "lore", outcome: "awaiting", items: expect.objectContaining({ applied: 0 }) }),
+			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: true }),
+		]));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "before full Apply confirmation" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(pending);
+
+		resolveResponse?.(new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 }));
+		await waitFor(() => {
+			const resolved = readCoauthorEditorState(TEST_CHAT, "char_test")?.review.targets;
+			expect(resolved).toEqual(expect.arrayContaining([
+				expect.objectContaining({ target: "card", outcome: "applied" }),
+				expect.objectContaining({ target: "lore", outcome: "applied", items: expect.objectContaining({ applied: 4 }) }),
+				expect.objectContaining({ target: "tracker_template", outcome: "applied", selected: true }),
+			]));
+		});
+		for (const content of ["after full Apply", "second following full Apply turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			const state = sent.at(-1)?.coauthorEditorState;
+			expect(state?.review.targets).toHaveLength(3);
+			expect(state?.review.targets.every((target) => target.outcome === "applied")).toBe(true);
+			expect(state?.review.targets.map((target) => target.roundId)).toEqual(pending?.map((target) => target.roundId));
+			expect(state?.card.body).toContain("Bold and direct.");
+			expect(state?.card.cardClean).toBe(true);
+		}
+		await expectReviewOutcomeFixture("coauthor-full-apply-after-rpc", sentCoauthorRequests("full Apply of all three targets: awaiting while the RPC is parked, applied on two following turns"));
+	});
+
+	it("RO-5 supervisor: whole Reject preserves terminal outcomes for all targets on later turns", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			recordSend(input, init);
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		const before = readCoauthorEditorState(TEST_CHAT, "char_test");
+		expect(before?.review.targets).toHaveLength(3);
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")).toBeNull());
+		for (const content of ["first rejected turn", "second rejected turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			const state = sent.at(-1)?.coauthorEditorState;
+			expect(state?.card).toEqual(before?.card);
+			expect(state?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", outcome: "rejected", hunks: { accepted: 0, rejected: 2, pending: 0 } }),
+				expect.objectContaining({ target: "lore", outcome: "rejected", items: { offered: 4, selected: 4, applied: 0 } }),
+				expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: true }),
+			]);
+			expect(state?.review.targets.map((target) => target.roundId)).toEqual(before?.review.targets.map((target) => target.roundId));
+		}
+		await expectReviewOutcomeFixture("coauthor-whole-reject", sentCoauthorRequests("whole Reject of all three targets over two following turns"));
+	});
+
+	it("RO-5 supervisor: frontmatter-only card Apply publishes its confirmed name and wholesale outcome", async () => {
+		seedReviewing();
+		const activity = makeProfileActivity("rename", "A reserved arachnid weaver.");
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, { ...activity, proposed: activity.proposed?.replace("name: Kira", "name: Renamed") });
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		let applied: ReturnType<typeof coauthorApplySchema.parse> | undefined;
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				applied = coauthorApplySchema.parse(JSON.parse(String(init?.body)));
+				return new Response(JSON.stringify({ character: makeCharacter({ name: "Renamed" }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		expect(utils.queryAllByRole("checkbox")).toHaveLength(0);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
+		expect(applied?.profileMd).toContain("name: Renamed");
+		for (const content of ["first renamed turn", "second renamed turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ name: "Renamed", cardClean: true });
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", outcome: "applied", hunks: { accepted: 1, rejected: 0, pending: 0 } }),
+			]);
+		}
+	});
+
+	it("RO-5: a parked mixed-target Apply failure stays awaiting and a retry publishes only confirmed partial outcomes", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		let applyAttempts = 0;
+		let resolveAttempt!: (response: Response) => void;
+		const appliedRequests: ReturnType<typeof coauthorApplySchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				applyAttempts += 1;
+				appliedRequests.push(coauthorApplySchema.parse(JSON.parse(String(init?.body))));
+				return new Promise<Response>((resolve) => { resolveAttempt = resolve; });
+			}
+			recordSend(input, init);
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
+		const choices = utils.getAllByRole("checkbox");
+		fireEvent.click(choices[1]!); // one card hunk remains
+		fireEvent.click(choices[2]!); // tracker is offered but not selected
+		fireEvent.click(choices[3]!); // first lorebook and its entry are rejected
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(applyAttempts).toBe(1));
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "Apply is still pending" });
+		const awaiting = sent.at(-1)?.coauthorEditorState?.review;
+		expect(awaiting?.targets.every((target) => target.outcome === "awaiting")).toBe(true);
+		await act(async () => {
+			resolveAttempt(new Response(JSON.stringify({ error: { message: "Apply failed" } }), { status: 500 }));
+		});
+		expect(utils.queryByText("coauthor.review.apply")).not.toBeNull();
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry remains awaiting" });
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting", hunks: { accepted: 0, rejected: 1, pending: 1 } }),
+			expect.objectContaining({ target: "lore", outcome: "awaiting", items: { offered: 4, selected: 2, applied: 0 } }),
+			expect.objectContaining({ target: "tracker_template", outcome: "awaiting", selected: false }),
+		]));
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(awaiting);
+
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(applyAttempts).toBe(2));
+		expect(appliedRequests[1]).toEqual(appliedRequests[0]);
+		expect(appliedRequests[1]?.profileMd).toContain("Bold and direct.");
+		expect(appliedRequests[1]?.profileMd).not.toContain("A forest cave at dusk.");
+		expect(appliedRequests[1]?.loreBundle?.lorebooks.map((item) => item.id)).toEqual(["lb2"]);
+		expect(appliedRequests[1]?.loreBundle?.entries.map((item) => item.id)).toEqual(["e2"]);
+		expect(appliedRequests[1]?.trackerTemplate).toBeUndefined();
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "retry is still pending" });
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(awaiting);
+		await act(async () => {
+			resolveAttempt(new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 }));
+		});
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
+		for (const content of ["retry confirmed", "second following turn"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ cardClean: true });
+			expect(sent.at(-1)?.coauthorEditorState?.card.body).toContain("Bold and direct.");
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets.map((target) => target.roundId)).toEqual(awaiting?.targets.map((target) => target.roundId));
+		}
+		expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "applied-partial", hunks: { accepted: 1, rejected: 1, pending: 0 } }),
+			expect.objectContaining({ target: "lore", outcome: "applied-partial", items: { offered: 4, selected: 2, applied: 2 } }),
+			expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: false }),
+		]));
+		const confirmed = sent.at(-1)?.coauthorEditorState?.review;
+		const content = utils.container.querySelector<HTMLElement>(".cm-content");
+		expect(content).not.toBeNull();
+		const editor = content ? EditorView.findFromDOM(content) : null;
+		expect(editor).not.toBeNull();
+		const body = editor?.state.doc.toString() ?? "";
+		const from = body.indexOf("Bold and direct.");
+		expect(from).toBeGreaterThanOrEqual(0);
+		await act(async () => {
+			editor?.dispatch({ changes: { from, to: from + "Bold and direct.".length, insert: "Manually refined after Apply." } });
+		});
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "manual edit after Apply" });
+		expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ cardClean: false });
+		expect(sent.at(-1)?.coauthorEditorState?.card.body).toContain("Manually refined after Apply.");
+		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(confirmed);
+		await expectReviewOutcomeFixture("coauthor-apply-error-retry-manual-edit", sentCoauthorRequests("parked mixed Apply fails and stays awaiting, the retry confirms a partial Apply, then a manual edit"));
+	});
+
+	it("RO-5 supervisor: Apply settled in another chat cannot resurrect the completed proposal on return", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("parked-profile", "Confirmed while away."));
+		let resolveApply!: (response: Response) => void;
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Promise<Response>((resolve) => { resolveApply = resolve; });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const first = render(<CoauthorCharacterForm />);
+		fireEvent.click(first.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(resolveApply).toBeDefined());
+		const before = readCoauthorEditorState(TEST_CHAT, "char_test")?.review.targets;
+		expect(before).toHaveLength(1);
+		expect(before?.[0]?.outcome).toBe("awaiting");
+		first.unmount();
+		await act(async () => {
+			useSnapshotStore.setState({ activeChat: { id: "chat_other", mode: "coauthor" } as unknown as ActiveChat });
+		});
+		const other = render(<CoauthorCharacterForm />);
+		await act(async () => {
+			resolveApply(new Response(JSON.stringify({ character: makeCharacter({ description: "Confirmed while away." }), corrections: [] }), { status: 200 }));
+		});
+		expect(useSnapshotStore.getState().activeChat?.id).toBe(brandId<ChatId>("chat_other"));
+		expect(useSnapshotStore.getState().character?.description).toBe("A reserved arachnid weaver.");
+		other.unmount();
+		await act(async () => {
+			seedReviewing({ description: "Confirmed while away." });
+		});
+		const returned = render(<CoauthorCharacterForm />);
+		for (const content of ["first turn after return", "second turn after return"]) {
+			await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content });
+			expect(sent.at(-1)?.coauthorEditorState?.review.targets).toEqual([
+				expect.objectContaining({ target: "card", roundId: before?.[0]?.roundId, outcome: "applied" }),
+			]);
+		}
+		expect(returned.queryByText("coauthor.review.apply")).toBeNull();
+	});
+
+	it("RO-5: an Apply settlement leaves a newer same-chat proposal intact", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("origin", "Origin proposal."));
+		let resolveOrigin!: (response: Response) => void;
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Promise<Response>((resolve) => { resolveOrigin = resolve; });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(resolveOrigin).toBeDefined());
+		await act(async () => {
+			useCoauthorTurnStore.getState().clearTurn(TEST_CHAT);
+			useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("replacement", "Newer proposal."));
+		});
+		await act(async () => {
+			resolveOrigin(new Response(JSON.stringify({ character: makeCharacter({ description: "Origin proposal." }), corrections: [] }), { status: 200 }));
+		});
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).not.toBeNull());
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "newer proposal remains" });
+		const targets = sent.at(-1)?.coauthorEditorState?.review.targets;
+		expect(targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "awaiting" }),
+			expect.objectContaining({ target: "card", outcome: "superseded" }),
+		]));
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT).map((activity) => activity.toolCallId)).toEqual(["replacement"]);
+	});
+
+	it("RO-5: a tracker refresh failure cannot restore the pre-Apply editor snapshot", async () => {
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("profile", "Confirmed editor body."));
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		refetchTrackerTemplateMock.mockRejectedValueOnce(new Error("tracker refresh failed"));
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Response(JSON.stringify({ character: makeCharacter({ description: "Confirmed editor body." }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(refetchTrackerTemplateMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
+
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "after refresh failure" });
+		const state = sent.at(-1)?.coauthorEditorState;
+		expect(state?.card.body).toContain("Confirmed editor body.");
+		expect(state?.review.targets).toEqual(expect.arrayContaining([
+			expect.objectContaining({ target: "card", outcome: "applied" }),
+			expect.objectContaining({ target: "tracker_template", outcome: "applied" }),
+		]));
+	});
 
 	it("CTX-L3: a lore-only turn enters Reviewing and Apply ships the wholesale loreBundle (no profileMd)", async () => {
 		__isSending = false;

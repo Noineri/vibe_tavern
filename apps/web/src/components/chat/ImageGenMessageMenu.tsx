@@ -1,3 +1,6 @@
+// forks: 1 — DiscussInSidechatMenu (components/chat/DiscussInSidechatMenu.tsx)
+//   (the «Discuss in the sidechat» scope choice: trigger + desktop popover /
+//   mobile sheet cloned, two option rows instead of the modes + toggle).
 /**
  * Message-action image-generation menu (IMAGE_GENERATION_PLAN IG-16).
  *
@@ -240,17 +243,17 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
   const busy = running !== undefined;
 
   if (profiles === null) {
-    return <div className="flex h-16 items-center justify-center px-3 text-xs text-t3">…</div>;
+    return <div className="flex h-16 items-center justify-center px-3 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">…</div>;
   }
 
   if (profiles.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 px-3 py-4 text-center">
-        <div className="text-xs text-t3">{t("image_gen_no_profiles")}</div>
+        <div className="text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("image_gen_no_profiles")}</div>
         <button
           type="button"
           data-testid="image-gen-empty-open-settings"
-          className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-xs font-medium text-accent-t transition-colors hover:bg-accent-hover"
+          className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-accent-t transition-colors hover:bg-accent-hover"
           onClick={() => {
             onDone();
             setIsProviderModalOpen(true);
@@ -273,7 +276,7 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
       <div className="my-0.5 h-px bg-border opacity-40" />
 
       {busy && (
-        <div className="flex items-center gap-2 px-1.5 text-xs text-accent animate-pulse">
+        <div className="flex items-center gap-2 px-1.5 text-[calc(var(--ui-fs)-2px)] leading-4 text-accent animate-pulse">
           <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
           {t("image_gen_generating")}
         </div>

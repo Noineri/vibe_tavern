@@ -7,6 +7,11 @@ import * as schemas from "@vibe-tavern/api-contracts";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import {
+  NoAgentKindForScriptKindError,
+  UnknownAgentKindError,
+  AgentKindNotWiredError,
+} from "../../domain/agent/agent-kind-registry.js";
 
 type CopilotStreamEvent = { event: string; data: string };
 
@@ -124,7 +129,7 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
     .post(
       "/api/experience-copilot/:threadId/stream",
       zValidator("json", schemas.experienceCopilotStreamRequestSchema),
-      (c) => {
+      async (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");
         logSendDebug("api.route.experience-copilot-stream.post", {
@@ -132,6 +137,24 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
           contentLength: body.content?.length ?? 0,
           answerToolCallId: body.answer?.toolCallId ?? null,
         });
+        // AS-2c kind resolution at the stream-turn start: run BEFORE the SSE
+        // headers are sent so an unserved script kind is a 400 JSON response
+        // (mirrors this file's `{ error }` response shape, plus the registry
+        // error's machine-readable `code`), never an in-stream SSE error.
+        // Today interactive → experience always resolves, so behavior is
+        // unchanged on every reachable state.
+        try {
+          await runtime.experienceCopilotAssertStreamKind(threadId);
+        } catch (err) {
+          if (
+            err instanceof NoAgentKindForScriptKindError ||
+            err instanceof UnknownAgentKindError ||
+            err instanceof AgentKindNotWiredError
+          ) {
+            return c.json({ error: err.message, code: err.code }, 400);
+          }
+          throw err;
+        }
         const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
         const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
         return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));
@@ -141,6 +164,17 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       const scriptId = c.req.param("scriptId");
       return c.json(await runtime.experienceCopilotGetActive(scriptId));
     })
+    // CA-4e1: registered before the `:threadId`-shaped GETs; a single-segment
+    // literal cannot collide with them (they all carry a second segment), but
+    // keep the literal first so the match never even consults them.
+    .get(
+      "/api/experience-copilot/image-route",
+      zValidator("query", z.object({ providerProfileId: z.string(), model: z.string().optional() })),
+      async (c) => {
+        const query = c.req.valid("query");
+        return c.json(await runtime.experienceCopilotGetImageRoute(query.providerProfileId, query.model));
+      },
+    )
     .get("/api/experience-copilot/:threadId/messages", async (c) => {
       const threadId = c.req.param("threadId");
       return c.json(await runtime.experienceCopilotListMessages(threadId));
@@ -205,7 +239,81 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       async (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");
-        return c.json(await runtime.experienceCopilotCompact(threadId, body, c.req.raw.signal));
+        // AS-10h: kind-resolution errors map to the same 400 JSON shape the
+        // stream route's assert step uses (an unwired kind is a server wiring
+        // bug surfacing as 400, not the client's 500); any other error
+        // propagates unchanged.
+        try {
+          return c.json(await runtime.experienceCopilotCompact(threadId, body, c.req.raw.signal));
+        } catch (err) {
+          if (
+            err instanceof NoAgentKindForScriptKindError ||
+            err instanceof UnknownAgentKindError ||
+            err instanceof AgentKindNotWiredError
+          ) {
+            return c.json({ error: err.message, code: err.code }, 400);
+          }
+          throw err;
+        }
+      },
+    )
+    .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/summarize",
+      zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() }).optional()),
+      async (c) => c.json(await runtime.experienceCopilotSummarizeAttachment(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json") ?? {}, c.req.raw.signal,
+      )),
+    )
+    .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/clear-summary", async (c) =>
+        c.json(await runtime.experienceCopilotClearAttachmentSummary(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/description",
+      zValidator("json", z.object({ description: z.string() })),
+      async (c) => c.json(await runtime.experienceCopilotUpdateAttachmentDescription(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json").description,
+      )),
+    )
+    .post(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/regenerate-description",
+      zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() }).optional()),
+      async (c) => c.json(await runtime.experienceCopilotRegenerateAttachmentDescription(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json") ?? {}, c.req.raw.signal,
+      )),
+    )
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId/include-in-prompt",
+      zValidator("json", z.object({ includeInPrompt: z.boolean() })),
+      async (c) => c.json(await runtime.experienceCopilotSetAttachmentIncluded(
+        c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"), c.req.valid("json").includeInPrompt,
+      )),
+    )
+    .delete("/api/experience-copilot/:threadId/messages/:messageId/attachments/:attachmentId", async (c) =>
+      c.json(await runtime.experienceCopilotDeleteAttachment(c.req.param("threadId"), c.req.param("messageId"), c.req.param("attachmentId"))))
+    .post(
+      "/api/experience-copilot/:threadId/turns/delete",
+      zValidator("json", z.object({ messageId: z.string(), includeUserMessage: z.boolean(), keepAttachmentFiles: z.boolean().optional() })),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const body = c.req.valid("json");
+        // AP-8: the adapter maps the store's refusal families onto the shared
+        // DomainError vocabulary — they propagate to the global handler (the
+        // compact endpoint's error family), so no local catch here.
+        return c.json(await runtime.experienceCopilotDeleteTurn(threadId, body));
+      },
+    )
+    .patch(
+      "/api/experience-copilot/:threadId/messages/:messageId",
+      zValidator("json", schemas.experienceCopilotMessageEditSchema),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const messageId = c.req.param("messageId");
+        // AP-30: same convention as /turns/delete — the adapter maps the
+        // store's refusal families (typed 400 reason codes / 404s) onto the
+        // shared DomainError vocabulary, which the global handler serializes.
+        return c.json(
+          await runtime.experienceCopilotEditMessage(threadId, messageId, c.req.valid("json").content),
+        );
       },
     );
 }

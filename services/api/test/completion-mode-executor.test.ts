@@ -25,6 +25,7 @@ import { GENERATION_MODE } from "@vibe-tavern/domain";
 import { resetProviderFetchFactory } from "../src/domain/providers/provider-fetch-factory.js";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { CONTINUATION_USER_INSTRUCTION } from "../src/infrastructure/ai/provider-executor-utils.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 
@@ -214,6 +215,26 @@ describe("completion mode — nonstreamingProviderExecute", () => {
     expect(Array.isArray(body.messages)).toBe(true);
     expect(body.prompt).toBeUndefined();
     expect(result.text).toBe("Hello!");
+  });
+
+  it("threads continuationFallback through the executor to the wire (trailing user instruction, no assistant push)", async () => {
+    installFetchStub(() => new Response(JSON.stringify({
+      id: "chatcmpl-fixture", object: "chat.completion", model: "qwen-local",
+      choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeProfile({ generationMode: GENERATION_MODE.chat }),
+      continuationFallback: true,
+    }));
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(Array.isArray(messages)).toBe(true);
+    expect(messages[messages.length - 1]).toEqual({ role: "user", content: CONTINUATION_USER_INSTRUCTION });
+    // No trailing assistant message was added: the only assistant message is the original history tail.
+    expect(messages.filter((m) => m.role === "assistant")).toEqual([{ role: "assistant", content: "Once upon a time" }]);
   });
 
   it("serializes nullable Co-Author tool fields without array-valued type keywords", async () => {

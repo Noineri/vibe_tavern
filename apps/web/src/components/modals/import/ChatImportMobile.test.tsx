@@ -23,6 +23,7 @@ import { describe, it, expect, mock, spyOn, beforeAll, beforeEach } from "bun:te
 import { createRef } from "react";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { mocked } from "../../../../test/mock-utils.js";
 import type { ChatImportMobileHandle } from "./ChatImportMobile.js";
 import type { ChatPreview } from "./parse-import-file.js";
@@ -35,21 +36,11 @@ const toastError = mock();
 const toastSuccess = mock();
 const toastWarning = mock();
 const toastInfo = mock();
-const realI18nContext = await import("../../../i18n/context.js");
 const realSonner = await import("sonner");
 const realParseImportFile = await import("./parse-import-file.js");
 const parseChatFile = mock(realParseImportFile.parseChatFile);
 
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (key: string) => key,
-		tDynamic: (key: string) => key,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam();
 mock.module("sonner", () => ({
 	...realSonner,
 	toast: {

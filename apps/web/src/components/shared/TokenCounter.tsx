@@ -19,7 +19,7 @@ export function TokenCounter({ text, count: providedCount, label, className }: T
   const count = providedCount ?? localCount;
   return (
     <span
-      className={className ?? "flex justify-end font-ui text-[11px] tabular-nums text-t3"}
+      className={className ?? "flex justify-end font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3"}
     >
       {count.toLocaleString()} {label || t("tokens_label")}
     </span>

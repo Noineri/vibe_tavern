@@ -53,9 +53,18 @@ The `opts?` argument to `connect`:
 # Runtime environment (HARD)
 Your document runs inside an iframe with `sandbox="allow-scripts"` and WITHOUT `allow-same-origin`, so its origin is always the opaque `"null"` origin. This is real isolation:
 - ALLOWED: the standard DOM (`document`, `document.createElement`, `getElementById`, `innerHTML`, `textContent`, `style`, event listeners), CSS (`<style>`, inline styles), inline `<script>`, `Math`, `JSON`, `Array`, `Object`, `String`, `crypto.getRandomValues`, and the one host global `window.VibeExperience`.
-- FORBIDDEN: `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`, `importScripts`, dynamic `import()`, ES module syntax (`export`/`import`), `<link>`/`<script src>` to external URLs, access to `parent`/`top`/`window.opener` (blocked by the sandbox), and any network, storage, or process API. The frame has no network and no storage — do not attempt to load external assets, fonts, libraries, or images by URL. Inline everything (data: URIs for images if absolutely needed; inline SVG preferred).
+- FORBIDDEN: `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`, `importScripts`, dynamic `import()`, ES module syntax (`export`/`import`), `<link>`/`<script src>` to external URLs, access to `parent`/`top`/`window.opener` (blocked by the sandbox), and any network, storage, or process API. The frame has no network and no storage — do not attempt to load external assets, fonts, libraries, or images by URL. Inline everything. Build scenes and game objects with HTML/CSS (elements, gradients, borders, shadows, pseudo-elements, transforms) or an existing canvas renderer; keep inline SVG for icons and simple outlines; a `data:` URI image is the last resort.
 - Write plain browser JS (no build step, no bundler, no modules). ES5-ish patterns (`var`, `function`, `for` loops, `.map`) and method shorthand / arrow functions inside an IIFE are both supported; wrap your script in an IIFE `(function(){ ... })();` so it does not leak globals.
 - Do NOT stash state on `window` beyond the SDK. Do NOT redefine `window.VibeExperience`.
+
+# Sizing the frame
+The host sets the frame's width — it fills the panel or the chat column — and takes the frame's height from you: the frame starts about 120 px tall and becomes exactly as tall as the last height you report with `xp.resize(width, height)`.
+So the height must come from your content and the width, never from the frame itself:
+- `height: 100%`, `100vh`, `window.innerHeight`, and the `clientHeight` of a full-height wrapper all measure the frame as it is now. A visual that sizes itself that way reports 120 px and stays 120 px tall.
+- For a scene with a fixed shape, give the scene a width and an `aspect-ratio`, for example `#scene { width: min(100%, 440px); aspect-ratio: 440 / 780; margin: 0 auto; }` — 360×638 on a phone, 440×780 on a desktop.
+- For a canvas, size its CSS box this way, then set `canvas.width` and `canvas.height` from that box times `devicePixelRatio`.
+- Report `xp.resize(root.scrollWidth, root.scrollHeight)` after the first render and whenever your layout changes height (a panel opens, the window width changes), where `root` is an element whose height comes from its content.
+- Keep the full game within about 800 px of height so it fits a laptop screen without scrolling.
 
 # Correct connection pattern
 `onView` fires asynchronously (on the first `state` message after handshake), so capture the handle returned by `connect` in a variable, then reference it inside `onView` / your render function. The canonical shape every starter uses:
@@ -129,6 +138,7 @@ These starters exist in the visual editor's «new from starter» picker; their s
 - **Breakout** — a realtime arcade loop: bounce the ball off the paddle and clear the brick wall (3 balls); renders on the loop tick and commits the round once with the final score.
 
 ## Concrete example: minimal blank-state visual
+This example shows the bridge wiring only — connect, render, act, pending, error, resize. Its look (a raw JSON dump, small grey text, one button per action) is a debugging scaffold, not a design baseline: a finished visual renders the state as a composed scene with readable text and objects built for the game.
 ```html
 <style>
   .xp-blank{font:14px/1.4 system-ui,sans-serif;color:#e5e5e5;padding:12px;min-width:200px}

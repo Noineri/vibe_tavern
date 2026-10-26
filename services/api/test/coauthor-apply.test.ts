@@ -21,6 +21,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { serializeProfileMd } from "@vibe-tavern/db";
+import { brandId, readTrackerTemplate } from "@vibe-tavern/domain";
+import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createLoreEntityLookup } from "../src/domain/coauthor/lore/lore-entity-lookup.js";
@@ -210,6 +212,110 @@ describe("Co-Author Apply RPC (CA-7)", () => {
 				firstMessage: "x",
 			}),
 		).rejects.toThrow(/Chat.*was not found/);
+	});
+});
+
+describe("Co-Author Apply RPC — tracker template (CT-7a)", () => {
+	let env: Awaited<ReturnType<typeof createTestRuntime>>;
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	/** A canonical template fixture (parsed so defaults are resolved — the
+	 *  exact payload the tool echoes and the aggregate forwards on Apply). */
+	const template = trackerTemplateSchema.parse({
+		version: 1,
+		scene: {
+			enabled: true,
+			config: { schema: { location: { $type: "string" } }, contextWindow: 12 },
+		},
+		objective: {
+			enabled: true,
+			state: {
+				mode: "goals",
+				objectiveDescription: "Escape the city",
+				shortTermGoals: [{ id: "goal_escape", description: "Reach the gate", status: "pending" }],
+			},
+		},
+	});
+
+	it("applies a tracker template AND a profile edit in one update (template rides the profile's extensions merge)", async () => {
+		env = await createTestRuntime();
+		const proposedMd = serializeProfileMd({
+			profile: {
+				name: "TrackerProbe",
+				tags: [],
+				creator: "author_x",
+				characterVersion: null,
+				creatorNotes: null,
+				mesExampleMode: "depth",
+				mesExampleDepth: 4,
+				description: "New personality with trackers.",
+				scenario: null,
+				mesExample: null,
+			},
+		});
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, {
+			profileMd: proposedMd,
+			trackerTemplate: template,
+		});
+
+		// The profile edit applied.
+		expect(res.character!.name).toBe("TrackerProbe");
+		expect(res.character!.description).toBe("New personality with trackers.");
+		// The template was written in the SAME character.update, merged on top of
+		// the profile branch's extensions edit (creator survives alongside it).
+		expect(readTrackerTemplate(res.character!.extensions)).toEqual(template);
+		expect(res.character!.extensions["creator"]).toBe("author_x");
+		expect(res.corrections).toEqual([]);
+	});
+
+	it("template-only apply (no profileMd) writes the template and keeps every OTHER extensions key", async () => {
+		// Seed a foreign extensions key the template merge must preserve.
+		await env.runtime.character.update(
+			brandId<import("@vibe-tavern/domain").CharacterId>(env.characterId),
+			{ extensions: { foreign_extension: { keep: true } } },
+		);
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, { trackerTemplate: template });
+
+		// The template landed (proves character.update ran with trackerTemplate
+		// as the Apply's ONLY field)...
+		expect(readTrackerTemplate(res.character!.extensions)).toEqual(template);
+		// ...and the foreign key survived the extensions merge.
+		expect(res.character!.extensions["foreign_extension"]).toEqual({ keep: true });
+		// Profile fields untouched.
+		expect(res.character!.name).toBe("TrackerProbe");
+		expect(res.character!.description).toBe("New personality with trackers.");
+		expect(res.corrections).toEqual([]);
+	});
+
+	it("apply without the field leaves the template untouched", async () => {
+		const characterId = brandId<import("@vibe-tavern/domain").CharacterId>(env.characterId);
+		const before = readTrackerTemplate((await env.stores.characters.getById(characterId))!.extensions);
+		expect(before).not.toBeNull();
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, { firstMessage: "Just a greeting." });
+
+		expect(res.character!.firstMessage).toBe("Just a greeting.");
+		expect(readTrackerTemplate(res.character!.extensions)).toEqual(before);
+	});
+
+	it("rejects an invalid trackerTemplate (wrong version) with invalid_tracker_template and writes nothing", async () => {
+		const characterId = brandId<import("@vibe-tavern/domain").CharacterId>(env.characterId);
+		const before = readTrackerTemplate((await env.stores.characters.getById(characterId))!.extensions);
+		expect(before).not.toBeNull();
+
+		// The wire schema keeps `version` numeric; the domain normalizer is the
+		// authority. A hand-crafted version-2 payload is refused loudly — never
+		// silently stored, never silently dropped.
+		await expect(
+			env.runtime.applyCoauthorDraft(env.coauthorChatId, {
+				trackerTemplate: { ...template, version: 2 },
+			}),
+		).rejects.toThrow(/tracker template is invalid/);
+
+		const after = readTrackerTemplate((await env.stores.characters.getById(characterId))!.extensions);
+		expect(after).toEqual(before);
 	});
 });
 

@@ -35,6 +35,10 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
+import { installExperienceStoreSeam } from "../../../test/experience-store-seam.js";
+import { installPersonaApiSeam } from "../../../test/persona-api-seam.js";
 
 import type { ReactNode } from "react";
 import type {
@@ -82,12 +86,25 @@ function setFakeState(patch: Partial<FakeState>): void {
   emit();
 }
 
+// CO-LOAD CONTRACT (catalog mocks default to a VALID empty catalog): a bare
+// `mock()` resolves `undefined` — a co-loaded consumer of the same api module
+// (e.g. AgentShell's mention-catalog `Promise.allSettled` in ScriptEditor's
+// graph) then gets FULFILLED-with-undefined where the real api would have
+// REJECTED, and the "transient failure leaves the type out" best-effort path
+// crashes on `for (… of undefined)`. The defaults below keep every list-shaped
+// export's contract; this suite's beforeEach re-seeds its own fixtures per
+// test, so its own pins are unchanged.
 const mocks = {
   testScript: mock(),
-  listAllScripts: mock(),
-  listPersonas: mock(),
-  listProviderProfiles: mock(),
-  fetchProviderProfileModels: mock(),
+  // Typed-default note: the permissive bare `mock()` typing stays (the
+  // fixtures below are partial records); the default impl is attached at
+  // creation via mockImplementation so the co-load poison window (another
+  // file's tests between this module's load and this suite's first
+  // beforeEach) still resolves a VALID empty catalog, never undefined.
+  listAllScripts: mock().mockImplementation(async () => []),
+  listPersonas: mock().mockImplementation(async () => []),
+  listProviderProfiles: mock().mockImplementation(async () => []),
+  fetchProviderProfileModels: mock().mockImplementation(async () => ({ models: [] })),
   getExperiencePromptOverrides: mock(),
   updateExperienceConfig: mock(),
   updateGlobalOverride: mock(),
@@ -100,9 +117,6 @@ const mocks = {
   endSession: mock(),
 };
 
-const realI18n = await import("../../i18n/context.js");
-const realStore = await import("../../stores/experience-store.js");
-const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realScriptApi = await import("../../api/script-api.js");
 const realExperienceApi = await import("../../api/experience-api.js");
 const realProviderApi = await import("../../api/provider-api.js");
@@ -113,26 +127,36 @@ const realMobile = await import("../../hooks/use-mobile.js");
 // (otherwise real) snapshot-store hooks the modal subscribes to.
 let fakeAllCharacters: Array<{ id: string; name: string }> = [];
 let fakeChatList: Array<{ id: string; title: string; characterId: string; lastMessageAt: string }> = [];
-mock.module("../../stores/snapshot-store.js", () => ({
-  ...realSnapshotStore,
+// CO-LOAD CONTRACT (snapshot-store seam): the former inline R4 narrows stayed
+// live process-globally in a hand-bundled run and broke every real-store rider
+// after this file (rail rows, topbar seeding). Register through the shared
+// seam: this file's fakes for its own run, the REAL store for everyone after
+// the next seam registration.
+installSnapshotStoreSeam({
   useAllCharacters: () => fakeAllCharacters,
   useChatList: () => fakeChatList,
-}));
+});
 
-// Stable `t` object so its identity is preserved across renders — the modal's
-// discovery effect depends on `t`, and a per-render closure would loop.
-const stableT = {
-  t: (k: string) => k,
-  tDynamic: (k: string) => k,
-  locale: "en",
-  setLocale: () => {},
-  ready: true,
-};
+// Hand port onto the shared seam (stable-identity family): the suite's own `t`
+// runs verbatim and `stable: true` keeps the old mock's whole-value identity —
+// `useT()` returned the exact same object every render (the modal's discovery
+// effect depends on `t`, and a per-render closure would loop).
+installI18nContextSeam({
+  custom: {
+    t: (k: string) => k,
+    tDynamic: (k: string) => k,
+    stable: true,
+  },
+});
 
-mock.module("../../i18n/context.js", () => ({ ...realI18n, useT: () => stableT }));
-
-mock.module("../../stores/experience-store.js", () => ({
-  ...realStore,
+// CO-LOAD CONTRACT (experience-store seam): the former inline narrow stayed
+// live process-globally in a hand-bundled run — a STALE passive effect of this
+// suite's own component flushed into the NEXT file's phase and called the
+// narrow getState there, breaking rail-character-browser's rows (11 fails,
+// reproduced 2026-10-27; harmless against the real store). Register through
+// the shared seam: this file's fakes for its own run, the REAL store for
+// everyone after the next seam registration.
+installExperienceStoreSeam({
   useExperienceConfig: () => useSyncExternalStore(subscribe, () => state.config),
   useExperienceLoading: () => useSyncExternalStore(subscribe, () => state.loading),
   useExperienceSession: () => useSyncExternalStore(subscribe, () => state.session),
@@ -148,7 +172,7 @@ mock.module("../../stores/experience-store.js", () => ({
       endSession: mocks.endSession,
     }),
   },
-}));
+});
 
 mock.module("../../api/script-api.js", () => ({ ...realScriptApi, testScript: mocks.testScript, listAllScripts: mocks.listAllScripts }));
 mock.module("../../api/experience-api.js", () => ({
@@ -159,7 +183,12 @@ mock.module("../../api/experience-api.js", () => ({
   updateExperienceCharacterOverride: mocks.updateCharacterOverride,
 }));
 const realPersonaApi = await import("../../api/persona-api.js");
-mock.module("../../api/persona-api.js", () => ({ ...realPersonaApi, listPersonas: mocks.listPersonas }));
+// CO-LOAD CONTRACT (persona-api seam): the former inline mock's registration
+// stayed live process-globally in a hand-bundled run — bun resets `mock()`
+// implementations at file boundaries, so a later rider (ScriptEditor's
+// AgentShell mention catalog) got FULFILLED-undefined and crashed. Register
+// through the shared seam: this file's double for its own run.
+installPersonaApiSeam({ listPersonas: mocks.listPersonas });
 
 mock.module("../../api/provider-api.js", () => ({
   ...realProviderApi,

@@ -17,7 +17,7 @@ export type ServicePromptFieldFamily =
   (typeof SERVICE_PROMPT_FIELD_FAMILIES)[keyof typeof SERVICE_PROMPT_FIELD_FAMILIES];
 
 export const SERVICE_PROMPT_FIELDS = {
-  // assistant (12)
+  // assistant (14)
   script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   dice_script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   lore_entry: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
@@ -31,8 +31,11 @@ export const SERVICE_PROMPT_FIELDS = {
   message_edit: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_merge: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_tts_annotate: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
-  // assistant (12) — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
+  tracker_template: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  // assistant — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
   regex: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  // assistant — skill drafting for the skill library (AGENT_SHELL_POLISH AP-23b)
+  skill: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   // summary (1)
   summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.summary },
   // insights (4)
@@ -40,9 +43,15 @@ export const SERVICE_PROMPT_FIELDS = {
   objective_generate_goals: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   objective_check: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   scene_generate: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
-  // bases (5)
+  // bases (11)
   coauthor_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  coauthor_summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  copilot_compaction: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  script_agent_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  script_agent_compaction: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  sidechat_ooc_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  sidechat_ooc_digest: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_user_flow: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_visual: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
@@ -64,14 +73,22 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "message_edit",
   "message_merge",
   "message_tts_annotate",
+  "tracker_template",
   "regex",
+  "skill",
   "summary",
   "objective_generate",
   "objective_generate_goals",
   "objective_check",
   "scene_generate",
   "coauthor_base",
+  "coauthor_summary",
   "copilot_base",
+  "copilot_compaction",
+  "script_agent_base",
+  "script_agent_compaction",
+  "sidechat_ooc_base",
+  "sidechat_ooc_digest",
   "copilot_user_flow",
   "interactive_rules",
   "interactive_visual",

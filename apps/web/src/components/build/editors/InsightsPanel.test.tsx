@@ -8,7 +8,10 @@
  *  3. Flipping an Objective/Tracker/Dice toggle dispatches the right partial
  *     patch through the INS-1b pipe — `{ insightsConfig: { objectiveEnabled } }` —
  *     so the adapter-side merge preserves the other toggles.
- *  4. (IR-72B) Experience is a FOURTH independent feature: it hydrates the
+ *  4. (CT-4) RP chats expose character tracker-template actions: loading
+ *     applies the returned snapshot, saving confirms only when replacing, and
+ *     Co-Author chats never render the row.
+ *  5. (IR-72B) Experience is a FOURTH independent feature: it hydrates the
  *     Experience store for the exact {chatId, branchId}, persists only through
  *     the dedicated Experience endpoint (never insightsConfig), rehydrates the
  *     exact origin before clearing pending, rolls back on failure, stays
@@ -24,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_CONTEXT_MODE } from "@vibe-tavern/domain";
 import type { ExperienceChatConfigRow } from "../../../api/types.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
@@ -36,10 +40,29 @@ const { render, fireEvent, waitFor } = await import("@testing-library/react");
 const mocks = {
   activeChat: null as
     | null
-    | { id: string; insightsConfig: { objectiveEnabled: boolean; trackerEnabled: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, ("persona" | "character")[]> | null } },
+    | {
+      id: string;
+      characterId?: string;
+      mode?: "rp" | "coauthor";
+      insightsConfig: {
+        objectiveEnabled: boolean;
+        trackerEnabled: boolean;
+        diceEnabled?: boolean;
+        diceMode?: "normal" | "immersive";
+        diceScriptIds?: string[] | null;
+        diceActorBindings?: Record<string, ("persona" | "character")[]> | null;
+        tracker?: { schema?: Record<string, unknown> };
+      };
+      insightsObjectiveState?: { shortTermGoals?: { title: string }[] };
+    },
   activeBranch: null as null | { id: string },
   experienceConfig: null as ExperienceChatConfigRow | null,
+  characterTrackerTemplate: null as null | { version: number },
   updateInsightsConfigAction: mock(),
+  ingestSnapshot: mock(),
+  applyCharacterTrackerTemplate: mock(),
+  saveAsCharacterTrackerTemplate: mock(),
+  refetchCharacterTrackerTemplate: mock(),
   getDiceDefinitions: mock(),
   listAllScripts: mock(),
   setScope: mock(),
@@ -67,35 +90,30 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> & { chatId: string })
   };
 }
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realDiceApi = await import("../../../api/dice-api.js");
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceStore = await import("../../../stores/experience-store.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
+const realTrackerTemplateApi = await import("../../../api/tracker-template-api.js");
+const realCharacterTrackerTemplate = await import("../../../hooks/use-character-tracker-template.js");
 const realExperienceAssignment = await import("./ExperienceAssignment.js");
+const realDestructiveConfirmModal = await import("../../shared/destructive-confirm-modal.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    // Return the key verbatim — assertions check for key strings.
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,
   // The component subscribes with a selector; invoke it against a stub state.
-  useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; activeBranch: typeof mocks.activeBranch; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
-    selector({ activeChat: mocks.activeChat, activeBranch: mocks.activeBranch, messageOrder: [], messagesById: {} }),
+  useSnapshotStore: Object.assign(
+    (selector: (s: { activeChat: typeof mocks.activeChat; activeBranch: typeof mocks.activeBranch; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
+      selector({ activeChat: mocks.activeChat, activeBranch: mocks.activeBranch, messageOrder: [], messagesById: {} }),
+    { getState: () => ({ ingestSnapshot: mocks.ingestSnapshot }) },
+  ),
   // TrackerConfig (rendered as a child) reads these for the scene_schema AI modal scopeContext.
   useActiveCharacter: () => ({ id: "char_1", name: "Hero" }),
   useActivePersona: () => ({ id: "persona_1", name: "User" }),
@@ -135,6 +153,24 @@ mock.module("../../../api/experience-api.js", () => ({
   updateExperienceConfig: mocks.updateExperienceConfig,
 }));
 
+mock.module("../../../api/tracker-template-api.js", () => ({
+  ...realTrackerTemplateApi,
+  applyCharacterTrackerTemplate: mocks.applyCharacterTrackerTemplate,
+  saveAsCharacterTrackerTemplate: mocks.saveAsCharacterTrackerTemplate,
+}));
+
+mock.module("../../../hooks/use-character-tracker-template.js", () => ({
+  ...realCharacterTrackerTemplate,
+  useCharacterTrackerTemplate: () => ({
+    template: mocks.characterTrackerTemplate,
+    loading: false,
+    error: null,
+    save: mock(),
+    clear: mock(),
+    refetch: mocks.refetchCharacterTrackerTemplate,
+  }),
+}));
+
 // IR-72A's ExperienceAssignment has its own standalone component test. In this
 // PANEL integration file a small real-shaped stub is acceptable: it exposes the
 // received controlled props and invokes onPatch so the panel's forwarding can be
@@ -171,15 +207,34 @@ mock.module("../../../hooks/use-mobile.js", () => ({
 // it so the PANEL test stays focused on the toggle behavior and does not drag
 // in the config editor's provider/model dependencies.
 mock.module("./ObjectiveConfig.js", () => ({
-  ObjectiveConfig: () => <div data-testid="objective-config" />,
+  ObjectiveConfig: () => (
+    <div data-testid="objective-config">
+      {mocks.activeChat?.insightsObjectiveState?.shortTermGoals?.map((goal) => goal.title).join(",")}
+    </div>
+  ),
 }));
+
 
 // TrackerConfig renders CustomTooltip (icon buttons); presentational here —
 // passthrough so no Radix TooltipProvider is needed.
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  CustomTooltip: ({ children, content }: { children: ReactNode; content?: ReactNode }) => <>{children}{content}</>,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+mock.module("../../shared/destructive-confirm-modal.js", () => ({
+  ...realDestructiveConfirmModal,
+  DestructiveConfirmModal: ({ title, body, confirmLabel, onConfirm, onCancel }: {
+    title: string; body: ReactNode; confirmLabel: string; onConfirm: () => void; onCancel: () => void;
+  }) => (
+    <div role="dialog">
+      <p>{title}</p>
+      <p>{body}</p>
+      <button type="button" onClick={onCancel}>cancel</button>
+      <button type="button" onClick={onConfirm}>{confirmLabel}</button>
+    </div>
+  ),
 }));
 
 // TrackerConfig renders the shared AiAssistantModal (scene_schema generator).
@@ -195,7 +250,12 @@ afterEach(() => {
   mocks.activeChat = null;
   mocks.activeBranch = null;
   mocks.experienceConfig = null;
+  mocks.characterTrackerTemplate = null;
   mocks.updateInsightsConfigAction.mockReset();
+  mocks.ingestSnapshot.mockReset();
+  mocks.applyCharacterTrackerTemplate.mockReset();
+  mocks.saveAsCharacterTrackerTemplate.mockReset();
+  mocks.refetchCharacterTrackerTemplate.mockReset();
   mocks.getDiceDefinitions.mockReset();
   mocks.listAllScripts.mockReset();
   mocks.setScope.mockReset();
@@ -213,6 +273,9 @@ describe("InsightsPanel (INS-2)", () => {
     mocks.updateExperienceConfig.mockResolvedValue(
       makeConfig({ chatId: "chat_mock", enabled: false }),
     );
+    mocks.applyCharacterTrackerTemplate.mockResolvedValue(undefined);
+    mocks.saveAsCharacterTrackerTemplate.mockResolvedValue(undefined);
+    mocks.refetchCharacterTrackerTemplate.mockResolvedValue(undefined);
   });
 
   it("renders the no-chat empty state when no chat is active", () => {
@@ -224,6 +287,100 @@ describe("InsightsPanel (INS-2)", () => {
     // No Experience hydration or write is issued without an active chat.
     expect(mocks.setScope).not.toHaveBeenCalled();
     expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  it("renders the tracker-template action row for RP chats", () => {
+    mocks.activeChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.characterTrackerTemplate = { version: 1 };
+
+    const { getByRole } = render(<InsightsPanel />);
+    expect(getByRole("button", { name: "insights_template_load_from_character" })).toBeTruthy();
+    expect(getByRole("button", { name: "insights_template_save_as_character" })).toBeTruthy();
+  });
+
+  it("disables loading and exposes its tooltip when the character has no template", () => {
+    mocks.activeChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+
+    const { getByRole, getByText } = render(<InsightsPanel />);
+    expect(getByRole("button", { name: "insights_template_load_from_character" }).hasAttribute("disabled")).toBe(true);
+    expect(getByText("insights_template_empty_tooltip")).toBeTruthy();
+  });
+
+  it("applies a character template through the snapshot patch and shows its schema and goals", async () => {
+    const appliedChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp" as const,
+      insightsConfig: {
+        objectiveEnabled: true,
+        trackerEnabled: true,
+        tracker: { schema: { location: { type: "string" } } },
+      },
+      insightsObjectiveState: { shortTermGoals: [{ title: "Template goal" }] },
+    };
+    mocks.activeChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.characterTrackerTemplate = { version: 1 };
+    mocks.applyCharacterTrackerTemplate.mockResolvedValue({ activeChat: appliedChat });
+    mocks.ingestSnapshot.mockImplementation((snapshot: { activeChat?: typeof appliedChat }) => {
+      if (snapshot.activeChat) mocks.activeChat = snapshot.activeChat;
+    });
+
+    const { getByRole, getByText, findByText, findAllByText, rerender } = render(<InsightsPanel />);
+    fireEvent.click(getByRole("button", { name: "insights_template_load_from_character" }));
+    expect(getByText("insights_template_apply_title")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "insights_template_replace" }));
+
+    await waitFor(() => expect(mocks.applyCharacterTrackerTemplate).toHaveBeenCalledWith("chat_template"));
+    expect(mocks.ingestSnapshot).toHaveBeenCalledWith({ activeChat: appliedChat });
+    rerender(<InsightsPanel />);
+    await findByText("Template goal");
+    expect((await findAllByText(/location/)).length).toBeGreaterThan(0);
+  });
+
+  it("confirms before saving over an existing character template", async () => {
+    mocks.activeChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.characterTrackerTemplate = { version: 1 };
+
+    const { getByRole, getByText } = render(<InsightsPanel />);
+    fireEvent.click(getByRole("button", { name: "insights_template_save_as_character" }));
+    expect(getByText("insights_template_save_title")).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "insights_template_replace" }));
+
+    await waitFor(() => expect(mocks.saveAsCharacterTrackerTemplate).toHaveBeenCalledWith("chat_template"));
+    expect(mocks.refetchCharacterTrackerTemplate).toHaveBeenCalled();
+  });
+
+  it("does not render tracker-template actions for Co-Author chats", () => {
+    mocks.activeChat = {
+      id: "chat_coauthor",
+      characterId: "char_template",
+      mode: "coauthor",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+
+    const { queryByRole } = render(<InsightsPanel />);
+    expect(queryByRole("button", { name: "insights_template_load_from_character" })).toBeNull();
+    expect(queryByRole("button", { name: "insights_template_save_as_character" })).toBeNull();
   });
 
   it("renders all four toggles unchecked when the config is all-off (default)", () => {

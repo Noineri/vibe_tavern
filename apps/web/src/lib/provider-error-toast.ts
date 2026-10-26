@@ -2,7 +2,7 @@
  * The RP chat controller's provider-error toast (extracted from
  * hooks/use-chat-controller.ts — the file-size ratchet). The experience
  * copilot controller keeps its own minimal replica (no provider-settings
- * action); see use-experience-copilot-controller.ts.
+ * action); see use-agent-controller.ts.
  */
 import { toast } from "sonner";
 import type { TFunc } from "../i18n/locale-helpers.js";
@@ -14,6 +14,11 @@ import { useModalStore } from "../stores/modal-store.js";
 // the message alone is enough; we just add a "try again" hint.
 const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
 
+/** The user-facing headline shared by the toast and queue failure rows. */
+export function getProviderErrorText(error: unknown, t: TFunc, fallbackKey: keyof Resources["en"] = "message_send_failed"): string {
+  return error instanceof Error && error.message ? error.message : t(fallbackKey);
+}
+
 /**
  * Shows a category-aware toast for a provider/LLM generation failure. Reads the
  * server-classified `category` from a {@link ProviderStreamError} and picks a
@@ -24,7 +29,7 @@ const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network
  * before the request reached the server).
  */
 export function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: keyof Resources["en"] = "message_send_failed"): void {
-  const message = error instanceof Error && error.message ? error.message : t(fallbackKey);
+  const message = getProviderErrorText(error, t, fallbackKey);
   const category = error instanceof ProviderStreamError ? error.category : "unknown";
 
   // The provider cut the reply mid-stream and the server kept what arrived —

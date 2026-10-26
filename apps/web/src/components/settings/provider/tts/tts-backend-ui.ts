@@ -346,7 +346,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     connection: {
       apiKey: { placeholder: "MiniMax API key" },
       // Live discovery (TPE-9a): listModels() fetches the documented
-      // GET /v1/models and keeps the speech-* family.
+      // GET /v1/models, unfiltered (owner ruling 2026-10-15).
       model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
     },
     tuning: [
@@ -557,6 +557,45 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
   return SPECS[variant];
+}
+
+/** The model field of a form's variant when its choices come from a LISTING
+ *  (spec `mode: "fetch"`: openai-compatible/local, Gemini, Inworld, MiniMax),
+ *  null for input-mode vendors and kokoro. The ONE gate of the editor's model
+ *  listing: a backend joins it by declaring a fetch-mode model in SPECS, not
+ *  by a second hand-written backend list (the old Gemini/OpenAI-compatible
+ *  pair left Inworld and MiniMax with an empty picker and a dead refresh).
+ *  `key` is the config field the picker reads and writes (`model` or
+ *  `modelId`). */
+export function ttsFetchedModelSpec(
+  backend: TtsBackendSlug,
+  config: Record<string, unknown>,
+): NonNullable<TtsConnectionSpec["model"]> | null {
+  const model = ttsUiSpecFor(ttsUiVariantOf(backend, config)).connection.model;
+  return model !== undefined && model.mode === "fetch" ? model : null;
+}
+
+/** Config keys the view-mode editor writes that never change what a listing
+ *  returns, beyond the spec's tuning knobs: the playback flag (TPE-16). */
+const TTS_NON_LISTING_CONFIG_KEYS: readonly string[] = ["waitForFullGeneration"];
+
+/** The part of a draft config that decides a listing (the effect key of the
+ *  editor's model/voice fetches): everything except the variant's tuning
+ *  knobs and the playback flag — they never change a listing, so editing
+ *  them must not re-run it. The selected model drops out of the MODEL
+ *  listing (the catalog does not depend on the pick) and stays in the VOICE
+ *  listing (rosters can be model-scoped, D22 — a model change re-lists the
+ *  voices). Subtractive on purpose: a config key nobody classified re-runs a
+ *  cheap stored read at worst, never serves a stale list. */
+export function ttsListingConfig(
+  backend: TtsBackendSlug,
+  config: Record<string, unknown>,
+  list: "models" | "voices",
+): Record<string, unknown> {
+  const spec = ttsUiSpecFor(ttsUiVariantOf(backend, config));
+  const skipped = new Set<string>([...TTS_NON_LISTING_CONFIG_KEYS, ...spec.tuning.map((field) => field.key)]);
+  if (list === "models" && spec.connection.model !== undefined) skipped.add(spec.connection.model.key);
+  return Object.fromEntries(Object.entries(config).filter(([key]) => !skipped.has(key)));
 }
 
 /** Derive the UI variant from the wire state: backend + the localServer

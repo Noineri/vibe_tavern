@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../stores/chat-store.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import {
   useGenerationQueueStore,
   type QueueJob,
@@ -121,19 +123,31 @@ async function pump(chatId: string): Promise<void> {
         ?.find((j) => j.id === job.id);
       if (fresh?.status === "cancelled") {
         useGenerationQueueStore.getState().removeJob(job.id);
+        if (job.recordId) useGenerationQueueStore.getState().removeRecord(chatId, job.recordId);
         continue;
       }
 
       switch (outcome) {
         case "done":
           useGenerationQueueStore.getState().markDone(job.id);
+          if (job.recordId) useGenerationQueueStore.getState().removeRecord(chatId, job.recordId);
           break;
         case "failed":
-          useGenerationQueueStore.getState().markFailed(job.id, "generation_failed");
+          const error = job.recordId
+            ? useGenerationQueueStore.getState().recordsByChat[chatId]?.find((item) => item.id === job.recordId)?.error
+            : undefined;
+          useGenerationQueueStore.getState().markFailed(job.id, error ?? "regen_failed");
+          if (job.recordId) {
+            const record = useGenerationQueueStore.getState().recordsByChat[chatId]?.find((item) => item.id === job.recordId);
+            if (record?.status === "running") {
+              useGenerationQueueStore.getState().updateRecord(chatId, job.recordId, { status: "failed", error: error ?? "regen_failed" });
+            }
+          }
           break;
         case "cancelled":
           // Partial variant (if any) already kept by the backend abort path.
           useGenerationQueueStore.getState().removeJob(job.id);
+          if (job.recordId) useGenerationQueueStore.getState().removeRecord(chatId, job.recordId);
           break;
       }
     }
@@ -157,7 +171,33 @@ export function enqueueGenerateMore(
 ): void {
   const chatId = useChatStore.getState().activeChatId;
   if (!chatId) return;
-  useGenerationQueueStore.getState().enqueueJob({ chatId, messageId, model, promptPresetId });
+  const queue = useGenerationQueueStore.getState();
+  const message = useSnapshotStore.getState().messagesById[messageId];
+  queue.startBatch(chatId, messageId, message?.variants.map((variant) => variant.id) ?? []);
+  const generation = useChatStore.getState().generations[chatId];
+  if (generation?.isSending && generation.streamingMessageId === messageId
+    && !queue.recordsByChat[chatId]?.some((record) => record.origin === "regenerate" && record.status === "running")) {
+    queue.addRecord(chatId, {
+      messageId,
+      origin: "regenerate",
+      status: "running",
+      model: generation.modelId,
+      presetName: generation.presetName,
+      presetId: null,
+    });
+  }
+  const presetName = promptPresetId
+    ? useBootstrapStore.getState().data?.promptPresets.find((preset) => preset.id === promptPresetId)?.name ?? null
+    : null;
+  const recordId = queue.addRecord(chatId, {
+    messageId,
+    origin: "queue",
+    status: "pending",
+    model,
+    presetName,
+    presetId: promptPresetId,
+  });
+  queue.enqueueJob({ chatId, messageId, model, promptPresetId, recordId });
   if (!activePumps.has(chatId)) {
     activePumps.add(chatId);
     void pump(chatId);
@@ -186,6 +226,10 @@ export function clearQueuePending(): void {
   const chatId = useChatStore.getState().activeChatId;
   if (!chatId) return;
   useGenerationQueueStore.getState().clearPending(chatId);
+  const records = useGenerationQueueStore.getState().recordsByChat[chatId] ?? [];
+  useGenerationQueueStore.setState((state) => ({
+    recordsByChat: { ...state.recordsByChat, [chatId]: records.filter((record) => record.status !== "pending") },
+  }));
 }
 
 /**

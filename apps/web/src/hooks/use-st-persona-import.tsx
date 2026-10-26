@@ -204,7 +204,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
 
   const preview = stImportPreview && (
     <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
-      <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title", { count: stImportSelected.size })}</div>
+      <div className="font-ui text-[var(--ui-fs)] leading-5 font-medium text-t1 mb-2">{t("st_persona_preview_title", { count: stImportSelected.size })}</div>
       <div className="max-h-[200px] overflow-y-auto space-y-1.5">
         {stImportPreview.map((entry, idx) => (
           <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
@@ -221,10 +221,10 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-ui text-[13px] font-medium text-t1">{entry.name}</span>
+                <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{entry.name}</span>
               </div>
               {entry.description && (
-                <div className="font-ui text-[12px] text-t3 line-clamp-2 mt-0.5">{entry.description.slice(0, 120)}{entry.description.length > 120 ? "..." : ""}</div>
+                <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3 line-clamp-2 mt-0.5">{entry.description.slice(0, 120)}{entry.description.length > 120 ? "..." : ""}</div>
               )}
             </div>
             <Checkbox
@@ -263,7 +263,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
               style={{ width: `${(stImportProgress.current / stImportProgress.total) * 100}%` }}
             />
           </div>
-          <div className="mt-1 font-ui text-[11px] text-t3">
+          <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             {t("st_persona_importing", { current: stImportProgress.current, total: stImportProgress.total })}
           </div>
         </div>

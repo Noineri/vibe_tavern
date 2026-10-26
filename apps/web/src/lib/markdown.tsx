@@ -25,13 +25,18 @@ interface MarkdownProps {
    * wrapping, bracket system-banner detection) — appropriate for message
    * bodies. `"plain"` skips them so generic Markdown (release notes, docs)
    * renders without chat-specific transforms.
+   * `"agent-rp"` keeps the chat feature set minus banners (quoted-text ON,
+   * bracket system-banners OFF, scene-meta OFF) with the RP palette but
+   * neutralized RP font sizes — see the md-agent rules in styles.css.
+   * `"agent-plain"` is the plain feature set with explicit plain em/strong
+   * styling (surrounding color and size, no quote coloring).
    */
-  variant?: "chat" | "plain";
+  variant?: "chat" | "plain" | "agent-rp" | "agent-plain";
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
 
-type MarkdownComponentProps = {
+export type MarkdownComponentProps = {
   children?: React.ReactNode;
   className?: string;
 } & ExtraProps & Record<string, unknown>;
@@ -111,15 +116,31 @@ function hasQuotedTextClass(node: HastElement): boolean {
   return false;
 }
 
+// KaTeX output (`span.katex`, `span.katex-display`) is machine-generated math
+// markup. The quote/banner wrappers below must treat it as an opaque barrier —
+// like `code`/`pre` — so flattening can never slice a formula apart. Only the
+// agent math pipelines (markdown-math.tsx, katex runs before these plugins) ever
+// contain such elements; `chat`/`plain` trees never do, so those outputs are
+// byte-identical with the guard in place.
+function hasKatexClass(node: HastElement): boolean {
+  const className = node.properties?.className;
+  if (typeof className === "string") {
+    return className.split(/\s+/).some((c) => c === "katex" || c === "katex-display");
+  }
+  if (Array.isArray(className)) return className.includes("katex") || className.includes("katex-display");
+  return false;
+}
+
 function canFlattenChild(child: HastNode): boolean {
   if (isText(child)) return true;
   if (!isElement(child)) return false;
+  if (hasKatexClass(child)) return false;
   if (!INLINE_TAGS.has(child.tagName) || child.tagName === "code") return false;
   return child.children.every(canFlattenChild);
 }
 
 function canWrapInlineQuotes(element: HastElement): boolean {
-  if (element.tagName === "code" || element.tagName === "pre" || hasQuotedTextClass(element)) return false;
+  if (element.tagName === "code" || element.tagName === "pre" || hasQuotedTextClass(element) || hasKatexClass(element)) return false;
   return element.children.some(canFlattenChild);
 }
 
@@ -255,7 +276,7 @@ function processNode(node: HastNode): void {
 
   if (!isElement(node)) return;
 
-  if (node.tagName === "code" || node.tagName === "pre" || hasQuotedTextClass(node)) return;
+  if (node.tagName === "code" || node.tagName === "pre" || hasQuotedTextClass(node) || hasKatexClass(node)) return;
 
   const newChildren = wrapQuotesInElement(node);
   if (newChildren !== node.children) node.children = newChildren;
@@ -263,7 +284,7 @@ function processNode(node: HastNode): void {
   for (const child of node.children) processNode(child);
 }
 
-const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
+export const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
 
 // ─── Rehype plugin: System Banner ───
 
@@ -277,7 +298,7 @@ function hasSystemBannerClass(node: HastElement): boolean {
 }
 
 function canWrapSystemBanner(element: HastElement): boolean {
-  if (element.tagName === "code" || element.tagName === "pre" || hasSystemBannerClass(element)) return false;
+  if (element.tagName === "code" || element.tagName === "pre" || hasSystemBannerClass(element) || hasKatexClass(element)) return false;
   return element.children.some(canFlattenChild);
 }
 
@@ -358,7 +379,7 @@ function processBannerNode(node: HastNode): void {
 
   if (!isElement(node)) return;
 
-  if (node.tagName === "code" || node.tagName === "pre" || hasSystemBannerClass(node)) return;
+  if (node.tagName === "code" || node.tagName === "pre" || hasSystemBannerClass(node) || hasKatexClass(node)) return;
 
   const newChildren = wrapBannersInElement(node);
   if (newChildren !== node.children) node.children = newChildren;
@@ -441,6 +462,13 @@ function MarkdownParagraph({ children, ...props }: MarkdownComponentProps) {
     return <div className="scene-meta">{blocks.join("\n")}</div>;
   }
 
+  return <p {...props}>{children}</p>;
+}
+
+// Agent variants (AP-1) never render scene-meta: the copilot feed and the
+// editors have no scene concept, so a `[Name: text]` line stays literal text
+// inside an ordinary paragraph.
+function AgentParagraph({ children, ...props }: MarkdownComponentProps) {
   return <p {...props}>{children}</p>;
 }
 
@@ -600,27 +628,84 @@ const BASE_REHYPE_PLUGINS: PluggableList = [
   [rehypeSanitize, sanitizeSchema],
 ];
 
-const CHAT_REHYPE_PLUGINS: PluggableList = [
+// agent-rp runs the chat pipeline minus the banner: quoted speech still
+// highlights, bracket runs stay literal for the copilot feed.
+const AGENT_RP_REHYPE_PLUGINS: PluggableList = [
   ...BASE_REHYPE_PLUGINS,
   rehypeRestoreEscapedUnderscoreTags,
   rehypeQuotedText,
+];
+
+const CHAT_REHYPE_PLUGINS: PluggableList = [
+  ...AGENT_RP_REHYPE_PLUGINS,
   rehypeSystemBanner,
 ];
+
+const AGENT_COMPONENTS: Record<string, React.ComponentType<MarkdownComponentProps>> = {
+  ...components,
+  p: AgentParagraph,
+};
+
+// Exported for the shared apps/web test seam (test/agent-message-markdown-seam.tsx):
+// the seam stubs the renderer DOM but derives the variant class from THIS map,
+// so the agent-shell suites' `.md-agent`/`.md-agent-plain` pins stay end-to-end
+// real (descriptor → list → block → variant class) under a co-loaded run.
+export const VARIANT_DEFAULT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
+  chat: "md-content",
+  plain: "md-content",
+  "agent-rp": "md-content md-agent",
+  "agent-plain": "md-content md-agent-plain",
+};
+
+// Agent math (markdown-math.tsx: remark-math + rehype-katex + katex) loads as a
+// separate chunk on the first agent message containing a `$`, so the KaTeX code
+// stays out of the initial bundle. Until it resolves, the Suspense fallback shows
+// the same sync agent pipeline as before — raw `$…$` text, one swap when math lands.
+const AgentMathMarkdown = React.lazy(() => import("./markdown-math.js"));
+
+function AgentSyncMarkdown({ text, variant }: { text: string; variant: "agent-rp" | "agent-plain" }) {
+  const isAgentRp = variant === "agent-rp";
+  return (
+    <ReactMarkdown
+      remarkPlugins={isAgentRp ? CHAT_REMARK_PLUGINS : REMARK_PLUGINS}
+      rehypePlugins={isAgentRp ? AGENT_RP_REHYPE_PLUGINS : BASE_REHYPE_PLUGINS}
+      components={AGENT_COMPONENTS}
+    >
+      {isAgentRp ? preserveEscapedUnderscoreTags(text) : text}
+    </ReactMarkdown>
+  );
+}
 
 export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
-  const isPlain = variant === "plain";
-  const remarkPlugins = isPlain ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
-  const rehypePlugins = isPlain ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS;
-  const markdownText = isPlain ? text : preserveEscapedUnderscoreTags(text);
+  const isAgentRp = variant === "agent-rp";
+  const isAgent = isAgentRp || variant === "agent-plain";
+  const agentVariant = isAgent ? variant : null;
+  if (agentVariant !== null && text.includes("$")) {
+    return (
+      <div className={className || VARIANT_DEFAULT_CLASS[agentVariant]}>
+        <React.Suspense fallback={<AgentSyncMarkdown text={text} variant={agentVariant} />}>
+          <AgentMathMarkdown text={text} variant={agentVariant} components={AGENT_COMPONENTS} />
+        </React.Suspense>
+      </div>
+    );
+  }
+  const isPlainPipeline = variant === "plain" || variant === "agent-plain";
+  const remarkPlugins = isPlainPipeline ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
+  const rehypePlugins = isPlainPipeline
+    ? BASE_REHYPE_PLUGINS
+    : isAgentRp
+      ? AGENT_RP_REHYPE_PLUGINS
+      : CHAT_REHYPE_PLUGINS;
+  const markdownText = isPlainPipeline ? text : preserveEscapedUnderscoreTags(text);
 
   return (
-    <div className={className || "md-content"}>
+    <div className={className || VARIANT_DEFAULT_CLASS[variant]}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
-        components={components}
+        components={isAgent ? AGENT_COMPONENTS : components}
       >
         {markdownText}
       </ReactMarkdown>

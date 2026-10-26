@@ -413,7 +413,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   if (!descriptor) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-neutral-900 text-neutral-400">
-        <p className="text-sm">{t("experience_detach_unavailable")}</p>
+        <p className="text-[var(--ui-fs)] leading-5">{t("experience_detach_unavailable")}</p>
       </div>
     );
   }
@@ -423,7 +423,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     // settled). Surface an incompatible state rather than fetching live source.
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-neutral-900 text-neutral-400">
-        <p className="text-sm">{t("experience_incompatible")}</p>
+        <p className="text-[var(--ui-fs)] leading-5">{t("experience_incompatible")}</p>
       </div>
     );
   }
@@ -431,10 +431,10 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   return (
     <div className="flex h-screen w-screen flex-col bg-neutral-900">
       <header className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
-        <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">
+        <h1 className="min-w-0 flex-1 truncate text-[var(--ui-fs)] leading-5 font-semibold text-neutral-100">
           {title}
         </h1>
-        <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+        <span className="rounded bg-neutral-800 px-2 py-0.5 text-[calc(var(--ui-fs)-4px)] uppercase tracking-wide text-neutral-400">
           {t("experience_detached_badge")}
         </span>
         {/* Trusted Finish — opens the shared confirmation (never auto-finishes).
@@ -444,7 +444,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
             privileged mutation (IR-73C acceptance fix). */}
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 max-md:min-h-9"
+          className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 max-md:min-h-9"
           disabled={!session}
           onClick={() => setConfirmingFinish(true)}
           data-testid="experience-detached-finish"

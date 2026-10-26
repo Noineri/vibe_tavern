@@ -81,6 +81,7 @@ function seedBinding(row: CoauthorConnectionSettingsRecord | null | undefined, d
     data: {
       initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
       uiSettings: makeUiSettings(),
+      agentKindSettings: {},
       isArmServer: false,
     },
   });
@@ -185,6 +186,7 @@ describe("useCoauthorProviderBinding — model source = connection row (CG-2)", 
       data: {
         initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
         uiSettings: { ...makeUiSettings(), coauthorProviderId: null },
+        agentKindSettings: {},
         isArmServer: false,
       },
     });

@@ -59,6 +59,7 @@ import {
   buildHeaders,
 } from "../../providers/provider-transport.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import { fetchOrWrap } from "./backend-helpers.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -159,23 +160,6 @@ function parseConfig(config: ImageGenAdapterConfig): LumaImageConfig {
 
 // ─── HTTP + parsing helpers ──────────────────────────────────────────────────
 
-async function fetchOrWrap(
-  transport: typeof fetch,
-  url: string,
-  init: RequestInit,
-  operation: string,
-): Promise<Response> {
-  try {
-    return await transport(url, init);
-  } catch (cause) {
-    if (cause instanceof Error && cause.name === "AbortError") throw cause;
-    throw new LumaImageError(
-      `Luma ${operation} network error: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-  }
-}
-
 /** Poll a Luma generation until completed; resolves with the COMPLETED
  *  payload root. Exported as the test seam: `wait` defaults to the real
  *  sleep; tests inject an instant resolver and a scripted fetch (no
@@ -199,6 +183,8 @@ export async function pollLumaGeneration(params: {
         signal: params.signal,
       },
       "generation poll",
+      "Luma",
+      LumaImageError,
     );
     if (!response.ok) {
       const excerpt = await readProviderErrorBody(response);
@@ -270,6 +256,8 @@ export const lumaImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend
           signal: request.signal,
         },
         "generation",
+        "Luma",
+        LumaImageError,
       );
       if (!submit.ok) {
         const excerpt = await readProviderErrorBody(submit);
@@ -314,6 +302,8 @@ export const lumaImageFactory = (config: ImageGenAdapterConfig): ImageGenBackend
         url,
         { method: "GET", signal: request.signal },
         "image download",
+        "Luma",
+        LumaImageError,
       );
       if (!download.ok) {
         throw new LumaImageError(`Luma image download failed with HTTP ${download.status}`, {

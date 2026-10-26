@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { TTS_PRESETS, getVisibleTtsPresets, getVisibleTtsPresetGroups, getTtsPresetGroup } from "../../../../lib/tts/tts-presets.js";
-import type { TtsProfileForm } from "./use-tts-profiles.js";
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import { listTtsDraftModels, listTtsDraftVoices } from "../../../../api/tts-api.js";
 import { Icons } from "../../../shared/icons.js";
@@ -26,8 +26,8 @@ import { configString, formDraftConfig } from "./tts-form-helpers.js";
 // hook's draftAutoKeyProviderName covers the live form (create / endpoint edit).
 import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
-import { useTtsPreview } from "./use-tts-preview.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import { useTtsPreview } from "../../../../hooks/use-tts-preview.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
@@ -207,7 +207,7 @@ export function TtsProviderForm({
             data-testid="tts-profile-name-input"
           />
           {duplicateNameWarning && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
+            <div className="mt-1 flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]">
                 <Icons.Alert />
               </span>
@@ -345,7 +345,7 @@ export function TtsProviderForm({
               href={spec.connection.region.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-accent"
             >
               <Icons.Book className="h-3.5 w-3.5" />
               {t("tts_region_docs_link")}
@@ -381,7 +381,7 @@ export function TtsProviderForm({
                 spellCheck={false}
               />
               {apiKey === "" && form.hasStoredApiKey && (
-                <div data-testid="tts-field-api-key-status" className="mt-1 font-ui text-[11px] text-t4">
+                <div data-testid="tts-field-api-key-status" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                   {t("tts_field_api_key_status_stored")}
                 </div>
               )}
@@ -403,7 +403,7 @@ export function TtsProviderForm({
               href={spec.connection.apiKey.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-accent"
             >
               <Icons.Book className="h-3.5 w-3.5" />
               {t("tts_key_docs_link")}
@@ -424,7 +424,7 @@ export function TtsProviderForm({
       {/* Per-segment bodies */}
       {segment === "local" && tts && <TtsLocalServerPanel tts={tts} form={form} />}
       {segment === "local" && !tts && (
-        <div className="mb-3 rounded border border-border bg-s1 p-3 font-ui text-[12px] text-t3" data-testid="tts-local-server-panel">
+        <div className="mb-3 rounded border border-border bg-s1 p-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3" data-testid="tts-local-server-panel">
           {t("loading")}
         </div>
       )}
@@ -439,12 +439,12 @@ export function TtsProviderForm({
       {/* Test connection card */}
       <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="tts-test-card">
         {needsKey && !apiKey && !form.hasStoredApiKey && autoKeyName === null ? (
-          <div className="flex items-center gap-2 font-ui text-[13px] text-t3" data-testid="tts-test-dot-enter-key">
+          <div className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3" data-testid="tts-test-dot-enter-key">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_connection_enter_key")}
           </div>
         ) : !form.voiceId ? (
-          <div className="flex items-center gap-2 font-ui text-[13px] text-t3" data-testid="tts-test-dot-no-voice">
+          <div className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t3" data-testid="tts-test-dot-no-voice">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_model_selected_begin")}
           </div>
@@ -456,7 +456,7 @@ export function TtsProviderForm({
                   type="button"
                   data-testid="tts-test-connection-btn"
                 className={cn(
-                  "min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5",
+                  "min-h-11 rounded-md border px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium transition-colors sm:min-h-0 sm:py-1.5",
                   testOkEff === true
                     ? "border-success/30 bg-success/10 text-success"
                     : testOkEff === false
@@ -474,11 +474,11 @@ export function TtsProviderForm({
                   testing={testingChatEff}
                   result={chatResultEff}
                   onTest={() => void handleTestChat()}
-                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
                   buttonTestId="tts-test-preview-btn"
                   resultContainerClassName="mt-3"
-                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success"
-                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"
+                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] italic text-success"
+                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger"
                 />
               )}
             </div>
@@ -492,7 +492,7 @@ export function TtsProviderForm({
               />
             )}
             {preview.error && (
-              <div data-testid="tts-preview-error" className="mt-2 font-ui text-[11px] text-danger">
+              <div data-testid="tts-preview-error" className="mt-2 font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
                 {preview.error}
               </div>
             )}

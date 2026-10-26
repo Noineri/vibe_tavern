@@ -1,0 +1,87 @@
+{
+  "surface": "copilot",
+  "scenario": "full rejection over two turns and a remount",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain rejection 2",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "rejected",
+              "hunks": {
+                "accepted": 0,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain rejection 3",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "rejected",
+              "hunks": {
+                "accepted": 0,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain rejection after remount",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "rejected",
+              "hunks": {
+                "accepted": 0,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    }
+  ]
+}

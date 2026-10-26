@@ -1,23 +1,19 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && Object.keys(params).length > 0
         ? `${key}:${Object.values(params).join(",")}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { act, cleanup, waitFor, fireEvent, render: render_impl } = await import("@testing-library/react");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
@@ -293,7 +289,7 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(google.queryByTestId("image-gen-endpoint-hint")).toBeNull();
   });
 
-  it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
+  it("CF8: segment switch to Custom pins the backend to openai-images-custom under the hood + drops the preset slug", async () => {
     const setForm = mock(() => {});
     const imageGen = makeImageGen({
       setForm,
@@ -315,7 +311,9 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
       (option as HTMLElement).click();
     });
     const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
-    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImages)).toBe(true);
+    // Behavior change (report step 9): was openai-images; Custom now has its
+    // own slug (free W×H, no OpenAI grid — owner ruling 2026-10-15).
+    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImagesCustom)).toBe(true);
     expect(calls.some((patch) => patch["presetId"] === null)).toBe(true);
   });
 
@@ -472,7 +470,7 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-base-card-keyless")).toBeTruthy());
   });
 
-  it("IG-21: an auto-matched keyless card names its source and counts as ready (no no-key warning)", async () => {
+  it("IG-21: an auto-matched keyless card counts as ready (no no-key warning) and does NOT name its source", async () => {
     const record = makeRecord({ backend: IMAGE_GEN_BACKENDS.OpenRouter, hasStoredApiKey: false });
     const imageGen = makeViewImageGen({
       profiles: [record],
@@ -487,7 +485,10 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     });
     const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
     await waitFor(() => expect(view.getByTestId("image-gen-base-card")).toBeTruthy());
-    expect(view.getByTestId("image-gen-key-source-hint").textContent).toContain("OR main");
+    // Behavior change (report step 2, owner 2026-10-15): the card used to name
+    // the source; the hint now lives only in the editor form.
+    expect(view.queryByTestId("image-gen-key-source-hint")).toBeNull();
+    expect(view.getByTestId("image-gen-base-card-status").textContent).toContain("api_key_saved");
     // Auto-matched = ready: the keyless warning must NOT render (the
     // SttBaseCard twin — an auto-match is not a missing key).
     expect(view.queryByTestId("image-gen-base-card-keyless")).toBeNull();

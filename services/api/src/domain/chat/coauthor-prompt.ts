@@ -20,18 +20,22 @@
  * fields stay empty; the trace UI simply shows fewer rows.
  */
 
-import type { ChatBranchId, ChatId, LoreEntryId } from "@vibe-tavern/domain";
-import { brandId } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
+import { attachmentPromptTokens, brandId, promptVisibleAttachmentsOf, readTrackerTemplate } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
+import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
+import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
-import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
+import { resolveSummaryPrompt } from "../prompt/summary-prompt.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** The assembled co-author history message shape (matches SDK message parts
@@ -41,15 +45,8 @@ import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
  *  `as any` at the provider mapping layer — so the provider silently dropped
  *  them. Typed here so the compiler catches any future drift. */
 type CoauthorHistoryMessage =
-  | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
+  | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[]; attachments?: Attachment[]; messageId?: string }
   | { role: "tool"; content: ToolResultPart[] };
-
-/** Narrow opaque JSON read from tool_calls_json back to AI SDK options. */
-function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as ToolCallPart["providerOptions"]
-    : undefined;
-}
 
 /**
  * Render the 'Available skills' catalog section (Wave 2 / CTX-S4). Metadata
@@ -59,6 +56,12 @@ function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] 
  * assets/references only as needed. Empty string when no skills are available
  * (the section is omitted entirely so the prompt is unchanged for a fresh
  * install with no built-ins).
+ *
+ * forks: 2 — 1) renderExperienceCopilotSkillCatalog (interactive/copilot/
+ * experience-copilot-module.ts, copilot-local so its wording can diverge),
+ * 2) renderAgentSkillCatalog (agent/agent-prompt.ts, the AS-7 generic twin,
+ * currently byte-identical to copy 1). Per the fork rule a THIRD occurrence
+ * must be surfaced to the owner with a unification proposal.
  */
 function renderSkillCatalog(entries: readonly SkillCatalogEntry[], primarySkillIds?: readonly string[]): string {
   if (entries.length === 0) return "";
@@ -88,6 +91,32 @@ function renderCurrentCard(profileMd: string, character: { firstMessage: string 
     return `### Greeting ${label}\n${g || "(empty)"}`;
   });
   return [`# Current profile.md`, "```yaml", profileMd, "```", "", "# Current greetings", ...greetingLines].join("\n");
+}
+
+/**
+ * Render the character's current tracker template as read-only context
+ * (CT-11), directly after {@link renderCurrentCard}'s card block. Fenced JSON
+ * when a template exists and `none` otherwise. The delegate, not the Co-Author,
+ * uses this as its refine base. The CALLER gates this on the module's tool set
+ * — a module without `set_tracker_template` never sees the section, so its
+ * prompt stays byte-identical to pre-CT-7a.
+ */
+function renderTrackerTemplateSection(template: TrackerTemplate | null): string {
+  return [
+    "# Current tracker template",
+    "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
+    ...(template === null ? ["none"] : ["```json", JSON.stringify(template, null, 2), "```"]),
+  ].join("\n");
+}
+
+/** Render the supplied editor's authoritative review outcomes and card save state. */
+function renderEditorReviewState(editorState: NonNullable<ChatModeAssembleInput["coauthorEditorState"]>): string {
+  return [
+    "# Editor review and save state",
+    `- card buffer: ${editorState.card.cardClean ? "saved" : "unsaved"}`,
+    "",
+    ...renderReviewOutcomeSection(editorState.review),
+  ].join("\n");
 }
 
 /** Render the chat's pinned Level-1 context entities as read-only reference
@@ -154,7 +183,8 @@ function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMe
 }
 
 function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
-  return estimateTokens(formatCoauthorHistoryMessages(messages));
+  return estimateTokens(formatCoauthorHistoryMessages(messages))
+    + messages.reduce((sum, message) => sum + (message.role === "tool" ? 0 : attachmentPromptTokens(message.attachments, estimateTokens)), 0);
 }
 
 /**
@@ -163,7 +193,7 @@ function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMe
  * the result and are threaded into the executor by CA-5's wiring.
  */
 export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
-  const { chatId, model, loaders, loreDelegate, loreEntityLookup, contextSearchSession } = input;
+  const { chatId, model, loaders, loreDelegate, trackerDelegate, loreEntityLookup, contextSearchSession } = input;
 
   // Pull the card state + conversation history up front. Co-author is a flat
   // editor chat — no branches. (Skills are catalog-only in the prompt; the
@@ -215,6 +245,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
           }
           // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
           const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
+          const attachments = promptVisibleAttachmentsOf(m.attachmentsJson);
+          if (attachments?.length) {
+            msg.attachments = attachments;
+            msg.messageId = m.id;
+          }
           if (m.toolCalls && m.toolCalls.length > 0) {
             msg.toolCalls = m.toolCalls.map((tc) => {
               const providerOptions = asToolProviderOptions(tc.providerOptions);
@@ -250,13 +285,20 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? []
     : await loaders.getCoauthorUserModules();
   const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
-  const [profileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
+  const [savedProfileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorContextItems(chatId),
     loaders.getSkillCatalog(),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
     loaders.getCoauthorBoundResources(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
   ]);
+  // Snapshot absence intentionally leaves the historical storage bytes and
+  // tool seed unchanged. A supplied editor state is canonicalized once and
+  // shared by the display block and mutation tools.
+  const workingDocument = input.coauthorEditorState === undefined
+    ? { profileMd: savedProfileMd, character }
+    : buildCoauthorWorkingDocument(savedProfileMd, input.coauthorEditorState);
+  const profileMd = workingDocument.profileMd;
   const basePrompt = module.basePrompt;
   // Shared editor preamble (Role + tool mechanics + scope + macros) loaded from
   // coauthor/base.md. This is the universal co-author framing; the module's
@@ -266,7 +308,23 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const coauthorBase = input.db
     ? await resolveServicePromptText(input.db, "coauthor_base")
     : await loadPromptAsset("coauthor/base.md");
-  const currentCard = renderCurrentCard(profileMd, character);
+  const currentCard = renderCurrentCard(profileMd, workingDocument.character);
+  const editorReviewBlock = input.coauthorEditorState === undefined
+    ? ""
+    : renderEditorReviewState(input.coauthorEditorState);
+  // CT-7a: the current tracker template rides right after the card — but ONLY
+  // for modules whose tool set enables `set_tracker_template` (the same gate
+  // buildCoauthorTools applies to the tool itself). Tool-off modules omit the
+  // section entirely, keeping their prompt byte-identical to pre-CT-7a.
+  const trackerToolOn = !module.toolSet || module.toolSet.set_tracker_template === true;
+  // Guard: minimal character fixtures (and any future caller) may omit
+  // `extensions` — the section then renders as `none`, same as an absent
+  // template (incident: CoauthorModeStrategy delegation test crashed on a
+  // character mock without the field).
+  const currentTrackerTemplate = character.extensions ? readTrackerTemplate(character.extensions) : null;
+  const trackerTemplateBlock = trackerToolOn
+    ? renderTrackerTemplateSection(currentTrackerTemplate)
+    : "";
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
   const boundScriptsBlock = renderBoundScriptsAwareness(boundResources.scripts);
@@ -289,6 +347,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     sections.push("", skillCatalogBlock);
   }
   sections.push("", currentCard);
+  // CT-7a: tracker-template section — empty string when the tool is toggled
+  // off, so the push (and the prompt) is skipped entirely.
+  if (trackerTemplateBlock) {
+    sections.push("", trackerTemplateBlock);
+  }
   // CE-C2/C3: bound-resource awareness sits right after the character card —
   // these are the character's OWNED lorebooks/scripts (a table of contents),
   // distinct from Level-1 pinned context (full content) appended further down.
@@ -305,6 +368,9 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     // Omitted entirely when nothing is pinned — the prompt is then
     // unchanged for chats with no context bound.
     sections.push("", contextBlock);
+  }
+  if (editorReviewBlock) {
+    sections.push("", editorReviewBlock);
   }
   const systemContent = sections.join("\n");
 
@@ -494,6 +560,33 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     });
   }
 
+  // SC-8d: a summary build (`input.summary`) resolves the co-author summary
+  // instruction — the strategy IS the co-author mode, so the key decision in
+  // summaryPromptKeyForChatMode lands on `coauthor_summary` here. The
+  // instruction rides the SAME layer id the RP pipeline emits, so
+  // ChatSummaryService's shared `withSummaryPromptAsFinalUserMessage` tail
+  // places it as the final user message for co-author chats exactly as it
+  // does for RP. Normal co-author turns never set `summary` — byte-identical.
+  if (input.summary) {
+    const summaryInstruction = (
+      input.db
+        ? await resolveSummaryPrompt(input.db, "coauthor")
+        : await loadPromptAsset("coauthor/summary.md")
+    ).trim();
+    layers.push({
+      id: PROMPT_LAYER_ID.promptPresetSummary,
+      sourceType: "service_prompt",
+      sourceId: "coauthor_summary",
+      sourceName: "Co-Author Summary Prompt",
+      position: "in_chat",
+      priority: 350,
+      text: summaryInstruction,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(summaryInstruction)
+    });
+  }
+
   const prompt: AssemblePromptResponse = {
     layers,
     tokenAccounting: {
@@ -534,7 +627,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, loreWorkActive, contextSearchSession }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, trackerDelegate, getCurrentTrackerTemplate: () => currentTrackerTemplate, loreEntityLookup, loreWorkActive, contextSearchSession }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
     coauthorSkillId: null,

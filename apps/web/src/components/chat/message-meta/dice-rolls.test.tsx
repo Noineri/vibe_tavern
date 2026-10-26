@@ -12,11 +12,11 @@ import { beforeAll, describe, it, expect, mock } from "bun:test";
 import React from "react";
 import { brandId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const realReactI18next = await import("react-i18next");
-const realI18nContext = await import("../../../i18n/context.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 
 // DiceFaces uses react-i18next directly; mock it (mirror dice-faces.test.tsx).
@@ -33,22 +33,18 @@ mock.module("react-i18next", () => ({
 }));
 
 // dice-rolls.tsx uses useT from i18n/context.
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (key: string, options?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, options?) => {
       if (key === "dice_meta_checks") return `${options?.count} checks`;
       if (key === "dice_meta_checks_one") return `${options?.count} check`;
       if (key === "dice_attempt") return `Attempt ${options?.n}`;
       if (key === "dice_meta_captured_rev_title") return `captured r${options?.revision}`;
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 

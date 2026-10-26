@@ -140,7 +140,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 							<span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-dim text-success-text">
 								<Icons.check />
 							</span>
-							<p className="text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
+							<p className="text-[var(--ui-fs)] font-medium text-t1">
 								{t("update_modal_complete", { version: flow.state.newVersion })}
 							</p>
 							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">

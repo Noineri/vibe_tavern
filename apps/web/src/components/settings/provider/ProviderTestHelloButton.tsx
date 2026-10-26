@@ -23,9 +23,9 @@ export interface ProviderTestHelloButtonProps {
   errorRenderer?: (error: string) => ReactNode;
 }
 
-const defaultButtonClassName = "rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50";
-const defaultReplyClassName = "inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic";
-const defaultErrorClassName = "inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger";
+const defaultButtonClassName = "rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50";
+const defaultReplyClassName = "inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-success italic";
+const defaultErrorClassName = "inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] text-danger";
 
 /** Shared model-specific test greeting control; callers retain their own send handlers. */
 export function ProviderTestHelloButton({

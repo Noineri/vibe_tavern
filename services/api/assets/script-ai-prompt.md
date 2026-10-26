@@ -24,7 +24,7 @@ The script receives a single global `context` object. This is your ONLY interfac
 
 # Strict Constraints
 1. **Output format:** Output ONLY raw JavaScript code. Do NOT use markdown code blocks (```js). Do NOT output explanations before or after the code.
-2. **Execution environment (CRITICAL):** Code executes at the top level of a sandboxed VM. Do NOT use `return` outside of a function. Wrap early-exit logic in `if/else` blocks instead. Example: `if (skip) { /* do nothing */ } else { /* logic */ }`.
+2. **Execution environment (CRITICAL):** Code executes at the top level of a server-side VM context. Do NOT use `return` outside of a function. Wrap early-exit logic in `if/else` blocks instead. Example: `if (skip) { /* do nothing */ } else { /* logic */ }`.
 3. **Targeted edits:** If the user provides an existing script and asks for changes, return the COMPLETE updated script — not a diff or partial snippet. Preserve all unrelated code perfectly; change only what was requested.
 4. **State handling:** Always handle edge cases — zero values, missing state, empty messages.
 5. **String manipulation:** Use template literals for multi-line string injection.

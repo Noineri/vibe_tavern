@@ -1,0 +1,133 @@
+import { cn } from "../../../lib/cn.js";
+import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
+import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
+import { Icons } from "../icons.js";
+import { useT } from "../../../i18n/context.js";
+
+/**
+ * CopilotActivityCard (TF-5): one tool-activity card row — the ex-TurnShell
+ * `LiveActivityRow`, extracted so a single activity can render anywhere the
+ * feed (TF-4) or the persisted history (inline tool rows, TF-5) needs it.
+ *
+ * Chrome = status icon (read → FileText, error → Close, streaming → Wrench,
+ * done → Check) + title (readPath / summary / target / toolName) + target chip
+ * for proposals + streaming ellipsis + an error sub-row. No reviewing
+ * affordances — the diff review lives in `AgentBufferReviewEditor`
+ * (CD-5/CD-6).
+ */
+export function AgentActivityCard({
+  activity,
+  kind,
+}: {
+  activity: AgentToolActivity;
+  /** The host kind driving the shell — the target chip names this host's buffer. */
+  kind: AgentKind;
+}) {
+  const { t } = useT();
+  const isRead = activity.readPath !== undefined;
+  // PM-6: plan-tool cards are labelled by i18n, not by their payloads — the
+  // `plan` result envelope ({ok, activeTitle, remaining}) and the `read_plan`
+  // result (the whole plan JSON) are machine shapes that must never render as
+  // a raw JSON title. "Plan updated" marks a rewrite; a read is just "Plan".
+  const isPlanUpdate = activity.toolName === "plan" && activity.status !== "error";
+  const isPlanRead = activity.toolName === "read_plan";
+  const isProposal = activity.target !== undefined && activity.proposed !== undefined;
+  // AS-8e5: the host caption wins over the raw summary — the script host
+  // translates its machine-shaped `run_script_test` envelope into an i18n
+  // title (+ optional detail); undefined keeps today's fallback below.
+  // Unknown host (a test rendering without registered hosts) degrades to
+  // the fallback — the caption is an enhancement, never a hard requirement.
+  const toolCaption = (() => {
+    try {
+      return getAgentHost(kind).toolCaption?.(activity);
+    } catch {
+      return undefined;
+    }
+  })();
+  const streaming = activity.status === "streaming";
+  const errored = activity.status === "error";
+  // AS-8e4: the target chip names the HOST's buffer (script `code` → the
+  // script host's label, experience rules/visual → theirs) — the shared
+  // shell hardcodes no buffer names. An unlisted target falls back to the
+  // raw target id (never blank). Resolved only for targeted cards: the
+  // label is consumed solely by proposals below.
+  const targetLabelKey =
+    activity.target !== undefined
+      ? getAgentHost(kind).bufferSpecs.find((b) => b.id === activity.target)?.labelKey
+      : undefined;
+  const targetText = targetLabelKey !== undefined ? t(targetLabelKey) : (activity.target ?? "");
+
+  const statusIcon = isRead ? (
+    <Icons.FileText />
+  ) : errored ? (
+    <Icons.Close />
+  ) : streaming ? (
+    <Icons.Wrench />
+  ) : (
+    <Icons.Check />
+  );
+  const statusClass = errored ? "text-danger-text" : streaming ? "text-t3" : "text-success-text";
+
+  // A read's meaningful label is the path; plan cards take their i18n label
+  // (see isPlanUpdate/isPlanRead above); proposals/informational cards use
+  // the model-supplied summary (commit-message label), falling back to the
+  // tool name / target.
+  const title = toolCaption !== undefined
+    ? t(toolCaption.titleKey, toolCaption.titleParams)
+    : isRead
+      ? activity.readPath!
+      : isPlanUpdate
+        ? t("agent_plan_updated")
+        : isPlanRead
+          ? t("agent_plan_title")
+          : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
+
+  // The label is NEVER visually truncated: the model's summaries are the
+  // user's window into what the copilot is doing, and an ellipsis hides
+  // exactly that. A file PATH stays single-line (`truncate`) — paths are
+  // machine strings — but every other label wraps onto as many lines as it
+  // needs (`whitespace-normal break-words`; copy still carries the full text
+  // either way — the old `truncate` hid it visually only).
+  const titleCls = isRead ? "min-w-0 truncate" : "min-w-0 whitespace-normal break-words";
+
+  // Page translation (owner follow-up 2026-10-24): this slot primarily
+  // carries MODEL text (summaries, read paths) — `translate="yes"` like the
+  // RP bodies. The two plan-label branches are our chrome, but they share
+  // this element; re-translating an already-localized label is harmless.
+  // The target chip (a buffer label) and the error/detail rows below are
+  // pure chrome and stay out.
+  return (
+    <div className="overflow-hidden rounded-md">
+      <div
+        data-testid="copilot-activity-card"
+        data-tool={activity.toolName}
+        {...(activity.target ? { "data-target": activity.target } : {})}
+        className={cn(
+          "flex min-w-0 items-start gap-1.5 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.03em]",
+          errored ? "text-danger-text" : "text-t2",
+        )}
+      >
+        <span className={cn(statusClass, "shrink-0 leading-[1.45]")}>{statusIcon}</span>
+        <span translate="yes" data-testid="copilot-activity-title" className={cn(titleCls, "leading-[1.45]")}>{title}</span>
+        {isProposal && (
+          <span
+            data-testid="copilot-activity-target"
+            className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"
+          >
+            {targetText}
+          </span>
+        )}
+        {streaming && <span className="italic text-t3">…</span>}
+      </div>
+      {toolCaption?.detail !== undefined ? (
+        <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">
+          {toolCaption.detail}
+        </div>
+      ) : errored ? (
+        <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">
+          {t("agent_tool_failed")}
+        </div>
+      ) : null}
+    </div>
+  );
+}

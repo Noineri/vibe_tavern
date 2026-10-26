@@ -21,19 +21,18 @@ import {
 	type ProviderQuotaWindowResetEvent,
 } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../test/dom-env.js";
+import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const { renderHook } = await import("@testing-library/react");
 
-const realI18n = await import("../i18n/context.js");
-mock.module("../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({
-		t: (key: string, values?: Record<string, unknown>) => JSON.stringify({ key, values }),
-		setLocale: () => {},
-	}),
-}));
+installI18nContextSeam({
+	custom: {
+		t: (key, values?) => JSON.stringify({ key, values }),
+		tDynamic: (key: string) => key,
+	},
+});
 
 interface ToastCall { level: string; payload: string }
 const toastCalls: ToastCall[] = [];

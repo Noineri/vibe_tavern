@@ -159,7 +159,7 @@ export function classifySuiteRun(input: {
 		const entry = input.quarantine.find(
 			(candidate) => candidate.suite === input.suite && candidate.test === name,
 		);
-		if (entry !== undefined && junitCrossAttribution(failure.file, failure.message) === null) {
+		if (entry !== undefined && junitCrossAttribution(failure.file, failure.fullMessage) === null) {
 			matched.push(entry);
 			continue;
 		}

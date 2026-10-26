@@ -281,7 +281,11 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 				getLatestSelectedVariant: async () => latestTarget,
 			},
 		} as unknown as StoreContainer;
-		return new InsightsAdapter(stores, {} as SessionRuntime, {} as never, tracker as SceneTrackerService);
+		// The scene harness never touches the objective service — a typed empty
+		// stub (one never-cast fewer, a real cleanup: SC-11's new tests first
+		// pushed the count to 1246 mid-unit; the stub pays it back to 1244).
+		const unusedObjectiveService = {} as unknown as ObjectiveService;
+		return new InsightsAdapter(stores, {} as SessionRuntime, unusedObjectiveService, tracker as SceneTrackerService);
 	}
 
 	it("generate resolves the target, generates, and returns the scoped message patch", async () => {

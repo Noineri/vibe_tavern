@@ -21,9 +21,9 @@ import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js"
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
-import { useTtsDiscovery } from "./use-tts-discovery.js";
+import { useTtsDiscovery } from "../../../../hooks/use-tts-discovery.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
@@ -86,7 +86,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-setup-help-accordion">
         <div
           className={cn(
-            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
             helpOpen && "!rounded-b-none",
           )}
         >
@@ -100,7 +100,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
         <AnimatedDisclosure open={helpOpen} className="border-t border-border2 bg-surface p-4" data-testid="tts-setup-help-body">
           <div className="flex flex-col gap-3">
-            <div className="font-ui text-[11px] text-t4">{t("tts_help_hint")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("tts_help_hint")}</div>
 
             {/* Step 1 — choose the server (TE2-17). */}
             <div data-testid="tts-help-step-choose" className="flex flex-col gap-1.5">
@@ -118,11 +118,11 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                       selected ? "border-accent" : "border-border",
                     )}
                   >
-                    <span className="flex items-center gap-2 font-ui text-[12px] font-medium text-t1">
+                    <span className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
                       {selected && <Icons.Check />}
                       {guide.name}
                     </span>
-                    <span className="font-ui text-[11px] text-t3">{t(guide.descriptionKey)}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t(guide.descriptionKey)}</span>
                   </button>
                 );
               })}
@@ -146,14 +146,14 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                 (novices paste blocks into nowhere; owner field-test finding). */}
             <div
               data-testid="tts-help-terminal-hint"
-              className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4"
+              className="flex items-center justify-between gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
             >
               <span>{t("tts_help_terminal_hint")}</span>
               {checklist.total > 0 && (
                 <button
                   type="button"
                   data-testid="tts-help-reset-checks"
-                  className="shrink-0 cursor-pointer font-ui text-[11px] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
+                  className="shrink-0 cursor-pointer font-ui text-[calc(var(--ui-fs)-3px)] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
                   onClick={checklist.reset}
                 >
                   {t("tts_help_reset_checks")}
@@ -185,7 +185,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                     );
                   })}
                   {s.noteKey !== undefined && (
-                    <div className="font-ui text-[11px] text-t4">{t(s.noteKey)}</div>
+                    <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t(s.noteKey)}</div>
                   )}
                 </div>
               );
@@ -210,7 +210,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                       <button
                         type="button"
                         data-testid={`tts-help-use-${guide.id}`}
-                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-white transition-colors hover:bg-accent/90"
                         onClick={() => setEndpoint(guide.endpoint)}
                       >
                         {t("tts_discover_adopt")}
@@ -220,7 +220,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                 </>
               );
             })()}
-            {copyError !== null && <div className="font-ui text-[11px] text-danger">{copyError}</div>}
+            {copyError !== null && <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-danger">{copyError}</div>}
           </div>
         </AnimatedDisclosure>
       </div>
@@ -231,25 +231,25 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
           type="button"
           data-testid="tts-discover-btn"
           disabled={discovery.scanning}
-          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
           onClick={() => void discovery.discover()}
         >
           {discovery.scanning ? t("tts_discover_scanning") : t("tts_discover_btn")}
         </button>
 
         {discovery.error !== null && (
-          <div data-testid="tts-discover-error" className="font-ui text-[12px] text-danger">
+          <div data-testid="tts-discover-error" className="font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
             {discovery.error}
           </div>
         )}
 
         {!discovery.scanning && discovery.error === null && discovery.servers.length === 0 && discovery.notFoundCodes !== null && (
           <>
-            <div data-testid="tts-discover-none" className="font-ui text-[12px] text-t3">
+            <div data-testid="tts-discover-none" className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
               {t("tts_discover_none")}
             </div>
             {diagKey !== null && (
-              <div data-testid="tts-discover-diag" className="font-ui text-[11px] text-t3">
+              <div data-testid="tts-discover-diag" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                 {tDynamic(diagKey)}
               </div>
             )}
@@ -267,9 +267,9 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                   className="flex items-center justify-between gap-2 rounded-md border border-border bg-s1 px-3 py-2"
                 >
                   <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="font-ui text-[12px] font-medium text-t1">{kindLabel(server.kind)}</span>
-                    <span className="truncate font-mono text-[11px] text-t3">{server.baseUrl}</span>
-                    <span className="font-ui text-[11px] text-t3">
+                    <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{kindLabel(server.kind)}</span>
+                    <span className="truncate font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{server.baseUrl}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                       {server.voiceIds.length} {t("tts_discover_voices_count")}
                     </span>
                   </div>
@@ -279,8 +279,8 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                     disabled={isAdopted}
                     className={
                       isAdopted
-                        ? "flex cursor-default items-center gap-1 rounded bg-accent/20 px-2 py-1 font-ui text-[11px] text-accent"
-                        : "flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                        ? "flex cursor-default items-center gap-1 rounded bg-accent/20 px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent"
+                        : "flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-white transition-colors hover:bg-accent/90"
                     }
                     onClick={() => setEndpoint(`${server.baseUrl}/v1`)}
                   >

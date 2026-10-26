@@ -1,17 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../../../lib/cn.js";
+import { listHeaderCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { EmptyState } from "../../shared/empty-state.js";
-import { AddButton } from "../../shared/add-button.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { MasterDetailMobileDrillDown } from "../../shared/MasterDetailModal.js";
-import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
-import { DndContext, DragOverlay, closestCenter, useDroppable, type DragOverEvent } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { MasterList } from "../../shared/master-list/master-list.js";
+import { MasterListRow } from "../../shared/master-list/master-list-row.js";
+import { SortableMasterListPhoneRow } from "../../shared/master-list/master-list-phone-row.js";
+import { MasterListDragOverlayRow } from "../../shared/master-list/master-list-overlay-row.js";
+import { MasterListDropSlot } from "../../shared/master-list/master-list-drop-slot.js";
+import { arrayMove } from "@dnd-kit/sortable";
 import { buildFlatVisualOrder, interpretRegexDrop, type FlatItem } from "../../../lib/regex-profile-drop.js";
 import {
   regexProfileAvailability,
@@ -51,199 +53,16 @@ interface RegexPresetListProps {
   onImportRegex?: () => void;
 }
 
-function StandaloneDropRow({ label, isDropOver }: { label: string; isDropOver: boolean }) {
-  const { isOver, setNodeRef } = useDroppable({ id: regexStandaloneDropId });
-  return (
-    <div
-      ref={setNodeRef}
-      data-testid="regex-standalone-drop"
-      className={cn(
-        "flex min-h-11 w-full items-center justify-center gap-2 border border-dashed border-border2 bg-s1 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors",
-        (isOver || isDropOver) && "border-accent bg-accent-dim text-accent",
-      )}
-    >
-      <Icons.Expand />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, startEditing, dndDisabled, availability, shadowed }: {
-  p: RegexPresetRecord;
-  isActive: boolean;
-  onSelect: (id: string) => void;
-  startEditing: (preset: RegexPresetRecord, e: React.MouseEvent) => void;
-  dndDisabled: boolean;
-  availability: RegexAvailability;
-  shadowed: boolean;
-}) => {
-  const { t } = useT();
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: `rule:${p.id}`,
-    disabled: dndDisabled,
-  });
-  const style: CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    ...(isDragging ? { opacity: 0 } : {}),
-  };
-  const isMember = p.profileId != null;
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onPointerDown={() => onSelect(p.id)}
-      className={cn(
-        "group flex cursor-pointer items-center gap-2 border-l-2 min-h-[56px] px-4 sm:transition-colors touch-manipulation",
-        isMember && "ml-4 border-l border-border/50",
-        isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
-        isMember && isActive && "border-l-accent"
-      )}
-    >
-      {!dndDisabled && (
-        <button
-          type="button"
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label={t("promptManager.regex.dragAria")}
-          onClick={(e) => e.stopPropagation()}
-          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
-        >
-          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
-        </button>
-      )}
-      <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
-      <CustomTooltip content={p.name}>
-        <span className={cn(
-          "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
-          isActive ? "text-accent-t" : "text-t2",
-          p.disabled && "opacity-50",
-        )}>{p.name}</span>
-      </CustomTooltip>
-      {shadowed && (
-        <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
-          <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="flex shrink-0 p-1">
-            <span className="h-[6px] w-[6px] rounded-full bg-danger" />
-          </span>
-        </CustomTooltip>
-      )}
-      <button type="button"
-        onClick={(e) => startEditing(p, e)}
-        className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-      ><Icons.Edit /></button>
-      <div className="ml-auto flex items-center gap-1">
-        <RegexAvailabilityBadge availability={availability} />
-        <button type="button"
-          onClick={(e) => startEditing(p, e)}
-          className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-        ><Icons.Edit /></button>
-        <MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-1" />
-      </div>
-    </div>
-  );
-}, (prev, next) =>
-  prev.isActive === next.isActive &&
-  prev.p.id === next.p.id &&
-  prev.p.name === next.p.name &&
-  prev.p.disabled === next.p.disabled &&
-  prev.p.profileId === next.p.profileId &&
-  prev.shadowed === next.shadowed &&
-  prev.availability.kind === next.availability.kind &&
-  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
-  prev.dndDisabled === next.dndDisabled);
-
-const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpanded, onSelect, startEditing, dndDisabled, onToggle, availability }: {
-  p: RegexProfileRecord;
-  memberCount: number;
-  isActive: boolean;
-  isExpanded: boolean;
-  onSelect: (id: string) => void;
-  startEditing: (profile: RegexProfileRecord, e: React.MouseEvent) => void;
-  dndDisabled: boolean;
-  onToggle: (id: string) => void;
-  availability: RegexAvailability;
-}) => {
-  const { t } = useT();
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: `profile:${p.id}`,
-    disabled: dndDisabled,
-  });
-  const style: CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    ...(isDragging ? { opacity: 0 } : {}),
-  };
-  // AD-022 row-width budget: desktop grip (20px) + gaps (24px) + caret
-  // (16px) + visible count (about 3ch) + status dot (14px with hit padding)
-  // + edit/drill actions leave the min-w-0 name flex slot. Mobile widens the
-  // grip to 44px, so status remains a dot: no authored EN/RU status text may
-  // compete with the Profile name or its separate `(N)` member count.
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onPointerDown={() => onSelect(p.id)}
-      className={cn(
-        "group flex cursor-pointer items-center gap-2 border-l-2 min-h-[56px] px-4 sm:transition-colors touch-manipulation bg-s1/50",
-        isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
-      )}
-    >
-      {!dndDisabled && (
-        <button
-          type="button"
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label={t("promptManager.regex.dragAria")}
-          onClick={(e) => e.stopPropagation()}
-          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
-        >
-          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onToggle(p.id); }}
-        aria-label={isExpanded ? t("promptManager.regex.collapseProfile") : t("promptManager.regex.expandProfile")}
-        aria-expanded={isExpanded}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-      >
-        <span className={cn("shrink-0 text-t3 transition-transform duration-200 ease-out", isExpanded && "rotate-90")}><Icons.Caret direction="r" /></span>
-        <CustomTooltip content={p.name}>
-          <span className={cn(
-            "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
-            isActive ? "text-accent-t" : "text-t1",
-            p.disabled && "opacity-50",
-          )}>{p.name}</span>
-        </CustomTooltip>
-        <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">({memberCount})</span>
-      </button>
-      <button type="button"
-        onClick={(e) => startEditing(p, e)}
-        className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-      ><Icons.Edit /></button>
-      <div className="ml-auto flex items-center gap-1">
-        <RegexAvailabilityBadge availability={availability} />
-        <button type="button"
-          onClick={(e) => startEditing(p, e)}
-          className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-        ><Icons.Edit /></button>
-        <MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-1" />
-      </div>
-    </div>
-  );
-}, (prev, next) =>
-  prev.isActive === next.isActive &&
-  prev.isExpanded === next.isExpanded &&
-  prev.p.id === next.p.id &&
-  prev.p.name === next.p.name &&
-  prev.p.disabled === next.p.disabled &&
-  prev.memberCount === next.memberCount &&
-  prev.availability.kind === next.availability.kind &&
-  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
-  prev.dndDisabled === next.dndDisabled);
-
+// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
+// title, rename slot, overlay, phone drill-down row). This list supplies data
+// + slots: the profile accordion toggle (the title slot carries the caret +
+// name + count button — clicking it expands AND selects, exactly like the old
+// row), rule/profile rename editors through the `rename` slot, availability
+// badges + edit buttons in trailing, and the standalone-drop flow slot (the
+// primitive's `renderDragSlot` + `MasterListDropSlot`, which owns the
+// droppable registration). Reorder/attach/detach math is unchanged — it runs
+// in `onReorderItems` over the full flat order; only presentation + the drag
+// shell moved.
 export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, regexProfileLinkCounts = {}, activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
   const [search, setSearch] = useState("");
@@ -277,12 +96,12 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
     manualExpandedIds,
   ), [profiles, presets, manualExpandedIds]);
 
-  // For sortable ids, use flatItems sortableIds
-  const sortableIds = useMemo(() => {
-    // Exclude editing rows from sortable set
-    const editingSortable = editingId ? `rule:${editingId}` : editingProfileId ? `profile:${editingProfileId}` : null;
-    return flatItems.filter((f) => f.sortableId !== editingSortable).map((f) => f.sortableId);
-  }, [flatItems, editingId, editingProfileId]);
+  // Sortable registration covers the full flat order minus the rows under
+  // inline rename (their rendered form is a plain input, not a sortable).
+  const editingSortable = editingId ? `rule:${editingId}` : editingProfileId ? `profile:${editingProfileId}` : null;
+  const sortableIds = useMemo(() => (
+    flatItems.filter((f) => f.sortableId !== editingSortable).map((f) => f.sortableId)
+  ), [flatItems, editingSortable]);
 
   const handleToggle = (id: string) => {
     if (isFiltering) return;
@@ -293,160 +112,6 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
       else next.add(id);
       return next;
     });
-  };
-
-  // Sensors and reorder handling via custom interpretation
-  const {
-    sensors,
-    activeDragItem,
-    handleDragStart: baseHandleDragStart,
-    handleDragEnd: baseHandleDragEnd,
-    handleDragCancel,
-  } = useReorderableList<FlatItem>({
-    items: flatItems,
-    getId: (f) => f.sortableId,
-    onReorder: (activeId, overId, currentFlat) => {
-      const interpretation = interpretRegexDrop(currentFlat, activeId, overId);
-      let optimistic = currentFlat;
-      let persist: () => void | Promise<unknown> = () => {};
-      if (interpretation.kind === "attach" && onAttach && interpretation.ruleId && interpretation.profileId) {
-        const { ruleId, profileId } = interpretation;
-        // optimistic: move rule into target profile's expanded members
-        const activeIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
-        const overIdx = currentFlat.findIndex((f) => f.sortableId === overId);
-        if (activeIdx !== -1 && overIdx !== -1) {
-          const moved = arrayMove(currentFlat, activeIdx, overIdx);
-          optimistic = moved.map((it) => it.sortableId === activeId ? { ...it, profileId } : it);
-        }
-        persist = () => {
-          onAttach(profileId, ruleId);
-          // R-13b fix: the optimistic move placed the rule at the drop spot,
-          // but its stored sortOrder is from the top-level scale — without a
-          // member-scale rewrite the refetched order snaps elsewhere. Persist
-          // the target profile's member order (0-based within the group).
-          if (onReorder) {
-            const memberIds = optimistic
-              .filter((f) => f.kind === "rule" && f.profileId === profileId)
-              .map((f) => f.id);
-            if (memberIds.length > 0) {
-              void onReorder(memberIds.map((id, i) => ({ id, sortOrder: i })));
-            }
-          }
-        };
-      } else if (interpretation.kind === "detach" && onDetach && interpretation.ruleId) {
-        const { ruleId } = interpretation;
-        const activeIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
-        const overIdx = currentFlat.findIndex((f) => f.sortableId === overId);
-        if (activeIdx !== -1 && overIdx !== -1) {
-          const moved = arrayMove(currentFlat, activeIdx, overIdx);
-          optimistic = moved.map((it) => it.sortableId === activeId ? { ...it, profileId: null } : it);
-        }
-        persist = () => {
-          onDetach(ruleId);
-          // R-13b fix: the rule's stored sortOrder is member-scale (0..n of
-          // its old group) — after detach it joins the top-level interleave,
-          // where that small number would snap it to the top. Rewrite the
-          // top-level rule order (GLOBAL flat indices, shared with profiles)
-          // so the detached rule keeps the position the user dropped it at.
-          if (onReorder) {
-            const topRuleIds = optimistic
-              .filter((f) => f.kind === "rule" && f.profileId == null)
-              .map((f) => f.id);
-            if (topRuleIds.length > 0) {
-              void onReorder(topRuleIds.map((id, i) => ({ id, sortOrder: i })));
-            }
-          }
-        };
-      } else {
-        // reorder (profile or standalone)
-        const fromIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
-        const toIdx = currentFlat.findIndex((f) => f.sortableId === overId);
-        if (fromIdx !== -1 && toIdx !== -1) {
-          const reordered = arrayMove(currentFlat, fromIdx, toIdx);
-          optimistic = reordered;
-          // Persist reorder for affected containers: derive sortOrder updates
-          persist = () => {
-            // Split reordered flat into top-level and member groups for sortOrder assignment
-            // For simplicity, if active is profile or standalone, treat as top-level reorder
-            // Collect top-level ids in order
-            const topIdsInOrder: string[] = [];
-            const seenProfiles = new Set<string>();
-            for (const item of reordered) {
-              if (item.kind === "profile") {
-                if (!seenProfiles.has(item.id)) {
-                  seenProfiles.add(item.id);
-                  topIdsInOrder.push(`profile:${item.id}`);
-                }
-              } else if (item.kind === "rule" && item.profileId == null) {
-                topIdsInOrder.push(`rule:${item.id}`);
-              }
-            }
-            // If we are reordering within a single profile's members, handle there
-            const activeItem = flatItems.find((f) => f.sortableId === activeId);
-            if (activeItem?.kind === "rule" && activeItem.profileId) {
-              const profileId = activeItem.profileId;
-              const membersInOrder = reordered.filter((f) => f.kind === "rule" && f.profileId === profileId).map((f) => f.id);
-              // Need to map to preset reorder within profile: for now call onReorder with those ids
-              // The parent's onReorder for presets currently handles all presets; we delegate
-              // Use onReorder for member reorder (same callback, but filtered)
-              if (onReorder && membersInOrder.length > 0) {
-                const updates = membersInOrder.map((id, i) => ({ id, sortOrder: i }));
-                void onReorder(updates);
-              }
-              return;
-            }
-            // Otherwise top-level reorder: use the GLOBAL flat index as each
-            // item's sortOrder (profiles and rules share one positional
-            // scale — per-type 0-based indices would collide across tables
-            // and the rebuilt interleave would fall back to name tiebreaks,
-            // silently losing the dragged order).
-            const profileUpdates: Array<{ id: string; sortOrder: number }> = [];
-            const presetUpdates: Array<{ id: string; sortOrder: number }> = [];
-            reordered.forEach((item, flatIdx) => {
-              if (item.kind === "profile") profileUpdates.push({ id: item.id, sortOrder: flatIdx });
-              else if (item.kind === "rule" && item.profileId == null) presetUpdates.push({ id: item.id, sortOrder: flatIdx });
-            });
-            if (profileUpdates.length && onReorderProfiles) void onReorderProfiles(profileUpdates);
-            if (presetUpdates.length) void onReorder(presetUpdates);
-          };
-        }
-      }
-      return { optimisticItems: optimistic, persist };
-    },
-  });
-
-  const handleDragStart = (event: Parameters<typeof baseHandleDragStart>[0]) => {
-    setIsStandaloneDropOver(false);
-    const id = String(event.active.id);
-    if (id.startsWith("profile:")) {
-      const pid = id.slice("profile:".length);
-      if (manualExpandedIds.has(pid)) {
-        handleToggle(pid);
-      }
-    }
-    baseHandleDragStart(event);
-  };
-
-  const handleDragOver = (event: DragOverEvent) => {
-    setIsStandaloneDropOver(
-      memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null) !== null,
-    );
-  };
-
-  const handleDragEnd = (event: Parameters<typeof baseHandleDragEnd>[0]) => {
-    const ruleId = memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null);
-    setIsStandaloneDropOver(false);
-    if (ruleId) {
-      handleDragCancel();
-      onDetach?.(ruleId);
-      return;
-    }
-    baseHandleDragEnd(event);
-  };
-
-  const handleStandaloneDragCancel = () => {
-    setIsStandaloneDropOver(false);
-    handleDragCancel();
   };
 
   const filteredFlat = useMemo(() => {
@@ -513,6 +178,31 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
     if (e.key === "Escape") { setIsCreatingProfile(false); setNewProfileName(""); }
   };
 
+  const renderRenameEditor = (
+    value: string,
+    onChange: (value: string) => void,
+    onKeyDown: (e: React.KeyboardEvent) => void,
+    onCommit: () => void,
+    placeholder?: string,
+  ) => (
+    <div className="relative flex items-center">
+      <InlineRenameInput
+        ref={editInputRef}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onCommit}
+      />
+      <button type="button"
+        onMouseDown={(e) => { e.preventDefault(); onCommit(); }}
+        className="absolute right-2 text-success transition-colors hover:text-green-400"
+      >
+        <Icons.Check />
+      </button>
+    </div>
+  );
+
   const isEmpty = presets.length === 0 && profiles.length === 0;
 
   // ── Accordion rendering (owner ruling 2026-10-09: «как аккордеонов у
@@ -522,90 +212,106 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
   // wrapper owns visibility, so expanding animates height+opacity instead
   // of mounting rows. `sortableIds` still derive from `flatItems` (real
   // expansion) — a collapsed member is never a sortable/drop target.
-  const renderFlatItem = (item: FlatItem) => {
-    if (item.kind === "profile") {
-      const pr = profiles.find((p) => p.id === item.id);
-      if (!pr) return null;
-      const isActive = activeProfileId === pr.id;
-      const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
-      const isEditing = editingProfileId === pr.id;
-      if (isEditing) {
-        return (
-          <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-            <div className="relative flex items-center">
-              <InlineRenameInput
-                ref={editInputRef}
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={handleEditKeyDown}
-                onBlur={saveEdit}
-              />
-              <button type="button"
-                onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-                className="absolute right-2 text-success transition-colors hover:text-green-400"
-              >
-                <Icons.Check />
-              </button>
-            </div>
-          </div>
-        );
-      }
+  const renderRuleRow = (p: RegexPresetRecord, sortableId: string) => {
+    const isActive = activePresetId === p.id;
+    if (editingId === p.id) {
       return (
-        <SortableRegexProfileRow
-          key={item.sortableId}
-          p={pr}
-          memberCount={presets.filter((preset) => preset.profileId === pr.id).length}
-          isActive={isActive}
-          isExpanded={isExpanded}
-          onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
-          startEditing={startEditingProfile}
-          dndDisabled={dndDisabled}
-          onToggle={handleToggle}
-          availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])}
+        <MasterListRow
+          rename={renderRenameEditor(editName, setEditName, handleEditKeyDown, saveEdit)}
         />
       );
     }
-    // rule
-    const p = presets.find((pr) => pr.id === item.id);
-    if (!p) return null;
-    const isActive = activePresetId === p.id;
-    const isEditing = editingId === p.id;
-    if (isEditing) {
-      return (
-        <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-          <div className="relative flex items-center">
-            <InlineRenameInput
-              ref={editInputRef}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={handleEditKeyDown}
-              onBlur={saveEdit}
-            />
+    const availability = regexRuleAvailability({
+      rule: p,
+      ruleLinkCount: regexLinkCounts[p.id],
+      profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
+      profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
+    });
+    const shadowed = p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0);
+    const row = (
+      <SortableMasterListPhoneRow
+        sortableId={sortableId}
+        dragDisabled={dndDisabled}
+        selected={isActive}
+        active={isActive}
+        status={shadowed ? (
+          <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
+            <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="flex shrink-0 p-1">
+              <span className="h-[6px] w-[6px] rounded-full bg-danger" />
+            </span>
+          </CustomTooltip>
+        ) : undefined}
+        title={p.name}
+        onSelect={() => onSelect(p.id)}
+        trailing={
+          <>
             <button type="button"
-              onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-              className="absolute right-2 text-success transition-colors hover:text-green-400"
-            >
-              <Icons.Check />
-            </button>
-          </div>
-        </div>
+              onClick={(e) => startEditing(p, e)}
+              className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+            ><Icons.Edit /></button>
+            <div className="ml-auto flex items-center gap-1">
+              <RegexAvailabilityBadge availability={availability} />
+              <button type="button"
+                onClick={(e) => startEditing(p, e)}
+                className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+              ><Icons.Edit /></button>
+              <MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-1" />
+            </div>
+          </>
+        }
+      />
+    );
+    // Member rows keep their nested indent (the tree line under the profile)
+    // — the accordion owns collapse, this wrapper owns the indent.
+    return p.profileId != null ? <div className="ml-4 border-l border-border/50">{row}</div> : row;
+  };
+
+  const renderProfileRow = (pr: RegexProfileRecord, sortableId: string, memberCount: number) => {
+    const isActive = activeProfileId === pr.id;
+    const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
+    if (editingProfileId === pr.id) {
+      return (
+        <MasterListRow
+          rename={renderRenameEditor(editName, setEditName, handleEditKeyDown, saveEdit)}
+        />
       );
     }
     return (
-      <SortableRegexPresetRow
-        key={item.sortableId}
-        p={p}
-        isActive={isActive}
-        onSelect={onSelect}
-        startEditing={startEditing}
-        dndDisabled={dndDisabled}
-        availability={regexRuleAvailability({
-          rule: p,
-          ruleLinkCount: regexLinkCounts[p.id],
-          profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
-          profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
-        })}
-        shadowed={p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0)}
+      <SortableMasterListPhoneRow
+        sortableId={sortableId}
+        dragDisabled={dndDisabled}
+        selected={isActive}
+        active={isActive}
+        title={
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleToggle(pr.id); }}
+            aria-label={isExpanded ? t("promptManager.regex.collapseProfile") : t("promptManager.regex.expandProfile")}
+            aria-expanded={isExpanded}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            <span className={cn("shrink-0 text-t3 transition-transform duration-200 ease-out", isExpanded && "rotate-90")}><Icons.Caret direction="r" /></span>
+            <span className={cn("min-w-0 break-words", isActive ? "text-accent-t" : "text-t1", pr.disabled && "opacity-50")}>{pr.name}</span>
+            <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">({memberCount})</span>
+          </button>
+        }
+        onSelect={() => onSelectProfile ? onSelectProfile(pr.id) : onSelect(pr.id)}
+        trailing={
+          <>
+            <button type="button"
+              onClick={(e) => startEditingProfile(pr, e)}
+              className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+            ><Icons.Edit /></button>
+            <div className="ml-auto flex items-center gap-1">
+              <RegexAvailabilityBadge availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])} />
+              <button type="button"
+                onClick={(e) => startEditingProfile(pr, e)}
+                className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+              ><Icons.Edit /></button>
+              <MasterDetailMobileDrillDown onSelect={() => onSelectProfile ? onSelectProfile(pr.id) : onSelect(pr.id)} className="py-1" />
+            </div>
+          </>
+        }
       />
     );
   };
@@ -628,165 +334,313 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
     return groups;
   }, [isFiltering, filteredFlat, profiles, presets]);
 
-  return (
-    <div className="flex flex-col flex-1 min-h-0 py-2.5">
-      <div className="shrink-0 px-[13px]">
-        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
-          {t("promptManager.regex.tabLabel")}
-        </div>
-        <SearchInput
-          className="mb-2"
-          placeholder={t("promptManager.regex.searchPlaceholder")}
-          value={search}
-          onChange={(e) => {
-            if (!isFiltering && e.target.value.trim()) manualExpansionSnapshot.current = new Set(manualExpandedIds);
-            setSearch(e.target.value);
-          }}
-        />
-      </div>
+  // The primitive renders top-level leads; profile members render nested in
+  // their profile's accordion (same grouping as before — the committed data
+  // owns the render, exactly like the old row map).
+  const visibleLeads = useMemo(() => renderGroups.map((group) => group.lead), [renderGroups]);
+  const membersByLead = useMemo(() => {
+    const map = new Map<string, FlatItem[]>();
+    for (const group of renderGroups) map.set(group.lead.sortableId, group.members);
+    return map;
+  }, [renderGroups]);
+  const presetById = useMemo(() => new Map<string, RegexPresetRecord>(presets.map((preset) => [preset.id, preset])), [presets]);
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleStandaloneDragCancel}
-      >
-        {/* Owner ruling 2026-10-09: the Standalone drop row is a SLOT in the
-            scrolling flow — rendered INSIDE the scroll container as its first
-            row, right above the rules — never a fixed band above the scroll
-            area (the band displaced/covered the profile row in ~90% of drag
-            positions). As a flow slot it pushes rows down naturally and
-            scrolls with the list. */}
-        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-          <div className="flex-1 overflow-y-auto">
-            {isMemberRuleDrag(activeDragItem) && (
-              <StandaloneDropRow
-                label={t("promptManager.regex.moveToStandalone")}
-                isDropOver={isStandaloneDropOver}
-              />
-            )}
-            {filteredFlat.length === 0 && !isCreating && !isCreatingProfile ? (
-              <div className="flex h-full items-center justify-center px-2">
-                <EmptyState
-                  icon={<Icons.Terminal />}
-                  title={isEmpty ? t("promptManager.regex.emptyTitle") : t("no_preset_matches")}
-                  sub={isEmpty ? t("promptManager.regex.emptySub") : t("no_preset_matches_sub")}
-                />
-              </div>
-            ) : renderGroups.map((group) => {
-              const lead = renderFlatItem(group.lead);
-              if (group.lead.kind !== "profile" || group.members.length === 0) return lead;
-              const open = isFiltering || manualExpandedIds.has(group.lead.id);
-              return (
-                <React.Fragment key={group.lead.sortableId}>
-                  {lead}
-                  {/* Owner rulings 2026-10-09: no duplicate quick-create row
-                      inside the list (the Profile pane's «Create Rule» /
-                      «Add existing» are the single entry points), and member
-                      sections collapse with the canonical grid-rows idiom. */}
-                  <div
-                    data-testid={`regex-members-${group.lead.id}`}
-                    className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
-                    style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}
-                    aria-hidden={!open}
-                  >
-                    <div className="overflow-hidden">{group.members.map(renderFlatItem)}</div>
-                  </div>
-                </React.Fragment>
-              );
-            })}
-
-            {isCreating && (
-              <div className="border-l-2 border-transparent px-3 py-2">
-                <div className="relative flex items-center">
-                  <InlineRenameInput
-                    ref={newInputRef}
-                    placeholder={t("promptManager.regex.newNamePlaceholder")}
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={handleNewKeyDown}
-                    onBlur={() => { if (!newName.trim()) setIsCreating(false); else saveNew(); }}
-                  />
-                  <button type="button"
-                    onMouseDown={(e) => { e.preventDefault(); saveNew(); }}
-                    className="absolute right-2 text-success transition-colors hover:text-green-400"
-                  >
-                    <Icons.Check />
-                  </button>
-                </div>
-              </div>
-            )}
-            {isCreatingProfile && (
-              <div className="border-l-2 border-transparent px-3 py-2">
-                <div className="relative flex items-center">
-                  <InlineRenameInput
-                    placeholder={t("promptManager.regex.newProfilePlaceholder")}
-                    value={newProfileName}
-                    onChange={(e) => setNewProfileName(e.target.value)}
-                    onKeyDown={handleNewProfileKeyDown}
-                    onBlur={() => { if (!newProfileName.trim()) setIsCreatingProfile(false); else saveNewProfile(); }}
-                  />
-                  <button type="button"
-                    onMouseDown={(e) => { e.preventDefault(); saveNewProfile(); }}
-                    className="absolute right-2 text-success transition-colors hover:text-green-400"
-                  >
-                    <Icons.Check />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </SortableContext>
-
-        <DragOverlay dropAnimation={null}>
-          {activeDragItem ? (
+  const renderLeadRow = (item: FlatItem) => {
+    if (item.kind === "profile") {
+      const pr = profiles.find((p) => p.id === item.id);
+      if (!pr) return null;
+      const memberItems = membersByLead.get(item.sortableId) ?? [];
+      const memberCount = presets.filter((preset) => preset.profileId === pr.id).length;
+      const open = isFiltering || manualExpandedIds.has(pr.id);
+      return (
+        <React.Fragment>
+          {renderProfileRow(pr, item.sortableId, memberCount)}
+          {/* Owner rulings 2026-10-09: no duplicate quick-create row
+              inside the list (the Profile pane owns rule creation), and
+              member sections collapse with the canonical grid-rows idiom. */}
+          {memberItems.length > 0 ? (
             <div
-              className={cn(
-                "flex items-center gap-2 border-l-2 min-h-[56px] px-4",
-                activeDragItem.kind === "rule" && presets.find((p) => p.id === activeDragItem.id)?.id === activePresetId
-                  ? "border-l-accent bg-accent-dim" : activeDragItem.kind === "profile" && profiles.find((p) => p.id === activeDragItem.id)?.id === activeProfileId
-                  ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2"
-              )}
+              data-testid={`regex-members-${pr.id}`}
+              className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+              style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}
+              aria-hidden={!open}
             >
-              <span className="text-base leading-none text-t4">≡</span>
-              <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
-                {activeDragItem.kind === "profile"
-                  ? profiles.find((p) => p.id === activeDragItem.id)?.name ?? activeDragItem.id
-                  : presets.find((p) => p.id === activeDragItem.id)?.name ?? activeDragItem.id}
-              </span>
+              <div className="overflow-hidden">
+                {memberItems.map((member) => {
+                  const p = presetById.get(member.id);
+                  return p ? <React.Fragment key={member.sortableId}>{renderRuleRow(p, member.sortableId)}</React.Fragment> : null;
+                })}
+              </div>
             </div>
           ) : null}
-        </DragOverlay>
-      </DndContext>
+        </React.Fragment>
+      );
+    }
+    const p = presetById.get(item.id);
+    if (!p) return null;
+    return renderRuleRow(p, item.sortableId);
+  };
 
-      <div className="shrink-0 border-t border-border px-3 pt-3">
-        <button type="button"
-          onClick={() => setIsCreating(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-        >
-          <Icons.Plus />
-          {t("promptManager.regex.newPreset")}
-        </button>
-        <button type="button"
-          onClick={() => setIsCreatingProfile(true)}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-        >
-          <Icons.Plus />
-          {t("promptManager.regex.newProfile")}
-        </button>
-        {onImportRegex && (
-          <button type="button"
-            onClick={onImportRegex}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-          >
-            <Icons.Import />
-            {t("promptManager.regex.importButton")}
-          </button>
-        )}
-      </div>
-    </div>
+  return (
+    <MasterList<FlatItem>
+      items={flatItems}
+      getId={(f) => f.sortableId}
+      dragDisabled={dndDisabled}
+      sortableIds={sortableIds}
+      visibleItems={visibleLeads}
+      onDragStartExtra={(event) => {
+        setIsStandaloneDropOver(false);
+        const id = String(event.active.id);
+        if (id.startsWith("profile:")) {
+          const pid = id.slice("profile:".length);
+          if (manualExpandedIds.has(pid)) {
+            handleToggle(pid);
+          }
+        }
+      }}
+      onDragOver={(event) => {
+        setIsStandaloneDropOver(
+          memberRuleIdForStandaloneDrop(
+            flatItems.find((f) => f.sortableId === String(event.active.id)) ?? null,
+            event.over ? String(event.over.id) : null,
+          ) !== null,
+        );
+      }}
+      onDragCancelExtra={() => {
+        setIsStandaloneDropOver(false);
+      }}
+      onReorderItems={(activeId, overId, currentFlat) => {
+        // Dropping a member rule onto the standalone target detaches it —
+        // handled before the flat-order interpretation (which knows nothing
+        // of the standalone slot id).
+        const standaloneRuleId = memberRuleIdForStandaloneDrop(
+          currentFlat.find((f) => f.sortableId === activeId) ?? null,
+          overId,
+        );
+        if (standaloneRuleId) {
+          return { optimisticItems: currentFlat, persist: () => { onDetach?.(standaloneRuleId); } };
+        }
+        const interpretation = interpretRegexDrop(currentFlat, activeId, overId);
+        let optimistic = currentFlat;
+        let persist: () => void | Promise<unknown> = () => {};
+        if (interpretation.kind === "attach" && onAttach && interpretation.ruleId && interpretation.profileId) {
+          const { ruleId, profileId } = interpretation;
+          // optimistic: move rule into target profile's expanded members
+          const activeIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
+          const overIdx = currentFlat.findIndex((f) => f.sortableId === overId);
+          if (activeIdx !== -1 && overIdx !== -1) {
+            const moved = arrayMove(currentFlat, activeIdx, overIdx);
+            optimistic = moved.map((it) => it.sortableId === activeId ? { ...it, profileId } : it);
+          }
+          persist = () => {
+            onAttach(profileId, ruleId);
+            // R-13b fix: the optimistic move placed the rule at the drop spot,
+            // but its stored sortOrder is from the top-level scale — without a
+            // member-scale rewrite the refetched order snaps elsewhere. Persist
+            // the target profile's member order (0-based within the group).
+            if (onReorder) {
+              const memberIds = optimistic
+                .filter((f) => f.kind === "rule" && f.profileId === profileId)
+                .map((f) => f.id);
+              if (memberIds.length > 0) {
+                void onReorder(memberIds.map((id, i) => ({ id, sortOrder: i })));
+              }
+            }
+          };
+        } else if (interpretation.kind === "detach" && onDetach && interpretation.ruleId) {
+          const { ruleId } = interpretation;
+          const activeIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
+          const overIdx = currentFlat.findIndex((f) => f.sortableId === overId);
+          if (activeIdx !== -1 && overIdx !== -1) {
+            const moved = arrayMove(currentFlat, activeIdx, overIdx);
+            optimistic = moved.map((it) => it.sortableId === activeId ? { ...it, profileId: null } : it);
+          }
+          persist = () => {
+            onDetach(ruleId);
+            // R-13b fix: the rule's stored sortOrder is member-scale (0..n of
+            // its old group) — after detach it joins the top-level interleave,
+            // where that small number would snap it to the top. Rewrite the
+            // top-level rule order (GLOBAL flat indices, shared with profiles)
+            // so the detached rule keeps the position the user dropped it at.
+            if (onReorder) {
+              const topRuleIds = optimistic
+                .filter((f) => f.kind === "rule" && f.profileId == null)
+                .map((f) => f.id);
+              if (topRuleIds.length > 0) {
+                void onReorder(topRuleIds.map((id, i) => ({ id, sortOrder: i })));
+              }
+            }
+          };
+        } else {
+          // reorder (profile or standalone)
+          const fromIdx = currentFlat.findIndex((f) => f.sortableId === activeId);
+          const toIdx = currentFlat.findIndex((f) => f.sortableId === overId);
+          if (fromIdx !== -1 && toIdx !== -1) {
+            const reordered = arrayMove(currentFlat, fromIdx, toIdx);
+            optimistic = reordered;
+            // Persist reorder for affected containers: derive sortOrder updates
+            persist = () => {
+              // Split reordered flat into top-level and member groups for sortOrder assignment
+              const activeItem = flatItems.find((f) => f.sortableId === activeId);
+              if (activeItem?.kind === "rule" && activeItem.profileId) {
+                const profileId = activeItem.profileId;
+                const membersInOrder = reordered.filter((f) => f.kind === "rule" && f.profileId === profileId).map((f) => f.id);
+                // Need to map to preset reorder within profile: for now call onReorder with those ids
+                // The parent's onReorder for presets currently handles all presets; we delegate
+                // Use onReorder for member reorder (same callback, but filtered)
+                if (onReorder && membersInOrder.length > 0) {
+                  const updates = membersInOrder.map((id, i) => ({ id, sortOrder: i }));
+                  void onReorder(updates);
+                }
+                return;
+              }
+              // Otherwise top-level reorder: use the GLOBAL flat index as each
+              // item's sortOrder (profiles and rules share one positional
+              // scale — per-type 0-based indices would collide across tables
+              // and the rebuilt interleave would fall back to name tiebreaks,
+              // silently losing the dragged order).
+              const profileUpdates: Array<{ id: string; sortOrder: number }> = [];
+              const presetUpdates: Array<{ id: string; sortOrder: number }> = [];
+              reordered.forEach((item, flatIdx) => {
+                if (item.kind === "profile") profileUpdates.push({ id: item.id, sortOrder: flatIdx });
+                else if (item.kind === "rule" && item.profileId == null) presetUpdates.push({ id: item.id, sortOrder: flatIdx });
+              });
+              if (profileUpdates.length && onReorderProfiles) void onReorderProfiles(profileUpdates);
+              if (presetUpdates.length) void onReorder(presetUpdates);
+            };
+          }
+        }
+        return { optimisticItems: optimistic, persist };
+      }}
+      renderDragSlot={(activeItem) => (
+        isMemberRuleDrag(activeItem) ? (
+          /* Owner ruling 2026-10-09: the Standalone drop row is a SLOT in the
+             scrolling flow — rendered INSIDE the scroll container as its first
+             row, right above the rules — never a fixed band above the scroll
+             area (the band displaced/covered the profile row in ~90% of drag
+             positions). As a flow slot it pushes rows down naturally and
+             scrolls with the list. */
+          <MasterListDropSlot droppableId={regexStandaloneDropId} testId="regex-standalone-drop">
+            {(isOver) => (
+              <div
+                className={cn(
+                  "flex min-h-11 w-full items-center justify-center gap-2 border border-dashed border-border2 bg-s1 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors",
+                  (isOver || isStandaloneDropOver) && "border-accent bg-accent-dim text-accent",
+                )}
+              >
+                <Icons.Expand />
+                <span>{t("promptManager.regex.moveToStandalone")}</span>
+              </div>
+            )}
+          </MasterListDropSlot>
+        ) : null
+      )}
+      header={
+        <div className="shrink-0 px-[13px]">
+          <div className={cn(listHeaderCls, "pt-1 pb-[5px]")}>
+            {t("promptManager.regex.tabLabel")}
+          </div>
+        </div>
+      }
+      search={
+        <div className="shrink-0 px-[13px]">
+          <SearchInput
+            className="mb-2"
+            placeholder={t("promptManager.regex.searchPlaceholder")}
+            value={search}
+            onChange={(e) => {
+              if (!isFiltering && e.target.value.trim()) manualExpansionSnapshot.current = new Set(manualExpandedIds);
+              setSearch(e.target.value);
+            }}
+          />
+        </div>
+      }
+      emptyState={
+        visibleLeads.length === 0 && !isCreating && !isCreatingProfile ? (
+          <div className="flex h-full items-center justify-center px-2">
+            <EmptyState
+              icon={<Icons.Terminal />}
+              title={isEmpty ? t("promptManager.regex.emptyTitle") : t("no_preset_matches")}
+              sub={isEmpty ? t("promptManager.regex.emptySub") : t("no_preset_matches_sub")}
+            />
+          </div>
+        ) : undefined
+      }
+      renderRow={renderLeadRow}
+      renderOverlayRow={(item) => (
+        <MasterListDragOverlayRow
+          active={item.kind === "rule"
+            ? presets.find((p) => p.id === item.id)?.id === activePresetId
+            : profiles.find((p) => p.id === item.id)?.id === activeProfileId}
+          title={item.kind === "profile"
+            ? profiles.find((p) => p.id === item.id)?.name ?? item.id
+            : presets.find((p) => p.id === item.id)?.name ?? item.id}
+        />
+      )}
+      footer={
+        <div className="shrink-0 border-t border-border px-3 pt-3">
+          {isCreating ? (
+            <div className="relative flex items-center">
+              <InlineRenameInput
+                ref={newInputRef}
+                placeholder={t("promptManager.regex.newNamePlaceholder")}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={handleNewKeyDown}
+                onBlur={() => { if (!newName.trim()) setIsCreating(false); else saveNew(); }}
+              />
+              <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); saveNew(); }}
+                className="absolute right-2 text-success transition-colors hover:text-green-400"
+              >
+                <Icons.Check />
+              </button>
+            </div>
+          ) : (
+            <button type="button"
+              onClick={() => setIsCreating(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+            >
+              <Icons.Plus />
+              {t("promptManager.regex.newPreset")}
+            </button>
+          )}
+          {isCreatingProfile ? (
+            <div className="relative mt-2 flex items-center">
+              <InlineRenameInput
+                placeholder={t("promptManager.regex.newProfilePlaceholder")}
+                value={newProfileName}
+                onChange={(e) => setNewProfileName(e.target.value)}
+                onKeyDown={handleNewProfileKeyDown}
+                onBlur={() => { if (!newProfileName.trim()) setIsCreatingProfile(false); else saveNewProfile(); }}
+              />
+              <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); saveNewProfile(); }}
+                className="absolute right-2 text-success transition-colors hover:text-green-400"
+              >
+                <Icons.Check />
+              </button>
+            </div>
+          ) : (
+            <button type="button"
+              onClick={() => setIsCreatingProfile(true)}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+            >
+              <Icons.Plus />
+              {t("promptManager.regex.newProfile")}
+            </button>
+          )}
+          {onImportRegex && (
+            <button type="button"
+              onClick={onImportRegex}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+            >
+              <Icons.Import />
+              {t("promptManager.regex.importButton")}
+            </button>
+          )}
+        </div>
+      }
+    />
   );
 }
-

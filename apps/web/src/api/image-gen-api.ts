@@ -195,16 +195,20 @@ function listingSnapshotAt(response: Response): string | null {
 }
 
 /** Model catalog for a saved profile (picker data source) — live, or the
- *  server's last-good snapshot (IF-20, `snapshotAt` set). Null = the route's
+ *  server's last-good snapshot (IF-20, `snapshotAt` set). `storedFirst` =
+ *  the open path (step 11, the LLM picker pattern): the stored list with no
+ *  upstream call, live only when nothing is stored. Null = the route's
  *  404 (unknown profile); upstream failures with no snapshot throw (the
  *  route maps them to typed error bodies). */
 export async function listImageGenModels(
   id: string,
   signal?: AbortSignal,
+  options?: { storedFirst?: boolean },
 ): Promise<ImageGenListingResult<ImageGenModelEntry[]> | null> {
   const baseUrl = getGatewayBaseUrl();
+  const query = options?.storedFirst === true ? "?source=stored" : "";
   const response = await fetch(
-    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/models`),
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/models${query}`),
     { signal },
   );
   if (response.status === 404) return null;

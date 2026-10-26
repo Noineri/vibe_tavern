@@ -10,8 +10,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 import { useCopilotReviewState, type UseCopilotReviewStateArgs } from "./use-copilot-review-state.js";
-import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
-import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-store.js";
+import { useAgentTurnStore } from "../stores/agent-turn-store.js";
+import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
 
 useDomEnv();
 
@@ -29,6 +29,7 @@ const { act, renderHook } = await import("@testing-library/react");
 
 function baseArgs(over: Partial<UseCopilotReviewStateArgs> = {}): UseCopilotReviewStateArgs {
   return {
+    kind: "experience",
     threadId: "thread-1",
     isSending: false,
     rulesCode: "RULES v1",
@@ -49,8 +50,8 @@ function setup(over: Partial<UseCopilotReviewStateArgs> = {}) {
 }
 
 beforeEach(() => {
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-  useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+  useAgentTurnStore.setState({ turnsByThread: {} });
+  useAgentReviewRoundStore.setState({ roundsByThread: {} });
 });
 
 describe("useCopilotReviewState", () => {
@@ -92,7 +93,7 @@ describe("useCopilotReviewState", () => {
 
   it("revertLastTurn restores the snapshot texts, pops it and dismisses the live turn", () => {
     const onRevert = mock();
-    useExperienceCopilotTurnStore.setState({
+    useAgentTurnStore.setState({
       turnsByThread: {
         "thread-1": [
           { toolCallId: "c1", toolName: "write_buffer", status: "done", target: "rules", proposed: "RULES v2" },
@@ -109,7 +110,7 @@ describe("useCopilotReviewState", () => {
     expect(onRevert).toHaveBeenCalledWith({ rules: "RULES v1", visual: "VISUAL v1" });
     // The snapshot is consumed and the live turn's activities are dismissed.
     expect(result.current.snapshots).toEqual([]);
-    expect(useExperienceCopilotTurnStore.getState().turnsByThread["thread-1"]).toBeUndefined();
+    expect(useAgentTurnStore.getState().turnsByThread["thread-1"]).toBeUndefined();
   });
 
   it("revertLastTurn is a no-op without a snapshot", () => {

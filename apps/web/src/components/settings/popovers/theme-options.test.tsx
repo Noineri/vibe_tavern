@@ -1,8 +1,15 @@
 
 import { describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 
 useDomEnv();
+
+// Both shells now carry the script-warnings row, whose hook loads the
+// server flag on mount. A loaded value makes that load a no-op, keeping the
+// settings API out of these theme tests (the row has its own file:
+// script-warnings-setting.test.tsx).
+useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
 
 const { fireEvent, render, within } = await import("@testing-library/react");
 

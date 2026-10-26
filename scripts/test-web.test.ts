@@ -160,6 +160,37 @@ test("junitCrossAttribution flags a junit file that disagrees with the failing s
 	).toBe("junit filed under apps/web/src/api/gallery-api.test.ts, stack points to apps/web/src/lib/x.test.ts — parallel junit cross-attribution, trust the stack");
 });
 
+test("the cross-attribution frame check reads the full failure text, not the 200-char cut", () => {
+	// SC-8b harness fix: parseFailingEntry used to cap the failure text at 200
+	// characters BEFORE junitCrossAttribution read it, so the guard went silent
+	// exactly where it matters most — long failure messages whose stack frame
+	// sits at the end. The motivating shape: the frame-runtime freshness test
+	// throws the generator's sizes plus the first diverging byte, so in SC-8a
+	// the stale-artifact failure surfaced only in the full web suite, filed
+	// under the wrong file, and took three runs to isolate because the «trust
+	// the stack» warning never printed. The parser now keeps the full cleaned
+	// text as `fullMessage`; only the on-screen summary line stays cut.
+	const filedUnder = "apps/web/src/components/shared/SegmentedControl.test.tsx";
+	const frame = "apps/web/src/lib/experience-frame-runtime.test.ts";
+	const filler = "A".repeat(260);
+	const body = `generator --check failed (exit 1): experience-frame-runtime.source.ts is STALE: ${filler} committed: 149793 bytes, fresh build: 150812 bytes, first divergence at byte 34767 — bun run gen:experience-frame-runtime at ${frame}:57:12`;
+	const report = `<testsuites>
+  <testsuite name="a" file="${filedUnder}" tests="1">
+    <testcase name="the committed artifact byte-matches a fresh generator run" classname="" time="0.1" file="${filedUnder}" assertions="1"><failure>${body}</failure></testcase>
+  </testsuite>
+</testsuites>`;
+	const entry = failingFiles(report).get(filedUnder)?.entries[0];
+	expect(entry).toBeDefined();
+	// The on-screen line stays cut — and the frame sits past the cut.
+	expect(entry?.message.length).toBe(200);
+	expect(entry?.message).not.toContain(frame);
+	// The frame check reads the full text, so the warning fires.
+	expect(entry?.fullMessage).toContain(`at ${frame}:57:12`);
+	expect(junitCrossAttribution(filedUnder, entry?.fullMessage ?? "")).toBe(
+		`junit filed under ${filedUnder}, stack points to ${frame} — parallel junit cross-attribution, trust the stack`,
+	);
+});
+
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {
 	// Given
 	const root = await makeRoot();

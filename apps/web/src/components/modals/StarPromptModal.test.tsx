@@ -9,6 +9,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
@@ -22,7 +23,6 @@ const mockState = {
 };
 
 const realBootstrap = await import("../../stores/api-actions/bootstrap-actions.js");
-const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({
@@ -33,10 +33,7 @@ mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({
   }),
 }));
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 
@@ -82,6 +79,7 @@ function openModal(settings: Partial<UiSettingsRecord> = {}) {
       allCharacters: [],
       promptPresets: [],
       uiSettings: baseSettings(settings),
+      agentKindSettings: {},
       isArmServer: false,
     },
   });

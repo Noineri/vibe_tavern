@@ -37,6 +37,7 @@ import {
 import { ImagePromptFamilyRow, adaptSetPayloadForTarget, composeSetFieldNotes } from "./ImageGenPromptFamilyRow.js";
 import { LlmAssistSection } from "./ImageGenLlmAssistSection.js";
 import { ProviderModelSelector } from "../ProviderModelSelector.js";
+import { useImageGenListingFills } from "./use-image-gen-listing-fills.js";
 import type { ProviderModelListOption } from "../ProviderModelList.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
@@ -108,16 +109,9 @@ const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
 // ─── Optional numeric field (TextInput inputMode=numeric — the empty-able
 //     numeric; no NumberInput because it requires a concrete number) ────────
 
-// ─── Slider+number field (IG-CF13: the ProviderSamplerPanel SamplerField
-//     taken VERBATIM per the owner's 2026-09-16 ruling — take the existing
-//     LLM implementation, don't reshape it). The CF5 "empty box /
-//     clear-to-undefined" optionality was supervisor spec invention, not an
-//     owner requirement — killed. The cell is NumberInput (h-[30px] w-[60px]
-//     hideControls — its own self-clamping), the label is the uppercase micro
-//     canon, and the display value is `value ?? min` exactly like the LLM
-//     panel. Untouched params still don't send until edited. Seed keeps the
-//     plain OptionalNumberField above (a full seed-range slider is meaningless —
-//     owner-approved).
+// Shared parameter field adapter (SL-10). The layer's own value falls back
+// to the range minimum for display only; untouched params remain unsent.
+// Integer-step controls round typed fractions; fractional controls stay exact.
 
 function SamplerSliderField({
   label,
@@ -135,37 +129,17 @@ function SamplerSliderField({
   rangeTestId: string;
   cellTestId: string;
 }) {
-  const val = value ?? range.min;
   return (
-    <div className="min-w-0">
-      <label className={lblCls}>{label}</label>
-      <div className="flex items-center gap-2">
-        <input
-          type="range"
-          data-testid={rangeTestId}
-          min={range.min}
-          max={range.max}
-          step={range.step}
-          value={val}
-          onChange={(e) => {
-            const parsed = Number(e.target.value);
-            if (Number.isFinite(parsed)) onChange(parsed);
-          }}
-          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
-        />
-        <div className="w-[60px] shrink-0" data-testid={cellTestId}>
-          <NumberInput
-            className="h-[30px] w-[60px]"
-            min={range.min}
-            max={range.max}
-            step={range.step}
-            value={val}
-            onChange={onChange}
-            hideControls
-          />
-        </div>
-      </div>
-    </div>
+    <SliderField
+      label={label}
+      value={value ?? range.min}
+      min={range.min}
+      max={range.max}
+      step={range.step}
+      onChange={(next) => onChange(Number.isInteger(range.step) ? Math.round(next) : next)}
+      rangeTestId={rangeTestId}
+      numberTestId={cellTestId}
+    />
   );
 }
 
@@ -516,7 +490,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
               autoFocus
             />
             {morphShowConflict && (
-              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+              <div className="mt-0.5 flex items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-warning">
                 <span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
                 {t("sampler_set_name_exists")}
               </div>
@@ -559,7 +533,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
             defaultOption={t("sampler_set_none")}
             placeholder={t("sampler_set_placeholder")}
             onChange={handleSelectSet}
-            triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+            triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[calc(var(--ui-fs)-2px)] hover:border-accent"
             triggerDetail={false}
             contentWidth={260}
             triggerLeading={
@@ -730,14 +704,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // by the real-hook round-trip tests, which mount before a form exists).
   const guardProfileId = form?.id ?? null;
   const guardSamplers = form?.capabilities.supportsSamplers ?? false;
-  useEffect(() => {
-    if (guardProfileId === null || !guardSamplers) return;
-    if ((imageGen.samplersByProfile[guardProfileId] ?? []).length === 0) {
-      void imageGen.fetchSamplers(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardSamplers]);
 
   // ADetailer availability (IG-CF15 15d / PG-4 v1): A1111-dialect servers
   // report their extensions; the pane row (and the chip's nested accordion
@@ -748,18 +714,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // isLocalDialectBackend) — the scheduler-list consumer gate; both
   // dialects expose the schedulers route (PG-3/CG-A3).
   const guardIsLocalDialect = form !== null && isLocalDialectBackend(form.backend);
-  // Scheduler list (PG-3) — the dialect-gated schedule-type catalog, one-shot
-  // cache fill per profile (the samplers-guard twin, dialect-gated: the
-  // schedulers route exists only on the local family). Failure = empty
-  // options, no connectivity signal (the samplers fetch owns that).
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsLocalDialect) return;
-    if ((imageGen.schedulersByProfile[guardProfileId] ?? []).length === 0) {
-      void imageGen.fetchSchedulers(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsLocalDialect]);
   // DiT sidecar lists (CG-B1, comfyui dialect): one-shot cache fill when
   // the SELECTED model (or the manual base-workflow pick) resolves a DiT
   // workflow family — the encoder/VAE fields need them. Options-data only
@@ -785,26 +739,14 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     modelId: guardModelId ?? undefined,
   });
   const guardIsDit = ditControls !== null;
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsDit) return;
-    if (imageGen.sidecarsByProfile[guardProfileId] === undefined) {
-      void imageGen.fetchSidecars(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsDit]);
-  // VAE list (IF-7b): the swappable-VAE vocabulary for the advanced
-  // accordion's VAE field — one-shot cache fill per LOCAL profile (A1111
-  // + ComfyUI; the field renders for every non-DiT local target).
-  // Options-data only (the fetchSidecars rule verbatim).
-  useEffect(() => {
-    if (guardProfileId === null || !guardIsLocalDialect) return;
-    if (imageGen.vaeByProfile[guardProfileId] === undefined) {
-      void imageGen.fetchVae(guardProfileId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
-    // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsLocalDialect]);
+  // One-shot listing cache fills per profile (models — stored list first,
+  // step 11 — samplers, schedulers, DiT sidecars, VAEs); the gates and the
+  // per-list rules live with the effects in use-image-gen-listing-fills.
+  useImageGenListingFills(imageGen, guardProfileId, {
+    supportsSamplers: guardSamplers,
+    isLocalDialect: guardIsLocalDialect,
+    isDit: guardIsDit,
+  });
   // Hires upscaler vocabulary (IF-7b, the pane's hires section): fetched
   // when a hires-capable profile opens the advanced accordion — the chip's
   // own fetch twin. Options-data only; [] on failure (Auto stays pickable).
@@ -1168,12 +1110,12 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           return (
             <>
               {entry?.isFree && (
-                <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
+                <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-t4">free</span>
               )}
               {entry?.family && (
                 <span
                   data-testid="image-gen-model-family"
-                  className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4"
+                  className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] font-medium text-t4"
                 >
                   {entry.family}
                 </span>
@@ -1197,7 +1139,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
             {selectedModel?.template && (
               <div
                 data-testid="image-gen-model-detected"
-                className="mt-2 font-ui text-[12px] font-medium text-accent"
+                className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent"
               >
                 {t("image_gen_detected_template", {
                   template: templateDisplayLabel(selectedModel.template, t),
@@ -1249,7 +1191,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           data-testid="image-gen-sizes-header"
           onClick={() => setSizesOpen((prev) => !prev)}
           className={cn(
-            "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3.5 py-3 font-ui text-[14px] font-semibold text-t1 transition-colors hover:bg-[var(--border)]",
+            "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3.5 py-3 font-ui text-[var(--ui-fs)] font-semibold text-t1 transition-colors hover:bg-[var(--border)]",
             sizesOpen && "!rounded-b-none",
           )}
         >
@@ -1277,7 +1219,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               setModeSize(mode, { width: preset?.width ?? displayWidth, height });
             return (
               <div key={mode} className="flex flex-wrap items-center gap-2" data-testid={`image-gen-mode-row-${mode}`}>
-                <div className="w-[180px] shrink-0 font-ui text-[13px] text-t2">{t(MODE_LABEL_KEYS[mode])}</div>
+                <div className="w-[180px] shrink-0 font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t(MODE_LABEL_KEYS[mode])}</div>
                 {caps.sizeSupport.kind === "vendor-set" ? (
                   <DropdownSelect
                     value={presetKey}
@@ -1318,7 +1260,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         onChange={editWidth}
                       />
                     </div>
-                    <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                    <span className="select-none font-ui text-[calc(var(--ui-fs)-1px)] text-t3" aria-hidden="true">×</span>
                     <div className="w-[110px] shrink-0" data-testid={`image-gen-mode-height-${mode}`}>
                       <NumberInput
                         value={displayHeight}
@@ -1386,7 +1328,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               className="mt-1 flex flex-col gap-2 rounded-lg border border-border2 bg-s2 p-3"
               data-testid="image-gen-user-sizes"
             >
-              <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_user_sizes_title")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_user_sizes_title")}</div>
               <div className="text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                 {t("image_gen_user_sizes_hint")}
               </div>
@@ -1398,7 +1340,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       className="flex items-center gap-2"
                       data-testid="image-gen-user-size-row"
                     >
-                      <span className="font-ui text-[13px] text-t2">
+                      <span className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">
                         {entry.width}×{entry.height}
                         {entry.ratio !== undefined ? ` · ${entry.ratio}` : ""}
                       </span>
@@ -1426,7 +1368,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     onChange={setDraftWidth}
                   />
                 </div>
-                <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                <span className="select-none font-ui text-[calc(var(--ui-fs)-1px)] text-t3" aria-hidden="true">×</span>
                 <div className="w-[110px] shrink-0" data-testid="image-gen-user-size-height">
                   <NumberInput
                     value={draftHeight}
@@ -1459,7 +1401,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         : undefined
                   }
                   onClick={addUserSize}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
                 >
                   {t("image_gen_user_size_add")}
                 </button>
@@ -1472,7 +1414,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
 
       {/* ── Parameters: bind toggle + sampler + advanced expand ── */}
       <section className="rounded-lg border border-border bg-surface p-3.5" data-testid="image-gen-params-section">
-        <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_params_section_title")}</div>
+        <div className="mb-3 font-ui text-[var(--ui-fs)] font-semibold text-t1">{t("image_gen_params_section_title")}</div>
 
         {form.modelId !== null && (
           <div className="mb-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
@@ -1493,7 +1435,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 aria-label={t("image_gen_bind_per_model")}
               />
               <div className="min-w-0">
-                <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
+                <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
                 <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                   {t("image_gen_bind_per_model_hint", { model: form.modelId })}
                 </div>
@@ -1502,7 +1444,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </div>
         )}
         {bound && (
-          <div className="mb-3 font-ui text-[12px] text-t3" data-testid="image-gen-overlay-inherit-hint">
+          <div className="mb-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3" data-testid="image-gen-overlay-inherit-hint">
             {t("image_gen_overlay_inherit_hint")}
           </div>
         )}
@@ -1515,7 +1457,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           <div
             data-testid="image-gen-advanced-header"
             className={cn(
-              "flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between",
+              "flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between",
               advancedOpen && "!rounded-b-none",
             )}
           >
@@ -1832,38 +1774,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         triggerTestId="image-gen-adetailer-model"
                       />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="range"
-                          data-testid="image-gen-range-adetailer-steps"
-                          min={adetailerControl.stepsRange.min}
-                          max={adetailerControl.stepsRange.max}
-                          step={adetailerControl.stepsRange.step}
-                          value={params.adetailerSteps ?? adetailerBaseSteps}
-                          onChange={(e) => {
-                            const patch = adetailerControl.parseSteps(e.target.value);
-                            if (patch !== null) setParam(patch);
-                          }}
-                          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
-                        />
-                        <div className="w-[60px] shrink-0" data-testid="image-gen-adetailer-steps">
-                          <NumberInput
-                            className="h-[30px] w-[60px]"
-                            min={adetailerControl.stepsRange.min}
-                            max={adetailerControl.stepsRange.max}
-                            step={adetailerControl.stepsRange.step}
-                            value={params.adetailerSteps ?? adetailerBaseSteps}
-                            onChange={(n) => {
-                              const patch = adetailerControl.parseSteps(String(n));
-                              if (patch !== null) setParam(patch);
-                            }}
-                            hideControls
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <SliderField
+                      label={t(adetailerControl.stepsLabelKey)}
+                      value={params.adetailerSteps ?? adetailerBaseSteps}
+                      min={adetailerControl.stepsRange.min}
+                      max={adetailerControl.stepsRange.max}
+                      step={adetailerControl.stepsRange.step}
+                      onChange={(next) => {
+                        const patch = adetailerControl.parseSteps(String(Math.round(next)));
+                        if (patch !== null) setParam(patch);
+                      }}
+                      rangeTestId="image-gen-range-adetailer-steps"
+                      numberTestId="image-gen-adetailer-steps"
+                    />
                     </>
                   )}
                 </div>

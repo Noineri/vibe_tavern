@@ -136,7 +136,11 @@ describe("GET/PATCH /api/experience-copilot/:threadId/context-links (CX-4)", () 
     expect(calls.setContextLinks).toHaveLength(0);
   });
 
-  test("PATCH with 65 links is rejected with 400", async () => {
+  test("PATCH with 65 links is forwarded and accepted — the length cap is gone (SC-21b)", async () => {
+    // Was: 65 links rejected with 400 (`.max(64)` on the `links` array
+    // claimed to mirror the co-author's pragmatic bound — which never
+    // existed). Now: the cap was invented provenance, dropped by owner
+    // review 2026-10-21; the whole array reaches the runtime untouched.
     const { app, calls } = makeApp();
     const many = Array.from({ length: 65 }, () => ({ targetType: "character", targetId: "char_1" }));
     const res = await app.request("/api/experience-copilot/thread_1/context-links", {
@@ -144,8 +148,9 @@ describe("GET/PATCH /api/experience-copilot/:threadId/context-links (CX-4)", () 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ links: many }),
     });
-    expect(res.status).toBe(400);
-    expect(calls.setContextLinks).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(calls.setContextLinks).toEqual([{ threadId: "thread_1", links: many }]);
+    expect(await res.json()).toEqual(many);
   });
 });
 

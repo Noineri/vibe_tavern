@@ -1,23 +1,14 @@
 import { beforeAll, describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { FormState } from "../../modals/ProviderModal.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
@@ -162,6 +153,97 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     );
 
     expect(queryByText("token_padding")).toBeNull();
+  });
+
+  it("updates sampler values through the nested slider input and keeps custom-sampler controls disabled", () => {
+    const onChange = mock();
+    const enabled = render(<ProviderSamplerPanel values={form()} onChange={onChange} />);
+    fireEvent.click(enabled.getByText("samplers_advanced"));
+    const topK = enabled.getByLabelText("sampler_top_k") as HTMLInputElement;
+
+    expect(topK.type).toBe("range");
+    expect(topK.min).toBe("0");
+    expect(topK.max).toBe("100");
+    expect(topK.step).toBe("1");
+    fireEvent.change(topK, { target: { value: "41" } });
+    expect(onChange).toHaveBeenLastCalledWith("topK", 41);
+    enabled.unmount();
+
+    const disabled = render(
+      <ProviderSamplerPanel values={setForm({ customSamplers: false })} onChange={mock()} />,
+    );
+    fireEvent.click(disabled.getByText("samplers_advanced"));
+    expect((disabled.getByLabelText("sampler_top_k") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("renders every sampler row as a SliderField whose help node sits inside the field", () => {
+    const view = render(<ProviderSamplerPanel values={form()} onChange={mock()} />);
+    fireEvent.click(view.getByText("samplers_advanced"));
+
+    // The label + range + number box twin is gone: no <label> carries a sampler name any more.
+    expect([...view.container.querySelectorAll("label")].some((el) => el.textContent?.includes("sampler_top_k"))).toBe(false);
+    const topK = view.getByLabelText("sampler_top_k") as HTMLInputElement;
+    const shell = topK.closest("[data-slider-field-shell]");
+    if (!shell) throw new Error("Sampler row is not a slider field");
+    expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("sampler_top_k?");
+    expect(shell.querySelector("[data-slider-field-help]")?.textContent).toBe("?");
+    expect(shell.querySelector("[data-slider-field-value]")?.textContent).toBe("0");
+    // Temperature sits outside the grid. Behavior change: its label (and accessible name) lost the " (value)" suffix, the field shows the value once.
+    const temperature = view.getByLabelText("sampler_temperature") as HTMLInputElement;
+    expect(temperature.type).toBe("range");
+    expect(temperature.closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent).toBe("0.70");
+    view.unmount();
+  });
+
+  it("sends typed sampler values through the field's inline editor, keeping integer rounding", () => {
+    const onChange = mock();
+    const view = render(<ProviderSamplerPanel values={form()} onChange={onChange} />);
+    fireEvent.click(view.getByText("samplers_advanced"));
+
+    function typeInto(label: string, text: string) {
+      const shell = view.getByLabelText(label).closest("[data-slider-field-shell]");
+      const box = shell?.querySelector("[data-slider-field]");
+      if (!shell || !box) throw new Error(`No slider field for ${label}`);
+      // Seam: typing a number used to go through a number box beside the range; it now opens the field's inline editor.
+      fireEvent.doubleClick(box);
+      const editor = shell.querySelector<HTMLInputElement>("[data-slider-field-editor] input");
+      if (!editor) throw new Error(`Inline editor did not open for ${label}`);
+      fireEvent.change(editor, { target: { value: text } });
+      fireEvent.blur(editor);
+    }
+
+    typeInto("sampler_top_k", "41.6");
+    expect(onChange).toHaveBeenLastCalledWith("topK", 42);
+    typeInto("sampler_top_p", "0.37");
+    expect(onChange).toHaveBeenLastCalledWith("topP", 0.37);
+    typeInto("sampler_top_k", "250");
+    expect(onChange).toHaveBeenLastCalledWith("topK", 100);
+    // A typed value finer than the step is kept exactly (temperature step 0.05): typing enters an exact value, only stepping snaps.
+    typeInto("sampler_temperature", "0.73");
+    expect(onChange).toHaveBeenLastCalledWith("temperature", 0.73);
+    view.unmount();
+  });
+
+  it("dims and blocks each disabled sampler field once, without dimming the grid on top", () => {
+    const onChange = mock();
+    const view = render(<ProviderSamplerPanel values={setForm({ customSamplers: false })} onChange={onChange} />);
+    fireEvent.click(view.getByText("samplers_advanced"));
+
+    const topK = view.getByLabelText("sampler_top_k") as HTMLInputElement;
+    const shell = topK.closest("[data-slider-field-shell]");
+    const box = shell?.querySelector("[data-slider-field]");
+    if (!shell || !box) throw new Error("Sampler row is not a slider field");
+    expect(shell.className).toContain("opacity-40");
+    expect(shell.className).toContain("pointer-events-none");
+    // The grid cell and the grid must not add a second 40% on top of the field's own.
+    expect(shell.parentElement?.className).not.toContain("opacity-40");
+    expect(shell.parentElement?.parentElement?.className).not.toContain("opacity-40");
+    fireEvent.doubleClick(box);
+    fireEvent.keyDown(topK, { key: "Enter" });
+    expect(shell.querySelector("[data-slider-field-editor]")).toBeNull();
+    fireEvent.change(topK, { target: { value: "41" } });
+    expect(onChange).not.toHaveBeenCalled();
+    view.unmount();
   });
 
   it("shows adaptive-p fields only for providers whose sampler set includes them (llamacpp_native / koboldcpp_native)", async () => {

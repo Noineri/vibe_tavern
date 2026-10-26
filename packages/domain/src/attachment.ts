@@ -42,14 +42,22 @@ export interface Attachment {
   purpose?: AudioPurpose;
   /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
   durationMs?: number;
-  /** Image-gen-slot only (IMAGE_GENERATION_PLAN IG-18; design: "per-image
-   *  'include in prompt' opt-in (default off — pure illustration)"). Absent =
-   *  OFF — the assembly drops the slot's attachment from the RP prompt
-   *  entirely (see {@link filterPromptVisibleAttachments}). Enabling requires
-   *  a vision description (server-enforced) so the non-vision executor path
-   *  always has text to send. Ordinary user uploads never carry this flag
-   *  and keep their always-included behavior. */
+  /** Prompt visibility, decided by {@link filterPromptVisibleAttachments}.
+   *  Image-gen slots are opt-in (IG-18): absent or false = OFF; only true
+   *  includes them. Enabling requires a description or generation prompt
+   *  (server-enforced) for the non-vision executor path.
+   *  Ordinary uploads are included when absent or true; explicit false
+   *  excludes them. The text-file include route writes this flag in Wave 2. */
   includeInPrompt?: boolean;
+  /** Text files only: token count of the file's full text, computed once by
+   *  the server at upload (UTF-8 decode, BOM stripped, default encoder) and
+   *  carried on the attachment. Absent on images, audio, video and on files
+   *  uploaded before the count existed. */
+  tokenCount?: number;
+  /** Text files only: token count of the summary stored in {@link description}.
+   *  Written by the server's summarize action together with the summary and
+   *  cleared with it; absent while the file is not summarized. */
+  summaryTokenCount?: number;
   /** Image-gen-only: slot provenance (IMAGE_GENERATION_PLAN IG-14, design:
    *  "a message carrying a single image attachment + provenance metadata:
    *  mode, profileId, model, effective params, seed") — exactly the design
@@ -57,6 +65,24 @@ export interface Attachment {
    *  `purpose`/`durationMs`; regeneration (IG-18) reads it to rebuild a
    *  request. Absent on ordinary uploads. */
   imageGen?: ImageGenSlotProvenance;
+}
+
+/** Only action-owned fields: omitted means unchanged; a null summary count
+ * asks the storage port to REMOVE the field, not persist a null count. */
+export interface AttachmentPatch {
+  description?: string | null;
+  summaryTokenCount?: number | null;
+  includeInPrompt?: boolean;
+}
+
+/** Apply the shared action patch without mutating the stored attachment. */
+export function applyAttachmentPatch(attachment: Attachment, patch: AttachmentPatch): Attachment {
+  const updated = { ...attachment };
+  if (patch.description !== undefined) updated.description = patch.description;
+  if (patch.includeInPrompt !== undefined) updated.includeInPrompt = patch.includeInPrompt;
+  if (patch.summaryTokenCount === null) delete updated.summaryTokenCount;
+  else if (patch.summaryTokenCount !== undefined) updated.summaryTokenCount = patch.summaryTokenCount;
+  return updated;
 }
 
 /** Provenance stamped on every attachment of an image-gen slot message
@@ -183,16 +209,37 @@ const AUDIO_MIMES = new Set([
   "audio/ogg",
   "audio/x-m4a",
   "audio/m4a",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/x-wav",
+  "audio/flac",
 ]);
 
-const TEXT_MIMES = new Set([
-  "application/json",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/yaml",
-  "text/x-jsonl",
-]);
+/**
+ * The ONE source of text-file attachment types: MIME -> stored extension.
+ * Insertion order matters for {@link textMimeForExtension}: the first MIME
+ * listed for an extension is its canonical one (`.jsonl` -> `application/x-ndjson`;
+ * `text/x-jsonl` is accepted as an alias). The asset service derives its upload
+ * allow-list, extension fallback and served Content-Type from this map.
+ */
+export const TEXT_MIME_TO_EXT: Readonly<Record<string, string>> = {
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "application/json": "json",
+  "application/x-ndjson": "jsonl",
+  "text/x-jsonl": "jsonl",
+  "text/csv": "csv",
+};
+
+const TEXT_MIMES: ReadonlySet<string> = new Set(Object.keys(TEXT_MIME_TO_EXT));
+
+const TEXT_EXT_TO_MIME: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const [mime, ext] of Object.entries(TEXT_MIME_TO_EXT)) {
+    if (!map.has(ext)) map.set(ext, mime);
+  }
+  return map;
+})();
 
 /**
  * Classify a MIME type into a broad attachment category.
@@ -209,6 +256,47 @@ export function classifyAttachment(mimeType: string): AttachmentType {
 /** Check whether a MIME type represents inline-able text content. */
 export function isTextMime(mimeType: string): boolean {
   return TEXT_MIMES.has(mimeType);
+}
+
+/** Sum the prompt weight of already-visible attachments without reading assets.
+ *  Text files use their full count, or their summary count while summarized.
+ *  Legacy summaries without a count use the caller's text estimator; legacy
+ *  full files without a count and all non-text attachments weigh zero.
+ *  Visibility belongs to {@link filterPromptVisibleAttachments}, not this helper. */
+export function attachmentPromptTokens(
+  attachments: ReadonlyArray<Attachment> | undefined,
+  estimateText: (text: string) => number,
+): number {
+  let total = 0;
+  for (const attachment of attachments ?? []) {
+    if (!isTextMime(attachment.mimeType)) continue;
+    total += attachment.description?.trim()
+      ? (attachment.summaryTokenCount ?? estimateText(attachment.description))
+      : (attachment.tokenCount ?? 0);
+  }
+  return total;
+}
+
+/** Canonical text MIME for a file extension (case-insensitive, with or without
+ *  the leading dot), or null when the extension is not a text-attachment type. */
+export function textMimeForExtension(extension: string): string | null {
+  return TEXT_EXT_TO_MIME.get(extension.replace(/^\./, "").toLowerCase()) ?? null;
+}
+
+/** Canonical text MIME derived from a file name's extension, or null when the
+ *  name has no extension or the extension is not a text-attachment type. */
+export function textMimeForFileName(fileName: string): string | null {
+  const dot = fileName.lastIndexOf(".");
+  return dot < 0 ? null : textMimeForExtension(fileName.slice(dot + 1));
+}
+
+/** Shared browser/server upload rule: OS text MIME guesses yield to a known
+ *  text extension, but a reported media type always keeps its meaning. */
+export function resolveAttachmentUploadMime(reportedMime: string, fileName: string): string {
+  const mime = reportedMime.split(";", 1)[0].trim().toLowerCase();
+  const media = IMAGE_MIMES.has(mime) || AUDIO_MIMES.has(mime)
+    || mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/");
+  return media ? mime : (textMimeForFileName(fileName) ?? mime);
 }
 
 // ─── Stored attachment parsing ──────────────────────────────────────────────
@@ -244,15 +332,32 @@ export function parseStoredAttachments(raw: string | null | undefined): Attachme
 
 /** Prompt-visibility filter for message attachments (IG-18): generated image
  * slots are pure illustration by default — the attachment is dropped from
- * the assembled prompt unless the per-image opt-in is ON. Everything else
- * (user uploads, voice notes, files) keeps its existing behavior. Without
+ * the assembled prompt unless includeInPrompt is explicitly true. Ordinary
+ * uploads (images, voice notes, files) are included when the flag is absent
+ * or true, and excluded only by explicit false. This is the ONE visibility
+ * rule for every prompt consumer. Without
  * this gate a slot in history would ride the executor's multimodal path
  * unconditionally: pixels for vision primaries, and a hard
  * VisionNotSupportedError on every later RP turn for non-vision primaries
  * (the slot's image is undescribed — the describe step covers only the
  * current user message's attachments). */
 export function filterPromptVisibleAttachments(attachments: Attachment[]): Attachment[] {
-  return attachments.filter((a) => a.imageGen === undefined || a.includeInPrompt === true);
+  return attachments.filter((a) => a.imageGen !== undefined
+    ? a.includeInPrompt === true
+    : a.includeInPrompt !== false);
+}
+
+/** The shared stored-row projection used by RP and Co-Author history.
+ * Empty columns omit the field; present columns retain RP's empty-list shape
+ * even when every attachment is excluded or the JSON cannot be parsed. */
+export function promptVisibleAttachmentsOf(raw: string | null | undefined): Attachment[] | undefined {
+  if (!raw) return undefined;
+  return promptVisibleAttachments(parseStoredAttachments(raw) ?? []);
+}
+
+/** The same prompt projection for consumers that already hold parsed rows. */
+export function promptVisibleAttachments(attachments: Attachment[]): Attachment[] {
+  return withImageGenPromptFallback(filterPromptVisibleAttachments(attachments));
 }
 
 /** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN
@@ -281,4 +386,3 @@ export function withImageGenPromptFallback(attachments: Attachment[]): Attachmen
     return { ...a, description: prompt };
   });
 }
-

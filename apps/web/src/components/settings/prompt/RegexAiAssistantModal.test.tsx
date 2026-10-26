@@ -18,6 +18,7 @@ import { beforeAll, afterEach, describe, expect, it, mock } from "bun:test";
 
 let userEvent: typeof import("@testing-library/user-event").default;
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
@@ -37,11 +38,13 @@ const localized = (key: string, opts?: Record<string, unknown>) => {
 	const label = useRussianLabels ? (RUSSIAN_LABELS[key] ?? key) : key;
 	return opts && opts.count !== undefined ? `${label}:${String(opts.count)}` : label;
 };
-const realI18n = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({ t: localized, tDynamic: localized }),
-}));
+// Hand port onto the shared seam (mutable-locale family): the suite's named
+// `localized` closes over `useRussianLabels` EXACTLY as the old inline mock
+// did — same function, same closure, now also delegating to real i18n when a
+// provider is mounted (which this suite never mounts).
+installI18nContextSeam({
+	custom: { t: localized, tDynamic: localized },
+});
 
 // Tests select the desktop modal or mobile sheet deterministically.
 let isMobile = false;

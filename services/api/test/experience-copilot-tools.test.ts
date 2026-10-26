@@ -4,6 +4,7 @@ import {
   type ExperienceCopilotRunSimulateDigest,
   type ExperienceCopilotRunTestDigest,
 } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
+import type { ExperienceCopilotTodoResult } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
 
 /**
  * Experience-Copilot tools propose rules/visual edits and run read-only tests;
@@ -139,6 +140,40 @@ context.experience.register({
   create() { return {}; },
 });
 `;
+
+/** AS-8e7b no-caps fixture (owner 2026-10-18: the assistant sees everything
+ *  the script produced — no invented economies): create() logs 30 console
+ *  lines and returns a state whose JSON runs past 2 000 chars, so a digest
+ *  that still capped either would visibly drop content. */
+const VERBOSE_RULES = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "verbose", name: "Verbose" },
+  capabilities: [],
+  create() {
+    for (var i = 1; i <= 30; i++) {
+      console.log("boot line " + i);
+    }
+    var chunk = "";
+    for (var j = 0; j < 25; j++) {
+      chunk = chunk + "0123456789abcdefghij"; // 25 × 20 = 500-char chunk
+    }
+    var blob = "";
+    for (var k = 0; k < 5; k++) {
+      blob = blob + chunk; // 5 × 500 = 2 500 chars → state JSON ≈ 2.5 KB
+    }
+    return { blob: blob, marker: "verbose-state" };
+  },
+  project(context) { return context.state; },
+  actions() { return [{ type: "noop", label: "No-op" }]; },
+  reduce(context) { return { state: context.state, status: "active", events: [] }; },
+});
+`;
+
+/** The exact 2 500-char blob VERBOSE_RULES' create() builds (the chunk string
+ *  repeated 125 times) — lets the no-caps pin assert stateSummary is the
+ *  COMPLETE JSON.stringify of the projected state, not a capped prefix. */
+const VERBOSE_BLOB = "0123456789abcdefghij".repeat(125);
 
 /** Shared tool-execution context stub (the tools ignore it). */
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
@@ -353,6 +388,23 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
     expect(edited.proposed).toContain("Tally");
   });
 
+  test("returns the WHOLE 30-entry console and the FULL state JSON — no caps (AS-8e7b)", async () => {
+    // Owner 2026-10-18: the assistant sees everything the script produced.
+    // The old caps kept the last 20 console entries and 1 500 state chars.
+    const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
+    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+
+    expect(digest.ok).toBe(true);
+    // All 30 create() console lines, in order — no 20-entry tail.
+    expect(digest.consoleTail).toEqual(
+      Array.from({ length: 30 }, (_, i) => `log: boot line ${i + 1}`),
+    );
+    // The ~2.5 KB state JSON comes back COMPLETE: byte-equal to the full
+    // stringify of the projected state, with no trailing «…» truncation mark.
+    expect(digest.stateSummary).toBe(JSON.stringify({ blob: VERBOSE_BLOB, marker: "verbose-state" }));
+    expect(digest.stateSummary?.endsWith("\u2026")).toBe(false);
+  });
+
   test("derived context is echoed with the default seats/grants and per-seat legality", async () => {
     const tools = buildExperienceCopilotTools({ rules: REFERENCE_ROUND_RULES });
     const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
@@ -449,6 +501,18 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
     expect(digest.stopReason).toBe("awaiting_human");
     expect(digest.launchContext?.source).toBe("sandbox");
   });
+
+  test("returns the WHOLE 30-entry console — no tail cap (AS-8e7b)", async () => {
+    // Owner 2026-10-18: the assistant sees everything the script produced —
+    // the simulation digest carries every create() line, not the last 20.
+    const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
+    const digest = await tools.run_simulate.execute({}, ctx) as ExperienceCopilotRunSimulateDigest;
+
+    expect(digest.ok).toBe(true);
+    expect(digest.consoleTail).toEqual(
+      Array.from({ length: 30 }, (_, i) => `log: boot line ${i + 1}`),
+    );
+  });
 });
 
 describe("experience-copilot-tools: suggest_visual_binding", () => {
@@ -470,7 +534,39 @@ describe("experience-copilot-tools: suggest_visual_binding", () => {
   });
 });
 
-describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => {
+describe("experience-copilot-tools: plan/read_plan", () => {
+  test("plan writes the full script-owned plan and returns its summary envelope", async () => {
+    let saved: unknown = null;
+    const tools = buildExperienceCopilotTools({
+      loadPlan: async () => saved as never,
+      savePlan: async (plan) => {
+        saved = plan;
+      },
+    });
+    const plan = {
+      goal: "Build the mini-app",
+      constraints: [],
+      tasks: [
+        { id: "scaffold", title: "Scaffold the mini-app", body: "", status: "pending" },
+        { id: "reducer", title: "Wire the reducer", body: "", status: "active" },
+      ],
+    };
+
+    const result = (await tools.plan.execute({ plan }, ctx)) as never;
+    expect(result).toEqual({ ok: true, activeTitle: "Wire the reducer", remaining: 2 });
+    expect(await tools.read_plan.execute({}, ctx)).toEqual(plan);
+  });
+
+  test("plan input schema is an OBJECT root `{plan}`", () => {
+    const tools = buildExperienceCopilotTools() as unknown as { plan: ToolSchemaProbe };
+    const plan = { goal: "x", constraints: [], tasks: [] };
+    expect(tools.plan.inputSchema.safeParse(plan).success).toBe(false);
+    expect(tools.plan.inputSchema.safeParse({}).success).toBe(false);
+    expect(tools.plan.inputSchema.safeParse({ plan }).success).toBe(true);
+  });
+});
+
+describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored PM-7)", () => {
   test("full-list rewrite — second call fully replaces the list and returns the summary", async () => {
     const calls: { title: string; status: string }[][] = [];
     const tools = buildExperienceCopilotTools({
@@ -485,8 +581,8 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
     ];
     const second = [{ title: "bind the visual", status: "active" }];
 
-    const r1 = (await tools.todo.execute({ items: first }, ctx)) as never;
-    const r2 = (await tools.todo.execute({ items: second }, ctx)) as never;
+    const r1 = (await tools.todo.execute({ items: first }, ctx)) as ExperienceCopilotTodoResult;
+    const r2 = (await tools.todo.execute({ items: second }, ctx)) as ExperienceCopilotTodoResult;
 
     expect(r1.ok).toBe(true);
     expect(r1.activeTitle).toBe("wire the reducer");
@@ -505,7 +601,10 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
         throw new Error("db down");
       },
     });
-    const r = (await tools.todo.execute({ items: [{ title: "a", status: "pending" }] }, ctx)) as never;
+    const r = (await tools.todo.execute(
+      { items: [{ title: "a", status: "pending" }] },
+      ctx,
+    )) as ExperienceCopilotTodoResult;
     expect(r.ok).toBe(false);
     expect(typeof r.error).toBe("string");
     expect(r.error).toContain("db down");
@@ -547,6 +646,19 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
       todo: ToolSchemaProbe;
     };
     expect(tools.todo.inputSchema.safeParse({ items: [{ title: "a", status: "in-progress" }] }).success).toBe(false);
+  });
+
+  test("PM-7: the todo description carries the todo-vs-plan choice guidance", () => {
+    // Owner ruling 2026-10-11: todo and plan coexist; the CHOICE guidance
+    // lives in the tool descriptions (prompt bytes stay untouched).
+    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
+      todo: { description?: string };
+      plan: { description?: string };
+    };
+    expect(tools.todo.description).toContain("CURRENT session");
+    expect(tools.todo.description).toContain("`plan` tool");
+    expect(tools.plan.description).toContain("serious multi-step work");
+    expect(tools.plan.description).toContain("`todo` tool");
   });
 });
 
@@ -595,22 +707,25 @@ describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
   });
 });
 
-describe("experience-copilot-tools: todo/ask_user gating", () => {
-  test("absent/disabled toolSet drops todo and ask_user", () => {
+describe("experience-copilot-tools: todo/plan/read_plan/ask_user gating", () => {
+  test("absent/disabled toolSet drops todo, plan, read_plan, and ask_user", () => {
     const tools = buildExperienceCopilotTools({ toolSet: { run_test: true } }) as unknown as Record<
       string,
       unknown
     >;
     expect(tools.todo).toBeUndefined();
+    expect(tools.plan).toBeUndefined();
+    expect(tools.read_plan).toBeUndefined();
     expect(tools.ask_user).toBeUndefined();
   });
 
-  test("enabled toolSet includes todo and ask_user, keeps read_skill_file", () => {
-    const tools = buildExperienceCopilotTools({ toolSet: { todo: true, ask_user: true } }) as unknown as Record<
-      string,
-      unknown
-    >;
+  test("enabled toolSet includes todo, plan, read_plan, and ask_user, keeps read_skill_file", () => {
+    const tools = buildExperienceCopilotTools({
+      toolSet: { todo: true, plan: true, read_plan: true, ask_user: true },
+    }) as unknown as Record<string, unknown>;
     expect(tools.todo).toBeDefined();
+    expect(tools.plan).toBeDefined();
+    expect(tools.read_plan).toBeDefined();
     expect(tools.ask_user).toBeDefined();
     expect(tools.run_test).toBeUndefined();
     expect(tools.read_skill_file).toBeDefined();
@@ -618,19 +733,21 @@ describe("experience-copilot-tools: todo/ask_user gating", () => {
 });
 
 describe("experience-copilot-tools: ToolSet shape + gating", () => {
-  test("all eight tools are present by default", () => {
+  test("all ten tools are present by default", () => {
     const tools = buildExperienceCopilotTools() as unknown as Record<string, unknown>;
     expect(tools.write_buffer).toBeDefined();
     expect(tools.edit_buffer).toBeDefined();
     expect(tools.run_test).toBeDefined();
     expect(tools.run_simulate).toBeDefined();
     expect(tools.suggest_visual_binding).toBeDefined();
+    expect(tools.plan).toBeDefined();
+    expect(tools.read_plan).toBeDefined();
     expect(tools.todo).toBeDefined();
     expect(tools.ask_user).toBeDefined();
     // read_skill_file is always included (reused from the Co-Author skill system).
     expect(tools.read_skill_file).toBeDefined();
     expect(Object.keys(tools).sort()).toEqual(
-      ["ask_user", "edit_buffer", "read_skill_file", "run_simulate", "run_test", "suggest_visual_binding", "todo", "write_buffer"],
+      ["ask_user", "edit_buffer", "plan", "read_plan", "read_skill_file", "run_simulate", "run_test", "suggest_visual_binding", "todo", "write_buffer"],
     );
   });
 
@@ -756,5 +873,48 @@ describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", 
       ctx,
     )) as unknown as { notValidated?: string };
     expect(out.notValidated).toBeUndefined();
+  });
+});
+
+// ─── AS-2c buffer-tool description pin ───────────────────────────────────────
+//
+// The buffer-tool MECHANISM moved to domain/agent/agent-buffer-tools.ts and
+// the experience wiring composes the strings from fragments. Tool descriptions
+// are model-facing behavior (not byte-pinned by AS-1), so this pins the
+// pre-AS-2c literals verbatim — copied from the pre-carve source, byte for
+// byte — plus the target-enum describe texts (the one place the factory
+// composes kind copy into the zod schema).
+
+describe("experience-copilot-tools: buffer-tool description pin (AS-2c)", () => {
+  test("write_buffer/edit_buffer descriptions are byte-identical to the pre-AS-2c literals", () => {
+    const WRITE_BUFFER_DESCRIPTION =
+      "Replace the ENTIRE rules OR visual buffer with `content`. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale. " +
+      "Use it for a ground-up rewrite of a buffer. " +
+      "It must be the FIRST change to that buffer in a turn — once a buffer has been mutated, refine it with edit_buffer instead. " +
+      "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn. " +
+      "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.";
+    const EDIT_BUFFER_DESCRIPTION =
+      "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale before any edit runs. " +
+      "Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
+      "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error. " +
+      "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.";
+    const WRITE_TARGET_DESCRIBE =
+      "REQUIRED on every call. Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source). Never omit.";
+    const EDIT_TARGET_DESCRIBE =
+      "REQUIRED on every call. Which buffer to edit: 'rules' or 'visual'. Never omit.";
+
+    const tools = buildExperienceCopilotTools();
+    expect(tools.write_buffer.description).toBe(WRITE_BUFFER_DESCRIPTION);
+    expect(tools.edit_buffer.description).toBe(EDIT_BUFFER_DESCRIPTION);
+
+    // The zod target-enum describe texts, via a minimal shape probe.
+    const writeSchema = tools.write_buffer.inputSchema as unknown as {
+      shape: { target: { description: string } };
+    };
+    const editSchema = tools.edit_buffer.inputSchema as unknown as {
+      shape: { target: { description: string } };
+    };
+    expect(writeSchema.shape.target.description).toBe(WRITE_TARGET_DESCRIBE);
+    expect(editSchema.shape.target.description).toBe(EDIT_TARGET_DESCRIBE);
   });
 });

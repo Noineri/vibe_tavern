@@ -224,12 +224,17 @@ describe("GeminiTtsFactory voices + probe", () => {
     expect(GEMINI_TTS_VOICES).toHaveLength(30);
   });
 
-  test("probe ok: counts -tts models (real /v1beta/models shape)", async () => {
+  // Behavior change (owner ruling 2026-10-15, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+  // step 8): the `-tts` name count is gone — the probe counts the whole
+  // catalogue, exactly what listModels returns.
+  test("probe ok: counts every catalogue model (real /v1beta/models shape)", async () => {
     captureFetch(() =>
       jsonResponse(200, {
         models: [
           { name: "models/gemini-2.5-flash-preview-tts" },
           { name: "models/gemini-2.5-flash" },
+          { name: "" },
+          { displayName: "no name" },
         ],
       }),
     );
@@ -238,7 +243,34 @@ describe("GeminiTtsFactory voices + probe", () => {
     const result = await backend.probe();
 
     expect(result.ok).toBe(true);
-    expect(result.detail).toBe("1 TTS models");
+    expect(result.detail).toBe("2 models");
+  });
+
+  // Same behavior change: the `tts` name filter is gone from listModels.
+  test("listModels lists the live catalogue unfiltered, ids without the models/ prefix", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, {
+        models: [
+          { name: "models/gemini-2.5-flash-preview-tts" },
+          { name: "models/gemini-2.5-flash" },
+          { name: "models/text-embedding-004" },
+          { name: "" },
+          "junk",
+        ],
+      }),
+    );
+    const backend = geminiTtsFactory({ apiKey: "k" });
+
+    const models = await backend.listModels!();
+
+    expect(models).toEqual([
+      { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
+      { id: "gemini-2.5-flash", label: "gemini-2.5-flash" },
+      { id: "text-embedding-004", label: "text-embedding-004" },
+    ]);
+    const req = captured()!;
+    expect(req.url).toBe(MODELS_URL);
+    expect((req.init.headers as Record<string, string>)["x-goog-api-key"]).toBe("k");
   });
 
   test("probe non-200 → ok:false with status", async () => {

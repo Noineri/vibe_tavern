@@ -3,6 +3,7 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
+import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 import type { Character, Message as DbMessage, Chat as DbChat, AppDb } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
@@ -156,6 +157,8 @@ export interface ChatModeAssembleLoaders {
  * `loaders` gives non-RP strategies raw state access (see {@link ChatModeAssembleLoaders}).
  */
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
+  /** Optional live co-author editor snapshot. Prompt/tool consumption is mode-owned. */
+  coauthorEditorState?: CoauthorEditorState;
   promptService: PromptAssemblyService;
   /** Service-prompt DB handle — when present, co-author base resolves via the active profile. */
   db?: AppDb;
@@ -168,6 +171,8 @@ export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
    * delegation tools then throw a clear error if invoked). RP mode ignores it.
    */
   loreDelegate?: import("../coauthor/lore/lore-delegate.js").LoreDelegate;
+  /** Optional AI-delegation callback for tracker-template generation (CT-11). */
+  trackerDelegate?: import("../coauthor/tracker/tracker-delegate.js").TrackerDelegate;
   /**
    * CE-B1: optional lookup that loads a persisted lore entity's current state
    * as a draft node, so the edit tools (edit_lorebook / edit_lore_entry /

@@ -1,4 +1,48 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
+export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
+export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
+export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
+export {
+  agentBranchForkSidechatRequestSchema,
+  agentBranchForkSidechatResultSchema,
+  agentBranchSidechatSummarySchema,
+} from "./agent-branch-sidechat-schema.js";
+export type {
+  AgentBranchForkSidechatRequest,
+  AgentBranchForkSidechatResult,
+  AgentBranchSidechatSummary,
+} from "./agent-branch-sidechat-schema.js";
+export { agentThreadEventSchema } from "./agent-thread-event-schema.js";
+export type { AgentThreadEventWire } from "./agent-thread-event-schema.js";
+export {
+  agentKindSettingsSchema,
+  agentKindSettingsPatchSchema,
+} from "./agent-kind-settings-schema.js";
+export type {
+  AgentKindSettingsWire,
+  AgentKindSettingsPatchRequest,
+} from "./agent-kind-settings-schema.js";
+export {
+  agentChatSettingsSchema,
+  agentChatSettingsPatchSchema,
+} from "./agent-chat-settings-schema.js";
+export type {
+  AgentChatSettingsWire,
+  AgentChatSettingsPatchRequest,
+} from "./agent-chat-settings-schema.js";
+export {
+  reviewHunkCountsSchema,
+  reviewOutcomeSchema,
+  reviewTargetRecordSchema,
+  agentReviewSnapshotSchema,
+} from "./agent-review-snapshot.js";
+export type {
+  ReviewHunkCounts,
+  ReviewOutcome,
+  ReviewTargetRecord,
+  AgentReviewSnapshot,
+} from "./agent-review-snapshot.js";
 export { createCharacterSchema, updateCharacterSchema, buildCharacterDraftSchema, createVersionSchema, renameVersionSchema } from "./character-schema.js";
 export type { BuildCharacterDraft } from "./character-schema.js";
 export {
@@ -18,6 +62,7 @@ export {
   coauthorCorrectionSchema,
   coauthorTargetSchema,
   coauthorToolOutputSchema,
+  coauthorTrackerTemplateOutputSchema,
   coauthorLoreBundleOutputSchema,
   coauthorLoreBundleSchema,
   LOREBOOK_REVIEW_SETTING_FIELDS,
@@ -30,11 +75,14 @@ export {
   skillCatalogErrorSchema,
   skillCatalogSchema,
   skillImportResultSchema,
+  skillContentSchema,
+  skillSaveSchema,
+  reorderSkillsSchema,
   coauthorEditItemSchema,
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTrackerTemplateOutput, CoauthorTarget, CoauthorEditorState, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, SkillContentDto, SkillSaveDto, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
@@ -178,6 +226,7 @@ export type {
   UpdateSceneTrackerConfig,
   ScenePathResolution,
 } from "./tracker-schema.js";
+export { trackerTemplateSchema, updateTrackerTemplateSchema } from "./tracker-template-schema.js";
 export {
   importJsonSchema,
   importJsonBatchSchema,
@@ -216,7 +265,7 @@ export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfi
 export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus, RevealNarrationInput } from "./tts-schema.js";
 export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
 export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput, SttModelInfoValue, DraftSttModelsInput } from "./stt-schema.js";
-export { imageGenBackendSchema, imageGenKreaParamsSchema, imageGenerationModeSchema, imageGenSizeSupportSchema, imageGenCapabilityFlagsSchema, imageGenDefaultParamsSchema, imageGenModeSizePresetSchema, imageGenModeSizePresetsSchema, imageGenUserSizeEntrySchema, imageGenProfileSchema, createImageGenProfileSchema, updateImageGenProfileSchema, imageGenProbeResultSchema, imageGenModelInfoSchema, imageGenSamplerInfoSchema, imageGenSchedulerInfoSchema, imageGenDitSidecarsSchema, IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, imageGenLoraInfoSchema, imageGenUpscalerInfoSchema, imageGenProgressInfoSchema, draftImageGenModelsSchema, imageGenGenerateOverridesSchema, generateImageGenSchema, draftImageGenPromptSchema, draftImageGenPromptResponseSchema, imageGenGeneratedAttachmentSchema, imageGenGenerateResponseSchema, promoteImageGenAttachmentSchema, imageGenGalleryPromoteResponseSchema, favoriteImageGenModelSchema, imageGenModelFavoriteSchema, imageGenModelSettingsOverlaySchema, imageGenModelSettingsSchema, upsertImageGenModelSettingsSchema, imageGenSamplerSetPayloadSchema, imageGenSamplerSetSchema, imageGenSamplerSetListSchema, createImageGenSamplerSetSchema, updateImageGenSamplerSetSchema, importImageGenSamplerSetSchema, imageGenPromptCapSchema, imageGenPromptCapListSchema, imagePromptTemplateRowKeySchema, imagePromptCanonSourceSchema, imagePromptTemplateCellSchema, imagePromptFamilyInfoSchema, imagePromptFamiliesSchema, setImageGenProfileFamilySchema, imageGenFamilyDetectionSourceSchema, imageGenFamilyDetectionAttemptSchema, imageGenFamilyDetectionResultSchema } from "./image-gen-schema.js";
+export { imageGenBackendSchema, imageGenKreaParamsSchema, imageGenerationModeSchema, imageGenSizeSupportSchema, imageGenCapabilityFlagsSchema, imageGenDefaultParamsSchema, imageGenModeSizePresetSchema, imageGenModeSizePresetsSchema, imageGenUserSizeEntrySchema, imageGenProfileSchema, createImageGenProfileSchema, updateImageGenProfileSchema, imageGenProbeResultSchema, imageGenModelInfoSchema, imageGenSamplerInfoSchema, imageGenSchedulerInfoSchema, imageGenDitSidecarsSchema, IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, imageGenModelListQuerySchema, imageGenLoraInfoSchema, imageGenUpscalerInfoSchema, imageGenProgressInfoSchema, draftImageGenModelsSchema, imageGenGenerateOverridesSchema, generateImageGenSchema, draftImageGenPromptSchema, draftImageGenPromptResponseSchema, imageGenGeneratedAttachmentSchema, imageGenGenerateResponseSchema, promoteImageGenAttachmentSchema, imageGenGalleryPromoteResponseSchema, favoriteImageGenModelSchema, imageGenModelFavoriteSchema, imageGenModelSettingsOverlaySchema, imageGenModelSettingsSchema, upsertImageGenModelSettingsSchema, imageGenSamplerSetPayloadSchema, imageGenSamplerSetSchema, imageGenSamplerSetListSchema, createImageGenSamplerSetSchema, updateImageGenSamplerSetSchema, importImageGenSamplerSetSchema, imageGenPromptCapSchema, imageGenPromptCapListSchema, imagePromptTemplateRowKeySchema, imagePromptCanonSourceSchema, imagePromptTemplateCellSchema, imagePromptFamilyInfoSchema, imagePromptFamiliesSchema, setImageGenProfileFamilySchema, imageGenFamilyDetectionSourceSchema, imageGenFamilyDetectionAttemptSchema, imageGenFamilyDetectionResultSchema } from "./image-gen-schema.js";
 export type { ImageGenBackendValue, ImageGenerationModeValue, ImageGenSizeSupportValue, ImageGenCapabilityFlagsValue, ImageGenDefaultParamsValue, ImageGenModeSizePresetValue, ImageGenModeSizePresetsValue, ImageGenUserSizeEntryValue, ImageGenProfileValue, CreateImageGenProfileInput, UpdateImageGenProfileInput, ImageGenProbeResultValue, ImageGenModelInfoValue, ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenDitSidecarsValue, ImageGenLoraInfoValue, ImageGenUpscalerInfoValue, ImageGenProgressInfoValue, DraftImageGenModelsInput, ImageGenGenerateOverridesValue, GenerateImageGenInput, DraftImageGenPromptInput, DraftImageGenPromptResponseValue, ImageGenGeneratedAttachmentValue, ImageGenGenerateResponseValue, PromoteImageGenAttachmentInput, ImageGenGalleryPromoteResponseValue, FavoriteImageGenModelInput, ImageGenModelFavoriteValue, ImageGenModelSettingsOverlayValue, ImageGenModelSettingsValue, UpsertImageGenModelSettingsValue, ImageGenSamplerSetPayloadValue, ImageGenSamplerSet, ImageGenSamplerSetList, ImageGenSamplerSetCreate, ImageGenSamplerSetUpdate, ImageGenSamplerSetImport, ImageGenPromptCap, ImageGenPromptCapList, ImagePromptTemplateRowKeyValue, ImagePromptCanonSourceValue, ImagePromptTemplateCellValue, ImagePromptFamilyInfoValue, ImagePromptFamiliesValue, ImagePromptFamilyValue, SetImageGenProfileFamilyInput, ImageGenFamilyDetectionSourceValue, ImageGenFamilyDetectionAttemptValue, ImageGenFamilyDetectionResultValue } from "./image-gen-schema.js";
 
 export {
@@ -225,6 +274,7 @@ export {
   setCoauthorModuleSchema,
   coauthorModuleCreateSchema,
   coauthorModuleUpdateSchema,
+  reorderCoauthorModulesSchema,
   COAUTHOR_TOOL_KEYS,
   COAUTHOR_MAX_STEPS_MIN,
   COAUTHOR_MAX_STEPS_MAX,
@@ -267,8 +317,11 @@ export {
   experienceCopilotLaunchContextSchema,
   experienceCopilotStreamRequestSchema,
   experienceCopilotStreamAnswerSchema,
+  type ExperienceCopilotStreamAskAnswer,
+  experienceCopilotStreamPermissionAnswerSchema,
   experienceCopilotThreadSchema,
   experienceCopilotMessageSchema,
+  experienceCopilotMessageEditSchema,
   experienceCopilotBoundVisualSchema,
   experienceCopilotContextMetricsSchema,
   experienceCopilotContextTargetTypeSchema,
@@ -277,11 +330,17 @@ export {
   copilotTodoItemSchema,
   copilotTodoListSchema,
   copilotToolSetSchema,
+  scriptAgentToolSetSchema,
+  sidechatOocToolSetSchema,
+  agentToolSetSchema,
   copilotProfileSchema,
   copilotProfileListSchema,
   copilotProfileCreateSchema,
   copilotProfileUpdateSchema,
+  reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
+  SCRIPT_AGENT_TOOL_KEYS,
+  SIDECHAT_OOC_TOOL_KEYS,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
@@ -292,6 +351,7 @@ export type {
   ExperienceCopilotStreamAnswer,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
+  ExperienceCopilotMessageEditRequest,
   ExperienceCopilotBoundVisual,
   ExperienceCopilotContextMetrics,
   ExperienceCopilotContextTargetType,
@@ -300,10 +360,16 @@ export type {
   CopilotTodoItem,
   CopilotTodoList,
   CopilotToolSet,
+  ScriptAgentToolSet,
+  SidechatOocToolSet,
+  AgentToolSet,
   CopilotProfile,
   CopilotProfileCreate,
   CopilotProfileUpdate,
 } from "./experience-copilot-schema.js";
+
+export { experienceTestDiscoverRequestSchema } from "./experience-test-discover-schema.js";
+export type { ExperienceTestDiscoverRequestDto } from "./experience-test-discover-schema.js";
 
 export {
   // Enums

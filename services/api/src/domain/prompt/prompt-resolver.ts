@@ -19,6 +19,7 @@ import {
 import { brandId } from "@vibe-tavern/domain";
 import { buildPromptVariableContext, createFullMacroEngine, type MacroVariableScope } from "@vibe-tavern/prompt-pipeline";
 import { notFound } from "../../shared/errors.js";
+import { findBranchOfChat } from "../chat/chat-branch-ownership.js";
 import {
 	type CharacterRecord,
 	toCharacterRecord,
@@ -277,8 +278,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 
 		// 5. Timed state belongs to the selected branch, not its parent chat:
 		// SillyTavern branches are separate chat files with independent metadata.
-		const branch = await this.stores.chats.getBranch(input.branchId);
-		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
+		// The ownership pair resolves through the shared SC-0l module; a missing
+		// branch and a foreign branch stay indistinguishable (both null → the
+		// same soft empty-lore return as before).
+		const branch = await findBranchOfChat(this.stores.chats, chat.id, input.branchId);
+		if (!branch) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 		const activationState = branch.loreActivationState as LoreActivationState;
 		// Keep activation aligned with assembly's single summary selection: only
 		// snapshots injected into the chat-summary slot become scan text.
@@ -464,6 +468,10 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		 *  `context.persona` (read-only). Optional — absent when no persona is
 		 *  resolved, in which case scripts see `context.persona` as undefined. */
 		persona?: { name: string; description: string };
+		/** Run scripts without persisting the updated script state (SC-4c): the
+		 *  engine still runs (injections and field mutations shape the assembly),
+		 *  but a read must not advance chat state. */
+		dryRun?: boolean;
 	}): Promise<{
 		personality: string;
 		scenario: string;
@@ -553,10 +561,15 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			persona: input.persona,
 		});
 
-		// 4. Persist updated script state
-		try {
-			await this.stores.chats.updateScriptState(chat.id, result.updatedScriptState);
-		} catch { /* don't crash pipeline on state persistence failure */ }
+		// 4. Persist updated script state — never under dryRun (SC-4c): the
+		//    script engine still ran (its injections and field mutations shaped
+		//    this assembly exactly as on a real turn), but a read must not
+		//    advance chat state; only a real send/regenerate persists.
+		if (!input.dryRun) {
+			try {
+				await this.stores.chats.updateScriptState(chat.id, result.updatedScriptState);
+			} catch { /* don't crash pipeline on state persistence failure */ }
+		}
 
 		return {
 			personality: result.character.personality,

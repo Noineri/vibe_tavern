@@ -1,27 +1,22 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
 const realMasterDetail = await import("../../../shared/MasterDetailModal.js");
+// Co-load contract (master-list.test.tsx registers the SAME mocks;
+// mock.module is process-global, last-write-wins — the factories must stay
+// shape-identical so either registration order is safe). The rows render the
+// REAL MasterDetailMobileDrillDown with `isDetailOpen: false` (the ML-8
+// rework lesson: a null-drill-down stub poisons the primitive's co-load).
 
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../shared/MasterDetailModal.js", () => ({
   ...realMasterDetail,
   useMasterDetail: () => ({ isMobile: false, isDetailOpen: false, openDetail: () => {}, closeDetail: () => {} }),
-  MasterDetailMobileDrillDown: () => null,
 }));
 
 const { act, cleanup, render, within } = await import("@testing-library/react");
@@ -52,12 +47,13 @@ function makeTts(overrides: Record<string, unknown> = {}) {
     filteredProfiles: [] as unknown[],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
+    defaultProfileId: null as string | null,
   };
   return {
     ...base,
     ...overrides,
     filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : base.profiles,
-  } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+  } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 }
 
 describe("TtsSection", () => {
@@ -80,7 +76,45 @@ describe("TtsSection", () => {
     expect(rows.length).toBe(2);
     const editingRow = view.baseElement.querySelector('[data-profile-id="p1"]') as HTMLElement;
     expect(editingRow.className).toContain("border-l-accent");
-    expect(editingRow.querySelector(".bg-accent")).toBeTruthy();
+    // Behavior change (was: the editing row carried an accent hand-rolled
+    // dot; now: the primitive owns the dot and selection owns the accent —
+    // owner follow-up 2026-10-24. No default set → no dot anywhere).
+    expect(editingRow.querySelector(".bg-accent")).toBeNull();
+    expect(editingRow.querySelector(".bg-success")).toBeNull();
+  });
+
+  it("marks the default profile with the unified green dot", async () => {
+    // Owner follow-up 2026-10-24: TTS rows pass
+    // `active={p.id === hook.defaultProfileId}` — the dot follows the
+    // persisted default; inactive rows show nothing.
+    const tts = makeTts({
+      profiles: [
+        { id: "p1", name: "Alpha", backend: "kokoro", hasStoredApiKey: true, config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: true, createdAt: "", updatedAt: "" },
+        { id: "p2", name: "Beta", backend: "gemini", hasStoredApiKey: true, config: {}, voiceId: "", lang: "en", sortOrder: 1, isDefault: false, createdAt: "", updatedAt: "" },
+      ] as unknown[],
+      defaultProfileId: "p1",
+    });
+    const view = render(<TtsSection tts={tts} />);
+    const defaultRow = view.baseElement.querySelector('[data-profile-id="p1"]') as HTMLElement;
+    expect(defaultRow.querySelector(".bg-success")).toBeTruthy();
+    const otherRow = view.baseElement.querySelector('[data-profile-id="p2"]') as HTMLElement;
+    expect(otherRow.querySelector(".bg-success")).toBeNull();
+    expect(otherRow.querySelector(".bg-danger")).toBeNull();
+  });
+
+  it("renders the danger tone for a default profile without a usable key", async () => {
+    // The provider auth state survives the unification: active without a
+    // stored key renders the red dot (the old defaultStatusClassName rule).
+    const tts = makeTts({
+      profiles: [
+        { id: "p1", name: "Alpha", backend: "kokoro", hasStoredApiKey: false, autoKeyProviderName: null, config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: true, createdAt: "", updatedAt: "" },
+      ] as unknown[],
+      defaultProfileId: "p1",
+    });
+    const view = render(<TtsSection tts={tts} />);
+    const defaultRow = view.baseElement.querySelector('[data-profile-id="p1"]') as HTMLElement;
+    expect(defaultRow.querySelector(".bg-danger")).toBeTruthy();
+    expect(defaultRow.querySelector(".bg-success")).toBeNull();
   });
 
   it("clicking a row calls select and + New calls startCreate", async () => {

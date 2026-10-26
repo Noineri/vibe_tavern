@@ -1,27 +1,23 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && "name" in params
         ? `${key}:${String(params.name)}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { SttSection } = await import("./SttSection.js");
-const { useSttProfiles } = await import("./use-stt-profiles.js");
+const { useSttProfiles } = await import("../../../../hooks/use-stt-profiles.js");
 const { useMasterDetail, MasterDetailModal } = await import("../../../shared/MasterDetailModal.js");
 
 type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;
@@ -66,6 +62,7 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     filteredProfiles: [makeRecord()] as SttRecord[],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
+    defaultProfileId: null as string | null,
   };
   return {
     ...base,
@@ -106,7 +103,39 @@ describe("SttSection", () => {
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
     expect(view.getByText("Dictation")).toBeTruthy();
-    expect(view.getByTestId("stt-profile-row").querySelector(".bg-accent")).toBeTruthy();
+    // Behavior change (was: the editing row carried an accent hand-rolled
+    // dot; now: the primitive owns the dot and selection owns the accent —
+    // owner follow-up 2026-10-24. No default set → no dot anywhere).
+    expect(view.getByTestId("stt-profile-row").querySelector(".bg-accent")).toBeNull();
+    expect(view.getByTestId("stt-profile-row").querySelector(".bg-success")).toBeNull();
+  });
+
+  it("marks the default profile with the unified green dot", async () => {
+    // Owner follow-up 2026-10-24: STT rows pass
+    // `active={p.id === hook.defaultProfileId}` — the dot follows the
+    // persisted default; inactive rows show nothing.
+    const stt = makeStt({
+      profiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
+      filteredProfiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
+      editingId: null,
+      defaultProfileId: "p1",
+    }) as unknown as ReturnType<typeof useSttProfiles>;
+    const view = render(
+      <MasterDetailModal
+        isOpen={true}
+        title="x"
+        masterContent={() => <SectionHost stt={stt} />}
+        detailContent={null}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(view.getAllByTestId("stt-profile-row")).toHaveLength(2));
+    const rows = view.getAllByTestId("stt-profile-row");
+    const defaultRow = rows.find((row) => row.getAttribute("data-profile-id") === "p1")!;
+    expect(defaultRow.querySelector(".bg-success")).toBeTruthy();
+    const otherRow = rows.find((row) => row.getAttribute("data-profile-id") === "p2")!;
+    expect(otherRow.querySelector(".bg-success")).toBeNull();
+    expect(otherRow.querySelector(".bg-danger")).toBeNull();
   });
 
   it("loading state shows the loading label", async () => {

@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { CharacterRuntimeApi, CharacterAssetRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
+import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
+import { unprocessable } from "../../shared/errors.js";
 
 export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAssetRuntimeApi) {
   return new Hono()
@@ -44,6 +46,20 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
       return c.json(
         await runtime.updateCharacter(c.req.param("characterId"), body),
       );
+    })
+    .get("/api/characters/:characterId/tracker-template", async (c) => {
+      return c.json(await runtime.getTrackerTemplate(c.req.param("characterId")));
+    })
+    .put("/api/characters/:characterId/tracker-template", zValidator("json", schemas.updateTrackerTemplateSchema), async (c) => {
+      const template = normalizeTrackerTemplate(c.req.valid("json").template);
+      if (!template) {
+        throw unprocessable("The tracker template is invalid.", { code: "invalid_tracker_template" });
+      }
+      return c.json(await runtime.updateTrackerTemplate(c.req.param("characterId"), template));
+    })
+    .delete("/api/characters/:characterId/tracker-template", async (c) => {
+      await runtime.deleteTrackerTemplate(c.req.param("characterId"));
+      return c.body(null, 204);
     })
     .delete("/api/characters/:characterId", async (c) => {
       runtime.deleteCharacter(c.req.param("characterId"));

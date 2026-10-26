@@ -10,30 +10,23 @@
  * `React.memo` around `Markdown` does. These tests observe that seam directly:
  * how many times it is entered, and with which plugin lists.
  *
- * The `mock.module` factory spreads the real namespace first. That is mandatory
- * here, not defensive: `mock.module` is process-global, so a partial factory
- * turns every other export of the module into `undefined` for the rest of the
- * run.
+ * The seam itself lives in `test/react-markdown-seam.ts`: ONE factory shared
+ * with markdown.test.tsx (co-load contract, owner order 2026-10-24), spreading
+ * the real namespace first — mandatory, not defensive: `mock.module` is
+ * process-global, so a partial factory turns every other export of the module
+ * into `undefined` for the rest of the run. The factory records the options
+ * and DELEGATES to the real renderer; these tests assert seam entry counts
+ * and plugin lists, which delegation preserves.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { Options } from "react-markdown";
+import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import type { PluggableList } from "unified";
+import { installReactMarkdownSeam, seamCalls } from "../../test/react-markdown-seam.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 const { render } = await import("@testing-library/react");
 
-const realReactMarkdown = await import("react-markdown");
-
-const seamCalls: Options[] = [];
-
-mock.module("react-markdown", () => ({
-  ...realReactMarkdown,
-  default: function ReactMarkdownSeam(options: Options) {
-    seamCalls.push(options);
-    return <span data-testid="seam">{options.children}</span>;
-  },
-}));
+installReactMarkdownSeam();
 
 let Markdown: typeof import("./markdown.js").Markdown;
 

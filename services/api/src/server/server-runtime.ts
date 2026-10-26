@@ -33,6 +33,21 @@ import { createRuntimeStore } from "../runtime/session/session-runtime-store.js"
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
 import { createCopilotSkillService } from "../domain/interactive/copilot/copilot-skill-service.js";
 import { resolveCopilotUserSkillsRoot, resolveExperienceCopilotSkillsRoot } from "../domain/interactive/copilot/experience-copilot-module.js";
+import {
+	resolveScriptAgentSkillsRoot,
+	resolveScriptAgentUserSkillsRoot,
+} from "../domain/agent/script-agent/script-agent-module.js";
+import {
+	resolveSidechatSkillsRoot,
+	resolveSidechatUserSkillsRoot,
+} from "../domain/agent/kinds/sidechat-ooc-kind.js";
+// agent-kind registration (AS-2a): experience registers itself at startup;
+// the script kind (AS-7) registers beside it — prompt/dice threads resolve;
+// the sidechat kind (SC-4a) is the first chat-owned kind — sidechat threads
+// resolve by the kind stored on their thread row.
+import "../domain/agent/kinds/experience-kind.js";
+import "../domain/agent/kinds/script-kind.js";
+import "../domain/agent/kinds/sidechat-ooc-kind.js";
 import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";
@@ -216,13 +231,31 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		resolveCopilotUserSkillsRoot(config.dataDir),
 		await resolveExperienceCopilotSkillsRoot(),
 	);
+	// Script-agent skill library (AS-8d1) — the SAME generic service over the
+	// script-agent roots (<dataDir>/agent-script/skills + the built-in asset
+	// root), so each agent kind serves and reads its OWN skill library.
+	const scriptSkillService = new SkillLibraryService(
+		resolveScriptAgentUserSkillsRoot(config.dataDir),
+		await resolveScriptAgentSkillsRoot(),
+	);
+	// Sidechat skill library (SIDECHAT_PLAN SC-5) — the same generic service
+	// over the sidechat roots (<dataDir>/agent-sidechat/skills + the built-in
+	// asset root): the sidechat kind serves its own (today empty) library, and
+	// a skill pinned in a sidechat thread resolves from it, never another
+	// kind's roots.
+	const sidechatSkillService = new SkillLibraryService(
+		resolveSidechatUserSkillsRoot(config.dataDir),
+		await resolveSidechatSkillsRoot(),
+	);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 		dataDir: config.dataDir,
 		getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
+	const summaryAssetLoader = (assetId: string) => assetService.loadBuffer(assetId);
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService, null, undefined, summaryAssetLoader);
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
@@ -237,11 +270,10 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	// Feature registry — features subscribe to events and mount routes
 	const features = new FeatureRegistry();
-	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events }));
+	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events, assetLoader: summaryAssetLoader }));
 	features.register(createChatEventsFeature());
 	features.register(createInsightsFeature({ objectiveService, trackerService }));
 
-	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
 	const mobileAccessService = await MobileAccessService.create(config.dataDir);
 
 	// RuntimeApi adapter
@@ -303,6 +335,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceModelEffectService,
 		experienceContextService,
 		copilotSkillService,
+		scriptSkillService,
+		sidechatSkillService,
+		summaryAssetLoader,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

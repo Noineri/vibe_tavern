@@ -10,21 +10,12 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ProviderModelListOption } from "./ProviderModelList.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
 // implement. The mutable flag lets one file pin BOTH branches (the mobile
@@ -134,8 +125,10 @@ describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
     expect(refresh.textContent).toBe("");
     // The closed trigger's metrics that 33.5px derives from (parity pin, not a
     // re-implementation): 13px text on the preflight 1.5 line-height + py-[6px].
+    // Behavior change: was `text-[13px]` → now `text-[calc(var(--ui-fs)-1px)]`,
+    // basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 6.
     const trigger = view.getByText("gpt-4o").closest("button")!;
-    expect(trigger.className).toContain("text-[13px]");
+    expect(trigger.className).toContain("text-[calc(var(--ui-fs)-1px)]");
     expect(trigger.className).toContain("py-[6px]");
     view.unmount();
   });
@@ -146,7 +139,9 @@ describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
     const refresh = view.getByTestId("provider-models-refresh");
     expect(refresh.className).not.toContain("min-h-[33.5px]");
     expect(refresh.className).toContain("font-ui");
-    expect(refresh.className).toContain("text-[13px]");
+    // Behavior change: was `text-[13px]` → now `text-[calc(var(--ui-fs)-1px)]`,
+    // basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 6.
+    expect(refresh.className).toContain("text-[calc(var(--ui-fs)-1px)]");
     expect(refresh.textContent).toContain("refresh_models");
     view.unmount();
   });

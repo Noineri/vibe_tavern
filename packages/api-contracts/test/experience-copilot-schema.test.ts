@@ -14,7 +14,12 @@ import {
   copilotTodoListSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
+  copilotProfileCreateSchema,
+  reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
+  sidechatOocToolSetSchema,
+  SIDECHAT_OOC_TOOL_KEYS,
+  agentToolSetSchema,
 } from "../src/schemas/experience-copilot-schema.js";
 
 // ─── ER-4 / ER-6 regression pin (existing schemas unchanged) ──────────────────
@@ -58,6 +63,43 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
     });
   });
 
+  test("preserves review metadata on a content request without defaulting absent fields", () => {
+    const reviewSnapshot = {
+      targets: [{
+        target: "rules" as const,
+        roundId: "a1b2c3",
+        outcome: "applied" as const,
+        hunks: { accepted: 2, rejected: 0, pending: 1 },
+      }],
+    };
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(parsed).toEqual({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+  });
+
+  test("retains an explicit empty review snapshot on a content request", () => {
+    expect(experienceCopilotStreamRequestSchema.parse({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot: { targets: [] },
+    })).toEqual({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot: { targets: [] },
+    });
+  });
+
   test("accepts the Try sandbox launch context", () => {
     const launchContext = {
       participants: [
@@ -88,6 +130,60 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
       },
     })).toThrow();
   });
+
+  // ─── SC-17: attached RP variants (the "discuss in the sidechat" wire arm) ───
+
+  test("accepts attachedVariants as plain (messageId, variantId) pairs", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [
+        { messageId: "msg_1", variantId: "mvar_1a" },
+        { messageId: "msg_1", variantId: "mvar_1b" },
+        { messageId: "msg_2", variantId: "mvar_2a" },
+      ],
+    });
+    expect(parsed.attachedVariants).toEqual([
+      { messageId: "msg_1", variantId: "mvar_1a" },
+      { messageId: "msg_1", variantId: "mvar_1b" },
+      { messageId: "msg_2", variantId: "mvar_2a" },
+    ]);
+  });
+
+  test("a pair carrying a selected marker is rejected — the request can never set it (SC-17)", () => {
+    // The pair schema is strict: `selected` is not a wire field. The server
+    // reads the RP's own `message_variants.is_selected` at freeze time.
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [{ messageId: "msg_1", variantId: "mvar_1a", selected: true }],
+    })).toThrow();
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      content: "compare those takes",
+      providerProfileId: "p1",
+      attachedVariants: [{ messageId: "", variantId: "mvar_1a" }],
+    })).toThrow();
+  });
+
+  test("a 65-element attachedVariants array validates — the length cap is gone (SC-21b)", () => {
+    // Was: `.max(64)` (SC-17) claimed to mirror the pinned-context links'
+    // bound — which itself claimed to mirror the co-author's, and the
+    // co-author has none. Now: the cap was invented provenance (no owner
+    // decision set it), dropped by owner review 2026-10-21; attaching every
+    // variant of a message with 65+ swipes must not fail validation.
+    // Element validation is unchanged (still strict messageId/variantId).
+    const pairs = Array.from({ length: 65 }, (_, i) => ({
+      messageId: `msg_${i}`,
+      variantId: `mvar_${i}`,
+    }));
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "compare every take",
+      providerProfileId: "p1",
+      attachedVariants: pairs,
+    });
+    expect(parsed.attachedVariants).toHaveLength(65);
+    expect(parsed.attachedVariants?.[64]).toEqual({ messageId: "msg_64", variantId: "mvar_64" });
+  });
 });
 
 // ─── TAG-5: split-turn answer mode on the stream request body ─────────────────
@@ -103,6 +199,34 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(parsed.answer).toEqual({ toolCallId: "tc_1", text: "make it blue" });
   });
 
+  test("preserves review metadata on an answer request while keeping the nested answer strict", () => {
+    const reviewSnapshot = {
+      targets: [{
+        target: "visual" as const,
+        roundId: "d4e5f6",
+        outcome: "applied-partial" as const,
+      }],
+    };
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(parsed).toEqual({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true, reviewSnapshot },
+    })).toThrow();
+  });
+
   test("answer-only is accepted (skip)", () => {
     const parsed = experienceCopilotStreamRequestSchema.parse({
       ...base,
@@ -111,14 +235,17 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(parsed.answer).toEqual({ toolCallId: "tc_1", skipped: true });
   });
 
-  test("content + answer together are rejected (exactly-one-of)", () => {
+  test("content + answer together are rejected (exactly-one mode)", () => {
+    // AP-9 re-capture (was: /not both/) — the mode vocabulary grew to three
+    // (content / answer / regenerate), so the multiple-modes refusal names
+    // all three and says "only one".
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({
         ...base,
         content: "hi",
         answer: { toolCallId: "tc_1", text: "blue" },
       }),
-    ).toThrow(/not both/);
+    ).toThrow(/only one/);
   });
 
   test("neither content nor answer is rejected (exactly-one-of)", () => {
@@ -150,6 +277,114 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
     ).toThrow();
+  });
+
+  // ── SC-23e: the permission decision family joins the answer union ──
+
+  test("a permission decision answer is accepted (allow and deny)", () => {
+    const allow = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_perm_1", decision: "allow" },
+    });
+    expect(allow.answer).toEqual({ toolCallId: "tc_perm_1", decision: "allow" });
+    const deny = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_perm_1", decision: "deny" },
+    });
+    expect(deny.answer).toEqual({ toolCallId: "tc_perm_1", decision: "deny" });
+  });
+
+  test("a permission decision rejects the ask family's fields and unknown decisions (strict)", () => {
+    // `text`/`skipped` belong to the ask member — a permission body is
+    // strict and carries neither.
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "allow", text: "why not" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "maybe" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { decision: "allow" } }),
+    ).toThrow();
+  });
+});
+
+// ─── AP-9: regenerate mode joins the exclusive mode set ───────────────────────
+
+describe("experienceCopilotStreamRequestSchema — regenerate mode (AP-9)", () => {
+  const base = { providerProfileId: "p1" };
+
+  test("regenerate-only is accepted", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: true,
+    });
+    expect(parsed.regenerate).toBe(true);
+  });
+
+  test("regenerate rides along the other request fields like any mode", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: true,
+      rulesSaved: false,
+      visualSaved: true,
+    });
+    expect(parsed.regenerate).toBe(true);
+    expect(parsed.rulesSaved).toBe(false);
+    expect(parsed.visualSaved).toBe(true);
+  });
+
+  test("an explicit regenerate:false is the absent mode — a content turn carrying it stays a content turn", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      regenerate: false,
+      content: "hi",
+    });
+    expect(parsed.content).toBe("hi");
+    expect(parsed.regenerate).toBe(false);
+  });
+
+  test("regenerate:false alone is rejected (no mode present)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, regenerate: false }),
+    ).toThrow(/either/);
+  });
+
+  test("content + regenerate is rejected (exactly-one mode)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        content: "hi",
+      }),
+    ).toThrow(/only one/);
+  });
+
+  test("answer + regenerate is rejected (exactly-one mode)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        answer: { toolCallId: "tc_1", text: "blue" },
+      }),
+    ).toThrow(/only one/);
+  });
+
+  test("all three modes together are rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        regenerate: true,
+        content: "hi",
+        answer: { toolCallId: "tc_1", skipped: true },
+      }),
+    ).toThrow(/only one/);
   });
 });
 
@@ -188,7 +423,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
 
-  test("accepts a thread carrying a todo step-plan (TAG-6)", () => {
+  test("accepts a thread carrying a todo step-plan (TAG-6, restored PM-7)", () => {
     const payload = {
       id: "thread_004",
       scriptId: "script_abc",
@@ -207,7 +442,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
 
-  test("rejects a thread missing the todo field (required — TAG-6)", () => {
+  test("rejects a thread missing the todo field (required — TAG-6, restored PM-7)", () => {
     expect(() =>
       experienceCopilotThreadSchema.parse({
         id: "thread_005",
@@ -298,6 +533,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       content: "Hello!",
       toolCallsJson: null,
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:00.000Z",
     };
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
@@ -311,7 +548,26 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       content: "",
       toolCallsJson: '[{"id":"call_1","name":"write_buffer"}]',
       toolCallId: null,
+      reasoning: null,
+      reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:01.000Z",
+    };
+    expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
+  });
+
+  // AP-28: the reasoning pair round-trips on the wire — values on the row
+  // that carries them, nulls elsewhere (both shapes parse to themselves).
+  test("accepts a message carrying the reasoning pair (AP-28)", () => {
+    const payload = {
+      id: "msg_ap28",
+      threadId: "thread_001",
+      role: "assistant",
+      content: "answer",
+      toolCallsJson: null,
+      toolCallId: null,
+      reasoning: "burst one\n\nburst two",
+      reasoningDurationMs: 4200,
+      createdAt: "2026-01-01T00:00:02.000Z",
     };
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
   });
@@ -325,6 +581,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
         content: "hi",
         toolCallsJson: null,
         toolCallId: null,
+        reasoning: null,
+        reasoningDurationMs: null,
         createdAt: 1735689600000,
       }),
     ).toThrow();
@@ -338,6 +596,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
         content: "hi",
         toolCallsJson: null,
         toolCallId: null,
+        reasoning: null,
+        reasoningDurationMs: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       }),
     ).toThrow();
@@ -389,27 +649,82 @@ describe("copilotToolSetSchema (CP-1)", () => {
     expect(() => copilotToolSetSchema.parse({ read_skill_file: true })).toThrow();
   });
 
-  test("accepts todo/ask_user booleans (TAG-1)", () => {
-    const payload = { todo: true, ask_user: false };
+  test("accepts plan/read_plan/ask_user booleans", () => {
+    const payload = { plan: true, read_plan: true, ask_user: false };
     expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });
 
-  test("COPILOT_TOOL_KEYS lists exactly the 7 toggleable tools (no read_skill_file)", () => {
+  test("accepts todo/plan/read_plan together (PM-7 coexistence)", () => {
+    // Owner ruling 2026-10-11: todo (the session checklist) and the plan
+    // tools coexist — a profile may enable all three at once.
+    const payload = { todo: true, plan: true, read_plan: true };
+    expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("COPILOT_TOOL_KEYS lists exactly the 9 toggleable tools (no read_skill_file)", () => {
     expect(COPILOT_TOOL_KEYS).toEqual([
       "write_buffer",
       "edit_buffer",
       "run_test",
       "run_simulate",
       "suggest_visual_binding",
+      "plan",
+      "read_plan",
       "todo",
       "ask_user",
     ]);
   });
 });
 
-// ─── TAG-1: copilot todo schemas ─────────────────────────────────────────────
+// ─── SC-5: the sidechat-ooc tool set (keys before tools — the TAG-1 pattern) ──
 
-describe("copilotTodoItemSchema (TAG-1)", () => {
+describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
+  test("accepts each of the 5 Wave-3 toggles with either boolean, and {} (all off)", () => {
+    for (const key of SIDECHAT_OOC_TOOL_KEYS) {
+      expect(sidechatOocToolSetSchema.parse({ [key]: true })).toEqual({ [key]: true });
+      expect(sidechatOocToolSetSchema.parse({ [key]: false })).toEqual({ [key]: false });
+    }
+    expect(sidechatOocToolSetSchema.parse({})).toEqual({});
+  });
+
+  test("rejects the other kinds' keys and unknown keys (strict)", () => {
+    // Experience keys, the script kind's key, and the always-on channel are
+    // all foreign to the sidechat — rejected, never silently stripped.
+    expect(() => sidechatOocToolSetSchema.parse({ write_buffer: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ run_script_test: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ read_skill_file: true })).toThrow();
+    expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
+  });
+
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 6 toggles in definition order", () => {
+    expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
+      "search_context",
+      "read_context_item",
+      "propose_objective",
+      "todo",
+      "read_plan",
+      "read_message_prompt",
+    ]);
+  });
+
+  test("agentToolSetSchema carries the sidechat member: a sidechat set passes the union, a cross-kind mix fails", () => {
+    expect(agentToolSetSchema.safeParse({ search_context: true, read_plan: false }).success).toBe(true);
+    // Mixing sidechat and experience keys matches NO member — rejected.
+    expect(
+      agentToolSetSchema.safeParse({ search_context: true, write_buffer: true }).success,
+    ).toBe(false);
+    // The pre-existing members are untouched: experience and script sets
+    // still pass, exactly as before the third member joined.
+    expect(agentToolSetSchema.safeParse({ write_buffer: true }).success).toBe(true);
+    expect(agentToolSetSchema.safeParse({ run_script_test: true }).success).toBe(true);
+  });
+});
+
+// ─── CP-1: copilot profiles ─────────────────────────────────────────────
+
+// ─── TAG-1 (restored PM-7): copilot todo schemas ──────────────────────────
+
+describe("copilotTodoItemSchema (TAG-1, restored PM-7)", () => {
   test("accepts a valid item in each status", () => {
     for (const status of ["pending", "active", "completed", "abandoned"] as const) {
       const payload = { title: "Write the reduce loop", status };
@@ -434,7 +749,7 @@ describe("copilotTodoItemSchema (TAG-1)", () => {
   });
 });
 
-describe("copilotTodoListSchema (TAG-1)", () => {
+describe("copilotTodoListSchema (TAG-1, restored PM-7)", () => {
   const item = { title: "step", status: "active" as const };
 
   test("accepts a list at the cap (30 items)", () => {
@@ -449,14 +764,15 @@ describe("copilotTodoListSchema (TAG-1)", () => {
 });
 
 describe("copilotProfileSchema (CP-1)", () => {
-  test("accepts a valid profile (no description/openingMessage)", () => {
+  test("accepts a valid profile (no description/openingMessage/skillIds)", () => {
     const payload = {
       id: "profile_1",
       name: "Card games",
       isBuiltIn: false,
       basePrompt: "You are a card-game experience author.",
-      skillIds: ["experience-authoring"],
       toolSet: { edit_buffer: true, run_test: true },
+      // AS-3: profiles carry their owning kind.
+      agentKind: "experience",
     };
     expect(copilotProfileSchema.parse(payload)).toEqual(payload);
   });
@@ -468,32 +784,75 @@ describe("copilotProfileSchema (CP-1)", () => {
         name: "X",
         isBuiltIn: false,
         basePrompt: "",
-        skillIds: [],
         toolSet: {},
+        agentKind: "experience",
       }),
     ).toThrow();
   });
 
-  // maxSteps is REMOVED from the wire (TAG-10): the schema strips it — it is
-  // no longer a field at all, so a payload carrying it yields no maxSteps key.
-  test("strips maxSteps (removed from the wire — TAG-10)", () => {
+  // PM-8 (owner ruling 2026-10-12): `skillIds` is retired — skills are
+  // ungated, so the field no longer exists. The schema is `.strict()`: a
+  // stale client sending `skillIds` is rejected, not silently stripped.
+  test("strict-rejects a retired skillIds payload (PM-8)", () => {
     const base = {
       id: "x",
       name: "X",
       isBuiltIn: false,
       basePrompt: "p",
-      skillIds: [],
       toolSet: {},
+      agentKind: "experience",
     };
-    expect(copilotProfileSchema.parse({ ...base, maxSteps: 5 })).not.toHaveProperty("maxSteps");
+    expect(() => copilotProfileSchema.parse({ ...base, skillIds: ["experience-authoring"] })).toThrow();
+    expect(() =>
+      copilotProfileCreateSchema.parse({
+        name: "X",
+        basePrompt: "p",
+        toolSet: {},
+        skillIds: [],
+      }),
+    ).toThrow();
+  });
+
+  // maxSteps is REMOVED from the wire (TAG-10) and the schema is `.strict()`:
+  // unknown keys are rejected outright (a payload carrying maxSteps throws,
+  // never yielding a parsed object with the field).
+  test("strict-rejects unknown keys incl. retired maxSteps (TAG-10)", () => {
+    const base = {
+      id: "x",
+      name: "X",
+      isBuiltIn: false,
+      basePrompt: "p",
+      toolSet: {},
+      agentKind: "experience",
+    };
+    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
+  });
+});
+
+describe("reorderCopilotProfilesSchema (ML-6)", () => {
+  test("accepts an id + sortOrder update list", () => {
+    const payload = { updates: [{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }] };
+    expect(reorderCopilotProfilesSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts an empty updates array (no-op reorder)", () => {
+    expect(reorderCopilotProfilesSchema.parse({ updates: [] })).toEqual({ updates: [] });
+  });
+
+  test("rejects a body without the updates array", () => {
+    expect(() => reorderCopilotProfilesSchema.parse({})).toThrow();
+  });
+
+  test("rejects an update entry missing sortOrder", () => {
+    expect(() => reorderCopilotProfilesSchema.parse({ updates: [{ id: "p1" }] })).toThrow();
   });
 });
 
 // ─── CX-1: pinned-context links ─────────────────────────────────────────────
 
 describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-1)", () => {
-  test("accepts all five target types including skill", () => {
-    for (const targetType of ["character", "persona", "lorebook", "script", "skill"] as const) {
+  test("accepts all six target types including skill and prompt_preset (SC-23c)", () => {
+    for (const targetType of ["character", "persona", "lorebook", "script", "skill", "prompt_preset"] as const) {
       expect(experienceCopilotContextLinkSchema.parse({ targetType, targetId: "id_1" })).toEqual({
         targetType,
         targetId: "id_1",
@@ -510,12 +869,55 @@ describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-
     ).toThrow();
   });
 
-  test("set schema accepts a valid array and rejects extras/oversize", () => {
+  test("set schema accepts a valid array and rejects extras; a 65-link body validates — the length cap is gone (SC-21b)", () => {
     const links = [{ targetType: "skill" as const, targetId: "my-skill" }];
     expect(setCopilotContextLinksSchema.parse({ links })).toEqual({ links });
     expect(() => setCopilotContextLinksSchema.parse({ links, extra: 1 })).toThrow();
+    // Was: 65 links rejected (`.max(64)` claimed to mirror the co-author's
+    // pragmatic bound — which never existed). Now: invented provenance,
+    // dropped by owner review 2026-10-21; element validation is unchanged.
+    const many = Array.from({ length: 65 }, () => links[0]);
+    expect(setCopilotContextLinksSchema.parse({ links: many })).toEqual({ links: many });
+  });
+});
+
+describe("experienceCopilotContextMetricsSchema (SC-0j kind-provided segments)", () => {
+  const base = {
+    systemTokens: 1000,
+    digestTokens: 0,
+    historyTokens: 500,
+    attachedTokens: 0,
+    totalTokens: 1500,
+    budgetTokens: 16000,
+    reserveTokens: 1000,
+    source: "estimate" as const,
+    measuredAt: "2026-10-18T00:00:00.000Z",
+  };
+
+  test("segments are absent by default (existing producers stay valid)", () => {
+    const parsed = experienceCopilotContextMetricsSchema.parse(base);
+    expect("segments" in parsed).toBe(false);
+  });
+
+  test("accepts a kind-provided segments array round-trip", () => {
+    const segments = [
+      { key: "cards_lore", tokens: 800 },
+      { key: "rp_messages", tokens: 700 },
+    ];
+    expect(experienceCopilotContextMetricsSchema.parse({ ...base, segments }).segments).toEqual(segments);
+  });
+
+  test("rejects a segment with an empty key, fractional tokens, or an unknown key", () => {
     expect(() =>
-      setCopilotContextLinksSchema.parse({ links: Array.from({ length: 65 }, () => links[0]) }),
+      experienceCopilotContextMetricsSchema.parse({ ...base, segments: [{ key: "", tokens: 10 }] }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotContextMetricsSchema.parse({ ...base, segments: [{ key: "lore", tokens: 1.5 }] }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotContextMetricsSchema.parse(
+        { ...base, segments: [{ key: "lore", tokens: 10, extra: 1 }] },
+      ),
     ).toThrow();
   });
 });

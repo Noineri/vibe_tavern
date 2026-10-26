@@ -1,7 +1,11 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import type { ScriptKind } from "@vibe-tavern/domain";
-import { conflict, notFound } from "../../shared/errors.js";
+import { conflict, notFound, unprocessable } from "../../shared/errors.js";
+import {
+	NoAgentKindForScriptKindError,
+	resolveKindForScript,
+} from "../../domain/agent/agent-kind-registry.js";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
 import { resolveEffectiveDiceScripts } from "../../domain/scripts-engine/dice-script-service.js";
 import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
@@ -58,6 +62,39 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		});
 
 	updateScript = async (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => {
+		// AS-3 cross-kind assignment guard: a profile belongs to exactly one
+		// agent kind, and a script is served by exactly one kind — assigning a
+		// profile of another kind is a 422 (`copilot_profile_kind_mismatch`).
+		// `null`/omitted clears the soft link (allowed); a DANGLING id is
+		// allowed too (the resolver falls back to the seed, unchanged). A script
+		// kind no registered kind serves cannot accept any profile — the
+		// unresolvable mapping counts as a mismatch, never a silent pass. Since
+		// AS-7 prompt/dice scripts resolve to the `script` kind, so only a
+		// SCRIPT-kind profile may be assigned to them (an experience profile on
+		// a prompt script is still a 422 mismatch).
+		if (body.copilotProfileId !== undefined && body.copilotProfileId !== null) {
+			const [script, profile] = await Promise.all([
+				this.stores.scripts.getById(scriptId),
+				this.stores.copilotProfiles.getById(body.copilotProfileId),
+			]);
+			// A missing script falls through to the store's own not-found throw
+			// below (unchanged behavior); only a present pair is kind-checked.
+			if (script !== null && profile !== null) {
+				let expectedKind: string | null = null;
+				try {
+					expectedKind = resolveKindForScript(script.scriptKind).id;
+				} catch (err) {
+					if (!(err instanceof NoAgentKindForScriptKindError)) throw err;
+				}
+				if (expectedKind === null || profile.agentKind !== expectedKind) {
+					throw unprocessable(
+						`Copilot profile '${profile.id}' (kind '${profile.agentKind}') cannot be assigned to a '${script.scriptKind}' script.`,
+						{ code: "copilot_profile_kind_mismatch" },
+					);
+				}
+			}
+		}
+
 		const existing = await this.stores.scripts.getById(scriptId);
 		if (existing?.scriptKind !== "interactive") return this.stores.scripts.update(scriptId, body);
 

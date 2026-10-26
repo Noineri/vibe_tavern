@@ -3,7 +3,9 @@ import { useT } from "../../../i18n/context.js";
 import { LOCALES } from "../../../i18n/registry.js";
 import { Icons } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { Slider } from "../../shared/slider.js";
 import { THEMES, type ThemeMode } from "../../../themes/registry.js";
+import { useScriptWarningsToggle } from "../../../hooks/use-script-warnings-toggle.js";
 
 interface TweaksSettings {
 	theme: ThemeMode;
@@ -51,7 +53,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 					<div className="overflow-hidden rounded-lg border border-border2 bg-surface">
 						<div className="px-3 pt-3 pb-1">
 							<div className="mb-1.5 flex items-center gap-2">
-								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent font-body text-[9px] font-semibold text-on-accent">S</div>
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent font-body text-[calc(var(--ui-fs)-5px)] font-semibold text-on-accent">S</div>
 								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">Silvius</span>
 								<span className="ml-auto font-ui text-[calc(var(--ui-fs)-5px)] text-t3">12:45</span>
 							</div>
@@ -65,7 +67,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						</div>
 						<div className="px-3 pt-2 pb-3">
 							<div className="mb-1.5 flex items-center gap-2">
-								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">U</div>
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)-5px)] italic text-t3">U</div>
 								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">You</span>
 							</div>
 							<div className="my-0.5 rounded-md bg-user-bg px-3 py-2.5">
@@ -111,7 +113,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							</div>
 							<span className="font-body text-[length:var(--ui-fs)] text-t1">{settings.showRail ? t("hide_rail") : t("show_rail")}</span>
 						</div>
-						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[18px]" />
+						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[calc(var(--ui-fs)+4px)]" />
 					</div>
 				</div>
 
@@ -119,16 +121,17 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				<div className="px-5 py-2.5">
 					<div className="flex items-center gap-3 mb-2">
 						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-							<span className="font-body text-[16px] font-bold">A</span>
+							<span className="font-body text-[calc(var(--ui-fs)+2px)] font-bold">A</span>
 						</div>
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
-						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.fontSize}px</span>
 					</div>
-					<input
-						type="range" min={14} max={22} step={1}
-						className="w-full accent-accent h-2"
+					<Slider
+						appearance="field"
+						min={14} max={22} step={1}
 						value={settings.fontSize}
-						onChange={(e) => setSetting("fontSize", parseInt(e.target.value))}
+						formatValue={(value) => `${value} px`}
+						onValueChange={(value) => setSetting("fontSize", Math.round(value))}
+						aria-label={t("tweaks_font_size")}
 					/>
 				</div>
 
@@ -139,13 +142,14 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							<Icons.Sliders />
 						</div>
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_ui_font_size")}</span>
-						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.uiFontSize}px</span>
 					</div>
-					<input
-						type="range" min={14} max={20} step={1}
-						className="w-full accent-accent h-2"
+					<Slider
+						appearance="field"
+						min={14} max={20} step={1}
 						value={settings.uiFontSize}
-						onChange={(e) => setSetting("uiFontSize", parseInt(e.target.value))}
+						formatValue={(value) => `${value} px`}
+						onValueChange={(value) => setSetting("uiFontSize", Math.round(value))}
+						aria-label={t("tweaks_ui_font_size")}
 					/>
 				</div>
 
@@ -174,6 +178,8 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 					</div>
 				</div>
 
+				<ScriptWarningsRow />
+
 				<div className="px-5 py-2.5">
 					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenProxyManager}>
 						<span className="flex items-center gap-3"><Icons.Globe />{t("proxies")}</span>
@@ -184,6 +190,34 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				{/* Safe area spacer */}
 				<div className="h-[env(safe-area-inset-bottom,0px)]" />
 				<div className="h-4" />
+			</div>
+		</div>
+	);
+}
+
+/** Mobile twin of the TweaksPanel «Script import warnings» row, in this
+ *  sheet's own toggle-row shape (the show-rail row; `gap-3` from the theme
+ *  row, since this label is longer). Its own component so the settings
+ *  load runs only while the sheet is open — the sheet itself stays mounted
+ *  and returns null when closed. */
+function ScriptWarningsRow() {
+	const { t } = useT();
+	const scriptWarnings = useScriptWarningsToggle();
+	return (
+		<div className="px-5 py-2.5">
+			<div className="flex min-h-[48px] items-center justify-between gap-3">
+				<div className="flex items-center gap-3">
+					<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-s2 text-t2">
+						<Icons.alert />
+					</div>
+					<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_script_warnings")}</span>
+				</div>
+				<Toggle
+					checked={scriptWarnings.checked}
+					onChange={scriptWarnings.onChange}
+					aria-label={t("tweaks_script_warnings")}
+					className="text-[calc(var(--ui-fs)+4px)]"
+				/>
 			</div>
 		</div>
 	);

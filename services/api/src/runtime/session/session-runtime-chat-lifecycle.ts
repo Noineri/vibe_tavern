@@ -1,6 +1,13 @@
 import type { StoreContainer } from "@vibe-tavern/db";
 import {
+	applyTrackerTemplate,
 	brandId,
+	defaultObjectiveState,
+	normalizeInsightsConfig,
+	readTrackerTemplate,
+	tag,
+	TRACKER_TEMPLATE_KEY,
+	VT_EXTENSION_KEY,
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
@@ -33,6 +40,16 @@ function buildGreetingVariants(firstMessage: string | null | undefined, alternat
  *  collision that a bare `${name}` would cause next to `${name} chat`). */
 function defaultChatTitle(characterName: string, mode: ChatMode | undefined): string {
 	return mode === "coauthor" ? `Co-Author · ${characterName}` : `${characterName} chat`;
+}
+
+const logger = tag("session.chat-lifecycle");
+
+function hasTrackerTemplate(extensions: Record<string, unknown>): boolean {
+	const vibeTavern = extensions[VT_EXTENSION_KEY];
+	return typeof vibeTavern === "object"
+		&& vibeTavern !== null
+		&& !Array.isArray(vibeTavern)
+		&& Object.prototype.hasOwnProperty.call(vibeTavern, TRACKER_TEMPLATE_KEY);
 }
 
 export interface ChatLifecycleRuntimeDeps {
@@ -111,12 +128,30 @@ export class ChatLifecycleRuntime {
 			throw notFound("Character", `Character '${characterId}' was not found.`);
 		}
 
+		const resolvedMode = mode ?? "rp";
+		const template = resolvedMode === "rp" ? readTrackerTemplate(character.extensions) : null;
+		const trackerTemplateSetup = template === null
+			? null
+			: applyTrackerTemplate(template, {
+				insightsConfig: normalizeInsightsConfig(undefined),
+				objectiveState: defaultObjectiveState(),
+			});
+		if (resolvedMode === "rp" && template === null && hasTrackerTemplate(character.extensions)) {
+			logger.warn("Ignoring malformed tracker template for characterId=%s", characterId);
+		}
+
 		const created = await this.deps.chatApp.createChat({
 			characterId: typedCharacterId,
 			personaId: await this.deps.persona.resolveDefaultId(),
 			title: defaultChatTitle(character.name, mode),
 			promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
 			mode,
+			...(trackerTemplateSetup === null
+				? {}
+				: {
+					insightsConfig: trackerTemplateSetup.insightsConfig,
+					insightsObjectiveState: trackerTemplateSetup.objectiveState,
+				}),
 		});
 
 		const createdChatId = created.id;

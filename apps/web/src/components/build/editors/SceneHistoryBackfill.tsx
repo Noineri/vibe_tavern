@@ -231,7 +231,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 								type="button"
 								onClick={() => setMode(m)}
 								className={cn(
-									"flex-1 rounded-md border px-3 py-1.5 font-ui text-[12px] transition-colors",
+									"flex-1 rounded-md border px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
 									mode === m ? "border-accent bg-accent-dim text-accent" : "border-border2 bg-s2 text-t3 hover:border-accent",
 								)}
 							>
@@ -239,28 +239,28 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 							</button>
 						))}
 					</div>
-					<p className="mt-1.5 font-ui text-[10px] leading-relaxed text-t4">
+					<p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t4">
 						{t(mode === SCENE_BACKFILL_MODE.fillMissing ? "scn_hist_mode_fill_hint" : "scn_hist_mode_rebuild_hint")}
 					</p>
 				</div>
 
 				{nothingToDo ? (
-					<p className="font-ui text-[11px] text-t4">
+					<p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 						{t(emptyState ? "scn_hist_no_messages" : "scn_hist_all_have_scene")}
 					</p>
 				) : (
 					<>
-						<p className="font-ui text-[11px] text-t3">
+						<p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
 							{t(mode === SCENE_BACKFILL_MODE.fillMissing ? "scn_hist_count_fill" : "scn_hist_count_rebuild", { n: effectiveCount })}
 						</p>
 						{effectiveCount > WARN_THRESHOLD && (
-							<p className="flex items-start gap-1.5 font-ui text-[11px] leading-relaxed text-warning-text">
+							<p className="flex items-start gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-warning-text">
 								<span className="mt-px shrink-0"><Ic.alert /></span>
 								<span>{t("scn_hist_warning", { n: effectiveCount })}</span>
 							</p>
 						)}
 						{estimate !== null && (
-							<p className="font-ui text-[11px] text-t4">
+							<p className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 								{t("scn_hist_estimate", { cost: estimate.toFixed(estimate < 1 ? 3 : 2) })}
 							</p>
 						)}
@@ -272,7 +272,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 					onClick={() => void start()}
 					disabled={nothingToDo || busy}
 					className={cn(
-						"inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[12px] font-medium transition-opacity disabled:opacity-40",
+						"inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-opacity disabled:opacity-40",
 						"bg-accent text-on-accent hover:opacity-90",
 					)}
 				>
@@ -288,7 +288,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 		const pct = status.total > 0 ? Math.min(100, Math.round((status.processed / status.total) * 100)) : 0;
 		return (
 			<div className="space-y-2.5">
-				<div className="flex items-center justify-between font-ui text-[11px] text-t3">
+				<div className="flex items-center justify-between font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
 					<span className="flex items-center gap-1.5"><Spinner /> {t("scn_hist_running")}</span>
 					<span className="tabular-nums text-t4">{t("scn_hist_progress", { processed: status.processed, total: status.total })}</span>
 				</div>
@@ -296,12 +296,12 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 					<div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
 				</div>
 				<div className="flex items-center justify-between">
-					<span className="font-ui text-[10px] text-t4">{status.current ? t("scn_hist_current", { n: status.processed + 1 }) : ""}</span>
+					<span className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{status.current ? t("scn_hist_current", { n: status.processed + 1 }) : ""}</span>
 					<button
 						type="button"
 						onClick={() => void cancel()}
 						disabled={busy}
-						className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[11px] text-t2 transition-colors hover:border-danger disabled:opacity-40"
+						className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:border-danger disabled:opacity-40"
 					>
 						<Ic.close />
 						{t("scn_hist_cancel")}
@@ -317,7 +317,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 	const showRetry = failedCount > 0 || status.status === "cancelled" || status.status === "failed";
 	return (
 		<div className="space-y-2.5">
-			<p className="flex items-center gap-1.5 font-ui text-[11px] font-medium text-t3">
+			<p className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3">
 				<span className={cn(
 					"shrink-0",
 					status.status === "completed" ? "text-success-text" : status.status === "cancelled" ? "text-t4" : "text-danger-text",
@@ -327,7 +327,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 				{t(`scn_hist_status_${status.status}` as const)}
 			</p>
 			{sum && (
-				<div className="flex flex-wrap gap-x-3 gap-y-1 font-ui text-[11px] text-t4">
+				<div className="flex flex-wrap gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
 					<span className="text-success-text">{t("scn_hist_succeeded", { n: sum.succeeded })}</span>
 					{sum.skipped > 0 && <span>{t("scn_hist_skipped", { n: sum.skipped })}</span>}
 					{sum.failed > 0 && <span className="text-danger-text">{t("scn_hist_failed", { n: sum.failed })}</span>}
@@ -339,7 +339,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 						type="button"
 						onClick={() => void retry()}
 						disabled={busy}
-						className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[11px] text-t2 transition-colors hover:border-accent disabled:opacity-40"
+						className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:border-accent disabled:opacity-40"
 					>
 						{busy ? <Spinner /> : <Ic.regen />}
 						{t("scn_hist_retry")}
@@ -348,7 +348,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 				<button
 					type="button"
 					onClick={newRun}
-					className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-ui text-[11px] text-t3 transition-colors hover:bg-s2"
+					className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2"
 				>
 					<Ic.plus />
 					{t("scn_hist_new")}

@@ -21,8 +21,8 @@ import type { ReactNode } from "react";
 export function ApiRefCard({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <div className="mb-4 min-w-0 rounded-lg border border-accent/30 bg-accent-dim/30" style={{ padding: 14 }}>
-      <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{title}</div>
-      <div className="grid min-w-0 gap-3 text-[12px]">{children}</div>
+      <div className="mb-3 text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.06em] text-accent-t">{title}</div>
+      <div className="grid min-w-0 gap-3 text-[calc(var(--ui-fs)-2px)]">{children}</div>
     </div>
   );
 }
@@ -34,7 +34,7 @@ export function ApiRefSection({ heading, children }: { heading?: ReactNode; chil
   return (
     <div className="min-w-0">
       {heading != null ? (
-        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{heading}</div>
+        <div className="mb-1.5 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t2">{heading}</div>
       ) : null}
       <div className="grid min-w-0 gap-1">{children}</div>
     </div>
@@ -47,7 +47,7 @@ export function ApiRefRow({ code, children }: { code?: ReactNode; children: Reac
   return (
     <div className="flex min-w-0 flex-col items-start gap-0.5 leading-[1.5] md:flex-row md:items-center md:gap-2">
       {code != null ? (
-        <code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">{code}</code>
+        <code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.4] text-accent-t">{code}</code>
       ) : null}
       <span className="min-w-0 text-t3">{children}</span>
     </div>
@@ -58,6 +58,6 @@ export function ApiRefRow({ code, children }: { code?: ReactNode; children: Reac
  *  line never sets the card's width. */
 export function ApiRefCode({ children }: { children: ReactNode }) {
   return (
-    <pre className="mt-1 min-w-0 overflow-x-auto rounded border border-border2 bg-bg px-2 py-1.5 font-mono text-[10px] leading-[1.4] text-t2">{children}</pre>
+    <pre className="mt-1 min-w-0 overflow-x-auto rounded border border-border2 bg-bg px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-4px)] leading-[1.4] text-t2">{children}</pre>
   );
 }

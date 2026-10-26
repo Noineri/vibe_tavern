@@ -14,6 +14,7 @@ import {
   OpenAiImagesConfigError,
   OpenAiImagesError,
   OpenAiImagesSizeError,
+  openAiImagesCustomFactory,
   openAiImagesFactory,
 } from "../src/domain/imagegen/backends/openai-images.js";
 import {
@@ -102,7 +103,7 @@ describe("openai-images adapter", () => {
       expect(body.model).toBe("gpt-image-1");
       expect(body.prompt).toBe("a tavern at dusk");
       expect(body.size).toBe("1024x1024");
-      // GPT Image never receives response_format (card: DALL-E-only).
+      // response_format is never sent (card: DALL-E-only; DALL-E retired).
       expect("response_format" in body).toBe(false);
 
       expect(result.images).toHaveLength(1);
@@ -198,11 +199,15 @@ describe("openai-images adapter", () => {
       expect("size" in sentJson(partial.calls[0])).toBe(false);
     });
 
-    it("sends response_format b64_json for dall-e models only (card: DALL-E-only field)", async () => {
-      const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
-      const backend = backendWith(transport);
-      await backend.generate({ prompt: "p", model: "dall-e-3" });
-      expect(sentJson(calls[0]).response_format).toBe("b64_json");
+    it("never sends response_format, whatever the model id (DALL-E gate removed — owner 2026-10-15)", async () => {
+      // Behavior change: was `response_format: "b64_json"` for dall-e-* ids;
+      // now never sent (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 1).
+      for (const model of ["dall-e-3", "google/gemini-3-pro-image", "gpt-image-2"]) {
+        const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+        const backend = backendWith(transport);
+        await backend.generate({ prompt: "p", model });
+        expect("response_format" in sentJson(calls[0])).toBe(false);
+      }
     });
 
     it("resolves the model from the profile config when the request carries none", async () => {
@@ -217,7 +222,7 @@ describe("openai-images adapter", () => {
       expect(sentJson(calls[0]).model).toBe("gpt-image-1-mini");
     });
 
-    it("downloads a url data entry server-side through the seam (DALL-E fallback)", async () => {
+    it("downloads a url data entry server-side through the seam (hosted-URL endpoints)", async () => {
       const imageUrl = "https://api.openai.com/v1/files/img.png";
       const { transport, calls } = makeTransport((url) =>
         url.href === imageUrl
@@ -226,7 +231,7 @@ describe("openai-images adapter", () => {
       );
       const backend = backendWith(transport);
 
-      const result = await backend.generate({ prompt: "p", model: "dall-e-2" });
+      const result = await backend.generate({ prompt: "p", model: "gpt-image-1" });
 
       // Two seam calls: the generations POST, then the server-side download.
       expect(calls.map((call) => call.url)).toEqual([`${ENDPOINT}/images/generations`, imageUrl]);
@@ -294,7 +299,10 @@ describe("openai-images adapter", () => {
   });
 
   describe("listModels", () => {
-    it("queries /models and filters down to the card's image families", async () => {
+    it("queries /models and lists the catalog unfiltered", async () => {
+      // Behavior change: was filtered to the gpt-image/dall-e prefixes (3 of
+      // 5); now every entry lists — owner ruling 2026-10-15,
+      // IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 1.
       const { transport, calls } = makeTransport(() =>
         Response.json({
           data: [
@@ -312,11 +320,34 @@ describe("openai-images adapter", () => {
         { id: "gpt-image-2", label: "gpt-image-2" },
         { id: "gpt-image-1-mini", label: "gpt-image-1-mini" },
         { id: "dall-e-3", label: "dall-e-3" },
+        { id: "gpt-5.2", label: "gpt-5.2" },
+        { id: "text-embedding-3-small", label: "text-embedding-3-small" },
       ]);
       expect(calls[0].url).toBe(`${ENDPOINT}/models`);
       expect(calls[0].init?.method).toBe("GET");
       const headers = calls[0].init?.headers as Record<string, string>;
       expect(headers.Authorization).toBe(`Bearer ${API_KEY}`);
+    });
+
+    it("lists a Custom aggregator's OpenRouter-style roster (the incident shape: no gpt-image/dall-e ids)", async () => {
+      // The live closerouter roster that the old prefix filter emptied:
+      // vendor-prefixed ids with a display `name` (2026-10-15 incident).
+      const customEndpoint = "https://api.closerouter.dev/v1";
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          data: [
+            { id: "anthropic/claude-fable-5", name: "Anthropic: Claude Fable 5", pricing: { prompt: "0.000003" } },
+            { id: "google/gemini-3-pro-image-preview", name: "Google: Gemini 3 Pro Image" },
+          ],
+        }),
+      );
+      const backend = openAiImagesFactory({ endpoint: customEndpoint, apiKey: API_KEY, fetch: transport });
+      const models = await backend.listModels();
+      expect(models).toEqual([
+        { id: "anthropic/claude-fable-5", label: "Anthropic: Claude Fable 5" },
+        { id: "google/gemini-3-pro-image-preview", label: "Google: Gemini 3 Pro Image" },
+      ]);
+      expect(calls[0].url).toBe(`${customEndpoint}/models`);
     });
 
     it("surfaces a non-2xx model list as a typed error with the status", async () => {
@@ -329,13 +360,15 @@ describe("openai-images adapter", () => {
   });
 
   describe("probe", () => {
-    it("reports ok with the image-model count from /models", async () => {
+    it("reports ok with the full catalog count from /models", async () => {
+      // Behavior change: was "2 image models" (prefix-filtered); now the
+      // unfiltered count with the honest noun (report step 1).
       const { transport, calls } = makeTransport(() =>
         Response.json({ data: [{ id: "gpt-image-2" }, { id: "dall-e-3" }, { id: "gpt-5.2" }] }),
       );
       const backend = backendWith(transport);
       const result = await backend.probe();
-      expect(result).toEqual({ ok: true, detail: "2 image models" });
+      expect(result).toEqual({ ok: true, detail: "3 models" });
       expect(calls[0].url).toBe(`${ENDPOINT}/models`);
     });
 
@@ -372,5 +405,48 @@ describe("openai-images adapter", () => {
       expect(typeof backend.probe).toBe("function");
       expect(typeof backend.dispose).toBe("function");
     });
+  });
+});
+
+describe("openai-images-custom (the Custom arm — report step 9)", () => {
+  const CUSTOM_ENDPOINT = "https://api.closerouter.dev/v1";
+
+  it("is registered under its own slug", () => {
+    const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImagesCustom, {
+      endpoint: CUSTOM_ENDPOINT,
+      apiKey: API_KEY,
+    });
+    expect(typeof backend.generate).toBe("function");
+  });
+
+  it("sends the user's W×H verbatim as the size string — no OpenAI grid, no response_format", async () => {
+    const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    const result = await backend.generate({
+      prompt: "p",
+      model: "google/gemini-3-pro-image-preview",
+      width: 832,
+      height: 1216,
+    });
+    expect(calls[0].url).toBe(`${CUSTOM_ENDPOINT}/images/generations`);
+    const body = sentJson(calls[0]);
+    expect(body.size).toBe("832x1216");
+    expect("response_format" in body).toBe(false);
+    expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("omits size when the W×H is incomplete (vendor default)", async () => {
+    const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    await backend.generate({ prompt: "p", model: "m", width: 832 });
+    expect("size" in sentJson(calls[0])).toBe(false);
+  });
+
+  it("lists the catalog unfiltered and probes with the plain noun", async () => {
+    const roster = { data: [{ id: "anthropic/claude-fable-5" }, { id: "google/gemini-3-pro-image-preview" }] };
+    const { transport } = makeTransport(() => Response.json(roster));
+    const backend = openAiImagesCustomFactory({ endpoint: CUSTOM_ENDPOINT, apiKey: API_KEY, fetch: transport });
+    expect((await backend.listModels()).map((m) => m.id)).toEqual(["anthropic/claude-fable-5", "google/gemini-3-pro-image-preview"]);
+    expect(await backend.probe()).toEqual({ ok: true, detail: "2 models" });
   });
 });

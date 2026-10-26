@@ -6,6 +6,7 @@ import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { resolveSystemPrompt, getDefaultPromptForMode } from "../src/domain/ai-assistant/ai-assistant-prompts.js";
 import { resolvePromptAssetPath, loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { getDefaultPromptFile } from "../src/domain/ai-assistant/ai-assistant-modes.js";
+import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 
 import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.ts";
 
@@ -72,23 +73,34 @@ describe("scene_schema prompt — format-aware default selection", () => {
     }
   });
 
-  it("profile override for script mode wins over asset", async () => {
-    const { db, profileStore, uiSettings } = await setupDb();
-    const profile = await profileStore.createServicePromptProfile({
-      name: "Script Override",
-      overrides: { script: "CUSTOM SCRIPT PROMPT" },
-    });
-    await uiSettings.update({ activeServicePromptProfileId: profile.id });
-    const result = await resolveSystemPrompt(db, "script");
-    expect(result.source).toBe("override");
-    expect(result.prompt).toBe("CUSTOM SCRIPT PROMPT");
-  });
-
   it("with no profile, xml format still selects the xml default file", async () => {
     const { db } = await setupDb();
     const result = await resolveSystemPrompt(db, "scene_schema", { promptFormat: "xml" });
     expect(result.source).toBe("default");
     expect(result.prompt).toContain("XML-safe names required");
+  });
+
+  it("both scene-schema prompts teach tone coding: toneBy and all four tone tokens", async () => {
+    for (const file of ["scene-schema-json.md", "scene-schema-xml.md"]) {
+      const asset = await loadPromptAsset(file);
+      expect(asset, `${file} lacks the Tone coding section`).toContain("## Tone coding");
+      expect(asset, `${file} does not mention toneBy`).toContain("toneBy");
+      for (const token of ["accent", "success", "warning", "danger"]) {
+        expect(asset, `${file} does not name the tone token ${token}`).toContain(`"${token}"`);
+      }
+    }
+  });
+
+  it("the last worked example of each scene-schema prompt parses through the DSL contract and carries tones", async () => {
+    for (const file of ["scene-schema-json.md", "scene-schema-xml.md"]) {
+      const asset = await loadPromptAsset(file);
+      const blocks = [...asset.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((match) => match[1]!);
+      const example = blocks[blocks.length - 1]!;
+      const result = sceneTrackerDslSchema.safeParse(JSON.parse(example));
+      expect(result.success, `${file} worked example failed the scene DSL contract`).toBe(true);
+      expect(example, `${file} worked example shows no toneBy`).toContain("toneBy");
+      expect(example, `${file} worked example shows no tone`).toContain('"tone"');
+    }
   });
 });
 
@@ -129,6 +141,43 @@ describe("message editor prompt modes", () => {
   }
 });
 
+describe("skill drafting prompt mode (AP-23c)", () => {
+  it("uses an independent text-mode configuration mirroring lore_entry", () => {
+    const config = getModeConfig("skill");
+    expect(config.mode).toBe("skill");
+    expect(config.presetKey).toBe("skill");
+    expect(config.defaultPromptFile).toBe("skill-ai-prompt.md");
+    expect(config.outputFormat).toBe("text");
+    expect(config.stripReasoning).toBe(false);
+    expect(config.jsonSchemaHint).toBeNull();
+    expect(getDefaultPromptFile("skill")).toBe("skill-ai-prompt.md");
+  });
+
+  it("resolves its default asset and only its own profile override when mode is skill", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const defaultResult = await resolveSystemPrompt(db, "skill");
+    expect(defaultResult.source).toBe("default");
+    const assetPath = await resolvePromptAssetPath("skill-ai-prompt.md");
+    expect(await Bun.file(assetPath).exists()).toBe(true);
+    expect((await getDefaultPromptForMode("skill")).length).toBeGreaterThan(0);
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Skill Override",
+      overrides: { skill: "OVERRIDE_TOKEN" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    const overrideResult = await resolveSystemPrompt(db, "skill");
+    expect(overrideResult).toEqual({ prompt: "OVERRIDE_TOKEN", source: "override" });
+  });
+
+  it("the default asset drafts the skill body as markdown, not the first-cut JSON draft", async () => {
+    const prompt = await getDefaultPromptForMode("skill");
+    expect(prompt).toContain("skill body");
+    expect(prompt).toContain("# Title");
+    expect(prompt).not.toContain('{"name"');
+  });
+});
+
 describe("chat impersonation enhancement prompt", () => {
   it("resolves its independent editable service-prompt field", async () => {
     const { db, profileStore, uiSettings } = await setupDb();
@@ -143,6 +192,23 @@ describe("chat impersonation enhancement prompt", () => {
     await uiSettings.update({ activeServicePromptProfileId: profile.id });
     expect(await resolveSystemPrompt(db, "chat_impersonate", { field: "chat_impersonate_enhance" }))
       .toEqual({ prompt: "CUSTOM ENHANCE PROMPT", source: "override" });
+  });
+});
+
+describe("tracker template teaching prompt (CT-10)", () => {
+  it("resolves its default asset and only its own profile override via the field path", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const defaultResult = await resolveSystemPrompt(db, "lore_entry", { field: "tracker_template" });
+    expect(defaultResult.source).toBe("default");
+    expect(defaultResult.prompt).toContain("UNION RULE");
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Tracker Override",
+      overrides: { tracker_template: "CUSTOM TRACKER TEMPLATE PROMPT" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    expect(await resolveSystemPrompt(db, "lore_entry", { field: "tracker_template" }))
+      .toEqual({ prompt: "CUSTOM TRACKER TEMPLATE PROMPT", source: "override" });
   });
 });
 

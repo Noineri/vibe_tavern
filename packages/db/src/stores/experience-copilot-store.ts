@@ -1,45 +1,43 @@
-import { and, eq, isNull, desc } from 'drizzle-orm';
-import { experienceCopilotThreads, experienceCopilotMessages } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import { and, eq, isNull, desc, asc } from 'drizzle-orm';
+import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { brandId, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId } from '@vibe-tavern/domain';
+import { brandId, type Attachment, type AttachmentPatch, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
+import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
+import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
+import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
+import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
+import { updateAssistantMessageContent, type CopilotMessageEditResult } from './experience-copilot-message-edit.js';
+import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
+import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
+import { findMessageAttachment, updateMessageAttachment, removeMessageAttachment, hasMessageAttachmentAssetReference } from './experience-copilot-attachments.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 export interface AppendMessageInput {
   role: string;
+  /** CA-4a2: absent or empty stores NULL, like RP message attachments. */
+  attachments?: Attachment[];
   /** Defaults to '' when omitted, mirroring the column default. */
   content?: string;
   /** Serialized tool-call payload (nullable). */
   toolCallsJson?: string | null;
   /** Correlated tool-call id for tool-result messages (nullable). */
   toolCallId?: string | null;
+  /** AP-28: the turn's reasoning — pinned by the stream loop on the FIRST
+   *  assistant row of a turn; omitted/null on every other row. */
+  reasoning?: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms (rides with `reasoning`). */
+  reasoningDurationMs?: number | null;
 }
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
-/**
- * Parsed segmented context-usage metrics for a copilot thread (CM-2). Mirrors
- * the `experienceCopilotContextMetricsSchema` wire shape (api-contracts)
- * field-for-field — the db package cannot import api-contracts (dependency
- * direction), so this local structural type is the store's read projection. The
- * stream finish path (services/api) builds the object; this store only
- * serializes it into `context_metrics_json` and parses it back out.
- */
-export interface CopilotContextMetrics {
-  systemTokens: number;
-  /** Tokens of the pinned-context attached block + recency anchor (CX-1,
-   *  additive). Rows written before this plan lack the field — the parse guard
-   *  defaults a missing value to 0. */
-  attachedTokens: number;
-  digestTokens: number;
-  historyTokens: number;
-  totalTokens: number;
-  budgetTokens: number;
-  reserveTokens: number;
-  source: "estimate" | "provider";
-  measuredAt: string;
-}
+// CopilotContextMetrics / CopilotContextLink / CopilotTodoItem (the local
+// structural twins of the api-contracts JSON-column shapes) live in
+// experience-copilot-row-parse.ts beside their defensive parsers — extracted
+// when this file hit the arch-gate size cap; re-exported from the stores
+// barrel, so consumers see no difference.
 
 /**
  * Store-level copilot thread — domain projection of an
@@ -51,6 +49,14 @@ export interface ExperienceCopilotThread {
   id: ExperienceCopilotThreadId;
   scriptId: string | null;
   draftSessionId: string | null;
+  /** Chat-owner triple (SC-0a): set together on chat-owned threads, null on
+   *  script-owned and draft rows. Plain strings, same as scriptId — the store
+   *  projection keeps cross-domain links unbranded (ER-3). */
+  chatId: string | null;
+  branchId: string | null;
+  /** Agent-shell kind slug on chat-owned threads; null on script/draft rows
+   *  (their kind is derived from the script). */
+  agentKind: string | null;
   title: string;
   /** NULL = the active session for this script_id; non-null ISO = archived. */
   archivedAt: string | null;
@@ -60,8 +66,9 @@ export interface ExperienceCopilotThread {
   /** Pinned-context links (CX-1); `[]` when none pinned or the stored JSON is
    *  malformed (logged, never fatal). */
   contextLinks: CopilotContextLink[];
-  /** The model's step-plan (TAG-2); `[]` until the first todo call or when the
-   *  stored JSON is malformed (logged, never fatal). */
+  /** The model's session-scoped checklist (TAG-2, restored PM-7); `[]` until
+   *  the first todo call or when the stored JSON is malformed (logged, never
+   *  fatal). */
   todo: CopilotTodoItem[];
   /** The provider/model the thread last used (persisted from the stream finish
    *  path); null before the first turn. */
@@ -73,35 +80,33 @@ export interface ExperienceCopilotThread {
   updatedAt: string;
 }
 
-/** Pinned-context link on a copilot thread (CX-1). Local structural twin of
- *  the api-contracts `experienceCopilotContextLinkSchema` — the db package
- *  cannot import api-contracts (dependency direction), same as
- *  {@link CopilotContextMetrics} above. Links resolve by id at assembly time
- *  (never a content copy). */
-export interface CopilotContextLink {
-  targetType: 'character' | 'persona' | 'lorebook' | 'script' | 'skill';
-  targetId: string;
-}
-
-/** A step-plan item on a copilot thread (copilot todo/ask plan, TAG-2). Local
- *  structural twin of the api-contracts `copilotTodoItemSchema` — the db
- *  package cannot import api-contracts (dependency direction), same as
- *  {@link CopilotContextMetrics} above. Statuses mirror the RP objective
- *  tracker so the frontend panel reuses its visual language. */
-export interface CopilotTodoItem {
-  title: string;
-  status: 'pending' | 'active' | 'completed' | 'abandoned';
-}
-
 export interface ExperienceCopilotMessage {
   id: ExperienceCopilotMessageId;
   threadId: ExperienceCopilotThreadId;
   role: string;
   content: string;
+  /** Full stored set, including excluded items; absent when empty. */
+  attachments?: Attachment[];
   toolCallsJson: string | null;
   toolCallId: string | null;
+  /** AP-28: the turn's reasoning (first assistant row of the turn only);
+   *  null on every other row, on turns without reasoning, and on rows
+   *  written before the column existed (additive migration, no backfill). */
+  reasoning: string | null;
+  /** AP-28: summed per-burst reasoning elapsed ms; null whenever `reasoning`
+   *  is null. */
+  reasoningDurationMs: number | null;
+  /** Frozen-context seq (SC-1): allocated from the thread's next_seq on
+   *  chat-owned threads (interleaving with context events); NULL on
+   *  script/draft threads and on rows written before SC-1. */
+  seq: number | null;
   createdAt: string;
 }
+
+// ─── Frozen context (SIDECHAT_PLAN SC-1) ─────────────────────────────
+// The SC-1 read-model vocabulary (event kinds, event/frontier/timeline
+// types, ordering + frontier-parse helpers) lives in
+// agent-thread-context-events.ts; the store methods below are the surface.
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -135,7 +140,27 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(and(eq(experienceCopilotThreads.scriptId, scriptId), isNull(experienceCopilotThreads.archivedAt)))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
+  }
+
+  /** The single active chat-owned thread (archived_at IS NULL) for a
+   *  (chat, branch, kind) triple, or null — the chat-owner twin of
+   *  {@link getActive}. Never matches script/draft rows (chat_id IS NULL on
+   *  those). */
+  async getActiveForChat(chatId: string, branchId: string, kind: string): Promise<ExperienceCopilotThread | null> {
+    const row = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          eq(experienceCopilotThreads.agentKind, kind),
+          isNull(experienceCopilotThreads.archivedAt),
+        ),
+      )
+      .get();
+    return row ? mapThread(row) : null;
   }
 
   /** All messages for a thread, oldest → newest (createdAt asc, then id as a
@@ -148,7 +173,7 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotMessages.threadId, threadId))
       .orderBy(experienceCopilotMessages.createdAt, experienceCopilotMessages.id)
       .all();
-    return rows.map((r) => this.mapMessage(r));
+    return rows.map((r) => mapMessage(r));
   }
 
   /** Fetch one thread by id. */
@@ -158,7 +183,7 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, sessionId))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Active + archived threads for a script, newest first (updatedAt desc, then
@@ -170,53 +195,91 @@ export class ExperienceCopilotStore {
       .where(eq(experienceCopilotThreads.scriptId, scriptId))
       .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
       .all();
-    return rows.map((r) => this.mapThread(r));
+    return rows.map((r) => mapThread(r));
+  }
+
+  /** Active + archived chat-owned threads for a (chat, branch, kind) triple,
+   *  newest first — the chat-owner twin of {@link listSessions}. Scoped to the
+   *  exact triple: other kinds on the same branch, other branches of the same
+   *  chat, and script-owned sessions never appear. */
+  async listSessionsForChat(chatId: string, branchId: string, kind: string): Promise<ExperienceCopilotThread[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          eq(experienceCopilotThreads.agentKind, kind),
+        ),
+      )
+      .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
+      .all();
+    return rows.map((r) => mapThread(r));
+  }
+
+  /** Every ACTIVE (unarchived) chat-owned thread on one branch, across ALL
+   *  agent kinds, oldest first (createdAt, then id as tiebreaker). Kinds are
+   *  NEVER enumerated by the caller — whatever kinds have active threads on
+   *  the branch are what this returns. Script/draft rows never match. */
+  async listActiveChatThreadsForBranch(chatId: string, branchId: string): Promise<ExperienceCopilotThread[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceCopilotThreads)
+      .where(
+        and(
+          eq(experienceCopilotThreads.chatId, chatId),
+          eq(experienceCopilotThreads.branchId, branchId),
+          isNull(experienceCopilotThreads.archivedAt),
+        ),
+      )
+      .orderBy(asc(experienceCopilotThreads.createdAt), asc(experienceCopilotThreads.id))
+      .all();
+    return rows.map((r) => mapThread(r));
   }
 
   /**
    * "New session": archive the current active thread for this script (if any)
-   * and create+return a fresh active one. The archive-then-insert runs inside a
-   * single synchronous transaction so two actives can never coexist (the app-
-   * level half of the at-most-one-active invariant; the partial unique index is
-   * the DB half).
+   * and create+return a fresh active one — thin seam over
+   * `experience-copilot-session-start.ts` (extracted at the arch-gate size
+   * cap); the creation contract is documented there. AP-20: `autoCompact`
+   * seeds the new row's toggle from the script's agent-kind default (the
+   * adapter resolves the kind and reads it); undefined keeps the column
+   * default (on).
    */
-  async startNewSession(scriptId: string, title?: string): Promise<ExperienceCopilotThread> {
-    const now = this.clock.now();
-    const id = this.idGen.next('expcop_thread');
-    this.db.transaction((tx) => {
-      tx
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: now, updatedAt: now })
-        .where(and(eq(experienceCopilotThreads.scriptId, scriptId), isNull(experienceCopilotThreads.archivedAt)))
-        .run();
-      tx
-        .insert(experienceCopilotThreads)
-        .values({
-          id,
-          scriptId,
-          draftSessionId: null,
-          title: title ?? '',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-    });
-    const row = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(eq(experienceCopilotThreads.id, id))
-      .get();
-    return this.mapThread(row!);
+  async startNewSession(scriptId: string, title?: string, autoCompact?: boolean): Promise<ExperienceCopilotThread> {
+    return startNewSession({ db: this.db, clock: this.clock, idGen: this.idGen }, scriptId, title, autoCompact);
   }
 
   /**
-   * Resume an archived session: archive all siblings sharing its script_id, then
+   * "New session" for a chat owner (SC-0a): archive the current active sibling
+   * thread of the SAME (chat, branch, kind) triple (if any) and create+return
+   * a fresh active one — the chat-owner twin of {@link startNewSession};
+   * thin seam over `experience-copilot-session-start.ts`, where the creation
+   * contract is documented. AP-20: `autoCompact` seeds the new row's toggle
+   * from this kind's default (the adapter reads it before calling).
+   */
+  async startNewChatSession(
+    chatId: string,
+    branchId: string,
+    kind: string,
+    title?: string,
+    autoCompact?: boolean,
+  ): Promise<ExperienceCopilotThread> {
+    return startNewChatSession({ db: this.db, clock: this.clock, idGen: this.idGen }, chatId, branchId, kind, title, autoCompact);
+  }
+
+  /**
+   * Resume an archived session: archive all siblings sharing its owner, then
    * mark this thread active (clear archived_at). No-op (returns the thread
-   * unchanged) if it is already the active session. Enforces at-most-one-active
-   * inside a synchronous transaction when a script_id is present. A draft thread
-   * (script_id NULL, exempt from the partial unique index) only clears its own
-   * archived_at.
+   * unchanged) if it is already the active session. Siblings are scoped to the
+   * owner — a chat-owned thread archives only threads of the same
+   * (chat_id, branch_id, agent_kind) triple (its script siblings — other kinds,
+   * other branches, script-owned threads — are never touched), a script-owned
+   * thread archives its same-script_id siblings. Enforces at-most-one-active
+   * inside a synchronous transaction when an owner is present. A draft thread
+   * (script_id NULL, chat_id NULL, exempt from both partial unique indexes)
+   * only clears its own archived_at.
    */
   async activate(sessionId: string): Promise<ExperienceCopilotThread | null> {
     const target = await this.getById(sessionId);
@@ -224,14 +287,30 @@ export class ExperienceCopilotStore {
     if (target.archivedAt === null) return target; // already the active session
 
     const now = this.clock.now();
-    const scriptId = target.scriptId;
-    if (scriptId === null) {
-      await this.db
-        .update(experienceCopilotThreads)
-        .set({ archivedAt: null, updatedAt: now })
-        .where(eq(experienceCopilotThreads.id, sessionId))
-        .run();
-    } else {
+    if (target.chatId !== null && target.branchId !== null && target.agentKind !== null) {
+      // Chat owner (SC-0a): archive same-(chat, branch, kind) siblings only.
+      const { chatId, branchId, agentKind } = target;
+      this.db.transaction((tx) => {
+        tx
+          .update(experienceCopilotThreads)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(experienceCopilotThreads.chatId, chatId),
+              eq(experienceCopilotThreads.branchId, branchId),
+              eq(experienceCopilotThreads.agentKind, agentKind),
+              isNull(experienceCopilotThreads.archivedAt),
+            ),
+          )
+          .run();
+        tx
+          .update(experienceCopilotThreads)
+          .set({ archivedAt: null, updatedAt: now })
+          .where(eq(experienceCopilotThreads.id, sessionId))
+          .run();
+      });
+    } else if (target.scriptId !== null) {
+      const scriptId = target.scriptId;
       this.db.transaction((tx) => {
         tx
           .update(experienceCopilotThreads)
@@ -244,13 +323,19 @@ export class ExperienceCopilotStore {
           .where(eq(experienceCopilotThreads.id, sessionId))
           .run();
       });
+    } else {
+      await this.db
+        .update(experienceCopilotThreads)
+        .set({ archivedAt: null, updatedAt: now })
+        .where(eq(experienceCopilotThreads.id, sessionId))
+        .run();
     }
     const row = await this.db
       .select()
       .from(experienceCopilotThreads)
       .where(eq(experienceCopilotThreads.id, sessionId))
       .get();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Archive a single thread (set archived_at). Idempotent — returns the thread
@@ -266,7 +351,7 @@ export class ExperienceCopilotStore {
       .set({ archivedAt: now, updatedAt: now })
       .where(eq(experienceCopilotThreads.id, sessionId))
       .returning();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /** Rename a session: set its title (empty = back to the auto-numbered
@@ -280,19 +365,26 @@ export class ExperienceCopilotStore {
       .set({ title, updatedAt: now })
       .where(eq(experienceCopilotThreads.id, sessionId))
       .returning();
-    return row ? this.mapThread(row) : null;
+    return row ? mapThread(row) : null;
   }
 
   /**
    * Append a message to a thread and bump the thread's updated_at so it surfaces
-   * as the most recently touched session. Returns the inserted message. Both
+   * as the most recently touched session. Returns the inserted message (a
+   * user row on an UNTITLED thread also auto-titles it — AP-19). Both
    * writes run in a synchronous transaction so updated_at always reflects the
-   * last appended message (a failure on either rolls both back).
+   * last appended message (a failure on either rolls both back). SC-1: on a
+   * CHAT-OWNED thread the same transaction also allocates the next gapless
+   * seq (read-and-increment of next_seq) and stamps it on the row, so messages
+   * interleave with frozen-context events on the merged timeline; script/draft
+   * threads append with seq NULL and keep their created_at-based ordering.
    */
   async appendMessage(threadId: string, input: AppendMessageInput): Promise<ExperienceCopilotMessage> {
     const now = this.clock.now();
     const id = this.idGen.next('expcop_msg');
     this.db.transaction((tx) => {
+      if (input.role === 'user') applyFirstMessageAutoTitle(tx, threadId, input.content ?? '');
+      const seq = this.allocateSeqAndTouchThread(tx, threadId, now);
       tx
         .insert(experienceCopilotMessages)
         .values({
@@ -302,13 +394,12 @@ export class ExperienceCopilotStore {
           content: input.content ?? '',
           toolCallsJson: input.toolCallsJson ?? null,
           toolCallId: input.toolCallId ?? null,
+          reasoning: input.reasoning ?? null,
+          reasoningDurationMs: input.reasoningDurationMs ?? null,
+          attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
+          seq,
           createdAt: now,
         })
-        .run();
-      tx
-        .update(experienceCopilotThreads)
-        .set({ updatedAt: now })
-        .where(eq(experienceCopilotThreads.id, threadId))
         .run();
     });
     const row = await this.db
@@ -316,7 +407,212 @@ export class ExperienceCopilotStore {
       .from(experienceCopilotMessages)
       .where(eq(experienceCopilotMessages.id, id))
       .get();
-    return this.mapMessage(row!);
+    return mapMessage(row!);
+  }
+
+  /** CA-4a2: single-attachment reads and transactional edits; the sibling owns
+   * the set rewrite, while the shared domain helper owns patch semantics. */
+  async findMessageAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    return findMessageAttachment(this.db, messageId, attachmentId);
+  }
+
+  async updateMessageAttachment(messageId: string, attachmentId: string, patch: AttachmentPatch): Promise<Attachment | null> {
+    return updateMessageAttachment(this.db, messageId, attachmentId, patch);
+  }
+
+  async removeMessageAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    return removeMessageAttachment(this.db, messageId, attachmentId);
+  }
+
+  async hasMessageAttachmentAssetReference(assetId: string): Promise<boolean> {
+    return hasMessageAttachmentAssetReference(this.db, assetId);
+  }
+
+  // ─── Frozen context events / timeline / frontier (SIDECHAT_PLAN SC-1/SC-2c) ──
+
+  /**
+   * Append a frozen-context event to a thread's timeline (SC-1): chat-state
+   * milestones (rp sync, variant attach, selection change, branch fork).
+   * seq is allocated exactly like appendMessage (the same next_seq counter,
+   * the same synchronous transaction), so events interleave with messages;
+   * the thread's updated_at is bumped. The payload's shape is the event
+   * writer's contract (SC-2c+) — the store only serializes it. Returns the
+   * inserted event.
+   */
+  async appendContextEvent(
+    threadId: string,
+    kind: AgentThreadContextEventKind,
+    payload: unknown,
+  ): Promise<AgentThreadContextEvent> {
+    const now = this.clock.now();
+    const id = this.idGen.next('expcop_evt');
+    let seq: number | null = null;
+    this.db.transaction((tx) => {
+      seq = this.allocateSeqAndTouchThread(tx, threadId, now);
+      tx
+        .insert(agentThreadContextEvents)
+        .values({
+          id,
+          threadId,
+          seq,
+          kind,
+          payloadJson: JSON.stringify(payload),
+          createdAt: now,
+        })
+        .run();
+    });
+    // The row was just written from these exact values (payloadJson is a
+    // fresh JSON.stringify — it cannot be malformed), so the projection is
+    // built directly instead of re-reading + mapEvent (which reserves null
+    // for corrupted rows).
+    return {
+      id: brandId<AgentThreadContextEventId>(id),
+      threadId: brandId<ExperienceCopilotThreadId>(threadId),
+      seq,
+      kind,
+      payload,
+      createdAt: now,
+    };
+  }
+
+  /**
+   * The merged timeline of ONE thread (SC-1): messages + frozen-context events
+   * in frozen order. Chat-owned threads interleave by seq ascending (rows
+   * written before SC-1 carry NULL seq and sort first); a thread whose rows
+   * are all-NULL seq (script/draft) orders by createdAt + id — byte-identical
+   * to listMessages today. Events with malformed payload_json are skipped
+   * (logged, never fatal); listMessages itself is unchanged for existing
+   * consumers.
+   */
+  async listTimeline(threadId: string): Promise<AgentThreadTimelineEntry[]> {
+    const messageRows = await this.db
+      .select()
+      .from(experienceCopilotMessages)
+      .where(eq(experienceCopilotMessages.threadId, threadId))
+      .all();
+    const eventRows = await this.db
+      .select()
+      .from(agentThreadContextEvents)
+      .where(eq(agentThreadContextEvents.threadId, threadId))
+      .all();
+    const entries: AgentThreadTimelineEntry[] = [];
+    for (const row of messageRows) {
+      entries.push({ rowType: 'message', ...mapMessage(row) });
+    }
+    for (const row of eventRows) {
+      const event = mapEvent(row);
+      if (event) entries.push({ rowType: 'event', ...event });
+    }
+    entries.sort(compareTimelineEntries);
+    return entries;
+  }
+
+  /**
+   * Read the thread's frozen RP-chat frontier (SC-1): null until the first rp
+   * sync, when the thread does not exist, or when the stored JSON is malformed
+   * or of the wrong shape (logged, never fatal — the store's defensive-parse
+   * contract).
+   */
+  async getFrontier(threadId: string): Promise<AgentThreadRpFrontier | null> {
+    const row = await this.db
+      .select({ rpFrontierJson: experienceCopilotThreads.rpFrontierJson })
+      .from(experienceCopilotThreads)
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .get();
+    if (!row || row.rpFrontierJson === null) return null;
+    return parseFrontier(row.rpFrontierJson, threadId);
+  }
+
+  /**
+   * Wholesale-replace the thread's frozen RP-chat frontier (SC-1): the sync
+   * writer (SC-2c) computes the full snapshot — there is no partial merge.
+   * Bumps updated_at so the thread surfaces as touched.
+   */
+  async setFrontier(threadId: string, frontier: AgentThreadRpFrontier): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({ rpFrontierJson: JSON.stringify(frontier), updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+  }
+
+  /**
+   * Apply one RP sync ATOMICALLY (SC-2c): inside ONE synchronous transaction
+   * — read the thread's stored frontier, hand it to `compute` (the caller's
+   * pure diff: services/api's computeRpSync over a branch view read before
+   * this call), append every planned event (seq allocated exactly like
+   * appendContextEvent, so the events interleave with messages on the merged
+   * timeline), then wholesale-replace the frontier. The frontier READ and the
+   * WRITES share the transaction on purpose: two back-to-back syncs then
+   * cannot both see the pre-sync frontier — the second computes its diff
+   * against the first's COMMITTED frontier, so a delta is never duplicated
+   * (bun:sqlite transactions are synchronous; no await can interleave between
+   * the read and the writes). A `compute` throw — the frozen-history
+   * corruption SC-2c names — propagates out of the synchronous callback, so
+   * the whole transaction rolls back: no events, no frontier move. The store
+   * stays payload-agnostic, exactly like appendContextEvent: nothing inside
+   * `plan` is validated here. The callback form keeps the pure diff out of
+   * this package's imports (dependency direction) while its input frontier is
+   * still read inside the same transaction that writes the plan.
+   */
+  async applyRpSync(
+    threadId: string,
+    compute: (frontier: AgentThreadRpFrontier | null) => RpSyncWritePlan,
+  ): Promise<void> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      const row = tx
+        .select({ rpFrontierJson: experienceCopilotThreads.rpFrontierJson })
+        .from(experienceCopilotThreads)
+        .where(eq(experienceCopilotThreads.id, threadId))
+        .get();
+      const frontier =
+        row === undefined || row.rpFrontierJson === null
+          ? null
+          : parseFrontier(row.rpFrontierJson, threadId);
+      const plan = compute(frontier);
+      for (const event of plan.events) {
+        const id = this.idGen.next('expcop_evt');
+        const seq = this.allocateSeqAndTouchThread(tx, threadId, now);
+        tx
+          .insert(agentThreadContextEvents)
+          .values({
+            id,
+            threadId,
+            seq,
+            kind: event.kind,
+            payloadJson: JSON.stringify(event.payload),
+            createdAt: now,
+          })
+          .run();
+      }
+      tx
+        .update(experienceCopilotThreads)
+        .set({ rpFrontierJson: JSON.stringify(plan.frontier), updatedAt: now })
+        .where(eq(experienceCopilotThreads.id, threadId))
+        .run();
+    });
+  }
+
+  // ─── Branch-sidechat fork copy (SIDECHAT_PLAN SC-20) ───────────────────
+
+  /**
+   * Copy ONE chat-owned thread onto another branch of the same chat (SC-20) —
+   * the thin seam over `experience-copilot-fork-copy.ts` (extracted at the
+   * arch-gate cap); the copy's full contract is documented there.
+   */
+  async forkChatThreadToBranch(
+    sourceThreadId: string,
+    targetBranchId: string,
+    remap: ForkThreadRemap,
+  ): Promise<ExperienceCopilotThread | null> {
+    return forkChatThreadToBranch(
+      { db: this.db, clock: this.clock, idGen: this.idGen, allocateSeq: (tx, threadId, now) => this.allocateSeqAndTouchThread(tx, threadId, now) },
+      sourceThreadId,
+      targetBranchId,
+      remap,
+    );
   }
 
   // ─── Context metrics / auto-compact (CM-2) ─────────────────────────────────
@@ -390,14 +686,13 @@ export class ExperienceCopilotStore {
       .run();
   }
 
-  // ─── Step-plan todo (TAG-2) ────────────────────────────────────────────────
+  // ─── Session-scoped checklist todo (TAG-2, restored PM-7) ──────────────
 
-  /** Full-replace the thread's step-plan (the model computes the whole list
-   *  on every `todo` tool call — Cline-style rewrite semantics; the panel and
-   *  the prompt section render whatever this holds). Bumps updated_at. The
-   *  caller (services/api tool layer) validates the list shape + cap against
-   *  the api-contracts schema; the store trusts its typed input, mirroring
-   *  setContextLinks. */
+  /** Full-replace the thread's checklist (the model computes the whole list
+   *  on every `todo` tool call — Cline-style rewrite semantics; the panel
+   *  renders whatever this holds). Bumps updated_at. The caller (services/api
+   *  tool layer) validates the list shape + cap against the api-contracts
+   *  schema; the store trusts its typed input, mirroring setContextLinks. */
   async updateTodo(threadId: string, items: readonly CopilotTodoItem[]): Promise<void> {
     const now = this.clock.now();
     await this.db
@@ -439,145 +734,56 @@ export class ExperienceCopilotStore {
       .set({ updatedAt: now })
       .where(eq(experienceCopilotThreads.id, threadId))
       .run();
-    return this.mapMessage(row);
+    return mapMessage(row);
   }
 
-  // ─── Row mappers (brandId at the DB edge only) ─────────────────────────────
-
-  private mapThread(row: typeof experienceCopilotThreads.$inferSelect): ExperienceCopilotThread {
-    return {
-      id: brandId<ExperienceCopilotThreadId>(row.id),
-      scriptId: row.scriptId,
-      draftSessionId: row.draftSessionId,
-      title: row.title,
-      archivedAt: row.archivedAt,
-      contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
-      contextLinks: parseContextLinks(row.contextLinksJson, row.id),
-      todo: parseTodo(row.todoJson, row.id),
-      lastProviderProfileId: row.lastProviderProfileId,
-      lastModel: row.lastModel,
-      autoCompact: row.autoCompact === 1,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+  /**
+   * AP-30: replace ONE assistant text row's `content` in place — thin seam
+   * over `experience-copilot-message-edit.ts` (the turn-delete sibling
+   * pattern: the eligibility checks, the digest-anchor fold boundary, and
+   * the single-row update live there; the store family owns the columns).
+   * Returns the updated row, or the typed refusal (not an assistant text
+   * row / a tool-call carrier / an empty replacement or row / folded into
+   * the last digest / missing thread or message).
+   */
+  updateAssistantContent(
+    threadId: string,
+    messageId: string,
+    content: string,
+  ): Promise<CopilotMessageEditResult> {
+    return updateAssistantMessageContent({ db: this.db, clock: this.clock }, threadId, messageId, content);
   }
 
-  private mapMessage(row: typeof experienceCopilotMessages.$inferSelect): ExperienceCopilotMessage {
-    return {
-      id: brandId<ExperienceCopilotMessageId>(row.id),
-      threadId: brandId<ExperienceCopilotThreadId>(row.threadId),
-      role: row.role,
-      content: row.content,
-      toolCallsJson: row.toolCallsJson,
-      toolCallId: row.toolCallId,
-      createdAt: row.createdAt,
-    };
-  }
-}
+  // ─── Seq allocation (SC-1, internal) ────────────────────────────────
 
-// ─── Row-parse helpers (defensive, never fatal) ───────────────────────────
-
-/** Type guard for the parsed metrics JSON shape. `attachedTokens` is additive
- *  (CX-1): rows written before the plan lack it — the guard accepts those and
- *  the caller defaults the value to 0. */
-function isCopilotContextMetrics(value: unknown): value is Omit<CopilotContextMetrics, "attachedTokens"> & { attachedTokens?: unknown } {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.systemTokens === "number" &&
-    typeof v.digestTokens === "number" &&
-    typeof v.historyTokens === "number" &&
-    typeof v.totalTokens === "number" &&
-    typeof v.budgetTokens === "number" &&
-    typeof v.reserveTokens === "number" &&
-    (v.source === "estimate" || v.source === "provider") &&
-    typeof v.measuredAt === "string"
-  );
-}
-
-/** Parse `context_metrics_json` into a validated {@link CopilotContextMetrics},
- *  or null when absent/malformed/wrong-shape. The column is always written via
- *  JSON.stringify of a valid object, so a failure indicates corruption — fall
- *  back to null (treated identically to "no metrics yet") and log it. */
-function parseContextMetrics(text: string | null, threadId: string): CopilotContextMetrics | null {
-  if (!text) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    // Legacy rows (pre-CX-1) carry no attachedTokens — default to 0 rather than
-    // rejecting: "no attached context recorded" and "attached not yet metered"
-    // mean the same thing to the meter.
-    if (isCopilotContextMetrics(parsed)) {
-      return { ...parsed, attachedTokens: typeof parsed.attachedTokens === "number" ? parsed.attachedTokens : 0 };
+  /**
+   * SC-1: bump the thread's updated_at and, on a CHAT-OWNED thread, allocate
+   * the next gapless seq (read-and-increment of next_seq) inside the caller's
+   * append transaction. Returns the allocated seq, or null for script/draft
+   * rows — they never allocate and keep created_at-based ordering. The
+   * read-modify-write is race-free because bun:sqlite transactions here are
+   * synchronous (no await can interleave between the read and the write). The
+   * chat-owned predicate is the store-seam twin of isChatOwnedAgentThread
+   * (services/api/agent-thread-owner.ts — the db package cannot import it,
+   * dependency direction): ownership columns are set together by the store,
+   * so chatId + agentKind non-null identifies the chat-owned rows.
+   */
+  private allocateSeqAndTouchThread(tx: DbTransaction, threadId: string, now: string): number | null {
+    const thread = tx
+      .select({ chatId: experienceCopilotThreads.chatId, agentKind: experienceCopilotThreads.agentKind, nextSeq: experienceCopilotThreads.nextSeq })
+      .from(experienceCopilotThreads)
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .get();
+    let seq: number | null = null;
+    if (thread?.chatId != null && thread.agentKind != null) {
+      seq = thread.nextSeq ?? 0;
     }
-  } catch (err) {
-    console.error(
-      `[experience-copilot-store] malformed context_metrics_json for thread '${threadId}':`,
-      err,
-    );
-    return null;
-  }
-  console.error(
-    `[experience-copilot-store] invalid context_metrics_json shape for thread '${threadId}'`,
-  );
-  return null;
-}
-
-const COPILOT_TODO_STATUSES = new Set(["pending", "active", "completed", "abandoned"]);
-
-/** Parse `todo_json` into validated {@link CopilotTodoItem}s. Absent/malformed
- *  JSON or a non-array → `[]` (logged where corrupt, never fatal): the todo
- *  list is the model's working plan — a corrupted column must never take the
- *  thread down, and the next `updateTodo` write heals it. Invalid entries are
- *  dropped individually (a mixed array keeps its valid items), mirroring
- *  parseContextLinks. */
-function parseTodo(text: string | null, threadId: string): CopilotTodoItem[] {
-  if (!text) return [];
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      console.error(`[experience-copilot-store] invalid todo_json for thread '${threadId}': not an array`);
-      return [];
-    }
-    const items: CopilotTodoItem[] = [];
-    for (const item of parsed) {
-      if (!item || typeof item !== "object") continue;
-      const rec = item as Record<string, unknown>;
-      if (typeof rec.title !== "string" || rec.title.length === 0 || rec.title.length > 200) continue;
-      if (typeof rec.status !== "string" || !COPILOT_TODO_STATUSES.has(rec.status)) continue;
-      items.push({ title: rec.title, status: rec.status as CopilotTodoItem["status"] });
-    }
-    return items;
-  } catch (err) {
-    console.error(`[experience-copilot-store] malformed todo_json for thread '${threadId}':`, err);
-    return [];
-  }
-}
-
-const COPILOT_LINK_TARGET_TYPES = new Set(["character", "persona", "lorebook", "script", "skill"]);
-
-/** Parse `context_links_json` into validated {@link CopilotContextLink}s.
- *  Malformed JSON or a wrong shape → `[]` (logged, never fatal): links are
- *  advisory grounding — a corrupted column must never take the thread down,
- *  and the next `setContextLinks` write heals it. */
-function parseContextLinks(text: string, threadId: string): CopilotContextLink[] {
-  if (!text) return [];
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      console.error(`[experience-copilot-store] invalid context_links_json for thread '${threadId}': not an array`);
-      return [];
-    }
-    const links: CopilotContextLink[] = [];
-    for (const item of parsed) {
-      if (!item || typeof item !== "object") continue;
-      const rec = item as Record<string, unknown>;
-      if (typeof rec.targetType !== "string" || !COPILOT_LINK_TARGET_TYPES.has(rec.targetType)) continue;
-      if (typeof rec.targetId !== "string" || rec.targetId.length === 0) continue;
-      links.push({ targetType: rec.targetType as CopilotContextLink["targetType"], targetId: rec.targetId });
-    }
-    return links;
-  } catch (err) {
-    console.error(`[experience-copilot-store] malformed context_links_json for thread '${threadId}':`, err);
-    return [];
+    const nextSeqUpdate = seq === null ? {} : { nextSeq: seq + 1 };
+    tx
+      .update(experienceCopilotThreads)
+      .set({ updatedAt: now, ...nextSeqUpdate })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+    return seq;
   }
 }

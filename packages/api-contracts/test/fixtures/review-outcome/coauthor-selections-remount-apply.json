@@ -1,0 +1,98 @@
+{
+  "surface": "coauthor",
+  "scenario": "mixed selections survive clear and remount, then a partial Apply",
+  "requests": [
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "preserved choices",
+        "coauthorEditorState": {
+          "card": {
+            "name": "Kira",
+            "body": "# PERSONALITY\nA reserved arachnid weaver.\n\n# SCENARIO\nA forest cave.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\nWelcome to my web, little fly.\n",
+            "greetings": [
+              "Welcome to my web, little fly."
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": [
+              {
+                "target": "card",
+                "roundId": "51d712124de2",
+                "outcome": "awaiting",
+                "hunks": {
+                  "accepted": 0,
+                  "rejected": 1,
+                  "pending": 1
+                }
+              },
+              {
+                "target": "lore",
+                "roundId": "4b3fc8760912",
+                "outcome": "awaiting",
+                "items": {
+                  "offered": 4,
+                  "selected": 2,
+                  "applied": 0
+                }
+              },
+              {
+                "target": "tracker_template",
+                "roundId": "f6de84e24e53",
+                "outcome": "awaiting",
+                "selected": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "applied choices",
+        "coauthorEditorState": {
+          "card": {
+            "name": "Kira",
+            "body": "# PERSONALITY\nA reserved arachnid weaver.\n\n# SCENARIO\nA forest cave at dusk.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\nWelcome to my web, little fly.\n",
+            "greetings": [
+              "Welcome to my web, little fly."
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": [
+              {
+                "target": "card",
+                "roundId": "51d712124de2",
+                "outcome": "applied-partial",
+                "hunks": {
+                  "accepted": 1,
+                  "rejected": 1,
+                  "pending": 0
+                }
+              },
+              {
+                "target": "lore",
+                "roundId": "4b3fc8760912",
+                "outcome": "applied-partial",
+                "items": {
+                  "offered": 4,
+                  "selected": 2,
+                  "applied": 2
+                }
+              },
+              {
+                "target": "tracker_template",
+                "roundId": "f6de84e24e53",
+                "outcome": "rejected",
+                "selected": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useVibeTavernApp } from "./hooks/use-vibe-tavern-app.js";
 import { useT } from "./i18n/context.js";
 import { AppShell } from "./components/layout/AppShell.js";
+import { FloatingGalleryViewers } from "./components/build/editors/FloatingGalleryViewers.js";
 import { TooltipProvider } from "./components/shared/Tooltip.js";
 import { Logo } from "./components/shared/Logo.js";
 import { useSessionStore } from "./stores/session-store.js";
@@ -45,7 +46,7 @@ export function App() {
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
           <div className="flex flex-col items-center gap-6">
             <Logo animated className="h-[180px] w-[180px]" />
-            <div className="font-body text-[12.5px] italic text-t3">{t("loading_app")}</div>
+            <div className="font-body text-[calc(var(--ui-fs)-1px)] italic text-t3">{t("loading_app")}</div>
           </div>
         </main>
       </div>
@@ -74,6 +75,10 @@ export function App() {
         tweaksSettings={tweaksSettings}
         setTweaksSettings={setTweaksSettings}
       />
+      {/* One host for every floating gallery viewer (chat menu + Build
+          grid open into the shared store) — mounted here so open windows
+          survive mode and character switches; the user closes each one. */}
+      <FloatingGalleryViewers />
     </TooltipProvider>
   );
 }

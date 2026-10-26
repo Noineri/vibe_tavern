@@ -21,8 +21,6 @@ export interface AiAssistantModeConfig {
    *  replaces defaultPromptFile in the default-md fallback branch (preset
    *  overrides still win and are format-agnostic). */
   formatPromptFiles?: Partial<Record<"json" | "xml", string>>;
-  /** Backward-compat column for script mode. null for other modes. */
-  legacyColumn?: "scriptAiSystemPrompt";
   /** Whether reasoning is stripped from SSE output (only final result emitted). */
   stripReasoning: boolean;
   /** Expected output format. */
@@ -37,30 +35,6 @@ export interface AiAssistantModeConfig {
 // ─── Mode registry ───────────────────────────────────────────────────────────
 
 const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
-  script: {
-    mode: "script",
-    presetKey: "script",
-    defaultPromptFile: "script-ai-prompt.md",
-    legacyColumn: "scriptAiSystemPrompt",
-    stripReasoning: false,
-    outputFormat: "text",
-    jsonSchemaHint: null,
-  },
-  // dice_script generates Dice-script code targeting the dedicated Dice VM
-  // (DICE_SYSTEM_BACKEND_PLAN Wave B2). It is a REAL assistant mode using the
-  // existing assembler — no thinner prompt shape. It has NO legacyColumn: the
-  // generic `script` preset/legacy override stays prompt-only, so a dice-script
-  // generation never falls through to scriptAiSystemPrompt. stripReasoning is
-  // true so the accumulated output is cleaned (markdown fences stripped) before
-  // yielding one final code block.
-  dice_script: {
-    mode: "dice_script",
-    presetKey: "dice_script",
-    defaultPromptFile: "dice-script-ai-prompt.md",
-    stripReasoning: true,
-    outputFormat: "text",
-    jsonSchemaHint: null,
-  },
   lore_entry: {
     mode: "lore_entry",
     presetKey: "lore_entry",
@@ -164,6 +138,17 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "json",
     jsonSchemaHint:
       '{ "name": "...", "findRegex": "/pattern/flags", "replaceString": "...", "trimStrings": ["..."], "applyTarget": "persist|display|prompt|display_prompt", "depthMode": "all|recent|older|range", "depthValue": 4, "explanation": "..." }',
+  },
+  // Skill-body drafting for the skill library (AGENT_SHELL_POLISH AP-23c).
+  // The modal edits the skill's markdown body — text output, reasoning kept
+  // in the stream like the other editor modes (lore_entry's config shape).
+  skill: {
+    mode: "skill",
+    presetKey: "skill",
+    defaultPromptFile: "skill-ai-prompt.md",
+    stripReasoning: false,
+    outputFormat: "text",
+    jsonSchemaHint: null,
   },
 };
 

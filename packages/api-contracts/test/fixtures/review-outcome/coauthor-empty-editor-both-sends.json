@@ -1,0 +1,44 @@
+{
+  "surface": "coauthor",
+  "scenario": "empty editor buffers on the non-stream and stream sends",
+  "requests": [
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "normal empty",
+        "coauthorEditorState": {
+          "card": {
+            "name": "",
+            "body": "# PERSONALITY\n\n# SCENARIO\n\n# EXAMPLES\n\n# GREETINGS\n",
+            "greetings": [
+              ""
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": []
+          }
+        }
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "stream empty",
+        "coauthorEditorState": {
+          "card": {
+            "name": "",
+            "body": "# PERSONALITY\n\n# SCENARIO\n\n# EXAMPLES\n\n# GREETINGS\n",
+            "greetings": [
+              ""
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": []
+          }
+        }
+      }
+    }
+  ]
+}

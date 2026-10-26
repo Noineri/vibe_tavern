@@ -16,11 +16,11 @@ import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { LoreEntryRecord, LorebookLinkRecord, LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const listLoreEntries = mock((_lorebookId: string) => Promise.resolve<LoreEntryRecord[]>([]));
-const realI18nContext = await import("../../../i18n/context.js");
 const realLorebookApi = await import("../../../api/lorebook-api.js");
 const realLoreEntryList = await import("./LoreEntryList.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
@@ -28,16 +28,7 @@ const realTooltip = await import("../../shared/Tooltip.js");
 const realTokenizer = await import("../../../utils/tokenizer.js");
 
 // Identity i18n — assertion strings match keys verbatim.
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 // lorebook-api — only listLoreEntries is called by the accordion; types are
 // erased at runtime.
@@ -566,7 +557,7 @@ describe("LorebookAccordion mobile edit form (MUI step 6)", () => {
 
 // ── Advanced book settings (resweep step 6) ─────────────────────────────
 // Pins the disclosure + SliderField.onCommit wiring: collapsed by default,
-// drag ticks paint locally (no write), release commits one write per field,
+// the Base UI nested-input test seam commits one write per field,
 // the ST mutual exclusion writes BOTH fields in ONE call, disabled states
 // follow recursive scanning / min activations, zero captions appear only
 // at 0, and the overflow checkbox writes its flag.
@@ -584,10 +575,9 @@ describe("LorebookAccordion advanced settings", () => {
     return view;
   }
 
-  /** Drag a slider to v (change per tick) and release (commit). */
-  function dragAndRelease(view: ReturnType<typeof render>, testId: string, v: number) {
+  /** Base UI's nested range input change is the drivable commit boundary. */
+  function changeAndCommit(view: ReturnType<typeof render>, testId: string, v: number) {
     fireEvent.change(view.getByTestId(testId), { target: { value: String(v) } });
-    fireEvent.pointerUp(view.getByTestId(testId));
   }
 
   it("collapsed by default; opens on the toggle", async () => {
@@ -601,34 +591,31 @@ describe("LorebookAccordion advanced settings", () => {
     expect(view.getByRole("checkbox", { name: "lore_overflow_alert" })).not.toBeNull();
   });
 
-  it("drag ticks paint locally — no write until release", async () => {
+  it("the nested input commit boundary writes once", async () => {
     const { view, writes } = renderStatefulAccordion({ recursiveScanning: true });
     await openAdvanced(view);
     fireEvent.change(view.getByTestId("lore-steps-range"), { target: { value: "5" } });
-    expect(writes).toHaveLength(0);
-    // release commits once
-    fireEvent.pointerUp(view.getByTestId("lore-steps-range"));
     expect(writes).toEqual([{ maxRecursionSteps: 5 }]);
   });
 
   it("each slider commits its own field", async () => {
     const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2 });
     await openAdvanced(view);
-    dragAndRelease(view, "lore-depth-max-range", 7);
+    changeAndCommit(view, "lore-depth-max-range", 7);
     expect(writes).toEqual([{ minActivationsDepthMax: 7 }]);
     writes.length = 0;
-    dragAndRelease(view, "lore-min-act-range", 5); // steps is 0 → no exclusion
+    changeAndCommit(view, "lore-min-act-range", 5); // steps is zero, so no exclusion
     expect(writes).toEqual([{ minActivations: 5 }]);
     writes.length = 0;
-    // no-op release (value already committed) writes nothing
-    dragAndRelease(view, "lore-depth-max-range", 7);
+    // no-op commit (value already committed) writes nothing
+    changeAndCommit(view, "lore-depth-max-range", 7);
     expect(writes).toHaveLength(0);
   });
 
   it("mutual exclusion: steps → non-zero zeroes min activations in ONE write, note on the zeroed control", async () => {
     const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2, maxRecursionSteps: 0 });
     await openAdvanced(view);
-    dragAndRelease(view, "lore-steps-range", 3);
+    changeAndCommit(view, "lore-steps-range", 3);
     expect(writes).toEqual([{ maxRecursionSteps: 3, minActivations: 0 }]);
     // min-act fell to 0 → its caption slot carries the reset note (NOT «выключено»)
     expect(view.getByText("lore_reset_by_steps")).not.toBeNull();
@@ -638,7 +625,7 @@ describe("LorebookAccordion advanced settings", () => {
   it("mutual exclusion mirror: min activations → non-zero zeroes steps in ONE write", async () => {
     const { view, writes } = renderStatefulAccordion({ maxRecursionSteps: 4, minActivations: 0 });
     await openAdvanced(view);
-    dragAndRelease(view, "lore-min-act-range", 1);
+    changeAndCommit(view, "lore-min-act-range", 1);
     expect(writes).toEqual([{ minActivations: 1, maxRecursionSteps: 0 }]);
     // steps fell to 0 → reset note, phrased as unlimited, never «выключено»
     expect(view.getByText("lore_reset_by_min_act")).not.toBeNull();
@@ -648,11 +635,11 @@ describe("LorebookAccordion advanced settings", () => {
   it("the reset note clears when the zeroed control next changes", async () => {
     const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2, maxRecursionSteps: 0 });
     await openAdvanced(view);
-    dragAndRelease(view, "lore-steps-range", 3);
+    changeAndCommit(view, "lore-steps-range", 3);
     expect(view.getByText("lore_reset_by_steps")).not.toBeNull();
     // re-raising min activations flips the exclusion the other way: steps
     // (non-zero now) is zeroed and the note moves to the steps control
-    dragAndRelease(view, "lore-min-act-range", 1);
+    changeAndCommit(view, "lore-min-act-range", 1);
     expect(view.queryByText("lore_reset_by_steps")).toBeNull();
     expect(view.getByText("lore_reset_by_min_act")).not.toBeNull();
     expect(writes[1]).toEqual({ minActivations: 1, maxRecursionSteps: 0 });
@@ -688,7 +675,7 @@ describe("LorebookAccordion advanced settings", () => {
 
     const { view } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2 });
     await openAdvanced(view);
-    dragAndRelease(view, "lore-steps-range", 3);
+    changeAndCommit(view, "lore-steps-range", 3);
     expect(view.queryByText("lore_steps_zero")).toBeNull(); // 3 ≠ 0 → no caption
   });
 

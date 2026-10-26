@@ -19,6 +19,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
 
 useDomEnv();
@@ -38,7 +39,6 @@ const mocks = {
   getSceneStatusAction: mock(async () => ({ generating: false, record: null })),
   startInsightsCompletionRefresh: mock(),
 };
-const realI18nContext = await import("../../../i18n/context.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
@@ -46,10 +46,7 @@ const realModal = await import("../../shared/Modal.js");
 const realBottomSheet = await import("../../shared/BottomSheet.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 

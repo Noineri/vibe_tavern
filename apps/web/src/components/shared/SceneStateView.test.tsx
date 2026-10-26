@@ -15,6 +15,7 @@ import { createElement } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { SceneStateView } from "./SceneStateView.js";
 import type { SceneTrackerDsl } from "@vibe-tavern/domain";
+import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 useDomEnv();
 
@@ -24,7 +25,7 @@ const { render } = await import("@testing-library/react");
 function r(
   schema: SceneTrackerDsl,
   data: Record<string, unknown>,
-  variant: "rich" | "compact" = "rich",
+  variant: SceneRenderVariant = "rich",
   stale?: boolean,
 ) {
   return render(createElement(SceneStateView, { schema, data, variant, stale })).container;
@@ -124,11 +125,14 @@ describe("SceneStateView — recursion (objects / arrays)", () => {
     expect(c.textContent).toContain("tavern");
   });
 
-  it("array of primitives renders each item; empty shows []", () => {
+  it("array of primitives renders each item; an empty array shows the i18n empty state, never []", () => {
     const schema = { tags: { $type: "array", items: { $type: "string" } } } as const satisfies SceneTrackerDsl;
     expect(r(schema, { tags: ["a", "b"] }).textContent).toContain("a");
     expect(r(schema, { tags: ["a", "b"] }).textContent).toContain("b");
-    expect(r(schema, { tags: [] }).textContent).toContain("[]");
+    // Without a LocaleProvider, the context's deterministic test fallback is the key itself.
+    const empty = r(schema, { tags: [] }).textContent;
+    expect(empty).toContain("scn_state_empty");
+    expect(empty).not.toContain("[]");
   });
 
   it("array of objects renders each object's fields, NOT [object Object]", () => {
@@ -147,6 +151,168 @@ describe("SceneStateView — recursion (objects / arrays)", () => {
     // Each object item is numbered.
     expect(c.textContent).toContain("#1");
     expect(c.textContent).toContain("#2");
+  });
+});
+
+describe("SceneStateView — shared-core defect fixes", () => {
+  it("a fixed min=max number is a plain value, never a zero-width meter", () => {
+    const c = r({ cost: { $type: "number", min: 30, max: 30 } }, { cost: 30 });
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+    expect(c.textContent).toContain("30");
+    expect(c.textContent).not.toContain("30–30");
+  });
+
+  it("a huge range is a plain value with a muted maximum, never a sliver meter", () => {
+    const c = r({ credits: { $type: "number", min: 0, max: 999999 } }, { credits: 30 });
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+    expect(c.textContent).toContain("30 / 999999");
+    const maximum = Array.from(c.querySelectorAll("span")).find((el) => el.textContent === " / 999999");
+    expect(maximum?.className).toContain("text-t4");
+  });
+
+  it("rich labels remain verbatim while compact keeps its established dense separator", () => {
+    const schema = { day: { $type: "string", label: "Day:" } } as const satisfies SceneTrackerDsl;
+    const rich = r(schema, { day: "Monday" });
+    const compact = r(schema, { day: "Monday" }, "compact");
+    expect(rich.textContent).toContain("Day:Monday");
+    expect(rich.textContent).not.toContain("Day::");
+    expect(compact.textContent).toContain("Day:Monday");
+    expect(compact.textContent).not.toContain("Day::");
+  });
+
+  it("array records prefer schema labels over numbered fallback identifiers and raw field keys", () => {
+    const schema = {
+      party: {
+        $type: "array",
+        items: {
+          $type: "object",
+          label: "Companion",
+          properties: { name: { $type: "string", label: "Name" }, rank: { $type: "string", label: "Rank" } },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { party: [{ name: "Aria", rank: "Captain" }] });
+    expect(c.textContent).toContain("Companion");
+    expect(c.textContent).toContain("Name");
+    expect(c.textContent).toContain("Rank");
+    expect(c.textContent).not.toContain("#1");
+    expect(c.textContent).not.toContain("name:");
+    expect(c.textContent).not.toContain("rank:");
+  });
+});
+
+describe("SceneStateView — clean variant", () => {
+  it("renders top-level groups as hairline-headed cards, short scalar triplets, and right-aligned meters without rich rails", () => {
+    const schema = {
+      citadel: {
+        $type: "object",
+        label: "Citadel",
+        properties: {
+          name: { $type: "string", label: "Name" },
+          rank: { $type: "string", label: "Rank" },
+          active: { $type: "boolean", label: "Active" },
+          level: { $type: "number", min: 0, max: 100, label: "Level" },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { citadel: { name: "Aster", rank: "UR", active: true, level: 25 } }, "clean");
+    expect(c.querySelectorAll(".scene-state-clean-card").length).toBe(1);
+    expect(c.querySelector(".scene-state-clean-group-header")?.textContent).toContain("Citadel");
+    expect(c.querySelector(".scene-state-clean-triplet")?.textContent).toContain("NameAster·RankUR·Active✓");
+    expect(c.querySelectorAll(".scene-state-clean-separator").length).toBe(2);
+    expect(c.querySelectorAll(".border-l").length).toBe(0);
+    const { meter } = meterOf(c);
+    expect(meter?.className).toContain("scene-state-clean-meter");
+    expect(meter?.className).toContain("ml-auto");
+  });
+
+  it("keeps record labels and shared empty, fixed-value, and huge-range behavior", () => {
+    const records = {
+      companions: {
+        $type: "array",
+        label: "Companions",
+        items: {
+          $type: "object",
+          label: "Companion",
+          properties: { name: { $type: "string", label: "Name" }, rank: { $type: "string", label: "Rank" } },
+        },
+      },
+      reserve: { $type: "array", label: "Reserve", items: { $type: "string" } },
+      fixed: { $type: "number", min: 30, max: 30, label: "Cost" },
+      huge: { $type: "number", min: 0, max: 999999, label: "Credits" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(records, { companions: [{ name: "Aria", rank: "Captain" }], reserve: [], fixed: 30, huge: 30 }, "clean");
+    expect(c.querySelector(".scene-state-clean-record")?.textContent).toContain("CompanionNameAria·RankCaptain");
+    expect(c.textContent).not.toContain("#1");
+    expect(c.textContent).toContain("scn_state_empty");
+    expect(c.textContent).toContain("30 / 999999");
+    expect(c.querySelectorAll('[role="meter"]').length).toBe(0);
+  });
+});
+
+describe("SceneStateView — HUD variant", () => {
+  it("renders schema-ordered HUD panels, dot leaders, and bracketed object records without renaming schema labels", () => {
+    const schema = {
+      status: {
+        $type: "object",
+        label: "Статус сцены",
+        properties: {
+          condition: { $type: "string", label: "Состояние" },
+          active: { $type: "boolean", label: "Активно" },
+        },
+      },
+      party: {
+        $type: "array",
+        label: "Группа",
+        items: {
+          $type: "object",
+          label: "Спутник",
+          properties: { name: { $type: "string", label: "Имя" } },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { status: { condition: "Спокойно", active: true }, party: [{ name: "Арина" }] }, "hud");
+    expect(c.firstElementChild?.className).toContain("font-mono");
+    expect(c.querySelectorAll(".scene-state-hud-panel").length).toBe(2);
+    expect(c.querySelectorAll(".scene-state-hud-dot-leader").length).toBe(3);
+    expect(c.querySelectorAll(".scene-state-hud-record").length).toBe(1);
+    expect(c.querySelectorAll(".scene-state-hud-corner").length).toBe(2);
+    const schemaLabel = Array.from(c.querySelectorAll(".scene-state-hud-label")).find((el) => el.textContent === "Состояние");
+    expect(schemaLabel?.textContent).toBe("Состояние");
+    expect(schemaLabel?.className).toContain("uppercase");
+    // Object group order remains the schema insertion order, not a HUD-guessed order.
+    expect(c.textContent!.indexOf("Статус сцены")).toBeLessThan(c.textContent!.indexOf("Группа"));
+  });
+
+  it("normalizes 7/100 across twenty segments with a 40%-filled final cell", () => {
+    const c = r({ hp: { $type: "number", min: 0, max: 100, label: "HP" } }, { hp: 7 }, "hud");
+    const { meter } = meterOf(c);
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(meter?.getAttribute("aria-valuenow")).toBe("7");
+    expect(fills.length).toBe(20);
+    expect(fills[0].style.width).toBe("100%");
+    expect(Number.parseFloat(fills[1].style.width)).toBeCloseTo(40, 6);
+    expect(fills.slice(2).every((fill) => fill.style.width === "0%")).toBe(true);
+  });
+
+  it("normalizes 1/100 to one fifth of a cell, never a full five-percent segment", () => {
+    const c = r({ hp: { $type: "number", min: 0, max: 100 } }, { hp: 1 }, "hud");
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(fills[0].style.width).toBe("20%");
+    expect(fills[0].style.width).not.toBe("100%");
+    expect(fills[1].style.width).toBe("0%");
+  });
+
+  it("inherits the shared empty, fixed-value, and huge-range gates", () => {
+    const schema = {
+      reserve: { $type: "array", label: "Резерв", items: { $type: "string" } },
+      cost: { $type: "number", min: 30, max: 30, label: "Стоимость" },
+      credits: { $type: "number", min: 0, max: 999999, label: "Кредиты" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { reserve: [], cost: 30, credits: 30 }, "hud");
+    expect(c.textContent).toContain("scn_state_empty");
+    expect(c.textContent).toContain("30 / 999999");
+    expect(c.querySelector('[role="meter"]')).toBeNull();
   });
 });
 
@@ -225,5 +391,157 @@ describe("SceneStateView — per-node `label` (label || key)", () => {
     expect(c.textContent).toContain("Группа");
     expect(c.textContent).toContain("Имя");
     expect(c.textContent).toContain("Aria");
+  });
+});
+
+/** Find the single span whose whole text is `text` (labels and values differ). */
+function spanWith(container: HTMLElement, text: string): HTMLElement {
+  const el = Array.from(container.querySelectorAll("span")).find((candidate) => candidate.textContent === text);
+  if (!el) throw new Error(`no span with text "${text}"`);
+  return el as HTMLElement;
+}
+
+describe("SceneStateView — toneBy end to end (R6)", () => {
+  const schema = { cond: { $type: "string", tone: "success", toneBy: { Ruined: "danger" } } } as const satisfies SceneTrackerDsl;
+
+  it("the toneBy-matched value renders the mapped tone class", () => {
+    expect(spanWith(r(schema, { cond: "Ruined" }), "Ruined").className).toContain("text-danger");
+  });
+
+  it("an unmapped value renders the node tone class", () => {
+    expect(spanWith(r(schema, { cond: "Stable" }), "Stable").className).toContain("text-success");
+  });
+});
+
+describe("SceneStateView — rich tone (R6)", () => {
+  it("scalar values take the text token and meter fills the solid token", () => {
+    const schema = {
+      mood: { $type: "string", tone: "danger" },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      active: { $type: "boolean", tone: "warning" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { mood: "Ruined", hp: 75, active: true });
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+    const { fill } = meterOf(c);
+    expect(fill!.className).toContain("bg-success");
+    expect(fill!.className).not.toContain("bg-accent");
+    expect(spanWith(c, "75").className).toContain("text-success");
+    const check = spanWith(c, "✓");
+    expect(check.className).toContain("text-warning");
+    expect(check.className).not.toContain("text-accent");
+  });
+
+  it("a group tone recolors the rail only — children stay neutral", () => {
+    const schema = {
+      loc: { $type: "object", tone: "danger", properties: { room: { $type: "string" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { loc: { room: "tavern" } });
+    const rail = c.querySelector(".border-danger");
+    expect(rail).not.toBeNull();
+    expect((rail as HTMLElement).className).toContain("border-l");
+    const room = spanWith(c, "tavern");
+    expect(room.className).toContain("text-t2");
+    expect(room.className).not.toContain("text-danger");
+  });
+});
+
+describe("SceneStateView — compact tone dot (R6)", () => {
+  it("toned values render a decorative dot and keep the default value color", () => {
+    const schema = {
+      mood: { $type: "string", tone: "danger" },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { mood: "tense", hp: 75 }, "compact");
+    const dots = Array.from(c.querySelectorAll(".scene-state-tone-dot")) as HTMLElement[];
+    expect(dots.length).toBe(2);
+    expect(dots[0].getAttribute("aria-hidden")).toBe("true");
+    expect(dots[0].className).toContain("bg-danger");
+    expect(dots[1].className).toContain("bg-success");
+    const value = spanWith(c, "tense");
+    expect(value.className).toContain("text-t2");
+    expect(value.className).not.toContain("text-danger");
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+  });
+
+  it("no dot renders without a tone", () => {
+    const c = r({ mood: { $type: "string" } }, { mood: "tense" }, "compact");
+    expect(c.querySelector(".scene-state-tone-dot")).toBeNull();
+  });
+});
+
+describe("SceneStateView — clean tone (R6)", () => {
+  it("an accent-toned group card takes the quest highlight", () => {
+    const schema = {
+      quest: { $type: "object", label: "Quest", tone: "accent", properties: { name: { $type: "string", label: "Name" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { quest: { name: "Survive" } }, "clean");
+    const card = c.querySelector(".scene-state-clean-card") as HTMLElement;
+    expect(card.className).toContain("scene-state-clean-card-accent");
+    expect(card.className).toContain("border-accent");
+    expect(card.className).toContain("bg-accent-dim");
+    expect(card.className).not.toContain("border-border");
+    const header = c.querySelector(".scene-state-clean-group-header") as HTMLElement;
+    const hairlines = Array.from(header.children) as HTMLElement[];
+    expect(hairlines[0].className).toContain("bg-accent");
+    expect(hairlines[2].className).toContain("bg-accent");
+    expect(spanWith(c, "Quest").className).toContain("text-accent");
+  });
+
+  it("a non-accent group tone colors the header only — card and children stay neutral", () => {
+    const schema = {
+      store: { $type: "object", label: "Store", tone: "warning", properties: { name: { $type: "string", label: "Name" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { store: { name: "Flour" } }, "clean");
+    const card = c.querySelector(".scene-state-clean-card") as HTMLElement;
+    expect(card.className).toContain("border-border");
+    expect(card.className).toContain("bg-s2");
+    expect(card.className).not.toContain("scene-state-clean-card-accent");
+    expect(card.className).not.toContain("border-accent");
+    const header = c.querySelector(".scene-state-clean-group-header") as HTMLElement;
+    const hairlines = Array.from(header.children) as HTMLElement[];
+    expect(hairlines[0].className).toContain("bg-warning");
+    expect(spanWith(c, "Store").className).toContain("text-warning");
+    const child = spanWith(c, "Flour");
+    expect(child.className).toContain("text-t2");
+    expect(child.className).not.toContain("text-warning");
+  });
+
+  it("meters and values take the tone family", () => {
+    const schema = {
+      hp: { $type: "number", min: 0, max: 100, label: "HP", tone: "success" },
+      mood: { $type: "string", label: "Mood", tone: "danger" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { hp: 40, mood: "Ruined" }, "clean");
+    const { fill } = meterOf(c);
+    expect(fill!.className).toContain("bg-success");
+    expect(spanWith(c, "40").className).toContain("text-success");
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+  });
+});
+
+describe("SceneStateView — hud tone (R6)", () => {
+  it("values, segment fills, and panel chrome take the tone family", () => {
+    const schema = {
+      status: {
+        $type: "object",
+        label: "Status",
+        tone: "warning",
+        properties: {
+          cond: { $type: "string", label: "Cond", tone: "danger" },
+          hp: { $type: "number", label: "HP", min: 0, max: 100, tone: "success" },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { status: { cond: "Ruined", hp: 50 } }, "hud");
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(fills.length).toBe(20);
+    for (const fill of fills) expect(fill.className).toContain("bg-success");
+    const header = c.querySelector(".scene-state-hud-panel-header") as HTMLElement;
+    expect(header.className).toContain("border-warning/40");
+    expect(spanWith(c, "Status").className).toContain("text-warning");
+    const rules = Array.from(header.children) as HTMLElement[];
+    expect(rules[0].className).toContain("bg-warning");
+    expect(rules[2].className).toContain("bg-warning/40");
   });
 });

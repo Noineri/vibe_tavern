@@ -24,33 +24,30 @@
  * Tested in isolation (the two-buffer last-wins semantics are the load-bearing
  * contract the Wave 4 Apply flow consumes).
  */
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
+import type { ExperienceCopilotTarget } from "@vibe-tavern/api-contracts";
+import type { BufferProposal } from "@vibe-tavern/api-contracts";
 
-/** A finalized, proposal-producing activity (rules or visual buffer). */
+/** A finalized, proposal-producing activity (a named buffer — `rules`,
+ *  `visual`, or the script kind's `code`). The aggregator maps `rules`/
+ *  `visual` itself; `code` activities are aggregated by the script host's own
+ *  last-wins review wiring (AS-8b), never here. */
 interface ProposedActivity {
 	toolCallId: string;
-	target: "rules" | "visual";
+	target: ExperienceCopilotTarget;
 	proposed: string;
 	summary?: string;
 }
 
-/** The result of aggregating a turn's activities over the two buffers. */
-export interface ExperienceCopilotProposal {
-	/** True iff at least one activity produced a proposal. */
-	hasProposal: boolean;
-	/** Last rules-target proposal text (undefined if none proposed this turn). */
-	proposedRules?: string;
-	/** Last visual-target proposal text (undefined if none proposed this turn). */
-	proposedVisual?: string;
-	/** Per-tool summaries in call order (the model's explanations, shown in the review bar). */
-	summaries: string[];
-}
+/** The result of aggregating a turn's activities over the two buffers.
+ *  AS-5: alias of the shared {@link BufferProposal} (zero logic churn). */
+export type ExperienceCopilotProposal = BufferProposal;
 
 /**
  * Keep only finalized (done) activities that actually propose a buffer,
  * deduped by toolCallId (the store merges re-emits in place).
  */
-function finalizedActivities(activities: ReadonlyArray<ExperienceCopilotToolActivity>): ProposedActivity[] {
+function finalizedActivities(activities: ReadonlyArray<AgentToolActivity>): ProposedActivity[] {
 	const byId = new Map<string, ProposedActivity>();
 	for (const a of activities) {
 		if (a.status !== "done") continue;
@@ -74,7 +71,7 @@ function finalizedActivities(activities: ReadonlyArray<ExperienceCopilotToolActi
  * `write_buffer`/`edit_buffer` result is the complete cumulative buffer).
  */
 export function aggregateExperienceCopilotProposal(
-	activities: ReadonlyArray<ExperienceCopilotToolActivity>,
+	activities: ReadonlyArray<AgentToolActivity>,
 ): ExperienceCopilotProposal {
 	const finalized = finalizedActivities(activities);
 	const summaries = finalized.map((a) => a.summary).filter((s): s is string => typeof s === "string" && s.length > 0);

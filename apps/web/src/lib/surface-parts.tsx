@@ -26,6 +26,7 @@ import { PlayMode } from "../components/play/PlayMode.js";
 import { BuildMode } from "../components/build/BuildMode.js";
 import { CoauthorMode } from "../components/coauthor/CoauthorMode.js";
 import { CoauthorEditorPanel } from "../components/coauthor/CoauthorEditorPanel.js";
+import { SidechatPanel } from "../components/chat/sidechat/SidechatPanel.js";
 
 /** Props every top bar accepts. CoauthorTopBar ignores `update` (it accepts a subset). */
 export interface TopBarPartProps {
@@ -70,4 +71,5 @@ export const SURFACE_TOP_BARS: Record<string, TopBarComponent> = {
  */
 export const SURFACE_RIGHT_PANELS: Record<string, ComponentType> = {
 	CoauthorEditor: CoauthorEditorPanel,
+	Sidechat: SidechatPanel,
 };

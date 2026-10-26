@@ -10,25 +10,16 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { beforeAll, describe, it, expect } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const { render, fireEvent, within } = await import("@testing-library/react");
 
-const realI18nContext = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+installI18nContextSeam();
 
 let ListSearchPanel: typeof import("./ListSearchPanel.js").ListSearchPanel;
 let userEvent: typeof import("@testing-library/user-event").default;

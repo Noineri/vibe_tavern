@@ -11,8 +11,15 @@
  * Runner: bun:test + happy-dom.
  */
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ObjectiveState } from "../../../api/types.js";
+import type { SnapshotStore } from "../../../stores/snapshot-store.js";
+import type { ProviderDataActions, ProviderDataState } from "../../../stores/provider-data-store.js";
+
+type ProviderDataStore = ProviderDataState & ProviderDataActions;
 
 useDomEnv();
 const { render, fireEvent, waitFor } = await import("@testing-library/react");
@@ -43,21 +50,24 @@ async function fetchProviderModelsAction() {
   };
 }
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realProviderDataStore = await import("../../../stores/provider-data-store.js");
 const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 
+// Co-load safety (bun's mock.module is process-global; MessageReasoning
+// precedent): the mocked hook must delegate to the REAL store's state and
+// override only the field this suite controls. A minimal `{ activeChat }`
+// state object poisons co-loaded suites whose components read other fields
+// through the leaked mock (AgentShell reads `allCharacters` and crashes on
+// `undefined.map`).
+const realUseSnapshotStore = realSnapshotStore.useSnapshotStore;
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,
-  useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat }) => unknown) =>
-    selector({ activeChat: mocks.activeChat }),
+  useSnapshotStore: <T,>(selector: (s: SnapshotStore) => T): T =>
+    selector({ ...realUseSnapshotStore.getState(), activeChat: mocks.activeChat as SnapshotStore["activeChat"] }),
 }));
 
 mock.module("../../../stores/api-actions/chat-actions.js", () => ({
@@ -78,15 +88,21 @@ mock.module("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveConfigAction: mocks.updateObjectiveConfigAction,
 }));
 
+// Co-load safety, same as the snapshot-store mock above: delegate to the REAL
+// store state, override only `profiles` — a minimal `{ profiles }` state
+// object starves co-loaded consumers of every other field
+// (useCopilotModelFavorites reads `copilotFavoritesByProfile`).
+const realUseProviderDataStore = realProviderDataStore.useProviderDataStore;
 mock.module("../../../stores/provider-data-store.js", () => ({
   ...realProviderDataStore,
   // Two profiles, the first active — mirrors the real store shape ModelSelector reads.
-  useProviderDataStore: (selector: (s: { profiles: Array<{ id: string; name: string; defaultModel: string | null; isActive: boolean }> }) => unknown) =>
+  useProviderDataStore: <T,>(selector: (s: ProviderDataStore) => T): T =>
     selector({
+      ...realUseProviderDataStore.getState(),
       profiles: [
         { id: "prof_active", name: "Active", defaultModel: "gpt-active", isActive: true },
         { id: "prof_other", name: "Other", defaultModel: "claude-other", isActive: false },
-      ],
+      ] as ProviderDataStore["profiles"],
     }),
 }));
 
@@ -136,6 +152,8 @@ const EMPTY: ObjectiveState = {
   model: null,
 };
 
+const CHAT_ID = brandId<ChatId>("chat_1");
+
 function withState(state: ObjectiveState) {
   mocks.activeChat = { id: "chat_1", insightsObjectiveState: state };
 }
@@ -150,6 +168,23 @@ describe("ObjectiveConfig (INS-5)", () => {
     fireEvent.change(input, { target: { value: "Start manually" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(mocks.addObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "Start manually");
+  });
+
+  it("re-seeds the description after an external snapshot update without blur-clobbering it", async () => {
+    withState({ ...EMPTY, objectiveDescription: "v1" });
+    const { getByPlaceholderText, rerender } = render(<ObjectiveConfig chatId={CHAT_ID} />);
+    expect((getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement).value).toBe("v1");
+
+    withState({ ...EMPTY, objectiveDescription: "v2" });
+    await act(async () => {
+      rerender(<ObjectiveConfig chatId={CHAT_ID} />);
+    });
+
+    // R10: re-query after the update because the key remount retires the old node.
+    const reseeded = getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement;
+    expect(reseeded.value).toBe("v2");
+    fireEvent.blur(reseeded);
+    expect((getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement).value).toBe("v2");
   });
 
   it("renders the task route when the state has tasks (generate → tree appears)", () => {

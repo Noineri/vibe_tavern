@@ -41,7 +41,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
       {bound.map((v) => (
         <CustomTooltip key={v.id} content={`${v.name} — ${t("experience_visual_unbind_hint")}`}>
           <div
-            className="flex h-[22px] max-md:h-9 min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-[11px] text-t2 transition-colors hover:border-danger hover:text-danger select-none"
+            className="flex h-[22px] max-md:h-9 min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:border-danger hover:text-danger select-none"
             onClick={() => onToggle(v.id, false)}
           >
             <span className="flex h-[18px] max-md:h-7 max-md:w-7 w-[18px] shrink-0 items-center justify-center rounded-full bg-accent-dim text-accent-t"><Ic.stack /></span>
@@ -58,7 +58,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
               aria-label={t("scope_visual")}
               disabled={disabled}
               className={cn(
-                "flex h-[22px] w-[22px] max-md:h-9 max-md:w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border2 text-[12px] leading-none text-t3 transition-colors hover:border-accent hover:text-accent-t",
+                "flex h-[22px] w-[22px] max-md:h-9 max-md:w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border2 text-[calc(var(--ui-fs)-2px)] leading-none text-t3 transition-colors hover:border-accent hover:text-accent-t",
                 disabled && "pointer-events-none opacity-40",
               )}
             >
@@ -74,7 +74,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
             className="glass-blur z-[220] min-w-[240px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-theme-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             <div className="px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">{t("scope_visual")}</div>
+              <div className="mb-2 text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-wider text-t3">{t("scope_visual")}</div>
               <div className="flex flex-wrap gap-1.5">
                 {available.map((v) => {
                   const active = boundIds.has(v.id);
@@ -82,7 +82,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
                     <div
                       key={v.id}
                       className={cn(
-                        "flex cursor-pointer items-center gap-1.5 rounded-full border py-[2px] pl-[3px] pr-2 text-[12px] transition-all select-none",
+                        "flex cursor-pointer items-center gap-1.5 rounded-full border py-[2px] pl-[3px] pr-2 text-[calc(var(--ui-fs)-2px)] transition-all select-none",
                         active ? "border-accent bg-accent/10 text-accent-t" : "border-border bg-surface text-t3 hover:border-border2 hover:text-t2",
                       )}
                       onClick={() => onToggle(v.id, !active)}
@@ -98,7 +98,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
                   );
                 })}
                 {available.length === 0 && (
-                  <div className="px-1 py-1 text-[12px] text-t3">{t("experience_assign_no_visual_option")}</div>
+                  <div className="px-1 py-1 text-[calc(var(--ui-fs)-2px)] text-t3">{t("experience_assign_no_visual_option")}</div>
                 )}
               </div>
             </div>

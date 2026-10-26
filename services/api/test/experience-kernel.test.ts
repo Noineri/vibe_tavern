@@ -173,6 +173,27 @@ context.experience.register({
 });
 `;
 
+// 2026-10-13 — engine bugfix regression pin: the UNO projection
+// (topCard === discardPile[0] — the same card object under two keys) was
+// misreported as a cyclic structure by the shared-seen JSON guard, so
+// runProject failed invalid_state and the mini-app forever rendered the empty
+// "table not assembled" screen (owner-reported outage). Shared references are
+// JSON-safe (they duplicate on serialization); only true ancestor cycles reject.
+const UNO_DAG_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "uno", name: "UNO" }, capabilities: [],
+  create() {
+    return { ids: ["you"], names: ["You"], controllers: ["human"], hands: [[]], deck: [], discard: [], turn: 0, direction: 1, winnerId: null };
+  },
+  project(context, viewer) {
+    const card = { id: "c1", color: "red", value: 5, kind: "number" };
+    return { topCard: card, discardPile: [card] };
+  },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
 const HUMAN: ExperienceViewer = { kind: "human", participantId: "p1" };
 const NO_CAPS: ExperienceCapabilityContext = {};
 
@@ -295,6 +316,23 @@ describe("runProject", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.kind).toBe("invalid_view");
+	});
+
+	test("accepts a shared-reference (DAG) projection: UNO topCard === discardPile[0]", () => {
+		// The real-outage pin (2026-10-13): create + project must both succeed for
+		// a projection that returns the SAME card object under two keys.
+		const created = runCreate(UNO_DAG_SCRIPT, "uno-dag.js", {}, NO_CAPS);
+		expect(created.ok).toBe(true);
+		if (!created.ok) return;
+		const result = runProject(UNO_DAG_SCRIPT, "uno-dag.js", created.value, HUMAN, NO_CAPS);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const view = result.value as { topCard: { id: string }; discardPile: Array<{ id: string }> };
+		expect(view.topCard.id).toBe("c1");
+		expect(view.discardPile[0].id).toBe("c1");
+		// The kernel returns the validated value as-is, so the DAG identity itself
+		// survives (it duplicates only under JSON serialization).
+		expect(view.topCard === view.discardPile[0]).toBe(true);
 	});
 });
 

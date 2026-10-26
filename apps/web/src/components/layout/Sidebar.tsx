@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { initials } from "./app-shell-helpers.js";
+import { useActivePersonaDisplay } from "./hooks/use-active-persona-display.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
@@ -22,6 +22,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
+import { useChatList } from "../../stores/snapshot-store.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
 import { ListSectionHeader } from "./sections/ListSectionHeader.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -50,7 +51,11 @@ export function Sidebar() {
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? snapshot?.allCharacters ?? [];
 
   // --- Derived from stores ---
-  const allChats = snapshot?.chats ?? [];
+  // The chat list is the sidebar list, independent of any active chat. NOT
+  // `snapshot?.chats`: `useChatMeta()` is null without an active chat (the sidebar
+  // renders then, e.g. after the current chat is deleted), which would blank the
+  // chats section, the collapsed-mode flyout and the characters' recency sort.
+  const allChats = useChatList();
   const activeChatCharacterId = snapshot?.activeChat?.characterId;
   const currentCharacterId = selectedCharacterId ?? activeChatCharacterId;
   const isCharacterTabActive = (tab: { id: string; chatId?: string | null }): boolean => {
@@ -60,13 +65,7 @@ export function Sidebar() {
 
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
-  const bootstrapPersonas = useBootstrapStore((s) => s.personas);
-  const activePersona = bootstrapPersonas?.find((p) => p.defaultForNewChats) ?? bootstrapPersonas?.[0];
-  const personaName = snapshot?.persona?.name ?? activePersona?.name ?? t("no_persona");
-  const personaForAvatar = snapshot?.persona ?? activePersona ?? null;
-  const personaAvatarSrc = personaForAvatar
-    ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId, updatedAt: personaForAvatar.updatedAt })
-    : null;
+  const persona = useActivePersonaDisplay();
   const activeCharAvatarSrc = snapshot?.character
     ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })
     : null;
@@ -119,7 +118,7 @@ export function Sidebar() {
 
   const rpFooterItems: FooterLauncherItem[] = [
     { key: "prompt-manager", label: t("sidebar_prompt_manager"), onClick: () => useModalStore.getState().setIsPromptManagerOpen(true), icon: <Icons.Terminal /> },
-    { key: "persona", label: personaName, onClick: () => useModalStore.getState().setIsPersonaModalOpen(true), avatar: { src: personaAvatarSrc, fallback: initials(personaName) }, expandedSuffix: t("sidebar_your_persona") },
+    { key: "persona", label: persona.name, onClick: () => useModalStore.getState().setIsPersonaModalOpen(true), avatar: { src: persona.avatarSrc, fallback: persona.fallback }, expandedSuffix: t("sidebar_your_persona") },
   ];
 
   return (

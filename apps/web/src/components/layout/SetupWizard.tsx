@@ -16,7 +16,7 @@ import { ProviderForm } from "../settings/provider/ProviderForm.js";
 import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ProviderModalModelSelector } from "../settings/provider/ProviderModalModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
-import { NOVELAI_SAMPLER_FORM_DEFAULTS } from "../../lib/provider-sampler-values.js";
+import { buildWizardFormSeed } from "./setup-wizard-form-seed.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
@@ -57,18 +57,18 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
     <>
     <div className={cn("flex flex-col gap-3", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
       <button type="button" className={cardBase} onClick={() => onSelect("a")}>
-        <div className="text-[1.4rem] text-accent"><Icons.Edit /></div>
-        <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_a_title")}</div>
-        <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_a_sub")}</div>
+        <div className="text-[calc(var(--ui-fs)+8px)] text-accent"><Icons.Edit /></div>
+        <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold">{t("wizard_path_a_title")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t("wizard_path_a_sub")}</div>
       </button>
       {!isMobile && (
         <button type="button" className={cardBase} onClick={() => onSelect("b")}>
-          <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
-          <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
-          <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
+          <div className="text-[calc(var(--ui-fs)+8px)] text-accent"><Icons.Import /></div>
+          <div className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold">{t("wizard_path_b_title")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{t("wizard_path_b_sub")}</div>
         </button>
       )}
-      <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[0.85rem] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
+      <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[var(--ui-fs)] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
         {t("wizard_skip_all")}
       </button>
     </div>
@@ -82,12 +82,12 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
         isMobile ? "px-4" : "px-7",
       )}>
         <span className="shrink-0 text-accent-t"><Icons.star /></span>
-        <span className="min-w-0 flex-1 font-ui text-[0.78rem] leading-snug text-t1">
+        <span className="min-w-0 flex-1 font-ui text-[calc(var(--ui-fs)-1px)] leading-snug text-t1">
           {t("star_prompt_welcome_line")}
         </span>
         <button
           type="button"
-          className="shrink-0 cursor-pointer rounded-lg border-0 bg-accent px-3 py-1.5 font-ui text-[0.75rem] font-semibold text-on-accent transition-[filter] hover:brightness-110"
+          className="shrink-0 cursor-pointer rounded-lg border-0 bg-accent px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
           onClick={onStar}
         >
           {t("star_prompt_cta")}
@@ -132,65 +132,7 @@ function ProviderStep({
   const existingProfile = provider.providerProfiles[0] ?? null;
   const alreadyHasProfile = !!existingProfile;
 
-  const [form, setForm] = useState<FormState>(() => ({
-    id: existingProfile?.id ?? "",
-    name: existingProfile?.name ?? "Default",
-    providerPreset: existingProfile?.providerPreset ?? "",
-    baseUrl: existingProfile?.endpoint ?? "",
-    apiKey: "",
-    hasStoredApiKey: !!existingProfile,
-    model: existingProfile?.defaultModel ?? "",
-    visionModel: existingProfile?.visionModel ?? "",
-    temperature: existingProfile?.temperature ?? 0.7,
-    topP: existingProfile?.topP ?? 1,
-    minP: existingProfile?.minP ?? 0,
-    topK: existingProfile?.topK ?? 0,
-    topA: existingProfile?.topA ?? 0,
-    typicalP: existingProfile?.typicalP ?? 1,
-    tfsZ: existingProfile?.tfsZ ?? 1,
-    adaptiveTarget: existingProfile?.adaptiveTarget ?? -1,
-    adaptiveDecay: existingProfile?.adaptiveDecay ?? 0.9,
-    dynatempRange: existingProfile?.dynatempRange ?? 0,
-    dynatempExponent: existingProfile?.dynatempExponent ?? 1,
-    topNSigma: existingProfile?.topNSigma ?? 0,
-    smoothingFactor: existingProfile?.smoothingFactor ?? 0,
-    repeatLastN: existingProfile?.repeatLastN ?? 0,
-    mirostat: existingProfile?.mirostat ?? 0,
-    mirostatTau: existingProfile?.mirostatTau ?? 5,
-    mirostatEta: existingProfile?.mirostatEta ?? 0.1,
-    dryMultiplier: existingProfile?.dryMultiplier ?? 0,
-    dryBase: existingProfile?.dryBase ?? 1.75,
-    dryAllowedLength: existingProfile?.dryAllowedLength ?? 2,
-    drySequenceBreakers: existingProfile?.drySequenceBreakers ?? [],
-    dryPenaltyLastN: existingProfile?.dryPenaltyLastN ?? -1,
-    xtcThreshold: existingProfile?.xtcThreshold ?? 0.1,
-    xtcProbability: existingProfile?.xtcProbability ?? 0,
-    frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
-    presencePenalty: existingProfile?.presencePenalty ?? 0,
-    repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
-    ...NOVELAI_SAMPLER_FORM_DEFAULTS, // NAI-1a convoy: wire fields arrive in NAI-1b
-    maxTokens: existingProfile?.maxTokens ?? 2000,
-    contextBudget: existingProfile?.contextBudget ?? 16000,
-    pinContextBudget: existingProfile?.pinContextBudget ?? false,
-    tokenPadding: existingProfile?.tokenPadding ?? 0,
-    generationMode: existingProfile?.generationMode ?? "chat",
-    bindPerModel: existingProfile?.bindPerModel ?? false,
-    modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
-    modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
-    editingModelId: null,
-    stopSequences: existingProfile?.stopSequences ?? [],
-    bannedStrings: existingProfile?.bannedStrings ?? [],
-    logitBias: existingProfile?.logitBias ?? [],
-    seed: existingProfile?.seed ?? null,
-    reasoningEffort: existingProfile?.reasoningEffort ?? "",
-    showReasoning: existingProfile?.showReasoning ?? false,
-    streamResponse: existingProfile?.streamResponse ?? true,
-    customSamplers: existingProfile?.customSamplers ?? false,
-    proxyMode: existingProfile?.proxyMode ?? "inherit",
-    proxyId: existingProfile?.proxyId ?? null,
-    samplerSetId: existingProfile?.samplerSetId ?? null,
-    generationFormat: existingProfile?.generationFormat ?? null,
-  }));
+  const [form, setForm] = useState<FormState>(() => buildWizardFormSeed(existingProfile));
 
   const [testOk, setTestOk] = useState<boolean | null>(alreadyHasProfile ? true : null);
   const [testing, setTesting] = useState(false);
@@ -307,8 +249,8 @@ function ProviderStep({
       <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
         <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0">
-            <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1">{form.name}</div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[13px] text-t3 sm:flex-nowrap">
+            <div className="mb-1 truncate font-ui text-[calc(var(--ui-fs)+2px)] font-semibold text-t1">{form.name}</div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 sm:flex-nowrap">
               {presetLabel && <span>{presetLabel}</span>}
               {presetLabel && <span className="h-1 w-1 rounded-full bg-t4" />}
               <span className="flex items-center gap-1.5 text-success">
@@ -316,12 +258,12 @@ function ProviderStep({
                 {t("api_key_saved")}
               </span>
             </div>
-            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setTestOk(null); setCollapsed(false); }}>
-              <span className="text-[11px]"><Icons.Edit /></span>
+            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setTestOk(null); setCollapsed(false); }}>
+              <span className="text-[calc(var(--ui-fs)-3px)]"><Icons.Edit /></span>
               {t("wizard_edit_provider")}
             </button>
           </div>
-          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
+          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
             ✓ {t("provider_active")}
           </button>
         </div>
@@ -333,9 +275,9 @@ function ProviderStep({
               testing={testingChat}
               result={chatResult}
               onTest={() => void handleTestChat()}
-              buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-              replyRenderer={(reply) => <div className="mt-3 rounded-md bg-s2 p-3 font-ui text-[12px] leading-relaxed text-t2">{reply}</div>}
-              errorRenderer={(error) => <div className="mt-3 rounded-md bg-danger-dim p-3 font-ui text-[12px] leading-relaxed text-danger-text">{error}</div>}
+              buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+              replyRenderer={(reply) => <div className="mt-3 rounded-md bg-s2 p-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{reply}</div>}
+              errorRenderer={(error) => <div className="mt-3 rounded-md bg-danger-dim p-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-danger-text">{error}</div>}
             />
           </div>
         </div>
@@ -357,7 +299,7 @@ function ProviderStep({
         <div className="flex items-center justify-end pt-2">
           <button
             type="button"
-            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all"
+            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all"
             onClick={onComplete}
           >
             {t("next")}
@@ -390,11 +332,11 @@ function ProviderStep({
       />
       {testOk === true && !showEdit && (
         <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-          <span className="inline-flex items-center gap-1.5 font-ui text-[12px] text-success">
+          <span className="inline-flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-success">
             <Icons.Check />
             {t("connection_successful")}
           </span>
-          <button type="button" className="ml-auto font-ui text-[11px] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
+          <button type="button" className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
             {t("wizard_edit_provider")}
           </button>
         </div>
@@ -403,7 +345,7 @@ function ProviderStep({
         <button
           type="button"
           className={cn(
-            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[0.88rem] font-semibold transition-all",
+            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[var(--ui-fs)] font-semibold transition-all",
             testing
               ? "cursor-default border-border bg-s2 text-t3"
               : "border-border bg-s2 text-t2 hover:border-accent hover:text-t1",
@@ -430,14 +372,14 @@ function ProviderStep({
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={showEdit ? () => { setCollapsed(true); setShowEdit(false); } : onSkip}
         >
           {showEdit ? t("back") : t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!canContinue || saving}
           onClick={() => void handleSave()}
         >
@@ -529,7 +471,7 @@ function PersonaStep({
 
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_persona_hint")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_persona_hint")}</div>
 
       {/* Avatar */}
       <div className="flex items-center gap-4">
@@ -552,7 +494,7 @@ function PersonaStep({
             <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
           )}
         </div>
-        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
       {pendingAvatar && (
         <AvatarCropModal
@@ -622,14 +564,14 @@ function PersonaStep({
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={onSkip}
         >
           {t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!name.trim() || saving}
           onClick={() => void handleSave()}
         >
@@ -749,8 +691,8 @@ function CharacterStep({
 
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_character_hint")}</div>
-      <div className="font-ui text-[0.75rem] text-t3">{t("wizard_character_simplified")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_character_hint")}</div>
+      <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("wizard_character_simplified")}</div>
 
       {/* Avatar */}
       <div className="flex items-center gap-4">
@@ -773,7 +715,7 @@ function CharacterStep({
             <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
           )}
         </div>
-        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
       {charAvatarPending && (
         <AvatarCropModal
@@ -830,7 +772,7 @@ function CharacterStep({
       {/* Import card */}
       <button
         type="button"
-        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[0.85rem] text-t3 transition-all hover:border-accent hover:text-accent disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[var(--ui-fs)] text-t3 transition-all hover:border-accent hover:text-accent disabled:opacity-50"
         disabled={parsingCard || busy}
         onClick={() => fileRef.current?.click()}
       >
@@ -849,7 +791,7 @@ function CharacterStep({
       />
 
       {parsingCard && (
-        <div className="rounded-lg border border-border bg-s2 px-4 py-3 font-ui text-[0.85rem] text-t2">
+        <div className="rounded-lg border border-border bg-s2 px-4 py-3 font-ui text-[var(--ui-fs)] text-t2">
           {t("analyzing_metadata")}
         </div>
       )}
@@ -860,31 +802,31 @@ function CharacterStep({
             {cardPreview.avatarUrl ? (
               <img src={cardPreview.avatarUrl} className="h-16 w-16 shrink-0 rounded-lg bg-s3 object-cover object-top" alt="" />
             ) : (
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-s3 font-body text-2xl italic text-t3">{wizardInitial(cardPreview.name)}</div>
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-s3 font-body text-[calc(var(--ui-fs)+10px)] leading-8 italic text-t3">{wizardInitial(cardPreview.name)}</div>
             )}
             <div className="min-w-0 flex-1 font-ui">
-              <div className="mb-1 text-base font-medium text-t1">{cardPreview.name}</div>
-              <div className="line-clamp-3 mb-2.5 text-xs leading-relaxed text-t3">{cardPreview.description || t("no_description")}</div>
+              <div className="mb-1 text-[calc(var(--ui-fs)+2px)] leading-6 font-medium text-t1">{cardPreview.name}</div>
+              <div className="line-clamp-3 mb-2.5 text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{cardPreview.description || t("no_description")}</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {cardPreview.tags.slice(0, 6).map((tag) => <span key={tag} className="rounded bg-s3 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{tag}</span>)}
               </div>
             </div>
           </div>
-          <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import", { name: cardPreview.file.name })}</div>
+          <div className="mt-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("ready_to_import", { name: cardPreview.file.name })}</div>
         </div>
       )}
 
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-t2 transition-all hover:text-t1"
           onClick={onSkip}
         >
           {t("skip")}
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[var(--ui-fs)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={cardPreview ? busy : (!name.trim() || busy)}
           onClick={() => cardPreview ? void handleImportPreview() : void handleCreate()}
         >
@@ -902,7 +844,7 @@ function StMigrationStep({ onImported }: { onImported: () => void }) {
 
   return (
     <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[0.88rem] text-t2">{t("wizard_st_hint")}</div>
+      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_st_hint")}</div>
       <StFolderImport onImported={onImported} />
     </div>
   );
@@ -946,8 +888,8 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
 
   const header = (
     <div className={cn("relative shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-6")}>
-      <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{title}</div>
-      {sub && <div className="mb-5 font-ui text-[0.88rem] text-t2">{sub}</div>}
+      <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)+7px)] font-bold text-t1">{title}</div>
+      {sub && <div className="mb-5 font-ui text-[var(--ui-fs)] text-t2">{sub}</div>}
       {path === "a" && <div className="mb-3"><StepIndicator step={stepA} total={3} /></div>}
       {path !== "choose" && (
         <button
@@ -959,7 +901,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
             else setPath("choose");
           }}
         >
-          <span className="text-[13px]">{Ic.caret('l')}</span>
+          <span className="text-[calc(var(--ui-fs)-1px)]">{Ic.caret('l')}</span>
         </button>
       )}
     </div>

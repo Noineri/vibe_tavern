@@ -13,11 +13,14 @@
  * calls `remove`; this store has no knowledge of modules.
  */
 import { create } from "zustand";
-import type { SkillCatalogEntryDto, SkillCatalogError } from "@vibe-tavern/api-contracts";
+import type { SkillCatalogEntryDto, SkillCatalogError, SkillSaveDto } from "@vibe-tavern/api-contracts";
 import {
   listCoauthorSkills,
   importCoauthorSkills,
   deleteCoauthorSkill,
+  createCoauthorSkill,
+  updateCoauthorSkill,
+  reorderCoauthorSkills,
 } from "../api/skill-api.js";
 
 export interface CoauthorSkillState {
@@ -38,6 +41,19 @@ export interface CoauthorSkillActions {
   /** Delete one user skill by id. A pure built-in is rejected by the server.
    *  Refreshes the catalog. */
   remove: (id: string) => Promise<void>;
+  /** Save a NEW user skill (AP-23d) — delegates to `createCoauthorSkill`
+   *  (the folder id derives from the name server-side) and refreshes the
+   *  catalog. Returns the FRESH entry so the caller can select it. */
+  saveNew: (input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+  /** Save an EXISTING user skill (AP-23d) — delegates to
+   *  `updateCoauthorSkill` (rewrites only that skill's SKILL.md) and
+   *  refreshes the catalog. Returns the FRESH entry. */
+  saveExisting: (id: string, input: SkillSaveDto) => Promise<SkillCatalogEntryDto>;
+  /** Rewrite the catalog's manual list order (ML-9) and adopt the reorder
+   *  response (the server returns the refreshed merged catalog — the
+   *  copilot-profile-store pattern, no second fetch). Built-in and user
+   *  skills order together in the one list this store holds. */
+  reorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 }
 
 export type CoauthorSkillStore = CoauthorSkillState & CoauthorSkillActions;
@@ -69,6 +85,23 @@ export const useCoauthorSkillStore = create<CoauthorSkillStore>()((set, get) => 
   remove: async (id) => {
     await deleteCoauthorSkill(id);
     await get().load();
+  },
+
+  saveNew: async (input) => {
+    const saved = await createCoauthorSkill(input);
+    await get().load();
+    return saved;
+  },
+
+  saveExisting: async (id, input) => {
+    const saved = await updateCoauthorSkill(id, input);
+    await get().load();
+    return saved;
+  },
+
+  reorder: async (updates) => {
+    const { entries, errors } = await reorderCoauthorSkills(updates);
+    set({ entries, errors });
   },
 }));
 

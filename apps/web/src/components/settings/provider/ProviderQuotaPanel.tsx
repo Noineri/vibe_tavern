@@ -9,8 +9,8 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../shared/icons.js";
-import { NumberInput } from "../../shared/NumberInput.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { SliderField } from "../../shared/SliderField.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { selectQuotaEntry, useQuotaStore } from "../../../stores/quota-store.js";
 import { QuotaSummaryRows } from "../../shared/QuotaSummaryRows.js";
@@ -103,13 +103,13 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
     <div className="mt-4 overflow-hidden rounded-lg border border-border2">
       <div
         className={cn(
-          "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)]",
+          "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1 transition-colors hover:bg-[var(--border)]",
           open && "!rounded-b-none",
         )}
       >
         <button
           type="button"
-          className="flex cursor-pointer items-center gap-2 font-ui text-[13px] font-medium text-t1"
+          className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1"
           onClick={() => {
             setOpen(!open);
             if (!open) setOpenedAt(Date.now());
@@ -150,45 +150,24 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                   aria-label={t("quota_low_notify")}
                 />
                 <div>
-                  <div className="font-ui text-[13px] font-medium text-t1">{t("quota_low_notify")}</div>
+                  <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("quota_low_notify")}</div>
                   <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                     {t("quota_low_notify_hint")}
                   </div>
                 </div>
               </div>
 
-              <div className={cn("mt-3", !windowed.lowQuotaEnabled && "pointer-events-none opacity-40")}>
-                <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-                  {t("quota_low_threshold")}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={windowed.lowQuotaRemainingPercent}
-                    disabled={!windowed.lowQuotaEnabled}
-                    aria-label={t("quota_low_threshold")}
-                    onChange={(event) => {
-                      const value = parseInt(event.target.value, 10);
-                      if (!Number.isNaN(value)) {
-                        commit({ ...windowed, lowQuotaRemainingPercent: value }, true);
-                      }
-                    }}
-                    className="!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0"
-                  />
-                  <NumberInput
-                    className="h-[30px] w-[64px] shrink-0"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={windowed.lowQuotaRemainingPercent}
-                    disabled={!windowed.lowQuotaEnabled}
-                    onChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: value }, true)}
-                    hideControls
-                  />
-                </div>
+              {/* The field dims itself (one 40 % dim, label included) when the notification is off, so the wrapper must not dim again. */}
+              <div className="mt-3">
+                <SliderField
+                  label={t("quota_low_threshold")}
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={windowed.lowQuotaRemainingPercent}
+                  disabled={!windowed.lowQuotaEnabled}
+                  onChange={(value) => commit({ ...windowed, lowQuotaRemainingPercent: Math.round(value) }, true)}
+                />
               </div>
             </div>
 
@@ -200,7 +179,7 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
                   aria-label={t("quota_reset_notify")}
                 />
                 <div>
-                  <div className="font-ui text-[13px] font-medium text-t1">{t("quota_reset_notify")}</div>
+                  <div className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("quota_reset_notify")}</div>
                   <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
                     {t("quota_reset_notify_hint")}
                   </div>
@@ -231,7 +210,7 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
         </div>
 
         {saveError && (
-          <div className="mt-3 flex items-center gap-1.5 text-[12px] text-danger">
+          <div className="mt-3 flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-danger">
             <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
             {saveError}
           </div>

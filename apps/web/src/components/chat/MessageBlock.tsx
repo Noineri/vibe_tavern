@@ -1,7 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
-import { resolveModelLabel } from "../../lib/model-resolve.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
@@ -39,6 +38,12 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
 import { ImageGenSlotControls } from "./ImageGenSlotControls.js";
 import { useMessageNarration } from "./use-message-narration.js";
+import { selectSidechatServedChatModes } from "../../api/agent-kind-served-modes.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useSidechatOpenStore } from "../../stores/sidechat-open-store.js";
+import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
+import { useSidechatVariantAttachmentsStore } from "../../stores/sidechat-variant-attachments-store.js";
+import type { DiscussScope } from "./DiscussInSidechatMenu.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
@@ -46,6 +51,7 @@ import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
 import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
+import { deriveVariantPickerItems } from "./variants/variant-picker-items.js";
 import { PendingUserMessage } from "./pending/pending-user-message.js";
 import { PendingAssistantMessage } from "./pending/pending-assistant-message.js";
 
@@ -83,6 +89,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const activeProfilePreset = useProviderDataStore((s) => s.profiles.find((p) => p.isActive)?.providerPreset ?? null);
   const canContinueByCapability = resolveAssistantPrefillSupport(activeProfilePreset).supported;
   const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
+  // SC-18: the sidechat's served-chat gate lives on these two subscriptions
+  // (placed with the other store reads, before any early return — the pure
+  // `canDiscussInSidechat` derivation sits below beside `canAiEdit`).
+  const activeChatMode = useSnapshotStore((s) => s.activeChat?.mode);
+  const agentKindSettings = useBootstrapStore((s) => s.data?.agentKindSettings);
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
   const pendingUserMessageContent = useChatStore(s => {
@@ -180,12 +191,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // stars key on it so they survive variant deletion / index compaction.
   const pickerItems = useMemo(() => {
     if (variantCount <= 6) return EMPTY_PICKER_ITEMS;
-    return variants.map((v) => ({
-      variantId: v.id,
-      displayIndex: v.variantIndex + 1,
-      modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
-      presetName: v.presetName ?? null,
-    }));
+    return deriveVariantPickerItems(variants);
   }, [variants, variantCount]);
 
   // ── Display-mode regex seam (RX-13) ──────────────────────────────────────
@@ -344,6 +350,14 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         }
       : undefined;
   const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  // SC-18: «Discuss in the sidechat» — assistant messages of chats the
+  // sidechat serves (the served-modes selector, never a hard-coded mode).
+  // Empty before the bootstrap kind-settings land, so the entry stays hidden
+  // until the map arrives.
+  const canDiscussInSidechat =
+    msg.role === "assistant" &&
+    activeChatMode !== undefined &&
+    selectSidechatServedChatModes(agentKindSettings).includes(activeChatMode);
   // TPE-14: the inverse gate — "prepare for narration" is offered on
   // greetings only (the editor opens directly in annotate mode).
   const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
@@ -433,6 +447,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     : null;
 
   // ── Message content rendering ──
+  // forks: 1 — the agent-shell edit (AgentEditMessage.tsx, AP-12)
   const messageContent = isEditing ? (
     <>
       <MobileExpandTextarea
@@ -451,12 +466,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       </MobileExpandTextarea>
       <div className="mt-1.5 flex gap-1.5">
         <button type="button"
-          className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+          className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all duration-100 hover:brightness-110"
           disabled={isBusy}
           onClick={() => void chat.handleSaveMessageEdit(msg.id)}
         >{t("save_edit")}</button>
         <button type="button"
-          className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
+          className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all duration-100 hover:bg-s3"
           disabled={isBusy}
           onClick={chat.handleCancelEdit}
         >{t("cancel_edit")}</button>
@@ -584,6 +599,30 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     });
   };
 
+  // SC-18: «Discuss in the sidechat» — parks the variants as sidechat
+  // composer chips (scope "selected" = the RP-selected variant only,
+  // "all" = every variant of the message), turns the sidechat on, and on
+  // mobile switches to the «Sidechat» tab. The RP selection never changes.
+  const handleDiscussInSidechat = (scope: DiscussScope) => {
+    if (isBusy) return;
+    const targets = scope === "selected"
+      ? (selectedVariant !== undefined ? [selectedVariant] : [])
+      : variants;
+    if (targets.length === 0) return;
+    useSidechatVariantAttachmentsStore.getState().attachVariants(
+      authorInfo.activeChatId,
+      msg.branchId,
+      targets.map((v) => ({
+        messageId: msg.id,
+        variantId: v.id,
+        variantNumber: v.variantIndex + 1,
+        selected: v.variantIndex === (selectedVariant?.variantIndex ?? selectedVariantIndex),
+      })),
+    );
+    useSidechatOpenStore.getState().setOpen(authorInfo.activeChatId, true);
+    if (isMobile) useSidechatMobileStore.getState().setTab("sidechat");
+  };
+
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
     chatId: authorInfo.activeChatId,
@@ -632,6 +671,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canResend={canResend}
       canContinue={canContinue}
       canAiEdit={canAiEdit}
+      canDiscussInSidechat={canDiscussInSidechat}
       canAiAnnotate={canAiAnnotate}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
@@ -683,6 +723,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         onEdit: () => void handleEditClick(),
         onAiEdit: () => handleAiEditClick(),
         onAiAnnotate: () => handleAiAnnotateClick(),
+        onDiscussInSidechat: (scope) => handleDiscussInSidechat(scope),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),

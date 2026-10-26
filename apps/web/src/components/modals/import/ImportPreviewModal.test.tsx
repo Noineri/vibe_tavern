@@ -26,26 +26,17 @@ import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
 import type { ReactNode } from "react";
 
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ImportPreviewModalProps } from "./ImportPreviewModal.js";
 
 useDomEnv();
 
 const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
 
-// useT must return a stable t() — the modal builds labels off it. Mocking at
-// the module level keeps the test locale-independent and avoids pulling the
-// real i18next resource bundle.
-const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// t echoes keys — the modal builds labels off it. The shared co-load seam
+// keeps the test locale-independent (identity stub unless a provider mounts)
+// and never touches the mutable i18next instance.
+installI18nContextSeam();
 
 let ImportPreviewModal: typeof import("./ImportPreviewModal.js").ImportPreviewModal;
 beforeAll(async () => {

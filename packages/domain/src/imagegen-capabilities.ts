@@ -2,8 +2,8 @@
  * Static image-gen backend capability table (IMAGE_GENERATION_PLAN IG-4/IG-11).
  *
  * Pure data, no I/O — the WEB-SAFE source of truth for what each image-gen
- * backend supports. Lives in the domain leaf (the STT/TTS preset-table
- * precedent: `stt-presets.ts`) because the Providers editor (apps/web)
+ * backend supports. Lives in the domain leaf (a browser-safe table used by
+ * both web and API) because the Providers editor (apps/web)
  * snapshots it onto profiles on create/backend-switch (the create contract
  * carries the capability mirror) and renders capability-gated controls from
  * it without a live round-trip — importing it from services/api would drag
@@ -23,6 +23,7 @@
  */
 import { IMAGE_GEN_BACKENDS } from "./entities.js";
 import { NOVELAI_IMAGE_GEN_CAPABILITIES } from "./imagegen-capabilities-novelai.js";
+import { OPENAI_IMAGES_CAPABILITIES, OPENAI_IMAGES_CUSTOM_CAPABILITIES } from "./imagegen-capabilities-openai-images.js";
 import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange } from "./entities.js";
 /** Global default slider ranges for the advanced numeric params
  *  (IMAGE_GENERATION_PLAN IG-CF5) — the single named constants block both
@@ -107,23 +108,8 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
-  [IMAGE_GEN_BACKENDS.OpenAiImages]: {
-    // POST /v1/images/generations: prompt/size only in our v1 arm — no
-    // negative prompt, no steps/seed/sampler surface.
-    supportsNegativePrompt: false,
-    supportsSamplers: false,
-    supportsSeed: false,
-    sizeSupport: {
-      kind: "vendor-set",
-      sizes: ["1024x1024", "1536x1024", "1024x1536"],
-    },
-    noApiKey: false,
-    supportsLiveProgress: false,
-    localExecution: false,
-    supportsImg2img: false,
-    supportsInpaint: false,
-    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
-  },
+  [IMAGE_GEN_BACKENDS.OpenAiImages]: OPENAI_IMAGES_CAPABILITIES,
+  [IMAGE_GEN_BACKENDS.OpenAiImagesCustom]: OPENAI_IMAGES_CUSTOM_CAPABILITIES,
   [IMAGE_GEN_BACKENDS.A1111]: {
     // /sdapi/v1/txt2img: full param surface — negative prompt, samplers
     // (GET /samplers), seed (reported back), free W×H integers, live
@@ -440,8 +426,8 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     // image_urls as the fallback field. seed int64 — supported. FAILURES
     // RIDE base_resp.status_code INSIDE HTTP 200 (live 200+1004 login
     // fail — the adapter honors the in-band status everywhere). Model
-    // discovery: documented OpenAI-compat GET /v1/models filtered to the
-    // image-* family (the TTS speech-* precedent).
+    // discovery: documented OpenAI-compat GET /v1/models, unfiltered (the
+    // image-* name filter was removed — owner ruling 2026-10-15).
     supportsNegativePrompt: false,
     supportsSamplers: false,
     supportsSeed: true,

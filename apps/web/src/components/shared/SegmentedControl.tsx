@@ -161,7 +161,7 @@ export function SegmentedControl<T extends string = string>({
                 // shrink-0 stops the flex row from cramming/truncating them,
                 // which is what made the drag meaningful in the first place.
                 mobileScroll && isMobile && "shrink-0",
-                dense ? "min-h-7 px-2.5 py-1 text-[11px] sm:min-h-0" : compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
+                dense ? "min-h-7 px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] sm:min-h-0" : compact ? "min-h-9 px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[calc(var(--ui-fs)-1px)] sm:min-h-0",
                 "text-t2 hover:text-t1",
                 "data-[state=checked]:bg-s2 data-[state=checked]:text-accent data-[state=checked]:shadow-sm data-[state=checked]:font-medium",
                 opt.disabled && "cursor-not-allowed opacity-40",

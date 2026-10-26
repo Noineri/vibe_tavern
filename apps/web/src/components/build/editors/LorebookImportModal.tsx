@@ -207,7 +207,7 @@ export function LorebookImportModal({
           className="flex items-center justify-between border-b border-border"
           style={{ padding: "16px 20px" }}
         >
-          <span className="text-sm font-semibold text-t1">
+          <span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">
             {t("import_lorebook_title")}
           </span>
           <div
@@ -236,10 +236,10 @@ export function LorebookImportModal({
           {/* ── Step 1: File upload ── */}
           {step === 1 && (
             <>
-              <div className="mb-3 text-sm font-medium text-t1">
+              <div className="mb-3 text-[var(--ui-fs)] leading-5 font-medium text-t1">
                 {t("import_step1_title")}
               </div>
-              <div className="mb-4 text-xs text-t2">
+              <div className="mb-4 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
                 {t("import_step1_desc")}
               </div>
               <Dropzone
@@ -248,13 +248,13 @@ export function LorebookImportModal({
                 onFiles={(files) => handleImportFile(files[0])}
               />
               <button type="button"
-                className="mt-4 h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+                className="mt-4 h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                 onClick={handlePaste}
               >
                 {t("import_paste_clipboard")}
               </button>
               {parseError && (
-                <div className="mt-3 text-xs text-danger">{parseError}</div>
+                <div className="mt-3 text-[calc(var(--ui-fs)-2px)] leading-4 text-danger">{parseError}</div>
               )}
             </>
           )}
@@ -262,10 +262,10 @@ export function LorebookImportModal({
           {/* ── Step 2: Review + pick target lorebook ── */}
           {step === 2 && (
             <>
-              <div className="mb-3 text-sm font-medium text-t1">
+              <div className="mb-3 text-[var(--ui-fs)] leading-5 font-medium text-t1">
                 {t("import_step2_title")}
               </div>
-              <div className="mb-4 text-xs text-t2">
+              <div className="mb-4 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
                 {t("import_step2_desc")}
               </div>
               <div
@@ -273,27 +273,27 @@ export function LorebookImportModal({
                 style={{ padding: 12 }}
               >
                 <div
-                  className="text-[13px] font-medium text-t1"
+                  className="text-[calc(var(--ui-fs)-1px)] font-medium text-t1"
                   style={{ marginBottom: 4 }}
                 >
                   {detectedFormat === "janitor"
                     ? t("import_detected_format_janitor")
                     : t("import_detected_format")}
                 </div>
-                <div className="text-xs text-t3">
+                <div className="text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">
                   {entryCount} {t("import_entries_found")}
                 </div>
                 {fileName && (
-                  <div className="mt-1 text-xs text-t3">{fileName}</div>
+                  <div className="mt-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{fileName}</div>
                 )}
               </div>
-              <div className="mb-3 text-xs text-t3">
+              <div className="mb-3 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">
                 {t("import_target_lorebook")}
               </div>
               <div className="mb-4 flex flex-col gap-1">
                 <div
                   className={cn(
-                    "cursor-pointer rounded-lg border px-3 py-2 text-[13px] transition-all",
+                    "cursor-pointer rounded-lg border px-3 py-2 text-[calc(var(--ui-fs)-1px)] transition-all",
                     targetLorebookId === null
                       ? "border-accent bg-accent-dim text-accent-t"
                       : "border-border hover:bg-s2 text-t1"
@@ -309,7 +309,7 @@ export function LorebookImportModal({
                   <div
                     key={lb.id}
                     className={cn(
-                      "cursor-pointer rounded-lg border px-3 py-2 text-[13px] transition-all",
+                      "cursor-pointer rounded-lg border px-3 py-2 text-[calc(var(--ui-fs)-1px)] transition-all",
                       targetLorebookId === lb.id
                         ? "border-accent bg-accent-dim text-accent-t"
                         : "border-border hover:bg-s2 text-t1"
@@ -325,13 +325,13 @@ export function LorebookImportModal({
               </div>
               <div className="flex gap-2">
                 <button type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(1)}
                 >
                   {t("import_back")}
                 </button>
                 <button type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(3)}
                 >
                   {t("import_next")}
@@ -343,16 +343,16 @@ export function LorebookImportModal({
           {/* ── Step 3: Import mode + run ── */}
           {step === 3 && (
             <>
-              <div className="mb-3 text-sm font-medium text-t1">
+              <div className="mb-3 text-[var(--ui-fs)] leading-5 font-medium text-t1">
                 {t("import_step3_title")}
               </div>
               {targetLorebookId === null ? (
-                <div className="mb-4 text-xs text-t2">
+                <div className="mb-4 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
                   {t("import_new_desc")}
                 </div>
               ) : (
                 <>
-                  <div className="mb-4 text-xs text-t2">
+                  <div className="mb-4 text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
                     {t("import_step3_desc")}
                   </div>
                   <div className="mb-4 flex flex-col gap-2">
@@ -370,10 +370,10 @@ export function LorebookImportModal({
                         { value: "replace", label: t("import_replace") },
                       ]}
                     />
-                    <div className="ml-6 text-xs text-t3">
+                    <div className="ml-6 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">
                       {t("import_merge_desc")}
                     </div>
-                    <div className="ml-6 text-xs text-t3">
+                    <div className="ml-6 text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">
                       {t("import_replace_desc")}
                     </div>
                   </div>
@@ -381,13 +381,13 @@ export function LorebookImportModal({
               )}
               <div className="flex gap-2">
                 <button type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(2)}
                 >
                   {t("import_back")}
                 </button>
                 <button type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all"
                   disabled={importing}
                   onClick={runImport}
                 >
@@ -395,7 +395,7 @@ export function LorebookImportModal({
                 </button>
               </div>
               {importError && (
-                <div className="mt-3 text-xs text-danger">{importError}</div>
+                <div className="mt-3 text-[calc(var(--ui-fs)-2px)] leading-4 text-danger">{importError}</div>
               )}
             </>
           )}

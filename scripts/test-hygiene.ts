@@ -54,7 +54,30 @@ const QUARANTINE_REMINDER_DAYS = 30;
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
 	// 1243 (2026-10-04): ratcheted to the merged tree's count after PR #51.
-	asNever: 1243,
+	// 1246 (2026-10-11, PM-7): +3 — the restored-as-was todo describe in
+	// experience-copilot-tools.test.ts carries the same three `as never`
+	// result casts PM-6 deleted with the mechanic (deliberate growth, not
+	// drift — the restore mandate forbids rewriting the old tests).
+	// 1243 (2026-10-12, PM-7 fixup, owner ruling): those 3 casts were
+	// eliminated — the todo results are typed as the seam's exported
+	// ExperienceCopilotTodoResult — and the ratchet lowered back; the
+	// ratchet exists to go DOWN.
+	// 1246 (2026-10-12, CPF-2b): +3 — continue-fallback integration tests
+	// (live-chat-continue-fallback.test.ts): (a) the chatRuntime DI stub for
+	// the LiveChatOrchestrator constructor (ChatRuntime is nominal — private
+	// deps — the same cast the existing live-chat-continue.test.ts harness
+	// uses), (b) the ChatRuntimeDeps object for the real-ChatRuntime
+	// attribution tests (members are nominal store classes; one whole-object
+	// cast instead of a dozen), (c) one shared `UNSET` for the two
+	// required-but-unused ctor deps. Minimized from 22 raw harness casts
+	// (real RpModeStrategy instead of a stub, real executor types for the DI
+	// stub, `satisfies` for the trace literal). Lower when the nominal DI
+	// boundaries become structural.
+	// 1245 (2026-10-15, RO-5): unused casts removed; ratchet lowered to match.
+	// 1244 (2026-10-21, SC-11): one insights scene-harness stub typed — SC-11
+	// reached 1246 mid-unit, paid back to 1244 at commit (SC-10's HEAD was
+	// green at exactly 1245/1245).
+	asNever: 1244,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

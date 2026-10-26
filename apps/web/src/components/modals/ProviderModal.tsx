@@ -8,8 +8,7 @@ import type { GenerationMode, ProviderGenerationFormat, ProviderProbeResponse, P
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
-import { GENERATION_MODE } from "@vibe-tavern/domain";
-import { NOVELAI_SAMPLER_FORM_DEFAULTS, type ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
+import type { ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -35,15 +34,17 @@ import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-poli
 import { TtsSection } from "../settings/provider/tts/TtsSection.js";
 import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
 import { TtsAudioFooter } from "../settings/provider/tts/TtsAudioFooter.js";
-import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
+import { useTtsProfiles } from "../../hooks/use-tts-profiles.js";
 import { SttSection } from "../settings/provider/stt/SttSection.js";
 import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
 import { SttFooter } from "../settings/provider/stt/SttFooter.js";
-import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
+import { useSttProfiles } from "../../hooks/use-stt-profiles.js";
 import { ImageGenSection } from "../settings/provider/imagegen/ImageGenSection.js";
 import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenProfileEditor.js";
 import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
 import { useImageProfiles } from "../../hooks/use-image-profiles.js";
+import { profileToForm } from "./provider-profile-to-form.js";
+import { NEW_PROFILE_CONTEXT_BUDGET } from "../../lib/new-profile-defaults.js";
 
 export interface FormState extends ProviderSamplerValues {
   id: string;
@@ -151,58 +152,6 @@ interface ProviderModalProps {
   proxies: ProxyRecord[];
   defaultProxyId: string | null;
   onSetDefaultProxy: (proxyId: string | null) => Promise<void>;
-}
-
-function profileToForm(p: ProviderProfileRecord): FormState {
-  const preset = PROVIDER_PRESETS.find((f) => f.id === p.providerPreset)
-    ?? PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
-  return {
-    id: p.id, name: p.name, providerPreset: preset?.id ?? "",
-    baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
-    model: p.defaultModel ?? "", visionModel: p.visionModel ?? "", temperature: p.temperature, topP: p.topP,
-    minP: p.minP, topK: p.topK, topA: p.topA,
-    typicalP: p.typicalP ?? 1,
-    tfsZ: p.tfsZ ?? 1,
-    adaptiveTarget: p.adaptiveTarget ?? -1,
-    adaptiveDecay: p.adaptiveDecay ?? 0.9,
-    dynatempRange: p.dynatempRange ?? 0,
-    dynatempExponent: p.dynatempExponent ?? 1,
-    topNSigma: p.topNSigma ?? 0,
-    smoothingFactor: p.smoothingFactor ?? 0,
-    repeatLastN: p.repeatLastN ?? 0,
-    dryPenaltyLastN: p.dryPenaltyLastN ?? -1,
-    mirostat: p.mirostat ?? 0,
-    mirostatTau: p.mirostatTau ?? 5,
-    mirostatEta: p.mirostatEta ?? 0.1,
-    dryMultiplier: p.dryMultiplier ?? 0,
-    dryBase: p.dryBase ?? 1.75,
-    dryAllowedLength: p.dryAllowedLength ?? 2,
-    drySequenceBreakers: p.drySequenceBreakers ?? [],
-    xtcThreshold: p.xtcThreshold ?? 0.1,
-    xtcProbability: p.xtcProbability ?? 0,
-    frequencyPenalty: p.frequencyPenalty,
-    presencePenalty: p.presencePenalty,
-    repetitionPenalty: p.repetitionPenalty,
-    ...NOVELAI_SAMPLER_FORM_DEFAULTS, // NAI-1a convoy: wire fields arrive in NAI-1b
-    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
-    tokenPadding: p.tokenPadding ?? 0,
-    generationMode: p.generationMode ?? GENERATION_MODE.chat,
-    bindPerModel: p.bindPerModel ?? false,
-    modelFreeOnly: p.modelFreeOnly ?? false,
-    modelGroupByOwner: p.modelGroupByOwner ?? false,
-    editingModelId: null,
-    stopSequences: p.stopSequences,
-    bannedStrings: p.bannedStrings ?? [],
-    logitBias: p.logitBias ?? [],
-    seed: p.seed ?? null, showReasoning: p.showReasoning,
-    reasoningEffort: p.reasoningEffort,
-    streamResponse: p.streamResponse,
-    customSamplers: p.customSamplers ?? false,
-    proxyMode: p.proxyMode ?? "inherit",
-    proxyId: p.proxyId ?? null,
-    samplerSetId: p.samplerSetId ?? null,
-    generationFormat: p.generationFormat ?? null,
-  };
 }
 
 interface Capabilities {
@@ -457,7 +406,7 @@ export function ProviderModal({
         presencePenalty: pick("presencePenalty"),
         repetitionPenalty: pick("repetitionPenalty"),
         maxTokens: pick("maxTokens"),
-        contextBudget: pick("contextBudget") ?? 16000,
+        contextBudget: pick("contextBudget") ?? NEW_PROFILE_CONTEXT_BUDGET,
         pinContextBudget: pick("pinContextBudget") ?? false,
         // Token padding (LS-1d) is profile-level — never overridden by the
         // per-model overlay — so it reads straight from the base profile.
@@ -785,7 +734,7 @@ export function ProviderModal({
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName={isMobile ? "p-4" : "p-5"}
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
-        headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
+        headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
           activeCategory === "image" ? (
             <ImageGenSection imageGen={imageGen} />
@@ -816,7 +765,7 @@ export function ProviderModal({
             imageGen.form ? (
               <ImageGenProfileEditor imageGen={imageGen} />
             ) : (
-              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
                 {t("image_gen_section_placeholder")}
               </div>
             )
@@ -824,7 +773,7 @@ export function ProviderModal({
             stt.form ? (
               <SttProfileEditor stt={stt} />
             ) : (
-              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
                 {t("stt_section_placeholder")}
               </div>
             )
@@ -832,12 +781,12 @@ export function ProviderModal({
             tts.form ? (
               <TtsProfileEditor tts={tts} />
             ) : (
-              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
                 {t("tts_section_placeholder")}
               </div>
             )
           ) : !form ? (
-            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+            <div className="flex h-full items-center justify-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">
               {t("provider_select_profile")}
             </div>
           ) : (
@@ -925,7 +874,7 @@ export function ProviderModal({
 
                   {/* Hint when no models are loaded yet but provider is selected */}
                   {!fetching && models.length === 0 && selectedPreset && !showVisionFallback && (
-                    <div className="mt-2 text-[12px] text-t3 italic">
+                    <div className="mt-2 text-[calc(var(--ui-fs)-2px)] text-t3 italic">
                       {t("refresh_models_vision_hint")}
                     </div>
                   )}
@@ -955,23 +904,23 @@ export function ProviderModal({
             <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]" : "px-6 py-4")}>
             <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
               <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
-                <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
+                <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
                   <Icons.Copy /> {t("duplicate")}
                 </span>
                 {providerProfiles.length > 1 && (
-                  <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
+                  <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-1px)] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
                     <Icons.Trash /> {t("delete")}
                   </span>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+              <div className="flex shrink-0 items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
                 <Icons.Floppy /> {t("autosaving")}
               </div>
               <div
                 data-testid="default-proxy-control"
                 className={cn("ml-auto flex min-w-0 items-center gap-2", isMobile ? "order-3 w-full" : "flex-1")}
               >
-                <label className="shrink-0 font-ui text-[12px] text-t3">{t("default_proxy")}</label>
+                <label className="shrink-0 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("default_proxy")}</label>
                 <DropdownSelect
                   value={defaultProxyId ?? ""}
                   placeholder={t("proxy_direct")}

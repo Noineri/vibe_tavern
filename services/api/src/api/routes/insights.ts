@@ -54,6 +54,12 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     .put("/api/chats/:chatId/insights/objective/config", zValidator("json", schemas.updateObjectiveConfigSchema), async (c) => {
       return c.json(await runtime.updateObjectiveConfig(c.req.param("chatId"), c.req.valid("json")));
     })
+    .post("/api/chats/:chatId/insights/apply-character-template", async (c) => {
+      return c.json(await runtime.applyCharacterTrackerTemplate(c.req.param("chatId")));
+    })
+    .post("/api/chats/:chatId/insights/save-as-character-template", async (c) => {
+      return c.json(await runtime.saveAsCharacterTrackerTemplate(c.req.param("chatId")));
+    })
     // ─── Scene Tracker (SCENE_TRACKER_PLAN SCN-9) — immutable variant ownership ──
     .post("/api/chats/:chatId/insights/scene/generate", zValidator("json", schemas.sceneGenerateSchema), async (c) => {
       return c.json(await runtime.generateScene(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));

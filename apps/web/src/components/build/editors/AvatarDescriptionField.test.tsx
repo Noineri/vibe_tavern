@@ -19,22 +19,13 @@
  */
 import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
 const toastError = mock();
-const realI18nContext = await import("../../../i18n/context.js");
 const realSonner = await import("sonner");
-mock.module("../../../i18n/context.js", () => ({
-	...realI18nContext,
-	useT: () => ({
-		t: (k: string) => k,
-		tDynamic: (k: string) => k,
-		locale: "en",
-		setLocale: () => {},
-		ready: true,
-	}),
-}));
+installI18nContextSeam();
 mock.module("sonner", () => ({
 	...realSonner,
 	toast: { ...realSonner.toast, error: toastError },

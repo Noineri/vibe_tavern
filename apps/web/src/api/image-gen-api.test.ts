@@ -94,6 +94,21 @@ describe("image-gen listing client (IF-20)", () => {
     });
     expect(await imageGenApi.listImageGenModels("missing")).toBeNull();
   });
+
+  test("storedFirst asks for the stored list (step 11 open path); the refresh call stays bare", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = mockFetch(async (input) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await imageGenApi.listImageGenModels("p 1", undefined, { storedFirst: true });
+    await imageGenApi.listImageGenModels("p 1");
+
+    expect(new URL(urls[0]!, "http://x").pathname.endsWith("/api/image-gen/profiles/p%201/models")).toBe(true);
+    expect(new URL(urls[0]!, "http://x").searchParams.get("source")).toBe("stored");
+    expect(new URL(urls[1]!, "http://x").searchParams.has("source")).toBe(false);
+  });
 });
 
 describe("ImageGen profile reorder client", () => {

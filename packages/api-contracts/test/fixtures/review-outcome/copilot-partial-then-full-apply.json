@@ -1,0 +1,87 @@
+{
+  "surface": "copilot",
+  "scenario": "partial local apply before Save, then full apply over two following turns",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain cumulative partial acceptance",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "start\nA: new\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: new\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: old\nend",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "f4696c4268e1",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain cumulative completion 3",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "start\nA: new\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: new\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: new\nend",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "f4696c4268e1",
+              "outcome": "applied",
+              "hunks": {
+                "accepted": 3,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain cumulative completion 4",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "start\nA: new\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: new\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: new\nend",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "f4696c4268e1",
+              "outcome": "applied",
+              "hunks": {
+                "accepted": 3,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

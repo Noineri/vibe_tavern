@@ -71,7 +71,7 @@ const tooltipTheme = EditorView.baseTheme({
     borderRadius: "6px",
     boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
     fontFamily: "var(--font-ui)",
-    fontSize: "12px",
+    fontSize: "calc(var(--ui-fs)-2px)",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul": {
     fontFamily: "var(--font-mono)",

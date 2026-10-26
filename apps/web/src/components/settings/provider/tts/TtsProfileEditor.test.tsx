@@ -1,26 +1,22 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) => {
       if (params && typeof params === "object" && "name" in params) {
         return `${key}:${String(params.name)}`;
       }
       return key;
     },
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { TtsProfileEditor } = await import("./TtsProfileEditor.js");
@@ -38,14 +34,14 @@ const { TTS_BACKEND } = await import("@vibe-tavern/domain");
 // captured first, only draft helpers overridden.
 const realTtsApi = await import("../../../../api/tts-api.js");
 import type { TtsDraftVoicesResponse } from "../../../../api/tts-api.js";
-const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown> }): Promise<TtsDraftVoicesResponse> => ({
+const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<TtsDraftVoicesResponse> => ({
   voices: [
     { id: "alloy", label: "Alloy", lang: "en" },
     { id: "echo", label: "Echo", lang: "en" },
   ],
   capabilities: { supportsCloning: false },
 }));
-const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
+const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<Array<{ id: string; label: string }>> => [
   { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
   { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
 ]);
@@ -74,7 +70,7 @@ function normalizeForm(form: Record<string, unknown> | null | undefined) {
   return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, ...form } as never;
 }
 
-function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
   const base = {
     profiles: [],
     loading: false,
@@ -102,7 +98,7 @@ function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
   if (overrides.form !== undefined) {
     (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
   }
-  return merged as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+  return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 }
 
 afterEach(async () => {
@@ -114,7 +110,7 @@ afterEach(async () => {
  *  LLM mechanism renders the base card + config sections (voices, model
  *  card, tuning, bindings) only in this state; the connection form is the
  *  separate edit screen. Derives the profiles record from the form. */
-function viewTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+function viewTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
   const base = makeTts(overrides);
   const form = base.form as { id: string | null; name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId?: string; hasStoredApiKey?: boolean } | null;
   const record =
@@ -139,6 +135,13 @@ function viewTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
   return makeTts({ ...overrides, headerMode: "view" as never, profiles: record as never });
 }
 
+
+/** One typed seam for loose form fixtures in the step-11c tests: the file-wide
+ *  `as never` convenience cast is a ratchet-budgeted pattern (test-hygiene),
+ *  so tests added since do not extend it. */
+function asForm(form: Record<string, unknown>): NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]> {
+  return form as unknown as NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]>;
+}
 
 describe("TtsProfileEditor", () => {
   it("typing a name calls setForm and marks dirty", async () => {
@@ -364,9 +367,13 @@ describe("TtsProfileEditor", () => {
     const select = await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
     expect(select).toBeTruthy();
     expect(listTtsDraftVoicesMock).toHaveBeenCalled();
-    const call = listTtsDraftVoicesMock.mock.calls[0][0] as { backend: string; config: Record<string, unknown> };
+    const call = listTtsDraftVoicesMock.mock.calls[0][0] as { backend: string; config: Record<string, unknown>; profileId?: string };
     expect(call.backend).toBe(TTS_BACKEND.OpenAiCompatible);
     expect(call.config.endpoint).toBe("https://x/v1");
+    // Step 11c: a DRAFT (id null) keeps the live listing - no stored marker,
+    // no profile id (nothing saved to read a stored list from).
+    expect("source" in call).toBe(false);
+    expect(call.profileId).toBeUndefined();
 
     cleanup();
     document.body.innerHTML = "";
@@ -402,10 +409,13 @@ describe("TtsProfileEditor", () => {
     );
     const lastGemini = geminiCalls[geminiCalls.length - 1][0] as { backend: string; config: Record<string, unknown> };
     expect(lastGemini.backend).toBe(TTS_BACKEND.Gemini);
+    // Step 11c: a draft lists live (no stored marker).
+    expect("source" in lastGemini).toBe(false);
     // Clicking refresh re-fetches
     const before = listTtsDraftModelsMock.mock.calls.length;
     fireEvent.click(refresh);
     await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBeGreaterThan(before), { timeout: 1000 });
+    expect("source" in listTtsDraftModelsMock.mock.calls.at(-1)![0]).toBe(false);
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
@@ -593,6 +603,13 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 });
 
 describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
+  /** Seam: the number box beside the slider is now the slider field's inline editor, opened by double-click. */
+  function openFieldEditor(range: HTMLInputElement) {
+    const box = range.closest("[data-slider-field-shell]")?.querySelector("[data-slider-field]");
+    if (!box) throw new Error("Tuning range is not a slider field");
+    fireEvent.doubleClick(box);
+  }
+
   it("tuning number field renders slider + compact number (elevenlabs stability)", async () => {
     const setForm = mock(() => {});
     const tts = viewTts({
@@ -612,10 +629,10 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     expect(range.type).toBe("range");
     expect(range.min).toBe("0");
     expect(range.max).toBe("1");
-    const numberWrapper = view.getByTestId("tts-field-stability-number");
-    expect(numberWrapper).toBeTruthy();
-    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
-    expect(numberInput).toBeTruthy();
+    expect(view.queryByTestId("tts-field-stability-number")).toBeNull();
+    openFieldEditor(range);
+    const numberInput = view.getByTestId("tts-field-stability-number") as HTMLInputElement;
+    expect(numberInput.tagName).toBe("INPUT");
     // Range commits immediately
     fireEvent.change(range, { target: { value: "0.8" } });
     expect(setForm).toHaveBeenCalled();
@@ -646,8 +663,8 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     let patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
     expect(patch.config.speed).toBe(1.5);
     setForm.mockClear();
-    const numberWrapper = view.getByTestId("tts-field-speed-number");
-    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
+    openFieldEditor(range);
+    const numberInput = view.getByTestId("tts-field-speed-number") as HTMLInputElement;
     fireEvent.change(numberInput, { target: { value: "1.2" } });
     fireEvent.blur(numberInput);
     expect(setForm).toHaveBeenCalled();
@@ -1235,7 +1252,7 @@ describe("TtsProfileEditor — TE2-9 test card states", () => {
 });
 
 describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () => {
-  function collapsedTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
+  function collapsedTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
     const profiles = [
       {
         id: "p1",
@@ -1301,7 +1318,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     if (overrides.form !== undefined) {
       (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
     }
-    return merged as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+    return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
   }
 
   it("collapsed keeps voices, speed and bindings visible (plan row)", async () => {
@@ -1438,7 +1455,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   });
 
   it("preview button is rendered and triggers useTtsPreview (mock deps seam)", async () => {
-    const { __setTtsPreviewDepsForTests } = await import("./use-tts-preview.js");
+    const { __setTtsPreviewDepsForTests } = await import("../../../../hooks/use-tts-preview.js");
     const synthesize = mock(async () => ({ blob: new Blob(["x"], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
     const play = mock(async () => {});
     __setTtsPreviewDepsForTests({ synthesize: synthesize as never, play: play as never });
@@ -1624,7 +1641,7 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
       remove: mock(async () => {}),
       cancelEdit: mock(() => {}),
       reload: mock(async () => {}),
-    } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+    } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
@@ -1691,10 +1708,16 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     cleanup();
   });
 
-  it("view mode: base card status row names the auto-key provider", () => {
+  it("view mode: an auto-matched base card counts as ready and does NOT name its source", () => {
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 2, owner
+    // 2026-10-15): was "base card status row names the auto-key provider";
+    // the hint now lives only in the editor form.
     const tts = viewTts({ form: orForm({ id: "p1", voiceId: "alloy" }) });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
+    expect(view.queryByTestId("tts-key-source-hint")).toBeNull();
+    const status = view.getByTestId("tts-base-card-status").textContent ?? "";
+    expect(status).toContain("api_key_saved");
+    expect(status).not.toContain("no_api_key");
     cleanup();
   });
 });
@@ -1738,6 +1761,7 @@ describe("TtsProfileEditor — voice clone section", () => {
   it("clone flow: inline validation, upload body, auto-select + voices refresh on success", async () => {
     const setForm = mock(() => {});
     // Mount → capable empty library; post-clone refresh → library holds the clone.
+    const callsBefore = listTtsDraftVoicesMock.mock.calls.length;
     listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
       voices: [{ id: "my-voice", label: "my-voice", lang: "en" }],
@@ -1777,7 +1801,16 @@ describe("TtsProfileEditor — voice clone section", () => {
     // …auto-select into the form's voiceId (design point 2, dirty-flow)…
     expect(setForm).toHaveBeenCalledWith({ voiceId: "my-voice" });
     // …and the picker list refreshed to include the clone (voices re-listed).
-    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBeGreaterThanOrEqual(callsBefore + 2), { timeout: 2500 });
+    // Step 11c: the open call of the SAVED profile (id "p1") was the stored
+    // read; the post-clone call is the LIVE second call - the stored list
+    // predates the clone and would not carry the new voice.
+    const opened = listTtsDraftVoicesMock.mock.calls[callsBefore][0] as { source?: string; profileId?: string };
+    const afterClone = listTtsDraftVoicesMock.mock.calls[callsBefore + 1][0] as { source?: string; profileId?: string };
+    expect(opened.source).toBe("stored");
+    expect(opened.profileId).toBe("p1");
+    expect("source" in afterClone).toBe(false);
+    expect(afterClone.profileId).toBe("p1");
 
     cleanup();
     document.body.innerHTML = "";
@@ -1882,6 +1915,10 @@ describe("TtsProfileEditor — voice clone section", () => {
         () => expect(listTtsDraftVoicesMock.mock.calls.length).toBeGreaterThan(before),
         { timeout: 2500 },
       );
+      // Step 11c: the mount call of this saved profile was the stored read,
+      // the refresh is LIVE (no stored marker).
+      expect((listTtsDraftVoicesMock.mock.calls[before - 1][0] as { source?: string }).source).toBe("stored");
+      expect("source" in listTtsDraftVoicesMock.mock.calls[before][0]).toBe(false);
 
       cleanup();
       document.body.innerHTML = "";
@@ -1891,18 +1928,44 @@ describe("TtsProfileEditor — voice clone section", () => {
     }
   });
 
-  it("voices transport rejection → the red load-error state (manual input floor stays)", async () => {
+  // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c, owner
+  // 2026-10-15): a failed OPEN of a saved profile is quiet - the manual voice
+  // input without the red load error; only a failed REFRESH (or a failed draft
+  // listing) shows it.
+  it("voices transport rejection: quiet on OPEN (manual input floor, no red error), red on REFRESH", async () => {
     listTtsDraftVoicesMock.mockImplementation(async () => {
       throw new Error("server unreachable");
     });
     try {
       const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await view.findByTestId("tts-voice-input", undefined, { timeout: 2500 });
+      expect(view.queryByTestId("tts-voices-load-error")).toBeNull();
+      expect(view.queryByTestId("tts-voices-empty")).toBeNull();
+      expect(view.queryByTestId("tts-voices-refresh")).toBeTruthy();
+
+      fireEvent.click(view.getByTestId("tts-voices-refresh"));
+      await view.findByTestId("tts-voices-load-error", undefined, { timeout: 2500 });
+      expect(view.getByTestId("tts-voice-input")).toBeTruthy();
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
+      listTtsDraftVoicesMock.mockRestore();
+    }
+  });
+
+  it("voices transport rejection of a DRAFT (no id) stays loud: the red load-error state", async () => {
+    listTtsDraftVoicesMock.mockImplementation(async () => {
+      throw new Error("server unreachable");
+    });
+    try {
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm, id: null }) }) }));
       await view.findByTestId("tts-voices-load-error", undefined, { timeout: 2500 });
       expect(view.queryByTestId("tts-voices-empty")).toBeNull();
       expect(view.queryByTestId("tts-voices-refresh")).toBeTruthy();
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       listTtsDraftVoicesMock.mockRestore();
@@ -1912,8 +1975,8 @@ describe("TtsProfileEditor — voice clone section", () => {
   // ── SiliconFlow: conditional transcript field + caveat (TPE-8) ───────
   it("siliconflow: transcript field + caveat hint appear, empty transcript blocks the upload, filled transcript rides the body", async () => {
     // Phase-based stub (NOT mockImplementationOnce): one editor mount
-    // performs 2+ listVoices calls (mount + models-settle, refresh after a
-    // clone), and Once-slots leak across tests in this file — a queue-based
+    // performs 2+ listVoices calls (mount, refresh after a clone), and
+    // Once-slots leak across tests in this file — a queue-based
     // stub is order-fragile and poisoned the neighbouring clone tests.
     // The phase flag answers EVERY request of a given mount consistently.
     const defaultEnvelope: TtsDraftVoicesResponse = {
@@ -1947,7 +2010,7 @@ describe("TtsProfileEditor — voice clone section", () => {
       await act(async () => {});
 
       // SiliconFlow phase: transcript hint + caveat key ride capabilities —
-      // EVERY voices answer of this mount (mount, settle, refresh) is SF.
+      // EVERY voices answer of this mount (mount, refresh) is SF.
       sfPhase = true;
       const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
       await view.findByTestId("tts-clone-reference-text", undefined, { timeout: 2500 });
@@ -1989,10 +2052,11 @@ describe("TtsProfileEditor — voice clone section", () => {
 
   it("clone failure: upstream error shown inline, no auto-select", async () => {
     const setForm = mock(() => {});
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
-    // A second queue slot: the models-settle patches `model` → config key
-    // changes → the voices effect re-runs; keep it on the capable EMPTY
-    // library so no roster settle sneaks a voiceId patch into the pins.
+    // Behavior change (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c): the
+    // old second queue slot served the D20 "models-settle" re-run (the model
+    // write changed the config key and re-ran the voices effect). D20 is gone,
+    // so a failed clone makes exactly ONE voices call - a second slot would
+    // sit unused in the queue and leak into later tests.
     listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
     cloneTtsVoiceMock.mockImplementationOnce(async () => {
       throw new Error("voice name already exists");
@@ -2005,11 +2069,10 @@ describe("TtsProfileEditor — voice clone section", () => {
     fireEvent.click(view.getByTestId("tts-clone-submit"));
 
     await waitFor(() => expect(view.queryByTestId("tts-clone-error")?.textContent).toContain("voice name already exists"), { timeout: 2500 });
-    // No voiceId auto-select — the models settle may still patch `model`
-    // (its own effect), so pin the ABSENCE of a voiceId patch specifically.
+    // No voiceId auto-select: pin the ABSENCE of a voiceId patch specifically.
     // The failed clone's name must never be auto-selected. (A roster settle
-    // from a stale cross-test listVoices mock call may still patch some OTHER
-    // voiceId — that is F6's pinned behavior, not this test's boundary.)
+    // may still patch some OTHER voiceId — that is F6's pinned behavior, not
+    // this test's boundary.)
     const patches = setForm.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
     expect(patches.some((p) => p?.voiceId === "dupe")).toBe(false);
     // The form stays filled so the user can retry after fixing the name.
@@ -2018,6 +2081,257 @@ describe("TtsProfileEditor — voice clone section", () => {
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
+  });
+});
+
+// ── Stored-first listings (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT step 11c) ──
+// Owner 2026-10-15: "the first time you pick the model, after that it must not
+// be requested again for things to work". A saved profile opens on the
+// server's STORED model/voice lists; the refresh buttons are the live path; a
+// pick, a tuning edit or a profile switch never re-lists by accident.
+describe("TtsProfileEditor — stored-first listings (step 11c)", () => {
+  const mountEditor = (tts: ReturnType<typeof viewTts>) => renderEditor(React.createElement(TtsProfileEditor, { tts }));
+  /** Re-render the same mounted editor with another store snapshot (a pick, a
+   *  tuning edit, a profile switch all arrive as a new `tts` prop). */
+  const rerenderEditor = (view: ReturnType<typeof renderEditor>, tts: ReturnType<typeof viewTts>) =>
+    view.rerender(React.createElement(TooltipProvider, null, React.createElement(TtsProfileEditor, { tts })));
+  const modelsRefresh = (view: ReturnType<typeof renderEditor>) => view.getByTestId("tts-models-refresh") as HTMLButtonElement;
+
+  const savedOpenai = {
+    id: "p1",
+    name: "Open",
+    backend: TTS_BACKEND.OpenAiCompatible,
+    config: { endpoint: "https://x/v1", apiKey: "k", model: "m1" },
+    voiceId: "alloy",
+  };
+  const capable: TtsDraftVoicesResponse = {
+    voices: [{ id: "alloy", label: "Alloy", lang: "en" }],
+    capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 },
+  };
+
+  it("opening a saved profile asks for the STORED model and voice lists; both refresh buttons list LIVE", async () => {
+    const voicesBefore = listTtsDraftVoicesMock.mock.calls.length;
+    const modelsBefore = listTtsDraftModelsMock.mock.calls.length;
+    const view = mountEditor(viewTts({ form: asForm(savedOpenai) }));
+    await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+
+    expect(listTtsDraftVoicesMock.mock.calls.length).toBe(voicesBefore + 1);
+    expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 1);
+    const openedVoices = listTtsDraftVoicesMock.mock.calls[voicesBefore][0];
+    const openedModels = listTtsDraftModelsMock.mock.calls[modelsBefore][0];
+    expect(openedVoices.source).toBe("stored");
+    expect(openedVoices.profileId).toBe("p1");
+    expect(openedModels.source).toBe("stored");
+    expect(openedModels.profileId).toBe("p1");
+
+    fireEvent.click(modelsRefresh(view));
+    await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 2), { timeout: 2500 });
+    expect("source" in listTtsDraftModelsMock.mock.calls[modelsBefore + 1][0]).toBe(false);
+
+    await waitFor(() => expect((view.getByTestId("tts-voices-refresh") as HTMLButtonElement).disabled).toBe(false), { timeout: 2500 });
+    fireEvent.click(view.getByTestId("tts-voices-refresh"));
+    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBe(voicesBefore + 2), { timeout: 2500 });
+    expect("source" in listTtsDraftVoicesMock.mock.calls[voicesBefore + 1][0]).toBe(false);
+  });
+
+  it("D20 removed: an empty model next to a non-empty list is NOT auto-picked - no model write", async () => {
+    const setForm = mock(() => {});
+    const view = mountEditor(
+      viewTts({ setForm, form: asForm({ ...savedOpenai, config: { endpoint: "https://x/v1", apiKey: "k" } }) }),
+    );
+    // The default models mock answers a non-empty list; it has landed once the
+    // refresh button leaves its loading state.
+    await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+    expect(view.getByTestId("tts-field-model").textContent).toBe("select_model");
+    const patches = setForm.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
+    expect(patches.some((patch) => "config" in patch)).toBe(false);
+  });
+
+  it("a failed OPEN is quiet for models and voices; a failed REFRESH shows both errors", async () => {
+    listTtsDraftModelsMock.mockImplementationOnce(async () => {
+      throw new Error("models upstream down");
+    });
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => {
+      throw new Error("voices upstream down");
+    });
+    const view = mountEditor(viewTts({ form: asForm(savedOpenai) }));
+    await view.findByTestId("tts-voice-input", undefined, { timeout: 2500 });
+    await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+    expect(view.queryByText("models upstream down")).toBeNull();
+    expect(view.queryByTestId("tts-voices-load-error")).toBeNull();
+
+    listTtsDraftModelsMock.mockImplementationOnce(async () => {
+      throw new Error("models refresh down");
+    });
+    fireEvent.click(modelsRefresh(view));
+    await view.findByText("models refresh down", undefined, { timeout: 2500 });
+
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => {
+      throw new Error("voices refresh down");
+    });
+    fireEvent.click(view.getByTestId("tts-voices-refresh"));
+    await view.findByTestId("tts-voices-load-error", undefined, { timeout: 2500 });
+  });
+
+  // Inworld and MiniMax declare a fetch-mode model (key modelId) and their
+  // backends implement listModels - but the old Gemini/OpenAI-compatible gate
+  // left their picker empty and refresh a no-op.
+  for (const { backend, label, entries } of [
+    { backend: TTS_BACKEND.Inworld, label: "inworld", entries: [{ id: "inworld-tts-2", label: "Inworld TTS 2" }, { id: "inworld-tts-1.5-max", label: "Inworld TTS 1.5 Max" }] },
+    { backend: TTS_BACKEND.MiniMax, label: "minimax", entries: [{ id: "speech-2.8-hd", label: "Speech 2.8 HD" }, { id: "speech-2.8-turbo", label: "Speech 2.8 Turbo" }] },
+  ]) {
+    it(`${label}: the fetch-mode model picker lists, reads and writes modelId, and refresh lists live`, async () => {
+      const modelsBefore = listTtsDraftModelsMock.mock.calls.length;
+      listTtsDraftModelsMock.mockImplementationOnce(async () => entries);
+      const setForm = mock(() => {});
+      const view = mountEditor(
+        viewTts({
+          setForm,
+          form: asForm({ id: "p1", name: label, backend, config: { modelId: entries[0].id }, voiceId: "v" }),
+        }),
+      );
+      await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 1), { timeout: 2500 });
+      const opened = listTtsDraftModelsMock.mock.calls[modelsBefore][0];
+      expect(opened.backend).toBe(backend);
+      expect(opened.source).toBe("stored");
+      expect(opened.profileId).toBe("p1");
+      // The picker READS the spec key: the stored modelId resolves to its label.
+      await waitFor(() => expect(view.getByTestId("tts-field-model").textContent).toBe(entries[0].label), { timeout: 2500 });
+
+      // ...and WRITES it: picking the other entry sets modelId, never model.
+      fireEvent.click(view.getByTestId("tts-field-model"));
+      const option = await waitFor(() => {
+        const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((n) => (n.textContent ?? "").includes(entries[1].label));
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      fireEvent.click(option);
+      const patch = setForm.mock.calls.map((c) => (c as unknown[])[0] as { config?: Record<string, unknown> }).find((p) => p.config !== undefined);
+      expect(patch?.config).toEqual({ modelId: entries[1].id });
+
+      // Refresh is no longer a no-op: a LIVE listing goes out.
+      await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+      fireEvent.click(modelsRefresh(view));
+      await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 2), { timeout: 2500 });
+      expect("source" in listTtsDraftModelsMock.mock.calls[modelsBefore + 1][0]).toBe(false);
+    });
+  }
+
+  it("a model pick re-lists the voices of the NEW model (stored-first), keeps the roster on screen, and does not re-list the models", async () => {
+    const voicesBefore = listTtsDraftVoicesMock.mock.calls.length;
+    const modelsBefore = listTtsDraftModelsMock.mock.calls.length;
+    const view = mountEditor(viewTts({ form: asForm(savedOpenai) }));
+    await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+
+    rerenderEditor(view, viewTts({ form: asForm({ ...savedOpenai, config: { ...savedOpenai.config, model: "m2" } }) }));
+    // The voices re-run is armed in this very commit; the roster stays up
+    // meanwhile (no blank-out, no loading text), the refresh button just waits.
+    expect(view.queryByTestId("tts-voices-loading")).toBeNull();
+    expect(view.getByTestId("tts-voice-select")).toBeTruthy();
+    expect((view.getByTestId("tts-voices-refresh") as HTMLButtonElement).disabled).toBe(true);
+    // The model list does not depend on the pick: nothing armed for it.
+    expect(modelsRefresh(view).disabled).toBe(false);
+
+    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBe(voicesBefore + 2), { timeout: 2500 });
+    const relisted = listTtsDraftVoicesMock.mock.calls[voicesBefore + 1][0];
+    expect(relisted.config.model).toBe("m2");
+    expect(relisted.source).toBe("stored");
+    expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 1);
+  });
+
+  it("a tuning edit re-lists nothing and blanks nothing", async () => {
+    const voicesBefore = listTtsDraftVoicesMock.mock.calls.length;
+    const modelsBefore = listTtsDraftModelsMock.mock.calls.length;
+    const view = mountEditor(viewTts({ form: asForm(savedOpenai) }));
+    await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    await waitFor(() => expect(modelsRefresh(view).disabled).toBe(false), { timeout: 2500 });
+
+    rerenderEditor(
+      view,
+      viewTts({ form: asForm({ ...savedOpenai, config: { ...savedOpenai.config, speed: 1.4, responseFormat: "wav", waitForFullGeneration: true } }) }),
+    );
+    // No re-run armed in this commit: both refresh buttons stay enabled, the
+    // roster and the model list stay as they were.
+    expect((view.getByTestId("tts-voices-refresh") as HTMLButtonElement).disabled).toBe(false);
+    expect(modelsRefresh(view).disabled).toBe(false);
+    expect(view.queryByTestId("tts-voices-loading")).toBeNull();
+    expect(view.getByTestId("tts-voice-select")).toBeTruthy();
+    expect(listTtsDraftVoicesMock.mock.calls.length).toBe(voicesBefore + 1);
+    expect(listTtsDraftModelsMock.mock.calls.length).toBe(modelsBefore + 1);
+  });
+
+  it("a profile switch resets the clone capability: the previous profile's clone card never lingers", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capable);
+    const view = mountEditor(viewTts({ form: asForm(savedOpenai) }));
+    await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+
+    // Profile p2 answers with the default (non-cloning) envelope.
+    rerenderEditor(view, viewTts({ editingId: "p2", form: asForm({ ...savedOpenai, id: "p2", name: "Other" }) }));
+    expect(view.queryByTestId("tts-clone-section")).toBeNull();
+    await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    expect(view.queryByTestId("tts-clone-section")).toBeNull();
+  });
+
+  it("a late roster from the previous profile is ignored (request numbering)", async () => {
+    let releaseLate: (answer: TtsDraftVoicesResponse) => void = () => {};
+    const voicesBefore = listTtsDraftVoicesMock.mock.calls.length;
+    listTtsDraftVoicesMock.mockImplementationOnce(
+      () =>
+        new Promise<TtsDraftVoicesResponse>((resolve) => {
+          releaseLate = resolve;
+        }),
+    );
+    const setForm = mock(() => {});
+    const view = mountEditor(viewTts({ setForm, form: asForm(savedOpenai) }));
+    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBe(voicesBefore + 1), { timeout: 2500 });
+
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [{ id: "p2-voice", label: "P2 Voice", lang: "en" }],
+      capabilities: { supportsCloning: false },
+    }));
+    rerenderEditor(
+      view,
+      viewTts({ setForm, editingId: "p2", form: asForm({ ...savedOpenai, id: "p2", name: "Other", voiceId: "p2-voice" }) }),
+    );
+    await waitFor(() => expect(view.getByTestId("tts-voice-select").textContent).toContain("P2 Voice"), { timeout: 2500 });
+
+    await act(async () => {
+      releaseLate({ voices: [{ id: "late-voice", label: "Late Voice", lang: "en" }], capabilities: { supportsCloning: true } });
+    });
+    expect(view.getByTestId("tts-voice-select").textContent).toContain("P2 Voice");
+    expect(view.queryByTestId("tts-clone-section")).toBeNull();
+    const patches = setForm.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
+    expect(patches.some((patch) => patch.voiceId === "late-voice")).toBe(false);
+  });
+
+  it("the first voice settle still runs on a STORED answer (owner-confirmed rule)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [
+        { id: "first-voice", label: "First", lang: "en" },
+        { id: "second-voice", label: "Second", lang: "en" },
+      ],
+      capabilities: { supportsCloning: false },
+    }));
+    const voicesBefore = listTtsDraftVoicesMock.mock.calls.length;
+    const setForm = mock(() => {});
+    mountEditor(viewTts({ setForm, form: asForm({ ...savedOpenai, voiceId: "" }) }));
+    await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "first-voice" }), { timeout: 2500 });
+    expect(listTtsDraftVoicesMock.mock.calls[voicesBefore][0].source).toBe("stored");
+  });
+
+  it("edit mode renders no pickers and no clone card for a saved remote profile", async () => {
+    const record = { id: "p1", name: "Open", backend: TTS_BACKEND.OpenAiCompatible, config: savedOpenai.config, voiceId: "alloy", narratorVoiceId: null, hasStoredApiKey: true, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" };
+    const tts = makeTts({
+      form: asForm(savedOpenai),
+      profiles: [record] as unknown as ReturnType<typeof viewTts>["profiles"],
+    });
+    const view = mountEditor(tts);
+    expect(view.queryByTestId("tts-voice-section")).toBeNull();
+    expect(view.queryByTestId("tts-field-model")).toBeNull();
+    expect(view.queryByTestId("tts-clone-section")).toBeNull();
   });
 });
 

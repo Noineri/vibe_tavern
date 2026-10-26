@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 import {
 	aggregateExperienceCopilotProposal,
 	type ExperienceCopilotProposal,
 } from "../lib/experience-copilot-apply.js";
-import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
-import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
+import type { AgentToolActivity } from "../stores/agent-turn-store.js";
+import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import {
 	EMPTY_REVIEW_ROUND,
-	useCopilotReviewRoundStore,
-	type CopilotReviewSnapshot,
-} from "../stores/experience-copilot-review-store.js";
+	useAgentReviewRoundStore,
+	type AgentReviewSnapshot,
+} from "../stores/agent-review-store.js";
 
 /**
  * CD-2: the copilot editor's unified review state — per-turn buffer snapshots
@@ -18,7 +19,7 @@ import {
  * revert ("Undo changes"), and manual-edit conflict flags.
  *
  * WHERE THE STATE LIVES: the snapshots live in the per-thread review-round
- * store (`experience-copilot-review-store.ts`), NOT in this hook's React
+ * store (`agent-review-store.ts`), NOT in this hook's React
  * state — the round must survive the shell unmounting (navigate to prompt
  * tracing / the tester and back) so a hanging, unaccepted diff reappears
  * exactly as it was, per the "diffs live until accepted" contract. This hook
@@ -55,9 +56,12 @@ import {
  * application may no longer overlay (CD-8 resolves flagged hunks explicitly:
  * skipped + toast, never a silent rebase).
  */
-export type { CopilotReviewSnapshot };
+export type { AgentReviewSnapshot };
 
 export interface UseCopilotReviewStateArgs {
+	/** The host kind owning the thread (AS-6c-ii) — forwarded to every store
+	 *  read/write so slices stay kind-scoped. */
+	kind: AgentKind;
 	/** The copilot thread whose live activities carry the pending proposal
 	 *  (also the review-round store key). */
 	threadId: string;
@@ -69,7 +73,7 @@ export interface UseCopilotReviewStateArgs {
 	visualSource: string;
 	/** The live turn's tool activities (already store-subscribed by the caller;
 	 *  passed in so this hook stays store-free and trivially testable). */
-	activities: ReadonlyArray<ExperienceCopilotToolActivity>;
+	activities: ReadonlyArray<AgentToolActivity>;
 	/** Applies the snapshot's texts to the draft buffers (shell → onChange). */
 	onRevert: (buffers: { rules: string; visual: string }) => void;
 }
@@ -77,9 +81,9 @@ export interface UseCopilotReviewStateArgs {
 export interface CopilotReviewState {
 	/** All snapshots this thread's round took (oldest first, for a future
 	 * checkpoint timeline; the revert UI reads only the last one). */
-	snapshots: CopilotReviewSnapshot[];
+	snapshots: AgentReviewSnapshot[];
 	/** The current revert target (null before the first turn). */
-	lastSnapshot: CopilotReviewSnapshot | null;
+	lastSnapshot: AgentReviewSnapshot | null;
 	/** True when the buffers differ from the last snapshot — revert is meaningful. */
 	canRevert: boolean;
 	/** Revert the draft buffers to the last snapshot and dismiss the pending
@@ -97,6 +101,7 @@ export interface CopilotReviewState {
 }
 
 export function useCopilotReviewState({
+	kind,
 	threadId,
 	isSending,
 	rulesCode,
@@ -107,8 +112,8 @@ export function useCopilotReviewState({
 	// The round slice is store-owned: survives unmount/remount (the whole point
 	// of the refactor). useShallow because EMPTY_REVIEW_ROUND is a shared frozen
 	// object — the selector must return it stably when the thread has no round.
-	const round = useCopilotReviewRoundStore(
-		useShallow((s) => s.roundsByThread[threadId] ?? EMPTY_REVIEW_ROUND),
+	const round = useAgentReviewRoundStore(
+		useShallow((s) => s.roundsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_REVIEW_ROUND),
 	);
 	const snapshots = round.snapshots;
 
@@ -125,24 +130,24 @@ export function useCopilotReviewState({
 		const was = prevSendingRef.current;
 		prevSendingRef.current = isSending;
 		if (isSending && !was) {
-			useCopilotReviewRoundStore
+			useAgentReviewRoundStore
 				.getState()
-				.pushSnapshot(threadId, { rules: rulesRef.current, visual: visualRef.current });
+				.pushSnapshot(kind, threadId, { rules: rulesRef.current, visual: visualRef.current });
 		}
-	}, [isSending, threadId]);
+	}, [isSending, kind, threadId]);
 
 	const lastSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
 
 	const revertLastTurn = useCallback(() => {
 		// Pop FIRST (the store owns the stack); the popped texts are the revert
 		// target. No-op when the stack is empty.
-		const snapshot = useCopilotReviewRoundStore.getState().popSnapshot(threadId);
+		const snapshot = useAgentReviewRoundStore.getState().popSnapshot(kind, threadId);
 		if (!snapshot) return;
 		onRevert({ rules: snapshot.rules, visual: snapshot.visual });
 		// Dismiss the pending proposal: it was diffed against the pre-turn
 		// buffers and cannot be meaningfully applied over the reverted text.
-		useExperienceCopilotTurnStore.getState().clearTurn(threadId);
-	}, [onRevert, threadId]);
+		useAgentTurnStore.getState().clearTurn(kind, threadId);
+	}, [onRevert, kind, threadId]);
 
 	const proposal = useMemo(
 		() => aggregateExperienceCopilotProposal(activities),

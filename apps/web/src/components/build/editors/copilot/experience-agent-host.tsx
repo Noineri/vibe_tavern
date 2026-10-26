@@ -1,0 +1,517 @@
+// forks: 1 — script-agent-editor-pane.tsx (the editor pane: tab strip + Try body)
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { COPILOT_TOOL_KEYS, type ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
+import { Icons } from "../../../shared/icons.js";
+import { EmptyState } from "../../../shared/empty-state.js";
+import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { ExperiencePlayground } from "../ExperiencePlayground.js";
+import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
+import { useT } from "../../../../i18n/context.js";
+import type { ScriptRecord } from "../../../../api/types.js";
+import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
+import { ToolbarButton } from "./experience-copilot-buttons.js";
+import { registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
+import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
+import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
+import {
+  activateExperienceCopilotSession,
+  answerCopilotAsk,
+  deleteCopilotTurn,
+  editCopilotMessage,
+  getExperienceCopilotActive,
+  listExperienceCopilotMessages,
+  listExperienceCopilotSessions,
+  renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
+  startExperienceCopilotSession,
+  streamExperienceCopilot,
+} from "../../../../api/experience-copilot-api.js";
+import { AgentBufferReviewEditor } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
+import {
+  useExperienceCopilotReviewFeedback,
+  useExperienceCopilotReviewSession,
+  useExperienceCopilotStep,
+} from "./use-experience-copilot-review.js";
+
+/**
+ * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
+ * AI assistant as the FIRST registered host of the generic `AgentShell`. This
+ * file holds everything the shell deliberately does not know: the two
+ * canonical buffers (rules + visual), the editor pane composition
+ * (`[Preview | Code | Try]` outer toggle, `[Rules | Visual]` sub-toggle,
+ * inline `ExperienceFrame` / `ExperiencePlayground`, the visual validator, the
+ * per-buffer hunk review through `AgentBufferReviewEditor`, the creation
+ * stepper reporting), the per-turn send options, and the buffer-review session
+ * state (snapshots, rounds, dangling capture) registered with the shell
+ * through the bridge.
+ *
+ * The descriptor is a module constant and self-registers at module init — the
+ * composition root (`ExperienceCopilotShell.tsx`) side-effect-imports THIS
+ * file exactly once. Everything LIVE flows through `AgentHostContext`: the
+ * pane receives `threadId` / `isSending` / the wrapper's host props, and hands
+ * its session handle (dangling capture + send options) back via the bridge.
+ *
+ * Behavior is byte-identical to the pre-split `ExperienceCopilotShell` —
+ * this is the AS-6b2 extraction, not a redesign.
+ */
+
+/** The wrapper's host-specific props (AS-6b2): everything only this host
+ *  understands. `ExperienceCopilotShell` builds the object; the shell carries
+ *  it opaquely; `renderEditorPane` narrows it here (wrapper and host are a
+ *  pair, so the cast is boundary-narrowing, not a guess). */
+export interface ExperienceCopilotHostProps {
+  /** SS-7B2: the selected rules script's trust data (origin/firstEnabledAt),
+   *  threaded from the editor to the inline playground so its debounced
+   *  AUTOMATIC discovery can route through the script execution guard.
+   *  Optional — the pre-threading behavior applies when absent. */
+  script?: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
+  /** Canonical rules buffer (the active script's code). Controlled. */
+  rulesCode: string;
+  onRulesChange: (code: string) => void;
+  /** Canonical visual buffer (the active visual's source). Controlled. */
+  visualSource: string;
+  onVisualChange: (source: string) => void;
+  /** Contextual toolbar rendered BELOW the editor toolbar when the Rules
+   *  buffer is active. Optional — undefined renders nothing (no gap). */
+  rulesToolbar?: ReactNode;
+  /** Contextual toolbar rendered BELOW the editor toolbar when the Visual
+   *  buffer is active. Optional — undefined renders nothing (no gap). */
+  visualToolbar?: ReactNode;
+  /** Reports the shell's current authoring position for the creation stepper
+   *  (`rules` / `appearance` / `try`). Optional — unused when the parent
+   *  renders no stepper. Fired on mount (initial default) and on every tab
+   *  switch. */
+  onStepChange?: (step: ExperienceCopilotStep) => void;
+  /** SS-7: «Show in code» — reveal a finding line in the RULES editor
+   *  (fresh object per request; switches to Rules when Visual is active). */
+  revealRulesLine?: { line: number } | null;
+  rulesSaved?: boolean;
+  visualSaved?: boolean;
+}
+
+/** Authoring position reported to the parent's creation stepper (XU-6).
+ *  Re-exported by the `ExperienceCopilotShell` wrapper for its public props. */
+export type ExperienceCopilotStep = "rules" | "appearance" | "try";
+
+/** The kind this host registers under (AS-6c-ii) — the single spelling for
+ *  every store key in this module (`agentThreadKey(EXPERIENCE_KIND,
+ *  threadId)`); the descriptor registration below uses the same const. */
+const EXPERIENCE_KIND: AgentKind = "experience";
+
+/** Outer editor tab (XU-5): live preview / code / inline sandbox. */
+type EditorBuffer = "preview" | "code" | "sandbox";
+/** Inner code sub-toggle — the two canonical buffers. */
+type CodeBuffer = "rules" | "visual";
+
+function ExperienceEditorPane({
+  ownerId,
+  threadId,
+  isSending,
+  bridge,
+  hostProps,
+}: {
+  ownerId: string;
+  threadId: string | null;
+  isSending: boolean;
+  bridge: AgentHostBridge;
+  hostProps: ExperienceCopilotHostProps;
+}) {
+  const {
+    script = null,
+    rulesCode,
+    onRulesChange,
+    visualSource,
+    onVisualChange,
+    rulesToolbar,
+    visualToolbar,
+    onStepChange,
+    revealRulesLine = null,
+    rulesSaved,
+    visualSaved,
+  } = hostProps;
+  const { t } = useT();
+
+  const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>(
+    () => (visualSource.trim() !== "" ? "preview" : "code"),
+  );
+  const [codeBuffer, setCodeBuffer] = useState<CodeBuffer>("rules");
+  const [rulesRevealLine, setRulesRevealLine] = useState(revealRulesLine);
+
+  // AP-15: `open` for the pending-review summary store — the pane owns the
+  // editor tabs, so it defines what "open the review" means: switch to the
+  // Code layer with the pending Rules buffer first (the SS-7 reveal
+  // precedent's exact switch). The ref indirection keeps a stable identity
+  // while the body refreshes every render (the bridge.session pattern), so
+  // the session hook's publish effect never churns on tab switches.
+  const openReviewRef = useRef<() => void>(() => {});
+  const openReview = useCallback(() => openReviewRef.current(), []);
+
+  // SS-7B4: reveal requests from either the editor or the inline Try surface
+  // land on the RULES editor, so leave Preview/Try and switch the code buffer.
+  useEffect(() => {
+    if (!revealRulesLine) return;
+    setRulesRevealLine(revealRulesLine);
+  }, [revealRulesLine]);
+  useEffect(() => {
+    if (!rulesRevealLine) return;
+    setEditorBuffer("code");
+    setCodeBuffer("rules");
+  }, [rulesRevealLine]);
+
+  const { testFeedback, launchContextRef, handleLaunchContextChange, handleSendToCopilot } = useExperienceCopilotReviewFeedback({
+    bridge,
+    onCopied: () => toast.success(t("agent_result_copied")),
+  });
+
+  // Draft envelope rehydration (ER-10): seeds BOTH stores (turn + review
+  // round) from the localStorage envelope on mount. Runs BEFORE the shell's
+  // own mount effect loads the session (child effects run first), preserving
+  // the pre-split guarantee that the stores are seeded before threadId lands.
+  useEffect(() => {
+    rehydrateExperienceCopilotDrafts();
+  }, []);
+
+  const {
+    acceptedRulesHunks,
+    acceptedVisualHunks,
+    acceptAllRules,
+    acceptAllVisual,
+    acceptRulesHunk,
+    acceptVisualHunk,
+    cancelRoundRules,
+    cancelRoundVisual,
+    dismissPendingRules,
+    dismissPendingVisual,
+    dismissedRulesHunks,
+    dismissedVisualHunks,
+    dismissRulesHunk,
+    dismissVisualHunk,
+    handleToolbarRevert,
+    review,
+    rulesReview,
+    visualReview,
+    visualValidation,
+  } = useExperienceCopilotReviewSession({
+    bridge,
+    codeBuffer,
+    editorBuffer,
+    isSending,
+    kind: EXPERIENCE_KIND,
+    launchContextRef,
+    onRulesChange,
+    onVisualChange,
+    openReview,
+    rulesCode,
+    rulesSaved,
+    t,
+    testFeedback,
+    threadId,
+    visualSaved,
+    visualSource,
+  });
+
+  // AP-15: the latest "open the review" body (assigned every render, read
+  // at click time through the stable `openReview` above).
+  openReviewRef.current = () => {
+    setEditorBuffer("code");
+    setCodeBuffer(rulesReview !== null ? "rules" : "visual");
+  };
+
+  // ── Editor toggle options (XU-5) ────────────────────────────────────────
+  // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
+  // layer; code is the second layer holding the inner `[Rules | Visual]`
+  // sub-toggle. Creation mode adds the inline `sandbox` position (ER-13d-1),
+  // relabelled "Try". Built here because the creation labels resolve through
+  // `t`.
+  // Buffer-tab labels with the pending-review dot (CD-6): a tab whose buffer
+  // has unaccepted hunks carries an accent dot (per the settled vision: the
+  // OTHER tab must signal pending diffs; showing it on both tabs is harmless
+  // and simpler than hiding the active one's).
+  const tabLabel = (value: "rules" | "visual", label: string): ReactNode => {
+    const pending = value === "rules" ? rulesReview !== null : visualReview !== null;
+    if (!pending) return label;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {label}
+        <span
+          data-testid={`copilot-buffer-dot-${value}`}
+          title={t("copilot_review_pending_badge")}
+          className="h-1.5 w-1.5 rounded-full bg-accent"
+        />
+      </span>
+    );
+  };
+
+  // The OUTER "Code" tab carries a dot when EITHER buffer has pending hunks
+  // (CD-6): the preview layer can't show diffs, so the code layer signals them.
+  const codeTabLabel = rulesReview !== null || visualReview !== null
+    ? (
+      <span className="inline-flex items-center gap-1.5">
+        {t("agent_code")}
+        <span
+          data-testid="copilot-outer-dot-code"
+          title={t("copilot_review_pending_badge")}
+          className="h-1.5 w-1.5 rounded-full bg-accent"
+        />
+      </span>
+    )
+    : t("agent_code");
+
+  const outerBufferOptions = [
+    { value: "preview", label: t("agent_preview") },
+    { value: "code", label: codeTabLabel },
+    { value: "sandbox", label: t("agent_try_it") },
+  ];
+  const codeBufferOptions = [
+    { value: "rules", label: tabLabel("rules", t("agent_rules")) },
+    { value: "visual", label: tabLabel("visual", t("agent_visual")) },
+  ];
+
+  const activeStep = useExperienceCopilotStep(editorBuffer, codeBuffer, onStepChange);
+
+  // IR-90A: exactly one ExperiencePlayground element is shared by the inline
+  // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
+  // instance ever mounts.
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={ownerId} script={script} onSendToCopilot={handleSendToCopilot} onShowInCode={(line) => setRulesRevealLine({ line })} onLaunchContextChange={handleLaunchContextChange} />;
+
+  /* 4a follow-up round 2: on mobile the code branch is ONE scroll document
+     — the pane root itself scrolls (max-md:overflow-y-auto) and every fixed
+     row above the editor (buffer radios, sub-toggle, the visual toolbar wall,
+     validator) scrolls away with it. Previously the toolbar stack (measured
+     322px for the visual buffer) stayed pinned as shrink-0 rows and the
+     editor's inner scroll window got only the flex remainder (~72px on a
+     360×740 phone) — the "tiny window with a huge scroll" defect. The single
+     scroll works together with the panel's max-md:flex-none container (see
+     AgentBufferReviewEditor): a flex-1 min-h-0 child would keep snapping
+     to the remainder and the root would never overflow. The preview/sandbox
+     branches keep their inner scroll (their containers stay flex-1 min-h-0,
+     so the root never overflows there — no double scrollbar). Desktop (>=md)
+     is untouched. */
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg max-md:overflow-y-auto">
+      {/* XU-5 outer tabs: [Preview | Code | Try] — preview is the default
+          layer; the Try tab renders the shared playground inline in BOTH modes
+          (XU-6, quote 10 — the old sandbox "Test it" button + modal are gone). */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
+        <SegmentedControl
+          value={editorBuffer}
+          options={outerBufferOptions}
+          onChange={(value) =>
+            setEditorBuffer(value === "sandbox" ? "sandbox" : value === "code" ? "code" : "preview")
+          }
+          compact
+        />
+      </div>
+
+      {editorBuffer === "preview" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {visualSource.trim() !== "" ? (
+            // Disconnected visual render: no session. An EMPTY initial view is
+            // pushed on ready so the visual's render() fires + reports its height
+            // (otherwise auto-resize never runs and the iframe stalls at the
+            // 120px fallback). Actions/errors are no-ops.
+            <ExperienceFrame
+              visualSource={visualSource}
+              sessionId="preview"
+              initialRevision={0}
+              initialView={{ state: {}, actions: [], revision: 0, status: "active" }}
+              onAction={() => {}}
+              onError={() => {}}
+            />
+          ) : (
+            <EmptyState
+              icon={<Icons.Eye />}
+              title={t("experience_playground_no_visual")}
+            />
+          )}
+        </div>
+      ) : editorBuffer === "sandbox" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">{playground}</div>
+      ) : (
+        <>
+          {/* XU-5 code sub-toggle: [Rules | Visual] + the review revert. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
+            <SegmentedControl
+              value={codeBuffer}
+              options={codeBufferOptions}
+              onChange={(value) => setCodeBuffer(value === "visual" ? "visual" : "rules")}
+              compact
+            />
+            {review.canRevert && (
+              <ToolbarButton
+                label={t("copilot_review_revert")}
+                icon={<Icons.Undo />}
+                onClick={handleToolbarRevert}
+                testId="copilot-toolbar-revert"
+              />
+            )}
+          </div>
+          {codeBuffer === "rules" ? rulesToolbar : visualToolbar}
+          {/* UX 2026-08-16 remark 6 — visual validator status row. Validates
+              the EFFECTIVE document: during a review round the proposed text
+              (what accept would land), otherwise the live buffer. Static
+              checks only (script-block compile + block closure) — see
+              lib/visual-source-validator.ts; runtime behavior stays the
+              sandbox's job. */}
+          {codeBuffer === "visual" && (
+            <div data-testid="copilot-visual-validator" className="px-3 pb-1.5 pt-2">
+              {visualValidation.ok ? (
+                <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-success-text">
+                  <Icons.Check className="h-3 w-3 shrink-0" />
+                  <span>{t("agent_visual_valid")}</span>
+                </div>
+              ) : (
+                <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-1.5">
+                  <div className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-danger-text">
+                    <Icons.Alert className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t("agent_visual_problems")}</span>
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {visualValidation.problems.map((p, i) => (
+                      <li key={i} className="font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-danger-text">
+                        {p.line !== null ? `L${p.line}: ` : ""}{p.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {/* CD-6: the review-mode editor (inline diff + review bar). The
+              accept-selection state lives here in the pane so it survives
+              buffer-tab switches (the panel remounts per tab). */}
+          <AgentBufferReviewEditor
+            value={codeBuffer === "rules" ? rulesCode : visualSource}
+            onChange={codeBuffer === "rules" ? onRulesChange : onVisualChange}
+            isSending={isSending}
+            review={codeBuffer === "rules" ? rulesReview : visualReview}
+            acceptedHunkIds={codeBuffer === "rules" ? acceptedRulesHunks : acceptedVisualHunks}
+            dismissedHunkIds={codeBuffer === "rules" ? dismissedRulesHunks : dismissedVisualHunks}
+            onAcceptHunk={codeBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
+            onAcceptAll={codeBuffer === "rules" ? acceptAllRules : acceptAllVisual}
+            onDismissHunk={codeBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
+            onDismissPending={codeBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
+            onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
+            fullscreenLabel={codeBuffer === "rules" ? t("agent_rules") : t("agent_visual")}
+            scriptKind={codeBuffer === "rules" ? "interactive" : undefined}
+            revealLine={codeBuffer === "rules" ? rulesRevealLine : undefined}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * AS-8e7a: the mini-app `run_test` / `run_simulate` captions — the digest
+ * envelopes are machine shapes (`{ok, ...}` / the `script_not_trusted`
+ * refusal) that must never render as a raw JSON title. Parses
+ * `activity.summary` through the shared `parseAgentToolOutput` helper
+ * (unwrapping the persisted `{toolName, output}` wrapper); unparseable or
+ * any other tool returns undefined and keeps today's fallback. `ok === true`
+ * → the passed caption; otherwise the failed caption with `errorMessage` as
+ * detail when present.
+ */
+function experienceTestCaption(activity: AgentToolActivity): { titleKey: "agent_rules_test_ok" | "agent_rules_test_failed" | "agent_simulate_ok" | "agent_simulate_failed"; detail?: string } | undefined {
+  if (activity.toolName !== "run_test" && activity.toolName !== "run_simulate") return undefined;
+  const record = parseAgentToolOutput(activity);
+  if (record === undefined) return undefined;
+  if (activity.toolName === "run_test") {
+    if (record.ok === true) return { titleKey: "agent_rules_test_ok" };
+    return typeof record.errorMessage === "string"
+      ? { titleKey: "agent_rules_test_failed", detail: record.errorMessage }
+      : { titleKey: "agent_rules_test_failed" };
+  }
+  if (record.ok === true) return { titleKey: "agent_simulate_ok" };
+  return typeof record.errorMessage === "string"
+    ? { titleKey: "agent_simulate_failed", detail: record.errorMessage }
+    : { titleKey: "agent_simulate_failed" };
+}
+
+/**
+ * The `experience` host descriptor. `renderEditorPane` narrows the opaque
+ * `hostProps` (the wrapper and this host are a pair); `buildSendOptions`
+ * forwards to the pane's live bridge session — the descriptor is a module
+ * constant and cannot close over component state.
+ */
+registerAgentHost({
+  kind: EXPERIENCE_KIND,
+  i18n: {
+    // AS-6b2a renamed the copilot_* keys to agent_*; `experience_editor_back`
+    // stays host-flavored — it is the EDITOR's shared back label, and the
+    // shell test pins its aria-label byte-exactly.
+    title: "agent_title",
+    // AP-17: the kind heading for the strip/modal (mockup section 3, the RU
+    // mini-apps kind label).
+    kindLabel: "agent_kind_experience",
+    subtitle: "agent_subtitle",
+    placeholder: "agent_input_placeholder",
+    loading: "agent_loading",
+    emptyTitle: "agent_title",
+    emptySub: "agent_subtitle",
+    mobileBackLabelKey: "experience_editor_back",
+  },
+  // AP-17: the empty-session starter prompts (mockup section 3, the
+  // mini-apps row) — rendered by AP-18 as click-to-fill composer chips,
+  // never sent directly.
+  starterPromptKeys: [
+    "agent_starter_experience_game",
+    "agent_starter_experience_explain_rules",
+    "agent_starter_experience_find_bugs",
+    "agent_starter_experience_polish_visual",
+  ],
+  // The toggleable tool keys of the experience assistant profiles — the shared
+  // profile modal reads them from here (no kind literal in the shell).
+  toolKeys: COPILOT_TOOL_KEYS,
+  // SC-0g: the experience assistant's profile choice is script-owned (the
+  // modal's single "use profile" action writes scripts.copilot_profile_id).
+  profileAssignment: { target: "script" },
+  bufferSpecs: [
+    { id: "rules", labelKey: "agent_rules", language: "javascript" },
+    { id: "visual", labelKey: "agent_visual", language: "xml" },
+  ],
+  // AS-6c-i: the transport seam — the exact experience client fns the
+  // pre-seam shell/controller called directly (behavior byte-identical, just
+  // re-homed behind the descriptor; the registry's typeof-mirrored member
+  // types keep this delegation compiler-checked).
+  transport: {
+    sendStream: streamExperienceCopilot,
+    answerAsk: answerCopilotAsk,
+    // AP-10: the turn-delete REST call (required member — forgetting it is
+    // a compile break). The thread route dispatches by thread, never kind.
+    deleteTurn: deleteCopilotTurn,
+    // AP-31: the assistant-edit REST call (required member, the delete's
+    // sibling) — the same thread route serves every kind.
+    editMessage: editCopilotMessage,
+    // SC-0c: the owner-scoped lifecycle takes the typed owner and maps it
+    // back to the script id in one line — the thread-scoped members stay
+    // owner-agnostic (the same per-thread routes serve both owners).
+    getActiveThread: (owner) => getExperienceCopilotActive(scriptOwnerId(owner)),
+    listMessages: listExperienceCopilotMessages,
+    startSession: (owner, title?) => startExperienceCopilotSession(scriptOwnerId(owner), title),
+    listSessions: (owner) => listExperienceCopilotSessions(scriptOwnerId(owner)),
+    activateSession: activateExperienceCopilotSession,
+    renameSession: renameExperienceCopilotSession,
+    setContextLinks: setExperienceCopilotContextLinks,
+  },
+  renderEditorPane: (ctx) => (
+    <ExperienceEditorPane
+      ownerId={scriptOwnerId(ctx.owner)}
+      threadId={ctx.threadId}
+      isSending={ctx.isSending}
+      bridge={ctx.bridge}
+      hostProps={ctx.hostProps as ExperienceCopilotHostProps}
+    />
+  ),
+  buildSendOptions: (ctx) => ctx.bridge.session?.buildSendOptions() ?? {},
+  // SC-0i: the experience assistant's plan is script-owned (the shell's plan
+  // section renders exactly as before this seam existed).
+  planOwner: (ctx) => ({ kind: "script", scriptId: scriptOwnerId(ctx.owner) }),
+  toolCaption: (activity) => experienceTestCaption(activity),
+  // AP-2: plain typography for the mini-app assistant's bubbles.
+  messageMarkup: "plain",
+  // No record-proposal renderers yet — the AS-5 fallback card covers every
+  // recordType until a host registers one.
+  recordProposalRenderers: {},
+});

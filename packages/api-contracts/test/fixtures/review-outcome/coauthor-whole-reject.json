@@ -1,0 +1,98 @@
+{
+  "surface": "coauthor",
+  "scenario": "whole Reject of all three targets over two following turns",
+  "requests": [
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "first rejected turn",
+        "coauthorEditorState": {
+          "card": {
+            "name": "Kira",
+            "body": "# PERSONALITY\nA reserved arachnid weaver.\n\n# SCENARIO\nA forest cave.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\nWelcome to my web, little fly.\n",
+            "greetings": [
+              "Welcome to my web, little fly."
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": [
+              {
+                "target": "card",
+                "roundId": "51d712124de2",
+                "outcome": "rejected",
+                "hunks": {
+                  "accepted": 0,
+                  "rejected": 2,
+                  "pending": 0
+                }
+              },
+              {
+                "target": "lore",
+                "roundId": "4b3fc8760912",
+                "outcome": "rejected",
+                "items": {
+                  "offered": 4,
+                  "selected": 4,
+                  "applied": 0
+                }
+              },
+              {
+                "target": "tracker_template",
+                "roundId": "f6de84e24e53",
+                "outcome": "rejected",
+                "selected": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "mode": "nonstream",
+      "body": {
+        "content": "second rejected turn",
+        "coauthorEditorState": {
+          "card": {
+            "name": "Kira",
+            "body": "# PERSONALITY\nA reserved arachnid weaver.\n\n# SCENARIO\nA forest cave.\n\n# EXAMPLES\n{{char}}: *tilts head*\n\n# GREETINGS\nWelcome to my web, little fly.\n",
+            "greetings": [
+              "Welcome to my web, little fly."
+            ],
+            "cardClean": true
+          },
+          "review": {
+            "targets": [
+              {
+                "target": "card",
+                "roundId": "51d712124de2",
+                "outcome": "rejected",
+                "hunks": {
+                  "accepted": 0,
+                  "rejected": 2,
+                  "pending": 0
+                }
+              },
+              {
+                "target": "lore",
+                "roundId": "4b3fc8760912",
+                "outcome": "rejected",
+                "items": {
+                  "offered": 4,
+                  "selected": 4,
+                  "applied": 0
+                }
+              },
+              {
+                "target": "tracker_template",
+                "roundId": "f6de84e24e53",
+                "outcome": "rejected",
+                "selected": true
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -281,7 +281,7 @@ export function RegexProfileEditor({
             presetSectionLabel={t("promptManager.regex.sectionPresets")}
           />
           {effectiveBindCount === 0 && (
-            <div className="mt-1.5 font-ui text-[11px] text-warning">
+            <div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-warning">
               {t("promptManager.regex.bindingsDeadZone")}
             </div>
           )}

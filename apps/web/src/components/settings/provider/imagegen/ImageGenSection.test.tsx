@@ -1,23 +1,19 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18n = await import("../../../../i18n/context.js");
-mock.module("../../../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
+installI18nContextSeam({
+  custom: {
+    t: (key, params?) =>
       params && typeof params === "object" && "name" in params
         ? `${key}:${String(params.name)}`
         : key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+    tDynamic: (key) => key,
+  },
+});
 
 const { act, cleanup, waitFor, fireEvent, render } = await import("@testing-library/react");
 const { ImageGenSection } = await import("./ImageGenSection.js");
@@ -185,8 +181,15 @@ describe("ImageGenSection", () => {
     });
     useImageGenChatStore.setState({ activeImageGenProfileId: "session" });
     const view = renderSection(imageGen);
-    await waitFor(() => expect(view.getByText("★ Session choice")).toBeTruthy());
-    expect(view.queryByText("★ Saved default")).toBeNull();
+    // Behavior change (was: `★ Session choice` as one title text node,
+    // then: the ★ in the status slot; now: the unified green dot — owner
+    // follow-up 2026-10-24, ★ retired. The effective-active row carries it).
+    await waitFor(() => expect(view.getByText("Session choice")).toBeTruthy());
+    const sessionRow = view.getByText("Session choice").closest('[data-profile-id="session"]');
+    expect(sessionRow?.querySelector(".bg-success")).toBeTruthy();
+    const defaultRow = view.getByText("Saved default").closest('[data-profile-id="default"]');
+    expect(defaultRow?.querySelector(".bg-success")).toBeNull();
+    expect(defaultRow?.querySelector(".bg-danger")).toBeNull();
   });
 
   it("passes hook-owned search to the unified list and disables its drag handles while active", async () => {
@@ -205,13 +208,14 @@ describe("ImageGenSection", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-load-error")).toBeTruthy());
   });
 
-  it("'+ New' seeds a BARE custom profile (name + the openai-images dialect via startCreate, IG-CF8)", async () => {
+  it("'+ New' seeds a BARE custom profile (name + the Custom openai-images-custom slug via startCreate, IG-CF8)", async () => {
     const imageGen = makeImageGen();
     const view = renderSection(imageGen);
     await waitFor(() => expect(view.getByTestId("image-gen-new-profile-btn")).toBeTruthy());
     fireEvent.click(view.getByTestId("image-gen-new-profile-btn"));
     await waitFor(() =>
-      expect(imageGen.startCreate).toHaveBeenCalledWith("image_gen_profile_default_name", IMAGE_GEN_BACKENDS.OpenAiImages),
+      // Behavior change (report step 9): was openai-images.
+      expect(imageGen.startCreate).toHaveBeenCalledWith("image_gen_profile_default_name", IMAGE_GEN_BACKENDS.OpenAiImagesCustom),
     );
   });
 

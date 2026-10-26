@@ -4,11 +4,13 @@ import type {
   CopilotProfile,
   ExperienceCopilotLaunchContext,
 } from "@vibe-tavern/api-contracts";
+import { brandId, resolveDigestBoundary, type ExperienceCopilotMessageId } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   AppendMessageInput,
+  CopilotTurnDeleteResult,
 } from "@vibe-tavern/db";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
 
@@ -73,10 +75,11 @@ function createFakeStore(
     },
     async getAutoCompact() { return true; },
     async setAutoCompact() {},
-    // TAG-6: the todo tool's full-list rewrite persists onto the thread row.
-    // The fake mirrors the real store: records the call AND mutates the in-
-    // memory thread's todo so the NEXT turn's `getById` (this same thread
-    // object) already carries the plan — the session-scoped lifetime behavior.
+    // TAG-6 (restored PM-7): the todo tool's full-list rewrite persists onto
+    // the thread row. The fake mirrors the real store: records the call AND
+    // mutates the in-memory thread's todo so the NEXT turn's `getById` (this
+    // same thread object) already carries the checklist — the session-scoped
+    // lifetime behavior.
     async updateTodo(threadId: string, items: readonly { title: string; status: string }[]) {
       todoCalls.push({ threadId, items });
       thread.todo = items as ExperienceCopilotThread["todo"];
@@ -186,6 +189,10 @@ function makeDeps(
   const profile = makeProfile();
   return {
     store,
+    agentPlans: {
+      get: async () => null,
+      save: async () => {},
+    } as ExperienceCopilotStreamDeps["agentPlans"],
     getScript: async () => null,
     getBoundVisualIds: async () => [],
     getVisual: async () => null,
@@ -529,6 +536,14 @@ describe("experience-copilot stream (ER-6)", () => {
         {
           threadId: "thread_1", content: "tweak the visual", providerProfileId: "prov_1",
           step: "visual", rules: "DRAFT RULES BODY", visual: "DRAFT VISUAL BODY",
+          reviewSnapshot: {
+            targets: [
+              { target: "rules", roundId: "a1b2c3d4", outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 1 } },
+              { target: "visual", roundId: "e5f6a7b8", outcome: "rejected", hunks: { accepted: 0, rejected: 3, pending: 0 } },
+            ],
+          },
+          rulesSaved: false,
+          visualSaved: true,
         },
         makeDeps(store, {
           getScript: async (id) => (id === "script_1" ? script : null),
@@ -543,6 +558,30 @@ describe("experience-copilot stream (ER-6)", () => {
     expect(blob).toContain("DRAFT VISUAL BODY");
     expect(blob).not.toContain("DB RULES BODY");
     expect(blob).not.toContain("DB VISUAL BODY");
+    expect(blob).toContain("rules round `a1b2c3d4`: **applied**");
+    expect(blob).toContain("visual round `e5f6a7b8`: **rejected**");
+    expect(blob).toContain("rules buffer: unsaved");
+    expect(blob).toContain("visual buffer: saved");
+  });
+
+  it("passes an explicit empty review snapshot into the actual provider system message", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(streamExperienceCopilot(
+      {
+        threadId: "thread_1", content: "status", providerProfileId: "prov_1",
+        reviewSnapshot: { targets: [] },
+      },
+      makeDeps(store),
+    ));
+
+    const systemMessage = captured!.messages!.find((message) => message.role === "system")!.content;
+    expect(systemMessage).toContain("no unreviewed proposals and no recorded outcomes");
   });
 
   it("round-trips tool-call/tool-result history across turns", async () => {
@@ -617,8 +656,8 @@ describe("experience-copilot stream (ER-6)", () => {
       name: "Custom",
       isBuiltIn: false,
       basePrompt: "CUSTOM STREAM PROMPT MARKER",
-      skillIds: [],
       toolSet: { run_test: true },
+      agentKind: "experience",
     };
     let captured: Record<string, unknown> | null = null;
     streamTextImpl = (opts: unknown) => {
@@ -969,11 +1008,14 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
   }
 
   /** Pull the LAST tool-role message's first tool-result part value (the
-   *  model-visible text of the seeded ask row) from the captured modelMessages. */
-  function lastAskResultText(modelMessages: Array<{ role: string; content: unknown }>): string {
+   *  model-visible wire string of the seeded ask row) from the captured
+   *  modelMessages, JSON-parsed — the wire contract is an OBJECT (the Struct
+   *  requirement translation proxies impose), so assertions deep-equal
+   *  objects, never string-identity prose. */
+  function lastAskResultObject(modelMessages: Array<{ role: string; content: unknown }>): unknown {
     const toolMsg = [...modelMessages].reverse().find((m) => m.role === "tool");
     const part = (toolMsg!.content as Array<{ type: string; output?: { value?: string } }>)[0];
-    return part.output!.value!;
+    return JSON.parse(part.output!.value!);
   }
 
   it("stopWhen wires the ceiling AND the ask_user stop condition (verified ai@7.0.66 API)", async () => {
@@ -1038,7 +1080,7 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     });
   });
 
-  it("answer mode: NO user row; the marker row is rewritten; the model sees the answer text as the tool-result", async () => {
+  it("answer mode: NO user row; the marker row is rewritten; the model sees the answer object as the tool-result", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store);
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1049,7 +1091,19 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 
     const events = await collect(
       streamExperienceCopilot(
-        { threadId: "thread_1", answer: { toolCallId: "tc_ask_1", text: "blue" }, providerProfileId: "prov_1" },
+        {
+          threadId: "thread_1", answer: { toolCallId: "tc_ask_1", text: "blue" }, providerProfileId: "prov_1",
+          reviewSnapshot: {
+            targets: [
+              {
+                target: "rules", roundId: "deadbeef", outcome: "applied-partial",
+                hunks: { accepted: 1, rejected: 2, pending: 3 },
+              },
+            ],
+          },
+          rulesSaved: false,
+          visualSaved: true,
+        },
         makeDeps(store),
       ),
     );
@@ -1062,16 +1116,24 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       toolName: "ask_user",
       output: { status: "answered", answer: "blue" },
     });
-    // The model window ends on the answered tool-result with the ANSWER TEXT
-    // (not the marker JSON), and the continuation persists normally.
-    expect(lastAskResultText(captured!.messages!)).toBe("blue");
+    // The model window ends on the answered tool-result with the ANSWER as an
+    // object (not the marker JSON), and the continuation persists normally.
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("blue")` — ask tool rows now render object
+    // wire JSON (Struct contract for translation proxies).
+    expect(lastAskResultObject(captured!.messages!)).toEqual({ answer: "blue" });
+    const systemMessage = captured!.messages!.find((message) => message.role === "system")!.content;
+    expect(systemMessage).toContain("rules round `deadbeef`: **applied-partial**");
+    expect(systemMessage).toContain("hunks: accepted 1, rejected 2, pending 3");
+    expect(systemMessage).toContain("rules buffer: unsaved");
+    expect(systemMessage).toContain("visual buffer: saved");
     const finish = events.find((e) => e.event === "finish");
     expect(finish).toBeDefined();
     expect(store.messages.at(-1)!.role).toBe("assistant");
     expect(store.messages.at(-1)!.content).toBe("Blue it is.");
   });
 
-  it("answer mode with skipped: the model sees (skipped)", async () => {
+  it("answer mode with skipped: the model sees { skipped: true }", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store, "tc_skip_1");
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1092,10 +1154,12 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       toolName: "ask_user",
       output: { status: "skipped" },
     });
-    expect(lastAskResultText(captured!.messages!)).toBe("(skipped)");
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("(skipped)")` — object wire JSON now.
+    expect(lastAskResultObject(captured!.messages!)).toEqual({ skipped: true });
   });
 
-  it("a dangling ask self-heals at the next assembly: the model reads the heal literal; the stored row is NOT mutated", async () => {
+  it("a dangling ask self-heals at the next assembly: the model reads the unanswered-note object; the stored row is NOT mutated", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store);
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1111,8 +1175,14 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       ),
     );
 
-    // The model sees the heal literal for the never-answered ask...
-    expect(lastAskResultText(captured!.messages!)).toBe("(the user did not answer this question; they moved on)");
+    // The model sees the unanswered-note OBJECT for the never-answered ask...
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("(the user did not answer …)")` — object
+    // wire JSON now.
+    expect(lastAskResultObject(captured!.messages!)).toEqual({
+      unanswered: true,
+      note: "the user did not answer this question; they moved on",
+    });
     // ...while the STORED row keeps its awaiting marker (prompt-side only —
     // the UI still renders the unanswered state, and a LATE answer can still
     // rewrite it).
@@ -1120,6 +1190,81 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     expect((JSON.parse(toolRow.content) as { output: { status: string } }).output.status).toBe("awaiting_answer");
     // The normal message still persisted as a user row.
     expect(store.messages.filter((m) => m.role === "user")).toHaveLength(1);
+  });
+
+  it("every reconstructed tool-row wire string parses to a JSON object (Struct contract for translation proxies)", async () => {
+    const store = createFakeStore(makeThread());
+    // Seed four tool rows a next turn must reconstruct: (a) an answered ask,
+    // (b) a skipped ask, (c) a normal tool with an OBJECT output, (d) a tool
+    // with a PRIMITIVE string output (hand-written persisted content JSON —
+    // the exact row shape that crashed Google-via-translation-proxy turns).
+    const seedToolPair = (toolCallId: string, toolName: string, output: unknown) => {
+      store.messages.push(
+        {
+          id: `msg_seed_c_${toolCallId}`,
+          threadId: "thread_1",
+          role: "assistant",
+          content: "",
+          toolCallsJson: JSON.stringify([
+            { type: "tool-call", toolCallId, toolName, input: {} },
+          ]),
+          toolCallId: null,
+          createdAt: "2025-01-01T00:00:00.000Z",
+        },
+        {
+          id: `msg_seed_r_${toolCallId}`,
+          threadId: "thread_1",
+          role: "tool",
+          content: JSON.stringify({ toolName, output }),
+          toolCallsJson: null,
+          toolCallId,
+          createdAt: "2025-01-01T00:00:01.000Z",
+        },
+      );
+    };
+    seedToolPair("tc_obj_ans", "ask_user", { status: "answered", answer: "blue" });
+    seedToolPair("tc_obj_skip", "ask_user", { status: "skipped" });
+    seedToolPair("tc_obj_wb", "write_buffer", { summary: "wrote" });
+    seedToolPair("tc_prim", "x", "plain");
+
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Every role:"tool" message's content part value JSON-parses to a NON-NULL
+    // NON-ARRAY object — a bare string there is the exact 400
+    // (function_response.response google.protobuf.Struct) the Google-via-proxy
+    // turns died on.
+    const toolMsgs = captured!.messages!.filter((m) => m.role === "tool");
+    expect(toolMsgs).toHaveLength(4);
+    for (const msg of toolMsgs) {
+      const part = (msg.content as Array<{ type: string; output?: { value?: string } }>)[0];
+      const parsed: unknown = JSON.parse(part.output!.value!);
+      expect(parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)).toBe(true);
+    }
+    // The four wire shapes in history order: ask rows render ask keys; an
+    // object output passes through; a primitive output is wrapped under a
+    // result key.
+    const wireValues: unknown[] = toolMsgs.map((msg) =>
+      JSON.parse(
+        (msg.content as Array<{ type: string; output?: { value?: string } }>)[0].output!.value!,
+      ),
+    );
+    expect(wireValues).toEqual([
+      { answer: "blue" },
+      { skipped: true },
+      { summary: "wrote" },
+      { result: "plain" },
+    ]);
   });
 
   it("an answer for a toolCallId that is not an awaiting ask in this thread is rejected", async () => {
@@ -1182,15 +1327,528 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toContain("either `content` or `answer`");
+    // AP-9 re-capture (was: "either `content` or `answer`") — the guard's
+    // mode vocabulary grew to three with regenerate.
+    expect((caught as Error).message).toContain("either `content`, `answer`, or `regenerate`");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TAG-6: todo wiring (saveTodo → updateTodo + prompt section)
+// AP-9 — regenerate mode: rerun the last turn with NO new user row. The
+// loop trims the replaced turn (rows after the thread's last user row)
+// BEFORE the history/context load, through the AP-8 store sibling exposed as
+// the deps' `deleteTurn` seam. The fake seam below mirrors the store's span
+// resolution + digest floor over the fake store's rows (the SAME domain
+// derivation the store reads); real-db span coverage lives in the store
+// suite (experience-copilot-turn-delete.test.ts). These cases pin the
+// LOOP's dispatch: trim-then-load, no new input row, the refusal mappings.
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("experience-copilot stream — todo wiring (TAG-6)", () => {
+describe("experience-copilot stream — regenerate mode (AP-9)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  /** Seed rows in timeline order (fixed ids so the deletion-address
+   *  assertions can name them). */
+  function seedRows(
+    store: ReturnType<typeof createFakeStore>,
+    rows: Array<{ id: string; role: string; content: string; toolCallId?: string | null }>,
+  ) {
+    let tick = 0;
+    for (const row of rows) {
+      store.messages.push({
+        id: row.id,
+        threadId: "thread_1",
+        role: row.role,
+        content: row.content,
+        toolCallsJson: null,
+        toolCallId: row.toolCallId ?? null,
+        createdAt: new Date(Date.parse("2025-01-01T00:00:00.000Z") + tick++ * 1000).toISOString(),
+      });
+    }
+  }
+
+  /** The fake deletion seam: mirrors deleteCopilotTurn's span resolution
+   *  (the enclosing turn around `messageId`) and digest floor over the fake
+   *  store's rows, and records every call so the tests can pin the address
+   *  the regenerate resolution chose. */
+  function makeFakeDeleteTurn(store: ReturnType<typeof createFakeStore>): {
+    deleteTurn: NonNullable<ExperienceCopilotStreamDeps["deleteTurn"]>;
+    calls: Array<{ threadId: string; messageId: string; includeUserMessage: boolean }>;
+  } {
+    const calls: Array<{ threadId: string; messageId: string; includeUserMessage: boolean }> = [];
+    const deleteTurn = async (
+      threadId: string,
+      messageId: string,
+      includeUserMessage: boolean,
+    ): Promise<CopilotTurnDeleteResult> => {
+      calls.push({ threadId, messageId, includeUserMessage });
+      const idx = store.messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return { status: "missing-message" };
+      let start: number;
+      if (store.messages[idx]!.role === "user") {
+        if (!includeUserMessage) return { status: "refused-user-row" };
+        start = idx;
+      } else {
+        start = idx;
+        while (start > 0 && store.messages[start - 1]!.role !== "user") start -= 1;
+      }
+      let end = store.messages.length;
+      for (let i = idx + 1; i < store.messages.length; i++) {
+        if (store.messages[i]!.role === "user") {
+          end = i;
+          break;
+        }
+      }
+      const span = store.messages.slice(start, end);
+      const spanIds = new Set(span.map((m) => m.id));
+      const boundary = resolveDigestBoundary(store.messages);
+      if (boundary.lastDigest !== null) {
+        const anchorId = boundary.lastDigest.toolCallId;
+        const hitsFloor =
+          spanIds.has(boundary.lastDigest.id) ||
+          (anchorId !== null && spanIds.has(anchorId)) ||
+          boundary.covered.some((m) => spanIds.has(m.id));
+        if (hitsFloor) return { status: "refused-digest" };
+      }
+      store.messages.splice(start, end - start);
+      return {
+        status: "deleted",
+        deletedMessageIds: span.map((m) => brandId<ExperienceCopilotMessageId>(m.id)),
+        deletedUserMessageId: null,
+      };
+    };
+    return { deleteTurn, calls };
+  }
+
+  it("regenerate after a full turn: the replaced answer's rows go, the user row stays, NO new user row, and the model window ends on the user row", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "seed question" },
+      { id: "msg_a1", role: "assistant", content: "OLD ANSWER MARKER" },
+    ]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("NEW ANSWER MARKER")] });
+    };
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    // The deletion addressed the thread's LAST row with includeUserMessage
+    // false — the store resolves the enclosing turn (the rows after the last
+    // user row); the user row itself is the rerun's input and stays.
+    expect(calls).toEqual([
+      { threadId: "thread_1", messageId: "msg_a1", includeUserMessage: false },
+    ]);
+    // Stored rows: user row stayed, old answer gone, the replacement reply
+    // persisted after it — and NO new user row was appended.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:seed question",
+      "assistant:NEW ANSWER MARKER",
+    ]);
+    // The model window: the replaced answer is gone; the history (after the
+    // system message) ends on the user row — the thread state as-is IS the
+    // turn's input.
+    const blob = JSON.stringify(captured!.messages);
+    expect(blob).toContain("seed question");
+    expect(blob).not.toContain("OLD ANSWER MARKER");
+    const lastNonSystem = [...captured!.messages!].reverse().find((m) => m.role !== "system")!;
+    expect(lastNonSystem.role).toBe("user");
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+    expect(events.find((e) => e.event === "error")).toBeUndefined();
+  });
+
+  it("regenerate after a failed turn (the last row IS a user row): nothing is deleted, the run simply re-executes against it", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [{ id: "msg_u1", role: "user", content: "failed turn question" }]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("RECOVERED ANSWER")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    // No deletion call at all: a failed turn has no rows after its user row.
+    expect(calls).toEqual([]);
+    // Still exactly ONE user row — the rerun appends no input row — and the
+    // recovered answer persisted after it.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:failed turn question",
+      "assistant:RECOVERED ANSWER",
+    ]);
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+  });
+
+  it("a digest-covered last turn is refused (the digest is a floor for regenerate's implicit deletion); nothing is written", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+      // The digest row: its toolCallId is the FIRST KEPT message id (the
+      // anchor overload) — anchored at u1 it covers nothing before it.
+      { id: "msg_d1", role: "digest", content: "{\"digest\":\"earlier\"}", toolCallId: "msg_u1" },
+    ]);
+    const { deleteTurn } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("never streams")] });
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store, { deleteTurn }),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("digest");
+    // Nothing was written: every row survives, no reply row appeared.
+    expect(store.messages).toHaveLength(3);
+  });
+
+  it("a post-digest last turn regenerates freely (the floor covers only the digest and everything before it)", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+      { id: "msg_d1", role: "digest", content: "{\"digest\":\"earlier\"}", toolCallId: "msg_u1" },
+      { id: "msg_u2", role: "user", content: "two" },
+      { id: "msg_a2", role: "assistant", content: "answer two" },
+    ]);
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("answer two prime")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+        makeDeps(store, { deleteTurn }),
+      ),
+    );
+
+    expect(calls).toEqual([
+      { threadId: "thread_1", messageId: "msg_a2", includeUserMessage: false },
+    ]);
+    // The digest row and everything before it survive; only the post-digest
+    // turn's answer was replaced.
+    expect(store.messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      "user:one",
+      "assistant:answer one",
+      "digest:{\"digest\":\"earlier\"}",
+      "user:two",
+      "assistant:answer two prime",
+    ]);
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+  });
+
+  it("an empty thread has nothing to regenerate — validation refusal before any provider call", async () => {
+    const store = createFakeStore(makeThread());
+    const { deleteTurn, calls } = makeFakeDeleteTurn(store);
+    let providerCalled = false;
+    streamTextImpl = () => {
+      providerCalled = true;
+      return makeFakeStreamTextResult({ parts: [textDelta("never")] });
+    };
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store, { deleteTurn }),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("no turn to regenerate");
+    expect(calls).toEqual([]);
+    expect(providerCalled).toBe(false);
+  });
+
+  it("regenerate without the deletion seam wired is refused (legacy harnesses never trim)", async () => {
+    const store = createFakeStore(makeThread());
+    seedRows(store, [
+      { id: "msg_u1", role: "user", content: "one" },
+      { id: "msg_a1", role: "assistant", content: "answer one" },
+    ]);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("never")] });
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", regenerate: true, providerProfileId: "prov_1" },
+          makeDeps(store),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("regenerate");
+    // Nothing was written and nothing was deleted.
+    expect(store.messages).toHaveLength(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Provider replay metadata on persisted tool calls (Gemini 3 thoughtSignature)
+//
+// Gemini 3 requires every replayed function call to carry its thoughtSignature
+// (through aggregators the signature rides the same per-call provider
+// metadata). The loop must persist `chunk.providerOptions` onto the stored
+// call and replay it inside the assistant content's tool-call part — a
+// resumed `ask_user` turn replays the question's call, unsigned = refused.
+// Known limit: a question stored BEFORE this fix has no signature to restore.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — provider replay metadata on tool calls", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  /** fullStream tool-call part carrying `providerMetadata` — what the SDK
+   *  emits for Gemini 3 (the thoughtSignature rides the call) and what
+   *  createMappedStream renames to the chunk's `providerOptions`. */
+  const toolCallWithSignature = (toolCallId: string, toolName: string, args: Record<string, unknown>) =>
+    ({
+      type: "tool-call",
+      toolCallId,
+      toolName,
+      input: args,
+      providerMetadata: { google: { thoughtSignature: `sig_${toolCallId}` } },
+    });
+
+  /** Flatten captured modelMessages into every assistant tool-call part. */
+  function assistantToolCallParts(modelMessages: Array<{ role: string; content: unknown }>): Array<Record<string, unknown>> {
+    return modelMessages
+      .flatMap((m) =>
+        m.role === "assistant" && Array.isArray(m.content) ? (m.content as Array<Record<string, unknown>>) : [])
+      .filter((p) => p.type === "tool-call");
+  }
+
+  it("persists a tool call's providerOptions into tool_calls_json (the chunk's metadata is not dropped)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCallWithSignature("tc_sig_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_sig_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "help me", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const row = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson);
+    expect(row).toBeDefined();
+    expect(JSON.parse(row!.toolCallsJson!)).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "tc_sig_1",
+        toolName: "suggest_visual_binding",
+        input: { reason: "dice roller" },
+        providerOptions: { google: { thoughtSignature: "sig_tc_sig_1" } },
+      },
+    ]);
+  });
+
+  it("persists byte-identical tool_calls_json when the provider sends no metadata (no empty providerOptions)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCall("tc_plain_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_plain_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "help me", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const row = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson);
+    expect(row).toBeDefined();
+    // String-identity pin (not toEqual on parsed JSON): the serialized row is
+    // byte-identical to a pre-fix row — no providerOptions key at all.
+    expect(row!.toolCallsJson).toBe(
+      JSON.stringify([
+        { type: "tool-call", toolCallId: "tc_plain_1", toolName: "suggest_visual_binding", input: { reason: "dice roller" } },
+      ]),
+    );
+  });
+
+  it("round-trips: the NEXT turn's model window replays the call with its providerOptions inside the assistant content", async () => {
+    const store = createFakeStore(makeThread());
+    // Turn 1: the model calls a tool whose call carries replay metadata.
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCallWithSignature("tc_rt_1", "suggest_visual_binding", { reason: "dice roller" }),
+          toolResult("tc_rt_1", "suggest_visual_binding", { ok: true }),
+        ],
+      });
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "first", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Turn 2: capture the model window streamed to the provider.
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "next", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const part = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_rt_1");
+    expect(part).toEqual({
+      type: "tool-call",
+      toolCallId: "tc_rt_1",
+      toolName: "suggest_visual_binding",
+      input: { reason: "dice roller" },
+      providerOptions: { google: { thoughtSignature: "sig_tc_rt_1" } },
+    });
+  });
+
+  it("an ask_user resume replays the question's call WITH its replay metadata (Gemini 3: unsigned = refused)", async () => {
+    const store = createFakeStore(makeThread());
+    // Question turn: ends on the ask_user call (stopWhen), which carried the
+    // signature in its provider metadata.
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          textDelta("One thing first:"),
+          toolCallWithSignature("tc_ask_sig", "ask_user", { question: "Blue or green?" }),
+          toolResult("tc_ask_sig", "ask_user", { status: "awaiting_answer", question: "Blue or green?" }),
+        ],
+      });
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The persisted question turn kept the metadata on the ask call.
+    const askRow = store.messages.find((m) => m.role === "assistant" && m.toolCallsJson?.includes("ask_user"));
+    expect(JSON.parse(askRow!.toolCallsJson!)).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "tc_ask_sig",
+        toolName: "ask_user",
+        input: { question: "Blue or green?" },
+        providerOptions: { google: { thoughtSignature: "sig_tc_ask_sig" } },
+      },
+    ]);
+
+    // The answer resumes from the persisted history (no new user row) — the
+    // replayed ask call must still carry its signature.
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("Blue it is.")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_ask_sig", text: "blue" }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const askPart = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_ask_sig");
+    expect(askPart).toBeDefined();
+    expect(askPart!.providerOptions).toEqual({ google: { thoughtSignature: "sig_tc_ask_sig" } });
+  });
+
+  it("an OLD row without providerOptions replays exactly as before — no key, never an empty object", async () => {
+    const store = createFakeStore(makeThread());
+    // Pre-fix shape: a question turn stored BEFORE providerOptions existed —
+    // nothing can restore its lost signature; the replay must simply match
+    // the old behavior (the part carries no providerOptions at all).
+    store.messages.push(
+      {
+        id: "msg_old_q",
+        threadId: "thread_1",
+        role: "assistant",
+        content: "One question first:",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "tc_ask_old", toolName: "ask_user", input: { question: "Blue or green?" } },
+        ]),
+        toolCallId: null,
+        createdAt: "2025-01-01T00:00:00.000Z",
+      },
+      {
+        id: "msg_old_r",
+        threadId: "thread_1",
+        role: "tool",
+        content: JSON.stringify({ toolName: "ask_user", output: { status: "awaiting_answer", question: "Blue or green?" } }),
+        toolCallsJson: null,
+        toolCallId: "tc_ask_old",
+        createdAt: "2025-01-01T00:00:01.000Z",
+      },
+    );
+
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("Blue it is.")] });
+    };
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_ask_old", text: "blue" }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const part = assistantToolCallParts(captured!.messages!).find((p) => p.toolCallId === "tc_ask_old");
+    expect(part).toEqual({
+      type: "tool-call",
+      toolCallId: "tc_ask_old",
+      toolName: "ask_user",
+      input: { question: "Blue or green?" },
+    });
+    expect("providerOptions" in part!).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PM-2/PM-3: agent-plan wiring + durable prompt context
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAG-6 (restored PM-7): todo wiring (saveTodo → updateTodo)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — todo wiring (TAG-6, restored PM-7)", () => {
   beforeEach(() => {
     streamTextImpl = undefined;
   });
@@ -1227,17 +1885,88 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
     expect(store.todoCalls[0].threadId).toBe("thread_1");
     expect(store.todoCalls[0].items).toEqual(items);
   });
+});
 
-  it("the NEXT turn's assembly carries the persisted todo section (session-scoped lifetime)", async () => {
-    // A prior turn already persisted a plan onto the thread (the fake's
-    // updateTodo mutates thread.todo; here we seed it directly to isolate the
-    // turn-over read path).
-    const thread = makeThread();
-    thread.todo = [
-      { title: "Write the rules buffer", status: "active" },
-      { title: "Bind a visual", status: "pending" },
-    ];
-    const store = createFakeStore(thread);
+describe("experience-copilot stream — agent-plan wiring + prompt context", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  it("wires plan/read_plan to the thread script's agent-plan store", async () => {
+    const store = createFakeStore(makeThread("script_1"));
+    const loadOwners: unknown[] = [];
+    const saves: Array<{ owner: unknown; plan: unknown }> = [];
+    let saved: unknown = null;
+    const agentPlans = {
+      get: async (owner: unknown) => {
+        loadOwners.push(owner);
+        return saved;
+      },
+      save: async (owner: unknown, plan: unknown) => {
+        saves.push({ owner, plan });
+        saved = plan;
+      },
+    } as ExperienceCopilotStreamDeps["agentPlans"];
+    let captured: { tools?: Record<string, { execute?: (input: unknown) => Promise<unknown> }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "plan this out", providerProfileId: "prov_1" },
+        makeDeps(store, { agentPlans }),
+      ),
+    );
+
+    const planTool = captured!.tools!["plan"];
+    const readPlanTool = captured!.tools!["read_plan"];
+    expect(planTool).toBeDefined();
+    expect(readPlanTool).toBeDefined();
+    const plan = {
+      goal: "Write the experience",
+      constraints: [],
+      tasks: [{ id: " rules ", title: " Write rules ", body: "", status: "active" }],
+    };
+
+    expect(await planTool.execute!({ plan })).toEqual({
+      ok: true,
+      activeTitle: "Write rules",
+      remaining: 1,
+    });
+    expect(saves).toEqual([{
+      owner: { kind: "script", scriptId: "script_1" },
+      plan: {
+        ...plan,
+        tasks: [{ ...plan.tasks[0], id: "rules", title: "Write rules" }],
+      },
+    }]);
+    expect(await readPlanTool.execute!({})).toEqual(saves[0]!.plan);
+    expect(loadOwners).toEqual([
+      { kind: "script", scriptId: "script_1" },
+      { kind: "script", scriptId: "script_1" },
+    ]);
+  });
+
+  it("loads the script-owned plan before assembly and renders its active task", async () => {
+    const plan = {
+      goal: "Build the experience",
+      constraints: [],
+      tasks: [
+        { id: "rules", title: "Write the rules buffer", body: "Draft reducer first.", status: "active" },
+        { id: "visual", title: "Bind a visual", body: "Pending detail.", status: "pending" },
+      ],
+    };
+    const store = createFakeStore(makeThread("script_1"));
+    const loadOwners: unknown[] = [];
+    const agentPlans = {
+      get: async (owner: unknown) => {
+        loadOwners.push(owner);
+        return plan;
+      },
+      save: async () => {},
+    } as ExperienceCopilotStreamDeps["agentPlans"];
     let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
     streamTextImpl = (opts: unknown) => {
       captured = opts as typeof captured;
@@ -1247,19 +1976,21 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
     await collect(
       streamExperienceCopilot(
         { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
-        makeDeps(store),
+        makeDeps(store, { agentPlans }),
       ),
     );
 
     const system = captured!.messages![0];
+    expect(loadOwners).toEqual([{ kind: "script", scriptId: "script_1" }]);
     expect(system.role).toBe("system");
-    expect(system.content).toContain("# Current step plan");
+    expect(system.content).toContain("# Plan");
     expect(system.content).toContain("[active] Write the rules buffer");
-    expect(system.content).toContain("[pending] Bind a visual");
+    expect(system.content).toContain("Draft reducer first.");
+    expect(system.content).not.toContain("Pending detail.");
   });
 
-  it("an empty todo → no todo section in the assembled prompt (byte-identical pre-TAG-6)", async () => {
-    const store = createFakeStore(makeThread()); // todo: []
+  it("no script-owned plan → no plan section in the assembled prompt", async () => {
+    const store = createFakeStore(makeThread());
     let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
     streamTextImpl = (opts: unknown) => {
       captured = opts as typeof captured;
@@ -1273,7 +2004,7 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
       ),
     );
 
-    expect(captured!.messages![0].content).not.toContain("Current step plan");
+    expect(captured!.messages![0].content).not.toContain("# Plan");
   });
 });
 

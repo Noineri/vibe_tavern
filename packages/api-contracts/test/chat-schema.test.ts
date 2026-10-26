@@ -8,6 +8,7 @@ import {
   editMessageSchema,
   renameBranchSchema,
   renameChatSchema,
+  reorderSkillsSchema,
   sendMessageSchema,
   setGreetingIndexSchema,
   updateDynamicPromptSchema,
@@ -242,6 +243,58 @@ describe("attachmentSchema", () => {
 describe("sendMessageSchema", () => {
   it("accepts a message with content and no attachments (attachments optional)", () => {
     expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
+  });
+
+  it("preserves the exact legacy output when coauthor editor state is absent", () => {
+    expect(sendMessageSchema.parse({ content: "hi" })).toEqual({ content: "hi" });
+  });
+
+  it("preserves a coauthor editor snapshot including live empty buffers and greetings", () => {
+    const coauthorEditorState = {
+      card: {
+        name: "",
+        body: "",
+        greetings: ["", "Hello there"],
+        cardClean: false,
+      },
+      review: {
+        targets: [
+          {
+            target: "lore" as const,
+            roundId: "a1b2",
+            outcome: "awaiting" as const,
+            items: { offered: 3, selected: 2, applied: 0 },
+            selected: true,
+          },
+          {
+            target: "tracker_template" as const,
+            roundId: "c3d4",
+            outcome: "awaiting" as const,
+            selected: true,
+          },
+        ],
+      },
+    };
+    expect(sendMessageSchema.parse({ content: "hi", coauthorEditorState })).toEqual({
+      content: "hi",
+      coauthorEditorState,
+    });
+  });
+
+  it("retains an explicit empty coauthor review snapshot", () => {
+    expect(sendMessageSchema.parse({
+      content: "hi",
+      coauthorEditorState: {
+        card: { name: "", body: "", greetings: [], cardClean: true },
+        review: { targets: [] },
+      },
+    })).toEqual({
+      content: "hi",
+      coauthorEditorState: {
+        card: { name: "", body: "", greetings: [], cardClean: true },
+        review: { targets: [] },
+      },
+    });
   });
 
   it("accepts a message with content and one valid attachment", () => {
@@ -509,5 +562,66 @@ describe("renameBranchSchema", () => {
 
   it("rejects a non-string label", () => {
     expectReject(renameBranchSchema.safeParse({ label: 123 }));
+  });
+});
+
+// --- reorderSkillsSchema (ML-7) ----------------------------------------------
+
+describe("reorderSkillsSchema", () => {
+  it("accepts an id + sortOrder update list", () => {
+    const payload = { updates: [{ id: "gamma", sortOrder: 0 }, { id: "alpha", sortOrder: 1 }] };
+    expect(reorderSkillsSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("accepts an empty updates array (clears the library's stored order)", () => {
+    expect(reorderSkillsSchema.parse({ updates: [] })).toEqual({ updates: [] });
+  });
+
+  it("accepts an update id the catalog may not know yet (it gets a slot — the plan's unknown-id clause)", () => {
+    expect(reorderSkillsSchema.parse({ updates: [{ id: "not-in-catalog", sortOrder: 0 }] }).updates[0]!.id).toBe("not-in-catalog");
+  });
+
+  it("rejects a body without the updates array", () => {
+    expect(() => reorderSkillsSchema.parse({})).toThrow();
+  });
+
+  it("rejects an update entry missing sortOrder", () => {
+    expect(() => reorderSkillsSchema.parse({ updates: [{ id: "alpha" }] })).toThrow();
+  });
+});
+
+describe("attachmentSchema tokenCount (CA-1a)", () => {
+  it("accepts a text file carrying a non-negative integer tokenCount (0 boundary included)", () => {
+    for (const tokenCount of [0, 1, 480_000]) {
+      expect(attachmentSchema.safeParse({ ...validAttachment(), type: "file", tokenCount }).success).toBe(true);
+    }
+  });
+
+  it("keeps tokenCount optional", () => {
+    const parsed = attachmentSchema.safeParse({ ...validAttachment(), type: "file" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect("tokenCount" in parsed.data).toBe(false);
+  });
+
+  it("rejects a negative, fractional or non-numeric tokenCount", () => {
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: -1 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: 1.5 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), tokenCount: "12" }));
+  });
+
+  it("strips the server-written fields summaryTokenCount and includeInPrompt (never accepted from a send)", () => {
+    const parsed = attachmentSchema.safeParse({
+      ...validAttachment(),
+      type: "file",
+      tokenCount: 10,
+      summaryTokenCount: 5,
+      includeInPrompt: false,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.tokenCount).toBe(10);
+      expect("summaryTokenCount" in parsed.data).toBe(false);
+      expect("includeInPrompt" in parsed.data).toBe(false);
+    }
   });
 });

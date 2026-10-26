@@ -9,16 +9,28 @@
  *     becomes `<span class="system-banner">`.
  *   - `variant="plain"` (release notes, docs) must emit neither, while keeping
  *     ordinary GFM — bold, italics, inline code, lists, tables — intact.
+ *   - `variant="agent-rp"` (AP-1) keeps the chat feature set minus banners:
+ *     quoted-text wrapping ON, bracket system-banners OFF, scene-meta OFF.
+ *   - `variant="agent-plain"` (AP-1) is the plain feature set with explicit
+ *     plain em/strong styling: no quoted-text, no banners, no scene-meta.
  *   - Empty text renders nothing at all, not an empty wrapper.
+ *
+ * Agent math (item 2, basis: AGENT_SHELL_POLISH_PLAN owner follow-up
+ * 2026-10-24 (math formulas)): the two agent variants render `$…$`/`$$…$$` via
+ * KaTeX (`markdown-math.tsx`, lazy chunk + vendored stylesheet); `chat`/`plain`
+ * never load it and keep dollars literal. The Pandoc dollar rule (opener followed
+ * by non-space, closer preceded by non-space and not followed by a digit) is
+ * enforced by `escapeNonMathDollars` before parsing and pinned below.
  *
  * These assertions are written against the pre-memoization component and must
  * hold identically after it, which is the whole point of pinning them.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { installReactMarkdownSeam } from "../../test/react-markdown-seam.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
-const { fireEvent, render } = await import("@testing-library/react");
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
 // Viewer seam — the SAME mock shape as ImageBlock.test.tsx (IG-CF6) pins:
 // FloatingImageViewer replaced by a marker div carrying the opened image's
@@ -32,6 +44,14 @@ mock.module("../components/build/editors/GalleryViewer.js", () => ({
   ),
 }));
 
+// react-markdown seam — the ONE factory shared with markdown.memo.test.tsx
+// (co-load contract, owner order 2026-10-24): registering the identical shape
+// here makes mock.module's last-write-wins harmless under a co-loaded pair
+// run, the same discipline as the GalleryViewer factory above. This file's own
+// assertions don't need the mock — the seam delegates to the real renderer —
+// but without this registration a co-loaded sibling's factory would replace
+// the real renderer for this file's renders (34/78 failed that way).
+installReactMarkdownSeam();
 
 let Markdown: typeof import("./markdown.js").Markdown;
 
@@ -85,6 +105,122 @@ describe("Markdown — plain variant omits chat-only transforms", () => {
     expect(container.querySelector(".md-code-inline")).not.toBeNull();
     expect(container.querySelectorAll(".md-list-item")).toHaveLength(2);
     expect(container.querySelector("table")).not.toBeNull();
+  });
+});
+
+describe("Markdown — chat/plain host contract (byte-identity guards)", () => {
+  it("routes a lone bracket run through the banner, not scene-meta, in chat", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" />);
+    expect(container.querySelector(".system-banner")).not.toBeNull();
+    expect(container.querySelector(".scene-meta")).toBeNull();
+  });
+
+  it("still renders .scene-meta in chat when a code barrier blocks the banner", () => {
+    const { container } = render(<Markdown text="[Alice: `hi`]" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.querySelector(".scene-meta")).not.toBeNull();
+  });
+
+  it("chat root carries exactly the default wrapper class", () => {
+    const { container } = render(<Markdown text="hi" />);
+    expect(container.firstElementChild!.className).toBe("md-content");
+  });
+
+  it("plain root carries exactly the default wrapper class", () => {
+    const { container } = render(<Markdown text="hi" variant="plain" />);
+    expect(container.firstElementChild!.className).toBe("md-content");
+  });
+});
+
+describe("Markdown — agent-rp variant (AP-1)", () => {
+  it("keeps quoted-text wrapping", () => {
+    const { container } = render(<Markdown text={QUOTE_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector(".quoted-text")).not.toBeNull();
+  });
+
+  it("emits no system-banner", () => {
+    const { container } = render(<Markdown text={BANNER_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.textContent).toContain("[Combat begins]");
+  });
+
+  it("does not render scene-meta blocks", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" variant="agent-rp" />);
+    expect(container.querySelector(".scene-meta")).toBeNull();
+    expect(container.textContent).toContain("[Alice: hello]");
+  });
+
+  it("roots in md-content plus the md-agent scope", () => {
+    const { container } = render(<Markdown text="hi" variant="agent-rp" />);
+    const root = container.firstElementChild!;
+    expect(root.className.split(/\s+/).sort()).toEqual(["md-agent", "md-content"]);
+  });
+
+  it("keeps the chat remark pipeline (underscore custom tags unwrap)", () => {
+    const source = "<internal_states><details><summary>State</summary>Visible content</details></internal_states>";
+    const { container } = render(<Markdown text={source} variant="agent-rp" />);
+    expect(container.querySelector("details")).not.toBeNull();
+    expect(container.textContent).not.toContain("<internal_states>");
+  });
+
+  it("still renders standard GFM", () => {
+    const { container } = render(<Markdown text={GFM_SOURCE} variant="agent-rp" />);
+    expect(container.querySelector("strong")).not.toBeNull();
+    expect(container.querySelector("em")).not.toBeNull();
+    expect(container.querySelector(".md-code-inline")).not.toBeNull();
+  });
+
+  it("keeps code blocks with the copy button", () => {
+    const source = ["```python", "print('hi')", "```"].join("\n");
+    const { container } = render(<Markdown text={source} variant="agent-rp" />);
+    expect(container.querySelector("pre")).not.toBeNull();
+    expect(container.querySelector(".md-copy-btn")).not.toBeNull();
+  });
+});
+
+describe("Markdown — agent-plain variant (AP-1)", () => {
+  it("leaves quoted speech untouched", () => {
+    const { container } = render(<Markdown text={QUOTE_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector(".quoted-text")).toBeNull();
+    expect(container.textContent).toContain("Your shorts,");
+  });
+
+  it("leaves a bracketed run untouched", () => {
+    const { container } = render(<Markdown text={BANNER_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector(".system-banner")).toBeNull();
+    expect(container.textContent).toContain("[Combat begins]");
+  });
+
+  it("does not render scene-meta blocks", () => {
+    const { container } = render(<Markdown text="[Alice: hello]" variant="agent-plain" />);
+    expect(container.querySelector(".scene-meta")).toBeNull();
+    expect(container.textContent).toContain("[Alice: hello]");
+  });
+
+  it("roots in md-content plus the md-agent-plain scope", () => {
+    const { container } = render(<Markdown text="hi" variant="agent-plain" />);
+    const root = container.firstElementChild!;
+    expect(root.className.split(/\s+/).sort()).toEqual(["md-agent-plain", "md-content"]);
+  });
+
+  it("keeps the plain remark pipeline (underscore custom tags stay literal)", () => {
+    const source = "<internal_states><details><summary>State</summary>Visible content</details></internal_states>";
+    const { container } = render(<Markdown text={source} variant="agent-plain" />);
+    expect(container.textContent).toContain("<internal_states>");
+  });
+
+  it("still renders standard GFM", () => {
+    const { container } = render(<Markdown text={GFM_SOURCE} variant="agent-plain" />);
+    expect(container.querySelector("strong")).not.toBeNull();
+    expect(container.querySelector("em")).not.toBeNull();
+    expect(container.querySelector(".md-code-inline")).not.toBeNull();
+  });
+
+  it("keeps code blocks with the copy button", () => {
+    const source = ["```python", "print('hi')", "```"].join("\n");
+    const { container } = render(<Markdown text={source} variant="agent-plain" />);
+    expect(container.querySelector("pre")).not.toBeNull();
+    expect(container.querySelector(".md-copy-btn")).not.toBeNull();
   });
 });
 
@@ -240,5 +376,169 @@ describe("Markdown — inline images via ImageBlock", () => {
     expect(view.container.textContent).toContain("before");
     expect(view.container.textContent).toContain("after");
     expect(view.getByTestId("image-block-img").getAttribute("alt")).toBe("mid");
+  });
+});
+
+/**
+ * Agent math (item 2, basis: AGENT_SHELL_POLISH_PLAN owner follow-up 2026-10-24
+ * (math formulas)). The agent variants lazy-load the KaTeX chunk, so these tests
+ * wait for `.katex` to land; the pre-chunk fallback is the sync agent pipeline
+ * (raw dollars), which is why the negative assertions below are stable states.
+ */
+describe("Markdown — agent math via KaTeX", () => {
+  // One real backslash. Normal string-literal semantics apply here, but JSX
+  // attribute bytes are kept verbatim by the bundler (a `\\` attribute holds
+  // two real backslashes), so backslash inputs stay out of JSX attributes and
+  // go through this constant instead.
+  const BS = "\\";
+
+  beforeEach(async () => {
+    const { resetKatexStylesheetForTests } = await import("./markdown-math.js");
+    resetKatexStylesheetForTests();
+  });
+
+  it("agent-plain renders $v_y = -770$ as KaTeX markup", async () => {
+    const view = render(<Markdown text="$v_y = -770$" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.textContent).toContain("v_y = -770");
+    expect(view.container.textContent).not.toContain("$v_y");
+  });
+
+  it("agent-plain renders a command formula as math", async () => {
+    const view = render(<Markdown text={`$${BS}rightarrow$`} variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.textContent).toContain("→");
+  });
+
+  it("agent-rp renders math and keeps quoted-text wrapping alongside it", async () => {
+    const view = render(<Markdown text={'"quoted" and $x^2$ mixed'} variant="agent-rp" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.querySelector(".quoted-text")).not.toBeNull();
+    expect(view.container.querySelector(".system-banner")).toBeNull();
+  });
+
+  it("single-line $$…$$ renders as math", async () => {
+    const view = render(<Markdown text="$$E = mc^2$$" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.textContent).not.toContain("$$");
+  });
+
+  it("fenced $$ blocks render as display math", async () => {
+    const view = render(<Markdown text={"$$\nE = mc^2\n$$"} variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex-display")).not.toBeNull());
+  });
+
+  it("an unparseable formula shows its source, never KaTeX red", async () => {
+    const view = render(<Markdown text={`$${BS}frac{1}{2$`} variant="agent-plain" />);
+    await waitFor(() => expect(view.container.textContent).toContain("frac"));
+    expect(view.container.innerHTML).not.toContain("#cc0000");
+    expect(view.container.textContent).toContain("1}{2");
+  });
+
+  it("injects the vendored KaTeX stylesheet once on first math render", async () => {
+    const first = render(<Markdown text="$x^2$" variant="agent-plain" />);
+    await waitFor(() => expect(first.container.querySelector(".katex")).not.toBeNull());
+    const links = document.querySelectorAll('link[data-katex-css]');
+    expect(links).toHaveLength(1);
+    expect(links[0]!.getAttribute("href")).toContain("/katex/katex.min.css");
+    const second = render(<Markdown text="$y^2$" variant="agent-rp" />);
+    await waitFor(() => expect(second.container.querySelector(".katex")).not.toBeNull());
+    expect(document.querySelectorAll('link[data-katex-css]')).toHaveLength(1);
+  });
+
+  it("a chat render never injects the KaTeX stylesheet", () => {
+    render(<Markdown text="hi $x$" />);
+    expect(document.querySelector('link[data-katex-css]')).toBeNull();
+  });
+});
+
+describe("Markdown — Pandoc dollar rule (prices stay text)", () => {
+  it("«It costs $5 and $10» keeps both dollars as plain text", async () => {
+    const view = render(<Markdown text="It costs $5 and $10" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.textContent).toContain("$10"));
+    expect(view.container.querySelector(".katex")).toBeNull();
+    expect(view.container.textContent).toContain("$5");
+  });
+
+  it("«$5,000 debt» stays literal", async () => {
+    const view = render(<Markdown text="$5,000 debt" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.textContent).toContain("$5,000"));
+    expect(view.container.querySelector(".katex")).toBeNull();
+  });
+
+  it("a closer followed by a digit stays literal", async () => {
+    const view = render(<Markdown text="$x$5" variant="agent-rp" />);
+    await waitFor(() => expect(view.container.textContent).toContain("$x$5"));
+    expect(view.container.querySelector(".katex")).toBeNull();
+  });
+
+  it("an opener followed by a space stays literal", async () => {
+    const view = render(<Markdown text="$ foo$" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.textContent).toContain("$ foo$"));
+    expect(view.container.querySelector(".katex")).toBeNull();
+  });
+
+  it("dollars in inline code and fenced blocks stay untouched", async () => {
+    const view = render(<Markdown text={'`$5` and\n```\n$5\n```\nand $x$'} variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.textContent).toContain("$5");
+    expect(view.container.querySelector("pre")?.textContent).toContain("$5");
+  });
+
+  it("a price and a formula share one message (price literal, formula math)", async () => {
+    const view = render(<Markdown text="It costs $5, while $v_y = -770$" variant="agent-plain" />);
+    await waitFor(() => expect(view.container.querySelector(".katex")).not.toBeNull());
+    expect(view.container.textContent).toContain("$5");
+    expect(view.container.textContent).toContain("v_y = -770");
+  });
+});
+
+describe("Markdown — escapeNonMathDollars pins the Pandoc rule", () => {
+  let escapeNonMathDollars: typeof import("./markdown-math.js").escapeNonMathDollars;
+
+  beforeAll(async () => {
+    ({ escapeNonMathDollars } = await import("./markdown-math.js"));
+  });
+
+  it.each([
+    ["$v_y = -770$", "$v_y = -770$"],
+    ["$\\rightarrow$", "$\\rightarrow$"],
+    ["$$E = mc^2$$", "$$E = mc^2$$"],
+    ["It costs $5 and $10", "It costs \\$5 and \\$10"],
+    ["$5,000 debt", "\\$5,000 debt"],
+    ["$x$5", "\\$x\\$5"],
+    ["$ foo$", "\\$ foo\\$"],
+    ["`$5` code", "`$5` code"],
+    ["$$\nE = mc^2\n$$", "$$\nE = mc^2\n$$"],
+    ["$$foo $$", "\\$\\$foo \\$\\$"],
+    ["```\n$5\n```", "```\n$5\n```"],
+    ["    $5 indented", "    $5 indented"],
+    ["\\$5 escaped already", "\\$5 escaped already"],
+  ])("escapes %s to %s", (input, expected) => {
+    expect(escapeNonMathDollars(input)).toBe(expected);
+  });
+
+  it("a newer opener abandons a pending one, so a price never swallows a later formula", () => {
+    expect(escapeNonMathDollars("$5 and $10 and $x$")).toBe("\\$5 and \\$10 and $x$");
+  });
+});
+
+describe("Markdown — chat/plain variants never do math (byte-identical pipelines)", () => {
+  it("chat leaves $v_y = -770$ as literal text", () => {
+    const { container } = render(<Markdown text="$v_y = -770$" />);
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.textContent).toContain("$v_y = -770$");
+  });
+
+  it("chat leaves $$…$$ as literal text", () => {
+    const { container } = render(<Markdown text="$$E = mc^2$$" />);
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.textContent).toContain("$$E = mc^2$$");
+  });
+
+  it("plain leaves dollars literal", () => {
+    const { container } = render(<Markdown text="It costs $5 and $x$" variant="plain" />);
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.textContent).toContain("$x$");
   });
 });

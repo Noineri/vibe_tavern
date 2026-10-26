@@ -6,7 +6,7 @@
   * forks: 1 — stt/stt-form-helpers.ts.
 */
 
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { useTtsProfiles } from "../../../../hooks/use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 

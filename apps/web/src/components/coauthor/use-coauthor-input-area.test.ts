@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -36,7 +37,6 @@ const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
 const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string) => null);
 const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
-const realI18n = await import("../../i18n/context.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
@@ -46,13 +46,8 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
   setCoauthorModuleAction,
 }));
 
-// useT must return a stable t(); the hook builds labels off it.
-mock.module("../../i18n/context.js", () => {
-	return {
-		...realI18n,
-		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-	};
-});
+// t echoes keys (the hook builds labels off it) — the shared co-load seam keeps it order-independent.
+installI18nContextSeam();
 
 // The favorites/tool-filter path goes through two hooks the data hook composes.
 // Stub them to deterministic inputs so the test pins the COMPOSITION (favorite

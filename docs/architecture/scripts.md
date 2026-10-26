@@ -6,7 +6,7 @@
 
 ## Overview
 
-A **script** is a snippet of user-authored JavaScript that runs **once per generated turn**, after lore activation and before prompt assembly. It can mutate the character's `personality` / `scenario` fields, inject extra messages into the prompt, and keep persistent per-chat state. Scripts are the bespoke, code-first counterpart to lorebooks: where a lorebook is a declarative table of keyword→text rules evaluated by an engine, a script is arbitrary code evaluated in a sandbox.
+A **script** is a snippet of user-authored JavaScript that runs **once per generated turn**, after lore activation and before prompt assembly. It can mutate the character's `personality` / `scenario` fields, inject extra messages into the prompt, and keep persistent per-chat state. Scripts are the bespoke, code-first counterpart to lorebooks: where a lorebook is a declarative table of keyword→text rules evaluated by an engine, a script is arbitrary code evaluated server-side in `node:vm` with a controlled context surface (see [Confinement posture](#confinement-posture) — not a security boundary).
 
 VT scripts are modeled on **Janitor AI's** scripting API, not SillyTavern's. The lineage is visible in the conventions: snake_case aliases (`last_message`, `message_count`, `inject_message`) mirroring JAI's surface, the `{ code, script }` JSON import shape that `parseScriptImport` accepts, per-character binding, and the `context.chat` / `context.character` shape. SillyTavern has no comparable freeform per-turn JS feature (its closest surfaces — Quick Reply scripts and the slash-command system — are a different model), so there is no ST parity to speak of here. See [Lineage: Janitor AI, not SillyTavern](#lineage-janitor-ai-not-sillytavern).
 
@@ -125,6 +125,8 @@ Injected host-realm objects expose host constructors: chains such as `Object.con
 The 5-second VM timeout bounds synchronous CPU execution only; Promise continuations can run after `executeScripts` returns and therefore outside the timeout window.
 
 This posture applies to both `script-sandbox.ts` and `dice-script-sandbox.ts`, which use the same `runInNewContext` API.
+
+Installing and enabling a script is therefore a deliberate act of granting it full access to the VT process; the import-time detector, warnings, and copilot review assist that assessment but guarantee nothing — absence of findings is not a safety claim.
 
 ---
 
@@ -256,7 +258,7 @@ Editor tabs (`listByScope`) read links for character/persona scopes too, so a sc
 1. `prompt-resolver.executeScripts` reads `chat.scriptState` (typed `Chat.scriptState`, parsed from `script_state_json`).
 2. Passes it as `scriptState` to `executeScripts`.
 3. `executeScripts` returns `updatedScriptState` (the post-run buckets).
-4. Resolver persists via `chat-store.updateScriptState(chatId, state)`. Persistence failures are swallowed (the pipeline does not crash on a state-write error).
+4. Resolver persists via `chat-store.updateScriptState(chatId, state)` — only on a real send/regenerate. Under the assembly's `dryRun` (context preview, sidechat reads, tracker/objective/insight one-shots, summaries — every read-only assembly) the scripts still run and their injections and field changes still shape the assembled text, but the state write is skipped: a read never moves the chat's scripts (SC-4c). Persistence failures are swallowed (the pipeline does not crash on a state-write error).
 
 ---
 
@@ -288,6 +290,12 @@ Nine shipped templates, each a standalone `.js` file imported as text in `script
 | `fate_die` | d20 check against fixed outcome bands (`scriptKind: "dice"`); persona or character rolls, result is binding |
 
 Every template is covered by `services/api/test/script-templates.test.ts`, which loads the bodies via `Bun.file()` and runs them through the real sandbox. This is the regression net for the engine invariants (the HP and dice tests are explicitly tagged REGRESSION).
+
+### Built-in assistant skills (`assets/agent-script/skills`)
+
+The script assistant ships with built-in skills: one folder per skill under `services/api/assets/agent-script/skills/`, each a `SKILL.md` manifest (`name` = the folder id, `description` = the catalog line the model picks by) with English prose and fenced examples tagged ```js prompt or ```js dice — the kind tag is mandatory because the two sandboxes have different APIs.
+Achievability is enforced by a test, not by review: `services/api/test/builtin-skill-achievability.test.ts` runs every tagged example in its real sandbox (`executeScripts` for prompt examples; `discoverDiceChecks` plus one `executeDiceRoll` sample roll per registered check for dice examples) and rejects `context` members that do not exist for the example's kind, tools the kind does not serve, planned surfaces (`context.host` / `context.net` / `context.memory`), and bad manifests — each rule proven by a failing fixture on a temp root.
+A skill text the guard rejects is fixed in the skill, never by loosening the guard.
 
 ---
 

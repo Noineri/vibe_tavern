@@ -5,6 +5,7 @@ import { Modal } from "./Modal.js";
 import { modalPanelCls } from "./modal-helpers.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { Slider } from "./slider.js";
 
 export interface AvatarCropResult {
   /** Cropped square image as a File (512×512 PNG) */
@@ -174,14 +175,15 @@ export function AvatarCropModal({
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 <line x1="8" y1="11" x2="14" y2="11" />
               </svg>
-              <input
-                type="range"
+              <Slider
                 min={1}
                 max={3}
                 step={0.01}
                 value={zoom}
-                onChange={(e) => setZoom(parseFloat(e.target.value))}
-                className="crop-zoom-slider flex-1"
+                formatValue={(value) => `×${value.toFixed(1)}`}
+                onValueChange={setZoom}
+                aria-label={t("crop_avatar_title")}
+                className="flex-1"
               />
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="shrink-0 text-t3">
                 <circle cx="11" cy="11" r="8" />

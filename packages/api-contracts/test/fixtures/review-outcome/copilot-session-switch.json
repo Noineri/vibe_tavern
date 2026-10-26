@@ -1,0 +1,76 @@
+{
+  "surface": "copilot",
+  "scenario": "session switch isolates the ledger and the return restores it",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain first thread",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain second thread",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": []
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain returned thread",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

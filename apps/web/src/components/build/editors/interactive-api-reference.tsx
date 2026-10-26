@@ -75,7 +75,7 @@ export function InteractiveApiReference() {
       </ApiRefSection>
 
       {/* Sandbox bounds */}
-      <div className="rounded border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[10px] leading-[1.4] text-t3">
+      <div className="rounded border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[calc(var(--ui-fs)-4px)] leading-[1.4] text-t3">
         {t("experience_api_bounds")}
       </div>
     </ApiRefCard>

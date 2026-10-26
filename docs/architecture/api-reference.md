@@ -102,6 +102,16 @@ Folder-snapshot branching for a character (VTF Phase 3). Each version is a snaps
 | `PATCH /api/characters/:characterId/versions/:versionId` | `{ title: string }` (`renameVersionSchema`) | `CharacterVersion`. `404` if not found |
 | `DELETE /api/characters/:characterId/versions/:versionId` | — | `204`. `409` if deleting the active version, `400` otherwise |
 
+### Character tracker template
+
+The portable tracker setup a character carries (per version, in `extensions.vibe_tavern.tracker_template`; see [scene-tracker.md](scene-tracker.md#character-tracker-template)). Creating an RP chat seeds its trackers from the active version's template in the creating transaction.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/characters/:characterId/tracker-template` | — | `{ template: TrackerTemplate \| null }` |
+| `PUT /api/characters/:characterId/tracker-template` | `{ template: TrackerTemplate }` (`updateTrackerTemplateSchema`) | `{ template: TrackerTemplate }` |
+| `DELETE /api/characters/:characterId/tracker-template` | — | `204` |
+
 ### Character avatar
 
 | Endpoint | Body | Response |
@@ -334,6 +344,40 @@ Remove an attachment from a message.
 
 **Response:** `204`.
 
+### `PATCH /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/include-in-prompt`
+
+Toggle an attachment's prompt visibility. Body: `{ "includeInPrompt": boolean }`.
+
+Semantics (one filter — `filterPromptVisibleAttachments` in `@vibe-tavern/domain`): ordinary uploads are included when the flag is absent or `true`, excluded on explicit `false`; image-gen slots are opt-in — absent or `false` means OFF, and enabling requires a description or generation prompt.
+
+**Response:** the updated attachment.
+
+### `PATCH /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/prompt`
+
+Edit the generation prompt of a generated image slot (image-gen provenance only — not text-file attachments).
+
+**Body:** `{ "prompt": string }` (non-empty).
+
+**Errors:** `400` — the attachment is not a generated-image slot, or the prompt is empty.
+
+**Response:** `{ ok: true }`.
+
+### `POST /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/summarize`
+
+Summarize a text-file attachment with the active profile's default model (one-shot `attachment-summarize.md` system prompt; the file's full text is read from the asset store server-side). The summary replaces `description` and is costed into `summaryTokenCount`; the prompt then prefers the summary over the full text.
+
+**Errors:**
+- `400` — `attachment_not_text` (only text files), or `attachment_summary_empty` (the model returned an empty summary).
+- `404` — attachment not found, or `attachment_asset_missing` (the stored asset is gone).
+
+**Response:** the updated attachment (`description` = summary, `summaryTokenCount` set). Honors `AbortSignal` between steps.
+
+### `POST /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/clear-summary`
+
+Drop a text file's summary and restore the full text as the prompt representation. Only text files (`attachment_not_text` otherwise).
+
+**Response:** the updated attachment (`description` = `null`, `summaryTokenCount` cleared).
+
 ---
 
 ## Branches
@@ -505,6 +549,14 @@ Request cancellation of a run (`cancelRequested`); the active item is not force-
 ### `POST /api/chats/:chatId/insights/scene/backfill/:runId/retry`
 
 Retry a run, reprocessing **only** failed + unprocessed items (succeeded items are never regenerated). Returns the updated (running) status.
+
+### `POST /api/chats/:chatId/insights/apply-character-template`
+
+«Взять из персонажа» — replace this chat's Scene-tracker config and Objective state with the active character version's template, in one transaction (the config and Objective state can never land out of sync; dice and mini-apps are untouched). RP chats only — other modes get a typed `422` `not_an_rp_chat`. Returns the config-patch snapshot.
+
+### `POST /api/chats/:chatId/insights/save-as-character-template`
+
+«Сохранить как заготовку персонажа» — capture this chat's current tracker setup as its character's template (overwriting an existing one); the chat itself is not modified. A chat with no tracker setup gets a typed `422` `empty_tracker_setup`. Returns `{ template: TrackerTemplate }`.
 
 ### `POST /api/chats/:chatId/summary`
 
@@ -1189,6 +1241,14 @@ Test a script with simulated context. The optional `code` field overrides the st
 
 **Response:** `{ output: any, error?: string, mutations?: object }`
 
+### `GET /api/scripts/:scriptId/agent-plan`
+
+The script-owned agent plan (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`). Returns `{ plan }` — the stored plan, or the empty plan (`{ goal: "", constraints: [], tasks: [] }`) when none is stored yet. The plan is shared by the copilot's `plan`/`read_plan` tools and the user-facing plan editor; it is NOT part of the copilot thread wire.
+
+### `PUT /api/scripts/:scriptId/agent-plan`
+
+Full-replace write of the plan. Runs the same `normalizeAgentPlan` validation as the `plan` tool: two `active` tasks are rejected with a typed `422` (ambiguous active task). **Body:** `{ plan: agentPlanSchema }` — **Response:** `{ plan }` (the normalized plan).
+
 ### `POST /api/scripts/import`
 
 Import a script from JS code or JSON.
@@ -1213,9 +1273,9 @@ The AI Assistant subsystem (the lightbulb "assist" actions in the Build editor) 
 
 ### `POST /api/ai-assistant`
 
-Run an AI Assistant mode and stream the result. The mode (`script`, `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`) selects what to generate; see [AI Assistant](./backend.md#ai-assistant) for the mode table and prompt fallback chain.
+Run an AI Assistant mode and stream the result. The mode selects what to generate: `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`, `scene_schema`, `scene_rules`, `message_edit`, `message_merge`, `message_tts_annotate`, `regex` (plus backend-only `vision_describe`, which drives the attachment-description pipeline, not the modal); see [AI Assistant](./backend.md#ai-assistant) for the mode table and prompt fallback chain.
 
-**Response:** `text/event-stream`. Events are mode-dependent: text modes stream `text-delta` chunks; JSON modes (`lore_keys`, `md_import`) buffer, strip reasoning, parse against the mode schema, then emit the parsed result.
+**Response:** `text/event-stream`. Events are mode-dependent: text modes stream `text-delta` chunks; JSON modes (`lore_keys`, `md_import`, `scene_schema`, `regex`) buffer, strip reasoning, parse against the mode schema, then emit the parsed result.
 
 ### `POST /api/ai-assistant/tokens`
 
@@ -1223,9 +1283,21 @@ Count tokens for an AI Assistant request before running it (context-budget previ
 
 ---
 
+## Experience Try Tab (unsaved-source tester)
+
+Stateless endpoints that drive UNSAVED rules source through the real sandbox/kernel (no session, store, or chat binding). Typed failures are 422 (409 `stale_revision`) with `error.details.{code,kind,console}`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/experience/test/discover` | Discover-only: `{ rulesCode, scriptName? }` (strict) → `{ definition }` (same shape as `/test/run`'s `definition`); never runs `create`, grants nothing — the Try tab derives grants / roster / setup fields from it |
+| `POST /api/experience/test/run` | Discover + `create` (with the request's `capabilityGrants`) + project + replay `actions` |
+| `POST /api/experience/test/simulate` | Discover + `create`, then a bounded script-seat simulation |
+
+---
+
 ## Experience Copilot
 
-The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`.
+The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`. Threads of ALL THREE kinds use these per-thread endpoints; each request resolves the thread to its kind through the stored `agent_kind` first (chat-owned threads), else through its script row (draft threads resolve to `experience`) — see [Agent Shell](./agent-shell.md). Script-owned sessions (both kinds) use the script lifecycle below; chat-owned sessions use the [chat-owned routes](#chat-owned-agents-sidechat).
 
 ### Sessions
 
@@ -1239,7 +1311,7 @@ The authoring assistant for interactive experiences. Architecture: [Experience C
 | `PATCH /api/experience-copilot/:threadId/title` | Rename (`{ title }`, max 120) |
 | `GET /api/experience-copilot/:threadId/messages` | Message history (user / assistant / tool rows, activities keyed by toolCallId) |
 
-The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no plan yet) — the model's step plan, full-list-rewrite semantics; the model owns it, the UI renders it read-only.
+The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no checklist yet) — the model's session-scoped quick checklist (PM-7), full-list-rewrite semantics; the model owns it, the UI renders it read-only. The durable plan is NOT on the thread wire — it is script-owned and served by [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan) (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`).
 
 ### Stream
 
@@ -1253,6 +1325,7 @@ The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no plan yet) �
   "providerProfileId": "...", "model": "...",
   "step": "rules",
   "rules": "<live draft>", "visual": "<live draft>",
+  "code": "<live draft (script kind)>",
   "testFeedback": { }
 }
 ```
@@ -1263,7 +1336,17 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 { "answer": { "toolCallId": "...", "text": "yes, use the keyboard" }, "providerProfileId": "..." }
 ```
 
-`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual` drafts are the editor's current unsaved sources — the backend prefers them over last-persisted buffers so the copilot is never blind to in-progress edits.
+`answer` carries exactly one of `text` / `skipped` (a skip carries no text) — the `ask_user` family — or `decision: "allow" | "deny"` — the permission family (SC-23e): a sidechat `read_message_prompt` call that stopped the turn on its `awaiting_permission` marker is resumed by the decision, `allow` rewriting the row with the rendered `<rp_prompt>` result, `deny` with `{ status: "denied" }`. The `rules`/`visual`/`code` drafts are the editors' current unsaved sources — the backend prefers them over last-persisted buffers so the agent is never blind to in-progress edits. The experience kind reads `rules`/`visual` (plus `rulesSaved`/`visualSaved`, `step`, `testFeedback`, `launchContext`, `reviewSnapshot`); the script kind reads `code` (plus `codeSaved`) and treats `scriptKind` as advisory telemetry — the STORED script kind selects the API-knowledge section. Both share `content`/`answer` and the provider/model pair. A chat-owned `sidechat-ooc` thread additionally reads `attachedVariants` (see [the sidechat stream field](#stream-field-sidechat-threads)).
+
+### Kind errors (stream assert + compact)
+
+The stream route resolves the thread's kind BEFORE sending SSE headers, and the compact route resolves it before compacting; all three registry failures return the same HTTP 400 JSON (`{ error, code }`), never an in-stream error or a 500.
+
+| `code` | When |
+|---|---|
+| `NO_AGENT_KIND_FOR_SCRIPT_KIND` | the thread's script kind is served by no registered kind |
+| `UNKNOWN_AGENT_KIND` | the resolved kind id (including the draft fallback) is not a registered kind |
+| `AGENT_KIND_NOT_WIRED` | the kind is registered but has no `stream` / `compaction` adapter entry (the error names its table) |
 
 ### Context
 
@@ -1272,12 +1355,102 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 | `GET /api/experience-copilot/:threadId/context` | Context-meter metrics + auto-compact flag |
 | `PATCH /api/experience-copilot/:threadId/context` | `{ autoCompact?: boolean }` |
 | `GET /api/experience-copilot/:threadId/context-links` | Pinned context entities |
-| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies |
+| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies. `prompt_preset` links (SC-23c, the sidechat's `<rp_prompt>` view) are chat-owned-thread-only: a script/draft thread gets the typed 400 `preset_link_not_chat_owned` |
 | `POST /api/experience-copilot/:threadId/compact` | Manual compaction; optional `{ providerProfileId?, model? }` (defaults to the thread's last pair) |
+
+### Message attachments
+
+Agent messages carry attachments in the row's `attachments_json` (one `ADD COLUMN` migration; no join table). The action surface mirrors the chat's, over the same domain service (`domain/attachment/attachment-actions-service.ts`) — each adapter resolves message ownership (reference check via `json_each` over `attachments_json`) and persists only the patch:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST …/messages/:messageId/attachments/:attachmentId/summarize` | Text-file summary; optional `{ providerProfileId?, model? }` — the profile ladder defaults to the thread's last pair. Errors as the chat twin (`attachment_not_text` 400, `attachment_asset_missing`/404, `attachment_summary_empty` 400). Response: the updated attachment |
+| `POST …/attachments/:attachmentId/clear-summary` | Drop the summary; response: the updated attachment |
+| `PATCH …/attachments/:attachmentId/description` | Hand-edit an image/video caption (lightbox); response: the updated attachment |
+| `POST …/attachments/:attachmentId/regenerate-description` | Force re-describe an image/video (chat-twin rules over the agent store; needs a `visionModel`). Response: `{ description }` |
+| `PATCH …/attachments/:attachmentId/include-in-prompt` | Prompt-visibility toggle; response: `{ ok: true }` |
+| `DELETE …/attachments/:attachmentId` | Remove an attachment and delete its now-unreferenced asset file; response: `{ ok: true }` |
+
+Turn deletion (`POST /api/experience-copilot/:threadId/turns/delete`) takes `keepAttachmentFiles` to spare assets the user may re-attach.
 
 ### Profiles
 
-CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (7 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `todo`, `ask_user`) and `skillIds`. The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot/profiles` (see the copilot profile schemas); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. User profiles carry `basePrompt` + `toolSet` toggles validated against the owning kind's registered schema (a wrong-kind set is a 422 `copilot_profile_invalid_tool_set`): the experience keys are the 9 `copilotToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`); the script keys are the 6 `scriptAgentToolSetSchema` keys (`write_buffer`, `edit_buffer`, `run_script_test`, `plan`, `read_plan`, `ask_user`); the sidechat keys are the 6 `sidechatOocToolSetSchema` keys (`search_context`, `read_context_item`, `propose_objective`, `todo`, `read_plan`, `read_message_prompt`). `read_skill_file` is in neither script/experience set (always on, never gated); `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+
+### Skills
+
+Per-kind skill libraries under `/api/copilot/skills` (mirroring the profile routes); `?kind=` selects the kind (`experience` default) on every route, and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`. `GET /api/copilot/skills` lists the merged built-in + user catalog (metadata only, no file bodies); `GET /api/copilot/skills/:id` reads one entry (404 when absent); `POST /api/copilot/skills/import` uploads a multipart skill where each file part's field name is its relative path (e.g. `my-skill/SKILL.md`) and returns 201; `DELETE /api/copilot/skills/:id` removes one user skill directory (a pure built-in is rejected). `GET /api/copilot/skills/:id/content` (AP-21; the Co-Author routes expose the identical endpoint at `/api/coauthor/skills/:id/content`) returns the full content view `{ id, path, content, body, files }` — `content` is the raw manifest read through the sandboxed `readSkillFile` (user shadow first, so a shadowed skill returns the USER's file), `body` is the same text with its frontmatter block stripped (the skill editor's text view), and `files` are the winning folder's POSIX-style relative file paths with the manifest itself excluded (it is already `content`/`body`); a missing skill (or an unreadable manifest) is a 404, and no absolute filesystem path crosses the wire. `POST /api/copilot/skills` and `PUT /api/copilot/skills/:id` (AP-23a; the Co-Author routes expose the identical pair under `/api/coauthor/skills`) save a user skill with the JSON body `{ name, description, body }`: create derives the folder id from the name (Cyrillic transliterated, lowercased, hyphenated, de-duplicated with `-2`/`-3` suffixes against both roots so a create never shadows a built-in) and writes a minimal manifest; update rewrites ONLY that user skill's `SKILL.md`, rebuilding the frontmatter from the existing block with every key kept and only `name`/`description` replaced, leaving `references/`/`assets/` untouched. Both paths validate the assembled manifest before any write (an invalid save writes nothing — 400); a built-in id on update is a 409 Conflict (built-ins are read-only; the duplicate flow is the user's path), a missing id is a 404, and both routes return the fresh catalog-entry DTO (201 on create, 200 on update).
+
+---
+
+## Chat-Owned Agents (sidechat)
+
+The chat-owned arm of the agent shell: agent threads owned by a chat branch instead of a script, with `sidechat-ooc` (the RP-chat sidechat) the first kind. Architecture: [Agent Shell](./agent-shell.md). Chat-owned threads ride the owner-agnostic per-thread routes above (`/api/experience-copilot/:threadId/...`, dispatched to their kind through the stored `agent_kind`); the routes below are the chat/branch-scoped families, all under `/api/agent/`.
+
+### Sessions
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/branches/:branchId/:kind/active` | The kind's active thread on that branch, or `null` |
+| `GET /api/agent/chats/:chatId/branches/:branchId/:kind/sessions` | Session list for the switcher (`[]` when the chat's mode is not served) |
+| `POST /api/agent/chats/:chatId/branches/:branchId/:kind/session` | Start a new session (archives same-owner siblings); optional body `{ title? }` |
+
+The `:kind` segment is validated through the agent-kind registry: an unregistered kind is a 400 `UNKNOWN_AGENT_KIND`, a script-owned kind a 400 `AGENT_KIND_NOT_CHAT_OWNED`, and a chat-owned kind on a chat whose mode it does not serve a 400 `AGENT_KIND_MODE_NOT_SERVED` — all the same `{ error, code }` JSON shape. A missing chat, a missing branch, or a branch of another chat is a 404.
+
+### Kind settings (model + default profile)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/kinds/:kind/settings` | The kind's remembered model binding + profile default |
+| `PATCH /api/agent/kinds/:kind/settings` | Partial write; `.strict()` body |
+
+**GET response:** `{ agentKind, providerProfileId, modelName, defaultProfileId, autoCompactDefault, updatedAt, servesChatModes }` (nullable fields are `null`, never `undefined`). **PATCH body:** `{ providerProfileId?, modelName?, defaultProfileId?, autoCompactDefault? }` — absent keeps the stored value, `null` clears one. Every registered kind is addressable (script- and chat-owned alike); an unregistered kind is a 400 `UNKNOWN_AGENT_KIND`.
+The binding is a remembered UI default, not a server override — the stream keeps taking provider/model per request. A kind with no row reads the legacy shared copilot pair ONLY if it is one of the two pre-split kinds (`experience`, `script`); every later kind reads nulls so its host's default model applies. `servesChatModes` is a registry fact carried on the wire (also in the bootstrap payload's per-kind map), never patched. `autoCompactDefault` (AP-20) is the kind's default for the auto-compact toggle on NEW sessions — non-nullable on the wire (the stored `NULL` = on resolves to `true`, the pre-AP-20 behavior); both new-session paths copy it onto the created thread's `auto_compact`, after which the per-thread toggle is authoritative.
+
+### Chat settings (profile choice per chat)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/:kind/settings` | The chat's own profile choice for that kind |
+| `PATCH /api/agent/chats/:chatId/:kind/settings` | Partial write; `.strict()` body |
+
+**GET response:** `{ chatId, agentKind, profileId, updatedAt }` (`profileId`/`updatedAt` `null` on a pair with no row). **PATCH body:** `{ profileId? }` — `null` clears the choice (follow the kind default), the sentinel `"builtin"` pins the kind's built-in profile for this chat. The stream's chat-owned profile chain: chat row → kind default → built-in; a dangling id falls through, never errors. Kind errors as above; a missing chat is a 404.
+
+### Branch plan
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/chats/:chatId/branches/:branchId/plan` | `{ plan }` — the stored branch plan, or the empty plan when none is stored yet |
+| `PUT /api/agent/chats/:chatId/branches/:branchId/plan` | Full-replace write (`{ plan }`), same validation as the script plan |
+
+The chat-branch twin of [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan): two `active` tasks are a 422 `agent_plan_multiple_active`, an unusable shape a 422 `agent_plan_invalid`; a missing chat/branch (or a branch of another chat) is a 404. The sidechat kind reads this plan read-only through its `read_plan` tool — no plan-write tool exists for it.
+
+### Thread events
+
+`GET /api/agent/threads/:threadId/events` — for a chat-owned thread, its frozen context events in merged-timeline order, each `{ id, kind, payload, beforeMessageId }`.
+`kind` is one of `rp_sync` / `variants_attached` / `selection_changed` / `branch_forked`; `payload` is the event mapped through the same parser the sidechat context loader uses (a corrupt stored payload surfaces as an error, never a silent skip); since SC-23a the `rp_sync` / `variants_attached` / `selection_changed` payloads additionally carry the frozen generation provenance — nullable `model` / `preset` (and `number` on variants) — where `null` means unknown, because the provenance is what was frozen at the time and is never inferred (events frozen before SC-23a parse and render exactly as before); `beforeMessageId` anchors each event to the first message row after it on the merged timeline, `null` when the event is the newest row — the web interleaves separators without a `seq` on the message wire (the shared messages route above is unchanged). A script-owned or draft thread answers `[]`; a missing thread is a 404.
+
+### Objective proposals (apply / reject)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/agent/threads/:threadId/proposals/:toolCallId/apply` | Accept a pending `propose_objective` proposal into the chat's objective tracker |
+| `POST /api/agent/threads/:threadId/proposals/:toolCallId/reject` | Reject it (tracker untouched) |
+
+Body-less: the proposal payload lives in the addressed tool row. The thread must be a chat-owned `sidechat-ooc` thread and the `toolCallId` a `propose_objective` row of it — anything else (missing, foreign, non-proposal) is a 404. Only a `pending` proposal resolves: a second apply/reject (double click, second tab) is the 409 `objective_proposal_already_resolved`. Apply reads the tracker at Accept time: tracker off → the 409 `objective_tracker_disabled`; mode `route` adds a task, mode `goals` adds a short-term goal (the insights services reused verbatim; a mode switched after the proposal wins). **Response:** `{ proposal }` — the record proposal with its final `status` (`applied` / `rejected`), also written back into the tool row so a reload shows the resolution.
+
+### Branch sidechat fork + summary
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/agent/chats/:chatId/branches/:branchId/fork-sidechat` | Copy the branch's ACTIVE sidechat threads + branch plan onto the target branch |
+| `GET /api/agent/chats/:chatId/branches/:branchId/sidechat-summary` | `{ hasSessions, count }` — ACTIVE chat-owned sessions on the branch, for the fork/delete confirms |
+
+**Fork body:** `{ targetBranchId }`. **Response:** `{ copiedThreads: [{ threadId, agentKind }] }` — the kinds the store actually had ACTIVE source threads for. The fork point comes from the target branch row (`parent_branch_id` must name the source): a target that is not a child is the 400 `target_branch_not_child_of_source`, a target that already has an active same-kind thread the 400 `target_branch_thread_active` (nothing is copied, the existing conversation stays). The copy re-keys id references onto the fork's new message ids, so the copy's first RP sync appends nothing for the copied history; frozen text is untouched. A missing chat/branch on either side is a 404.
+
+### Stream field (sidechat threads)
+
+`POST /api/experience-copilot/:threadId/stream` gains `attachedVariants?: Array<{ messageId, variantId }>` — RP variants attached to this sidechat turn as plain pairs; only the `sidechat-ooc` kind reads the field (the other kinds ignore it entirely). The request never carries a `selected` marker — the server reads the RP's own selection at freeze time. A message or variant outside the thread's own chat + branch is the typed 400 `attached_variant_not_in_branch` and nothing is frozen (the user message is not persisted). The pinned-context `PATCH /api/experience-copilot/:threadId/context-links` is reused as-is for the sidechat's `@` pins (characters, personas, lorebooks, scripts, skills), resolved by id at assembly time like every kind's.
 
 ---
 
@@ -1285,11 +1458,13 @@ CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profi
 
 ### `POST /api/assets/upload`
 
-Upload an image asset (avatar, gallery image).
+Upload an asset (image, audio, or a text file — avatars, gallery images, voice notes, chat-attached files).
 
 **Body:** `multipart/form-data` with file field.
 
-**Response:** `{ assetId: string, url: string }`
+**Response:** `{ assetId: string, url: string, tokenCount?: number }` — `tokenCount` is present only for text files: the server UTF-8-decodes the bytes (BOM stripped) and counts with the default tokenizer once, at upload (`AssetService.upload`); the count rides the attachment so the UI can show `~N tok.` without reading the file again.
+
+**MIME resolution:** browsers report OS-guessed MIME types for text files (a Windows `.csv` arrives as `application/vnd.ms-excel`). `resolveAttachmentUploadMime` (`@vibe-tavern/domain`) is the one shared browser/server rule: a known text extension wins over any non-media reported MIME. `TEXT_MIME_TO_EXT` is the single extension↔MIME table.
 
 ### `GET /api/assets/:assetId`
 
@@ -1389,6 +1564,6 @@ Get the bootstrap snapshot — all reference data needed on app startup (chats, 
 
 Get the default system prompt for an AI Assistant mode (used by the Settings prompt editor to show the editable default).
 
-**Query:** `mode` (default `script`) — any of the [AI Assistant modes](./backend.md#ai-assistant).
+**Query:** `mode` (default `lore_entry`) — any of the [AI Assistant modes](./backend.md#ai-assistant).
 
 **Response:** `{ prompt: string }`.

@@ -200,7 +200,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       </div>
 
       <details className="mb-3">
-        <summary className="cursor-pointer font-ui text-xs text-t3 hover:text-t2 transition-colors">
+        <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3 hover:text-t2 transition-colors">
           {t("st_where_to_find")}
         </summary>
         <div className="mt-1.5 rounded border border-border2 bg-surface p-2.5 font-mono text-[calc(var(--ui-fs)-2px)] text-t3 leading-relaxed">
@@ -248,7 +248,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       {/* Scan results: counts + scan errors. */}
       {scanResult && !scanning && !importing && (
         <div className="mt-3">
-          <div className="mb-2.5 font-ui text-xs text-t2">
+          <div className="mb-2.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
             {t("st_scan_results", {
               personas: scanResult.persona?.count ?? 0,
               characters: scanResult.characters.length,
@@ -297,7 +297,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       {/* Import result summary + per-item errors. */}
       {importResult && !importing && (
         <div className="mt-3">
-          <div className="font-ui text-xs text-t2">
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2">
             {t("st_import_results", {
               characters: importResult.characters,
               chats: importResult.chats,
@@ -490,8 +490,8 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
         <div className={cn("shrink-0", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between">
             <div>
-              <div className={cn("mb-0.5 font-body font-medium text-t1", isMobile ? "text-lg" : "text-[calc(var(--ui-fs)+4px)]")}>{props.title}</div>
-              <div className={cn("mb-3.5 font-ui text-t3", isMobile ? "text-xs" : "text-[calc(var(--ui-fs)-2px)]")}>{props.subtitle}</div>
+              <div className={cn("mb-0.5 font-body font-medium text-t1", isMobile ? "text-[calc(var(--ui-fs)+4px)] leading-7" : "text-[calc(var(--ui-fs)+4px)]")}>{props.title}</div>
+              <div className={cn("mb-3.5 font-ui text-t3", isMobile ? "text-[calc(var(--ui-fs)-2px)] leading-4" : "text-[calc(var(--ui-fs)-2px)]")}>{props.subtitle}</div>
             </div>
             <button type="button" className={cn("flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-[5px]")} onClick={props.onClose} aria-label={t("close")}><Icons.Close /></button>
           </div>

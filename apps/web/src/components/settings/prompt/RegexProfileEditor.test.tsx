@@ -2,11 +2,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "
 import type { ReactNode } from "react";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../../i18n/context.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
 const realRegexApi = await import("../../../api/regex-api.js");
 const realPresetApi = await import("../../../api/preset-api.js");
@@ -16,10 +16,7 @@ const getRegexProfileLinksMock = mock(async () => [] as Awaited<ReturnType<typeo
 const setRegexProfileLinksMock = mock(async () => [] as Awaited<ReturnType<typeof realRegexApi.setRegexProfileLinks>>);
 const listPromptPresetsMock = mock(async () => [] as Awaited<ReturnType<typeof realPresetApi.listPromptPresets>>);
 
-mock.module("../../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+installI18nContextSeam();
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => isMobile }));
 mock.module("../../../api/regex-api.js", () => ({
   ...realRegexApi,

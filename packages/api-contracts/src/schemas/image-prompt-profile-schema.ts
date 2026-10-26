@@ -10,9 +10,11 @@ import { imagePromptTemplateCellSchema } from "./image-gen-schema.js";
 // flat field-key axis replaced by (rowKey | family) CELLS. The profile
 // collection lives apart from service-prompt profiles and LLM presets.
 
-/** The row axis of the cell keys: the eight generation modes plus the shared
- *  negative row (mirrors IMAGE_PROMPT_CATALOG_ROW_KEYS in the catalog). */
-const PROFILE_ROW_KEYS: readonly string[] = [...Object.values(IMAGE_GENERATION_MODES), "negative"];
+/** The row axis of the cell keys: the eight generation modes, the shared
+ *  negative row, and the assist row (SC-8d — `assist|prose` is the
+ *  extraction-core override, `assist|<family>` that family's addendum
+ *  override; mirrors the domain's ImagePromptVariantRowKey). */
+const PROFILE_ROW_KEYS: readonly string[] = [...Object.values(IMAGE_GENERATION_MODES), "negative", "assist"];
 
 /** Every legal `"rowKey|family"` composition, as a closed enum. */
 const CELL_KEYS: readonly [string, ...string[]] = Array.from(
@@ -80,6 +82,13 @@ export const imagePromptProfileDetailResponseSchema = z.object({
     assist: z.object({
       core: z.string(),
       addenda: z.record(z.string(), z.string()),
+      /** SC-8d: the assist parts' custom tier, sourced from THIS profile's
+       *  overrides — `assist|prose` for the core, `assist|<family>` for the
+       *  addendum. `text` null = canon (not customized). `addendaCustom` is
+       *  keyed exactly like `addenda` (canon-addendum families only — prose
+       *  has no addendum editor, the quality-layer precedent). */
+      coreCustom: z.object({ text: z.string().nullable(), isCustomized: z.boolean() }),
+      addendaCustom: z.record(z.string(), z.object({ text: z.string().nullable(), isCustomized: z.boolean() })),
     }),
   }),
 });

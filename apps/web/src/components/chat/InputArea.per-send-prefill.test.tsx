@@ -20,26 +20,23 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
+import type { Attachment } from "@vibe-tavern/domain";
+import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
+import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realUseInputArea = await import("./use-input-area.js");
+const en = (await import("../../i18n/locales/en.json")).default;
 
-mock.module("../../i18n/context.js", () => ({
-  ...realI18nContext,
-  useT: () => ({
-    t: (k: string) => k,
-    tDynamic: (k: string) => k,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
-}));
+// House i18n test pattern via the shared co-load seam: raw keys render as-is;
+// the overflow-warning pin reads the bundled EN template.
+installI18nContextSeam({ interpolateKeys: ["attachments_overflow_warning"] });
 
 // countTokens loads a real tiktoken encoding — heavy and irrelevant here.
 mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
@@ -82,7 +79,10 @@ function makeFakeData() {
     activeModelId: null as string | null,
     handleSelectFavoriteModel: mock(),
     fileInputRef: { current: null as HTMLInputElement | null },
-    draftAttachments: [] as never[],
+    draftAttachments: [] as Attachment[],
+    remove: mock(),
+    attachmentOverflow: estimateAttachmentOverflow({ totalUsed: 0, availableBudget: 7168, attachments: [] }),
+    attachmentVisionWarning: false,
     onFileInputChange: () => {},
     handlePaste: () => {},
     canSend: false,
@@ -107,6 +107,31 @@ beforeAll(async () => {
   ({ usePerSendPrefillStore } = await import("../../stores/per-send-prefill-store.js"));
   ({ InputArea } = await import("./InputArea.js"));
   ({ render, within, fireEvent } = await import("@testing-library/react"));
+});
+
+describe("InputArea attachment overflow warning (CA-1e)", () => {
+  for (const [tokens, warns] of [[100, false], [101, true]] as const) {
+    it(`file tokens=${tokens}: warning=${warns} and Send stays enabled`, () => {
+      fakeData.draft = "Hello";
+      fakeData.canSend = true;
+      fakeData.draftAttachments = [{ id: "file", assetId: "asset_file", type: "file", name: "notes.md", mimeType: "text/markdown", sizeBytes: 10, tokenCount: tokens }];
+      fakeData.attachmentOverflow = estimateAttachmentOverflow({ totalUsed: 900, availableBudget: 1000, attachments: fakeData.draftAttachments });
+      const view = render(<InputArea />);
+      const warning = view.queryByRole("status");
+      expect(Boolean(warning)).toBe(warns);
+      if (warning) {
+        expect(warning.textContent).toContain(tokens.toLocaleString());
+        expect(warning.textContent).toContain((100).toLocaleString());
+        expect(warning.nextElementSibling?.className).toContain("bg-input-bg");
+        expect(warning.textContent).toBe(en.attachments_overflow_warning.replace("{attached}", tokens.toLocaleString()).replace("{free}", (100).toLocaleString()));
+        expect(warning.querySelector(".truncate")).toBeNull();
+      }
+      const send = view.getByRole("button", { name: "send_unavailable" }) as HTMLButtonElement;
+      expect(send.disabled).toBe(false);
+      fireEvent.click(send);
+      expect(fakeData.chat.handleSend).toHaveBeenCalledTimes(1);
+    });
+  }
 });
 
 // One-shot queue is global store state — reset between tests so the armed
@@ -165,5 +190,34 @@ describe("InputArea — per-send prefill chip + bubble (LS-8)", () => {
     const q = within(view.baseElement);
     expect(q.queryByTestId("per-send-prefill-chip")).toBeNull();
     expect(q.queryByTestId("per-send-prefill-bubble")).toBeNull();
+  });
+});
+
+describe('desktop image warning (CA-1h2)', () => {
+  it('route none renders before overflow with wrapping chrome and does not disable Send', async () => {
+    fakeData.draft = 'Hello';
+    fakeData.canSend = true;
+    fakeData.draftAttachments = [
+      { id: 'image', assetId: 'image', type: 'image', name: 'a.png', mimeType: 'image/png', sizeBytes: 4 },
+      { id: 'file', assetId: 'file', type: 'file', name: 'a.md', mimeType: 'text/markdown', sizeBytes: 12, tokenCount: 101 },
+    ];
+    fakeData.attachmentOverflow = estimateAttachmentOverflow({ totalUsed: 900, availableBudget: 1000, attachments: fakeData.draftAttachments });
+    const fetchRoute = mock(async () => 'none' as const);
+    function Harness() {
+      fakeData.attachmentVisionWarning = useImageRouteWarning(fakeData.draftAttachments, 'rp-key', fetchRoute);
+      return <InputArea />;
+    }
+    const view = render(<Harness />);
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => expect(view.getAllByRole('status')).toHaveLength(2));
+    const warnings = view.getAllByRole('status');
+    expect(warnings[0]?.textContent).toBe('attachment_vision_warning');
+    expect(warnings[0]?.className).toBe(warnings[1]?.className ?? 'missing overflow warning');
+    expect(warnings[0]?.querySelector('.truncate')).toBeNull();
+    expect(warnings[0]?.querySelector('.whitespace-normal')).not.toBeNull();
+    const send = view.getByRole('button', { name: 'send_unavailable' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(fakeData.chat.handleSend).toHaveBeenCalledTimes(1);
   });
 });

@@ -149,7 +149,7 @@ export function GenerateCancelButton({
 							type="button"
 							className={cn(
 								"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3",
-								"font-ui text-[12px] text-danger",
+								"font-ui text-[calc(var(--ui-fs)-2px)] text-danger",
 								"transition-[background-color,color] duration-150",
 								"hover:bg-danger/20 hover:text-danger-strong",
 							)}
@@ -173,7 +173,7 @@ export function GenerateCancelButton({
 							type="button"
 							className={cn(
 								"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3",
-								"font-ui text-[12px] text-t2",
+								"font-ui text-[calc(var(--ui-fs)-2px)] text-t2",
 								"transition-[background-color,color,border-color] duration-150",
 								"hover:bg-s2 hover:text-t1 hover:border-accent/40",
 							)}
@@ -264,7 +264,7 @@ export function GeneratingScrim({
 			)}
 		>
 			<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-			<span className="font-ui text-[16px] text-t2">{label}</span>
+			<span className="font-ui text-[calc(var(--ui-fs)+2px)] text-t2">{label}</span>
 		</motion.div>
 	);
 }

@@ -56,11 +56,12 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
 import { adetailerSummary, kreaSummary, samplersSummary } from "../../lib/imagegen/chip-section-summaries.js";
 import { useImageGenChipSectionsStore } from "../../stores/image-gen-chip-sections-store.js";
 import { ImageGenChipSection } from "./image-gen-chip-section.js";
 import { ImageGenChipBodyLayout } from "./image-gen-chip-body-layout.js";
+import { IMAGE_GEN_SLIDER_RANGE_TESTIDS } from "./image-gen-slider-test-ids.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -270,7 +271,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     });
   }, [effective?.id, effective?.llmProviderProfileId, effective?.llmModelId]);
 
-  // Model catalog for the effective profile (re-fetched on profile switch).
+  // Model catalog for the effective profile: stored list first (step 11).
   useEffect(() => {
     if (effectiveId === null) {
       setModels(null);
@@ -280,7 +281,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     setModels(null);
     setModelsFailed(false);
     setModelsSnapshotAt(null);
-    void listImageGenModels(effectiveId)
+    void listImageGenModels(effectiveId, undefined, { storedFirst: true })
       .then((listing) => {
         if (cancelled) return;
         setModels(listing?.data ?? []);
@@ -575,7 +576,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
       {selectedModelEntry?.template && (
         <div
           data-testid="image-gen-ft-model-detected"
-          className="mt-2 font-ui text-[12px] font-medium text-accent"
+          className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent"
         >
           {t("image_gen_detected_template", {
             template: templateDisplayLabel(selectedModelEntry.template, t),
@@ -875,16 +876,6 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
 }
 
 // ─── Per-model settings (IG-CF15 15d) ───────────────────────────────────
-
-// The settings block's pinned slider testids (kept VERBATIM from the pre-T4
-// inline rows — tests and muscle memory ride these; the descriptor's field
-// id and the testid stem are NOT the same string for cfg/clip-skip).
-const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
-  steps: "image-gen-range-overlay-steps",
-  cfgScale: "image-gen-range-overlay-cfg",
-  cfgRescale: "image-gen-range-overlay-cfg-rescale",
-  clipSkip: "image-gen-range-overlay-clip",
-};
 
 /** The loaded model's overlay editor — the chip's «quick pult» view of the
  *  same data the providers pane edits (one source of truth, two surfaces).
@@ -1206,40 +1197,20 @@ function ImageGenModelSettingsAccordion({
               triggerTestId="image-gen-ft-adetailer-model"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                data-testid="image-gen-ft-range-adetailer-steps"
-                min={adetailerControl.stepsRange.min}
-                max={adetailerControl.stepsRange.max}
-                step={adetailerControl.stepsRange.step}
-                value={adetailerSteps ?? baseSteps}
-                onChange={(e) => {
-                  const patch = adetailerControl.parseSteps(e.target.value);
-                  if (patch !== null) commit(patch);
-                }}
-                disabled={disabled}
-                className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
-              />
-              <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
-                <NumberInput
-                  className="h-[30px] w-[60px]"
-                  min={adetailerControl.stepsRange.min}
-                  max={adetailerControl.stepsRange.max}
-                  step={adetailerControl.stepsRange.step}
-                  value={adetailerSteps ?? baseSteps}
-                  onChange={(n) => {
-                    const patch = adetailerControl.parseSteps(String(n));
-                    if (patch !== null) commit(patch);
-                  }}
-                  disabled={disabled}
-                  hideControls
-                />
-              </div>
-            </div>
-          </div>
+          <SliderField
+            label={t(adetailerControl.stepsLabelKey)}
+            value={adetailerSteps ?? baseSteps}
+            min={adetailerControl.stepsRange.min}
+            max={adetailerControl.stepsRange.max}
+            step={adetailerControl.stepsRange.step}
+            onChange={(next) => {
+              const patch = adetailerControl.parseSteps(String(Math.round(next)));
+              if (patch !== null) commit(patch);
+            }}
+            disabled={disabled}
+            rangeTestId="image-gen-ft-range-adetailer-steps"
+            numberTestId="image-gen-ft-adetailer-steps"
+          />
         </ImageGenChipSection>
       ) : null}
 
@@ -1416,7 +1387,7 @@ function ImageGenModelSettingsAccordion({
               step={slider.range.step}
               onChange={(value) => commit(slider.commit(value))}
               disabled={disabled}
-              rangeTestId={SLIDER_RANGE_TESTIDS[slider.field]}
+              rangeTestId={IMAGE_GEN_SLIDER_RANGE_TESTIDS[slider.field]}
             />
           ))}
 

@@ -21,6 +21,7 @@
  */
 
 import type { ScriptRecord, ExperienceVisualRow } from "../api/types.js";
+import { isRecord } from "@vibe-tavern/domain";
 
 export const MINI_APP_BUNDLE_FORMAT = "vt-miniapp" as const;
 export const MINI_APP_BUNDLE_VERSION = 1 as const;
@@ -56,10 +57,6 @@ export type MiniAppParseFailureReason =
 export type MiniAppParseResult =
   | { ok: true; bundle: MiniAppBundle }
   | { ok: false; reason: MiniAppParseFailureReason };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Build a bundle from a saved script, its bound visuals, and the primary id. */
 export function buildMiniAppBundle(

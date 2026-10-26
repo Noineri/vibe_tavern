@@ -1,7 +1,10 @@
-import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
-import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
+import { eq, and, desc, asc, lte, count } from 'drizzle-orm';
+import { chats, chatBranches, characters, messages, messageVariants } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import { createChatInsertValues, type CreateChatInput } from './chat-create-values.js';
+import { copyForkPromptTraces } from './chat-store-fork-trace-copy.js';
+import { replaceChatTrackerSetup, updateChatInsightsConfig, updateChatObjectiveState } from './chat-tracker-setup.js';
 import {
   normalizeSceneTrackerConfig,
   applySceneTrackerConfigPatch,
@@ -85,14 +88,7 @@ export class ChatStore {
 
   // ─── Chat lifecycle ────────────────────────────────────────────────────────
 
-  async createChat(data: {
-    characterId: string;
-    personaId?: string;
-    title: string;
-    promptPresetId: string | null;
-    /** Chat mode. Omit/undefined → DB default 'rp'. */
-    mode?: ChatMode;
-  }): Promise<Chat> {
+  async createChat(data: CreateChatInput): Promise<Chat> {
     const chatId = this.idGen.next('chat');
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
@@ -106,21 +102,13 @@ export class ChatStore {
     this.db.transaction((tx) => {
       tx
         .insert(chats)
-        .values({
+        .values(createChatInsertValues({
+          ...data,
           id: chatId,
-          characterId: data.characterId,
-          personaId: data.personaId ?? null,
           activeBranchId: branchId,
-          promptPresetId: data.promptPresetId,
-          mode: data.mode,
-          title: data.title,
-          summary: '',
-          messageHistoryLimit: 0,
-          autoSummaryConfigJson: '{"enabled":false,"everyN":20,"useChatModel":true}',
-          status: 'active',
           createdAt: now,
           updatedAt: now,
-        })
+        }))
         .run();
 
       tx
@@ -252,14 +240,7 @@ export class ChatStore {
   }
 
   async updateInsightsConfig(id: string, input: { insightsConfig?: InsightsConfig }): Promise<Chat> {
-    const now = this.clock.now();
-    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
-    if (input.insightsConfig !== undefined) values.insightsConfigJson = JSON.stringify(input.insightsConfig);
-    const [row] = await this.db
-      .update(chats)
-      .set(values)
-      .where(eq(chats.id, id))
-      .returning();
+    const [row] = await updateChatInsightsConfig(this.db, id, input.insightsConfig, this.clock.now());
     if (!row) throw new Error(`Chat '${id}' not found after insights config update`);
     return this.mapRow(row);
   }
@@ -297,16 +278,17 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
+  /** Replace both Tracker setup columns in one write so applying a portable
+   * template cannot leave the config and Objective state out of sync. */
+  async replaceTrackerSetup(id: string, insightsConfig: InsightsConfig, objectiveState: ObjectiveState): Promise<Chat> {
+    const [row] = await replaceChatTrackerSetup(this.db, id, insightsConfig, objectiveState, this.clock.now());
+    if (!row) throw new Error(`Chat '${id}' not found after tracker setup replacement`);
+    return this.mapRow(row);
+  }
+
   /** Replace the chat's Objective Tracker state wholesale (INSIGHTS_PLAN). The service computes the full next state and writes it atomically. */
   async updateInsightsObjectiveState(id: string, input: { insightsObjectiveState?: ObjectiveState }): Promise<Chat> {
-    const now = this.clock.now();
-    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
-    if (input.insightsObjectiveState !== undefined) values.insightsObjectiveStateJson = JSON.stringify(input.insightsObjectiveState);
-    const [row] = await this.db
-      .update(chats)
-      .set(values)
-      .where(eq(chats.id, id))
-      .returning();
+    const [row] = await updateChatObjectiveState(this.db, id, input.insightsObjectiveState, this.clock.now());
     if (!row) throw new Error(`Chat '${id}' not found after objective state update`);
     return this.mapRow(row);
   }
@@ -495,6 +477,10 @@ export class ChatStore {
       // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below
       // and to clone bound Dice rolls onto the new message ids (DICE-B12).
       const msgIdMap = new Map<string, string>();
+      // oldVariantId → newVariantId map (SC-23b): remaps prompt_traces.variant_id
+      // onto the copied variants, so a forked trace points at the fork's own
+      // swipe — never the parent branch's variant row.
+      const variantIdMap = new Map<string, string>();
 
       for (const msg of msgsToCopy) {
         const newMsgId = this.idGen.next('msg');
@@ -514,6 +500,7 @@ export class ChatStore {
           // still matches and the record stays valid. A null/unparseable
           // record yields null (see rekeySceneRecordJson).
           const newVariantId = this.idGen.next('mvar');
+          variantIdMap.set(v.id, newVariantId);
           newVariants.push({
             id: newVariantId, messageId: newMsgId, variantIndex: v.variantIndex,
             content: v.content, isSelected: v.isSelected, finishReason: v.finishReason,
@@ -537,56 +524,19 @@ export class ChatStore {
         tx.insert(messageVariants).values(newVariants).run();
       }
 
-      // Copy prompt_traces for the forked message range into the new branch.
-      // Only traces whose messageId was just copied (position <= fork point)
-      // are duplicated; traces for messages after the fork stay in the source
-      // branch. messageId is remapped via msgIdMap; every other column (JSON
-      // blobs, scalars, createdAt) is copied verbatim so the fork's trace
-      // history matches the parent up to the cut. New ids + the new branchId
-      // are assigned to keep rows independent. Fixes the defect where a forked
-      // branch started with zero trace history.
+      // Copy prompt_traces for the forked message range into the new branch
+      // (extracted — see chat-store-fork-trace-copy.ts). Runs inside this
+      // transaction so a failure rolls back with the whole fork.
+      copyForkPromptTraces(tx, {
+        idGen: this.idGen,
+        chatId,
+        newBranchId: branchId,
+        sourceBranchId: sourceMsg.branchId,
+        msgIdMap,
+        variantIdMap,
+      });
+
       if (msgIdMap.size > 0) {
-        const tracesToCopy = tx.select().from(promptTraces)
-          .where(and(
-            eq(promptTraces.branchId, sourceMsg.branchId),
-            inArray(promptTraces.messageId, [...msgIdMap.keys()]),
-          ))
-          .all();
-
-        if (tracesToCopy.length > 0) {
-          const newTraces: typeof promptTraces.$inferInsert[] = [];
-          for (const t of tracesToCopy) {
-            const newMessageId = msgIdMap.get(t.messageId);
-            // Defensive: the WHERE clause (messageId IN msgIdMap.keys())
-            // guarantees membership, but guard anyway rather than assert.
-            if (!newMessageId) continue;
-            newTraces.push({
-              id: this.idGen.next('trace'),
-              chatId,
-              branchId,
-              messageId: newMessageId,
-              model: t.model,
-              presetName: t.presetName,
-              assembledLayersJson: t.assembledLayersJson,
-              tokenAccountingJson: t.tokenAccountingJson,
-              finalPayloadJson: t.finalPayloadJson,
-              activatedLoreEntriesJson: t.activatedLoreEntriesJson,
-              activatedLoreDetailJson: t.activatedLoreDetailJson,
-              retrievedMemoriesJson: t.retrievedMemoriesJson,
-              scriptInjectionsJson: t.scriptInjectionsJson,
-              prefill: t.prefill,
-              compactionSummary: t.compactionSummary,
-              latencyMs: t.latencyMs,
-              sentConfigJson: t.sentConfigJson,
-              providerResponseJson: t.providerResponseJson,
-              createdAt: t.createdAt,
-            });
-          }
-          if (newTraces.length > 0) {
-            tx.insert(promptTraces).values(newTraces).run();
-          }
-        }
-
         // DICE-B12: clone bound Dice rolls onto the corresponding new message
         // ids, inside this same synchronous transaction so a failure rolls the
         // dice copy back too. Only bound rolls (user messages) are copied;

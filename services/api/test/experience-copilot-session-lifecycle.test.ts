@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer, type CopilotContextMetrics } from "@vibe-tavern/db";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
+import { PRESET_LINK_NOT_CHAT_OWNED_CODE } from "../src/domain/sidechat/preset-link-guard.js";
+import { isDomainError, type DomainError } from "../src/shared/errors.js";
 
 // ─── Real store + adapter wiring ─────────────────────────────────────────────
 //
@@ -53,9 +55,11 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
     expect(sessions.some((s) => s.id === other.id)).toBe(false);
 
     // Wire mapping: branded ids flatten to plain strings, nullable fields stay
-    // null (never undefined). `todo` joined the thread wire in TAG-6 (REQUIRED,
-    // `[]` = no plan yet) — `listSessions` returns full `ExperienceCopilotThreadWire`s,
-    // so the summary pin carries it too.
+    // null (never undefined). `todo` is the REQUIRED session checklist on the
+    // thread wire (TAG-6, restored PM-7 — `[]` = none yet; the durable plan is
+    // script-owned and served by /api/scripts/:id/agent-plan, NOT here).
+    // `listSessions` returns full `ExperienceCopilotThreadWire`s, so the
+    // summary pin carries the whole wire shape.
     expect(sessions[0]).toEqual({
       id: newer.id,
       scriptId: "script_a",
@@ -158,6 +162,35 @@ describe("ExperienceCopilotAdapter context (CM-4)", () => {
     expect(state.autoCompact).toBe(true);
   });
 
+  it("GET context wire-maps kind-provided segments through, absent stays absent (SC-9)", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    const withSegments: CopilotContextMetrics = {
+      ...metrics,
+      segments: [
+        { key: "context", tokens: 1000 },
+        { key: "rp_summaries", tokens: 120 },
+        { key: "rp_messages", tokens: 480 },
+        { key: "digest", tokens: 0 },
+        { key: "discussion", tokens: 500 },
+      ],
+    };
+    await store.updateContextMetrics(thread.id, withSegments, "prov_1", "model_x");
+
+    const state = await adapter.experienceCopilotGetContext(thread.id);
+    // The kind's segments ride the wire verbatim (the SC-0j schema field; the
+    // first producer is the sidechat kind, SC-9).
+    expect(state.metrics).toEqual(withSegments);
+
+    // A metrics object without segments (the other kinds) maps without the
+    // field — never `segments: undefined` on the wire.
+    await store.updateContextMetrics(thread.id, metrics, "prov_1", "model_x");
+    const plain = await adapter.experienceCopilotGetContext(thread.id);
+    expect("segments" in (plain.metrics ?? {})).toBe(false);
+    expect(plain.metrics).toEqual(metrics);
+  });
+
   it("PATCH toggles autoCompact and returns the full state (metrics unchanged)", async () => {
     const { store, adapter } = await setup();
     const thread = await store.startNewSession("script_a", "T");
@@ -227,5 +260,30 @@ describe("ExperienceCopilotAdapter context-links (CX-4)", () => {
     const { adapter } = await setup();
     await expect(adapter.experienceCopilotGetContextLinks("nope")).rejects.toThrow();
     await expect(adapter.experienceCopilotSetContextLinks("nope", [])).rejects.toThrow();
+  });
+
+  it("pinning a prompt preset on a script-owned thread is the typed 400 preset_link_not_chat_owned — nothing written (SC-23c)", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    let thrown: unknown;
+    try {
+      await adapter.experienceCopilotSetContextLinks(thread.id, [
+        { targetType: "character", targetId: "char_1" },
+        { targetType: "prompt_preset", targetId: "preset_1" },
+      ]);
+    } catch (err) {
+      thrown = err;
+    }
+
+    // The typed refusal — the same lowercase Validation family as
+    // attached_variant_not_in_branch.
+    expect(isDomainError(thrown)).toBe(true);
+    const error = thrown as DomainError;
+    expect(error.kind).toBe("Validation");
+    expect(error.details?.code).toBe(PRESET_LINK_NOT_CHAT_OWNED_CODE);
+    expect(error.details?.threadId).toBe(thread.id);
+    // All-or-nothing: the replace wrote NOTHING, valid character link included.
+    expect(await adapter.experienceCopilotGetContextLinks(thread.id)).toEqual([]);
   });
 });

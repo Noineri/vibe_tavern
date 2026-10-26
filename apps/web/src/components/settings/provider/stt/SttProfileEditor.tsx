@@ -2,16 +2,16 @@
  * fork #1 of tts/TtsProfileEditor.tsx.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
-import { useT } from "../../../../i18n/context.js";
 import { listSttDraftModels, type SttModelListEntry } from "../../../../api/stt-api.js";
+import { useStoredFirstListing } from "../../../../hooks/use-stored-first-listing.js";
 import { SttProviderForm } from "./SttProviderForm.js";
 import { SttRecognitionSection } from "./SttRecognitionSection.js";
 import { SttBaseCard } from "./SttBaseCard.js";
 import { SttLocalConnectionChip } from "./SttLocalConnectionChip.js";
-import { configString, formDraftConfig, sttProviderSegmentOf, updateConfigField } from "./stt-form-helpers.js";
-import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
+import { formDraftConfig, sttListingConfig, sttProviderSegmentOf, updateConfigField } from "./stt-form-helpers.js";
+import type { SttProfileForm, useSttProfiles } from "../../../../hooks/use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
@@ -27,16 +27,22 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
     stt.editingId !== null ? (stt.profiles.find((p) => p.id === stt.editingId) ?? null) : null;
   const isView = stt.headerMode === "view" && savedProfile !== null;
 
-  // Live model catalog (P8) — the STT twin of the TTS editor's models
-  // effect: debounced, JSON-stringified config dep, honest-slate resets,
-  // profileId stored-key resolution server-side. The form's just-typed key
-  // rides INSIDE the transient draft config (formDraftConfig — the TTS
-  // formDraftConfig rule). DEVIATION from the TTS twin, named: the fetch is
-  // gated on VIEW mode — the STT model lives ONLY in level 2 (governing
-  // rule), so an edit-mode fetch would burn a request nothing renders.
-  const [models, setModels] = useState<SttModelListEntry[] | null>(null);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  // Live model catalog (P8) — the STT twin of the TTS editor's model
+  // listing: the form's just-typed key rides INSIDE the transient draft
+  // config (formDraftConfig — the TTS formDraftConfig rule), profileId lets
+  // the server inject the stored typed-column key. DEVIATION from the TTS
+  // twin, named: the listing is gated on VIEW mode — the STT model lives ONLY
+  // in level 2 (governing rule), so an edit-mode fetch would burn a request
+  // nothing renders.
+  //
+  // Step 11c (owner 2026-10-15: "the first time you pick the model, after that
+  // it must not be requested again for things to work"): a saved profile opens
+  // on the server's STORED model list (`source: "stored"`, no upstream call;
+  // live only when nothing is stored); the refresh button is the live path.
+  // The mechanism (request numbering, quiet open failure, keep-the-list
+  // re-runs, debounce) is useStoredFirstListing, shared with the TTS lists.
+  // The model is never auto-picked from the list: an empty model stays empty
+  // until the user picks one.
   const formDraft = useMemo(
     () => (stt.form === null || stt.form === undefined ? undefined : formDraftConfig(stt.form)),
     [stt.form],
@@ -47,71 +53,25 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
       formBackend === STT_BACKENDS.Gemini ||
       formBackend === STT_BACKENDS.Deepgram) &&
     formDraft !== undefined;
-  const modelsConfigKey = formDraft === undefined ? null : JSON.stringify(formDraft);
-  // Mirror of the live config bag (read at fetch-completion time) for the
-  // settle-on-first write below — config is NOT an effect dep (a dep would
-  // restart the debounced fetch on every keystroke).
-  const formConfigRef = useRef<Record<string, unknown>>({});
-  formConfigRef.current = stt.form?.config ?? {};
-
-  useEffect(() => {
-    if (!needsRemoteModels || modelsConfigKey === null) {
-      setModels(null);
-      setModelsError(null);
-      setModelsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const backend = formBackend;
-    const config = formDraft;
-    const profileId = formId ?? undefined;
-    setModelsLoading(true);
-    setModelsError(null);
-    // Honest-slate rule (the TTS twin): while the new fetch is in flight
-    // the field degrades to manual input, never keeps the previous
-    // profile's list under a dead or switched endpoint.
-    setModels(null);
-    const timer = setTimeout(() => {
-      listSttDraftModels({ backend, config, profileId })
-        .then((list) => {
-          if (cancelled) return;
-          setModels(list);
-          setModelsLoading(false);
-          // LLM rule (D20, owner directive — the TTS twin): an empty model
-          // field settles on the first fetched entry; a user pick survives
-          // refetches.
-          if (list.length > 0 && configString(formConfigRef.current, "model") === "") {
-            stt.setForm({ config: { ...formConfigRef.current, model: list[0].id } });
-          }
-        })
-        .catch((cause) => {
-          if (cancelled) return;
-          setModelsError(cause instanceof Error ? cause.message : String(cause));
-          setModelsLoading(false);
-        });
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [needsRemoteModels, modelsConfigKey, formBackend, formDraft, formId, stt.setForm]);
-
-  // Refresh button handler for the model picker — the same fetch the
-  // debounced effect performs, on demand.
-  const refreshModels = () => {
-    if (!needsRemoteModels || formDraft === undefined || formBackend === undefined) return;
-    setModelsLoading(true);
-    setModelsError(null);
-    listSttDraftModels({ backend: formBackend, config: formDraft, profileId: formId ?? undefined })
-      .then((list) => {
-        setModels(list);
-        setModelsLoading(false);
-      })
-      .catch((cause) => {
-        setModelsError(cause instanceof Error ? cause.message : String(cause));
-        setModelsLoading(false);
+  const models = useStoredFirstListing<SttModelListEntry[]>({
+    enabled: needsRemoteModels,
+    scope: formId === null || formBackend === undefined ? null : `${formId}:${formBackend}`,
+    // Picking a model or a language must not re-run the catalog listing.
+    inputKey: formDraft === undefined ? "" : JSON.stringify(sttListingConfig(formDraft)),
+    storedFirst: formId !== null,
+    load: async (source) => {
+      if (formBackend === undefined || formDraft === undefined) {
+        // Unreachable: the listing is only enabled with a form.
+        throw new Error("STT listing requested without a form");
+      }
+      return listSttDraftModels({
+        backend: formBackend,
+        config: formDraft,
+        profileId: formId ?? undefined,
+        ...(source === undefined ? {} : { source }),
       });
-  };
+    },
+  });
 
   if (!stt.form) return null;
 
@@ -162,16 +122,16 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
             form={form}
             onUpdate={handleUpdateConfig}
             onUpdateForm={(patch) => stt.setForm(patch)}
-            models={models ?? []}
-            fetching={modelsLoading}
-            fetchError={modelsError}
-            onRefresh={refreshModels}
+            models={models.data ?? []}
+            fetching={models.loading}
+            fetchError={models.error}
+            onRefresh={models.refresh}
           />
         </>
       ) : null}
 
       {stt.error && (
-        <div data-testid="stt-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
+        <div data-testid="stt-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">
           {stt.error}
         </div>
       )}

@@ -49,7 +49,7 @@ export function TtsNarrationModeBlock() {
     // `mobileBottomRow` owns the full-width row; step 18's basis-full here
     // resolved against the auto-width right group and overflowed.
     <div data-testid="tts-narration-mode-block" className="flex min-w-0 flex-1 items-center gap-2">
-      <label className="shrink-0 font-ui text-[12px] text-t3">{t("tts_narration_mode_label")}</label>
+      <label className="shrink-0 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("tts_narration_mode_label")}</label>
       {/* MUI step 19 (owner 2026-09-11): inline-footer canon (the STT
           dictation selects are the reference) — content-sized trigger with a
           cap, NEVER the w-full form-field chrome; the per-mode description
@@ -71,7 +71,7 @@ export function TtsNarrationModeBlock() {
         contentWidth={320}
         side="top"
         triggerTestId="tts-narration-mode-select"
-        triggerClassName="w-auto min-w-0 max-w-[220px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
+        triggerClassName="w-auto min-w-0 max-w-[220px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[calc(var(--ui-fs)-2px)] text-t1 hover:border-accent"
       />
     </div>
   );

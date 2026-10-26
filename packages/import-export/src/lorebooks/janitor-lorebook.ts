@@ -6,14 +6,13 @@ import type {
   LorebookId,
   LoreScopeType,
 } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE, isRecord, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
   asNumber,
   asString,
   asStringArray,
-  isRecord,
   makeDeterministicId,
   stableJson,
 } from "../shared.js";

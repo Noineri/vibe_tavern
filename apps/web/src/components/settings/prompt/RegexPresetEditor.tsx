@@ -392,7 +392,7 @@ export function RegexPresetEditor({
           <div className="flex shrink-0 items-center gap-2 pb-[7px]">
             <button
               type="button"
-              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
               onClick={() => setAiOpen(true)}
             >
               <Ic.brain /> {t("regexAssistant.open")}
@@ -408,7 +408,7 @@ export function RegexPresetEditor({
           </div>
         </div>
         {draftSaveIssue?.field === "name" && (
-          <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+          <div role="alert" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
             {t("promptManager.regex.draftNameRequired")}
           </div>
         )}
@@ -439,7 +439,7 @@ export function RegexPresetEditor({
             defaultOption={t("promptManager.regex.profileStandalone")}
             searchable={false}
             onChange={handleProfileAssignment}
-            triggerClassName="flex min-h-11 w-full items-center justify-between gap-2 rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-colors duration-150 hover:border-accent"
+            triggerClassName="flex min-h-11 w-full items-center justify-between gap-2 rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors duration-150 hover:border-accent"
             triggerTestId="regex-profile-assignment"
           />
         </div>
@@ -495,7 +495,7 @@ export function RegexPresetEditor({
                 presetSectionLabel={t("promptManager.regex.sectionPresets")}
               />
               {effectiveBindCount === 0 && (
-                <div className="mt-1.5 font-ui text-[11px] text-warning">
+                <div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-warning">
                   {t("promptManager.regex.bindingsDeadZone")}
                 </div>
               )}
@@ -578,7 +578,7 @@ export function RegexPresetEditor({
               )}
             </div>
           ) : (
-            <div className="font-ui text-[11px] text-t4">{t("promptManager.regex.depthNoteHidden")}</div>
+            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.depthNoteHidden")}</div>
           )}
 
           {/* Apply-target (write-mode) */}
@@ -617,9 +617,9 @@ export function RegexPresetEditor({
           minRows={2}
           maxRows={6}
         />
-        <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.findHint")}</div>
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.findHint")}</div>
         {draftSaveIssue?.field === "findRegex" && (
-          <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+          <div role="alert" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-danger">
             {t("promptManager.regex.draftFindRequired")}
           </div>
         )}
@@ -636,7 +636,7 @@ export function RegexPresetEditor({
           minRows={2}
           maxRows={6}
         />
-        <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.replaceHint")}</div>
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.replaceHint")}</div>
       </div>
 
       <div>
@@ -650,7 +650,7 @@ export function RegexPresetEditor({
           minRows={1}
           maxRows={4}
         />
-        <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.trimHint")}</div>
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.trimHint")}</div>
       </div>
 
       {/* Substitute macros — part of the rule (affects the find pattern). */}
@@ -681,7 +681,7 @@ export function RegexPresetEditor({
         <div className={cn(lblCls, "mb-2")}>
           {t("promptManager.regex.testTitle")}
         </div>
-        <div className="mb-2 font-ui text-[11px] text-t4">{t("promptManager.regex.testDisclaimer")}</div>
+        <div className="mb-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.testDisclaimer")}</div>
         <AutoTextarea
           mono
           value={testInput}
@@ -692,7 +692,7 @@ export function RegexPresetEditor({
           maxRows={6}
         />
         <div className="mt-2">
-          <div className="font-ui text-[11px] text-t4">{t("promptManager.regex.testOutputLabel")}</div>
+          <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.testOutputLabel")}</div>
           {testResult.kind === "error" ? (
             <div role="alert" aria-label={t("promptManager.regex.testOutputLabel")} className="mt-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 font-mono text-t1 text-danger">
               {testResult.output}
@@ -708,7 +708,7 @@ export function RegexPresetEditor({
               ) : testResult.kind === "ok" && testResult.unchanged && testResult.output !== "" ? (
                 <>
                   {testResult.output}
-                  <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.testUnchanged")}</div>
+                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("promptManager.regex.testUnchanged")}</div>
                 </>
               ) : (
                 testResult.output || <span className="text-t4">{t("promptManager.regex.testOutputEmpty")}</span>

@@ -207,7 +207,7 @@ export function CanvasCard({
                 />
               ) : (
                 <>
-                  <span className={cn("min-w-0 truncate font-ui text-[12px] sm:flex-1", enabled ? "text-t1" : "text-t3", !editableName.value && "text-t4")}>
+                  <span className={cn("min-w-0 truncate font-ui text-[calc(var(--ui-fs)-2px)] sm:flex-1", enabled ? "text-t1" : "text-t3", !editableName.value && "text-t4")}>
                     {editableName.value || editableName.placeholder}
                   </span>
                   <button
@@ -222,7 +222,7 @@ export function CanvasCard({
               )}
             </div>
           ) : (
-            <span className="min-w-0 flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">
+            <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">
               {labelTooltip ? (
                 <CustomTooltip content={labelTooltip}>
                   <span className="cursor-help border-b border-dotted border-current pb-0.5">{label}</span>
@@ -238,12 +238,12 @@ export function CanvasCard({
           {hasValue && (
             <TokenCounter
               text={value}
-              className="canvas-card-token flex shrink-0 justify-end whitespace-nowrap font-ui text-[11px] tabular-nums text-t2"
+              className="canvas-card-token flex shrink-0 justify-end whitespace-nowrap font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t2"
             />
           )}
-          {role && <span className="canvas-card-role shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3">{role}</span>}
+          {role && <span className="canvas-card-role shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t3">{role}</span>}
           {showDepthBadge && (
-            <span className="canvas-card-slot shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t2 tabular-nums">
+            <span className="canvas-card-slot shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[calc(var(--ui-fs)-4px)] text-t2 tabular-nums">
               {slotLabel === "in-chat" || /^\d+$/.test(String(slotLabel)) ? `←${slotDepthNum}` : slotLabel}
             </span>
           )}
@@ -270,7 +270,7 @@ export function CanvasCard({
             </CustomTooltip>
           )}
           {expandable && (
-            <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")} aria-hidden="true">▶</span>
+            <span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", expanded && "rotate-90")} aria-hidden="true">▶</span>
           )}
         </div>
       </div>
@@ -280,8 +280,8 @@ export function CanvasCard({
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {showDepthInput && (
                 <CustomTooltip content={t("insert_depth_label")}>
-                  <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
-                    <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                  <div className="flex shrink-0 items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
+                    <span aria-hidden="true" className="font-mono text-[calc(var(--ui-fs)-2px)] text-t3">←</span>
                     <span className="sr-only">{t("insert_depth_label")}</span>
                     <NumberInput
                       className="h-[30px] w-[90px]"
@@ -294,7 +294,7 @@ export function CanvasCard({
                 </CustomTooltip>
               )}
               {onRoleChange && role && (
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
                   <span>{t("role")}</span>
                   <SegmentedControl
                     value={role}

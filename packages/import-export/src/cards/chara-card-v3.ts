@@ -1,11 +1,10 @@
 import type { Character, CharacterId, CharacterVersion, CharacterVersionId } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE, isRecord } from "@vibe-tavern/domain";
 
 import {
   asOptionalString,
   asString,
   asStringArray,
-  isRecord,
   makeDeterministicId,
   normalizeTimestamp,
   parseJsonInput,

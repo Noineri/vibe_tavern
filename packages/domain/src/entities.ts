@@ -1085,14 +1085,16 @@ export interface SttProfile {
 // the editor form (absent for Custom).
 
 /** v1 image-gen adapter protocol roster (owner-locked scope): OpenRouter
- *  (chat-completions transport), the OpenAI-images protocol (serves Custom
- *  cloud endpoints + the PE-1 cloud family, see
- *  backends/openai-images-family.ts), and the A1111-compatible local
- *  dialect (owner's Forge-Neo). Further providers arrive in later
+ *  (chat-completions transport), the OpenAI-images protocol (the OpenAI
+ *  preset + the PE-1 cloud family, see backends/openai-images-family.ts),
+ *  its Custom arm `openai-images-custom` (a bare user endpoint: free W×H,
+ *  no OpenAI grid — owner ruling 2026-10-15), and the A1111-compatible
+ *  local dialect (owner's Forge-Neo). Further providers arrive in later
  *  owner-approved batches. */
 export const IMAGE_GEN_BACKENDS = {
   OpenRouter: "openrouter",
   OpenAiImages: "openai-images",
+  OpenAiImagesCustom: "openai-images-custom",
   A1111: "a1111",
   ComfyUI: "comfyui",
   TogetherAi: "togetherai",

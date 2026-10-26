@@ -5,7 +5,7 @@ import type { AiAssistantMode, PromptAssemblyContext } from "../src/types.ts";
 
 function assemble(
   overrides: Partial<PromptAssemblyContext> = {},
-  registryMode: AiAssistantMode = "script",
+  registryMode: AiAssistantMode = "lore_entry",
 ) {
   return getAiAssistantAssembler(registryMode).assemble({
     identity: { chatId: "assistant_1" },
@@ -15,7 +15,7 @@ function assemble(
     chat: { recentMessages: [] },
     mode: "ai_assistant",
     aiAssistant: {
-      mode: "script",
+      mode: "lore_entry",
       enabledLayers: ["character_base", "persona", "lore"],
       systemPrompt: "You improve character cards.",
       existingContent: "Old description.",
@@ -79,7 +79,6 @@ function assembleMessageMode(mode: AiAssistantMode, contextBudget: number) {
 }
 
 const EXISTING_AI_ASSISTANT_MODES = [
-  "script",
   "lore_entry",
   "lore_keys",
   "chat_impersonate",
@@ -136,7 +135,7 @@ describe("AI assistant assembly", () => {
 
   it("gates only optional context layers", () => {
     const result = assemble({ aiAssistant: {
-      mode: "script",
+      mode: "lore_entry",
       enabledLayers: [],
       systemPrompt: "System.",
       existingContent: "Existing.",

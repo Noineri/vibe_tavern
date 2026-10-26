@@ -18,7 +18,7 @@ import { builtinFormatTemplateBySelection } from "@vibe-tavern/domain";
 import type { GenerationFormat } from "@vibe-tavern/domain";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
-import { resolveMultimodalContent } from "./vision-gate.js";
+import { resolveMultimodalContent, unseenImagePolicy } from "./vision-gate.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -292,6 +292,11 @@ export function toSdkMessages(
 // prepareSdkMessages
 // ---------------------------------------------------------------------------
 
+/** Trailing user instruction appended by `prepareSdkMessages` when the caller
+ *  opts into `continuationFallback`. A history ending in assistant→user is
+ *  accepted by every chat backend, unlike a trailing assistant prefill. */
+export const CONTINUATION_USER_INSTRUCTION = "You are continuing an assistant reply that stops mid-text. Continue it from exactly where it stopped. Do not repeat any part of the existing reply; output only the continuation text.";
+
 /**
  * Prepare prompt messages for provider execution.
  *
@@ -309,46 +314,56 @@ export async function prepareSdkMessages(
   messages: SdkMessage[],
   options: {
     prefill?: string;
+    continuationFallback?: boolean;
     providerType: ProviderType;
     visionGate?: VisionGateConfig;
     assetLoader?: (assetId: string) => Promise<Buffer | null>;
   },
 ): Promise<PreparedMessages> {
   const capabilities = resolveProtocol(options.providerType).capabilities;
-  let conversationMessages: SdkMessage[];
+  if (options.continuationFallback && options.prefill) {
+    throw new Error("prepareSdkMessages: continuationFallback and prefill are mutually exclusive");
+  }
+  // Pair each policy with its original input occurrence. Google reorders these
+  // pairs, never re-derives indexes; synthetic continuation/prefill arrive later.
+  const inputMessages = messages.map((message, index) => ({ message, policy: unseenImagePolicy(messages, index) }));
+  let conversationMessages: typeof inputMessages;
 
   if (options.providerType === "google") {
     // Google requires system messages only at the beginning.
     // Merge all system messages into one, keep non-system in original order.
     const systemParts: string[] = [];
-    const nonSystem: SdkMessage[] = [];
+    const nonSystem: typeof inputMessages = [];
 
-    for (const msg of messages) {
+    for (const entry of inputMessages) {
+      const msg = entry.message;
       if (msg.role === "system") {
         systemParts.push(msg.content);
       } else {
-        nonSystem.push(msg);
+        nonSystem.push(entry);
       }
     }
 
     conversationMessages = systemParts.length > 0
-      ? [{ role: "system", content: systemParts.join("\n\n") }, ...nonSystem]
+      ? [{ message: { role: "system", content: systemParts.join("\n\n") }, policy: "error" }, ...nonSystem]
       : nonSystem;
   } else {
-    conversationMessages = [...messages];
+    conversationMessages = [...inputMessages];
   }
 
-  if (options.prefill && capabilities.prefill) {
-    conversationMessages.push({ role: "assistant", content: options.prefill });
+  if (options.continuationFallback) {
+    conversationMessages.push({ message: { role: "user", content: CONTINUATION_USER_INSTRUCTION }, policy: "error" });
+  } else if (options.prefill && capabilities.prefill) {
+    conversationMessages.push({ message: { role: "assistant", content: options.prefill }, policy: "error" });
   }
 
   // Map to SDK `ModelMessage[]`. Attachments only ever live on user
   // messages by design (see `toSdkMessages` + executor filtering), so only
   // user content can become multimodal `UserContent` after vision resolution.
   const conversationModelMessages: ModelMessage[] = await Promise.all(
-    conversationMessages.map(async (msg): Promise<ModelMessage> => {
+    conversationMessages.map(async ({ message: msg, policy }): Promise<ModelMessage> => {
       if (msg.attachments?.length && options.visionGate && options.assetLoader) {
-        const parts = await resolveMultimodalContent(msg, options.visionGate, options.assetLoader);
+        const parts = await resolveMultimodalContent(msg, options.visionGate, options.assetLoader, { unseenImagePolicy: policy });
         return { role: "user", content: parts };
       }
       switch (msg.role) {

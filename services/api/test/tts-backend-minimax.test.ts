@@ -217,12 +217,23 @@ describe("parseGetVoiceResponse", () => {
       { id: "a", label: "a", lang: "multi" },
     ]);
   });
+
+  test("drops array and scalar elements from voice sections (SC-5r2: arrays carry no voice_id)", () => {
+    expect(
+      parseGetVoiceResponse({
+        system_voice: [["nested"], { voice_id: "a" }, "plain"],
+        voice_cloning: [[{ voice_id: "b" }]],
+      }),
+    ).toEqual([{ id: "a", label: "a", lang: "multi" }]);
+  });
 });
 
-// ─── listModels (live GET /v1/models + speech-family criterion) ────────────
+// ─── listModels (live GET /v1/models, unfiltered) ───────────────────────────
 
 describe("MinimaxTtsBackend.listModels", () => {
-  test("fetches the live /v1/models catalog and keeps the speech-* family", async () => {
+  // Behavior change (owner ruling 2026-10-15, IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
+  // step 8): the `speech-` prefix filter is gone — the whole catalog lists.
+  test("fetches the live /v1/models catalog unfiltered", async () => {
     installFetchMock();
     nextResponse = Response.json({
       data: [
@@ -235,19 +246,24 @@ describe("MinimaxTtsBackend.listModels", () => {
 
     const models = await backend().listModels();
 
-    expect(models.map((m) => m.id)).toEqual(["speech-2.8-hd", "speech-02-turbo"]);
+    expect(models).toEqual([
+      { id: "MiniMax-M3", label: "MiniMax-M3" },
+      { id: "speech-2.8-hd", label: "speech-2.8-hd" },
+      { id: "abab-6.5s-chat", label: "abab-6.5s-chat" },
+      { id: "speech-02-turbo", label: "speech-02-turbo" },
+    ]);
     expect(recordedRequests.length).toBe(1);
     expect(recordedRequests[0].url).toBe("https://api.minimax.io/v1/models");
     expect(recordedRequests[0].headers.get("Authorization")).toBe("Bearer mm_key");
   });
 
-  test("degrades to an empty list when the catalog carries no speech models", async () => {
+  test("degrades to an empty list on an empty catalog; entries without an id are skipped", async () => {
     installFetchMock();
-    nextResponse = Response.json({ data: [{ id: "MiniMax-M3" }] });
+    nextResponse = Response.json({ data: [] });
+    expect(await backend().listModels()).toEqual([]);
 
-    const models = await backend().listModels();
-
-    expect(models).toEqual([]);
+    nextResponse = Response.json({ data: [{ id: "" }, { object: "model" }, "junk", { id: "speech-2.8-hd" }] });
+    expect((await backend().listModels()).map((m) => m.id)).toEqual(["speech-2.8-hd"]);
   });
 
   test("throws with the HTTP status on a failed catalog fetch", async () => {
