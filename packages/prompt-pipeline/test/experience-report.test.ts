@@ -27,6 +27,32 @@ function makeReport(overrides: Partial<ExperienceReportSnapshot> = {}): Experien
 }
 
 describe("formatExperienceMessageBlock", () => {
+  // ERX-1, 2026-10-27: characterize the legacy block before renderer/frame changes.
+  it("preserves the complete legacy block for non-string and missing details", () => {
+    expect(formatExperienceMessageBlock([makeReport({
+      title: "Legacy game",
+      summary: undefined,
+      events: [
+        { type: "card_played", detail: { participantId: "seat_1", card: "yellow_6" } },
+        { type: "count", detail: 0 },
+        { type: "ready", detail: false },
+        { type: "empty", detail: null },
+        { type: "cards", detail: ["a", 2] },
+        { type: "finished" },
+      ],
+    })])).toBe([
+      "[Experience report — Legacy game — authoritative]",
+      "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.",
+      '- card_played: {"participantId":"seat_1","card":"yellow_6"}',
+      "- count: 0",
+      "- ready: false",
+      "- empty: null",
+      '- cards: ["a",2]',
+      "- finished",
+      "[End experience report]",
+    ].join("\n"));
+  });
+
   it("returns empty string for no reports (absence no-op)", () => {
     expect(formatExperienceMessageBlock([])).toBe("");
   });

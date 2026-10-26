@@ -30,6 +30,7 @@ export * from "./experience-helpers.js";
 export * from "./experience-launch-context.js";
 export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";
+export * from "./experience-report-lines.js";
 export * from "./experience-round-limits.js";
 export * from "./ids.js";
 export * from "./is-record.js";
