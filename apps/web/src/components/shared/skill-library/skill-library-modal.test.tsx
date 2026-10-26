@@ -473,7 +473,11 @@ describe("skill-library-modal — footer + import dock (mockup §6)", () => {
 		await waitFor(() => expect(readContentMock).toHaveBeenCalled());
 		fireEvent.click(getByText("DELETE"));
 		await waitFor(() => expect(findReferencingModulesMock).toHaveBeenCalledWith("my-style"));
-		expect(getByText("Card Module")).toBeDefined();
+		// The mock being CALLED does not mean the confirm has RENDERED (the guard
+		// promise resolves and mounts the confirm after the call) — wait for the
+		// resolved state itself, like the sibling delete test waits for
+		// confirm-modal (Linux-CI flake, PR #63 test-linux 2026-10-26).
+		await waitFor(() => expect(getByText("Card Module")).toBeDefined());
 	});
 
 	it("import docks at the list bottom, out of headerActions", async () => {
