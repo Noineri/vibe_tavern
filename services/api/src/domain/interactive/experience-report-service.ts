@@ -82,8 +82,7 @@ export class ExperienceReportService {
   }
 
   /** LB-2 (lobby report): `finishDetail` overrides the public system event
-   * text of a manual finish (restart uses it to say the match was restarted
-   * rather than simply ended); omitted = the default user-ended wording.
+   * text of a manual finish; omitted = the default user-ended wording.
    *
    * `quiet` (pending queue pos 2): end an active session WITHOUT any public
    * artifact — no report is built, no `experience_finished` step, no terminal

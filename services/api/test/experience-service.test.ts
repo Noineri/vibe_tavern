@@ -1276,7 +1276,8 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     return new ExperienceService(stores, resources, { generateSeed: () => "seed-" + (++n) });
   }
 
-  test("active source: old session interrupted with a public restarted step, slot moves to the NEW session, seed differs", async () => {
+  // ERX-4, 2026-10-27: abandoned matches close quietly; only the successor queues a start report.
+  test("active source: old session interrupted quietly, queue purged, slot moves to the NEW session, seed differs", async () => {
     await setup();
     const service = makeSeededService();
     const { chatId, branchId } = await seedChatAndScript(RESTART_ECHO_SOURCE);
@@ -1294,7 +1295,9 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     expect(old?.status).toBe("interrupted");
     expect(old?.activeSlot).toBeNull();
     const steps = await stores.experiences.getSteps(started.data.sessionId);
-    expect(steps.some((st) => st.message !== null && st.message.includes("restarted"))).toBe(true);
+    expect(steps).toHaveLength(0);
+    expect(await stores.experiences.getQueuedAttachmentForSession(started.data.sessionId)).toBeNull();
+    expect(await stores.experiences.getQueuedAttachmentForSession(restarted.data.sessionId)).not.toBeNull();
 
     expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
     const fresh = await stores.experiences.getSessionById(restarted.data.sessionId);
@@ -1328,7 +1331,8 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     expect(snapshot.data.participants).toEqual(roster);
   });
 
-  test("completed source: status and revision untouched, final report frozen, slot passes to the successor", async () => {
+  // ERX-4, 2026-10-27: rule-completed but still slot-holding matches also close quietly.
+  test("completed slot-holding source: quiet finish releases the slot and purges its queue", async () => {
     await setup();
     const service = makeSeededService();
     const { chatId, branchId } = await seedChatAndScript(SCRIPT_COMPLETION_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
@@ -1347,13 +1351,11 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     if (!restarted.ok) return;
 
     const after = await stores.experiences.getSessionById(started.data.sessionId);
-    expect(after?.status).toBe("completed");
-    expect(after?.revision).toBe(before!.revision);
+    expect(after?.status).toBe("interrupted");
+    expect(after?.revision).toBe(before!.revision + 1);
     expect(after?.activeSlot).toBeNull();
-    // Revision-zero start report (1) + the final freeze the restart performs
-    // on the still-slot-holding completed match (2).
     const frozen = await service.getQueuedAttachment(started.data.sessionId);
-    expect(frozen.ok && frozen.data?.queueRevision).toBe(2);
+    expect(frozen.ok && frozen.data).toBeNull();
     expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
   });
 
@@ -1397,6 +1399,32 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     if (!restarted.ok) return;
     const after = await stores.experiences.getEffectsForSession(started.data.sessionId);
     expect(after.every((e) => e.status === "cancelled")).toBe(true);
+  });
+
+  test("ERX-4: fix rules then restart preserves bound reports but purges the abandoned queue", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const bound = await stores.experiences.getQueuedAttachmentForSession(sid);
+    if (!bound) throw new Error("expected start report");
+    const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Played" });
+    await stores.experiences.bindAttachment(bound.id, message.id);
+    const action = await service.submitAction(sid, { type: "inc", requestId: "before-fix", expectedRevision: 0 });
+    expect(action.ok).toBe(true);
+    expect((await service.queueReport(sid, 1)).ok).toBe(true);
+    const boundBefore = await stores.experiences.getAttachmentById(bound.id);
+    const source = await stores.experiences.getSessionById(sid);
+    if (!source) throw new Error("expected source session");
+    await stores.scripts.update(source.rulesId, { code: COUNTER_SOURCE.replace('name: "Counter"', 'name: "Fixed Rules"') });
+    const restarted = await service.restartSession(sid);
+    expect(restarted.ok).toBe(true);
+    if (!restarted.ok) throw new Error("expected restart");
+    expect(restarted.data.manifest.name).toBe("Fixed Rules");
+    expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toBeNull();
+    expect(await stores.experiences.getAttachmentById(bound.id)).toEqual(boundBefore);
   });
 });
 

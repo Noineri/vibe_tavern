@@ -539,7 +539,7 @@ export class ExperienceService {
    * Restart a session as a NEW match on the same chat+branch (lobby report
    * LB-2 / Track B — "play again" / "change settings"). A restart is a
    * NEW session id, never a replay: the successor runs a fresh `create` under
-   * a NEW random seed; the source match's journal and reports are preserved.
+   * a NEW random seed; the source match's journal and bound reports are preserved.
    *
    * Resolution semantics:
    *  - settings/participants default to the source session's frozen snapshots
@@ -550,12 +550,12 @@ export class ExperienceService {
    *    context): an author's rule fix or grant change lands in the new match;
    *    a disabled or dangling script is the typed not_enabled error. The
    *    source's pinned rules snapshot is NOT replayed — new match, new rules.
-   *  - An ACTIVE source is finished first: interrupted with a public
-   *    «restarted» system step + frozen final report, the slot released
-   *    atomically with the report freeze (revision CAS — a concurrent action
+   *  - A slot-holding source is finished quietly: no public system step or
+   *    final report, and its unbound queue is purged with slot release
+   *    atomically (revision CAS — a concurrent action
    *    races to stale_revision, the caller retries); its still-pending
    *    effects are cancelled so nothing wakes into the dead match. A
-   *    completed/interrupted source is left untouched.
+   *    source with an already-released slot is left untouched.
    */
   async restartSession(sessionId: string, override?: {
     settings?: unknown;
@@ -575,7 +575,7 @@ export class ExperienceService {
 
     if (source.activeSlot !== null) {
       const finished = await this.reports.finish(sessionId, source.revision, {
-        finishDetail: "The user restarted the game — this match was ended.",
+        quiet: true,
       });
       if (!finished.ok) return finished;
       // Cancel still-pending effects of the dead match: timers would wake

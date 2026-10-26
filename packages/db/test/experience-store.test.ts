@@ -447,6 +447,31 @@ describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
     counter = 0;
   });
 
+  test("ERX-4: purge removes only this session's unbound queue, is idempotent, and participates in rollback", async () => {
+    const created = await store.createSession(baseSession());
+    if (!created.ok) throw new Error("expected a session");
+    const sid = created.session.id;
+    await seedMessage(db, "msg_purge");
+    const data = { chatId: "chat_1", branchId: "branch_1", sessionId: sid, sessionRevision: 0, queueRevision: 1,
+      kind: "report", publicEventsJson: "[]", hiddenStateCheckpointJson: "{}", rulesSourceHash: "abc123" };
+    const bound = await store.queueAttachment(data);
+    await store.bindAttachment(bound.id, "msg_purge");
+    const queued = await store.queueAttachment({ ...data, queueRevision: 2 });
+    const other = await store.queueAttachment({ ...data, sessionId: "other_session" });
+    const before = await store.getSessionById(sid);
+    expect(() => db.transaction((tx) => {
+      store.purgeUnboundAttachments(sid, tx);
+      throw new Error("rollback purge");
+    })).toThrow("rollback purge");
+    expect(await store.getAttachmentById(queued.id)).not.toBeNull();
+    store.purgeUnboundAttachments(sid);
+    store.purgeUnboundAttachments(sid);
+    expect(await store.getAttachmentById(queued.id)).toBeNull();
+    expect(await store.getAttachmentById(bound.id)).toEqual({ ...bound, boundMessageId: "msg_purge" });
+    expect(await store.getAttachmentById(other.id)).toEqual(other);
+    expect(await store.getSessionById(sid)).toEqual(before);
+  });
+
   test("active session: slot released, interrupted, revision+1, NO step, unbound attachment purged", async () => {
     const created = await store.createSession(baseSession());
     if (!created.ok) return;
