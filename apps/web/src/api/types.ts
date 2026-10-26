@@ -68,6 +68,7 @@ import type {
 	experiencePromptOverrideContentSchema,
 	experienceRecalculateRequestSchema,
 	experienceReportQueueRequestSchema,
+	experienceReportClearRequestSchema,
 	experienceStartRequestSchema,
 	experienceTestRunRequestSchema,
 	experienceTestSimulateRequestSchema,
@@ -313,6 +314,7 @@ export type ExperienceFinishRequest = ExperienceFinishRequestDto;
 export type ExperienceRestartRequest = ExperienceRestartRequestDto;
 /** POST /sessions/:id/reports/queue body (`{ expectedRevision }`). */
 export type ExperienceReportQueueRequest = z.input<typeof experienceReportQueueRequestSchema>;
+export type ExperienceReportClearRequest = z.input<typeof experienceReportClearRequestSchema>;
 /** POST /sessions/:id/undo body (`{ targetRevision }`). */
 export type ExperienceUndoRequest = z.input<typeof experienceUndoRequestSchema>;
 /** POST /sessions/:id/recalculate body (`{ rulesCode }`). */
