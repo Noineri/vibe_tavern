@@ -173,6 +173,11 @@
       },
     },
   },
+  "trustedDependencies": [
+    "esbuild",
+    "onnxruntime-node",
+    "@swc/core",
+  ],
   "overrides": {
     "esbuild@<0.19": {
       ".": "0.25.12",

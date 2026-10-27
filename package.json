@@ -61,5 +61,10 @@
     "type": "git",
     "url": "https://github.com/Noineri/vibe_tavern"
   },
-  "license": "AGPL-3.0"
+  "license": "AGPL-3.0",
+  "trustedDependencies": [
+    "@swc/core",
+    "esbuild",
+    "onnxruntime-node"
+  ]
 }
