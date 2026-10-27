@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
@@ -42,6 +42,7 @@ import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
+import { AppToaster } from "./AppToaster.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 import type { ProxyRecord } from "../../api/types.js";
@@ -557,17 +558,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
-      <Toaster
-        position={isMobile ? "top-center" : "bottom-right"}
-        toastOptions={{
-          // glass-blur is a no-op in opaque themes (--glass-blur: 0) and frosts
-          // the lava blobs behind the toast in glass themes. --glass-bg is the
-          // translucent tint tuned to survive the blur (vs --s2, which reads
-          // muddy when blurred).
-          className: "glass-blur",
-          style: { background: "var(--glass-bg)", color: "var(--t1)", border: "1px solid var(--border)" },
-        }}
-      />
+      <AppToaster />
     </div>
   );
 }
