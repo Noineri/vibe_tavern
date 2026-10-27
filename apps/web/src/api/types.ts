@@ -103,7 +103,8 @@ export type {
 type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapshot"]>;
 
 /** Message with variant data. `sceneTracker` mirrors the selected variant (swapped
- *  locally on selection); `diceRolls` is present only on user messages with bound rolls. */
+ *  locally on selection); `diceRolls` / `experienceReports` are inferred public
+ *  projections present only on user messages with bound attachments. */
 export type AppMessage = WireSessionSnapshot["messages"][number] & {
   /**
    * IG-CF10: client shadow of the message ROW's attachment set (the

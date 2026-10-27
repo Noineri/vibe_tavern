@@ -1,4 +1,4 @@
-import { type StoreContainer, type PromptPreset, type DiceRoll } from "@vibe-tavern/db";
+import { type StoreContainer, type PromptPreset } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
@@ -21,7 +21,7 @@ import {
 } from "../../shared/errors.js";
 import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
-import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
+import { buildMessagesWithVariants } from "./session-runtime-messages.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
@@ -39,7 +39,6 @@ import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./sess
 import {
 	mapChatBranch,
 	mapChatDto,
-	mapMessageDto,
 	mapPromptTraceRecord,
 } from "./session-runtime-dto.js";
 
@@ -507,27 +506,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		messages: import("@vibe-tavern/db").Message[],
 		branchId: ChatBranchId,
 	): Promise<SessionSnapshot["messages"]> {
-		// Batch-load bound Dice rolls for user messages in ONE query (the B7 batch
-		// read already used by prompt assembly). Assistant messages never carry
-		// Dice; user messages without bound rolls get nothing (field absent).
-		const userMessageIds = messages.filter((m) => m.role === "user").map((m) => m.id);
-		const [variantsByMessage, diceRollsByMessage] = await Promise.all([
-			this.stores.messages.getVariantsByBranch(branchId),
-			userMessageIds.length > 0
-				? this.stores.diceRolls.getRollsForMessages(userMessageIds)
-				: Promise.resolve(new Map<string, DiceRoll[]>()),
-		]);
-		return messages.map((message) => {
-			if (message.role !== "user") {
-				return mapMessageDto(message, variantsByMessage.get(message.id) ?? []);
-			}
-			const rolls = diceRollsByMessage.get(message.id);
-			return mapMessageDto(
-				message,
-				variantsByMessage.get(message.id) ?? [],
-				rolls && rolls.length > 0 ? rolls.map(storeRollToSnapshot) : undefined,
-			);
-		});
+		return buildMessagesWithVariants(this.stores, messages, branchId);
 	}
 
 	/** All branches for a chat, each annotated with its message count. */
