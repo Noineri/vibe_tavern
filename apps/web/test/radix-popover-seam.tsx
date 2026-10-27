@@ -95,39 +95,48 @@ export interface RadixPopoverSeamSpec {
 /** Register the shared radix-popover seam (re-registration simply owns the process until the next one). */
 export function installRadixPopoverSeam(spec: RadixPopoverSeamSpec = {}): void {
 	const stubAllRoots = spec.stubAllRoots ?? false;
-	mock.module("@radix-ui/react-popover", () => ({
-		...realPopover,
-		Root: function RadixPopoverSeamRoot(props: RootProps) {
-			const stub = stubAllRoots || props.open === undefined;
-			return (
-				<StubRootContext.Provider value={stub}>
-					{stub ? ((props.children as ReactNode) ?? null) : <RealRoot {...props} />}
-				</StubRootContext.Provider>
-			);
-		},
-		Trigger: function RadixPopoverSeamTrigger(props: TriggerProps) {
-			return useContext(StubRootContext) ? (
-				((props.children as ReactNode) ?? null)
-			) : (
-				<RealTrigger {...props} />
-			);
-		},
-		Portal: function RadixPopoverSeamPortal(props: PortalProps) {
-			return useContext(StubRootContext) ? (
-				((props.children as ReactNode) ?? null)
-			) : (
-				<RealPortal {...props} />
-			);
-		},
-		Content: function RadixPopoverSeamContent(props: ContentProps) {
-			return useContext(StubRootContext) ? (
-				<div>{props.children as ReactNode}</div>
-			) : (
-				<RealContent {...props} />
-			);
-		},
-		Anchor: function RadixPopoverSeamAnchor(props: AnchorProps) {
-			return useContext(StubRootContext) ? null : <RealAnchor {...props} />;
-		},
-	}));
+	const seamParts = new Map<object, object>([
+		[
+			RealRoot,
+			function RadixPopoverSeamRoot(props: RootProps) {
+				const stub = stubAllRoots || props.open === undefined;
+				return (
+					<StubRootContext.Provider value={stub}>
+						{stub ? ((props.children as ReactNode) ?? null) : <RealRoot {...props} />}
+					</StubRootContext.Provider>
+				);
+			},
+		],
+		[
+			RealTrigger,
+			function RadixPopoverSeamTrigger(props: TriggerProps) {
+				return useContext(StubRootContext) ? ((props.children as ReactNode) ?? null) : <RealTrigger {...props} />;
+			},
+		],
+		[
+			RealPortal,
+			function RadixPopoverSeamPortal(props: PortalProps) {
+				return useContext(StubRootContext) ? ((props.children as ReactNode) ?? null) : <RealPortal {...props} />;
+			},
+		],
+		[
+			RealContent,
+			function RadixPopoverSeamContent(props: ContentProps) {
+				return useContext(StubRootContext) ? <div>{props.children as ReactNode}</div> : <RealContent {...props} />;
+			},
+		],
+		[
+			RealAnchor,
+			function RadixPopoverSeamAnchor(props: AnchorProps) {
+				return useContext(StubRootContext) ? null : <RealAnchor {...props} />;
+			},
+		],
+	]);
+	// Radix ≥1.3 exports each part under two names bound to ONE local
+	// (`PopoverContent as Content`, `PopoverContent`), and bun's in-place slot
+	// rewrite goes through that shared binding — a by-name override is undone
+	// by whichever alias is written last. Swap every export by identity.
+	mock.module("@radix-ui/react-popover", () =>
+		Object.fromEntries(Object.entries(realPopover).map(([name, value]) => [name, seamParts.get(value) ?? value])),
+	);
 }

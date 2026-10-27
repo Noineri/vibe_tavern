@@ -1,16 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import { NoOutputGeneratedError } from "ai";
+import { APICallError, JSONParseError, TypeValidationError } from "@ai-sdk/provider";
 import { classifyProviderError, extractProviderErrorStatusCode } from "../src/infrastructure/ai/provider-error-classifier.js";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 import { DomainError } from "../src/shared/errors.js";
 
-/**
- * Coverage for Layer 1 of the provider-error-categorization reanimation.
- * Every category arm of ProviderErrorCategory has at least one mapping case,
- * plus the unwrap (RetryError → lastError), short-circuit (DomainError), and
- * conservative fall-through (unknown) paths. Error inputs are plain objects /
- * Error instances duck-typed to match AI SDK shapes — no `ai` import, mirroring
- * provider-error-message.test.ts.
- */
+/** SDK predicates, external-provider fallbacks, and classification precedence. */
 describe("classifyProviderError", () => {
   // ── 1. DomainError short-circuit (VT wrapper) ──────────────────────────
 
@@ -80,10 +75,10 @@ describe("classifyProviderError", () => {
 
   // ── 4. Empty response ──────────────────────────────────────────────────
 
-  it("classifies NoOutputGeneratedError", () => {
-    const err = new Error("No output generated. Check the stream for errors.");
-    err.name = "NoOutputGeneratedError";
-    expect(classifyProviderError(err)).toBe("empty_response");
+  it("recognizes SDK empty output independently of its message", () => {
+    expect(classifyProviderError(new NoOutputGeneratedError({
+      message: "Provider returned an empty result",
+    }))).toBe("empty_response");
   });
 
   // ── 5. APICallError status-code mapping ────────────────────────────────
@@ -224,6 +219,16 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(err)).toBe("network");
   });
 
+  it("classifies a refused proxy tunnel (Bun ERR_PROXY_TUNNEL) nested in APICallError.cause", () => {
+    const apiLike = {
+      statusCode: undefined,
+      cause: Object.assign(new Error("Proxy refused to open a tunnel: 597 Socks5 Authentication failed"), {
+        code: "ERR_PROXY_TUNNEL",
+      }),
+    };
+    expect(classifyProviderError(apiLike)).toBe("network");
+  });
+
   it("classifies 'fetch failed' message", () => {
     expect(classifyProviderError(new Error("fetch failed"))).toBe("network");
   });
@@ -251,10 +256,13 @@ describe("classifyProviderError", () => {
     }
   });
 
-  it("classifies AI SDK JSONParseError by name", () => {
-    const err = new Error("Unexpected token < in JSON");
-    err.name = "JSONParseError";
-    expect(classifyProviderError(err)).toBe("parse_error");
+  it("recognizes SDK parse and validation failures without message heuristics", () => {
+    expect(classifyProviderError(new JSONParseError({
+      text: "not-json", cause: new Error("payload rejected"),
+    }))).toBe("parse_error");
+    expect(classifyProviderError(new TypeValidationError({
+      value: {}, cause: new Error("required field missing"),
+    }))).toBe("parse_error");
   });
 
   it("classifies 'Unexpected token' message as parse_error", () => {
@@ -306,6 +314,18 @@ describe("classifyProviderError", () => {
   it("APICallError with 5xx wins over a parse-error-shaped message", () => {
     // Status code is the primary signal; message heuristic must not override it.
     expect(classifyProviderError({ statusCode: 502, message: "Unexpected token in JSON" })).toBe("server_error");
+  });
+
+  it("keeps HTTP precedence over a real SDK validation cause", () => {
+    const cause = new TypeValidationError({ value: {}, cause: new Error("required field missing") });
+    expect(classifyProviderError(new APICallError({
+      message: "Upstream failed", url: "https://provider.test", requestBodyValues: {},
+      statusCode: 502, cause,
+    }))).toBe("server_error");
+    expect(classifyProviderError(new APICallError({
+      message: "Malformed provider result", url: "https://provider.test", requestBodyValues: {},
+      cause,
+    }))).toBe("parse_error");
   });
 
   // ── ProviderExecutionError short-circuit ──────────────────────────────

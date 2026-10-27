@@ -123,12 +123,14 @@ Why the original decision missed this: the options table weighs three ways to fi
 **Decision:** `domain` → `db` / `api-contracts` / `prompt-pipeline` / `import-export` → `api` → `web`.
 
 **Rationale:**
-- **Compile-time boundary enforcement** — TypeScript catches cross-boundary imports. `prompt-pipeline` can't accidentally import from `db`.
+- **Boundary enforcement** — `arch-gate` checks dependency direction before typechecking. `prompt-pipeline` cannot import from `db`.
 - **Shared types** — `domain` is the single source of truth for all type definitions. Both frontend and backend import from it.
 - **Atomic changes** — adding a DB column touches domain → db → api-contracts → api → web in one PR. No versioning ceremony between packages.
 - **Testable in isolation** — `prompt-pipeline` is pure (no I/O, no DB). Unit tests don't need a database.
 
-**Trade-off:** More files to touch for cross-cutting changes. Acceptable because the monorepo tooling (Bun workspaces, TypeScript project references) makes navigation seamless.
+**Trade-off:** More files to touch for cross-cutting changes. Acceptable because the monorepo tooling (Bun workspaces, TypeScript path aliases) makes navigation seamless.
+
+**Build and type checking:** Bun builds the workspaces. TypeScript checks source through path aliases with shared `noEmit`; there are no composite projects, declaration builds, or duplicate typecheck-only configs.
 
 ---
 
@@ -691,6 +693,10 @@ Threads stay **script-owned with no kind column**: `experience_copilot_threads` 
 > Chat-owned threads are amended in: the shared `experience_copilot_threads` table gained the owner triple `chat_id` + `branch_id` + `agent_kind` (hard FKs with cascade), a chat-owned row stores its kind because there is no script to derive it from, and `resolveThreadKind` resolves a stored `agent_kind` through the registry before falling to the script path.
 > The kind descriptor declares the owner (`owner: "script" | "chat"`, `services/api/src/domain/agent/agent-kind.ts`), so the script and chat lifecycles can never mix; `sidechat-ooc` (the RP-chat sidechat) is the first chat-owned kind.
 > Everything else holds: one registry, internal kinds, one host registry, and the generic core and shell still carry no kind knowledge.
+
+**Tool execution:** The agent loop and both provider executors use AI SDK's `toolCallConcurrency: 1`. The SDK runs calls in emission order and continues after a failed call, replacing the tool builders' turn-local promise queues. Read-only calls within the same step are also sequential.
+
+`LoreDraftState` mutations are synchronous and compose in call order without a promise queue. Their public API still returns Promises (including validation rejections); every attempted mutation advances the revision, so failures can leave gaps but never reuse a prior snapshot's revision.
 
 **Evidence:** The second consumer landed through registration only: the `script` kind and host were added without edits to the generic core (the plan's cross-cutting goal — "what would the next consumer have to write, and does it edit anything shared?"). At HEAD the generic core's only non-comment kind spelling is the `skillRootId` label union in `agent-kind.ts`, and the shell's production files hold no kind literal (the one kind branch, `agentThreadKey`'s bare `threadId` for `experience`, lives in the registry with the localStorage-draft rationale). Pinned by `services/api/test/agent-kind-registry.test.ts` (registration, precedence, typed errors), `services/api/test/experience-copilot-kind-resolution.test.ts` (thread-to-kind resolution, per-kind dispatch, the unwired-kind 400s on both routes), `services/api/test/copilot-profile-kind.test.ts` (filtered lists, immutable kind, cross-kind rejection), `services/api/test/copilot-skill-routes.test.ts` (per-kind libraries and their isolation), the `script-agent-*` suites (assembly, tools incl. the fail-closed trust refusal, stream, compaction), and `apps/web/src/lib/agent-host-registry.test.ts` plus the shell suites, which kept their counts and assertions through the moves. The add-a-kind checklist derived from how `script` landed is `docs/architecture/agent-shell.md`; the kind pages are `docs/architecture/experience-copilot.md` and the script sections of the editor docs.
 

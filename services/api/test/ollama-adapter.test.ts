@@ -268,32 +268,45 @@ describe("Ollama adapter — doStream", () => {
     ]);
   });
 
-  it("uses the final line's usage even without a trailing newline", async () => {
-    // Given - the done object is complete but the body ends right after it.
-    mockByteChunks([
-      '{"message":{"content":"hi"},"done":false}\n',
-      '{"message":{"content":""},"done":true,"done_reason":"length","prompt_eval_count":7,"eval_count":9}',
-    ]);
+  it("reports EOF without done:true as an error and preserves partial text", async () => {
+    mockByteChunks(['{"message":{"content":"partial"},"done":false}']);
     const model = createOllamaModel({ baseURL: "http://localhost:11434", modelId: "gemma3:4b" });
-
-    // When
     const result = await model.doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
     });
     const parts: LanguageModelV3StreamPart[] = [];
     for await (const part of result.stream) parts.push(part);
-
-    // Then - token counts and the length reason survive; dropping the tail
-    // would silently report a stop with zero usage.
-    const finish = parts.at(-1);
-    expect(finish).toEqual(expect.objectContaining({
-      type: "finish",
-      finishReason: expect.objectContaining({ unified: "length" }),
-      usage: expect.objectContaining({
-        inputTokens: expect.objectContaining({ total: 7 }),
-        outputTokens: expect.objectContaining({ total: 9 }),
+    expect(parts.find((part) => part.type === "text-delta")).toMatchObject({ delta: "partial" });
+    expect(parts.some((part) => part.type === "error")).toBe(true);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "error" } });
+  });
+  it("propagates caller abort without emitting a successful finish", async () => {
+    const abort = new AbortController();
+    mockFetch = mock(async (_url: string | URL | Request, init?: RequestInit) => new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"message":{"content":"partial"},"done":false}\n'));
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        },
       }),
-    }));
+      { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+    ));
+    globalThis.fetch = mockFetch as typeof fetch;
+    const model = createOllamaModel({ baseURL: "http://localhost:11434", modelId: "gemma3:4b" });
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+      abortSignal: abort.signal,
+    });
+    let partial = "";
+    await expect((async () => {
+      for await (const part of result.stream) {
+        if (part.type === "text-delta") { partial += part.delta; abort.abort(); }
+        if (part.type === "finish") expect(part.finishReason.unified).not.toBe("stop");
+      }
+    })()).rejects.toThrow("aborted");
+    expect(partial).toBe("partial");
   });
 });
 

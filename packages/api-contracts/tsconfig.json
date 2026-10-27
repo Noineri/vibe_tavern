@@ -1,15 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "../../out/packages/api-contracts",
     "types": [
       "bun"
-    ],
-    "composite": true,
-    "tsBuildInfoFile": "../../out/tsbuildinfo/api-contracts.tsbuildinfo"
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "test/**/*.ts"
   ]
 }

@@ -167,6 +167,7 @@ export async function nonstreamingProviderExecute(
       ...samplerConfig,
       ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
       ...(providerTools ? { tools: providerTools } : {}),
+      toolCallConcurrency: 1,
       ...(providerTools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
     });
 

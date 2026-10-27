@@ -85,12 +85,13 @@ function makeFinishReason(
 
 interface OllamaChatResponse {
   model: string;
-  message: { role: string; content: string };
+  message?: { role: string; content: string };
   done: boolean;
   done_reason?: string;
   prompt_eval_count?: number;
   eval_count?: number;
   total_duration?: number;
+  error?: string;
 }
 
 export interface OllamaAdapterOptions {
@@ -302,13 +303,18 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
           textOpened = false;
           controller.enqueue({ type: "text-end", id: "0" });
         }
-        controller.enqueue({
-          type: "finish",
-          finishReason: chunk?.done_reason === "length"
-            ? makeFinishReason("length", chunk.done_reason)
-            : makeFinishReason("stop", chunk?.done_reason),
-          usage: makeUsage(chunk?.prompt_eval_count, chunk?.eval_count),
-        });
+        if (!chunk) {
+          controller.enqueue({ type: "error", error: new Error("Ollama stream ended before done:true") });
+          controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+        } else {
+          controller.enqueue({
+            type: "finish",
+            finishReason: chunk.done_reason === "length"
+              ? makeFinishReason("length", chunk.done_reason)
+              : makeFinishReason("stop", chunk.done_reason),
+            usage: makeUsage(chunk.prompt_eval_count, chunk.eval_count),
+          });
+        }
       };
 
       /** Emits the line's parts; returns true when it ended the stream. */
@@ -326,6 +332,7 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
           return false;
         }
 
+        if ("error" in chunk && typeof chunk.error === "string") throw new Error(chunk.error);
         if (chunk.done) {
           closeTextAndFinish(controller, chunk);
           return true;
@@ -352,24 +359,22 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                // A body that ends without a trailing newline leaves its last
-                // object — the one carrying done_reason and the token counts —
-                // in the buffer. Dropping it reported a bare stop with zero usage.
                 const tail = buffer;
                 buffer = "";
                 if (!consumeLine(controller, tail)) closeTextAndFinish(controller, null);
                 controller.close();
+                reader.releaseLock();
                 return;
               }
 
               buffer += value;
-              // NDJSON: split by newlines, each line is a complete JSON object
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
-
               for (const line of lines) {
                 if (consumeLine(controller, line)) {
                   controller.close();
+                  await reader.cancel();
+                  reader.releaseLock();
                   return;
                 }
               }
@@ -379,20 +384,18 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
               textOpened = false;
               controller.enqueue({ type: "text-end", id: "0" });
             }
-            if (callOptions.abortSignal?.aborted) {
-              controller.enqueue({
-                type: "finish",
-                finishReason: makeFinishReason("stop"),
-                usage: makeUsage(),
-              });
-            } else {
-              controller.enqueue({
-                type: "error",
-                error: err,
-              } satisfies LanguageModelV3StreamPart);
+            if (callOptions.abortSignal?.aborted) controller.error(err);
+            else {
+              controller.enqueue({ type: "error", error: err });
+              controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+              controller.close();
             }
-            controller.close();
+            reader.releaseLock();
           }
+        },
+        async cancel(reason) {
+          await reader.cancel(reason);
+          reader.releaseLock();
         },
       });
 

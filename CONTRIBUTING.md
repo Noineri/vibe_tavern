@@ -8,7 +8,7 @@ For the product overview, see [README.md](./README.md). For architecture deep-di
 
 ## Prerequisites
 
-- **[Bun](https://bun.sh) 1.3.x** — the only runtime. The project does not run on Node.js. The exact pin is in the [Dockerfile](./Dockerfile); install that version (or the closest available) via `bun upgrade` or your platform installer.
+- **[Bun](https://bun.sh) 1.4.4** — the only runtime. The project does not run on Node.js. Use the version pinned in [`package.json`](./package.json), the Dockerfile, and CI; upgrade with `bun upgrade` or your platform installer.
 - **Git** — the usual.
 - An **OpenAI-compatible API key** for any provider you want to talk to (configured in-app after first launch; not needed to build or run unit tests).
 

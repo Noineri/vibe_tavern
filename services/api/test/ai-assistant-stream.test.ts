@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { simulateReadableStream } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
@@ -55,6 +58,107 @@ async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
   return { db, ...base, ...overrides, db } as StreamDeps;
 }
 
+function mockModel(parts: LanguageModelV4StreamPart[]): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
+    doStream: {
+      stream: simulateReadableStream({ chunks: parts }),
+    },
+  });
+}
+
+const finishPart: LanguageModelV4StreamPart = {
+  type: "finish",
+  finishReason: { unified: "stop", raw: "stop" },
+  usage: {
+    inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+    outputTokens: { total: 1, text: 1, reasoning: 0 },
+  },
+};
+
+describe("AI assistant fullStream reasoning", () => {
+  beforeEach(() => setTokenCountFn((text) => text.length));
+  afterEach(() => setTokenCountFn(() => 0));
+
+  it("forwards native reasoning separately and still splits inline think tags", async () => {
+    const model = mockModel([
+      { type: "stream-start", warnings: [] },
+      { type: "reasoning-start", id: "reasoning-1" },
+      { type: "reasoning-delta", id: "reasoning-1", delta: "native thought" },
+      { type: "reasoning-end", id: "reasoning-1" },
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", delta: "before <think>inline thought</think> answer" },
+      { type: "text-end", id: "text-1" },
+      finishPart,
+    ]);
+    const chunks = [];
+    for await (const chunk of streamAiAssistant(
+      { mode: "lore_entry", instruction: "Write an entry", providerProfileId: "profile_1", enabledLayers: [] },
+      await deps({ resolveModel: () => model }),
+    )) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({ type: "reasoning", text: "native thought" });
+    expect(chunks).toContainEqual({ type: "reasoning", text: "inline thought" });
+    expect(chunks).toContainEqual({ type: "text", text: "before " });
+    expect(chunks).toContainEqual({ type: "text", text: " answer" });
+  });
+
+  it("parses md_import JSON from answer text, not native reasoning", async () => {
+    const model = mockModel([
+      { type: "stream-start", warnings: [] },
+      { type: "reasoning-start", id: "reasoning-1" },
+      { type: "reasoning-delta", id: "reasoning-1", delta: '{"name":"Reasoning must not parse"}' },
+      { type: "reasoning-end", id: "reasoning-1" },
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", delta: '{"name":"Answer"}' },
+      { type: "text-end", id: "text-1" },
+      finishPart,
+    ]);
+    const chunks = [];
+    for await (const chunk of streamAiAssistant(
+      { mode: "md_import", instruction: "Import this card", existingContent: "", providerProfileId: "profile_1", enabledLayers: [] },
+      await deps({ resolveModel: () => model }),
+    )) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({ type: "reasoning", text: '{"name":"Reasoning must not parse"}' });
+    expect(chunks).toContainEqual({ type: "partial_json", json: expect.objectContaining({ name: "Answer" }) });
+  });
+  it("keeps native reasoning out of lore_keys answer text", async () => {
+    const model = mockModel([
+      { type: "stream-start", warnings: [] },
+      { type: "reasoning-start", id: "reasoning-1" },
+      { type: "reasoning-delta", id: "reasoning-1", delta: '{"keys":["private"]}' },
+      { type: "reasoning-end", id: "reasoning-1" },
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", delta: '{"keys":["answer"]}' },
+      { type: "text-end", id: "text-1" },
+      finishPart,
+    ]);
+    const chunks = [];
+    for await (const chunk of streamAiAssistant(
+      { mode: "lore_keys", instruction: "Generate keys", existingContent: "Entry", providerProfileId: "profile_1", enabledLayers: [] },
+      await deps({ resolveModel: () => model }),
+    )) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({ type: "text", text: '{"keys":["answer"]}' });
+    expect(chunks.some((chunk) => chunk.type === "reasoning")).toBe(false);
+  });
+
+  it("emits SDK fullStream errors as assistant error chunks", async () => {
+    const model = mockModel([
+      { type: "stream-start", warnings: [] },
+      { type: "error", error: new Error("provider failure") },
+    ]);
+    const chunks = [];
+    for await (const chunk of streamAiAssistant(
+      { mode: "lore_entry", instruction: "Write an entry", providerProfileId: "profile_1", enabledLayers: [] },
+      await deps({ resolveModel: () => model }),
+    )) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({ type: "error", error: "provider failure" });
+  });
+
+});
+
 async function createMessageEditorRuntime() {
   const tempDir = resolve(tmpdir(), `vt-message-editor-${crypto.randomUUID().slice(0, 8)}`);
   await mkdir(resolve(tempDir, "data"), { recursive: true });
@@ -92,6 +196,7 @@ async function createMessageEditorRuntime() {
   };
   return { runtime, stores, chat, profile, chatPreset, cleanup };
 }
+
 
 describe("AI assistant stream abort", () => {
   beforeEach(() => setTokenCountFn((text) => text.length));

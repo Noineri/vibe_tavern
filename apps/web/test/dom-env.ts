@@ -92,7 +92,7 @@ function installNetworkGuard(): void {
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
-    // happy-dom 20.14.5 rejects finished on cancel but omits the spec's
+    // happy-dom (still on 21.0.4) rejects finished on cancel but omits the spec's
     // PromiseIsHandled step. Preserve the rejection for observers while
     // preventing spurious unhandled AbortErrors when Motion cancels animations.
     // https://drafts.csswg.org/web-animations-1/#canceling-an-animation-section

@@ -75,7 +75,7 @@
 
 ### On any platform with Bun (recommended)
 
-Install [Bun](https://bun.com) and run:
+Install [Bun](https://bun.com) **1.4.4 or newer** and run:
 
 ```bash
 bun install -g vibe-tavern

@@ -16,6 +16,7 @@
  * KoboldCPP's native parameter names (top_k, top_p, rep_pen, etc.).
  */
 
+import { createParser } from "eventsource-parser";
 import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
@@ -38,7 +39,7 @@ import {
   type ProviderProbeResult,
   type TestChatResult,
 } from "./provider-transport.js";
-import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import { isRecord, PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput, CompletionFormatHandoff } from "./protocol-types.js";
 import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
@@ -228,23 +229,20 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         throw new Error("KoboldCPP stream: no response body");
       }
 
-      // Parse SSE stream from KoboldCPP and convert to AI SDK V3 stream parts.
-      // LS-6d: the ai@7 streamText recorder requires the FULL protocol
-      // sequence — stream-start first, a text-start before the first delta,
-      // and a matching text-end before finish ("text part 0 not found" was
-      // the recorder rejecting bare deltas). Flags persist across pull calls.
-      // `textStream()` decodes UTF-8 and joins characters split across chunk
-      // boundaries, so only SSE line reassembly is left to do here.
+      // Parse SSE events into V3 parts using the full stream protocol sequence.
       const reader = response.textStream().getReader();
-      let buffer = "";
       let streamStarted = false;
       let textOpened = false;
+      let finishReason: LanguageModelV3FinishReason | undefined;
 
       const emitEventParts = (
         controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
         event: Record<string, unknown>,
       ) => {
         const parts = mapSSEEventToStreamParts(event);
+        if (typeof event.finish_reason === "string") {
+          finishReason = makeFinishReason(event.finish_reason === "length" ? "length" : "stop");
+        }
         if (parts.length === 0) return;
         if (!textOpened) {
           textOpened = true;
@@ -260,11 +258,13 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
           textOpened = false;
           controller.enqueue({ type: "text-end", id: "0" });
         }
-        controller.enqueue({
-          type: "finish",
-          finishReason: makeFinishReason("stop"),
-          usage: makeUsage(),
-        });
+        if (finishReason) {
+          controller.enqueue({ type: "finish", finishReason, usage: makeUsage() });
+        } else {
+          const error = new Error("KoboldCPP stream ended before a finish_reason");
+          controller.enqueue({ type: "error", error });
+          controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+        }
         controller.close();
       };
 
@@ -275,36 +275,32 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
               streamStarted = true;
               controller.enqueue({ type: "stream-start", warnings: [] });
             }
+            const parser = createParser({
+              onEvent: ({ data }) => {
+                if (finishReason) return;
+                try {
+                  const event = JSON.parse(data);
+                  if (isRecord(event)) emitEventParts(controller, event);
+                } catch {
+                  return; // Ignore malformed proxy events, as before.
+                }
+              },
+            });
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                // Flush remaining buffer
-                if (buffer.trim()) {
-                  const event = parseSSEEvent(buffer);
-                  if (event) emitEventParts(controller, event);
-                }
+                parser.feed("\n\n");
+                parser.reset();
                 closeTextAndFinish(controller);
+                reader.releaseLock();
                 return;
               }
-
-              buffer += value;
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith(":")) continue; // skip empty/comments
-
-                const event = parseSSEEvent(trimmed);
-                if (!event) continue;
-
-                emitEventParts(controller, event);
-
-                // Check for done event
-                if ("done" in event && event.done) {
-                  closeTextAndFinish(controller);
-                  return;
-                }
+              parser.feed(value);
+              if (finishReason) {
+                closeTextAndFinish(controller);
+                await reader.cancel();
+                reader.releaseLock();
+                return;
               }
             }
           } catch (err) {
@@ -312,20 +308,19 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
               textOpened = false;
               controller.enqueue({ type: "text-end", id: "0" });
             }
-            if (callOptions.abortSignal?.aborted) {
-              controller.enqueue({
-                type: "finish",
-                finishReason: makeFinishReason("stop"),
-                usage: makeUsage(),
-              });
+            if (!callOptions.abortSignal?.aborted) {
+              controller.enqueue({ type: "error", error: err });
+              controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+              controller.close();
             } else {
-              controller.enqueue({
-                type: "error",
-                error: err,
-              } satisfies LanguageModelV3StreamPart);
+              controller.error(err);
             }
-            controller.close();
+            reader.releaseLock();
           }
+        },
+        async cancel(reason) {
+          await reader.cancel(reason);
+          reader.releaseLock();
         },
       });
 
@@ -337,44 +332,12 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
   };
 }
 
-// ─── SSE parsing ─────────────────────────────────────────────────────────
-
-function parseSSEEvent(line: string): Record<string, unknown> | null {
-  // KoboldCPP SSE format: "data: {...}"
-  if (line.startsWith("data: ")) {
-    try {
-      return JSON.parse(line.slice(6));
-    } catch {
-      return null;
-    }
-  }
-  // Some events come without the "data: " prefix (raw JSON)
-  if (line.startsWith("{")) {
-    try {
-      return JSON.parse(line);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 function mapSSEEventToStreamParts(
   event: Record<string, unknown>,
 ): LanguageModelV3StreamPart[] {
-  // Token event: { "token": " word" }
-  if ("token" in event && typeof event.token === "string") {
-    return [{ type: "text-delta", id: "0", delta: event.token }];
-  }
-
-  // Done event: { "text": "...", "done": true }
-  if ("done" in event && event.done) {
-    // The done event may include the full accumulated text, but we've
-    // already streamed all tokens — nothing more to emit.
-    return [];
-  }
-
-  return [];
+  return typeof event.token === "string" && event.token
+    ? [{ type: "text-delta", id: "0", delta: event.token }]
+    : [];
 }
 
 // ─── Tokenize (LS-1a) ───────────────────────────────────────────────────

@@ -12,7 +12,7 @@
  * surfaces — adapted from {@link buildCoauthorTools}.
  *
  * AS-2c SPLIT: the buffer-tool MECHANISM (working state, first-mutation guard,
- * validation plumbing, mutation queue, empty-content rejection) lives in
+ * validation plumbing and empty-content rejection) lives in
  * `domain/agent/agent-buffer-tools.ts` (`createBufferTools`); this module is
  * the EXPERIENCE wiring — buffer ids, description fragments (byte-identical
  * to the pre-AS-2c strings), the rules validator, and the seeds — plus the
@@ -36,9 +36,9 @@
  * The model may call several tools per turn; the AI SDK multi-step loop feeds
  * results back so the model stays coherent (bounded only by the nominal
  * `COPILOT_TOOL_LOOP_CEILING` — the profile `maxSteps` was removed in TAG-4).
- * The closure working-state composes across calls in one turn (a later call
- * sees earlier mutations), serialized through a non-poisoning queue so a
- * rejected call cannot corrupt the buffers or block a later one.
+ * The closure working-state composes across calls in one turn. The generic
+ * agent loop serializes execution through AI SDK's `toolCallConcurrency: 1`;
+ * rejected calls leave the last good buffer intact.
  *
  * SS-4B trust gate (SCRIPT_SAFETY_PLAN decision 10): while the thread's
  * script is UNTRUSTED (imported and never enabled — the stream passes
@@ -364,22 +364,6 @@ export function buildExperienceCopilotTools(opts: {
     };
   }
 
-  // ── Turn-local serialization queue ─────────────────────────────────────────
-  // AS-2c: the buffer tools serialize on the generic factory's OWN queue
-  // (agent-buffer-tools.ts); this one remains for the `todo` tool's
-  // full-list rewrite. The two queues guard DISJOINT state (buffers vs the
-  // thread checklist), so per-queue serialization preserves every observable
-  // ordering that existed under the single shared chain.
-  let turnChain: Promise<unknown> = Promise.resolve();
-
-  /** Serialize a mutation onto the turn queue (non-poisoning: a rejected
-   *  call is swallowed so the next call runs against the last good state). */
-  function runQueued<T>(fn: () => Promise<T>): Promise<T> {
-    const result = turnChain.catch(() => undefined).then(fn);
-    turnChain = result.then(() => undefined, () => undefined);
-    return result;
-  }
-
   /**
    * Rules-validation guard (inside write_buffer/edit_buffer when
    * target==="rules"). Runs the PROPOSED rules source through a create-only
@@ -432,12 +416,7 @@ export function buildExperienceCopilotTools(opts: {
   });
 
   // ── Buffer tools through the generic factory (AS-2c) ────────────────────────
-  // The MECHANISM (working state, first-mutation guard, validation plumbing,
-  // mutation queue, empty-content rejection) lives in agent-buffer-tools.ts;
-  // this wiring supplies the EXPERIENCE copy — the description fragments below
-  // reproduce the pre-AS-2c tool strings BYTE-EXACTLY (pinned by the tools
-  // suite's description pins), including the rules-vs-visual validation
-  // sentences and the SS-4B marker flow through makeOutput.
+  // Buffer validation and working state are shared with the script-agent kind.
   const bufferTools = createBufferTools({
     bufferIds: ["rules", "visual"],
     seeds: {
@@ -627,7 +606,7 @@ export function buildExperienceCopilotTools(opts: {
 
     ...agentPlanTools,
 
-    todo: createCopilotTodoTool({ save: saveTodo, enqueue: runQueued }),
+    todo: createCopilotTodoTool({ save: saveTodo }),
 
     // forks: 1 — agent/script-agent/script-agent-tools.ts (AS-7: the script kind's
     // ask_user — description/schema/refine byte-identical to this original).

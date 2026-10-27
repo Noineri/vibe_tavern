@@ -156,7 +156,7 @@ async function withEnv(options: EnvOptions, run: (env: {
               yield { type: "text-delta" as const, delta: "A reply" };
             })(),
             text: Promise.resolve("A reply"), reasoning: Promise.resolve(undefined),
-            finished: Promise.resolve({ finishReason: "stop" }), hasRedactedReasoning: false,
+            finished: Promise.resolve({ finishReason: "stop" }),
             providerResponse: { mode: "stream", steps: [] },
           };
         },

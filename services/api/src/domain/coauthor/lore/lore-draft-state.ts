@@ -12,9 +12,8 @@
  * `coauthor-tools.ts`, applied to a structured graph):
  *  - Every successful mutation returns the COMPLETE cumulative bundle, so
  *    last-proposal aggregation can never discard earlier entries or fields.
- *  - Mutations serialize through one non-poisoning queue: same-step calls
- *    compose deterministically, and a rejected call is discarded without
- *    poisoning the queue or corrupting the last good state.
+ *  - Mutations are synchronous and compose in call order; validation failures
+ *    reject their Promise without corrupting the last good state.
  *  - Parent references are validated BEFORE the snapshot advances: a
  *    `create_lore_entry` whose `lorebookId` is absent from the draft is
  *    rejected and leaves all prior draft state intact.
@@ -235,37 +234,19 @@ export class LoreDraftState {
 	private readonly entryBaselines = new Map<string, CoauthorDraftLoreEntry>();
 	/** Monotonic revision emitted with every cumulative snapshot. */
 	private revision = 0;
-	private chain: Promise<unknown> = Promise.resolve();
 
 	constructor(private readonly deps: LoreDraftDeps) {}
 
-	/**
-	 * Serialize a lore mutation onto the turn queue (non-poisoning). Mirrors the
-	 * profile queue in `coauthor-tools.ts`: a prior rejection is swallowed so
-	 * this call runs regardless, and this call's own outcome never blocks a
-	 * later queued call. The state mutation is synchronous and pure; the queue
-	 * exists so same-step tool calls (issued without awaiting) compose in call
-	 * order rather than racing on the maps.
-	 */
-	private runQueued<T>(fn: () => T): Promise<T> {
-		const result = this.chain.catch(() => undefined).then(() => {
-			// Advance before the mutation snapshots state, making every successful
-			// output's revision an atomic ordering token. A rejected operation may
-			// leave a gap, but no output carries that revision and later snapshots
-			// remain strictly newer than every prior successful snapshot.
-			this.revision += 1;
-			return fn();
-		});
-		this.chain = result.then(
-			() => undefined,
-			() => undefined,
-		);
-		return result;
+	/** Synchronous mutations cannot interleave; keep Promise rejection semantics. */
+	private async mutate<T>(fn: () => T): Promise<T> {
+		// Failed mutations may leave revision gaps, but never reuse a revision.
+		this.revision += 1;
+		return fn();
 	}
 
 	/** Allocate a draft lorebook and return the full cumulative bundle. */
 	createLorebook(input: CreateLorebookInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			if (!input.name.trim()) {
 				throw new Error("create_lorebook: name must not be empty");
 			}
@@ -294,7 +275,7 @@ export class LoreDraftState {
 	 * rejection leaves all prior draft state intact.
 	 */
 	createLoreEntry(input: CreateLoreEntryInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			if (!this.lorebooks.has(input.lorebookId)) {
 				throw new Error(
 					`create_lore_entry: parent lorebook '${input.lorebookId}' does not exist in the draft`,
@@ -314,7 +295,7 @@ export class LoreDraftState {
 	 * co-author can add an entry to a previously-created book across turns.
 	 */
 	addLoreEntry(input: CreateLoreEntryInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const [id, entry] = this.appendEntry(input);
 			this.entries.set(id, entry);
 			return this.snapshot();
@@ -350,7 +331,7 @@ export class LoreDraftState {
 	 * earlier snapshots stay stable). Rejects if the entry is absent.
 	 */
 	setLoreActivation(input: SetLoreActivationInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const existing = this.entries.get(input.entryId);
 			if (!existing) {
 				throw new Error(
@@ -373,7 +354,7 @@ export class LoreDraftState {
 	 * returns generated prose. Rejects if the entry is absent.
 	 */
 	setLoreEntryContent(input: SetLoreEntryContentInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const existing = this.entries.get(input.entryId);
 			if (!existing) {
 				throw new Error(
@@ -391,7 +372,7 @@ export class LoreDraftState {
 	 * returns suggested keywords. Rejects if the entry is absent.
 	 */
 	setLoreEntryKeys(input: SetLoreEntryKeysInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const existing = this.entries.get(input.entryId);
 			if (!existing) {
 				throw new Error(
@@ -426,7 +407,7 @@ export class LoreDraftState {
 	 * a node reaching here is known to exist in the DB.
 	 */
 	importLorebook(node: CoauthorDraftLorebook): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const { settingChanges: _settingChanges, ...baseline } = node;
 			this.lorebookBaselines.set(node.id, baseline);
 			this.lorebooks.set(node.id, { ...baseline, mode: "edit" });
@@ -436,7 +417,7 @@ export class LoreDraftState {
 
 	/** CE-B1: upsert an entry node as an EDIT target (force mode "edit"). */
 	importEntry(node: CoauthorDraftLoreEntry): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			// A persisted entry's parent is itself persisted and intentionally need
 			// not appear as a no-op lorebook node in the proposal bundle.
 			const { settingChanges: _settingChanges, ...baseline } = node;
@@ -453,7 +434,7 @@ export class LoreDraftState {
 	 * absent from the draft.
 	 */
 	editLorebook(input: EditLorebookInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const existing = this.lorebooks.get(input.id);
 			if (!existing) {
 				throw new Error(`edit_lorebook: lorebook '${input.id}' does not exist in the draft`);
@@ -472,7 +453,7 @@ export class LoreDraftState {
 	 * Immutable replace; preserves `mode`. Rejects if the entry is absent.
 	 */
 	editLoreEntry(input: EditLoreEntryInput): Promise<CoauthorLoreBundle> {
-		return this.runQueued(() => {
+		return this.mutate(() => {
 			const existing = this.entries.get(input.id);
 			if (!existing) {
 				throw new Error(`edit_lore_entry: entry '${input.id}' does not exist in the draft`);

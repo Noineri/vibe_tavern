@@ -590,6 +590,7 @@ export async function* streamAgentTurn<
       allowSystemInMessages: true,
       abortSignal: signal,
       tools,
+      toolCallConcurrency: 1,
       // TAG-5 split-turn (style B), generalized by SC-23e: a turn ENDS on a
       // "waits for the user" tool — the kind's stop conditions (absent →
       // the mechanism default, `ask_user` alone, so the pre-SC-23e kinds keep

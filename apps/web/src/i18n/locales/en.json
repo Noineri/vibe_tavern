@@ -1543,7 +1543,6 @@
 	"mobile_access_enable": "Enable",
 	"back": "← Back",
 	"reasoning": "Reasoning",
-	"reasoning_redacted": "Model used internal reasoning",
 	"coauthor_tool_activity": "AI edits",
 	"coauthor_tool_streaming": "editing…",
 	"coauthor_tool_proposed": "Proposed change",
