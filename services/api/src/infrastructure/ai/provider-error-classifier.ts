@@ -1,28 +1,18 @@
 /**
- * Classifies an arbitrary error thrown during provider request execution into a
- * {@link ProviderErrorCategory}. Pure, no I/O, no `ai` package import — the AI
- * SDK error shapes (`APICallError`, `RetryError`) are duck-typed, mirroring the
- * approach in `provider-error-message.ts` so the two modules stay testable in
- * isolation and free of runtime SDK coupling.
- *
- * This is Layer 1 of the provider-error-categorization reanimation. It makes
- * the dormant `ProviderErrorCategory` union reachable; layers 2–4 (throw sites
- * in the execution boundary, SSE wire field, UI surfacing) build on top of it.
- * See `vibe_tavern_plan/reports/provider-error-categorization-reanimation.md`.
- *
- * Resolution order matters: RetryError is unwrapped first (its `lastError`
- * carries the real APICallError), DomainError short-circuits on the VT-side
- * kinds it already encodes, and the AI SDK status-code mapping is the workhorse.
- * Fall-throughs are deliberately conservative — `unknown` rather than a guess.
+ * Classify SDK and external-provider errors into stable UI categories.
+ * Retry wrappers and VT errors take precedence over HTTP status mapping;
+ * network/message heuristics cover non-SDK provider failures.
  */
 
+import { NoOutputGeneratedError } from "ai";
+import { APICallError, JSONParseError, TypeValidationError } from "@ai-sdk/provider";
 import { isRecord } from "@vibe-tavern/domain";
 
 import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ProviderErrorCategory } from "./provider-execution-types.js";
 import { isDomainError } from "../../shared/errors.js";
 
-// ─── duck-typed AI SDK error shapes (no `ai` import) ───────────────────────
+// ─── external-provider error shapes ───────────────────────────────────────
 
 interface ApiCallErrorLike {
   statusCode?: number;
@@ -51,6 +41,7 @@ function asRetryError(error: unknown): RetryErrorLike | null {
 }
 
 function asApiCallError(error: unknown): ApiCallErrorLike | null {
+  if (APICallError.isInstance(error)) return error;
   if (!isRecord(error)) return null;
   // APICallError carries statusCode as a number; presence of other SDK fields
   // strengthens the match but statusCode alone is sufficient and is what the
@@ -112,16 +103,16 @@ function isAbortError(error: unknown): boolean {
 }
 
 function isNoOutputGenerated(error: unknown): boolean {
+  if (NoOutputGeneratedError.isInstance(error)) return true;
   if (!isRecord(error)) return false;
-  if (error.name === "NoOutputGeneratedError") return true;
   if (typeof error.message === "string" && /no output generated/i.test(error.message)) return true;
   return false;
 }
 
 function isParseError(error: unknown): boolean {
+  if (JSONParseError.isInstance(error) || TypeValidationError.isInstance(error)) return true;
   if (error instanceof SyntaxError) return true;
   if (isRecord(error)) {
-    if (error.name === "JSONParseError" || error.name === "TypeValidationError") return true;
     if (typeof error.message === "string" && /unexpected token|invalid json|json parse|unexpected end of json/i.test(error.message)) return true;
   }
   return false;
