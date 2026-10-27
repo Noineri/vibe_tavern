@@ -132,7 +132,7 @@ export async function generateRegexAssist(
     for await (const chunk of result.textStream) fullText += chunk;
   } else {
     const aiModel = deps.resolveModel(effectiveProfile, modelName, await resolveProviderFetchForProfile(effectiveProfile));
-    const result = await streamText({ ...streamOpts, model: aiModel });
+    const result = streamText({ ...streamOpts, model: aiModel });
     for await (const chunk of result.textStream) fullText += chunk;
   }
   const json = extractJsonFromText(fullText);

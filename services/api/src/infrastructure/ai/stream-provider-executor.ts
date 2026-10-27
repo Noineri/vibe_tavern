@@ -100,9 +100,6 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       finished,
       text,
       reasoning,
-      get hasRedactedReasoning() {
-        return state.hasRedacted;
-      },
       sentConfig,
       providerResponse: state.providerResponse,
     };

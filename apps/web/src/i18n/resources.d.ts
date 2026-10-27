@@ -2660,7 +2660,6 @@ export default interface Resources {
     "ready_to_import": "Ready to import: {name}",
     "reasoning": "Reasoning",
     "reasoning_effort": "Reasoning Effort",
-    "reasoning_redacted": "Model used internal reasoning",
     "recursion_level_hint": "Higher levels activate later in recursion chain. Level 1 activates first, then 2, etc.",
     "refresh_models": "Refresh Models",
     "refresh_models_vision_hint": "Refresh models to see vision-capable options",

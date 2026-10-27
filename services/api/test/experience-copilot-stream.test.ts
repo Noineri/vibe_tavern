@@ -629,7 +629,7 @@ describe("experience-copilot stream (ER-6)", () => {
     streamTextImpl = () =>
       makeFakeStreamTextResult({
         parts: [
-          ({ type: "reasoning-delta", delta: "thinking..." }),
+          ({ type: "reasoning-delta", text: "thinking..." }),
           textDelta("answer"),
         ],
       });

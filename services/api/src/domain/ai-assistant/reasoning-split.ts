@@ -1,11 +1,9 @@
 import type { AiAssistantStreamChunk } from "@vibe-tavern/api-contracts";
-import { REASONING_END_MARKER, REASONING_START_MARKER } from "../providers/openai-reasoning-fetch.js";
 
 export type { AiAssistantStreamChunk };
 
 export interface ReasoningSplitState {
   buffer: string;
-  insideMarkerReasoning: boolean;
   insideThinkTag: boolean;
 }
 
@@ -70,24 +68,10 @@ export function splitReasoningFromText(
       continue;
     }
 
-    if (state.insideMarkerReasoning) {
-      const endIndex = state.buffer.indexOf(REASONING_END_MARKER);
-      if (endIndex === -1) {
-        const keep = options.flush ? 0 : partialPrefixLength(state.buffer, [REASONING_END_MARKER]);
-        const emitLength = state.buffer.length - keep;
-        pushChunk(out, "reasoning", state.buffer.slice(0, emitLength));
-        state.buffer = state.buffer.slice(emitLength);
-        break;
-      }
-      pushChunk(out, "reasoning", state.buffer.slice(0, endIndex));
-      state.buffer = state.buffer.slice(endIndex + REASONING_END_MARKER.length);
-      state.insideMarkerReasoning = false;
-      continue;
-    }
 
-    const token = findEarliestToken(state.buffer, [REASONING_START_MARKER, THINK_START]);
+    const token = findEarliestToken(state.buffer, [THINK_START]);
     if (!token) {
-      const keep = options.flush ? 0 : partialPrefixLength(state.buffer, [REASONING_START_MARKER, THINK_START]);
+      const keep = options.flush ? 0 : partialPrefixLength(state.buffer, [THINK_START]);
       const emitLength = state.buffer.length - keep;
       pushChunk(out, "text", state.buffer.slice(0, emitLength));
       state.buffer = state.buffer.slice(emitLength);
@@ -97,11 +81,6 @@ export function splitReasoningFromText(
     pushChunk(out, "text", state.buffer.slice(0, token.index));
     state.buffer = state.buffer.slice(token.index);
 
-    if (state.buffer.startsWith(REASONING_START_MARKER)) {
-      state.buffer = state.buffer.slice(REASONING_START_MARKER.length);
-      state.insideMarkerReasoning = true;
-      continue;
-    }
 
     const thinkTagEnd = state.buffer.indexOf(">");
     if (thinkTagEnd === -1) break;

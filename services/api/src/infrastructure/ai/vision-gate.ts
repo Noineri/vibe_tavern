@@ -59,7 +59,6 @@ export async function resolveVisionDescribePrompt(db: AppDb): Promise<string> {
 function stripReasoning(fullText: string): string {
   const state: ReasoningSplitState = {
     buffer: "",
-    insideMarkerReasoning: false,
     insideThinkTag: false,
   };
   let text = "";

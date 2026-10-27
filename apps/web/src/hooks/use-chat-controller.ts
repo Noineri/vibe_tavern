@@ -234,7 +234,7 @@ export function useChatController(): ChatControllerActions {
       onStatus: (status: ChatGenerationStatus) => void;
       onChunk: (delta: string) => void;
       onReasoningChunk?: (delta: string) => void;
-      onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+      onReasoningDone?: (info: { durationMs: number | null }) => void;
       onGenerationMetadata?: (info: GenerationMetadata) => void;
       onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;

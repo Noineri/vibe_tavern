@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { NoOutputGeneratedError } from "ai";
+import { NoOutputGeneratedError, type TextStreamPart, type ToolSet } from "ai";
 import {
   createMappedStream,
   mapFinish,
@@ -10,7 +10,7 @@ import {
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 /** Create an async iterable from an array of stream parts. */
-async function* fromParts(parts: unknown[]): AsyncGenerator<unknown, void, unknown> {
+async function* fromParts(parts: TextStreamPart<ToolSet>[]): AsyncGenerator<TextStreamPart<ToolSet>, void, unknown> {
   for (const p of parts) yield p;
 }
 
@@ -27,9 +27,9 @@ async function collect(stream: AsyncGenerator<unknown>): Promise<unknown[]> {
 
 describe("createMappedStream", () => {
   it("yields text-delta chunks", async () => {
-    const parts = [
-      { type: "text-delta", text: "Hello " },
-      { type: "text-delta", text: "world" },
+    const parts: TextStreamPart<ToolSet>[] = [
+      { type: "text-delta", id: "text-1", text: "Hello " },
+      { type: "text-delta", id: "text-1", text: "world" },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
@@ -43,7 +43,7 @@ describe("createMappedStream", () => {
     // AI SDK v7 TextStreamReasoningDeltaPart carries the text in `text`, NOT
     // `delta` — this regression test pins the real v7 shape (a hand-cast hid
     // the rename and silently dropped ALL reasoning).
-    const parts = [
+    const parts: TextStreamPart<ToolSet>[] = [
       { type: "reasoning-delta", id: "r1", text: "thinking..." },
     ];
     const { stream } = createMappedStream(fromParts(parts));
@@ -53,38 +53,13 @@ describe("createMappedStream", () => {
     ]);
   });
 
-  it("still yields native reasoning-delta chunks from the legacy `delta` field", async () => {
-    const parts = [
-      { type: "reasoning-delta", delta: "thinking..." },
-    ];
-    const { stream } = createMappedStream(fromParts(parts));
-    const chunks = await collect(stream);
-    expect(chunks).toEqual([
-      { type: "reasoning-delta", textDelta: "thinking..." },
-    ]);
-  });
-
-  it("converts marker-wrapped text into reasoning-delta", async () => {
-    const parts = [
-      { type: "text-delta", text: "\x02REASONING_START\x03" },
-      { type: "text-delta", text: "inner thought" },
-      { type: "text-delta", text: "\x02REASONING_END\x03" },
-      { type: "text-delta", text: "final answer" },
-    ];
-    const { stream } = createMappedStream(fromParts(parts));
-    const chunks = await collect(stream);
-    expect(chunks).toEqual([
-      { type: "reasoning-delta", textDelta: "inner thought" },
-      { type: "text-delta", delta: "final answer" },
-    ]);
-  });
 
   it("yields tool-call chunks with args and replay-critical provider metadata", async () => {
     // AI SDK v6 fullStream `tool-call` carries parsed args as `input` and
     // provider-specific replay data as `providerMetadata`. Gemini 3 places its
     // thoughtSignature there; dropping it makes the next request replay the
     // functionCall without its reasoning signature.
-    const parts = [
+    const parts: TextStreamPart<ToolSet>[] = [
       {
         type: "tool-call",
         toolCallId: "tc_1",
@@ -109,8 +84,8 @@ describe("createMappedStream", () => {
   it("yields tool-result chunks carrying the execute() output payload", async () => {
     // AI SDK v6 puts the execute() return value on `output`; there is no `isError` flag
     // (failures arrive as a separate `tool-error` part — see the next test).
-    const parts = [
-      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", output: { roll: 4 } },
+    const parts: TextStreamPart<ToolSet>[] = [
+      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", input: { sides: 6 }, output: { roll: 4 } },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
@@ -120,8 +95,8 @@ describe("createMappedStream", () => {
   });
 
   it("normalizes a tool-error part into a tool-result chunk with isError + error payload", async () => {
-    const parts = [
-      { type: "tool-error", toolCallId: "tc_2", toolName: "write_profile", error: new Error("invalid heading") },
+    const parts: TextStreamPart<ToolSet>[] = [
+      { type: "tool-error", toolCallId: "tc_2", toolName: "write_profile", input: {}, error: new Error("invalid heading") },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
@@ -133,10 +108,10 @@ describe("createMappedStream", () => {
   it("forwards tool-input-start and tool-input-delta (progressive tool-arg streaming)", async () => {
     // AI SDK streams tool args as: tool-input-start (toolName) → N× tool-input-delta (inputTextDelta)
     // → final tool-call. Co-Author forwards these so the UI can render the model writing the document.
-    const parts = [
+    const parts: TextStreamPart<ToolSet>[] = [
       { type: "tool-input-start", id: "tc_3", toolName: "write_profile" },
-      { type: "tool-input-delta", id: "tc_3", inputTextDelta: "{\"profileMd\":\"# P" },
-      { type: "tool-input-delta", id: "tc_3", inputTextDelta: "ERSONALITY\"}" },
+      { type: "tool-input-delta", id: "tc_3", delta: "{\"profileMd\":\"# P" },
+      { type: "tool-input-delta", id: "tc_3", delta: "ERSONALITY\"}" },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
@@ -147,21 +122,11 @@ describe("createMappedStream", () => {
     ]);
   });
 
-  it("skips tool-call without toolCallId or toolName", async () => {
-    const parts = [
-      { type: "tool-call", toolCallId: undefined, toolName: "roll_dice", input: {} },
-      { type: "tool-call", toolCallId: "tc_1", toolName: undefined, input: {} },
-      { type: "text-delta", text: "ok" },
-    ];
-    const { stream } = createMappedStream(fromParts(parts));
-    const chunks = await collect(stream);
-    expect(chunks).toEqual([{ type: "text-delta", delta: "ok" }]);
-  });
 
   it("throws on error parts with errorText", async () => {
-    const parts = [
-      { type: "text-delta", text: "partial" },
-      { type: "error", errorText: "Rate limited" },
+    const parts: TextStreamPart<ToolSet>[] = [
+      { type: "text-delta", id: "text-1", text: "partial" },
+      { type: "error", error: new Error("Rate limited") },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     try {
@@ -173,7 +138,7 @@ describe("createMappedStream", () => {
   });
 
   it("throws on error parts with nested error object", async () => {
-    const parts = [
+    const parts: TextStreamPart<ToolSet>[] = [
       { type: "error", error: { data: { error: { message: "Quota exceeded" } } } },
     ];
     const { stream } = createMappedStream(fromParts(parts));
@@ -185,19 +150,9 @@ describe("createMappedStream", () => {
     }
   });
 
-  it("tracks hasRedacted when redacted-reasoning part appears", async () => {
-    const parts = [
-      { type: "text-delta", text: "visible" },
-      { type: "redacted-reasoning" },
-    ];
-    const { stream, state } = createMappedStream(fromParts(parts));
-    const chunks = await collect(stream);
-    expect(chunks).toEqual([{ type: "text-delta", delta: "visible" }]);
-    expect(state.hasRedacted).toBe(true);
-  });
 
   it("collects raw provider chunks and response metadata per model step", async () => {
-    const parts = [
+    const parts: TextStreamPart<ToolSet>[] = [
       { type: "start-step", request: {}, warnings: [] },
       { type: "raw", rawValue: { id: "chunk_1", delta: "Hel" } },
       { type: "raw", rawValue: { id: "chunk_2", delta: "lo" } },
@@ -212,12 +167,19 @@ describe("createMappedStream", () => {
             "set-cookie": "session=secret",
           },
         },
-        usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+        usage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 2,
+          outputTokenDetails: { textTokens: 1, reasoningTokens: 1 },
+          totalTokens: 12,
+        },
         finishReason: "tool-calls",
+        performance: { effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: undefined, inputTokensPerSecond: undefined, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, responseTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
         rawFinishReason: "tool_calls",
         providerMetadata: { google: { thoughtSignature: "sig_1" } },
       },
-      { type: "start-step", request: {}, warnings: [] },
+      { type: "start-step", request: { messages: [] }, warnings: [] },
       { type: "raw", rawValue: { id: "chunk_3", delta: "Done" } },
       {
         type: "finish-step",
@@ -227,8 +189,15 @@ describe("createMappedStream", () => {
           modelId: "model-a",
           headers: { "retry-after": "2" },
         },
-        usage: { inputTokens: 20, outputTokens: 1, totalTokens: 21 },
+        usage: {
+          inputTokens: 20,
+          inputTokenDetails: { noCacheTokens: 20, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 1,
+          outputTokenDetails: { textTokens: 1, reasoningTokens: undefined },
+          totalTokens: 21,
+        },
         finishReason: "stop",
+        performance: { effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: undefined, inputTokensPerSecond: undefined, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, responseTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
         rawFinishReason: "stop",
         providerMetadata: undefined,
       },
@@ -271,12 +240,11 @@ describe("createMappedStream", () => {
     });
   });
 
-  it("ignores unknown part types", async () => {
-    const parts = [
-      { type: "source", url: "https://example.com" },
-      { type: "text-start" },
-      { type: "text-delta", text: "hello" },
-      { type: "text-end" },
+  it("ignores text lifecycle parts", async () => {
+    const parts: TextStreamPart<ToolSet>[] = [
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", text: "hello" },
+      { type: "text-end", id: "text-1" },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);

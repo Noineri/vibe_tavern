@@ -86,26 +86,16 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 export interface MessageReasoningSlotExtra {
 	reasoning: string | null | undefined;
 	reasoningDurationMs?: number | null;
-	redacted?: boolean;
 	/** Which visual preset to render. Defaults to `"rich"`. */
 	variant?: ReasoningVariant;
 }
 
 interface MessageReasoningProps {
-	/** The reasoning text content (may be empty for redacted reasoning). */
+	/** The reasoning text content. */
 	reasoning: string | null | undefined;
 	/** Duration of the reasoning phase in milliseconds. */
 	reasoningDurationMs?: number | null;
-	/** If true, the model used reasoning but the content was redacted. */
-	redacted?: boolean;
-	/**
-	 * Visual preset — see {@link ReasoningVariant}. Defaults to `"rich"`.
-	 */
 	variant?: ReasoningVariant;
-	/**
-	 * Expand the block on first render instead of defaulting to collapsed.
-	 * Used by the dev ThemeTuner to show reasoning styling without an extra click.
-	 */
 	defaultOpen?: boolean;
 }
 
@@ -114,7 +104,7 @@ interface MessageReasoningProps {
  * above the main message content. Collapsed by default.
  *
  * Three visual presets via the `variant` prop — see {@link ReasoningVariant}.
- * For redacted reasoning: shows placeholder text instead of reasoning content.
+ *
  */
 function getReasoningSlotExtra(ctx: MessageSlotContext): MessageReasoningSlotExtra | null {
 	const value = ctx.extras.reasoning;
@@ -130,7 +120,7 @@ registerMessageSlot({
 	visible: (ctx) => {
 		const data = getReasoningSlotExtra(ctx);
 		if (!data) return false;
-		return Boolean(data.redacted || data.reasoning?.trim() || data.reasoningDurationMs);
+		return Boolean(data.reasoning?.trim() || data.reasoningDurationMs);
 	},
 	render: (ctx) => {
 		const data = getReasoningSlotExtra(ctx);
@@ -139,7 +129,6 @@ registerMessageSlot({
 			<MessageReasoning
 				reasoning={data.reasoning}
 				reasoningDurationMs={data.reasoningDurationMs}
-				redacted={data.redacted}
 				variant={data.variant}
 			/>
 		);
@@ -149,7 +138,6 @@ registerMessageSlot({
 export function MessageReasoning({
 	reasoning,
 	reasoningDurationMs,
-	redacted,
 	variant = "rich",
 	defaultOpen = false,
 }: MessageReasoningProps) {
@@ -162,7 +150,7 @@ export function MessageReasoning({
 	const durationLabel = hasDuration ? `(${(reasoningDurationMs! / 1000).toFixed(1)}s)` : "";
 
 	// No reasoning at all — don't render
-	if (!hasContent && !redacted && !hasDuration) return null;
+	if (!hasContent && !hasDuration) return null;
 
 	return (
 		<div className={s.container}>
@@ -180,11 +168,11 @@ export function MessageReasoning({
 			<AnimatedDisclosure open={open} className={s.bodyWrapper}>
 				{s.bodyAs === "markdown" ? (
 					<div translate="yes" className={s.bodyText}>
-						{hasContent ? <Markdown text={reasoning} /> : t("reasoning_redacted")}
+						{reasoning ? <Markdown text={reasoning} /> : null}
 					</div>
 				) : (
 					<pre translate="yes" className={s.bodyText}>
-						{hasContent ? reasoning : t("reasoning_redacted")}
+						{reasoning}
 					</pre>
 				)}
 			</AnimatedDisclosure>

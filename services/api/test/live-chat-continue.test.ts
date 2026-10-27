@@ -203,7 +203,6 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
           finished: Promise.resolve({ finishReason: "stop" }),
           text: Promise.resolve(" and more."),
           reasoning: Promise.resolve(undefined),
-          hasRedactedReasoning: false,
           providerResponse: {},
         } as ProviderStreamResult;
       },
