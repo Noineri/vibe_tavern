@@ -730,6 +730,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
             modalOpen ? (
               <ExperienceReportControls
                 key={surfaceKey ?? undefined}
+                layout="footer"
                 queuedAttachment={queuedAttachment}
                 reportStatus={reportStatus}
                 onQueue={handleQueueReport}

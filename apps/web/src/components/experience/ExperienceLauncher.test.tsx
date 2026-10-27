@@ -1044,7 +1044,8 @@ describe("ExperienceLauncher — defect #3: popup error clears on close/resume",
 // ─── IR-73C: report controls — no silent growth integration boundary ──────
 // The frozen queued snapshot must NEVER grow locally. All values and mutations
 // come from the store (server-authoritative). The t mock appends opts JSON so
-// server-supplied counts / revisions are verifiable in the DOM.
+// server-supplied counts are verifiable in the DOM. 2026-10-27 ERX-10:
+// count uses the plural `count` param; technical revisions are no longer shown.
 describe("ExperienceLauncher — report controls (IR-73C)", () => {
   function makeAttachment(events: number, queueRev: number, sessionRev = 7) {
     return {
@@ -1068,8 +1069,9 @@ describe("ExperienceLauncher — report controls (IR-73C)", () => {
     const { getByTestId } = render(<ExperienceLauncher />);
     fireEvent.click(getByTestId("experience-launcher-pill"));
     // Frozen shows N=2, queueRev Q=5 from server props.
-    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
-    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":5');
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"count":2');
+    expect(document.querySelector('[data-testid="experience-report-queue-rev"]')).toBeNull();
+    expect(scopeState(SCOPE_KEY).queuedAttachment?.queueRevision).toBe(5);
     // A rehydrate changes ONLY pendingPublicEventCount.
     setScopeState(SCOPE_KEY, {
       ...scopeState(SCOPE_KEY),
@@ -1118,15 +1120,16 @@ describe("ExperienceLauncher — report controls (IR-73C)", () => {
     const { getByTestId } = render(<ExperienceLauncher />);
     fireEvent.click(getByTestId("experience-launcher-pill"));
     // Before: frozen N=2, queueRev Q=5.
-    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
-    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":5');
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"count":2');
+    expect(scopeState(SCOPE_KEY).queuedAttachment?.queueRevision).toBe(5);
     await act(async () => {
       fireEvent.click(getByTestId("experience-report-action"));
     });
     // After: frozen N+later=5, queueRev Q+1=6 — supplied ONLY by the server
     // response (no local arithmetic).
-    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":5');
-    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":6');
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"count":5');
+    expect(document.querySelector('[data-testid="experience-report-meta"]')).toBeNull();
+    expect(scopeState(SCOPE_KEY).queuedAttachment?.queueRevision).toBe(6);
   });
 
   it("Queue path with no existing attachment", async () => {
@@ -1195,7 +1198,7 @@ describe("ExperienceLauncher — report controls (IR-73C)", () => {
       fireEvent.click(getByTestId("experience-report-action"));
     });
     // The frozen count is STILL 2 (the old server value) — no optimistic bump.
-    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"count":2');
     // A fail-closed error is shown.
     expect(getByTestId("experience-report-error").textContent).toContain("experience_report_action_error");
   });

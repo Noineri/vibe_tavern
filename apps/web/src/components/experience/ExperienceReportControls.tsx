@@ -2,7 +2,7 @@
  * ExperienceReportControls — the trusted report-control surface for an active
  * interactive-experience session (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 7 /
  * IR-73C_report_controls). A PURE presentational component plus the one async
- * queue/clear actions: every displayed count, frontier, and revision comes from
+ * queue/clear actions: every displayed count and event comes from
  * server-authoritative props, never inferred from reducer revisions or
  * synthesized locally.
  *
@@ -11,8 +11,7 @@
  *  - Frozen queued public-event count: `queuedAttachment.publicReport?.events.length`.
  *    A malformed/null public report is fail-closed — the count is NOT guessed.
  *  - Later/pending public-event count: `reportStatus.pendingPublicEventCount` ONLY.
- *  - Report frontier: `reportStatus.reportFrontier` (distinct from event count).
- *  - Queue/session revisions: `queuedAttachment.queueRevision` / `.sessionRevision`.
+ *  - Technical frontier/revisions remain action metadata, never displayed.
  *
  * Action states (all driven by props — no endpoint call without a user click):
  *  - No queued attachment + pending > 0 → enabled "Queue for next message".
@@ -28,9 +27,11 @@
  * success the component renders ONLY the new props supplied by the store
  * rehydrate/response; it does not synthesize a queue revision or append events.
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
+import { renderExperienceEventLine, toExperienceMessageReport } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { Icons } from "../shared/icons.js";
 import type {
   ExperienceQueuedAttachmentView,
   ExperienceReportStatus,
@@ -47,6 +48,8 @@ export interface ExperienceReportControlsProps {
   readonly onQueue: () => Promise<void>;
   /** Clear the queue; reject on failure and leave all frozen props unchanged. */
   readonly onClear: () => Promise<void>;
+  /** Only a wide trusted footer may place the disclosure beside the count. */
+  readonly layout?: "compact" | "footer";
 }
 
 /** The four mutually-exclusive action-surface states, computed purely from
@@ -75,11 +78,16 @@ export function computeReportActionState(
 }
 
 export function ExperienceReportControls(props: ExperienceReportControlsProps): ReactNode {
-  const { queuedAttachment, reportStatus, onQueue, onClear } = props;
+  const { queuedAttachment, reportStatus, onQueue, onClear, layout = "compact" } = props;
   const { t } = useT();
   const [pending, setPending] = useState<"queue" | "clear" | null>(null);
   const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
+  const previewId = useId();
+  const snapshotKey = queuedAttachment ? JSON.stringify([queuedAttachment.id, queuedAttachment.queueRevision, queuedAttachment.sessionRevision]) : null;
+  const expanded = snapshotKey !== null && expandedSnapshot === snapshotKey;
+  const preview = queuedAttachment?.publicReport ? toExperienceMessageReport(queuedAttachment.publicReport) : null;
 
   // ── Server-authoritative values (props only — never synthesized) ──────────
   // `frozenCount` is `undefined` when there is no attachment OR the report is
@@ -87,9 +95,6 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
   // state, distinct from a real zero.
   const frozenCount = queuedAttachment?.publicReport?.events.length;
   const pendingCount = reportStatus?.pendingPublicEventCount ?? 0;
-  const reportFrontier = reportStatus?.reportFrontier;
-  const queueRevision = queuedAttachment?.queueRevision;
-  const sessionRevision = queuedAttachment?.sessionRevision;
   const action = computeReportActionState(queuedAttachment, reportStatus);
   const actionable = action.kind === "queue" || action.kind === "addLater";
 
@@ -125,11 +130,11 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
   const showFrozenMalformed = queuedAttachment !== null && frozenCount === undefined;
 
   return (
-    <div className="@container/report flex flex-col gap-1.5" data-testid="experience-report-controls">
-      <div className="flex flex-col gap-1.5 @min-[40rem]/report:flex-row @min-[40rem]/report:items-center @min-[40rem]/report:justify-between">
-        <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="@container/report flex min-w-0 flex-col gap-1.5" data-testid="experience-report-controls">
+      <div className={cn("flex min-w-0 flex-col gap-1.5", layout === "footer" && "@min-[40rem]/report:flex-row @min-[40rem]/report:flex-wrap @min-[40rem]/report:items-start @min-[40rem]/report:justify-between")}>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {/* Frozen + pending counts (server-authoritative; never synthesized). */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-3px)]">
+          <div className={cn("flex min-w-0 flex-col items-start gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)]", layout === "footer" && "@min-[40rem]/report:flex-row @min-[40rem]/report:flex-wrap @min-[40rem]/report:items-center")}>
             {showFrozenMalformed ? (
               <span className="text-warning-text" data-testid="experience-report-frozen-malformed">
                 {t("experience_report_queued_malformed")}
@@ -137,42 +142,47 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
             ) : (
               frozenCount !== undefined && (
                 <span className="text-t3" data-testid="experience-report-frozen">
-                  {t("experience_report_queued_events", { n: frozenCount })}
+                  {t("experience_report_will_attach", { count: frozenCount })}
                 </span>
               )
             )}
-            <span className="text-t4" data-testid="experience-report-pending">
-              {t("experience_report_pending_events", { n: pendingCount })}
-            </span>
+            {preview && (
+              <button
+                type="button"
+                className="flex cursor-pointer items-center gap-1 self-start font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:text-t1"
+                aria-expanded={expanded}
+                aria-controls={previewId}
+                onClick={() => setExpandedSnapshot(expanded ? null : snapshotKey)}
+                data-testid="experience-report-preview-toggle"
+              >
+                {t(expanded ? "experience_report_hide_events" : "experience_report_show_events")}
+                <Icons.Caret direction={expanded ? "u" : "d"} />
+              </button>
+            )}
           </div>
-
-          {/* Frontier / revisions metadata (distinct from event counts). */}
-          {(reportFrontier !== undefined || queueRevision !== undefined || sessionRevision !== undefined) && (
+          {preview && expanded && (
             <div
-              className="flex flex-wrap gap-x-3 gap-y-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4"
-              data-testid="experience-report-meta"
+              id={previewId}
+              className="max-h-48 min-w-0 space-y-1 overflow-y-auto rounded-md border border-border bg-s2 p-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 [overflow-wrap:anywhere]"
+              data-testid="experience-report-preview"
             >
-              {reportFrontier !== undefined && (
-                <span data-testid="experience-report-frontier">
-                  {t("experience_report_frontier", { n: reportFrontier })}
-                </span>
+              <h3 className="font-medium text-t1">{preview.title}</h3>
+              {preview.summary && <p>{preview.summary}</p>}
+              {preview.eventCount > preview.events.length && (
+                <p className="text-[calc(var(--ui-fs)-3px)] text-t3">{t("experience_report_recent_events", { shown: preview.events.length, total: preview.eventCount })}</p>
               )}
-              {queueRevision !== undefined && (
-                <span data-testid="experience-report-queue-rev">
-                  {t("experience_report_queue_rev", { n: queueRevision })}
-                </span>
-              )}
-              {sessionRevision !== undefined && (
-                <span data-testid="experience-report-session-rev">
-                  {t("experience_report_session_rev", { n: sessionRevision })}
-                </span>
-              )}
+              <ul className="space-y-1">
+                {preview.events.map((event, index) => <li key={index} className="whitespace-pre-wrap">{renderExperienceEventLine(event, preview.participants)}</li>)}
+              </ul>
             </div>
           )}
+          <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4" data-testid="experience-report-pending">
+            {t("experience_report_pending_events", { n: pendingCount })}
+          </span>
         </div>
 
         {/* Narrow surfaces stack primary then secondary; wide footers put Clear first on the right. */}
-        <div className="flex flex-col gap-1.5 @min-[40rem]/report:shrink-0 @min-[40rem]/report:flex-row-reverse">
+        <div className={cn("flex min-w-0 flex-col gap-1.5", layout === "footer" && "@min-[40rem]/report:ml-auto @min-[40rem]/report:flex-row-reverse")}>
           <button
             type="button"
             className={cn(

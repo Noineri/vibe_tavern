@@ -501,6 +501,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
         data-testid="experience-detached-report-footer"
       >
         <ExperienceReportControls
+          layout="footer"
           queuedAttachment={queuedAttachment}
           reportStatus={reportStatus}
           onQueue={handleQueueReport}
