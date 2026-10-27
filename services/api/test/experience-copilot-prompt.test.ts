@@ -16,7 +16,8 @@ import { join } from "node:path";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
-import type { AgentPlan } from "@vibe-tavern/domain";
+import { renderExperienceEventLine, type AgentPlan } from "@vibe-tavern/domain";
+import { runExperienceTest } from "../src/domain/interactive/experience-tester.js";
 import {
   assembleExperienceCopilotPrompt,
   COPILOT_RECENCY_ANCHOR_TEXT,
@@ -45,6 +46,9 @@ import {
  * blocks, the catalog frame — and deliberately NOT the prose of the asset
  * `.md` files, so an intentional asset edit no longer forces a re-capture.
  * It changes only when assembly code (or the stand-in texts) changes.
+ * 2026-10-27 ERX-11: readable-event guidance changes only real asset prose;
+ * no SHA re-capture is appropriate. The real-reference/skill tests below pin
+ * those authoring facts while all four stand-in assembly hashes stay intact.
  */
 const STAND_IN_ASSEMBLY_SHA256 = "f494ed41d33d1a495be463b183c2ef73c92c753bcf0b3541585d6267f98d0459";
 
@@ -967,6 +971,57 @@ describe("copilot prompt assets — S2-0a", () => {
     for (const name of PLAIN_REAL_ASSETS) {
       const text = await loadPromptAsset(name);
       expect(text.trim().length, `${name} is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  test("ERX-11: readable public-event guidance reaches the real reference and the on-demand authoring skill", async () => {
+    const result = await assembleExperienceCopilotPrompt({ history: [], rules: VALID_RULES, step: "rules" });
+    const skill = await readSkillFile("experience-authoring/SKILL.md", result.skillRoots);
+    const reference = await loadPromptAsset("interactive-rules.md");
+    expect(result.systemMessage).toContain(reference);
+    for (const text of [reference, skill.content]) {
+      expect(text).toContain("self-contained human-readable phrase");
+      expect(text).toContain("WITHOUT the actor's name");
+      expect(text).toContain("optional top-level `participantId`");
+      expect(text).toContain("host prefixes the frozen participant label");
+      expect(text).toContain("first public event");
+      expect(text).toContain("participants and the key public starting state");
+      expect(text).toContain("first transition");
+      expect(text).toContain("`create` returns state");
+      expect(text).toContain("host-generated `experience_started`");
+      expect(text).toContain("Never put the projection object into events");
+      expect(text).toContain("private hands");
+      expect(text).not.toMatch(/^# Role\b/m);
+    }
+    expect(reference).toContain('participantId: action.participantId, detail: "scored one point"');
+  });
+
+  test("ERX-11: both concrete reference examples run and emit a single readable opening before readable actions", async () => {
+    const reference = await loadPromptAsset("interactive-rules.md");
+    const examples = [...reference.matchAll(/## Concrete example:[^\n]*\n```js\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
+    expect(examples).toHaveLength(2);
+    const participants = [{ id: "player-a", label: "Alice", controller: "human" as const },
+      { id: "player-b", label: "Bob", controller: "human" as const }];
+    for (const [index, rulesCode] of examples.entries()) {
+      const types = index === 0 ? ["increment", "reset", "increment"] : ["score", "pass", "score"];
+      const result = runExperienceTest({ rulesCode, participants, capabilityGrants: index === 0 ? [] : ["participants"],
+        actions: types.map((type, n) => ({ type, requestId: `move-${n}`, expectedRevision: n,
+          participantId: index === 1 && n === 2 ? "player-b" : "player-a" })) });
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      expect(result.data.events).toHaveLength(4);
+      expect(result.data.events.filter((event) => event.type.endsWith("_opened"))).toHaveLength(1);
+      expect(result.data.events[0]?.participantId).toBeUndefined();
+      expect(result.data.steps.map((step) => step.events.length)).toEqual([2, 1, 1]);
+      for (const event of result.data.events) expect(typeof event.detail).toBe("string");
+      const lines = result.data.events.map((event) => renderExperienceEventLine(event, participants));
+      if (index === 0) {
+        expect(lines[0]).toBe("The counter started at zero.");
+        expect(lines[1]).toBe("The counter reached 1.");
+      } else {
+        expect(lines[0]).toBe("Alice and Bob started round 1 with zero points; Alice opens.");
+        expect(lines[1]).toBe("Alice: scored one point");
+        expect(lines[3]).toBe("Bob: scored one point");
+      }
     }
   });
 

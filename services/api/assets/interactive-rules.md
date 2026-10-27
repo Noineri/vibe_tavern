@@ -93,7 +93,7 @@ return {
   state: nextState,            // plain bounded JSON — the new authoritative state (REQUIRED)
   status: "active",            // "active" | "completed" (REQUIRED). "active" = keep playing; "completed" = natural end.
   events: [                    // REQUIRED (may be empty)
-    { visibility: "public", type: "scored", detail: { player: 0 } }
+    { visibility: "public", type: "scored", participantId: action.participantId, detail: "scored one point" }
     // visibility: "public" reaches the visual + report + Writer; "private" never leaves the runtime
   ],
   effects: [                   // OPTIONAL — durable effects the host runs out-of-band
@@ -102,6 +102,23 @@ return {
 };
 ```
 `state` and every event/effect payload must be plain bounded JSON (numbers, strings, booleans, arrays, plain objects — no functions, no Dates, no circular refs). Deeply nested values are bounded; keep state reasonably small.
+
+## Readable public events
+
+Public events become the report attached to the user's chat message: the Writer and the user both read the same rendered lines.
+Write `detail` as a self-contained human-readable phrase describing the action and its public result, WITHOUT the actor's name.
+For a single actor, set the optional top-level `participantId` to the actual roster id (usually `action.participantId`); the host prefixes the frozen participant label when rendering string details.
+For example, `detail: "played a yellow 6"` with that actor id renders as `Player: played a yellow 6` — never repeat `Player` inside `detail`, and never bury the actor id inside a detail object.
+An actorless event omits `participantId` and describes the shared situation directly.
+Non-string details remain valid for legacy packages but render as raw type/JSON; use prose for new public events rather than expecting the host to translate an object.
+
+Make the package's first public event a readable opening summary of the participants and the key public starting state (for example, who is playing, the deal size, trump suit, and who opens).
+Emit it once on the first transition, before that transition's action events; retain the opening facts and an emitted flag in state so the summary describes the start, not the state after the first move.
+`create` returns state, not events; the host-generated `experience_started` record is separate legacy metadata and cannot be replaced through `create`.
+Use the package's own opening event, not an invented create-time event API.
+Never put the projection object into events: projections belong to `project` and the visual, not the story report.
+Include only public facts in prose — never private hands, deck order, hidden state, or another viewer's private projection.
+In realtime mode transition events are dropped; keep score/summary on `finishRound` as described below rather than trying to log each tick.
 
 Effects are durable async host operations; requesting one does NOT block `reduce` — return the transition with the effect, and the host fulfills it later, feeding the result back through a subsequent `reduce`. Never `await` anything; `reduce` is synchronous. Two kinds exist:
 - `{ kind: "model", request: { viewer, mode, actionType?, instruction? } }` — out-of-band AI generation for a model seat (requires the `model` capability). `viewer` is the model seat's id from `context.participants`. Two modes:
@@ -193,7 +210,7 @@ context.experience.register({
   manifest: { id: "counter", name: "Counter" },
   capabilities: [],
   create() {
-    return { count: 0, label: "Ready" };
+    return { count: 0, label: "Ready", openingReported: false };
   },
   project(context) {
     return { count: context.state.count, label: context.state.label };
@@ -205,13 +222,14 @@ context.experience.register({
     ];
   },
   reduce(context, action) {
+    var opening = context.state.openingReported ? [] : [{ visibility: "public", type: "counter_opened", detail: "The counter started at zero." }];
     if (action.type === "increment") {
       var c = context.state.count + 1;
       var label = c >= 10 ? "Max" : "Counting";
-      return { state: { count: c, label: label }, status: c >= 10 ? "completed" : "active", events: [{ visibility: "public", type: "incremented" }] };
+      return { state: { count: c, label: label, openingReported: true }, status: c >= 10 ? "completed" : "active", events: opening.concat([{ visibility: "public", type: "incremented", detail: "The counter reached " + c + "." }]) };
     }
     if (action.type === "reset") {
-      return { state: { count: 0, label: "Reset" }, status: "active", events: [{ visibility: "public", type: "reset" }] };
+      return { state: { count: 0, label: "Reset", openingReported: true }, status: "active", events: opening.concat([{ visibility: "public", type: "reset", detail: "The counter was reset to zero." }]) };
     }
     return { state: context.state, status: "active", events: [] };
   }
@@ -227,7 +245,7 @@ context.experience.register({
   create(context) {
     var ids = context.participants.map(function (p) { return p.id; });
     var names = context.participants.map(function (p) { return p.label || p.id; });
-    return { round: 1, turn: 0, ids: ids, names: names, scores: ids.map(function () { return 0; }) };
+    return { round: 1, turn: 0, ids: ids, names: names, scores: ids.map(function () { return 0; }), openingReported: false };
   },
   project(context) {
     var s = context.state;
@@ -258,14 +276,15 @@ context.experience.register({
     if (action.participantId !== s.ids[s.turn]) {
       return { state: s, status: "active", events: [] };
     }
+    var opening = s.openingReported ? [] : [{ visibility: "public", type: "round_opened", detail: s.names.join(" and ") + " started round 1 with zero points; " + s.names[0] + " opens." }];
     if (action.type === "score") {
       var scores = s.scores.slice(); scores[s.turn] += 1;
-      return { state: { round: s.round, turn: s.turn, ids: s.ids, names: s.names, scores: scores }, status: "active", events: [{ visibility: "public", type: "scored" }] };
+      return { state: { round: s.round, turn: s.turn, ids: s.ids, names: s.names, scores: scores, openingReported: true }, status: "active", events: opening.concat([{ visibility: "public", type: "scored", participantId: action.participantId, detail: "scored one point" }]) };
     }
     if (action.type === "pass") {
       var next = (s.turn + 1) % s.ids.length;
       var round = next === 0 ? s.round + 1 : s.round;
-      return { state: { round: round, turn: next, ids: s.ids, names: s.names, scores: s.scores.slice() }, status: "active", events: [{ visibility: "public", type: "turn_passed" }] };
+      return { state: { round: round, turn: next, ids: s.ids, names: s.names, scores: s.scores.slice(), openingReported: true }, status: "active", events: opening.concat([{ visibility: "public", type: "turn_passed", participantId: action.participantId, detail: "passed the turn" }]) };
     }
     return { state: s, status: "active", events: [] };
   }
