@@ -44,6 +44,35 @@ const API_ASSETS = join(ROOT, "services", "api", "assets");
 const PACKAGE_NAME = "vibe-tavern";
 const BIN_NAME = "vibe-tavern.js";
 
+/**
+ * Bun.build inlines CJS dependencies inside module wrappers and bakes their
+ * `__filename` as a BUILD-MACHINE absolute path string (a CI runner's
+ * `/home/runner/...`, backslash-escaped for the literal). At runtime the
+ * `@agnai/web-tokenizers` emscripten glue computes its script directory via
+ * `fileURLToPath(new URL("file:" + __filename))`; Windows Bun requires a
+ * drive letter in file URLs, so on a Windows host running the Linux-built npm
+ * artifact every tokenizer warmup throws "File URL path must be an absolute
+ * path" and the server silently falls back to cl100k for ALL non-OpenAI
+ * families (owner report 2026-10-27; CI smoke-npm windows logs showed
+ * "Warmed up 0 tokenizer(s)" while linux/macOS warmed 10 — the wasm is
+ * inlined, so POSIX hosts never touch the baked path and the defect stayed
+ * invisible). Rewriting the baked literal to the runtime module path fixes
+ * every inlined wrapper without touching the library. Standalone executables
+ * are built per-OS on matching runners, so their baked paths stay host-shaped;
+ * only the cross-OS npm artifact needs this.
+ */
+const BAKED_FILENAME_DECL = 'var __filename\\s*=\\s*"(?:[^"\\\\]|\\\\.)*"';
+
+/** Rewrites every baked `var __filename="<build machine path>"` declaration to `import.meta.path`. */
+export function rewriteBakedModuleFilenames(bundle: string): string {
+	return bundle.replaceAll(new RegExp(BAKED_FILENAME_DECL, "g"), "var __filename=import.meta.path");
+}
+
+/** True while a baked `var __filename="…"` declaration remains — the build refuses to ship such an artifact. */
+export function hasBakedModuleFilename(bundle: string): boolean {
+	return new RegExp(BAKED_FILENAME_DECL).test(bundle);
+}
+
 async function step(label: string, fn: () => Promise<void>) {
 	console.log(`\n🔨 ${label}`);
 	try {
@@ -209,6 +238,14 @@ async function main() {
 		if (!(await Bun.file(outfile).exists())) {
 			throw new Error(`Expected output not found: ${outfile}`);
 		}
+		// Baked __filename literals break the cross-OS artifact (see
+		// rewriteBakedModuleFilenames) — rewrite them and fail loudly if any remain.
+		const bundled = await Bun.file(outfile).text();
+		const rewritten = rewriteBakedModuleFilenames(bundled);
+		if (hasBakedModuleFilename(rewritten)) {
+			throw new Error('Bundle still contains a baked `var __filename="…"` declaration after rewrite');
+		}
+		await Bun.write(outfile, rewritten);
 		// npm preserves the executable bit from the tarball; bun's global link
 		// relies on it on POSIX.
 		await chmod(outfile, 0o755);
