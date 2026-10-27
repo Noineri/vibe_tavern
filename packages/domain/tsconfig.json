@@ -1,13 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "../../out/packages/domain",
     "types": [
       "bun"
-    ],
-    "composite": true,
-    "tsBuildInfoFile": "../../out/tsbuildinfo/domain.tsbuildinfo"
+    ]
   },
   "include": [
     "src/**/*.ts"

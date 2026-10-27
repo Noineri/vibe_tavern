@@ -17,8 +17,8 @@
  * tolerated specifier in a list file; the primitive's own folder and three
  * named non-master-detail drag surfaces are exempt.
  */
-import { API } from "typescript/unstable/async";
-import { isExportDeclaration, isImportDeclaration, isStringLiteral } from "typescript/unstable/ast";
+import { API } from "typescript/async";
+import { isExportDeclaration, isImportDeclaration, isStringLiteral } from "typescript/ast";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
@@ -225,30 +225,22 @@ export async function collectLayerImports(root: string = ROOT): Promise<LayerImp
 	if (files.length === 0) return [];
 
 	const imports: LayerImport[] = [];
-	const api = new API();
-	try {
-		const snapshot = await api.updateSnapshot({ openFiles: files });
-		for (const file of files) {
-			const project = await snapshot.getDefaultProjectForFile(file);
-			if (!project) throw new Error(`could not parse ${normalizePath(path.relative(root, file))}: no TypeScript project`);
-			const sourceFile = await project.program.getSourceFile(file);
-			if (!sourceFile) throw new Error(`could not parse ${normalizePath(path.relative(root, file))}: source file unavailable`);
-
-			for (const statement of sourceFile.statements) {
-				if (!isImportDeclaration(statement) && !isExportDeclaration(statement)) continue;
-				const moduleSpecifier = statement.moduleSpecifier;
-				if (moduleSpecifier === undefined || !isStringLiteral(moduleSpecifier)) continue;
-				const module = resolveApiModule(root, file, moduleSpecifier.text);
-				if (module === undefined || (!module.startsWith("api/") && !module.startsWith("runtime/"))) continue;
-				imports.push({
-					file: `domain/${normalizePath(path.relative(domainRoot, file))}`,
-					line: sourceFile.getLineAndCharacterOfPosition(moduleSpecifier.getStart(sourceFile)).line + 1,
-					module,
-				});
-			}
+	await using api = new API();
+	const parsed = await Promise.all(files.map((file) => api.createSourceFileFromFile(file)));
+	for (const [index, { sourceFile }] of parsed.entries()) {
+		const file = files[index]!;
+		for (const statement of sourceFile.statements) {
+			if (!isImportDeclaration(statement) && !isExportDeclaration(statement)) continue;
+			const moduleSpecifier = statement.moduleSpecifier;
+			if (moduleSpecifier === undefined || !isStringLiteral(moduleSpecifier)) continue;
+			const module = resolveApiModule(root, file, moduleSpecifier.text);
+			if (module === undefined || (!module.startsWith("api/") && !module.startsWith("runtime/"))) continue;
+			imports.push({
+				file: `domain/${normalizePath(path.relative(domainRoot, file))}`,
+				line: sourceFile.getLineAndCharacterOfPosition(moduleSpecifier.getStart(sourceFile)).line + 1,
+				module,
+			});
 		}
-	} finally {
-		api.close();
 	}
 	return imports.sort((left, right) => toLayerKey(left).localeCompare(toLayerKey(right)) || left.line - right.line);
 }
