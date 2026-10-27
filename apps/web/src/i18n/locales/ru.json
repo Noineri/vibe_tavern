@@ -2704,6 +2704,8 @@
 	"agent_archived": "В архиве",
 	"agent_switch_error": "Не удалось переключить сессию.",
 	"agent_new_session_error": "Не удалось начать новую сессию.",
+	"agent_profile_chip_tag_builtin": "встроенный",
+	"agent_profile_chip_tag_own": "свой",
 	"agent_preview": "Предпросмотр",
 	"agent_code": "Код",
 	"agent_try_it": "Попробовать",

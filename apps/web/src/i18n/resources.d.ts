@@ -74,6 +74,8 @@ export default interface Resources {
     "agent_plan_title": "Plan",
     "agent_plan_updated": "Plan updated",
     "agent_preview": "Preview",
+    "agent_profile_chip_tag_builtin": "built-in",
+    "agent_profile_chip_tag_own": "own",
     "agent_provider": "Provider",
     "agent_provider_select": "Select provider",
     "agent_rename_error": "Failed to rename the session",

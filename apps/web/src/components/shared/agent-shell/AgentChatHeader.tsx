@@ -21,9 +21,17 @@ import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
  * (ring with the used %, opening the meter body) between the session
  * switcher and the gear (mockup §1). The pane builds it from the copilot
  * context controller; the header only positions it.
+ *
+ * DR-6: the optional `profileChip` slot renders the `AgentProfileChip`
+ * (mockup §2's accent-dim label + quick-switch menu) between the session
+ * switcher and the context ring. The shell builds it (profile data + the
+ * assignment writes live there, with the hook); the header only positions
+ * it — absent (the kind's first built-in effective) the row is
+ * byte-identical to the pre-DR-6 header.
  */
 export function AgentChatHeader({
   leading,
+  profileChip,
   contextRing,
   sessions,
   activeThreadId,
@@ -34,6 +42,7 @@ export function AgentChatHeader({
   onOpenSettings,
 }: {
   leading?: ReactNode;
+  profileChip?: ReactNode;
   contextRing?: ReactNode;
   sessions: ExperienceCopilotThreadWire[];
   activeThreadId: string;
@@ -55,6 +64,7 @@ export function AgentChatHeader({
         onNew={onNew}
         onRename={onRename}
       />
+      {profileChip}
       {contextRing}
       <button
         type="button"

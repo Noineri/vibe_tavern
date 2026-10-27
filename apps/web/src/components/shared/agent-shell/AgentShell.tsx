@@ -27,6 +27,8 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatPane } from "./AgentChatPane.js";
 import { AgentSettingsModal } from "./AgentSettingsModal.js";
+import { AgentProfileModal } from "./AgentProfileModal.js";
+import { AgentProfileChip } from "./AgentProfileChip.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -287,6 +289,26 @@ export function AgentShell({
   // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
   //  the profile modal is its child now) ───────────────────────────────────
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
+  // ── DR-6: the header's profile chip + its own profiles modal ──────────
+  //  The chip's edit-profiles row (agent_settings_edit_profiles) opens the
+  //  profiles modal straight from the header (standalone — no parentBack:
+  //  it was not opened from a settings surface), so the shell owns a second
+  //  controlled mount beside the settings summary's child one; only one is
+  //  ever open.
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  // The chip's assignment hook reads the (chat, kind) row once per mount —
+  // the sibling write surfaces (the settings summary's dropdown, both
+  // profiles-modal footers) hold their own hook instances, so their writes
+  // are invisible to the chip until it re-reads. Both surfaces are MODALS
+  // (the chip is occluded while either is open), so bumping this epoch on
+  // their close — remounting the chip with a fresh read — is enough to
+  // keep the always-visible label correct; the modals themselves are
+  // untouched (their own surfaces re-read on open, as before).
+  const [profileChipEpoch, setProfileChipEpoch] = useState(0);
+  const handleProfileSurfaceClosed = useCallback(() => {
+    setProfileChipEpoch((epoch) => epoch + 1);
+  }, []);
 
   // UX 2026-08-16 remark 6 — prefill handed to the chat input by a HOST
   // surface (the experience "send to copilot" flow) through the bridge.
@@ -584,6 +606,18 @@ export function AgentShell({
       handleNewSession={handleNewSession}
       handleRenameSession={handleRenameSession}
       setSettingsModalOpen={setSettingsModalOpen}
+      profileChip={
+        <AgentProfileChip
+          // Remount on sibling-surface close = a fresh (chat, kind) read —
+          // see `profileChipEpoch` above.
+          key={profileChipEpoch}
+          agentKind={kind}
+          scriptId={scriptId}
+          chatId={owner.kind === "chat" ? owner.chatId : undefined}
+          assignedProfileId={assignedProfileId}
+          onOpenProfiles={() => setProfileModalOpen(true)}
+        />
+      }
       copilotContext={copilotContext}
       ctrl={ctrl}
       sendWithOptions={sendWithOptions}
@@ -628,7 +662,24 @@ export function AgentShell({
         model={model}
         onProviderChange={handleProviderChange}
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+        onClose={() => {
+          setSettingsModalOpen(false);
+          handleProfileSurfaceClosed();
+        }}
+      />
+      {/* DR-6: the chip's standalone profiles modal (see `profileModalOpen`).
+          The close also bumps the chip epoch — the modal's footers may have
+          written the chat row behind the chip's back. */}
+      <AgentProfileModal
+        scriptId={scriptId}
+        chatId={owner.kind === "chat" ? owner.chatId : undefined}
+        agentKind={kind}
+        assignedProfileId={assignedProfileId}
+        isOpen={profileModalOpen}
+        onClose={() => {
+          setProfileModalOpen(false);
+          handleProfileSurfaceClosed();
+        }}
       />
     </>
   );

@@ -2658,6 +2658,8 @@
 	"agent_archived": "Archived",
 	"agent_switch_error": "Couldn't switch session.",
 	"agent_new_session_error": "Couldn't start a new session.",
+	"agent_profile_chip_tag_builtin": "built-in",
+	"agent_profile_chip_tag_own": "own",
 	"agent_preview": "Preview",
 	"agent_code": "Code",
 	"agent_try_it": "Try it",

@@ -75,6 +75,11 @@ export interface AgentChatPaneProps {
   handleNewSession: () => Promise<void>;
   handleRenameSession: (targetThreadId: string, title: string) => Promise<void>;
   setSettingsModalOpen: Dispatch<SetStateAction<boolean>>;
+  /** DR-6: the header's profile chip (the label + quick-switch menu). The
+   *  SHELL builds this element (profile data + assignment writes live
+   *  there); the pane only forwards it into the header's slot, exactly as
+   *  it forwards the host's `leading` toolbar slot. */
+  profileChip?: ReactNode;
   copilotContext: CopilotContextController;
   ctrl: AgentController;
   sendWithOptions: (dispatch: (opts?: AgentSendOptions) => void) => void;
@@ -113,6 +118,7 @@ export function AgentChatPane({
   handleNewSession,
   handleRenameSession,
   setSettingsModalOpen,
+  profileChip,
   copilotContext,
   ctrl,
   sendWithOptions,
@@ -263,6 +269,7 @@ export function AgentChatPane({
         <>
           <AgentChatHeader
             leading={host.toolbarSlot?.(hostCtx)}
+            profileChip={profileChip}
             contextRing={
               <AgentContextRing
                 metrics={copilotContext.metrics}
