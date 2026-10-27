@@ -487,8 +487,8 @@ export class ExperienceService {
     const cursorAfterCreate = createRng.totalDraws();
 
     // `create()` emits state rather than reportable events. The revision-zero
-    // attachment therefore records only an explicit public setup projection,
-    // never the authoritative state supplied to the store below.
+    // attachment records a readable public roster/first-actor summary, never a
+    // projection or authoritative state. Keep observer validation before start.
     const startViewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.observer };
     const startCaps = this.buildCaps(grants, enrichedParticipants, undefined, createEphemeralRandom());
     const startProjection = runProject(rules.code, rules.scriptName, initialState, startViewer, startCaps);
@@ -520,7 +520,6 @@ export class ExperienceService {
       randomSeed: seed,
       randomCursor: cursorAfterCreate,
     }, (session) => this.reports.buildStartReport(session, {
-      projection: startProjection.value,
       legalActions: startActions.value,
       participants: enrichedParticipants,
     }));

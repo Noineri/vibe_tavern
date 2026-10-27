@@ -114,7 +114,8 @@ Non-string details remain valid for legacy packages but render as raw type/JSON;
 
 Make the package's first public event a readable opening summary of the participants and the key public starting state (for example, who is playing, the deal size, trump suit, and who opens).
 Emit it once on the first transition, before that transition's action events; retain the opening facts and an emitted flag in state so the summary describes the start, not the state after the first move.
-`create` returns state, not events; the host-generated `experience_started` record is separate legacy metadata and cannot be replaced through `create`.
+`create` returns state, not events; the host-generated `experience_started` record is a readable title/roster/first-actor summary and cannot be replaced through `create`.
+The host does not infer game-specific starting facts from the projection, so the package's opening event supplies those facts.
 Use the package's own opening event, not an invented create-time event API.
 Never put the projection object into events: projections belong to `project` and the visual, not the story report.
 Include only public facts in prose — never private hands, deck order, hidden state, or another viewer's private projection.

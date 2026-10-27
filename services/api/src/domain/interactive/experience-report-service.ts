@@ -14,8 +14,7 @@ export interface ExperienceReportStatus {
   queuedAttachment: ExperienceQueuedAttachmentView | null;
 }
 
-export interface StartReportProjection {
-  projection: unknown;
+export interface StartReportContext {
   legalActions: readonly ExperienceActionDescriptor[];
   participants: readonly ExperienceParticipant[];
 }
@@ -28,24 +27,19 @@ export interface StartReportProjection {
 export class ExperienceReportService {
   constructor(private readonly stores: StoreContainer) {}
 
-  buildStartReport(session: ExperienceSessionRow, source: StartReportProjection): AtomicReportData {
+  buildStartReport(session: ExperienceSessionRow, source: StartReportContext): AtomicReportData {
+    const participants = readReportParticipants(source.participants) ?? [];
+    const labels = participants.map((participant) => participant.label || participant.id);
+    const firstId = source.legalActions[0]?.participantId;
+    const first = participants.find((participant) => participant.id === firstId);
+    const firstLabel = first?.label || first?.id;
+    // System-owned prose only: arbitrary projections have no shared narrative
+    // schema. Game-specific setup facts belong in the rules' own public events.
     const event: ExperienceReportEvent = {
       type: "experience_started",
-      detail: {
-        name: session.manifestName,
-        participants: source.participants.map((participant) => ({
-          id: participant.id,
-          label: participant.label,
-          controller: participant.controller,
-        })),
-        projection: source.projection,
-        legalActions: source.legalActions.map((action) => ({
-          type: action.type,
-          ...(action.label !== undefined ? { label: action.label } : {}),
-          ...(action.participantId !== undefined ? { participantId: action.participantId } : {}),
-        })),
-        ...(source.legalActions[0]?.participantId !== undefined ? { firstActor: source.legalActions[0].participantId } : {}),
-      },
+      detail: `${session.manifestName} began.`
+        + (labels.length > 0 ? ` Participants: ${labels.join(", ")}.` : "")
+        + (firstLabel ? ` First to act: ${firstLabel}.` : ""),
     };
     return this.freezeData(session, { title: session.manifestName, events: [event] });
   }

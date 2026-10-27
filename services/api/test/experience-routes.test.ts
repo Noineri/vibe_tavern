@@ -881,7 +881,8 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
     expect((await jsonBody(later)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["advanced", "bonus"]);
   });
 
-	test("starts atomically with a projected public setup report and no checkpoint leak", async () => {
+	// 2026-10-27 ERX-12: prose replaces projection JSON on new automatic starts.
+	test("starts atomically with a readable public setup report and no projection or checkpoint leak", async () => {
 		const { stores, resources, app } = await setupIntegration();
 		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
@@ -897,7 +898,8 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		expect(raw).not.toContain("PRIVATE_MARKER_70C");
 		const body = JSON.parse(raw);
 		expect(body.sessionRevision).toBe(0);
-		expect(body.publicReport.events[0].detail.projection).toEqual({ setup: "ready", n: 0 });
+		expect(body.publicReport.events[0]).toEqual({ type: "experience_started", detail: "Report began." });
+		expect(raw).not.toContain('"projection"');
 		expect((await stores.experiences.getSessionById(sid))?.reportFrontier).toBe(0);
 	});
 

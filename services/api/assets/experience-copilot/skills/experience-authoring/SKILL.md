@@ -35,7 +35,8 @@ Try-it panel labels, English interface / Russian interface — quote the ones ma
   Omit the actor id for shared, actorless facts; non-string legacy details remain raw type/JSON, not automatically translated prose.
 - Make the package's first public event a readable opening summary of the participants and the key public starting state.
   Emit it once on the first transition, before the action events, using opening facts captured in state and an emitted flag so it never repeats or describes a later position as the start.
-  `create` returns state, not events; the host-generated `experience_started` record is separate legacy metadata, not an authorable event hook.
+  `create` returns state, not events; the host-generated `experience_started` record is a readable title/roster/first-actor summary, not an authorable event hook.
+  The host does not infer game-specific starting facts from the projection; your opening event supplies them.
 - Never put the projection object into events: projections are for the visual; report events are the settled facts the Writer can narrate.
   Summarize only public facts — never private hands, deck order, hidden state or another viewer's private projection.
   Check that a reader can understand each line without decoding JSON or looking at the board.

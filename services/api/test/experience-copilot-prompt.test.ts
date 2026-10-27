@@ -989,6 +989,9 @@ describe("copilot prompt assets — S2-0a", () => {
       expect(text).toContain("first transition");
       expect(text).toContain("`create` returns state");
       expect(text).toContain("host-generated `experience_started`");
+      // 2026-10-27 ERX-12: the automatic host start is prose too; no SHA change
+      // because the existing four hashes still cover stand-in assembly only.
+      expect(text).toContain("readable title/roster/first-actor summary");
       expect(text).toContain("Never put the projection object into events");
       expect(text).toContain("private hands");
       expect(text).not.toMatch(/^# Role\b/m);
