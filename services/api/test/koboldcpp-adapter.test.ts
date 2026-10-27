@@ -30,8 +30,8 @@ function setupMockFetch(responses: Array<{ ok: boolean; status: number; json?: u
 
 function setupMockSSEStream(tokens: string[], doneText = "full text") {
   const lines = [
-    ...tokens.map((t) => `data: ${JSON.stringify({ token: t })}`),
-    `data: ${JSON.stringify({ text: doneText, done: true })}`,
+    ...tokens.map((t) => `data: ${JSON.stringify({ token: t, finish_reason: null })}`),
+    `data: ${JSON.stringify({ text: doneText, token: "", finish_reason: "stop" })}`,
   ];
   const body = lines.join("\n\n");
   mockFetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
@@ -272,7 +272,7 @@ describe("KoboldCPP adapter — doStream", () => {
     // Given - TCP hands the adapter arbitrary byte runs, not whole SSE lines.
     setupMockByteChunks([
       'data: {"token":" wor',
-      'ld"}\n\ndata: {"text":" world","done":true}\n\n',
+      'ld"}\n\ndata: {"text":" world","finish_reason":"stop"}\n\n',
     ]);
     const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
 
@@ -299,7 +299,7 @@ describe("KoboldCPP adapter — doStream", () => {
     const emojiTailOffset = new TextEncoder().encode(line).length - 10;
     setupMockByteChunks([
       ...splitBytes(line, emojiTailOffset),
-      'data: {"done":true}\n\n',
+      'data: {"token":"","finish_reason":"stop"}\n\n',
     ]);
     const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
 
@@ -314,32 +314,61 @@ describe("KoboldCPP adapter — doStream", () => {
     expect(parts[2]).toEqual({ type: "text-delta", id: "0", delta: "привет 😀" });
   });
 
-  it("emits the last event when the body ends without a blank line", async () => {
-    // Given - a closed connection leaves the final event in the buffer with no
-    // terminator; dropping it would lose the last token of the reply.
+  it("emits the final protocol event without a trailing newline", async () => {
     setupMockByteChunks([
       'data: {"token":"a"}\n\n',
-      'data: {"token":"b"}',
+      'data: {"token":"","finish_reason":"stop"}',
     ]);
     const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
-
-    // When
     const result = await model.doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
     });
     const parts: LanguageModelV3StreamPart[] = [];
     for await (const part of result.stream) parts.push(part);
-
-    // Then
-    expect(parts).toEqual([
-      { type: "stream-start", warnings: [] },
-      { type: "text-start", id: "0" },
-      { type: "text-delta", id: "0", delta: "a" },
-      { type: "text-delta", id: "0", delta: "b" },
-      { type: "text-end", id: "0" },
-      expect.objectContaining({ type: "finish" }),
-    ]);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } });
   });
+
+  it("reports a truncated stream as error and preserves partial text", async () => {
+    setupMockByteChunks(['data: {"token":"partial"}\n\n']);
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+    expect(parts.some((part) => part.type === "error")).toBe(true);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "error" } });
+    expect(parts.find((part) => part.type === "text-delta")).toMatchObject({ delta: "partial" });
+  });
+  it("propagates caller abort without emitting a successful finish", async () => {
+    const abort = new AbortController();
+    mockFetch = mock(async (_url: string | URL | Request, init?: RequestInit) => new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"token":"partial"}\n\n'));
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ));
+    globalThis.fetch = mockFetch as typeof fetch;
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      abortSignal: abort.signal,
+    });
+    let partial = "";
+    await expect((async () => {
+      for await (const part of result.stream) {
+        if (part.type === "text-delta") { partial += part.delta; abort.abort(); }
+        if (part.type === "finish") expect(part.finishReason.unified).not.toBe("stop");
+      }
+    })()).rejects.toThrow("aborted");
+    expect(partial).toBe("partial");
+  });
+
 
   it("skips keep-alive comments and unparseable lines", async () => {
     // Given - SSE comments (": ping") and proxy noise must not end the stream.
@@ -347,7 +376,7 @@ describe("KoboldCPP adapter — doStream", () => {
       ": ping\n\n",
       'data: {"token":"a"}\n\n',
       "data: <html>502</html>\n\n",
-      'data: {"token":"b"}\n\ndata: {"done":true}\n\n',
+      'data: {"token":"b"}\n\ndata: {"token":"","finish_reason":"stop"}\n\n',
     ]);
     const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
 

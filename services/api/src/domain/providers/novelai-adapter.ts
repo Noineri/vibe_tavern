@@ -50,6 +50,7 @@
  *   distinguishes a rejected token).
  */
 
+import { createParser } from "eventsource-parser";
 import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
@@ -70,7 +71,7 @@ import {
   type TestChatResult,
 } from "./provider-transport.js";
 import { interpretProbeResponse } from "./probe-helpers.js";
-import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import { isRecord, PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, CompletionFormatHandoff } from "./protocol-types.js";
 import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
@@ -344,25 +345,15 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
         throw new Error("NovelAI stream: no response body");
       }
 
-      // Parse the SSE stream and convert to AI SDK V3 stream parts. The
-      // fork-kept LS-6d protocol sequencing applies (stream-start first, a
-      // text-start before the first delta, a matching text-end before
-      // finish). Client-side stops add one twist: while stops are active the
-      // last (maxStopLength - 1) received chars are held back — a stop string
-      // split across token boundaries must still be caught before it is
-      // forwarded.
+      // Parse SSE events with V3 sequencing while preserving cross-token stop matching.
       const reader = response.textStream().getReader();
-      let buffer = "";
       let streamStarted = false;
       let textOpened = false;
       let received = "";
       let emittedLen = 0;
       let stoppedEarly = false;
-
-      const emitDelta = (
-        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
-        delta: string,
-      ) => {
+      let terminal = false;
+      const emitDelta = (controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>, delta: string) => {
         if (!delta) return;
         if (!textOpened) {
           textOpened = true;
@@ -370,77 +361,37 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
         }
         controller.enqueue({ type: "text-delta", id: "0", delta });
       };
-
-      const closeTextAndFinish = (
-        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
-      ) => {
+      const closeText = (controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>) => {
         if (textOpened) {
           textOpened = false;
           controller.enqueue({ type: "text-end", id: "0" });
         }
-        controller.enqueue({
-          type: "finish",
-          finishReason: makeFinishReason("stop"),
-          usage: makeUsage(),
-        });
+      };
+      const finish = (controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>, success: boolean) => {
+        closeText(controller);
+        if (success) controller.enqueue({ type: "finish", finishReason: makeFinishReason("stop"), usage: makeUsage() });
+        else {
+          controller.enqueue({ type: "error", error: new Error("NovelAI stream ended before a final event") });
+          controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+        }
         controller.close();
       };
-
-      /** Flush the held-back tail at the natural end of the stream — no
-       *  future token can complete a stop anymore. */
-      const flushHeldBackTail = (
-        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
-      ) => {
-        if (emittedLen < received.length) {
-          emitDelta(controller, received.slice(emittedLen));
-          emittedLen = received.length;
-        }
-      };
-
-      /** Feed one token through the client-side stop filter. Returns true
-       *  when a stop matched: the cut delta was emitted, the stream was
-       *  finished, and the request was aborted. */
-      const feedToken = (
-        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
-        token: string,
-      ): boolean => {
+      const feedToken = (controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>, token: string) => {
         received += token;
         const cut = findFirstStopIndex(received, stops);
         if (cut !== -1) {
           emitDelta(controller, received.slice(emittedLen, cut));
           stoppedEarly = true;
-          closeTextAndFinish(controller);
+          closeText(controller);
+          controller.enqueue({ type: "finish", finishReason: makeFinishReason("stop"), usage: makeUsage() });
+          controller.close();
           requestAbort.abort();
-          return true;
+          return;
         }
-        const safeEnd = stops.length > 0
-          ? Math.max(0, received.length - (maxStopLength - 1))
-          : received.length;
+        const safeEnd = stops.length ? Math.max(0, received.length - maxStopLength + 1) : received.length;
         emitDelta(controller, received.slice(emittedLen, safeEnd));
         emittedLen = safeEnd;
-        return false;
       };
-
-      /** Handle one parsed SSE event; true = the stream ended (stop match or
-       *  done event — the caller must return from pull). */
-      const handleEvent = (
-        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
-        event: Record<string, unknown>,
-      ): boolean => {
-        // Token event: { "token": " word" }
-        if ("token" in event && typeof event.token === "string") {
-          return feedToken(controller, event.token);
-        }
-        // Done event: { "text": "...", "done": true } — everything is
-        // streamed already; flush what is held back and finish.
-        if ("done" in event && event.done) {
-          flushHeldBackTail(controller);
-          closeTextAndFinish(controller);
-          return true;
-        }
-        return false;
-      };
-
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async pull(controller) {
           try {
@@ -448,58 +399,62 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
               streamStarted = true;
               controller.enqueue({ type: "stream-start", warnings: [] });
             }
+            const parser = createParser({
+              onEvent: ({ data }) => {
+                if (terminal || stoppedEarly) return;
+                try {
+                  const event = JSON.parse(data);
+                  if (!isRecord(event)) return;
+                  if (typeof event.token === "string") {
+                    feedToken(controller, event.token);
+                    if (stoppedEarly) return;
+                  }
+                  if (event.final === true) {
+                    terminal = true;
+                    emitDelta(controller, received.slice(emittedLen));
+                    finish(controller, true);
+                  }
+                } catch {
+                  return; // Ignore malformed proxy events, as before.
+                }
+              },
+            });
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                // Flush remaining buffer
-                if (buffer.trim()) {
-                  const event = parseSSEEvent(buffer);
-                  if (event && handleEvent(controller, event)) return;
+                parser.feed("\n\n");
+                parser.reset();
+                if (!terminal && !stoppedEarly) {
+                  emitDelta(controller, received.slice(emittedLen));
+                  finish(controller, false);
                 }
-                flushHeldBackTail(controller);
-                closeTextAndFinish(controller);
+                reader.releaseLock();
                 return;
               }
-
-              buffer += value;
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith(":")) continue; // skip empty/comments
-
-                const event = parseSSEEvent(trimmed);
-                if (!event) continue;
-
-                if (handleEvent(controller, event)) return;
+              parser.feed(value);
+              if (terminal || stoppedEarly) {
+                await reader.cancel();
+                reader.releaseLock();
+                return;
               }
             }
           } catch (err) {
-            // A client-side stop already finished and closed this stream;
-            // the abort of the underlying reader lands here and is expected.
             if (stoppedEarly) return;
-            if (textOpened) {
-              textOpened = false;
-              controller.enqueue({ type: "text-end", id: "0" });
+            closeText(controller);
+            if (callOptions.abortSignal?.aborted) controller.error(err);
+            else {
+              controller.enqueue({ type: "error", error: err });
+              controller.enqueue({ type: "finish", finishReason: makeFinishReason("error"), usage: makeUsage() });
+              controller.close();
             }
-            if (callOptions.abortSignal?.aborted) {
-              controller.enqueue({
-                type: "finish",
-                finishReason: makeFinishReason("stop"),
-                usage: makeUsage(),
-              });
-            } else {
-              controller.enqueue({
-                type: "error",
-                error: err,
-              } satisfies LanguageModelV3StreamPart);
-            }
-            controller.close();
+            reader.releaseLock();
           }
         },
+        async cancel(reason) {
+          await reader.cancel(reason);
+          reader.releaseLock();
+        },
       });
-
       return {
         stream,
         request: { body },
@@ -508,27 +463,6 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
   };
 }
 
-// ─── SSE parsing (fork-kept verbatim) ────────────────────────────────────
-
-function parseSSEEvent(line: string): Record<string, unknown> | null {
-  // NovelAI SSE format: "data: {...}" — same envelope as KoboldCPP.
-  if (line.startsWith("data: ")) {
-    try {
-      return JSON.parse(line.slice(6));
-    } catch {
-      return null;
-    }
-  }
-  // Some events come without the "data: " prefix (raw JSON)
-  if (line.startsWith("{")) {
-    try {
-      return JSON.parse(line);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
 
 // ─── Subscription (context size source) ──────────────────────────────────
 
