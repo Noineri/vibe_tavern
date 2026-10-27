@@ -102,13 +102,21 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 			`import type {\n  RenderResult,\n} from "@testing-library/react";\n`,
 			"apps/web/src/example.test.tsx",
 		);
-		expect(multilineTypeOnly.violations.some((v) => v.rule === "rtl-import-needs-dom-env")).toBe(true);
+		expect(multilineTypeOnly.violations).toEqual([]);
 
 		const dynamic = scanFile(
 			`useDomEnv();\nconst { render } = await import("@testing-library/react");\ntype RenderResult = import("@testing-library/react").RenderResult;\n`,
 			"apps/web/src/example.test.tsx",
 		);
 		expect(dynamic.violations.filter((v) => v.rule === "rtl-import-needs-dom-env")).toEqual([]);
+
+		const mixed = scanFile(
+			`import { test } from "bun:test";\n` +
+				`import type { RenderResult } from "@testing-library/react";\n` +
+				`import {\n  render,\n} from "@testing-library/react";\n`,
+			"apps/web/src/example.test.tsx",
+		);
+		expect(mixed.violations).toMatchObject([{ rule: "rtl-import-needs-dom-env", line: 3 }]);
 	});
 
 	test("counts ratchet metrics exactly (as never, screen, innerHTML, long sleeps)", () => {

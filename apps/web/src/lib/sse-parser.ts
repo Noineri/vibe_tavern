@@ -10,7 +10,7 @@ export interface ParseSSEStreamOptions {
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
-  onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+  onReasoningDone?: (info: { durationMs: number | null }) => void;
   /** Co-author tool calls. The backend (drainStream) emits these four wire events; they carry the AI's proposed edits. Optional so RP chat callers are unaffected. */
   onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
   onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
@@ -145,7 +145,6 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         if (opts.onReasoningDone) {
           opts.onReasoningDone({
             durationMs: (parsed.durationMs as number | null | undefined) ?? null,
-            redacted: (parsed.redacted as boolean | undefined) ?? false,
           });
         }
       } else if (ev.event === "tool-call") {

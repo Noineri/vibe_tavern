@@ -36,8 +36,8 @@ function setupMockFetch(responses: Array<{ ok: boolean; status: number; json?: u
 
 function setupMockSSEStream(tokens: string[], doneText = "full text") {
   const lines = [
-    ...tokens.map((t) => `data: ${JSON.stringify({ token: t })}`),
-    `data: ${JSON.stringify({ text: doneText, done: true })}`,
+    ...tokens.map((t) => `data: ${JSON.stringify({ token: t, final: false })}`),
+    `data: ${JSON.stringify({ text: doneText, token: "", final: true })}`,
   ];
   const body = lines.join("\n\n");
   mockFetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
@@ -344,15 +344,52 @@ describe("NovelAI adapter — doStream", () => {
 
   it("throws on HTTP error in stream mode", async () => {
     setupMockFetch([{ ok: false, status: 503, body: "Service Unavailable" }]);
+    await expect(kayraModel().doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    })).rejects.toThrow("503");
+  });
 
-    try {
-      await kayraModel().doStream({
-        prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
-      });
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      expect((err as Error).message).toContain("503");
-    }
+  it("reports EOF without final:true as an error and preserves partial text", async () => {
+    mockFetch = mock(async () => new Response(
+      'data: {"token":"partial"}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ));
+    globalThis.fetch = mockFetch as typeof fetch;
+    const result = await kayraModel().doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+    expect(parts.find((part) => part.type === "text-delta")).toMatchObject({ delta: "partial" });
+    expect(parts.some((part) => part.type === "error")).toBe(true);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "error" } });
+  });
+  it("propagates caller abort without emitting a successful finish", async () => {
+    const abort = new AbortController();
+    mockFetch = mock(async (_url: string | URL | Request, init?: RequestInit) => new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ token: "x".repeat(80), final: false })}\n\n`));
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ));
+    globalThis.fetch = mockFetch as typeof fetch;
+    const result = await kayraModel().doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      abortSignal: abort.signal,
+    });
+    let partial = "";
+    await expect((async () => {
+      for await (const part of result.stream) {
+        if (part.type === "text-delta") { partial += part.delta; abort.abort(); }
+        if (part.type === "finish") expect(part.finishReason.unified).not.toBe("stop");
+      }
+    })()).rejects.toThrow("aborted");
+    expect(partial).toMatch(/^x+$/);
   });
 });
 

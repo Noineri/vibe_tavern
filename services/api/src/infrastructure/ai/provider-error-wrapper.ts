@@ -31,8 +31,7 @@ import { VoiceTranscribeUnavailableError } from "./stt-gate.js";
  * through unchanged so their route-level `instanceof` surfacing keeps working.
  *
  * Does NOT handle the abort short-circuit — callers check `input.signal?.aborted`
- * (and, for streaming, the `vercel.ai.error` NoOutputGenerated case) before
- * calling this, so those paths never reach here.
+ * before calling this.
  */
 export function wrapProviderExecutionError(
   error: unknown,

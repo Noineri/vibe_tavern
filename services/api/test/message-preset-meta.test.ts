@@ -170,7 +170,6 @@ describe("message meta records resolved preset on reply paths", () => {
 				finished: Promise.resolve({ finishReason: "stop" }),
 				text: Promise.resolve("Streamed resent reply"),
 				reasoning: Promise.resolve(undefined),
-				hasRedactedReasoning: false,
 				providerResponse: {},
 			}),
 		});

@@ -102,7 +102,7 @@ export function mcpWebDefaults(envFileText: string | null): Record<string, strin
 }
 
 /** End-of-run message for the server's exit status. */
-export function describeExit(exitCode: number | null, signalCode: string | null): string {
+export function describeExit(exitCode: number | null, signalCode: string | number | null): string {
 	if (signalCode === "SIGINT") return "Server stopped (Ctrl+C).";
 	if (exitCode === null) return `Server was terminated (${signalCode ?? "unknown signal"}).`;
 	if (exitCode === 0) return "Server stopped cleanly.";

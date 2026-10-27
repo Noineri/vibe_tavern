@@ -71,7 +71,6 @@ const successStream: typeof streamProviderExecutor = async () => ({
   finished: Promise.resolve({ finishReason: "stop" as const }),
   text: Promise.resolve("transport reply"),
   reasoning: Promise.resolve(undefined),
-  hasRedactedReasoning: false,
   providerResponse: { mode: "stream" as const, steps: [] },
 });
 

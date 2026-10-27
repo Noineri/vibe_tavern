@@ -171,7 +171,7 @@ describe("Co-Author attachments (CA-3a)", () => {
           nonstreaming: execute,
           stream: async (input) => {
             await execute(input);
-            return { stream: (async function* () { yield { type: "text-delta" as const, delta: "Reply" }; })(), text: Promise.resolve("Reply"), reasoning: Promise.resolve(undefined), finished: Promise.resolve({ finishReason: "stop" }), hasRedactedReasoning: false, providerResponse: { mode: "stream", steps: [] } };
+            return { stream: (async function* () { yield { type: "text-delta" as const, delta: "Reply" }; })(), text: Promise.resolve("Reply"), reasoning: Promise.resolve(undefined), finished: Promise.resolve({ finishReason: "stop" }), providerResponse: { mode: "stream", steps: [] } };
           },
         });
         const adapter = new ChatAdapter(stores, runtime, orchestrator, new ChatSummaryService(stores, runtime, profiles), profiles, assets, async () => null);

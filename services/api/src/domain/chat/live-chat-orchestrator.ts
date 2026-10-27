@@ -911,13 +911,10 @@ export class LiveChatOrchestrator {
     const snapshot = await onFinal(transformedFinalText, transformedFinalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
 
     // ── Yield reasoning-done + finish ──
-    if (reasoningAccumulator || streamResult.hasRedactedReasoning) {
+    if (reasoningAccumulator) {
       yield {
         event: "reasoning-done",
-        data: JSON.stringify({
-          durationMs: reasoningDurationMs,
-          redacted: streamResult.hasRedactedReasoning,
-        }),
+        data: JSON.stringify({ durationMs: reasoningDurationMs }),
       };
     }
 

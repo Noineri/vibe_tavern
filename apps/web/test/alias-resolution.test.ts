@@ -3,7 +3,7 @@
  *
  * Proves that every `@vibe-tavern/*` specifier the web app depends on resolves
  * under Bun to the exact workspace TypeScript source it is supposed to — the
- * same set of aliases declared in `apps/web/tsconfig.json` / `tsconfig.typecheck.json`.
+ * same set of aliases declared in `apps/web/tsconfig.json`.
  *
  * Bun resolves these through the workspace `exports` maps (not tsconfig paths),
  * so this test is the runtime counterpart to the compiler's path aliases: if a

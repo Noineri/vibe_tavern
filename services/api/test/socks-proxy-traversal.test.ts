@@ -53,6 +53,7 @@ import {
 	getSocksBridgeManager,
 	type BridgeHandle,
 } from "../src/domain/providers/socks-bridge.js";
+import { classifyProviderError } from "../src/infrastructure/ai/provider-error-classifier.js";
 import { resolveModel } from "../src/infrastructure/ai/provider-executor-utils.js";
 
 const TARGET_CERT = Bun.file(new URL("./fixtures/provider-proxy-cert.pem", import.meta.url));
@@ -500,14 +501,18 @@ describe("SOCKS5 provider proxy traversal", () => {
 
 	it("wrong SOCKS5 credentials fail closed (no direct bypass)", async () => {
 		const fetch = await socksFetch(fixture, "wrong-user", "wrong-pass");
-		// Bun returns the proxy's error response (not a throw) on a CONNECT
-		// failure — the request must NOT succeed via a silent direct bypass.
-		const response = await fetch(`${fixture.targetUrl}/models`);
-		try {
-			expect(response.ok).toBe(false);
-		} finally {
-			await drain(response);
-		}
+		// Bun rejects a refused CONNECT with ERR_PROXY_TUNNEL (1.4.2 resolved the
+		// proxy's 597 response instead) — the request must NOT succeed via a
+		// silent direct bypass, and the rejection must classify as a network
+		// failure rather than `unknown`.
+		const error = await fetch(`${fixture.targetUrl}/models`).then(
+			() => {
+				throw new Error("a refused tunnel must reject");
+			},
+			(rejection: Error) => rejection,
+		);
+		expect(error).toMatchObject({ code: "ERR_PROXY_TUNNEL" });
+		expect(classifyProviderError(error)).toBe("network");
 		// The SOCKS5 fixture must have seen the auth attempt (and rejected it),
 		// proving the request went through SOCKS rather than bypassing it.
 		expect(fixture.authAttempts.length).toBeGreaterThanOrEqual(1);
@@ -580,18 +585,24 @@ describe("SOCKS5 provider proxy traversal", () => {
 	it("error from a failed SOCKS5 connection contains no upstream credentials", async () => {
 		const LEAK_PASSWORD = "socks-leak-canary-secret-value";
 		// Use wrong credentials embedding a distinctive password; the upstream
-		// URL carries this value — it must never surface in the response or error.
+		// URL carries this value — it must never surface in the rejection.
 		const fetch = await socksFetch(fixture, "wrong-user", LEAK_PASSWORD);
-		const response = await fetch(`${fixture.targetUrl}/models`);
-		let body = "";
-		try {
-			expect(response.ok).toBe(false);
-			body = await response.text();
-		} finally {
-			await drain(response);
-		}
-		// The response body (proxy error message) must not contain the upstream password.
-		expect(body.includes(LEAK_PASSWORD)).toBe(false);
+		const error = await fetch(`${fixture.targetUrl}/models`).then(
+			() => {
+				throw new Error("a refused tunnel must reject");
+			},
+			(rejection: Error & { headers?: Headers }) => rejection,
+		);
+		// Every field Bun attaches (message, code, status, statusText, headers).
+		// Not Bun.inspect: its source-code preview would print this test's own
+		// LEAK_PASSWORD literal from the call-site frame.
+		const surface = JSON.stringify({
+			...error,
+			message: error.message,
+			headers: Object.fromEntries(error.headers ?? []),
+		});
+		expect(surface).toContain("597");
+		expect(surface).not.toContain(LEAK_PASSWORD);
 	});
 
 	// ── Bridge caching: same config reuses one listener ────────────────────

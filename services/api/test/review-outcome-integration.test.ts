@@ -171,7 +171,6 @@ async function makeCoauthorEnvironment() {
           finished: Promise.resolve({ finishReason: "stop" as const }),
           text: Promise.resolve("ok"),
           reasoning: Promise.resolve(undefined),
-          hasRedactedReasoning: false,
           providerResponse: { mode: "stream" as const, steps: [] },
         };
       },

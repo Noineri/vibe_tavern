@@ -191,26 +191,11 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingBodyRef = useRef<string | null>(null);
 
-  // ── Greetings widget handlers (draft-backed; the form→editor subscription
-  // re-emits the canonical body after each change, so markers never drift). ──
-  // NOTE: we ALSO force the editor to re-emit directly. react-hook-form's
-  // `subscribe({ name })` does not reliably fire for array-field `setValue`
-  // (only for registered-input changes), so the subscription alone would leave
-  // the editor stale after a widget click. The direct dispatch is the primary
-  // path for widget actions; the subscription still covers Reset/switch.
-  function forceEditorFromBody(): void {
-    const body = draftToBody(form.getValues());
-    const view = viewRef.current;
-    if (view && body !== editorBodyRef.current) {
-      editorBodyRef.current = body;
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: body } });
-    }
-  }
+  // Greeting widgets update the form; the values subscription refreshes the editor.
   function addGreeting(): void {
     flushEditorToForm();
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", [...current, ""], { shouldDirty: true });
-    forceEditorFromBody();
     // Focus the editor at the end so the user can type the new greeting.
     const view = viewRef.current;
     if (view) {
@@ -223,7 +208,6 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     flushEditorToForm();
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", current.filter((_, i) => i !== altIndex), { shouldDirty: true });
-    forceEditorFromBody();
   }
 
   // ── Editor lifecycle: create on mount + re-create on character switch ──────
@@ -279,14 +263,18 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     const body = pendingBodyRef.current;
     if (body == null) return;
     pendingBodyRef.current = null;
-    editorOriginatedRef.current = true;
     editorBodyRef.current = body;
     const updated = applyBodyToDraft(body, form.getValues());
-    setValue("description", updated.description, { shouldDirty: true });
-    setValue("scenario", updated.scenario, { shouldDirty: true });
-    setValue("mesExample", updated.mesExample, { shouldDirty: true });
-    setValue("firstMessage", updated.firstMessage, { shouldDirty: true });
-    setValue("alternateGreetings", updated.alternateGreetings, { shouldDirty: true });
+    editorOriginatedRef.current = true;
+    try {
+      setValue("description", updated.description, { shouldDirty: true });
+      setValue("scenario", updated.scenario, { shouldDirty: true });
+      setValue("mesExample", updated.mesExample, { shouldDirty: true });
+      setValue("firstMessage", updated.firstMessage, { shouldDirty: true });
+      setValue("alternateGreetings", updated.alternateGreetings, { shouldDirty: true });
+    } finally {
+      editorOriginatedRef.current = false;
+    }
   }
 
   function syncEditorToForm(body: string): void {
@@ -299,13 +287,11 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   useEffect(() => {
     const unsubscribe = form.subscribe({
       name: ["description", "scenario", "mesExample", "firstMessage", "alternateGreetings"],
+      formState: { values: true },
       callback: ({ values }) => {
         // Skip editor-originated changes — they already match the editor.
-        if (editorOriginatedRef.current) {
-          editorOriginatedRef.current = false;
-          return;
-        }
-        const body = draftToBody(values as BuildCharacterDraft);
+        if (editorOriginatedRef.current) return;
+        const body = draftToBody(values);
         const view = viewRef.current;
         if (view && body !== editorBodyRef.current) {
           editorBodyRef.current = body;

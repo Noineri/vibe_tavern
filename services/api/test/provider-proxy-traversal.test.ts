@@ -28,6 +28,8 @@ interface ProxyHit {
 	readonly method: string;
 	readonly url: string;
 	readonly proxyAuthorization: string | null;
+	/** The process-wide NO_PROXY while the request was in flight. */
+	readonly noProxyEnv: string | undefined;
 }
 
 /**
@@ -137,6 +139,7 @@ function startFixture(): Fixture {
 				method: request.method,
 				url: request.url,
 				proxyAuthorization: request.headers.get("proxy-authorization"),
+				noProxyEnv: process.env.NO_PROXY,
 			});
 			// A provider that answers a 302 toward a loopback URL — the shape that
 			// would escape the tunnel if Bun dropped the proxy on the second hop.
@@ -161,6 +164,7 @@ function startFixture(): Fixture {
 				method: request.method,
 				url: request.url,
 				proxyAuthorization: request.headers.get("proxy-authorization"),
+				noProxyEnv: process.env.NO_PROXY,
 			});
 			return providerResponse(request);
 		},
@@ -276,16 +280,34 @@ describe("provider proxy traversal", () => {
 	// proxy selected is the configuration where a silent no_proxy-style bypass
 	// would be invisible: the request still succeeds, it just leaves the tunnel
 	// the user asked for. Both host spellings are pinned because a bypass rule
-	// can key on the literal IP or on the name.
+	// can key on the literal IP or on the name. The ambient exclusion list is
+	// set for real (the runner strips proxy env, so without it this pin would
+	// never see the bypass), and it must still be intact afterwards — the
+	// explicit proxy may not touch process-wide state.
 	for (const [label, hostOf] of [
 		["ip literal", (url: string) => url],
 		["localhost name", (url: string) => url.replace("127.0.0.1", "localhost")],
 	] as const) {
-		it(`an explicit proxy still carries a loopback provider target (${label})`, async () => {
+		it(`an explicit proxy still carries a loopback provider target past NO_PROXY (${label})`, async () => {
 			const fetch = await proxiedFetch(fixture);
 			const baseUrl = hostOf(fixture.directTargetUrl);
-			const models = await listProviderModels({ baseUrl, apiKey: "key", providerType: "openai", fetch });
-			expect(models.length).toBeGreaterThan(0);
+			const savedNoProxy = process.env.NO_PROXY;
+			const savedLowerNoProxy = process.env.no_proxy;
+			process.env.NO_PROXY = "127.0.0.1,localhost";
+			process.env.no_proxy = "127.0.0.1,localhost";
+			try {
+				const models = await listProviderModels({ baseUrl, apiKey: "key", providerType: "openai", fetch });
+				expect(models.length).toBeGreaterThan(0);
+				// Concurrent direct requests rely on the ambient list, so it must
+				// stay intact for the whole lifetime of the proxied request.
+				expect(fixture.proxyHits[0]?.noProxyEnv).toBe("127.0.0.1,localhost");
+				expect(process.env.NO_PROXY).toBe("127.0.0.1,localhost");
+			} finally {
+				if (savedNoProxy === undefined) delete process.env.NO_PROXY;
+				else process.env.NO_PROXY = savedNoProxy;
+				if (savedLowerNoProxy === undefined) delete process.env.no_proxy;
+				else process.env.no_proxy = savedLowerNoProxy;
+			}
 			expect(fixture.proxyHits).toHaveLength(1);
 			expect(fixture.proxyHits[0]?.url).toBe(`${baseUrl}/models`);
 			// The canned proxy answers on the target's behalf, so the provider

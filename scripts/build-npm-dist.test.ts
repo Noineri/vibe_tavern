@@ -40,7 +40,7 @@ describe("npm manifest", () => {
 	});
 
 	it("requires the Bun version used by the shipped runtime APIs", () => {
-		expect(manifest("1.2.3").engines).toEqual({ bun: ">=1.4.2" });
+		expect(manifest("1.2.3").engines).toEqual({ bun: ">=1.4.4" });
 	});
 
 	it("stamps the version it is given", () => {

@@ -1,8 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "declaration": false,
     "types": ["bun"]
   },
   "include": ["*.ts"]

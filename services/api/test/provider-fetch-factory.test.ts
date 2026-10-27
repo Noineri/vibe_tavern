@@ -245,28 +245,6 @@ describe("resolveProviderFetch", () => {
 // ─── createProxiedFetch ────────────────────────────────────────────────────
 
 describe("createProxiedFetch", () => {
-	it("calls the underlying fetch with the proxy option merged into init", async () => {
-		const calls: Array<{ init: unknown }> = [];
-		const fakeFetch = ((input: unknown, init?: unknown) => {
-			calls.push({ init });
-			return Promise.resolve(new Response("ok"));
-		}) as typeof fetch;
-		fakeFetch.preconnect = () => {};
-
-		const controller = new AbortController();
-		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
-		await proxied("http://target.example/api", { method: "POST", headers: { a: "b" }, body: "request body", redirect: "manual", signal: controller.signal });
-
-		expect(calls).toHaveLength(1);
-		const init = calls[0]!.init as Record<string, unknown> | undefined;
-		expect(init).toBeTruthy();
-		expect(init!.proxy).toBe("http://127.0.0.1:8080");
-		expect(init!.method).toBe("POST");
-		expect(init!.body).toBe("request body");
-		expect(init!.redirect).toBe("manual");
-		expect(init!.signal).toBe(controller.signal);
-	});
-
 	it("keeps fetch.preconnect as a no-op so proxy intent cannot preconnect directly", () => {
 		let directPreconnects = 0;
 		const fakeFetch = (async () => new Response("ok")) as typeof fetch;
@@ -276,45 +254,6 @@ describe("createProxiedFetch", () => {
 		expect(directPreconnects).toBe(0);
 	});
 
-	it("overrides a caller-supplied redirect to manual for SOCKS-backed wrappers", async () => {
-		const calls: Array<{ init: unknown }> = [];
-		const fakeFetch = ((input: unknown, init?: unknown) => {
-			calls.push({ init });
-			return Promise.resolve(new Response("ok"));
-		}) as typeof fetch;
-		fakeFetch.preconnect = () => {};
-
-		// Caller explicitly asks for redirect: "follow" — the SOCKS-backed wrapper
-		// must override it to "manual" so no Location target is followed inside Bun.
-		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch, { socksBacked: true });
-		await proxied("https://provider.example/api", { redirect: "follow" });
-
-		expect(calls).toHaveLength(1);
-		const init = calls[0]!.init as Record<string, unknown> | undefined;
-		expect(init).toBeTruthy();
-		expect(init!.redirect).toBe("manual");
-		expect(init!.proxy).toBe("http://127.0.0.1:8080");
-	});
-
-	it("preserves a caller-supplied redirect for ordinary HTTP/HTTPS-proxy wrappers", async () => {
-		const calls: Array<{ init: unknown }> = [];
-		const fakeFetch = ((input: unknown, init?: unknown) => {
-			calls.push({ init });
-			return Promise.resolve(new Response("ok"));
-		}) as typeof fetch;
-		fakeFetch.preconnect = () => {};
-
-		// No socksBacked option → ordinary wrapper must NOT touch the caller's
-		// redirect preference (here "follow" passes through untouched).
-		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
-		await proxied("https://provider.example/api", { redirect: "follow" });
-
-		expect(calls).toHaveLength(1);
-		const init = calls[0]!.init as Record<string, unknown> | undefined;
-		expect(init).toBeTruthy();
-		expect(init!.redirect).toBe("follow");
-		expect(init!.proxy).toBe("http://127.0.0.1:8080");
-	});
 });
 
 // ─── Factory lifecycle + module-wide default ───────────────────────────────

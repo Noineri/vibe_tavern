@@ -108,9 +108,10 @@ export function manifest(version: string = VERSION) {
 		bugs: { url: "https://github.com/Noineri/vibe_tavern/issues" },
 		keywords: ["ai", "roleplay", "llm", "self-hosted", "sillytavern", "chat"],
 		// Android 10-12 users run this package on Termux's patched `bun`
-		// (termux-packages/packages/bun, 1.4.2 on 2026-09-30); a floor above
+		// (termux-packages/packages/bun, 1.4.4 on 2026-10-27); a floor above
 		// that version breaks the Termux path documented in docs/android-setup.md.
-		engines: { bun: ">=1.4.2" },
+		// 1.4.3+ is required: provider proxies rely on `respectNoProxy: false`.
+		engines: { bun: ">=1.4.4" },
 		publishConfig: { access: "public" },
 	};
 }

@@ -7,8 +7,8 @@
  * protocol asks for `{"actionId", "args"}` and `validateOutput` parses the
  * free text). This module adds the native alternative: synthesize a JSON Schema
  * from the legal action descriptors and run the call through the AI SDK
- * `generateObject` with `mode: "json"`, so the reply IS a JSON object by
- * construction.
+ * `generateText` with `Output.object`, so the provider receives the response
+ * schema and the SDK parses the reply as JSON.
  *
  * Division of authority (deliberate): the generated object is stringified and
  * handed back as TEXT — the caller runs it through the exact same
@@ -28,7 +28,8 @@
  * access; the injectable seam in the model-effect service keeps tests
  * provider-free.
  */
-import { generateObject, jsonSchema } from "ai";
+import { generateText, jsonSchema, Output, type JSONSchema7 } from "ai";
+import { normalizeProviderType } from "@vibe-tavern/domain";
 
 import type {
 	AssemblePromptResponse,
@@ -38,7 +39,7 @@ import type {
 
 import { buildSamplerConfig } from "../../infrastructure/ai/sampler-mapper.js";
 import { resolveProviderFetchForProfile } from "../providers/provider-fetch-factory.js";
-import { resolveModel, toSdkMessages } from "../../infrastructure/ai/provider-executor-utils.js";
+import { prepareSdkMessages, resolveModel, toSdkMessages } from "../../infrastructure/ai/provider-executor-utils.js";
 
 // ─── Input / result types ────────────────────────────────────────────────────
 
@@ -62,9 +63,6 @@ export type StructuredActionChoiceResult =
 
 // ─── Schema synthesis ────────────────────────────────────────────────────────
 
-/** A bare JSON-Schema object node (the subset the descriptors + synthesis emit). */
-type SchemaNode = Record<string, unknown>;
-
 /**
  * Synthesize the response schema for an action-mode choice from the legal
  * descriptors. Two shapes:
@@ -82,7 +80,7 @@ type SchemaNode = Record<string, unknown>;
  */
 export function synthesizeActionChoiceSchema(
 	legalActions: readonly ExperienceActionDescriptor[],
-): SchemaNode {
+): JSONSchema7 {
 	const legalTypes = legalActions.map((a) => a.type);
 	const withSchema = legalActions.filter((a) => a.payloadSchema !== undefined);
 	if (withSchema.length === 0) {
@@ -95,11 +93,11 @@ export function synthesizeActionChoiceSchema(
 			additionalProperties: false,
 		};
 	}
-	const variants: SchemaNode[] = legalActions.map((a) => ({
+	const variants: JSONSchema7[] = legalActions.map((a) => ({
 		type: "object",
 		properties: {
 			actionId: { type: "string", enum: [a.type] },
-			...(a.payloadSchema !== undefined ? { args: a.payloadSchema as SchemaNode } : {}),
+			...(a.payloadSchema !== undefined ? { args: a.payloadSchema as JSONSchema7 } : {}),
 		},
 		required: ["actionId"],
 		additionalProperties: false,
@@ -107,33 +105,6 @@ export function synthesizeActionChoiceSchema(
 	return { oneOf: variants };
 }
 
-// ─── Prompt flattening ───────────────────────────────────────────────────────
-
-/**
- * Flatten the assembled experience prompt into generateObject's `system` +
- * `prompt` pair. `generateObject` does not take the SDK message array the
- * text executor uses, and the experience prompt is plain prose (host protocol
- * + overrides + character/persona + context bundle + private view — no tools,
- * no attachments), so concatenation loses nothing. System messages join as the
- * system; everything else joins in order as the user prompt.
- */
-function flattenPrompt(
-	prompt: AssemblePromptResponse,
-): { system: string | undefined; user: string } {
-	const messages = toSdkMessages(prompt);
-	const systemParts: string[] = [];
-	const userParts: string[] = [];
-	for (const m of messages) {
-		const text = typeof m.content === "string" ? m.content : "";
-		if (text.length === 0) continue;
-		if (m.role === "system") systemParts.push(text);
-		else userParts.push(text);
-	}
-	return {
-		system: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
-		user: userParts.join("\n\n"),
-	};
-}
 
 // ─── The structured call ─────────────────────────────────────────────────────
 
@@ -148,28 +119,24 @@ export async function generateStructuredActionChoice(
 	try {
 		const providerFetch = await resolveProviderFetchForProfile(input.profile);
 		const model = resolveModel(input.profile, input.model, undefined, providerFetch);
-		const { system, user } = flattenPrompt(input.prompt);
+		const { conversationMessages } = await prepareSdkMessages(toSdkMessages(input.prompt), {
+			providerType: normalizeProviderType(input.profile.providerPreset),
+		});
 		const schema = synthesizeActionChoiceSchema(input.legalActions);
 		const sampler = buildSamplerConfig(input.profile, input.model);
 
-		const result = await generateObject({
+		const result = await generateText({
 			model,
-			// `jsonSchema(...)` (not a zod schema) selects generic JSON-Schema
-			// structured output — the provider-native json/response_format path.
-			schema: jsonSchema(schema),
-			...(system !== undefined ? { system } : {}),
-			prompt: user,
+			output: Output.object({ schema: jsonSchema(schema) }),
+			messages: conversationMessages,
+			allowSystemInMessages: true,
 			abortSignal: input.signal,
 			...(sampler.temperature !== undefined ? { temperature: sampler.temperature } : {}),
 			...(sampler.maxOutputTokens !== undefined ? { maxOutputTokens: sampler.maxOutputTokens } : {}),
 		});
-		return { kind: "structured", text: JSON.stringify(result.object) };
-	} catch (e) {
-		if (input.signal?.aborted) throw e;
-		const message =
-			e !== null && typeof e === "object" && typeof (e as { message?: unknown }).message === "string"
-				? (e as { message: string }).message
-				: String(e);
-		return { kind: "unsupported", reason: message };
+		return { kind: "structured", text: JSON.stringify(result.output) };
+	} catch (error) {
+		if (input.signal?.aborted) throw error;
+		return { kind: "unsupported", reason: error instanceof Error ? error.message : String(error) };
 	}
 }

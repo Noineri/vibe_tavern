@@ -18,6 +18,8 @@
 import { describe, it, expect, beforeAll, mock } from "bun:test";
 import { useEffect, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
+import type { act as testingAct } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
@@ -48,8 +50,10 @@ let VibeMdView: typeof import("./VibeMdView.js").VibeMdView;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let act: typeof testingAct;
+// DOM consumers load after happy-dom registration and the module seams above.
 beforeAll(async () => {
-	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
 	({ VibeMdView } = await import("./VibeMdView.js"));
 });
 
@@ -164,17 +168,32 @@ describe("VibeMdView (rework)", () => {
 		expect(document.querySelector('textarea[name="firstMessage"]')).toBeNull();
 	});
 
-	it("add/remove alternate greetings round-trip through the editor body", () => {
-		// The widget click handlers call setValue(alternateGreetings, ...); the
-		// form→editor subscription re-emits the body. Rather than simulate a click
-		// on a CodeMirror-created DOM node (act/timing-fragile in happy-dom), we
-		// assert the body reflects the draft's alternates. The full altIndexAt +
-		// round-trip logic is covered in vibe-md-sync.test.ts.
-		const { container } = render(<Harness draft={makeDraft()} />);
-		if (!container.querySelector(".cm-content")) return; // CM did not mount.
-		const text = container.querySelector(".cm-content")!.textContent ?? "";
-		// makeDraft starts with one alternate greeting → one `=== ALT` marker.
-		expect((text.match(/=== ALT/g) || []).length).toBe(1);
+	it("keeps greetings and external form updates synchronized after an editor edit", async () => {
+		let captured: UseFormReturn<BuildCharacterDraft> | undefined;
+		const { container } = render(<HarnessWithFormCapture draft={makeDraft()} onForm={(form) => { captured = form; }} />);
+		await waitFor(() => { expect(captured).toBeDefined(); });
+		const form = captured;
+		const cm = container.querySelector<HTMLElement>(".cm-editor");
+		if (!form || !cm) throw new Error("The form and CodeMirror must mount");
+		const view = EditorView.findFromDOM(cm);
+		if (!view) throw new Error("CodeMirror view is missing");
+
+		await act(async () => { form.setValue("alternateGreetings", ["Replaced from the form"], { shouldDirty: true }); });
+		expect(view.state.doc.toString()).toContain("Replaced from the form");
+		expect(view.state.doc.toString()).not.toContain("A second greeting.");
+
+		await act(async () => {
+			form.setValue("alternateGreetings", ["Replaced from the form", ""], { shouldDirty: true });
+		});
+		expect(view.state.doc.toString()).toContain("=== ALT 2 ===");
+
+		const doc = view.state.doc.toString();
+		const from = doc.indexOf("A reserved arachnid weaver.");
+		await act(async () => { view.dispatch({ changes: { from, insert: "Updated " } }); });
+		await waitFor(() => { expect(form.getValues().description).toBe("Updated A reserved arachnid weaver."); });
+		await act(async () => { form.setValue("description", "External after typing", { shouldDirty: true }); });
+		expect(view.state.doc.toString()).toContain("External after typing");
+		expect(view.state.doc.toString()).not.toContain("Updated A reserved arachnid weaver.");
 	});
 });
 

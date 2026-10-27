@@ -442,16 +442,19 @@ Logit bias is model-aware and fail-closed because token IDs are tokenizer/model-
 
 ### Streaming
 
-`stream-provider-executor.ts` uses AI SDK v6's `streamText()`. The raw chunk stream (`result.fullStream`) is passed through `createMappedStream()` (`infrastructure/ai/`), which normalizes provider chunk shapes and applies secret redaction, then exposes the orchestrator-facing stream of chunks:
-- `text-delta` — assistant text content
-- `reasoning-delta` — thinking/reasoning content (DeepSeek R1, Claude extended thinking)
-- `error` — provider-side stream errors (logged and thrown)
+`stream-provider-executor.ts` uses AI SDK 7's `streamText()`. `createMappedStream()` accepts the SDK's typed `TextStreamPart<ToolSet>` stream and exposes orchestrator-facing text, reasoning, progressive tool inputs and tool results. It also captures raw provider chunks and per-step response metadata; tool-call provider metadata survives replay (including Gemini thought signatures).
+
+An `interrupted` finish raises a provider error rather than a successful stop. The orchestrator retains partial output and emits an SSE error. Obsolete stream-field aliases, reasoning boundary markers and the nonexistent `redacted-reasoning` part are not supported; `reasoning-done` carries timing only.
+
+**Diagnostic ownership:** the SDK's default error callback writes the original error to the server console. VT separately writes request-context diagnostics to `send-debug.log` and emits the user-facing SSE error. These are distinct destinations, not duplicate console handlers; keep the SDK callback rather than replacing it with a no-op, especially because debug-file writes are best-effort.
 
 The non-streaming path (`nonstreaming-provider-executor.ts`) uses `generateText()` and awaits the full reply instead.
 
+The custom V3 adapters require their native completion signal: KoboldCPP `finish_reason`, NovelAI `final: true`, and Ollama `done: true`. Unexpected EOF emits an error while preserving partial text; caller cancellation never synthesizes a successful stop. NovelAI's intentional client-side stop matching remains successful. KoboldCPP and NovelAI use `eventsource-parser` for SSE framing; Ollama remains NDJSON.
+
 ### OpenAI-Compatible Reasoning
 
-AI SDK v6 natively maps both `reasoning_content` and `reasoning` fields for streaming and non-streaming OpenAI-compatible responses. Provider response bodies are therefore passed through unchanged; `domain/providers/openai-reasoning-fetch.ts` retains only the legacy boundary constants used by marker-compatible parsers.
+AI SDK 7 natively maps both `reasoning_content` and `reasoning` fields for streaming and non-streaming OpenAI-compatible responses. Provider response bodies pass through unchanged, and consumers read native reasoning parts rather than injecting or parsing a private marker protocol.
 
 ### Tokenizer Service
 
@@ -521,7 +524,7 @@ Registering `vision_describe` as a real mode (rather than a separate code path) 
 
 ### Runtime
 
-`ai-assistant-stream.ts` is the core runtime: resolve prompt → build pipeline context (`context-resolver.ts`) → `assemblePrompt()` → `streamText()`. It is exposed as the `ai-assistant` FeatureModule (routes: `POST /api/scripts/ai-assistant`, plus the lore/import generate endpoints), which is how the subsystem mounts without being hard-wired into the server bootstrap. `reasoning-split.ts` is the shared `<think>`-tag stripper used by both the assistant and the vision describe pipeline.
+`ai-assistant-stream.ts` is the core runtime: resolve prompt → build pipeline context (`context-resolver.ts`) → `assemblePrompt()` → `streamText()`. It is exposed as the `ai-assistant` FeatureModule (routes: `POST /api/scripts/ai-assistant`, plus the lore/import generate endpoints), which is how the subsystem mounts without being hard-wired into the server bootstrap. Native SDK reasoning and inline `<think>` content reach the reasoning channel in reasoning-visible modes; buffered JSON modes exclude reasoning from the parsed answer. `reasoning-split.ts` handles inline `<think>` tags for the assistant and vision describe pipeline.
 
 ---
 

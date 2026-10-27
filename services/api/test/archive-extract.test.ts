@@ -13,11 +13,11 @@ import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { createGzip } from "node:zlib";
+import { createGzip, gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { zipSync } from "fflate";
 import { pack } from "tar-stream";
-import { extractArchive, resolveEntryPath } from "../src/server/archive-extract.js";
+import { ArchiveExtractError, extractArchive, resolveEntryPath } from "../src/server/archive-extract.js";
 
 /**
  * POSIX permission bits have no Windows counterpart: `chmod` there only toggles
@@ -66,6 +66,25 @@ async function makeTarGz(name: string, entries: readonly TarEntry[]): Promise<st
 	}
 	packer.finalize();
 	await write;
+	return archivePath;
+}
+
+/** Build a tar.gz that ends partway through the payload of a forbidden entry. */
+async function makeTruncatedTraversalTarGz(name: string): Promise<string> {
+	const packer = pack();
+	const chunks: Uint8Array[] = [];
+	const ended = Promise.withResolvers<void>();
+	packer.on("data", (chunk) => {
+		if (chunk instanceof Uint8Array) chunks.push(chunk);
+	});
+	packer.on("end", ended.resolve);
+	packer.entry({ name: "../escaped.bin", type: "file" }, new Uint8Array(1024 * 1024));
+	packer.finalize();
+	await ended.promise;
+
+	const archivePath = join(root, name);
+	const partialTar = Buffer.concat(chunks).subarray(0, 512 + 1024);
+	await writeFile(archivePath, gzipSync(partialTar));
 	return archivePath;
 }
 
@@ -176,6 +195,16 @@ describe("extractArchive — .tar.gz", () => {
 
 		await expect(extractArchive(archive, dest)).rejects.toThrow(/escapes the destination/);
 		expect(await stat(join(root, "escaped.txt")).then(() => true, () => false)).toBe(false);
+	});
+
+	it("rejects a traversal header before its truncated payload arrives and closes extraction", async () => {
+		const archive = await makeTruncatedTraversalTarGz("truncated-evil.tar.gz");
+
+		await expect(extractArchive(archive, dest)).rejects.toMatchObject({
+			constructor: ArchiveExtractError,
+			message: expect.stringMatching(/escapes the destination/),
+		});
+		expect(await stat(join(root, "escaped.bin")).then(() => true, () => false)).toBe(false);
 	});
 
 	it("rejects an absolute-path entry", async () => {

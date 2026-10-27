@@ -173,8 +173,6 @@ export interface ProviderStreamResult {
   text: Promise<string>;
   /** Final reasoning text collected from the stream (resolved after stream ends). */
   reasoning: Promise<string | undefined>;
-  /** True if a redacted-reasoning chunk was encountered. */
-  hasRedactedReasoning: boolean;
   /** Snapshot of what was sent to the provider. */
   sentConfig?: SentConfigSnapshot;
   /** Live trace object populated as the provider stream is consumed. */

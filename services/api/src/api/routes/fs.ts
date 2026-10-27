@@ -63,7 +63,7 @@ interface DialogRunResult {
 	 * kill surfaces as `signalCode: "SIGKILL"` with `exitCode: 137`, so the
 	 * exit code alone cannot separate "killed" from "cancelled".
 	 */
-	signalCode: NodeJS.Signals | null;
+	signalCode: Bun.Subprocess["signalCode"];
 }
 
 /**

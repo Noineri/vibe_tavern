@@ -21,16 +21,15 @@
  *     - existing debt is visible and shrinks one fix at a time (remove a
  *       violation, run `--update-baseline`, the line drops from the checklist),
  *     - no eslint/biome dependency — this is a ~250-line Bun script using the
- *       TypeScript compiler API (via `typescript/unstable/async`), matching the
+ *       TypeScript compiler API (via `typescript/async`), matching the
  *       i18n-check gate pattern and the project's "no linter" stance.
  *
- * Parsing uses the TypeScript 7 programmatic API (`typescript/unstable/async`).
- * TS 7 restructured the package: the main entry now exports only `version`, and
- * the compiler/AST API moved to `typescript/unstable/*` subpaths. This script
- * creates an `API` instance (which spawns the native `tsgo` worker), opens all
- * scanned files in one `updateSnapshot` call (auto-resolving their workspace
- * projects via tsconfig discovery), then walks each parsed `SourceFile` AST for
- * violations. Total wall time for ~450 files is ~500ms.
+ * Parsing uses the TypeScript 7 programmatic API (`typescript/async`). TS 7's
+ * main entry exports only `version`; the compiler/AST API lives on subpaths.
+ * This script creates an `API` instance (which spawns the native `tsgo`
+ * worker), parses every scanned file standalone via `createSourceFileFromFile`
+ * (no tsconfig/project discovery — the scan is purely syntactic), then walks
+ * each `SourceFile` AST for violations.
  *
  * Usage:
  *   bun scripts/type-gate.ts                # enforce (exit 1 on new violations)
@@ -61,14 +60,14 @@
  * to the repo root. When a file is refactored and line numbers shift, run
  * `--update-baseline` (the diff will show only the legit shift — review it).
  */
-import { API } from "typescript/unstable/async";
+import { API } from "typescript/async";
 import {
   SyntaxKind,
   isAsExpression,
   isTypeAssertion,
   isCatchClause,
-} from "typescript/unstable/ast";
-import type { Node, SourceFile, Block } from "typescript/unstable/ast";
+} from "typescript/ast";
+import type { Node, SourceFile, Block } from "typescript/ast";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
@@ -232,34 +231,15 @@ function collectFiles(): string[] {
 }
 
 /**
- * Parse every collected file via the TS 7 `unstable/async` API and scan each
- * parsed AST for violations. Creates a single `tsgo` worker, opens all files in
- * one `updateSnapshot` (auto-resolving workspace projects), then fetches each
- * parsed `SourceFile` sequentially.
+ * Parse every collected file via the TS 7 `async` API and scan each parsed AST
+ * for violations. One `tsgo` worker; files are parsed standalone, so a file
+ * outside every tsconfig is still scanned.
  */
 async function collectAllViolations(): Promise<Violation[]> {
   const files = collectFiles();
-  const api = new API();
-  try {
-    const snap = await api.updateSnapshot({ openFiles: files });
-    const all: Violation[] = [];
-    for (const absPath of files) {
-      const proj = await snap.getDefaultProjectForFile(absPath);
-      if (!proj) {
-        console.error(`type-gate: warning — ${rel(absPath)} not in any tsconfig project; skipping AST scan.`);
-        continue;
-      }
-      const sf = await proj.program.getSourceFile(absPath);
-      if (!sf) {
-        console.error(`type-gate: warning — could not parse ${rel(absPath)}; skipping.`);
-        continue;
-      }
-      all.push(...scanAst(sf, absPath));
-    }
-    return all;
-  } finally {
-    api.close();
-  }
+  await using api = new API();
+  const parsed = await Promise.all(files.map((absPath) => api.createSourceFileFromFile(absPath)));
+  return parsed.flatMap(({ sourceFile }, i) => scanAst(sourceFile, files[i]!));
 }
 
 // ─── Baseline ──────────────────────────────────────────────────────────────

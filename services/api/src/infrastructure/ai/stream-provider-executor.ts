@@ -83,36 +83,28 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...samplerConfig,
       ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
       ...(providerTools ? { tools: providerTools } : {}),
+      toolCallConcurrency: 1,
       ...(providerTools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
       include: { rawChunks: true },
     });
 
     const { stream, state } = createMappedStream(result.stream);
 
-    // Attach catch handlers immediately. On manual cancellation AI SDK v5 can
-    // reject these promises later with NoOutputGeneratedError even after our
-    // route already returned an abort event; if left unhandled, Bun terminates.
+    // Observe collection rejections before returning, including aborted streams.
     const finished = mapFinish(result, input.signal);
     const text = safeStreamTextPromise(result.text, input.signal);
-    const reasoning = safeReasoningPromise(result.reasoningText as Promise<string | undefined>, input.signal);
+    const reasoning = safeReasoningPromise(result.reasoningText, input.signal);
 
     return {
       stream,
       finished,
       text,
       reasoning,
-      get hasRedactedReasoning() {
-        return state.hasRedacted;
-      },
       sentConfig,
       providerResponse: state.providerResponse,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();
-    // AI SDK v5 throws NoOutputGeneratedError when stream produced nothing (e.g. immediate abort)
-    if (error && typeof error === "object" && "vercel.ai.error" in error) {
-      throw cancelled();
-    }
     // Setup error (streamText() failed before iteration began): normalize at the
     // execution boundary into ProviderExecutionError. Iteration errors surface
     // later in LiveChatOrchestrator.drainStream, which classifies inline.

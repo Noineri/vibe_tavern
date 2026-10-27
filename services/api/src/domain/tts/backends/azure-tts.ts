@@ -8,8 +8,8 @@
  *   with an SSML body. Required headers: auth, `Content-Type:
  *   application/ssml+xml`, `X-Microsoft-OutputFormat`, `User-Agent`
  *   (application name, <255 chars — REQUIRED per the docs' header table;
- *   SillyTavern's server reference omits it only because node-fetch
- *   injects a default User-Agent, which Bun's fetch does not).
+ *   Bun's fetch sends a generic `Bun/<version>` default, so the app name is
+ *   set explicitly).
  * - Auth: `Ocp-Apim-Subscription-Key: <resource key>` works directly for
  *   both synthesis and the voice list; the Bearer/issueToken flow is an
  *   optional dance we skip (docs: "if you receive a 401 with a Bearer

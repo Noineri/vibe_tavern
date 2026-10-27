@@ -16,12 +16,12 @@
  *                default is configured.
  *
  * `http://` and `https://` proxy URLs use Bun's native per-request
- * `fetch(url, { proxy })` option, wrapped in a scoped NO_PROXY blank — Bun
- * lets the ambient NO_PROXY env override the explicit option (see
- * fetchWithForcedProxy below). `socks5://` URLs use a loopback HTTP bridge
- * (proxy-chain) so Bun fetch remains the actual client; the bridge is created
- * lazily and cached by the full upstream configuration. Other schemes fail
- * closed.
+ * `fetch(url, { proxy: { url, respectNoProxy: false } })` option — selecting a
+ * proxy means THE TUNNEL, so the ambient NO_PROXY list may not bypass it
+ * (Bun ≥1.4.3; before, NO_PROXY silently overrode an explicit proxy).
+ * `socks5://` URLs use a loopback HTTP bridge (proxy-chain) so Bun fetch
+ * remains the actual client; the bridge is created lazily and cached by the
+ * full upstream configuration. Other schemes fail closed.
  *
  * SOCKS5 is HTTPS-only and redirect-proof: a SOCKS5-backed fetch applied to
  * an `http://` target fails closed before any DNS or network access, and
@@ -236,51 +236,11 @@ function targetProtocolOf(input: Parameters<ProviderFetch>[0]): string {
 	}
 }
 
-/** Scoped NO_PROXY neutralization for explicit-proxy requests. Bun 1.4.x
- *  lets the ambient NO_PROXY/no_proxy environment variable OVERRIDE the
- *  explicit per-request `proxy` option (live-verified 2026-09-18: with
- *  NO_PROXY=127.0.0.1 in the machine env, `fetch(url, {proxy})` silently
- *  bypasses the proxy for loopback targets; the proxy-option object form
- *  with `noProxy: false` does not beat it either — Bun's fetch API has no
- *  per-request no-proxy control). The product contract is the opposite:
- *  selecting a proxy for a provider means THE TUNNEL, always — a silent
- *  no_proxy-style bypass is invisible to the user (the request still
- *  succeeds, it just leaves the tunnel she explicitly asked for; pinned
- *  by provider-proxy-traversal.test.ts's loopback cases). So for the
- *  duration of each explicit-proxy request the exclusion list is blanked
- *  (empty string = no exclusions, live-verified) and restored afterwards.
- *  `direct` mode is untouched: ambient env behavior is "existing
- *  behavior" there — NO_PROXY=loopback is exactly what keeps local
- *  providers reachable on machines that also set HTTP_PROXY. JS is
- *  single-threaded, so the blanked window only overlaps CONCURRENT
- *  requests (their direct-mode fetches briefly see no exclusions) —
- *  accepted as the smallest honest fix available on today's Bun. */
 /** The init shape explicit-proxy calls build: the standard RequestInit plus
  *  Bun's per-request `proxy` option (declared here because the DOM-lib
- *  RequestInit the web typecheck sees does not carry it — the original
- *  direct-call sites typechecked against `typeof fetch`, and this keeps
- *  that exact shape flowing through the helper). */
+ *  RequestInit the web typecheck sees does not carry it). */
 interface ProxyRequestInit extends RequestInit {
-	proxy?: string;
-}
-
-async function fetchWithForcedProxy(
-	transportFetch: ProviderFetch,
-	input: Parameters<ProviderFetch>[0],
-	init: ProxyRequestInit,
-): Promise<Response> {
-	const savedNoProxy = process.env.NO_PROXY;
-	const savedLowerNoProxy = process.env.no_proxy;
-	process.env.NO_PROXY = "";
-	process.env.no_proxy = "";
-	try {
-		return await transportFetch(input, init);
-	} finally {
-		if (savedNoProxy === undefined) delete process.env.NO_PROXY;
-		else process.env.NO_PROXY = savedNoProxy;
-		if (savedLowerNoProxy === undefined) delete process.env.no_proxy;
-		else process.env.no_proxy = savedLowerNoProxy;
-	}
+	proxy?: { url: string; respectNoProxy: boolean };
 }
 
 export function createProxiedFetch(
@@ -309,13 +269,11 @@ export function createProxiedFetch(
 		// redirect behavior unchanged — the pin for that lives in
 		// provider-proxy-traversal.test.ts.
 		if (socksBacked) {
-			return fetchWithForcedProxy(transportFetch, input, {
-				...init,
-				proxy: proxyUrl,
-				redirect: "manual",
-			});
+			const socksInit: ProxyRequestInit = { ...init, proxy: { url: proxyUrl, respectNoProxy: false }, redirect: "manual" };
+			return transportFetch(input, socksInit);
 		}
-		return fetchWithForcedProxy(transportFetch, input, { ...init, proxy: proxyUrl });
+		const proxyInit: ProxyRequestInit = { ...init, proxy: { url: proxyUrl, respectNoProxy: false } };
+		return transportFetch(input, proxyInit);
 	};
 	// A direct preconnect could leak target DNS/connection metadata outside the
 	// configured proxy. Keep the namespace member for type compatibility only.

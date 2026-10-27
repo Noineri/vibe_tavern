@@ -230,30 +230,10 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
 export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; trackerDelegate?: TrackerDelegate; getCurrentTrackerTemplate?: () => TrackerTemplate | null; loreEntityLookup?: LoreEntityLookup; loreWorkActive?: boolean; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
   const { toolSet, skillRoots, loreDelegate, trackerDelegate, getCurrentTrackerTemplate, loreEntityLookup, contextSearchSession } = opts;
 
-  // ── Turn-local composable profile state (CED-2) ───────────────────────────
-  // Every successful profile mutation in one assembled turn — write_profile,
-  // edit_personality/scenario/examples, write_personality/scenario/examples —
-  // shares this single working profile and a single serialized, non-poisoning
-  // queue. The working profile starts from the canonical turn document
-  // captured at turn start (the supplied editor snapshot when present, storage
-  // otherwise); each successful call advances it, so a later call
-  // sees earlier mutations (composition). A rejected call cannot poison the
-  // queue or corrupt the working profile — its change is discarded and the next
-  // call proceeds against the last good state.
+  // SDK entrypoints serialize tools; successful mutations advance the working
+  // document and rejected edits leave the last good state intact.
   let workingProfileMd: string | undefined = opts.profileMd;
   let profileMutationCount = 0;
-  let turnChain: Promise<unknown> = Promise.resolve();
-
-  /** Serialize a profile mutation onto the turn queue (non-poisoning). */
-  function runQueued<T>(fn: () => Promise<T>): Promise<T> {
-    // Neutralize any prior rejection so this call runs regardless; then run fn.
-    const result = turnChain.catch(() => undefined).then(fn);
-    // The tail chain for the NEXT call swallows this call's outcome, so a
-    // rejection here never blocks a later queued call.
-    turnChain = result.then(() => undefined, () => undefined);
-    return result;
-  }
-
   /** Shared exact-edit path for edit_personality / edit_scenario / edit_examples. */
   async function runSectionExactEdit(
     field: SectionField,
@@ -261,46 +241,41 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     edits: ReadonlyArray<{ search: string; replace: string }>,
     summary: string,
   ): Promise<CoauthorToolOutput> {
-    return runQueued(async () => {
-      if (edits.length === 0) {
-        throw new Error(`${toolName}: edits must not be empty`);
-      }
-      if (!workingProfileMd) {
-        logger.warn("%s REJECTED missing profileMd context", toolName);
-        throw new Error(`${toolName}: Internal error, missing canonical profile context`);
-      }
-      logger.info("%s IN edits=%d summary=%s", toolName, edits.length, summary);
-      const parsed = parseProfileMd(workingProfileMd);
-      const currentBody = parsed.profile[field] ?? "";
-      // Models anchor `search` on the bare `# SECTION` heading they see in the
-      // rendered profile.md; the edit applies to the body only, so that can
-      // never match. Name the real fix instead of a generic "not found" — a
-      // model left guessing falls back to a whole-profile write_profile.
-      const section = PROFILE_FIELD_TO_SECTION[field];
-      if (currentBody.trim().length === 0) {
-        const writeTool = PROFILE_FIELD_TO_WRITE_TOOL[field];
-        const hint = !toolSet || toolSet[writeTool] === true
-          ? ` To populate it, call ${writeTool} with the full section content (no heading).`
-          : "";
-        logger.warn("%s REJECTED empty section %s", toolName, section);
-        throw new Error(`${toolName}: the ${section} section is empty, so there is no text for search to match.${hint}`);
-      }
-      const headingLine = new RegExp(`^#[ \\t]+${section}[ \\t]*$`, "m");
-      if (edits.some((e) => headingLine.test(e.search))) {
-        logger.warn("%s REJECTED heading in search %s", toolName, section);
-        throw new Error(
-          `${toolName}: search includes the "# ${section}" heading, which is not part of the section body — edits apply to the body text only. Remove the heading from search and replace.`,
-        );
-      }
-      const newBody = applyExactEditsToBody(currentBody, edits, toolName);
-      setSectionField(parsed.profile, field, newBody);
-      const merged = serializeProfileMd(parsed);
-      const canonical = validateProfileMd(merged); // CA-17 guard + canonicalize
-      workingProfileMd = canonical; // advance ONLY on success — atomic on failure
-      profileMutationCount += 1;
-      logger.info("%s OK canonical len=%d", toolName, canonical.length);
-      return { target: "profile", proposed: canonical, summary };
-    });
+    if (edits.length === 0) {
+      throw new Error(`${toolName}: edits must not be empty`);
+    }
+    if (!workingProfileMd) {
+      logger.warn("%s REJECTED missing profileMd context", toolName);
+      throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+    }
+    logger.info("%s IN edits=%d summary=%s", toolName, edits.length, summary);
+    const parsed = parseProfileMd(workingProfileMd);
+    const currentBody = parsed.profile[field] ?? "";
+    // Models sometimes include the heading in a body-only search.
+    const section = PROFILE_FIELD_TO_SECTION[field];
+    if (currentBody.trim().length === 0) {
+      const writeTool = PROFILE_FIELD_TO_WRITE_TOOL[field];
+      const hint = !toolSet || toolSet[writeTool] === true
+        ? ` To populate it, call ${writeTool} with the full section content (no heading).`
+        : "";
+      logger.warn("%s REJECTED empty section %s", toolName, section);
+      throw new Error(`${toolName}: the ${section} section is empty, so there is no text for search to match.${hint}`);
+    }
+    const headingLine = new RegExp(`^#[ \\t]+${section}[ \\t]*$`, "m");
+    if (edits.some((e) => headingLine.test(e.search))) {
+      logger.warn("%s REJECTED heading in search %s", toolName, section);
+      throw new Error(
+        `${toolName}: search includes the "# ${section}" heading, which is not part of the section body — edits apply to the body text only. Remove the heading from search and replace.`,
+      );
+    }
+    const newBody = applyExactEditsToBody(currentBody, edits, toolName);
+    setSectionField(parsed.profile, field, newBody);
+    const merged = serializeProfileMd(parsed);
+    const canonical = validateProfileMd(merged);
+    workingProfileMd = canonical; // advance ONLY on success — atomic on failure
+    profileMutationCount += 1;
+    logger.info("%s OK canonical len=%d", toolName, canonical.length);
+    return { target: "profile", proposed: canonical, summary };
   }
 
   /** Shared whole-section write path for write_personality / write_scenario / write_examples. */
@@ -310,25 +285,23 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     content: string,
     summary: string,
   ): Promise<CoauthorToolOutput> {
-    return runQueued(async () => {
-      if (!content.trim()) {
-        logger.warn("%s REJECTED empty input", toolName);
-        throw new Error(`${toolName}: content must not be empty`);
-      }
-      if (!workingProfileMd) {
-        logger.warn("%s REJECTED missing profileMd context", toolName);
-        throw new Error(`${toolName}: Internal error, missing canonical profile context`);
-      }
-      logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
-      const parsed = parseProfileMd(workingProfileMd);
-      setSectionField(parsed.profile, field, content);
-      const merged = serializeProfileMd(parsed);
-      const canonical = validateProfileMd(merged);
-      workingProfileMd = canonical;
-      profileMutationCount += 1;
-      logger.info("%s OK canonical len=%d", toolName, canonical.length);
-      return { target: "profile", proposed: canonical, summary };
-    });
+    if (!content.trim()) {
+      logger.warn("%s REJECTED empty input", toolName);
+      throw new Error(`${toolName}: content must not be empty`);
+    }
+    if (!workingProfileMd) {
+      logger.warn("%s REJECTED missing profileMd context", toolName);
+      throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+    }
+    logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
+    const parsed = parseProfileMd(workingProfileMd);
+    setSectionField(parsed.profile, field, content);
+    const merged = serializeProfileMd(parsed);
+    const canonical = validateProfileMd(merged);
+    workingProfileMd = canonical;
+    profileMutationCount += 1;
+    logger.info("%s OK canonical len=%d", toolName, canonical.length);
+    return { target: "profile", proposed: canonical, summary };
   }
 
   const allTools = {
@@ -349,43 +322,37 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
           .max(200)
           .describe("One-line description of what this edit changes, shown above the Apply button. e.g. 'Made the personality more assertive.'"),
       }),
-      execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> =>
-        runQueued(async () => {
-          if (!profileMd.trim()) {
-            logger.warn("write_profile REJECTED empty input summary=%s", summary);
-            throw new Error("write_profile: profileMd must not be empty");
-          }
-          // write_profile is the explicit whole-document escape hatch: it may
-          // run ONLY as the first profile mutation in the turn. Once any section
-          // edit/write has composed into the working profile, a full rewrite
-          // would silently erase that work — reject and steer the model to the
-          // section tools. (A guard-thrown write_profile does NOT increment the
-          // count, so a self-correct re-emit in the same turn is still allowed.)
-          if (profileMutationCount > 0) {
-            logger.warn("write_profile REJECTED late whole-profile rewrite after %d mutation(s)", profileMutationCount);
-            throw new Error(
-              "write_profile: a whole-profile rewrite can only be the FIRST profile change in a turn. " +
-                "Earlier section edits already composed into the working profile; a full rewrite now would erase them. " +
-                "Use edit_personality / edit_scenario / edit_examples (exact edits) or write_personality / write_scenario / write_examples (whole-section writes) to refine the composed result.",
-            );
-          }
-          logger.info("write_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
-          logger.debug("write_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
-          let canonical: string;
-          try {
-            canonical = validateProfileMd(profileMd);
-          } catch (err) {
-            // The lost-section guard throws to force a self-correct re-emit.
-            const msg = (err as Error).message;
-            const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
-            logger.warn("write_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
-            throw err;
-          }
-          workingProfileMd = canonical;
-          profileMutationCount += 1;
-          logger.info("write_profile OK canonical len=%d", canonical.length);
-          return { target: "profile", proposed: canonical, summary };
-        }),
+      execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> => {
+        if (!profileMd.trim()) {
+          logger.warn("write_profile REJECTED empty input summary=%s", summary);
+          throw new Error("write_profile: profileMd must not be empty");
+        }
+        // A late whole-document rewrite would erase earlier composed edits.
+        if (profileMutationCount > 0) {
+          logger.warn("write_profile REJECTED late whole-profile rewrite after %d mutation(s)", profileMutationCount);
+          throw new Error(
+            "write_profile: a whole-profile rewrite can only be the FIRST profile change in a turn. " +
+              "Earlier section edits already composed into the working profile; a full rewrite now would erase them. " +
+              "Use edit_personality / edit_scenario / edit_examples (exact edits) or write_personality / write_scenario / write_examples (whole-section writes) to refine the composed result.",
+          );
+        }
+        logger.info("write_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
+        logger.debug("write_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
+        let canonical: string;
+        try {
+          canonical = validateProfileMd(profileMd);
+        } catch (err) {
+          // The lost-section guard throws to force a self-correct re-emit.
+          const msg = (err as Error).message;
+          const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
+          logger.warn("write_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
+          throw err;
+        }
+        workingProfileMd = canonical;
+        profileMutationCount += 1;
+        logger.info("write_profile OK canonical len=%d", canonical.length);
+        return { target: "profile", proposed: canonical, summary };
+      },
     }),
 
     edit_greeting: tool({

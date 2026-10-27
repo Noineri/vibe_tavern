@@ -39,12 +39,7 @@ import { createAgentPlanTools } from "../../../agent-plan/agent-plan-tools.js";
  *  `saveTodo` is the thread-store writer (the stream closes over the turn's
  *  thread row — `updateTodo(threadId, items)`, the same seam the experience
  *  kind wires); `agentPlans` is the shared plan store's READ seam (the
- *  sidechat never writes a branch plan).
- *
- *  The `todo` serialization queue is TURN-LOCAL and lives HERE, exactly the
- *  experience builder's own-queue pattern (AS-2c): the sidechat has no buffer
- *  tools, so this queue is the turn's only serialized writer and guards
- *  nothing else. */
+ *  sidechat never writes a branch plan). */
 export function buildSidechatChecklistTools(input: {
   /** The RESOLVED profile's tool set (the kind's toggles, SC-5). */
   readonly toolSet: Record<string, boolean>;
@@ -56,16 +51,6 @@ export function buildSidechatChecklistTools(input: {
   /** The shared agent-plan store's read seam. */
   readonly agentPlans: { get(owner: AgentPlanOwner): Promise<AgentPlan | null> };
 }): ToolSet {
-  // ── Turn-local serialization queue (non-poisoning — the experience
-  // builder's todo queue, verbatim pattern: a rejected call is swallowed so
-  // the next call runs against the last good state).
-  let turnChain: Promise<unknown> = Promise.resolve();
-  const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {
-    const result = turnChain.catch(() => undefined).then(fn);
-    turnChain = result.then(() => undefined, () => undefined);
-    return result;
-  };
-
   const branchOwner: AgentPlanOwner = {
     kind: "chatBranch",
     chatId: input.owner.chatId,
@@ -75,7 +60,7 @@ export function buildSidechatChecklistTools(input: {
   const allTools: ToolSet = {
     // REUSED factory — never cloned: the description, schema and result
     // envelope are the shared tool's, byte-identical.
-    todo: createCopilotTodoTool({ save: input.saveTodo, enqueue }),
+    todo: createCopilotTodoTool({ save: input.saveTodo }),
 
     // REUSED shared plan tools, read-only: the set this spreads carries
     // exactly `read_plan` (readOnly builds no `plan` tool). The `save` dep

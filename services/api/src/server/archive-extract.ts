@@ -102,10 +102,13 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
 		void handleTarEntry(header, stream, destDir).then(
 			() => next(),
 			(err: unknown) => {
-				// Drain so the underlying stream is not left half-read, then tear
-				// the extractor down so `pipeline` below rejects with this error.
-				stream.resume();
-				tar.destroy(err instanceof Error ? err : new ArchiveExtractError(String(err)));
+				const failure = err instanceof Error ? err : new ArchiveExtractError(String(err));
+				// tar-stream destroys the current entry with its own error; observe it
+				// here so rejecting does not leave an unhandled stream error.
+				stream.once("error", (streamError) => {
+					if (streamError !== failure) tar.destroy(streamError);
+				});
+				tar.destroy(failure);
 			},
 		);
 	});
@@ -120,13 +123,11 @@ async function handleTarEntry(header: TarHeaders, stream: TarEntryStream, destDi
 	if (type === "symlink" || type === "link") {
 		// Never recreate links: a symlink pointing outside the destination turns
 		// every later entry written "through" it into an arbitrary-file write.
-		await drain(stream);
 		throw new ArchiveExtractError(`Refusing link entry in release archive: ${name}`);
 	}
 
 	const target = resolveEntryPath(destDir, name);
 	if (target === null) {
-		await drain(stream);
 		throw unsafeEntry(name);
 	}
 
@@ -138,7 +139,6 @@ async function handleTarEntry(header: TarHeaders, stream: TarEntryStream, destDi
 
 	if (type !== "file" && type !== undefined) {
 		// Character/block devices, FIFOs — nothing a release archive should carry.
-		await drain(stream);
 		throw new ArchiveExtractError(`Refusing ${type} entry in release archive: ${name}`);
 	}
 

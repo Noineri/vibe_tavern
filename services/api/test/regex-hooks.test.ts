@@ -66,7 +66,6 @@ const STUB_STREAM: typeof streamProviderExecutor = async () => ({
   finished: Promise.resolve({ finishReason: "stop" as const }),
   text: Promise.resolve(AI_REPLY_TEXT),
   reasoning: Promise.resolve(undefined),
-  hasRedactedReasoning: false,
   providerResponse: { mode: "stream" as const, steps: [] },
 });
 const STUB_EXECUTORS = { nonstreaming: STUB_NONSTREAMING, stream: STUB_STREAM };
