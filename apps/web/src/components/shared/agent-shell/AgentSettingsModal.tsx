@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useT } from "../../../i18n/context.js";
@@ -15,7 +15,7 @@ import { AgentSkillModal } from "./AgentSkillModal.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
+import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
 
 /**
  * Assistant settings summary (AGENT_SHELL_POLISH AP-27, mockup §4) — the
@@ -86,18 +86,6 @@ export function AgentSettingsModal({
 
 	const [profileOpen, setProfileOpen] = useState(false);
 	const [skillOpen, setSkillOpen] = useState(false);
-	// The dropdown is one-step (choose = apply) while the assignment hook is
-	// two-step (select, then assign): the choice parks here and the commit
-	// effect below applies it through the hook once the target resolves.
-	// A FAILED write resets the park (see `onFailed`) so the trigger shows
-	// the effective profile again and choosing the same profile retries.
-	const [chosenId, setChosenId] = useState<string | null>(null);
-	// The commit edge pins the committed choice (see below) — the hook
-	// object is fresh every render, so without it the effect would re-fire
-	// the write on every parent re-render until the server round-trip
-	// clears the choice. Reset on failure and on close (a stale pin would
-	// swallow a same-profile retry, even in a later modal session).
-	const committedRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -107,41 +95,24 @@ export function AgentSettingsModal({
 		if (!isOpen) {
 			setProfileOpen(false);
 			setSkillOpen(false);
-			setChosenId(null);
-			committedRef.current = null;
 		}
 	}, [isOpen, agentKind, loadProfiles, loadSkills]);
 
-	// No in-flight choice: pass null (the hook's guards no-op on null, and
-	// neither resolution read below depends on the selection).
-	const selected = chosenId !== null ? (profiles.find((p) => p.id === chosenId) ?? null) : null;
-	const assignment = useAgentProfileAssignment({
+	// The parked-choice pattern (the one-step dropdown over the two-step
+	// assignment hook: parking state, commit pin/effect, failure reset,
+	// close reset) lives in `useParkedProfileChoice` — the DR-6b
+	// unification; its close reset was this modal's own `!isOpen` branch
+	// before the extraction.
+	const { chosenId, choose, effectiveId } = useParkedProfileChoice({
 		agentKind,
 		isChatTarget,
 		scriptId,
 		chatId,
 		assignedProfileId,
-		selected,
 		profiles,
 		isOpen,
 		t,
-		onAssigned: () => setChosenId(null),
-		onFailed: () => {
-			committedRef.current = null;
-			setChosenId(null);
-		},
 	});
-	const effectiveId = isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId;
-
-	// The commit edge (see `chosenId` above): guards + writes live in the
-	// hook (`assign` / `assignHere` no-op when the choice is already active).
-	useEffect(() => {
-		if (chosenId === null || chosenId === committedRef.current) return;
-		if (!profiles.some((p) => p.id === chosenId)) return;
-		committedRef.current = chosenId;
-		if (isChatTarget) assignment.assignHere();
-		else assignment.assign();
-	}, [chosenId, profiles, isChatTarget, assignment]);
 
 	const handleAutoCompact = (enabled: boolean) => {
 		// SC-0e: the write merges the returned row into the bootstrap
@@ -205,7 +176,7 @@ export function AgentSettingsModal({
 									<DropdownSelect
 										value={chosenId ?? effectiveId}
 										options={profiles.map((p) => ({ id: p.id, label: p.name }))}
-										onChange={(id) => setChosenId(id)}
+										onChange={choose}
 										disabled={!profilesLoaded || profiles.length === 0}
 										searchable={false}
 										triggerTestId="agent-settings-profile-select"

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
@@ -6,7 +6,7 @@ import { Icons } from "../icons.js";
 import { MasterListTag } from "../master-list/master-list-tag.js";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
-import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
+import { BUILTIN_PROFILE_ID, useParkedProfileChoice } from "./use-agent-profile-assignment.js";
 
 /**
  * AgentProfileChip (DIRECTOR_MODE_PLAN DR-6, mockup §2) — the header's
@@ -19,20 +19,20 @@ import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profi
  * The pill NEVER truncates (`whitespace-nowrap` + `shrink-0` — the session
  * name yields first).
  *
- * WRITE SURFACE — the THIRD consumer of the parked-choice pattern (the
- * profile modal was the first, the settings summary's dropdown the second):
- * the choice parks in `chosenId`, a commit effect applies it through
- * `useAgentProfileAssignment` (`assignHere` for chat-target hosts, `assign`
- * for script hosts — exactly what the settings summary's profile dropdown
- * writes today), and `onFailed` unparks so a failed write falls back to
- * the effective profile and a same-choice retry re-fires. Unlike the modal
- * consumers, the chip
- * keeps the hook's `isOpen` true for its whole mounted life: the LABEL
- * needs the chat row's effective profile at rest, not only while a menu is
- * open. Sibling surfaces (settings summary, profiles modal) write through
- * their own hook instances, which this instance cannot see — the shell
- * remounts the chip (fresh read) each time one of them closes, so the
- * label never goes stale.
+ * WRITE SURFACE — the parked-choice pattern lives in
+ * `useParkedProfileChoice` (extracted from the settings summary's inline
+ * dropdown pattern by the DR-6b unification; this chip carried copy #2
+ * until then): a menu pick parks there and its commit effect writes
+ * exactly what the settings summary's profile dropdown writes
+ * (`assignHere` for chat-target hosts, `assign` for script hosts), with
+ * `onFailed` unparking a failed write so it falls back to the effective
+ * profile and a same-choice retry re-fires. Unlike the modal consumer, the
+ * chip keeps the hook's `isOpen` true for its whole mounted life: the
+ * LABEL needs the chat row's effective profile at rest, not only while a
+ * menu is open. Sibling surfaces (settings summary, profiles modal) write
+ * through their own hook instances, which this instance cannot see — the
+ * shell remounts the chip (fresh read) each time one of them closes, so
+ * the label never goes stale.
  *
  * CHROME — the pill is mockup §2's `pchip`; the menu rides the SAME-ROW
  * canon: `AgentSessionSwitcher`'s Radix popover chrome, which also makes it
@@ -78,46 +78,25 @@ export function AgentProfileChip({
 		void loadProfiles(agentKind);
 	}, [agentKind, loadProfiles]);
 
-	// The parked choice + its commit pin (the settings-summary pattern,
-	// verbatim): the menu is one-step (choose = apply) while the hook is
-	// two-step (select, then assign). A FAILED write resets the park so the
-	// label shows the effective profile again and re-choosing retries.
-	const [chosenId, setChosenId] = useState<string | null>(null);
-	const committedRef = useRef<string | null>(null);
+	// The parked choice + its commit pin live in `useParkedProfileChoice`
+	// (the DR-6b unification of the settings-summary pattern this chip had
+	// copied verbatim): the menu is one-step (choose = apply), the hook
+	// parks the choice, commits it, and resets the park on a failed write
+	// so the label shows the effective profile again and re-choosing
+	// retries.
 	const [menuOpen, setMenuOpen] = useState(false);
-
-	// No in-flight choice: pass null (the hook's guards no-op on null, and
-	// the effective resolution below does not depend on the selection).
-	const selected = chosenId !== null ? (profiles.find((p) => p.id === chosenId) ?? null) : null;
-	const assignment = useAgentProfileAssignment({
+	const { choose, effectiveId } = useParkedProfileChoice({
 		agentKind,
 		isChatTarget,
 		scriptId,
 		chatId,
 		assignedProfileId,
-		selected,
 		profiles,
 		// Always true while mounted — see the header comment: the label
 		// needs the (chat, kind) read at rest, not only while open.
 		isOpen: true,
 		t,
-		onAssigned: () => setChosenId(null),
-		onFailed: () => {
-			committedRef.current = null;
-			setChosenId(null);
-		},
 	});
-	const effectiveId = isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId;
-
-	// The commit edge: guards + writes live in the hook (`assignHere` /
-	// `assign` no-op when the choice is already active).
-	useEffect(() => {
-		if (chosenId === null || chosenId === committedRef.current) return;
-		if (!profiles.some((p) => p.id === chosenId)) return;
-		committedRef.current = chosenId;
-		if (isChatTarget) assignment.assignHere();
-		else assignment.assign();
-	}, [chosenId, profiles, isChatTarget, assignment]);
 
 	// Mockup §2: no chip on the kind's first built-in (the seed — its id is
 	// the sentinel), and none until the list has loaded (an unloaded list
@@ -183,7 +162,7 @@ export function AgentProfileChip({
 									data-testid={`agent-profile-menu-row-${p.id}`}
 									data-active="false"
 									onClick={() => {
-										setChosenId(p.id);
+										choose(p.id);
 										setMenuOpen(false);
 									}}
 									className="flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-t2 transition-colors hover:bg-s2 hover:text-t1"
