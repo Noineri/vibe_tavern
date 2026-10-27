@@ -1,7 +1,8 @@
 /**
- * Toast-under-modal-scrim regression pin (owner-reported UX defect: an error
- * toast fired inside an open modal painted BEHIND the modal scrim — «тост под
- * затемнением модалки», invisible or half-glimpsed).
+ * Toast-under-modal-scrim regression pin (owner-reported UX defect 2026-10-27,
+ * see DIRECTOR_MODE_PLAN.md: an error toast fired inside an open modal painted
+ * BEHIND the modal scrim — invisible or half-glimpsed, so the user cannot
+ * tell what happened).
  *
  * Mechanism (NOT a sonner z-index shortage): #root carries
  * `position:relative;z-index:1` (styles.css — it must paint above the lava

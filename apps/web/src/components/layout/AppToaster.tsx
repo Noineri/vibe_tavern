@@ -10,8 +10,9 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
  * z-index:0), which makes #root a STACKING CONTEXT. A toaster mounted inside
  * it is trapped at #root's z≈1 while every modal overlay portals to <body>
  * (Modal z-[500]/[501], MediaModal z-[700]) — so in-modal error toasts
- * painted UNDER the modal scrim (owner report: «тост под затемнением
- * модалки»). At body level sonner's own z-index:999999999 applies in the
+ * painted UNDER the modal scrim (owner report 2026-10-27 — see
+ * DIRECTOR_MODE_PLAN.md: "the toast sits under the modal dim and you cannot
+ * tell what is happening"). At body level sonner's own z-index:999999999 applies in the
  * root stacking context, above every app overlay — restoring what the
  * styles.css comment already assumed ("portaled modals/toasts (body
  * children) still stack above both"). Position, animation, and glass
