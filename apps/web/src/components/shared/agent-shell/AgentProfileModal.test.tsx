@@ -8,6 +8,9 @@
  *   - "+ New profile" opens a blank editor; empty name blocks save (no RPC);
  *   - "Duplicate" on the built-in seed opens a create editor with a copy suffix;
  *   - editing a user profile populates the editor and Save calls update;
+ *     the PATCH body carries name/basePrompt/toolSet but NEVER agentKind
+ *     (the update contract omits the immutable kind — owner-report edit 422),
+ *     while the create body KEEPS it;
  *   - NO skill toggles render and the skill catalog is never fetched (PM-8 —
  *     skills are ungated, so the profile editor has no skill surface);
  *   - assigning a user profile calls setCopilotProfile(scriptId, id); assigning
@@ -618,6 +621,45 @@ describe("CopilotProfileModal — edit user profile", () => {
 		expect(getByText("copilot_profile_tools")).toBeDefined();
 		// The skill catalog RPC was profile-toggle-only wiring — never called.
 		expect(listCopilotSkills).not.toHaveBeenCalled();
+	});
+});
+
+describe("CopilotProfileModal — PATCH body shape (owner-report edit 422)", () => {
+	// AS-3: `agentKind` is immutable — the create contract takes it, the
+	// update contract (`.strict()` through omit/partial on zod 4.4.3) rejects
+	// it, so the edit save must send a body without the key. The owner repro
+	// path: duplicate the built-in seed → save (create) → edit the copy →
+	// save (update) — both payloads pinned at the API seam (the suite's mock
+	// family; the store itself stays real).
+	it("edit save sends name/basePrompt/toolSet with NO agentKind; create keeps agentKind", async () => {
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+		// Duplicate the built-in seed and save — the create RPC fires.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(1));
+		// The created copy (the create mock returns USER) is selected in view
+		// mode — edit it and save, firing the update RPC.
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(updateCopilotProfile).toHaveBeenCalledTimes(1));
+
+		// Create keeps the kind (guards against over-stripping the fix).
+		const createInput = createCopilotProfile.mock.calls[0]![0];
+		expect(createInput.agentKind).toBe("experience");
+
+		// The PATCH body: no agentKind key at all, editable fields intact.
+		const [updateId, updateInput] = updateCopilotProfile.mock.calls[0]!;
+		expect(updateId).toBe("cprof_1");
+		expect("agentKind" in updateInput).toBe(false);
+		expect(updateInput.name).toBe("Card games");
+		expect(updateInput.basePrompt).toBe("You help author card-game experiences.");
+		expect(updateInput.toolSet).toEqual({ write_buffer: true, run_test: true });
 	});
 });
 

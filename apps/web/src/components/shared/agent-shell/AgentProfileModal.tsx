@@ -24,7 +24,7 @@ import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
-import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile, CopilotProfileCreate, CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
 import { resolveAgentProfileToolLabel } from "./agent-tool-labels.js";
@@ -60,6 +60,18 @@ function draftToCreateInput(d: ProfileDraft, agentKind: string): CopilotProfileC
 		basePrompt: d.basePrompt,
 		toolSet: d.toolSet,
 		agentKind,
+	};
+}
+
+/** The edit-save body: the create shape MINUS `agentKind` — the kind is
+ *  immutable (AS-3), and the strict update contract omits the key, so a
+ *  PATCH carrying it is rejected with a 422. The server re-validates
+ *  toolSet against the stored row's kind. */
+function draftToUpdateInput(d: ProfileDraft): CopilotProfileUpdate {
+	return {
+		name: d.name.trim(),
+		basePrompt: d.basePrompt,
+		toolSet: d.toolSet,
 	};
 }
 
@@ -227,15 +239,14 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 			toast.error(t("copilot_profile_base_prompt_required"));
 			return;
 		}
-		const input = draftToCreateInput(draft, agentKind);
 		try {
 			// The store actions wrap the profile API (create/update) and
 			// refresh the list — the modal only drives draft → save → view.
 			if (detailMode === "create") {
-				const created = await createProfile(input);
+				const created = await createProfile(draftToCreateInput(draft, agentKind));
 				setSelectedId(created.id);
 			} else if (detailMode === "edit" && selectedId) {
-				await updateProfile(selectedId, input);
+				await updateProfile(selectedId, draftToUpdateInput(draft));
 			}
 			setDetailMode("view");
 			setDirty(false);
