@@ -123,29 +123,28 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 		expect(bundle.entries[0].lorebookId).toBe("lorebook_1");
 	});
 
-	it("a failed call does NOT poison the queue or corrupt prior state (failed-call rollback)", async () => {
+	it("a failed call rejects without corrupting prior state or reusing its revision", async () => {
 		const draft = makeDraft();
 		await draft.createLorebook({ name: "Book" });
-		// This fails (missing parent) — it must be discarded, not poison the chain.
+		// A missing parent must not change the last good draft graph.
 		await expect(draft.createLoreEntry({ lorebookId: "ghost" })).rejects.toThrow();
 		// A subsequent valid call must still succeed against the last good state.
 		const bundle = await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "After fail" });
 		expect(bundle.lorebooks).toHaveLength(1);
 		expect(bundle.entries).toHaveLength(1);
 		expect(bundle.entries[0].title).toBe("After fail");
+		expect(bundle.revision).toBe(3);
 	});
 
-	it("same-step mutations serialize in call order (non-poisoning queue)", async () => {
+	it("same-step mutations compose in call order", async () => {
 		const draft = makeDraft();
-		// Issue two lorebook creations WITHOUT awaiting between them. Both must
-		// commit (the queue composes them), and ids are allocated in call order.
+		// Issue both without awaiting; ids and snapshots must follow call order.
 		const [b1, b2] = await Promise.all([
 			draft.createLorebook({ name: "First" }),
 			draft.createLorebook({ name: "Second" }),
 		]);
 		expect(b1.lorebooks).toHaveLength(1);
-		// The second call's snapshot reflects BOTH creations (it ran after the
-		// first on the serialized queue), so it sees the cumulative state.
+		// The second snapshot includes the first mutation's state.
 		expect(b2.lorebooks).toHaveLength(2);
 		// Final state has both books, in insertion order.
 		const names = draft.snapshot().lorebooks.map((lb) => lb.name);
