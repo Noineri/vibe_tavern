@@ -66,6 +66,20 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 **Trade-off:** Three panels rendered simultaneously. Acceptable because only markdown text is rendered (no images or heavy components), and only the current panel's content is actively measured.
 
+**Engine update (2026-10-28, mobile swipe gestures report step 2):** the true carousel remains, but native horizontal overflow plus CSS scroll snap replaces Framer Motion's JavaScript drag engine.
+The old engine could commit the horizontal component of a cancelled vertical gesture, suppress text selection, and leave the track locked if a new touch interrupted its animation promise.
+The browser now owns axis arbitration, momentum, snapping and interruption; there is no drag-end velocity threshold or animation promise in `MobileVariantCarousel`.
+
+- Every variant has an equal full-width snap slot; the 12px spacing is a track gap, never padding that changes text width on landing.
+- Only current ±1 mount content, keyed by stable variant identity, so an adjacent landing preserves the overlapping Markdown panels.
+- Native `scrollend` commits the landed index; feature-detected older engines use a quiet-scroll fallback that requires snap alignment and no active touches.
+- The current slot alone drives the viewport height through `ResizeObserver`; a height-only resize does not reset horizontal scroll.
+- Busy text swipes use hidden horizontal overflow and reject queued landings; image slots retain `VariantControls`' `swipeWhileBusy` exception.
+- Non-current slots are `aria-hidden`, inert, non-interactive and excluded from translation; the current text remains natively selectable.
+
+**Feel trade-off:** a slow native drag crosses roughly half a slot to change pages (rather than the old ~22% threshold); native momentum still allows a flick to land early.
+This update covers the pager engine only; display-regex parity, smooth external chevrons and mobile scroll-to-start are separate report steps.
+
 ---
 
 ## AD-003: Portal Overlay for Desktop Variant Controls

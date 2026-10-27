@@ -505,6 +505,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         <MobileVariantCarousel
           selectedVariantIndex={selectedVariantIndex}
           variants={variants}
+          isBusy={isBusy}
+          swipeWhileBusy={isPureImageSlot}
           onSelectVariant={handleSelectVariant}
           renderPanel={renderImagePanel}
         />

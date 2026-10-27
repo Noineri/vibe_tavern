@@ -102,7 +102,7 @@ MessageBlock (memo)
 │   ├── Header (avatar, name, greeting counter)
 │   ├── Content area
 │   │   ├── Desktop: AnimatePresence variant slide
-│   │   └── Mobile: MobileVariantCarousel (3-panel drag)
+│   │   └── Mobile: MobileVariantCarousel (native scroll snap, current ±1 content)
 │   ├── MessageReasoning (collapsible thinking block)
 │   ├── MessageMetadata (token count, model, timestamp)
 │   └── Actions
@@ -161,29 +161,31 @@ The portal overlay remains load-bearing and should still be tested in both direc
 
 ### Mobile Variant Carousel (`MobileVariantCarousel`)
 
-A **true 3-panel carousel** for switching variants on mobile via horizontal drag.
+A **true native scroll-snap carousel** for switching variants on mobile via horizontal touch scrolling.
 
 **Why a carousel (not gesture-to-slide):** A true carousel renders previous/current/next panels side-by-side. The content follows the finger during drag. This feels premium and native. Gesture-to-slide (where the current panel slides out and the next slides in after a threshold) feels cheaper because the content isn't visible during the gesture.
 
 **Architecture:**
 
 ```
-motion.div (viewport, overflow: hidden, height: locked)
-└── motion.div (track, width: 300%, flex, items-start)
-    ├── Panel 1: previous variant (w-1/3)
-    ├── Panel 2: current variant  (w-1/3, ref for height measurement)
-    └── Panel 3: next variant     (w-1/3)
+div (viewport + flex track, overflow-x: auto, overflow-y: hidden, snap-x mandatory)
+├── Full-width snap slots for all variant positions, separated by a track gap
+├── Only current ±1 mount Markdown or image content, keyed by variant identity
+└── Current slot ref drives the viewport height; other slots are inert/aria-hidden
 ```
 
 **Key details:**
 
 - **`items-start` on the track** — CRITICAL. Default flex stretch forces all panels to the tallest panel's height. `items-start` lets each panel be its natural height, which is needed for correct current-panel height measurement.
 - **Height management:** The viewport height is locked to the current panel's measured height via `ResizeObserver`. After a swipe commits, the height smoothly transitions (`transition: height 180ms ease`) to the new panel's height.
-- **Drag handling:** `drag="x"` with `dragDirectionLock` — Framer only captures the gesture once horizontal movement wins. CSS `touchAction: "pan-y"` leaves normal vertical scrolling to the browser.
-- **Snap logic:** `handleDragEnd` checks threshold (22% of viewport width, min 55px, max 120px) OR velocity (>650px/s). If neither threshold is met, snaps back to center via spring animation.
-- **Commit flow:** After animation completes (`.then()`), calls `onSelectVariant(targetIndex, direction)`, then instantly resets track position (`controls.set({ x: -viewportWidth })`) for the next swipe.
+- **Gesture ownership:** Native scrolling owns axis arbitration, momentum, snapping and interruptions; no JS drag handlers or selection suppression remain in the carousel.
+- **Geometry:** Equal full-width slots use `snap-start` and `snap-always`; spacing belongs to the track gap, whose computed CSS value is included in index calculations.
+- **Commit flow:** `variant-scroll-snap.ts` observes native `scrollend`, or a feature-detected quiet-scroll fallback on older browsers; the fallback requires an aligned snap point and all touches ending.
+- **Busy lock:** Hidden horizontal overflow and a settle-time guard apply the same `isBusy && !swipeWhileBusy` rule as the arrows; pure image slots retain their busy exception.
+- **Accessibility and translation:** Only the current slot is interactive and translated; neighbors are inert, `aria-hidden` and `translate="no"`.
+- **External selection:** Aligns instantly in this engine step; smooth chevrons, display-regex parity and mobile scroll-to-start remain separate steps in the mobile swipe gestures report.
 
-**Greeting carousel:** The same `MobileVariantCarousel` is reused for greeting messages, which use `greetingCarouselVariants` (array of `{ content }` objects built from `alternateGreetings`).
+**Greeting carousel:** Greeting messages use the same message-variant array and carousel branch in `MessageBlock`; the existing `canSwitchVariant` gate still applies.
 
 ### Markdown Rendering
 
@@ -207,7 +209,7 @@ Quoted dialogue highlighting deliberately works on the HAST tree instead of raw 
 | `MessageMetadata` | Token count, model ID, timestamp display |
 | `DesktopMessageActions` | Hover-reveal action bar: copy, edit, branch, regenerate, delete, variant arrows |
 | `MobileMessageActions` | Three-dot menu with action items: copy, edit, branch, resend, regenerate, variant counter |
-| `MobileVariantCarousel` | 3-panel drag carousel (see above) |
+| `MobileVariantCarousel` | Native scroll-snap carousel with current ±1 content (see above) |
 | `VariantControls` | Arrow buttons for variant switching (used both inline and in the portal overlay) |
 | `VariantJumpList` | Dropdown jump-list for hopping between many variants at once |
 | `PendingUserMessage` / `PendingAssistantMessage` | Optimistic/streaming cells appended to the stable recent tail |

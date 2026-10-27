@@ -235,17 +235,31 @@ describe("Mobile variant carousel — gated to last message (desktop parity)", (
 
 // ---------------------------------------------------------------------------
 // Content swipe carousel (MobileVariantCarousel in MessageBlock) — the
-// 3-panel framer-motion track that fires onSelectVariant on swipe. This is a
+// content pager that fires onSelectVariant on swipe. This is a
 // SECOND gate (regression 2026-08): the 2026-06-21 fix above gated only the
 // actions-row VariantControls; MessageBlock's mobile render branch still chose
 // the swipe carousel for ANY multi-variant message via `isMobile && variantCount > 1`,
 // without the `canSwitchVariant` (isLast && !isCoauthorMode) term — so brushing
 // an old message's content sideways flipped its variant. Sentinel for the
-// swipe carousel is its 300%-wide track (`w-[300%]`); the static desktop-style
-// branch never contains it.
+// swipe carousel is its stable component marker; the static desktop-style
+// branch never contains it. The gate must not depend on the pager engine.
 // ---------------------------------------------------------------------------
 
 describe("Mobile content swipe carousel — gated to last message", () => {
+  test("a busy text message locks the content pager as well as its arrows", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeMultiVariantMessage("m2")]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+    chatStore.useChatStore.setState({ messageActionId: "m2" });
+    const { getByTestId } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+    expect(getByTestId("mobile-variant-carousel").classList.contains("overflow-x-hidden")).toBe(true);
+  });
+
   test("NON-LAST multi-variant assistant message: swipe track must NOT render, content stays static", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(
@@ -258,8 +272,8 @@ describe("Mobile content swipe carousel — gated to last message", () => {
     );
     await act(async () => { await Promise.resolve(); });
 
-    // The 300% track is the swipe carousel; it must be absent for older messages.
-    expect(container.innerHTML).not.toContain("w-[300%]");
+    // The content carousel must be absent for older messages.
+    expect(container.querySelector('[data-testid="mobile-variant-carousel"]')).toBeNull();
     // Fallback branch still renders the selected variant's content statically.
     expect(container.textContent).toContain("variant-0");
   });
@@ -277,7 +291,7 @@ describe("Mobile content swipe carousel — gated to last message", () => {
     await act(async () => { await Promise.resolve(); });
 
     // Positive control: the swipe carousel track renders for the last message.
-    expect(container.innerHTML).toContain("w-[300%]");
+    expect(container.querySelector('[data-testid="mobile-variant-carousel"]') !== null).toBe(true);
   });
 });
 
@@ -321,6 +335,20 @@ describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () =
     return [...container.querySelectorAll('[data-testid="image-block-img"]')].map((el) => el.getAttribute("src") ?? "");
   }
 
+  test("a busy image slot preserves the shared swipeWhileBusy exception", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeImageSlot(true)]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+    chatStore.useChatStore.setState({ messageActionId: "m2" });
+    const { getByTestId } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+    expect(getByTestId("mobile-variant-carousel").classList.contains("overflow-x-auto")).toBe(true);
+  });
+
   test("multi-variant slot: one image PER PANEL (row set / v1 / v2), no duplicate grid below", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(
@@ -335,7 +363,7 @@ describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () =
 
     // The swipe track renders AT ALL for the slot (the pre-fix bug: it existed
     // but its empty panels gave it zero height — no swipe surface).
-    expect(container.innerHTML).toContain("w-[300%]");
+    expect(container.querySelector('[data-testid="mobile-variant-carousel"]') !== null).toBe(true);
     // One image per panel: v0 → the row-set shadow, v1 → its own set,
     // v2 → its own set. Exactly one of each — the standalone grid below must
     // NOT add a second copy of the current variant's image.
@@ -394,7 +422,7 @@ describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () =
 
     // variantCount === 1 → no carousel; the plain grid path must render the
     // image exactly once (the suppression must not eat the no-carousel case).
-    expect(container.innerHTML).not.toContain("w-[300%]");
+    expect(container.querySelector('[data-testid="mobile-variant-carousel"]')).toBeNull();
     const srcs = imageSrcs(container);
     expect(srcs.length).toBe(1);
     expect(srcs[0].includes("asset-row")).toBe(true);
