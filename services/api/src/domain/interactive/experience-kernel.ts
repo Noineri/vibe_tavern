@@ -704,6 +704,7 @@ function validateTransition(
 		events: data.events.map((event) => ({
 			visibility: event.visibility,
 			type: event.type,
+			...(event.participantId !== undefined ? { participantId: event.participantId } : {}),
 			...(event.detail !== undefined ? { detail: event.detail } : {}),
 		})),
 		...(data.effects !== undefined

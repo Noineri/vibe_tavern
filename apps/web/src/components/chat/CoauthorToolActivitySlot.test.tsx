@@ -71,6 +71,7 @@ const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState 
 	pendingUserMessageContent: null,
 	pendingUserMessageAttachments: [],
 	pendingDiceRolls: [],
+	pendingExperienceReport: null,
 	abortController: null,
 	...over,
 });

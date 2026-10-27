@@ -393,6 +393,10 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     if (result === null) throw new Error("experience queue failed");
   }, []);
 
+  async function handleClearQueue(): Promise<void> {
+    if (!await useExperienceStore.getState().clearQueue()) throw new Error("experience clear queue failed");
+  }
+
   async function handleFinishExperience(): Promise<void> {
     setConfirmingFinish(false);
     try {
@@ -497,9 +501,11 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
         data-testid="experience-detached-report-footer"
       >
         <ExperienceReportControls
+          layout="footer"
           queuedAttachment={queuedAttachment}
           reportStatus={reportStatus}
           onQueue={handleQueueReport}
+          onClear={handleClearQueue}
         />
       </footer>
       {confirmingFinish && (

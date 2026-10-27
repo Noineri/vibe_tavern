@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranchId, ChatId, ExperienceMessageReport } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
 import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
@@ -46,7 +46,8 @@ import {
 import { useDiceStore } from "../stores/dice-store.js";
 import { usePerSendPrefillStore } from "../stores/per-send-prefill-store.js";
 import { useExperienceStore } from "../stores/experience-store.js";
-import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
+import type { DiceSendCommitIntent } from "../api/types.js";
+import { readExperienceSendState } from "./experience-send-state.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 import { diceConflictCode, experienceConflictCode, gateErrorCode } from "./chat-controller-error-codes.js";
@@ -79,43 +80,6 @@ function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; 
   const hasBindable = lane !== null && lane.rolls.some((roll) => roll.included);
   const commitIntent = lane && hasBindable ? { diceMode, pendingRevision: lane.revision } : undefined;
   return { commitIntent, blockReason: null };
-}
-
-/** Imperative read (at send time) of the experience attachment commit intent
- *  for the EXACT scope the caller is about to send into (IR-73D). The
- *  `expectedChatId` is the actual send target (from the chat store, not the
- *  snapshot); a transient mismatch — snapshot claims a different chat is active
- *  — fails closed so the other chat's attachment can never be bound into this
- *  send. Subtractive-only: when the scope has no queued attachment, or the
- *  attachment's scope IDs don't match the active scope exactly, the intent is
- *  undefined and the send body is byte-identical to a no-experience send.
- *  Derives ONLY the three identifiers/revisions the server already stored —
- *  never `publicReport`, hashes, transcript, state, or visual source. The
- *  returned `scope` (always set when there is an active chat+branch) is used
- *  for the post-settlement authoritative attachment refresh. */
-function readExperienceSendState(expectedChatId: ChatId): {
-  commitIntent: ExperienceSendCommitIntent | undefined;
-  scope: { chatId: string; branchId: string } | null;
-} {
-  const snapshot = useSnapshotStore.getState();
-  // Fail closed unless the snapshot's active chat is the EXACT send target — a
-  // transient mismatch could otherwise capture the wrong chat's intent.
-  if (snapshot.activeChat?.id !== expectedChatId) return { commitIntent: undefined, scope: null };
-  const chatId = snapshot.activeChat?.id ?? null;
-  const branchId = snapshot.activeBranch?.id ?? null;
-  if (!chatId || !branchId) return { commitIntent: undefined, scope: null };
-  const attachment = useExperienceStore.getState().byScope[JSON.stringify([chatId, branchId])]?.queuedAttachment ?? null;
-  if (!attachment || attachment.chatId !== chatId || attachment.branchId !== branchId) {
-    return { commitIntent: undefined, scope: { chatId, branchId } };
-  }
-  return {
-    commitIntent: {
-      experienceAttachmentId: attachment.id,
-      experienceQueueRevision: attachment.queueRevision,
-      experienceSessionRevision: attachment.sessionRevision,
-    },
-    scope: { chatId, branchId },
-  };
 }
 
 /** A send that failed with a dice commit conflict (stale lane revision /
@@ -251,11 +215,12 @@ export function useChatController(): ChatControllerActions {
     streamingMessageId?: string | null,
     onFailure?: (error: unknown) => void,
     onGenerationMetadata?: (metadata: GenerationMetadata) => void,
+    pendingExperienceReport?: ExperienceMessageReport | null,
   ): Promise<StreamOutcome> {
     const completionTargetBeforeStream = streamingMessageId
       ? null
       : findCurrentInsightsCompletionTarget(chatId);
-    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId);
+    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId, pendingExperienceReport);
     const store = useChatStore.getState();
     store.setDraft("");
 
@@ -488,6 +453,7 @@ export function useChatController(): ChatControllerActions {
     opts: {
       pendingUserContent?: string | null;
       pendingAttachments?: Attachment[];
+      pendingExperienceReport?: ExperienceMessageReport | null;
       streamingMessageId?: string | null;
       /** Suppress the default "generation cancelled" toast — the queue path
        *  (runRegenerateJob) owns its own job-row affordances and stays silent. */
@@ -502,6 +468,7 @@ export function useChatController(): ChatControllerActions {
       opts.pendingUserContent ?? null,
       opts.pendingAttachments,
       opts.streamingMessageId ?? null,
+      opts.pendingExperienceReport,
     );
     useChatStore.getState().setGenerationMetadata(chatId, captureQuickSwitchGenerationMetadata(chatId));
     try {
@@ -577,6 +544,10 @@ export function useChatController(): ChatControllerActions {
         (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent, ...exp.commitIntent, ...(perSendPrefill !== undefined ? { prefill: perSendPrefill } : {}) }, opts),
         draft,
         currentAttachments,
+        null,
+        undefined,
+        undefined,
+        exp.pendingReport,
       );
       notifyUserTurnSettled(outcome === "done");
     } else {
@@ -593,6 +564,7 @@ export function useChatController(): ChatControllerActions {
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
+          pendingExperienceReport: exp.pendingReport,
           onError: async (error) => {
             const settleDraft = () => settleFailedSendDraft(error, activeChatId, refreshChatSnapshotCache, draft, currentAttachments);
             // DICE-F3: a dice commit conflict resyncs the lane and keeps the

@@ -498,7 +498,7 @@ import type {
 	ExperienceQueuedAttachmentView,
 	TurnAwait,
 } from "../../domain/interactive/experience-service.js";
-import type { ExperienceReportStatus } from "../../domain/interactive/experience-report-service.js";
+import type { ExperienceReportRuntimeApi } from "./experience-report-contracts.js";
 import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
 import type { ExperienceTesterRuntimeApi } from "./experience-tester-contracts.js";
 import type {
@@ -589,7 +589,7 @@ export interface ExperiencePromptOverridesResponse {
   character: ExperiencePromptOverrideDto | null;
 }
 
-export interface ExperienceRuntimeApi extends ExperienceTesterRuntimeApi {
+export interface ExperienceRuntimeApi extends ExperienceTesterRuntimeApi, ExperienceReportRuntimeApi {
 	// ── Config (the config-driven setup source) ──
 	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
 	updateExperienceConfig: (chatId: string, body: {
@@ -662,15 +662,6 @@ export interface ExperienceRuntimeApi extends ExperienceTesterRuntimeApi {
 	// ── Per-viewer projection reads ──
 	getExperienceView: (sessionId: string, participantId?: string) => Promise<ExperienceProjection>;
 	getExperienceActions: (sessionId: string, participantId?: string) => Promise<ExperienceActionDescriptor[]>;
-
-	// ── Queued-attachment read (IR-70A) ──
-	/** Read the session's current queued attachment through the privacy-safe DTO,
-	 *  or `null` when none is queued. Never includes hidden checkpoint state. */
-	getExperienceQueuedAttachment: (sessionId: string) => Promise<ExperienceQueuedAttachmentResponse>;
-	/** Explicit Queue / Add later at the exact client revision. */
-	queueExperienceReport: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentView>;
-	/** Privacy-safe server report status and exact validated-public-event count. */
-	getExperienceReportStatus: (sessionId: string) => Promise<ExperienceReportStatus>;
 
 	// ── Replay ──
 	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;

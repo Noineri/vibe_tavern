@@ -511,6 +511,41 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	});
 
 	// ── DICE Contract stack-audit GAP-1: message read DTO carries bound diceRolls ──
+
+	it("ERX-7: snapshot and message builders expose only bounded public reports, including legacy envelopes", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { stores, runtime, chatId } = ctx;
+			const branchId = (await runtime.getSnapshot(chatId)).activeBranch!.id;
+			const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Played" });
+			const events = Array.from({ length: 105 }, (_, n) => ({ type: "move", participantId: "p1", detail: `move ${n}` }));
+			const data = { chatId, branchId, sessionId: "removed-session", sessionRevision: 7, queueRevision: 1,
+				kind: "report", rulesSourceHash: "rules", hiddenStateCheckpointJson: '{"secret":"HIDDEN_ERX7"}' };
+			for (const publicEventsJson of [JSON.stringify({ title: "Cards", events,
+				participants: [{ id: "p1", label: "Player", controller: "PRIVATE_ERX7" }], private: "PRIVATE_ERX7" }),
+				JSON.stringify({ title: "Legacy", events: [{ type: "card_played", detail: { suit: "red" } }] }), "bad json"]) {
+				const attachment = await stores.experiences.queueAttachment({ ...data, publicEventsJson });
+				await stores.experiences.bindAttachment(attachment.id, message.id);
+			}
+			// An unbound queue never appears on historical messages.
+			await stores.experiences.queueAttachment({ ...data, publicEventsJson: '{"title":"UNBOUND_ERX7","events":[]}' });
+			for (const snap of [await runtime.getSnapshot(chatId), await runtime.buildChatSwitchResponse(chatId), await runtime.buildMessageResponse(chatId)]) {
+				const reports = snap.messages.find((m) => m.id === message.id)?.experienceReports;
+				expect(reports).toHaveLength(2);
+				const cards = reports?.find((r) => r.title === "Cards");
+				expect(cards?.eventCount).toBe(105);
+				expect(cards?.events).toEqual(events.slice(-100));
+				expect(cards?.participants).toEqual([{ id: "p1", label: "Player" }]);
+				expect(reports?.find((r) => r.title === "Legacy")).toEqual({ title: "Legacy", eventCount: 1,
+					events: [{ type: "card_played", detail: { suit: "red" } }] });
+				const wire = JSON.stringify(snap.messages);
+				for (const marker of ["HIDDEN_ERX7", "PRIVATE_ERX7", "UNBOUND_ERX7", "hiddenStateCheckpointJson", "rulesSourceHash"]) expect(wire).not.toContain(marker);
+				for (const other of snap.messages.filter((m) => m.id !== message.id)) expect("experienceReports" in other).toBe(false);
+			}
+		} finally {
+			await ctx.cleanup();
+		}
+	});
 	//
 	// Pins the FULL read path the frontend fetches: buildChatSwitchResponse →
 	// buildMessagesWithVariants → DiceRollStore.getRollsForMessages (the B7 batch

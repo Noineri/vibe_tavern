@@ -702,10 +702,12 @@ describe("assemblePrompt", () => {
       const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1");
       expect(userMsg).toBeDefined();
       expect(userMsg!.content).toContain("I make my move.");
-      expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
-      expect(userMsg!.content).toContain("resolved facts");
-      expect(userMsg!.content).toContain("- move: X played center");
-      expect(userMsg!.content).toContain("[End experience report]");
+      // ERX-2b, 2026-10-27: re-pin the frame; keep event projection and ordering intact.
+      expect(userMsg!.content).toContain("[In the story — Tic-Tac-Toe]");
+      expect(userMsg!.content).toContain("it is settled and now part of the story");
+      // ERX-2, 2026-10-27: string details are prose; legacy raw details keep their type prefix.
+      expect(userMsg!.content).toContain("- X played center");
+      expect(userMsg!.content).toContain("[End]");
     });
 
     it("projects the report block into the history layer text (trace-visible)", () => {
@@ -717,7 +719,7 @@ describe("assemblePrompt", () => {
         },
       }));
       const hist = result.layers.find((l) => l.id === "recent_history");
-      expect(hist!.text).toContain("[Experience report — Tic-Tac-Toe");
+      expect(hist!.text).toContain("[In the story — Tic-Tac-Toe]");
     });
 
     it("appends both Dice and experience blocks when a message carries both (combined bind)", () => {
@@ -742,9 +744,9 @@ describe("assemblePrompt", () => {
       }));
       const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1")!;
       expect(userMsg.content).toContain("[Dice]");
-      expect(userMsg.content).toContain("[Experience report —");
+      expect(userMsg.content).toContain("[In the story —");
       // Dice block renders before the experience block (stable order).
-      expect(userMsg.content.indexOf("[Dice]")).toBeLessThan(userMsg.content.indexOf("[Experience report"));
+      expect(userMsg.content.indexOf("[Dice]")).toBeLessThan(userMsg.content.indexOf("[In the story"));
       expect(userMsg.content).toContain("turn\n[Dice]");
     });
 

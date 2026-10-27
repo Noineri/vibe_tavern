@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { ChatId, Attachment, DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
 import type { ChatGenerationStatus } from "../api/types.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useSnapshotStore } from "./snapshot-store.js";
@@ -40,6 +40,8 @@ export interface ChatGenerationState {
    * (immer store), so this filtered array is a stable frozen bundle.
    */
   pendingDiceRolls: DiceRollSnapshot[];
+  /** Public report captured together with the exact outgoing attachment intent. */
+  pendingExperienceReport: ExperienceMessageReport | null;
   abortController: AbortController | null;
 }
 
@@ -55,6 +57,7 @@ function defaultGenState(): ChatGenerationState {
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],
     pendingDiceRolls: [],
+    pendingExperienceReport: null,
     abortController: null,
   };
 }
@@ -127,7 +130,7 @@ export interface ChatActions {
    * `pendingDiceRolls` (frozen for the pending-user shell). Yields `[]` when
    * Dice is off / no pending rolls, so regenerate & non-Dice sends are inert.
    */
-  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null) => AbortController;
+  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null, pendingExperienceReport?: ExperienceMessageReport | null) => AbortController;
 
   /** Set the revealed streaming text (throttled by StreamingReveal). */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
@@ -194,7 +197,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     return newGen;
   },
 
-  startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null) => {
+  startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null, pendingExperienceReport = null) => {
     const controller = new AbortController();
     const pendingDiceRolls = captureBindableDiceRolls(chatId);
     set((s) => ({
@@ -207,6 +210,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           pendingUserMessageContent: pendingContent ?? null,
           pendingUserMessageAttachments: pendingAttachments ?? [],
           pendingDiceRolls,
+          pendingExperienceReport: pendingContent != null && streamingMessageId === null ? pendingExperienceReport : null,
           abortController: controller,
         },
       },
@@ -287,6 +291,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             pendingUserMessageContent: null,
             pendingUserMessageAttachments: [],
             pendingDiceRolls: [],
+            pendingExperienceReport: null,
             abortController: null,
           },
         },
@@ -315,6 +320,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             presetName: null,
             pendingUserMessageContent: null,
             pendingDiceRolls: [],
+            pendingExperienceReport: null,
             abortController: null,
           },
         },

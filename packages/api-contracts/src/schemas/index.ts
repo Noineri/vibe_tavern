@@ -421,6 +421,7 @@ export {
   experienceFinishRequestSchema,
   experienceRestartRequestSchema,
   experienceReportQueueRequestSchema,
+  experienceReportClearRequestSchema,
   // Runtime request/query envelopes (IR-32 routes)
   experienceVisualsQuerySchema,
   experienceViewerQuerySchema,

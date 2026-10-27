@@ -13,11 +13,13 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
+import { createStoreContainer, experienceSessions, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND, type ExperienceCapability } from "@vibe-tavern/domain";
+import { formatExperienceMessageBlock } from "../../../packages/prompt-pipeline/src/experience-report.js";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService, seedToNumeric } from "../src/domain/interactive/experience-service.js";
+import { storeAttachmentToReportSnapshot } from "../src/domain/interactive/experience-report-snapshot.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -201,6 +203,109 @@ async function seedChatAndScript(
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ExperienceService — basic lifecycle (counter, no capabilities)", () => {
+  test("ERX-3: every freeze carries public roster labels, re-freezes idempotently, and reflects a later rename", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [{ id: "human", label: "Player", controller: "human" }] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const initial = await service.getQueuedAttachment(sid);
+    expect(initial.ok).toBe(true);
+    if (!initial.ok || !initial.data) throw new Error("expected frozen start report");
+    expect(initial.data.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    const firstRow = await stores.experiences.getQueuedAttachmentForSession(sid);
+    if (!firstRow) throw new Error("expected stored report");
+    expect(JSON.parse(firstRow.publicEventsJson).participants).toEqual([{ id: "human", label: "Player" }]);
+    const unchanged = await service.queueReport(sid, 0);
+    expect(unchanged.ok && unchanged.data.queueRevision).toBe(initial.data.queueRevision);
+    expect(unchanged.ok && unchanged.data.publicReport?.participants).toEqual(initial.data.publicReport?.participants);
+    // This test DB contains one session; simulate a roster rename in persisted data.
+    stores.db.update(experienceSessions).set({ participantsJson: JSON.stringify([
+      { id: "human", label: "Renamed player", controller: "human", character: { secret: "PRIVATE_ROSTER_SECRET" } },
+    ]) }).run();
+    const sameFrontier = await service.queueReport(sid, 0);
+    expect(sameFrontier.ok).toBe(false);
+    if (sameFrontier.ok) throw new Error("expected a changed-content freeze conflict");
+    expect(sameFrontier.error.code).toBe("stale_revision");
+    const frozenAfterRename = await service.getQueuedAttachment(sid);
+    expect(frozenAfterRename.ok && frozenAfterRename.data?.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    const advanced = await service.submitAction(sid, { type: "inc", requestId: "after-rename", expectedRevision: 0 });
+    expect(advanced.ok).toBe(true);
+    const renamed = await service.queueReport(sid, 1);
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) throw new Error("expected re-frozen report");
+    expect(renamed.data.queueRevision).toBe(initial.data.queueRevision + 1);
+    expect(renamed.data.publicReport?.participants).toEqual([{ id: "human", label: "Renamed player" }]);
+    expect(initial.data.publicReport?.participants).toEqual([{ id: "human", label: "Player" }]);
+    expect(JSON.stringify(renamed.data)).not.toContain("PRIVATE_ROSTER_SECRET");
+    const repeated = await service.queueReport(sid, 1);
+    expect(repeated.ok && repeated.data.queueRevision).toBe(renamed.data.queueRevision);
+    const final = await service.finishWithReport(sid, 1);
+    expect(final.ok && final.data?.publicReport?.participants).toEqual([{ id: "human", label: "Renamed player" }]);
+  });
+
+  test("ERX-1b: actor ids survive the VM, journal, freeze, queue read and snapshot without private data", async () => {
+    const service = await setup();
+    const source = `
+      context.experience.register({
+        apiVersion: 1,
+        manifest: { id: "actor-report", name: "Actor Report" },
+        capabilities: [{ capability: "participants", reason: "actor roster" }],
+        create() { return { n: 0, secret: "PRIVATE_ACTOR_REPORT_SECRET" }; },
+        project(c) { return { n: c.state.n }; },
+        actions() { return [{ type: "inc", participantId: "human" }]; },
+        reduce(c, a) {
+          return { state: { ...c.state, n: c.state.n + 1 }, status: "active", events: [
+            { visibility: "public", type: "move", participantId: a.participantId, detail: "raised the count" },
+            { visibility: "private", type: "secret", participantId: a.participantId, detail: c.state.secret },
+            { visibility: "public", type: "legacy", detail: { participantId: "human", n: 1 } },
+            { visibility: "public", type: "note", detail: "The round continues." }
+          ] };
+        }
+      });
+    `;
+    const { chatId, branchId } = await seedChatAndScript(source, [EXPERIENCE_CAPABILITY.participants]);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [{ id: "human", label: "Player", controller: "human" }] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const applied = await service.submitAction(sid, { type: "inc", participantId: "human", requestId: "actor-move", expectedRevision: 0 });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) throw new Error("expected applied action");
+    expect(applied.data.events[0]).toEqual({ visibility: "public", type: "move", participantId: "human", detail: "raised the count" });
+    const steps = await stores.experiences.getSteps(sid);
+    const journal = steps.flatMap((step) => JSON.parse(step.emittedEventsJson));
+    expect(journal).toContainEqual({ visibility: "public", type: "move", participantId: "human", detail: "raised the count" });
+    const queued = await service.queueReport(sid, 1);
+    expect(queued.ok).toBe(true);
+    if (!queued.ok) throw new Error("expected queued report");
+    const expectedEvents = [
+      { type: "move", participantId: "human", detail: "raised the count" },
+      { type: "legacy", detail: { participantId: "human", n: 1 } },
+      { type: "note", detail: "The round continues." },
+    ];
+    expect(queued.data.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    const row = await stores.experiences.getQueuedAttachmentForSession(sid);
+    expect(row).not.toBeNull();
+    if (!row) throw new Error("expected stored frozen report");
+    expect(JSON.parse(row.publicEventsJson).events.slice(1)).toEqual(expectedEvents);
+    expect(storeAttachmentToReportSnapshot(row)?.events.slice(1)).toEqual(expectedEvents);
+    const reread = await service.getQueuedAttachment(sid);
+    expect(reread.ok && reread.data?.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    const refrozen = await service.queueReport(sid, 1);
+    expect(refrozen.ok && refrozen.data.queueRevision).toBe(queued.data.queueRevision);
+    expect(refrozen.ok && refrozen.data.publicReport?.events.slice(1)).toEqual(expectedEvents);
+    expect(JSON.stringify(queued.data)).not.toContain("PRIVATE_ACTOR_REPORT_SECRET");
+    expect(JSON.stringify(queued.data)).not.toContain("hiddenStateCheckpointJson");
+    for (const participantId of [null, 42, { secret: "PRIVATE_ACTOR_REPORT_SECRET" }]) {
+      const snapshot = storeAttachmentToReportSnapshot({ ...row, publicEventsJson: JSON.stringify({
+        title: "Malformed actor", events: [{ type: "note", participantId, detail: "still public", secret: "PRIVATE_ACTOR_REPORT_SECRET" }],
+      }) });
+      expect(snapshot?.events).toEqual([{ type: "note", detail: "still public" }]);
+    }
+  });
+
   test("start → project → action → resume → natural completion, with explicit report finalization", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
@@ -309,7 +414,8 @@ describe("ExperienceService — basic lifecycle (counter, no capabilities)", () 
     expect(dup.ok && dup.data.session.revision).toBe(first.ok ? first.data.session.revision : -1);
   });
 
-  test("start report uses the public observer projection and self-describes participant ids", async () => {
+  // 2026-10-27 ERX-12: new starts are readable; projections stay out of reports.
+  test("start report describes public participants and the first actor without any projection", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(START_VIEWER_SOURCE);
     const participants = [{ id: "human-1", label: "You", controller: "human" as const }];
@@ -317,15 +423,59 @@ describe("ExperienceService — basic lifecycle (counter, no capabilities)", () 
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     const report = await service.getQueuedAttachment(started.data.sessionId);
-    const detail = report.ok ? report.data?.publicReport?.events[0]?.detail as {
-      projection: unknown; participants: Array<{ id: string }>; firstActor?: string;
-    } : null;
-    expect(detail?.projection).toEqual({ viewer: "observer" });
+    const detail = report.ok ? report.data?.publicReport?.events[0]?.detail : null;
+    expect(detail).toBe("Start Viewer began. Participants: You. First to act: You.");
     expect(JSON.stringify(detail)).not.toContain("only-human");
-    expect(detail?.participants).toEqual([{ id: "human-1", label: "You", controller: "human" }]);
-    expect(detail?.firstActor).toBe("human-1");
+    expect(report.ok && report.data?.publicReport?.participants).toEqual([{ id: "human-1", label: "You" }]);
+    const row = await stores.experiences.getQueuedAttachmentForSession(started.data.sessionId);
+    if (!row) throw new Error("expected start attachment");
+    const snapshot = storeAttachmentToReportSnapshot(row);
+    if (!snapshot) throw new Error("expected parsed start report");
+    const prompt = formatExperienceMessageBlock([snapshot]);
+    expect(prompt).toContain("- Start Viewer began. Participants: You. First to act: You.");
+    for (const marker of ["projection", "legalActions", "controller", "only-human", "experience_started:"]) expect(prompt).not.toContain(marker);
     const human = await service.getProjectedView(started.data.sessionId, { kind: "human", participantId: "human-1" });
     expect(human.ok && human.data.state).toEqual({ viewer: "human-1", secret: "only-human" });
+  });
+
+  test("ERX-12: an absent roster or absent observer actor never invents a first participant", async () => {
+    const service = await setup();
+    for (const [source, participants, grants, expected] of [
+      [START_VIEWER_SOURCE, [], [], "Start Viewer began."],
+      [HOTSEAT_SOURCE, [{ id: "p0", label: "You", controller: "human" as const },
+        { id: "p1", label: "Bot", controller: "script" as const }], ["participants" as const], "Hotseat began. Participants: You, Bot."],
+      [START_VIEWER_SOURCE, [{ id: "human-1", label: "", controller: "human" as const }], [], "Start Viewer began. Participants: human-1. First to act: human-1."],
+    ] as const) {
+      const { chatId, branchId } = await seedChatAndScript(source, [...grants]);
+      const started = await service.startSession({ chatId, branchId, settings: {}, participants: [...participants] });
+      if (!started.ok) throw new Error(JSON.stringify(started.error));
+      const report = await service.getQueuedAttachment(started.data.sessionId);
+      expect(report.ok && report.data?.publicReport?.events).toEqual([{ type: "experience_started", detail: expected }]);
+    }
+  });
+
+  test("ERX-12: a bound legacy JSON start remains byte-identical through restart and still renders raw", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) throw new Error("expected session");
+    const publicEventsJson = JSON.stringify({ title: "Counter", events: [{ type: "experience_started", detail: { projection: { count: 0 } } }] });
+    const legacy = await stores.experiences.queueAttachment({ chatId, branchId, sessionId: started.data.sessionId,
+      sessionRevision: 0, queueRevision: 2, kind: "report", publicEventsJson,
+      hiddenStateCheckpointJson: "{}", rulesSourceHash: "legacy-rules", visualSourceHash: null });
+    const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Started" });
+    await stores.experiences.bindAttachment(legacy.id, message.id);
+    const before = await stores.experiences.getAttachmentById(legacy.id);
+    const restarted = await service.restartSession(started.data.sessionId);
+    if (!restarted.ok) throw new Error("expected restarted session");
+    const after = await stores.experiences.getAttachmentById(legacy.id);
+    expect(after).toEqual(before);
+    expect(after?.publicEventsJson).toBe(publicEventsJson);
+    const snapshot = after && storeAttachmentToReportSnapshot(after);
+    if (!snapshot) throw new Error("expected legacy report");
+    expect(formatExperienceMessageBlock([snapshot])).toContain('- experience_started: {"projection":{"count":0}}');
+    const fresh = await service.getQueuedAttachment(restarted.data.sessionId);
+    expect(fresh.ok && fresh.data?.publicReport?.events).toEqual([{ type: "experience_started", detail: "Counter began." }]);
   });
 
   test("an injected start-report failure rolls back the active claim and allows a later normal start", async () => {
@@ -1172,7 +1322,8 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     return new ExperienceService(stores, resources, { generateSeed: () => "seed-" + (++n) });
   }
 
-  test("active source: old session interrupted with a public restarted step, slot moves to the NEW session, seed differs", async () => {
+  // ERX-4, 2026-10-27: abandoned matches close quietly; only the successor queues a start report.
+  test("active source: old session interrupted quietly, queue purged, slot moves to the NEW session, seed differs", async () => {
     await setup();
     const service = makeSeededService();
     const { chatId, branchId } = await seedChatAndScript(RESTART_ECHO_SOURCE);
@@ -1190,7 +1341,9 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     expect(old?.status).toBe("interrupted");
     expect(old?.activeSlot).toBeNull();
     const steps = await stores.experiences.getSteps(started.data.sessionId);
-    expect(steps.some((st) => st.message !== null && st.message.includes("restarted"))).toBe(true);
+    expect(steps).toHaveLength(0);
+    expect(await stores.experiences.getQueuedAttachmentForSession(started.data.sessionId)).toBeNull();
+    expect(await stores.experiences.getQueuedAttachmentForSession(restarted.data.sessionId)).not.toBeNull();
 
     expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
     const fresh = await stores.experiences.getSessionById(restarted.data.sessionId);
@@ -1224,7 +1377,8 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     expect(snapshot.data.participants).toEqual(roster);
   });
 
-  test("completed source: status and revision untouched, final report frozen, slot passes to the successor", async () => {
+  // ERX-4, 2026-10-27: rule-completed but still slot-holding matches also close quietly.
+  test("completed slot-holding source: quiet finish releases the slot and purges its queue", async () => {
     await setup();
     const service = makeSeededService();
     const { chatId, branchId } = await seedChatAndScript(SCRIPT_COMPLETION_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
@@ -1243,13 +1397,11 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     if (!restarted.ok) return;
 
     const after = await stores.experiences.getSessionById(started.data.sessionId);
-    expect(after?.status).toBe("completed");
-    expect(after?.revision).toBe(before!.revision);
+    expect(after?.status).toBe("interrupted");
+    expect(after?.revision).toBe(before!.revision + 1);
     expect(after?.activeSlot).toBeNull();
-    // Revision-zero start report (1) + the final freeze the restart performs
-    // on the still-slot-holding completed match (2).
     const frozen = await service.getQueuedAttachment(started.data.sessionId);
-    expect(frozen.ok && frozen.data?.queueRevision).toBe(2);
+    expect(frozen.ok && frozen.data).toBeNull();
     expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
   });
 
@@ -1293,6 +1445,32 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     if (!restarted.ok) return;
     const after = await stores.experiences.getEffectsForSession(started.data.sessionId);
     expect(after.every((e) => e.status === "cancelled")).toBe(true);
+  });
+
+  test("ERX-4: fix rules then restart preserves bound reports but purges the abandoned queue", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) throw new Error("expected session start");
+    const sid = started.data.sessionId;
+    const bound = await stores.experiences.getQueuedAttachmentForSession(sid);
+    if (!bound) throw new Error("expected start report");
+    const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Played" });
+    await stores.experiences.bindAttachment(bound.id, message.id);
+    const action = await service.submitAction(sid, { type: "inc", requestId: "before-fix", expectedRevision: 0 });
+    expect(action.ok).toBe(true);
+    expect((await service.queueReport(sid, 1)).ok).toBe(true);
+    const boundBefore = await stores.experiences.getAttachmentById(bound.id);
+    const source = await stores.experiences.getSessionById(sid);
+    if (!source) throw new Error("expected source session");
+    await stores.scripts.update(source.rulesId, { code: COUNTER_SOURCE.replace('name: "Counter"', 'name: "Fixed Rules"') });
+    const restarted = await service.restartSession(sid);
+    expect(restarted.ok).toBe(true);
+    if (!restarted.ok) throw new Error("expected restart");
+    expect(restarted.data.manifest.name).toBe("Fixed Rules");
+    expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toBeNull();
+    expect(await stores.experiences.getAttachmentById(bound.id)).toEqual(boundBefore);
   });
 });
 

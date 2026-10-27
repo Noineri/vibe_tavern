@@ -536,18 +536,13 @@ export class ExperienceStore {
     return this.db.transaction((tx) => {
       const current = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
       if (!current) return { ok: false, conflict: 'session_not_found' };
-      const purgeUnbound = () =>
-        tx
-          .delete(experienceAttachments)
-          .where(and(eq(experienceAttachments.sessionId, sessionId), isNull(experienceAttachments.boundMessageId)))
-          .run();
       if (current.activeSlot === null) {
         // Already terminal: idempotent no-op that still purges unbound rows.
-        purgeUnbound();
+        this.purgeUnboundAttachments(sessionId, tx);
         return { ok: true, session: this.mapRowSession(current), attachment: null, idempotent: true };
       }
       if (current.revision !== expectedRevision) return { ok: false, conflict: 'stale_revision' };
-      purgeUnbound();
+      this.purgeUnboundAttachments(sessionId, tx);
       const finalRevision = current.revision + 1;
       const now = this.clock.now();
       tx
@@ -558,6 +553,14 @@ export class ExperienceStore {
       const updated = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
       return { ok: true, session: this.mapRowSession(updated!), attachment: null, idempotent: false };
     });
+  }
+
+  /** Purge only a session's unbound queue, optionally in the caller's transaction. */
+  purgeUnboundAttachments(sessionId: string, tx: AppDb | DbTransaction = this.db): void {
+    tx
+      .delete(experienceAttachments)
+      .where(and(eq(experienceAttachments.sessionId, sessionId), isNull(experienceAttachments.boundMessageId)))
+      .run();
   }
 
   // ─── CAS transition (the core write path) ────────────────────────────────
@@ -1365,10 +1368,7 @@ export class ExperienceStore {
         // The failed-send row is newest. Remove any older/equal queued rows
         // before releasing it so the session still has exactly one queued row.
         if (unboundRows.length > 0) {
-          tx
-            .delete(experienceAttachments)
-            .where(inArray(experienceAttachments.id, unboundRows.map((candidate) => candidate.id)))
-            .run();
+          this.purgeUnboundAttachments(row.sessionId, tx);
         }
         tx
           .update(experienceAttachments)

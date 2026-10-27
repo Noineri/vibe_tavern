@@ -21,6 +21,7 @@ import type {
 import {
   ExperienceApiError,
   captureExperienceContext,
+  clearExperienceReportQueue,
   commitExperienceRound,
   endExperienceSession,
   getActiveExperienceSession,
@@ -36,6 +37,7 @@ import {
   startExperienceSession,
   submitExperienceAction,
 } from "../api/experience-api.js";
+import { actionIntentKey, clearActiveSessionResources, clearError, emptyScope, isNoActiveSessionError, recordError, scopeDraft, scopeKey } from "./experience-scope-state.js";
 
 /**
  * Experience session store (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 7 /
@@ -110,7 +112,7 @@ export interface ExperienceScopeState {
   detached: boolean;
 }
 
-interface ExperienceState {
+export interface ExperienceState {
   byScope: Record<string, ExperienceScopeState>;
   /** The scope the UI is currently showing — the refocus rehydration target. */
   activeScope: { chatId: string; branchId: string } | null;
@@ -185,6 +187,8 @@ export interface ExperienceActions {
   /** Freeze a report attachment at the current server revision. The server
    *  response replaces the queued attachment. */
   queueReport: () => Promise<ExperienceQueuedAttachmentView | null>;
+  /** Clear the selected queue only after server acknowledgement; false on failure/no queue. */
+  clearQueue: () => Promise<boolean>;
   /** Capture/replace the session's frozen RP-context bundle (abortable). */
   captureContext: (
     body: ExperienceContextCaptureRequest,
@@ -194,70 +198,6 @@ export interface ExperienceActions {
   openModal: () => void;
   closeModal: () => void;
   setDetached: (detached: boolean) => void;
-}
-
-function emptyScope(): ExperienceScopeState {
-  return {
-    config: null,
-    session: null,
-    effects: [],
-    queuedAttachment: null,
-    reportStatus: null,
-    contextStatus: null,
-    actionRequestIds: {},
-    loading: false,
-    lastError: null,
-    lastApiError: null,
-    modalOpen: false,
-    detached: false,
-  };
-}
-
-/** Collision-safe scope key: ids are only length-bounded strings (the bounded
- *  schema does not exclude `|`), so the pair is structurally encoded. */
-function scopeKey(chatId: string, branchId: string): string {
-  return JSON.stringify([chatId, branchId]);
-}
-
-/** Dedup key for one action intent (type + seat + payload). */
-function actionIntentKey(intent: ExperienceActionIntent): string {
-  return JSON.stringify([intent.type, intent.participantId ?? null, intent.payload ?? null]);
-}
-
-function toMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function scopeDraft(s: ExperienceState, key: string): ExperienceScopeState {
-  return s.byScope[key] ?? (s.byScope[key] = emptyScope());
-}
-
-function isNoActiveSessionError(err: unknown): boolean {
-  return err instanceof ExperienceApiError && err.status === 404 && err.code === "no_active_session";
-}
-
-function recordError(scope: ExperienceScopeState, err: unknown): void {
-  scope.lastError = toMessage(err);
-  scope.lastApiError = err instanceof ExperienceApiError ? err : null;
-}
-
-function clearError(scope: ExperienceScopeState): void {
-  scope.lastError = null;
-  scope.lastApiError = null;
-}
-
-/** Clear the resources owned by an active session (normal empty state after
- *  a 404 `no_active_session` discovery — not an error). The queued attachment
- *  is intentionally NOT cleared: a terminal Finish (IR-73C/D) writes the exact
- *  server envelope back after the post-end rehydrate, and a retained terminal
- *  intent must survive subsequent no-active-session refocus until an
- *  authoritative `refreshAttachment` or a new active-session hydration
- *  replaces it. */
-function clearActiveSessionResources(scope: ExperienceScopeState): void {
-  scope.session = null;
-  scope.effects = [];
-  scope.reportStatus = null;
-  scope.contextStatus = null;
 }
 
 // ── Race guards + in-flight join registry (module-level, per scope) ─────────
@@ -818,6 +758,27 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           return response;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      clearQueue: async () => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        const scope = get().byScope[key];
+        const attachment = scope?.queuedAttachment;
+        if (!attachment) return false;
+        const expectedRevision = scope.session?.sessionId === attachment.sessionId
+          ? scope.session.revision : attachment.sessionRevision;
+        set((s) => { clearError(scopeDraft(s, key)); });
+        try {
+          await clearExperienceReportQueue(attachment.sessionId, { chatId, branchId, expectedRevision });
+          if (isActiveOperation(key, activeEpoch)) {
+            set((s) => { scopeDraft(s, key).queuedAttachment = null; });
+            await get().rehydrate(chatId, branchId);
+          }
+          return true;
+        } catch (err) {
+          await failMutation(chatId, branchId, key, activeEpoch, err);
+          return false;
         }
       },
 

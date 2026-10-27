@@ -12,7 +12,7 @@ This skill is the *strategy* layer. The exact API surface (`context.experience.r
 Work rules-first, always. The rules package is the source of truth for the experience; the visual only renders state the rules produce.
 
 1. **Smallest valid package first.** Get to a rules package that passes `run_test` (discovers, creates, projects, lists legal actions) with the *minimum* state and actions that express the core loop. A counter that increments. A board that places one mark. Do not model the whole game before the first green test.
-2. **Test, then elaborate.** After every `write_buffer`/`edit_buffer` to rules, call `run_test`. Read the digest's `launchContext` first: `source: "sandbox"` is the user's own Try-it setup; `source: "derived"` means they have not configured the Try-it panel and the roster is the default one (one human seat, plus an AI seat for participants + model). Then read `status`, `legalActionTypes`, `seatLegality` and the `stateSummary` to see whether the package behaves. Only add the next mechanic once the current one is proven.
+2. **Test, then elaborate.** After every `write_buffer`/`edit_buffer` to rules, call `run_test`. Read the digest's `launchContext` first: `source: "sandbox"` is the user's own Try-it setup; `source: "derived"` means they have not configured the Try-it panel and the roster is the default one (one human seat, plus an AI seat for participants + model). Then read `status`, `legalActionTypes`, `seatLegality` and the `stateSummary` to see whether the package behaves. Inspect the public events as story lines too: readable opening context, then actorless action phrases with top-level actor ids (see below), not projection dumps. Only add the next mechanic once the current one is proven.
 3. **Compare the sandbox setup with what the rules need.** With `source: "sandbox"`, set `launchContext.seats` beside the seats your rules expect and `launchContext.grants` beside the declared capabilities. When they differ — one seat where the game needs two, a model seat missing, `participants` or `model` not granted — the user's Try setup is why the game misbehaves, and the user is the only one who can change it. Tell them in the same message, as steps with the interface's own labels (below): which participant to add with which role, which boxes to tick, and for an AI-character seat the provider and the model to pick. Keep the rules written for the setup the game needs; adapting them to a broken setup hides the cause and breaks the game once the setup is fixed.
 4. **Check termination with `run_simulate`** once script-controlled seats or automated flow exist. If `stopReason` is not `completed`/`awaiting_human` and `iterations` climbs to the bound, the rules stall — find the state where no legal action advances.
 5. **Visual last.** Write the visual only once the rules' projected state is stable enough to render. The visual reads projected state; churning rules means churning visuals.
@@ -26,6 +26,21 @@ Try-it panel labels, English interface / Russian interface — quote the ones ma
 - **`project` is per-viewer and pure.** It hides private state and computes the display shape. Never mutate inside `project`; return a new object. What the visual renders comes from here.
 - **Capabilities are declared, not assumed.** Read `context.participants` only with the `participants` capability; use `context.random` only with `deterministic_random`. Seeding randomness through `context.random` (inside `create`/`reduce`) is what makes replays deterministic — never `Math.random` for authoritative state.
 - **`choose` is required for script seats; `flavor` is optional.** As soon as a script-controlled seat can own the turn, the rules need `choose` — a script seat with legal actions and no `choose` stops the game with `no_choose_method`. `flavor` is for cosmetic variety that must stay deterministic across viewers. If no seat is script-controlled and nothing cosmetic varies, the four mandatory methods are enough.
+
+## Public events are story lines
+
+- Write `detail` as a self-contained human-readable phrase describing the action and its public result, WITHOUT the actor's name.
+  For a single actor, use the optional top-level `participantId` from the real roster; the host prefixes the frozen participant label when rendering string details.
+  Prefer `detail: "played a yellow 6"`, not a name repeated in the phrase or a JSON object containing only an actor id.
+  Omit the actor id for shared, actorless facts; non-string legacy details remain raw type/JSON, not automatically translated prose.
+- Make the package's first public event a readable opening summary of the participants and the key public starting state.
+  Emit it once on the first transition, before the action events, using opening facts captured in state and an emitted flag so it never repeats or describes a later position as the start.
+  `create` returns state, not events; the host-generated `experience_started` record is a readable title/roster/first-actor summary, not an authorable event hook.
+  The host does not infer game-specific starting facts from the projection; your opening event supplies them.
+- Never put the projection object into events: projections are for the visual; report events are the settled facts the Writer can narrate.
+  Summarize only public facts — never private hands, deck order, hidden state or another viewer's private projection.
+  Check that a reader can understand each line without decoding JSON or looking at the board.
+- Realtime transition events are dropped; its readable round result belongs on `finishRound`, not in a per-tick event log.
 
 ## Turn ownership and seat mapping (the #1 illegal-action trap)
 

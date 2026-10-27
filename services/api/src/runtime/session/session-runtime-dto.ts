@@ -1,5 +1,5 @@
 import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { Chat as DbChat, ChatBranch as DbChatBranch, PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
@@ -49,6 +49,8 @@ export interface MessageDto extends Message {
    *  snapshot the message-meta badge and historical rendering read — never
    *  recomputed from the (possibly renamed/deleted) script. (DICE.) */
   diceRolls?: DiceRollSnapshot[];
+  /** Bounded public reports bound to this user message; no session/checkpoint data. */
+  experienceReports?: ExperienceMessageReport[];
 }
 
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
@@ -112,9 +114,9 @@ export function mapChatBranch(branch: DbChatBranch): ChatBranch {
   };
 }
 
-export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
-export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
-export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto {
+export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto;
+export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto;
+export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto {
   // Normalize once: store variants (plain-string ids) and domain variants are
   // structurally identical apart from phantom id brands, so a single cast carries
   // the per-variant Scene record through unchanged. Reading the selection off the
@@ -156,6 +158,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     ...(attachments ? { attachments } : {}),
     ...(rowSetHidden ? { messageLevelAttachments: rowAttachments } : {}),
     ...(diceRolls && diceRolls.length > 0 ? { diceRolls } : {}),
+    ...(experienceReports?.length ? { experienceReports } : {}),
   } satisfies MessageDto;
 }
 

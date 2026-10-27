@@ -119,6 +119,11 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .get("/api/experience/sessions/:sessionId/reports/status", async (c) => {
       return c.json(await runtime.getExperienceReportStatus(c.req.param("sessionId")));
     })
+    .delete(
+      "/api/experience/sessions/:sessionId/reports/queue",
+      zValidator("json", schemas.experienceReportClearRequestSchema),
+      async (c) => c.json(await runtime.clearExperienceReportQueue(c.req.param("sessionId"), c.req.valid("json"))),
+    )
 
     // ── Replay ─────────────────────────────────────────────────────────────
     .post("/api/experience/sessions/:sessionId/undo", zValidator("json", schemas.experienceUndoRequestSchema), async (c) => {

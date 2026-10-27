@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DiceRollSnapshot, MessageVariant } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceMessageReport, MessageVariant } from "@vibe-tavern/domain";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Message Meta Registry
@@ -70,6 +70,8 @@ export interface MessageMetaContext {
    * never changes a historical snapshot.
    */
   diceRolls: DiceRollSnapshot[];
+  /** Message-owned public reports; absent on unrelated/legacy contexts. */
+  experienceReports?: ExperienceMessageReport[];
 }
 
 /**

@@ -28,6 +28,7 @@ import type {
   ExperienceQueuedAttachmentResponse,
   ExperienceQueuedAttachmentView,
   ExperienceReportQueueRequest,
+  ExperienceReportClearRequest,
   ExperienceReportStatus,
   ExperienceRestartRequest,
   ExperienceSessionResponse,
@@ -55,6 +56,7 @@ interface Impl {
     options?: { signal?: AbortSignal },
   ) => Promise<ExperienceActionResponse>;
   queueExperienceReport: (sessionId: string, body: ExperienceReportQueueRequest) => Promise<ExperienceQueuedAttachmentView>;
+  clearExperienceReportQueue: (sessionId: string, body: ExperienceReportClearRequest) => Promise<void>;
   runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => Promise<ExperienceEffectRunResponse>;
   retryExperienceEffect: (effectId: string) => Promise<ExperienceEffectRow>;
   commitExperienceRound: (
@@ -74,9 +76,10 @@ const startCalls: Array<{ chatId: string; body: ExperienceStartRequest }> = [];
 const endCalls: Array<{ sessionId: string; body: ExperienceFinishRequest }> = [];
 const restartCalls: Array<{ sessionId: string; body: ExperienceRestartRequest }> = [];
 const queueCalls: Array<{ sessionId: string; body: ExperienceReportQueueRequest }> = [];
+const clearCalls: Array<{ sessionId: string; body: ExperienceReportClearRequest }> = [];
 const roundCommitCalls: Array<{ sessionId: string; body: ExperienceRoundCommitRequestDto }> = [];
 
-const realExperienceApi = await import("../api/experience-api.js");
+const realExperienceApi = { ...await import("../api/experience-api.js") };
 mock.module("../api/experience-api.js", () => {
   return {
     ...realExperienceApi,
@@ -105,6 +108,10 @@ mock.module("../api/experience-api.js", () => {
     queueExperienceReport: (sessionId: string, body: ExperienceReportQueueRequest) => {
       queueCalls.push({ sessionId, body });
       return impl.queueExperienceReport(sessionId, body);
+    },
+    clearExperienceReportQueue: (sessionId: string, body: ExperienceReportClearRequest) => {
+      clearCalls.push({ sessionId, body });
+      return impl.clearExperienceReportQueue(sessionId, body);
     },
     runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => impl.runExperienceEffect(effectId, options),
     retryExperienceEffect: (effectId: string) => impl.retryExperienceEffect(effectId),
@@ -283,6 +290,7 @@ beforeEach(() => {
   endCalls.length = 0;
   restartCalls.length = 0;
   queueCalls.length = 0;
+  clearCalls.length = 0;
   roundCommitCalls.length = 0;
   impl = {
     getExperienceConfig: async (chatId) => makeConfig(chatId),
@@ -298,6 +306,7 @@ beforeEach(() => {
     restartExperienceSession: async () => makeSession({ sessionId: "sess-restarted", revision: 1 }),
     submitExperienceAction: async () => makeActionResponse(),
     queueExperienceReport: async () => makeAttachment(),
+    clearExperienceReportQueue: async () => {},
     runExperienceEffect: async (effectId) => ({ effect: makeEffect({ id: effectId, status: "completed" }), delivered: true }),
     retryExperienceEffect: async (effectId) => makeEffect({ id: effectId, status: "pending", attemptCount: 1, error: null }),
     commitExperienceRound: async () => makeAttachment({ id: "att-round" }),
@@ -306,6 +315,66 @@ beforeEach(() => {
 });
 
 // ── Fresh-scope hydration ────────────────────────────────────────────────────
+
+describe("experience-store — clear queue (ERX-6a)", () => {
+  test("clears only after server success and resyncs the authoritative status", async () => {
+    const attachment = makeAttachment();
+    impl.getExperienceQueuedAttachment = async () => attachment;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: attachment });
+    await seedActiveScope(makeSession({ revision: 7 }));
+    let finish!: () => void;
+    impl.clearExperienceReportQueue = () => new Promise<void>((resolve) => { finish = resolve; });
+    const clearing = useExperienceStore.getState().clearQueue();
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toEqual(attachment);
+    expect(clearCalls).toEqual([{ sessionId: S1, body: { chatId: C1, branchId: B1, expectedRevision: 7 } }]);
+    impl.getExperienceQueuedAttachment = async () => null;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: null });
+    finish();
+    expect(await clearing).toBe(true);
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toBeNull();
+  });
+
+  test("failed clear retains the server queue and exposes the structured error after resync", async () => {
+    const attachment = makeAttachment();
+    impl.getExperienceQueuedAttachment = async () => attachment;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: attachment });
+    await seedActiveScope(makeSession());
+    const error = new ExperienceApiError(409, "stale", "stale_revision");
+    impl.clearExperienceReportQueue = async () => { throw error; };
+    expect(await useExperienceStore.getState().clearQueue()).toBe(false);
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toEqual(attachment);
+    expect(scopeState(KEY_C1B1)?.lastApiError).toBe(error);
+  });
+
+  test("late clear cannot overwrite a different scope or a reactivated scope", async () => {
+    impl.getExperienceQueuedAttachment = async () => makeAttachment();
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: makeAttachment() });
+    await seedActiveScope(makeSession());
+    let finish!: () => void;
+    impl.clearExperienceReportQueue = () => new Promise<void>((resolve) => { finish = resolve; });
+    const clearing = useExperienceStore.getState().clearQueue();
+    await seedActiveScope(makeSession({ chatId: C2 }), C2, B1);
+    await seedActiveScope(makeSession());
+    finish();
+    await clearing;
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).not.toBeNull();
+    expect(scopeState(KEY_C2B1)?.queuedAttachment).not.toBeNull();
+  });
+
+  test("a retained terminal queue clears without an active session", async () => {
+    const terminal = makeAttachment({ sessionRevision: 9 });
+    impl.endExperienceSession = async () => terminal;
+    await seedActiveScope(makeSession());
+    impl.getActiveExperienceSession = async () => { throw noActiveSession(B1); };
+    await useExperienceStore.getState().endSession();
+    expect(scopeState(KEY_C1B1)?.session).toBeNull();
+    expect(await useExperienceStore.getState().clearQueue()).toBe(true);
+    expect(clearCalls[0]).toEqual({ sessionId: S1, body: { chatId: C1, branchId: B1, expectedRevision: 9 } });
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toBeNull();
+    expect(await useExperienceStore.getState().clearQueue()).toBe(false);
+    expect(clearCalls).toHaveLength(1);
+  });
+});
 
 describe("experience-store — fresh scope hydration", () => {
   test("setScope hydrates config + active session + effects + attachment/report/context metadata", async () => {

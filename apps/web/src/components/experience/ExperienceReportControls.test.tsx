@@ -3,8 +3,8 @@
  *
  * Boundary under test: the REAL ExperienceReportControls (no store, no API) with
  * typed server-shaped props → DOM observations + onQueue call assertions. The
- * component is pure: every count, frontier, and revision comes from props, and
- * the ONLY mutation is the single async `onQueue` callback. This test pins the
+ * component reads only frozen props; actions call the queue/clear callbacks.
+ * This test pins the
  * no-silent-growth contract at the component boundary:
  *   - frozen count from `queuedAttachment.publicReport?.events.length` (fail-
  *     closed on a malformed/null report — never guessed);
@@ -29,7 +29,7 @@ const { render, fireEvent, act } = await import("@testing-library/react");
 
 // ─── i18n mock (returns keys verbatim; interpolation params are ignored so the
 //     test asserts on stable key text, matching the rest of the experience tests) ─
-installI18nContextSeam();
+installI18nContextSeam({ interpolateKeys: ["experience_report_will_attach", "experience_report_recent_events"] });
 
 const { ExperienceReportControls, computeReportActionState } = await import("./ExperienceReportControls.js");
 import type {
@@ -71,16 +71,19 @@ function makeReportStatus(over: Partial<ExperienceReportStatus> = {}): Experienc
 }
 
 function renderControls(over: Partial<ExperienceReportControlsProps> = {}):
-  ReturnType<typeof render> & { onQueue: ReturnType<typeof mock> } {
+  ReturnType<typeof render> & { onQueue: ReturnType<typeof mock>; onClear: ReturnType<typeof mock> } {
   const onQueue = mock((_over?: unknown) => Promise.resolve());
+  const onClear = mock(() => Promise.resolve());
   const utils = render(
     <ExperienceReportControls
       queuedAttachment={over.queuedAttachment ?? null}
       reportStatus={over.reportStatus ?? null}
       onQueue={(over.onQueue as () => Promise<void>) ?? onQueue}
+      onClear={over.onClear ?? onClear}
+      layout={over.layout}
     />,
   );
-  return { ...utils, onQueue };
+  return { ...utils, onQueue, onClear };
 }
 
 beforeEach(() => {
@@ -88,6 +91,50 @@ beforeEach(() => {
 });
 
 // ─── Pure action-state derivation ──────────────────────────────────────────
+
+describe("clear queue (ERX-6b)", () => {
+  it("is disabled without a queue and never clears automatically", () => {
+    const view = renderControls();
+    const button = view.getByTestId("experience-report-clear") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(view.onClear).not.toHaveBeenCalled();
+  });
+
+  it("clears an up-to-date or malformed queue only on click, without optimistic removal", async () => {
+    const onClear = mock(async () => {});
+    const view = renderControls({ queuedAttachment: makeAttachment({ publicReport: null }),
+      reportStatus: makeReportStatus({ pendingPublicEventCount: 0 }), onClear });
+    const button = view.getByTestId("experience-report-clear") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(onClear).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(button); });
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("experience-report-frozen-malformed")).toBeDefined();
+  });
+
+  it("suppresses duplicate clear and queue clicks while clearing", async () => {
+    let finish!: () => void;
+    const onClear = mock(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const view = renderControls({ queuedAttachment: makeAttachment(), reportStatus: makeReportStatus(), onClear });
+    fireEvent.click(view.getByTestId("experience-report-clear"));
+    fireEvent.click(view.getByTestId("experience-report-clear"));
+    fireEvent.click(view.getByTestId("experience-report-action"));
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(view.onQueue).not.toHaveBeenCalled();
+    expect((view.getByTestId("experience-report-clear") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { finish(); });
+  });
+
+  it("shows a distinct localized clear failure and retains frozen values", async () => {
+    const view = renderControls({ queuedAttachment: makeAttachment(), reportStatus: makeReportStatus(),
+      onClear: async () => { throw new Error("clear failed"); } });
+    await act(async () => { fireEvent.click(view.getByTestId("experience-report-clear")); });
+    expect(view.getByRole("alert").textContent).toBe("experience_report_clear_error");
+    expect(view.getByTestId("experience-report-frozen")).toBeDefined();
+    expect((view.getByTestId("experience-report-clear") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 describe("computeReportActionState — pure derivation from server props", () => {
   it("no attachment + pending > 0 → queue", () => {
     expect(computeReportActionState(null, makeReportStatus({ pendingPublicEventCount: 3 }))).toEqual({
@@ -125,7 +172,8 @@ describe("ExperienceReportControls — server-authoritative counts", () => {
   it("shows the frozen count from publicReport.events.length", () => {
     const att = makeAttachment({ publicReport: { title: "T", events: [{ type: "public", detail: "a" }] } });
     const { getByTestId } = renderControls({ queuedAttachment: att, reportStatus: makeReportStatus({ pendingPublicEventCount: 0 }) });
-    expect(getByTestId("experience-report-frozen").textContent).toContain("experience_report_queued_events");
+    // The shared seam interpolates base copy; real plural forms are checked in the browser.
+    expect(getByTestId("experience-report-frozen").textContent).toContain("Will attach to your next message: 1 ");
   });
 
   it("shows the pending count label from reportStatus.pendingPublicEventCount", () => {
@@ -157,28 +205,72 @@ describe("ExperienceReportControls — server-authoritative counts", () => {
   });
 });
 
-// ─── Frontier / revisions metadata ─────────────────────────────────────────
-describe("ExperienceReportControls — frontier + revisions", () => {
-  it("renders the report frontier, queue revision, and session revision", () => {
-    const { getByTestId } = renderControls({
-      queuedAttachment: makeAttachment({ queueRevision: 5, sessionRevision: 7 }),
-      reportStatus: makeReportStatus({ reportFrontier: 9 }),
+// 2026-10-27 ERX-10: re-pin the existing metadata boundary to absence in both
+// mounts; revisions/frontier stay on the props and are not event counts.
+describe("ExperienceReportControls — frozen preview (ERX-10)", () => {
+  for (const layout of ["compact", "footer"] as const) {
+    it(`${layout}: hides technical metadata, starts collapsed and toggles shared-renderer lines`, () => {
+      const att = makeAttachment({ publicReport: { title: "Frozen Hearts", summary: "The opening deal",
+        participants: [{ id: "seat_1", label: "Player" }], events: [
+          { type: "move", participantId: "seat_1", detail: "played a red six" },
+          { type: "old", detail: { suit: "red" } }, { type: "end", detail: "The match ended." },
+        ] } });
+      const view = renderControls({ layout, queuedAttachment: att, reportStatus: makeReportStatus({ reportFrontier: 999 }) });
+      for (const id of ["meta", "frontier", "queue-rev", "session-rev"]) expect(view.queryByTestId(`experience-report-${id}`)).toBeNull();
+      expect(view.queryByTestId("experience-report-preview")).toBeNull();
+      expect(view.getByTestId("experience-report-frozen").textContent).toBe("Will attach to your next message: 3 events");
+      const toggle = view.getByRole("button", { name: "experience_report_show_events" });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
+      const preview = view.getByTestId("experience-report-preview");
+      expect(preview.id).toBe(toggle.getAttribute("aria-controls")!);
+      expect(preview.textContent).toContain("Frozen Hearts");
+      expect(preview.textContent).toContain("The opening deal");
+      expect(preview.textContent).toContain("Player: played a red six");
+      expect(preview.textContent).toContain('old: {"suit":"red"}');
+      expect(preview.textContent).toContain("The match ended.");
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(view.getByRole("button", { name: "experience_report_hide_events" }));
+      expect(view.queryByTestId("experience-report-preview")).toBeNull();
+      expect(view.onQueue).not.toHaveBeenCalled();
+      expect(view.onClear).not.toHaveBeenCalled();
     });
-    expect(getByTestId("experience-report-frontier").textContent).toContain("experience_report_frontier");
-    expect(getByTestId("experience-report-queue-rev").textContent).toContain("experience_report_queue_rev");
-    expect(getByTestId("experience-report-session-rev").textContent).toContain("experience_report_session_rev");
+  }
+
+  it("caps the preview at the same last 100 events as message chips, with total count and legacy actor fallback", () => {
+    const events = Array.from({ length: 105 }, (_, n) => ({ type: "move", participantId: "seat_1", detail: `move ${n}` }));
+    const view = renderControls({ queuedAttachment: makeAttachment({ publicReport: { title: "Legacy", events } }) });
+    fireEvent.click(view.getByTestId("experience-report-preview-toggle"));
+    const preview = view.getByTestId("experience-report-preview");
+    expect(preview.querySelectorAll("li")).toHaveLength(100);
+    expect(preview.querySelector("li")?.textContent).toBe("seat_1: move 5");
+    expect(preview.querySelector("li:last-child")?.textContent).toBe("seat_1: move 104");
+    expect(preview.textContent).toContain("Showing the last 100 of 105 events.");
+    expect(view.getByTestId("experience-report-frozen").textContent).toBe("Will attach to your next message: 105 events");
+    expect(events).toHaveLength(105);
   });
 
-  it("does not conflate the frontier with the event count (separate spans)", () => {
-    const att = makeAttachment({ publicReport: { title: "T", events: [{ type: "public", detail: "x" }] } });
-    const { getByTestId } = renderControls({
-      queuedAttachment: att,
-      reportStatus: makeReportStatus({ reportFrontier: 12, pendingPublicEventCount: 1 }),
-    });
-    // The frontier span carries the frontier key; the frozen span carries the
-    // events key — they are distinct DOM nodes, never the same text.
-    expect(getByTestId("experience-report-frontier").textContent).toContain("experience_report_frontier");
-    expect(getByTestId("experience-report-frozen").textContent).toContain("experience_report_queued_events");
+  it("does not offer a preview for a missing or malformed queue; a genuine empty report has a zero count", () => {
+    const view = renderControls();
+    expect(view.queryByTestId("experience-report-preview-toggle")).toBeNull();
+    view.rerender(<ExperienceReportControls queuedAttachment={makeAttachment({ publicReport: null })} reportStatus={null} onQueue={view.onQueue} onClear={view.onClear} />);
+    expect(view.queryByTestId("experience-report-preview-toggle")).toBeNull();
+    view.rerender(<ExperienceReportControls queuedAttachment={makeAttachment({ publicReport: { title: "Empty", events: [] } })} reportStatus={null} onQueue={view.onQueue} onClear={view.onClear} />);
+    expect(view.getByTestId("experience-report-frozen").textContent).toBe("Will attach to your next message: 0 events");
+  });
+
+  it("does not grow the frozen preview from pending counts; an authoritative replacement starts collapsed", () => {
+    const attachment = makeAttachment();
+    const view = renderControls({ queuedAttachment: attachment, reportStatus: makeReportStatus() });
+    fireEvent.click(view.getByTestId("experience-report-preview-toggle"));
+    view.rerender(<ExperienceReportControls queuedAttachment={attachment} reportStatus={makeReportStatus({ pendingPublicEventCount: 99 })} onQueue={view.onQueue} onClear={view.onClear} />);
+    expect(view.getByTestId("experience-report-preview").querySelectorAll("li")).toHaveLength(2);
+    view.rerender(<ExperienceReportControls queuedAttachment={makeAttachment({ queueRevision: 6 })} reportStatus={makeReportStatus()} onQueue={view.onQueue} onClear={view.onClear} />);
+    expect(view.queryByTestId("experience-report-preview")).toBeNull();
+    fireEvent.click(view.getByTestId("experience-report-preview-toggle"));
+    view.rerender(<ExperienceReportControls queuedAttachment={null} reportStatus={null} onQueue={view.onQueue} onClear={view.onClear} />);
+    expect(view.queryByTestId("experience-report-preview")).toBeNull();
+    expect(view.queryByTestId("experience-report-preview-toggle")).toBeNull();
   });
 });
 
@@ -311,6 +403,7 @@ describe("ExperienceReportControls — action contract", () => {
         queuedAttachment={att}
         reportStatus={makeReportStatus({ pendingPublicEventCount: 1 })}
         onQueue={fail}
+        onClear={async () => {}}
       />,
     );
     expect(getByTestId("experience-report-frozen")).toBeTruthy();

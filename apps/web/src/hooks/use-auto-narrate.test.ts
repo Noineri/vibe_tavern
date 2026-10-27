@@ -95,6 +95,7 @@ function genState(streamingMessageId: string | null): ChatGenerationState {
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],
     pendingDiceRolls: [],
+    pendingExperienceReport: null,
     abortController: null,
   };
 }

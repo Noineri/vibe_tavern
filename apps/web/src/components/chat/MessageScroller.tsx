@@ -46,7 +46,8 @@ export function useDisplayMessageIds(): string[] {
     const state = useSnapshotStore.getState();
     const ids = messageOrder.filter(id => state.messagesById[id]?.role !== "tool");
 
-    if (pendingUserMessageContent) {
+    // Empty text is a valid attachment-only send; null alone means no pending user turn.
+    if (pendingUserMessageContent !== null) {
       const lastMsg = lastPersistedMessage;
       const alreadyPersisted =
         lastMsg?.role === "user" &&
