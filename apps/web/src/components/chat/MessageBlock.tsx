@@ -639,6 +639,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     // message's — otherwise swiping always shows the first variant's time.
     createdAt: selectedVariant?.createdAt ?? msg.createdAt,
     diceRolls: msg.diceRolls ?? [],
+    experienceReports: msg.experienceReports,
   };
 
   return (
