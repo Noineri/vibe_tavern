@@ -8,11 +8,8 @@ import { copilotTodoListSchema, type CopilotTodoItem } from "@vibe-tavern/api-co
  * ruling 2026-10-11: todo = the thread's session checklist living BESIDE the
  * script-owned plan; see `agent-plan-tools.ts` for the durable twin).
  *
- * Extracted from `experience-copilot-tools.ts` when the mechanic was restored
- * (the arch-gate file ratchet caps that builder at 800 lines — the same
- * remedy PM-2 applied to the plan tools). The factory is standalone: the
- * copilot builder injects the persistence writer (the store's `updateTodo`)
- * and the turn's non-poisoning serialization queue.
+ * The builder injects the persistence writer. SDK entrypoints serialize tool
+ * execution with `toolCallConcurrency: 1`.
  */
 
 /** Structured log — same observability tag as the builder's other tools. */
@@ -34,16 +31,11 @@ export interface ExperienceCopilotTodoResult {
   readonly error?: string;
 }
 
-/** Build the `todo` tool. `save` is optional by design (mirroring the old
- *  inline tool): when absent, a call throws a precondition error — the same
- *  contract `run_test`'s no-buffer guard uses. `enqueue` is the caller's
- *  turn-local serialization queue so the write never interleaves with buffer
- *  mutations. */
+/** Build the checklist writer. A missing `save` rejects the call. */
 export function createCopilotTodoTool(deps: {
   readonly save?: (items: readonly CopilotTodoItem[]) => Promise<void>;
-  readonly enqueue: <T>(fn: () => Promise<T>) => Promise<T>;
 }): Tool<{ items: CopilotTodoItem[] }, ExperienceCopilotTodoResult> {
-  const { save, enqueue } = deps;
+  const { save } = deps;
   return tool({
     description:
       "Maintain the quick checklist of SMALL tasks for the CURRENT session (this thread only — it does not survive sessions). " +
@@ -57,25 +49,24 @@ export function createCopilotTodoTool(deps: {
     inputSchema: z.object({
       items: copilotTodoListSchema.describe("The FULL rewritten todo list — every item, every time."),
     }),
-    execute: async ({ items }): Promise<ExperienceCopilotTodoResult> =>
-      enqueue(async () => {
-        const toolName = "todo";
-        logger.info("%s IN items=%d", toolName, items.length);
-        if (save === undefined) {
-          logger.warn("%s REJECTED no saveTodo writer wired", toolName);
-          throw new Error(`${toolName}: no todo writer wired — saveTodo is required for this tool`);
-        }
-        try {
-          await save(items);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.warn("%s FAIL message=%s", toolName, message);
-          return { ok: false, error: message };
-        }
-        const activeTitle = items.find((i) => i.status === "active")?.title;
-        const remaining = items.filter((i) => i.status === "pending" || i.status === "active").length;
-        logger.info("%s OK items=%d remaining=%d activeTitle=%s", toolName, items.length, remaining, activeTitle ?? "(none)");
-        return { ok: true, items, activeTitle, remaining };
-      }),
+    execute: async ({ items }): Promise<ExperienceCopilotTodoResult> => {
+      const toolName = "todo";
+      logger.info("%s IN items=%d", toolName, items.length);
+      if (save === undefined) {
+        logger.warn("%s REJECTED no saveTodo writer wired", toolName);
+        throw new Error(`${toolName}: no todo writer wired — saveTodo is required for this tool`);
+      }
+      try {
+        await save(items);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn("%s FAIL message=%s", toolName, message);
+        return { ok: false, error: message };
+      }
+      const activeTitle = items.find((i) => i.status === "active")?.title;
+      const remaining = items.filter((i) => i.status === "pending" || i.status === "active").length;
+      logger.info("%s OK items=%d remaining=%d activeTitle=%s", toolName, items.length, remaining, activeTitle ?? "(none)");
+      return { ok: true, items, activeTitle, remaining };
+    },
   });
 }

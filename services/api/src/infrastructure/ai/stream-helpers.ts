@@ -7,11 +7,11 @@
 
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
-import { cancelled, providerError } from "../../shared/errors.js";
+import { providerError } from "../../shared/errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "../../domain/providers/openai-reasoning-fetch.js";
-import type { ProviderMetadata } from "ai";
+import { NoOutputGeneratedError, type FinishReason, type ProviderMetadata, type TextStreamPart, type ToolSet } from "ai";
 import type { ProviderResponseTrace } from "@vibe-tavern/domain";
-import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import type { GenerationUsage, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 import { serializeProviderResponseStep, toTraceJsonValue } from "./provider-response-trace.js";
 
 // ─── createMappedStream ──────────────────────────────────────────────────
@@ -65,6 +65,12 @@ export function createMappedStream(
         const errMsg = pErr.errorText ?? extractProviderErrorMessage(pErr.error);
         logSendDebug("reasoning.stream-error", { chunkCount, error: errMsg, partTypes: [...partTypes].sort() });
         throw providerError(errMsg);
+      }
+      if (p.type === "finish") {
+        const finish = part as Extract<TextStreamPart<ToolSet>, { type: "finish" }>;
+        if (finish.finishReason === "interrupted") {
+          throw providerError("Provider response stream ended before completion");
+        }
       }
 
       // ── Raw provider response capture, grouped by AI SDK model step ──
@@ -242,16 +248,11 @@ export function createMappedStream(
  * Map the Vercel AI SDK result into our ProviderStreamFinish promise.
  */
 export function mapFinish(
-  result: { finishReason: PromiseLike<unknown>; usage: PromiseLike<unknown> },
+  result: { finishReason: PromiseLike<FinishReason>; usage: PromiseLike<GenerationUsage | undefined> },
   signal?: AbortSignal,
 ): Promise<ProviderStreamFinish> {
-  return Promise.all([result.finishReason, result.usage]).then(([reason, usage]) => {
-    const usageRecord = usage as { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
-    let finishReason: ProviderStreamFinish["finishReason"] = "stop";
-    if (reason === "length") finishReason = "length";
-    else if (reason === "content-filter") finishReason = "content-filter";
-    else if (reason === "tool-calls") finishReason = "tool-calls";
-    else if (reason === "error" || reason === "unknown") finishReason = "error";
+  return Promise.all([result.finishReason, result.usage]).then(([reason, usageRecord]) => {
+    const finishReason = reason === "interrupted" || reason === "other" ? "error" : reason;
 
     return {
       finishReason,
@@ -262,32 +263,25 @@ export function mapFinish(
       } : undefined,
     };
   }).catch((error) => {
-    if (signal?.aborted || isNoOutputGeneratedError(error)) return { finishReason: "cancelled" };
+    if (signal?.aborted) return { finishReason: "cancelled" };
     logSendDebug("stream.finish-promise-error", { message: error instanceof Error ? error.message : String(error) });
     return { finishReason: "error" };
   });
 }
 
-// ─── Error classification ────────────────────────────────────────────────
-
-export function isNoOutputGeneratedError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === "AI_NoOutputGeneratedError" || error.name === "NoOutputGeneratedError" || error.message.includes("No output generated");
-}
-
 // ─── Safe promise wrappers ───────────────────────────────────────────────
 
 export function safeStreamTextPromise(promise: PromiseLike<string>, signal?: AbortSignal): Promise<string> {
-  return Promise.resolve(promise).catch((error: unknown) => {
-    if (signal?.aborted || isNoOutputGeneratedError(error)) return "";
+  return Promise.resolve(promise).catch((error) => {
+    if (signal?.aborted || NoOutputGeneratedError.isInstance(error)) return "";
     logSendDebug("stream.text-promise-error", { message: error instanceof Error ? error.message : String(error) });
     return "";
   });
 }
 
 export function safeReasoningPromise(promise: PromiseLike<string | undefined>, signal?: AbortSignal): Promise<string | undefined> {
-  return Promise.resolve(promise).catch((error: unknown) => {
-    if (signal?.aborted || isNoOutputGeneratedError(error)) return undefined;
+  return Promise.resolve(promise).catch((error) => {
+    if (signal?.aborted || NoOutputGeneratedError.isInstance(error)) return undefined;
     logSendDebug("stream.reasoning-promise-error", { message: error instanceof Error ? error.message : String(error) });
     return undefined;
   });

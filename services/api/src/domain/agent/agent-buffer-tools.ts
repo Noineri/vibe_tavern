@@ -4,9 +4,9 @@
  * `experience-copilot-tools.ts` (ER-4): per-buffer working state seeded at
  * turn start, the whole-buffer FIRST-mutation guard, per-buffer validators
  * (throw = tool-error; `{ notValidated }` return = an SS-4B-style marker
- * riding on the output), empty-content rejection, and the non-poisoning
- * mutation queue. Everything KIND-SPECIFIC — the buffer ids, the tool
- * description fragments, the output shape — arrives through
+ * riding on the output) and empty-content rejection. SDK entrypoints serialize
+ * tool execution. Everything KIND-SPECIFIC — buffer ids, description fragments,
+ * and output shape — arrives through
  * {@link CreateBufferToolsConfig}; the experience wiring in the old module
  * reproduces today's strings BYTE-EXACTLY through them (pinned by the tools
  * suite's description pins).
@@ -151,9 +151,8 @@ export interface AgentBufferTools {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-/** Build the generic `write_buffer`/`edit_buffer` pair over the kind's buffer
- *  ids (see {@link CreateBufferToolsConfig}). The returned tools are
- *  self-contained ToolSet pieces: the caller spreads them into its tool set. */
+/** Build the generic buffer tools. SDK entrypoints serialize execution with
+ *  `toolCallConcurrency: 1` so mutations compose on the last good state. */
 export function createBufferTools(
   config: CreateBufferToolsConfig,
 ): AgentBufferTools {
@@ -171,16 +170,6 @@ export function createBufferTools(
     if (seed !== undefined) working.set(bufferId, seed);
   }
   const mutationCounts = new Map<string, number>();
-  let turnChain: Promise<unknown> = Promise.resolve();
-
-  /** Serialize a buffer mutation onto the turn queue (non-poisoning: a rejected
-   *  call is swallowed so the next call runs against the last good state). */
-  function runQueued<T>(fn: () => Promise<T>): Promise<T> {
-    const result = turnChain.catch(() => undefined).then(fn);
-    turnChain = result.then(() => undefined, () => undefined);
-    return result;
-  }
-
   const getBuffer = (bufferId: string): string | undefined => working.get(bufferId);
 
   const write_buffer = tool({
@@ -205,36 +194,35 @@ export function createBufferTools(
         .max(200)
         .describe("One-line description of what this change does, shown above the Apply action."),
     }),
-    execute: async ({ target, content, summary }): Promise<AgentBufferToolOutput> =>
-      runQueued(async () => {
-        const toolName = "write_buffer";
-        if (!content.trim()) {
-          logger.warn("%s REJECTED empty content target=%s", toolName, target);
-          throw new Error(`${toolName}: content must not be empty`);
+    execute: async ({ target, content, summary }): Promise<AgentBufferToolOutput> => {
+      const toolName = "write_buffer";
+      if (!content.trim()) {
+        logger.warn("%s REJECTED empty content target=%s", toolName, target);
+        throw new Error(`${toolName}: content must not be empty`);
+      }
+      logger.info("%s IN target=%s len=%d summary=%s", toolName, target, content.length, summary);
+      if (config.firstMutationGuard?.[target] === true) {
+        const count = mutationCounts.get(target) ?? 0;
+        if (count > 0) {
+          logger.warn(
+            "%s REJECTED late whole-buffer %s rewrite after %d mutation(s)",
+            toolName,
+            target,
+            count,
+          );
+          throw new Error(
+            `${toolName}: a whole-buffer rewrite of '${target}' can only be the FIRST ${target} change in a turn. ` +
+              `Earlier edits already composed into the working ${target} buffer; a full rewrite now would erase them. ` +
+              `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
+          );
         }
-        logger.info("%s IN target=%s len=%d summary=%s", toolName, target, content.length, summary);
-        if (config.firstMutationGuard?.[target] === true) {
-          const count = mutationCounts.get(target) ?? 0;
-          if (count > 0) {
-            logger.warn(
-              "%s REJECTED late whole-buffer %s rewrite after %d mutation(s)",
-              toolName,
-              target,
-              count,
-            );
-            throw new Error(
-              `${toolName}: a whole-buffer rewrite of '${target}' can only be the FIRST ${target} change in a turn. ` +
-                `Earlier edits already composed into the working ${target} buffer; a full rewrite now would erase them. ` +
-                `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
-            );
-          }
-        }
-        const marker = config.validators?.[target]?.(content, toolName);
-        working.set(target, content); // advance ONLY on success — atomic on failure
-        mutationCounts.set(target, (mutationCounts.get(target) ?? 0) + 1);
-        logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-        return makeOutput(target, content, summary, marker);
-      }),
+      }
+      const marker = config.validators?.[target]?.(content, toolName);
+      working.set(target, content); // advance ONLY on success — atomic on failure
+      mutationCounts.set(target, (mutationCounts.get(target) ?? 0) + 1);
+      logger.info("%s OK target=%s len=%d", toolName, target, content.length);
+      return makeOutput(target, content, summary, marker);
+    },
   });
 
   const edit_buffer = tool({
@@ -264,26 +252,25 @@ export function createBufferTools(
         .max(200)
         .describe("One-line description of what these edits change, shown above the Apply action."),
     }),
-    execute: async ({ target, edits, summary }): Promise<AgentBufferToolOutput> =>
-      runQueued(async () => {
-        const toolName = "edit_buffer";
-        logger.info("%s IN target=%s edits=%d summary=%s", toolName, target, edits.length, summary);
-        const current = working.get(target);
-        if (current === undefined) {
-          logger.warn("%s REJECTED no %s buffer in working state", toolName, target);
-          throw new Error(
-            `${toolName}: no '${target}' buffer in the working state — use write_buffer to set the buffer first`,
-          );
-        }
-        // Shared exact-edit primitive. Atomic on failure: a failed item throws
-        // and the working buffer is left untouched.
-        const proposed = applyExactEditsToBody(current, edits, toolName);
-        const marker = config.validators?.[target]?.(proposed, toolName);
-        working.set(target, proposed);
-        mutationCounts.set(target, (mutationCounts.get(target) ?? 0) + 1);
-        logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
-        return makeOutput(target, proposed, summary, marker);
-      }),
+    execute: async ({ target, edits, summary }): Promise<AgentBufferToolOutput> => {
+      const toolName = "edit_buffer";
+      logger.info("%s IN target=%s edits=%d summary=%s", toolName, target, edits.length, summary);
+      const current = working.get(target);
+      if (current === undefined) {
+        logger.warn("%s REJECTED no %s buffer in working state", toolName, target);
+        throw new Error(
+          `${toolName}: no '${target}' buffer in the working state — use write_buffer to set the buffer first`,
+        );
+      }
+      // Shared exact-edit primitive. Atomic on failure: a failed item throws
+      // and the working buffer is left untouched.
+      const proposed = applyExactEditsToBody(current, edits, toolName);
+      const marker = config.validators?.[target]?.(proposed, toolName);
+      working.set(target, proposed);
+      mutationCounts.set(target, (mutationCounts.get(target) ?? 0) + 1);
+      logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
+      return makeOutput(target, proposed, summary, marker);
+    },
   });
 
   return { write_buffer, edit_buffer, getBuffer };

@@ -20,10 +20,12 @@
  * adapter's fixture tests. No `mock.module`.
  */
 import { describe, it, expect, mock, beforeEach, afterEach, afterAll } from "bun:test";
+import { setImmediate } from "node:timers/promises";
 import type { AssemblePromptResponse, GenerationFormat, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
 import { resetProviderFetchFactory } from "../src/domain/providers/provider-fetch-factory.js";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
+import { createCopilotTodoTool } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { CONTINUATION_USER_INSTRUCTION } from "../src/infrastructure/ai/provider-executor-utils.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
@@ -147,6 +149,67 @@ const CHAT_STREAM_CHUNKS = [
   { id: "chatcmpl-s", object: "chat.completion.chunk", created: 1, model: "qwen-local", choices: [{ index: 0, delta: { role: "assistant", content: "Ready." }, finish_reason: null }] },
   { id: "chatcmpl-s", object: "chat.completion.chunk", created: 1, model: "qwen-local", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 20, completion_tokens: 2, total_tokens: 22 } },
 ];
+
+describe("tool execution ordering", () => {
+  it.each(["streaming", "nonstreaming"] as const)("%s serializes checklist writes and continues after a failed write", async (mode) => {
+    const toolCalls = ["first", "last"].map((title, index) => ({
+      index, id: `todo_${index}`, type: "function",
+      function: { name: "todo", arguments: JSON.stringify({ items: [{ title, status: "active" }] }) },
+    }));
+    installFetchStub(() => mode === "streaming"
+      ? sseResponse([{
+        id: "chatcmpl-tools", object: "chat.completion.chunk", created: 1, model: "qwen-local",
+        choices: [{ index: 0, delta: { role: "assistant", tool_calls: toolCalls }, finish_reason: "tool_calls" }],
+      }])
+      : Response.json({
+        id: "chatcmpl-tools", object: "chat.completion", model: "qwen-local",
+        choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: toolCalls }, finish_reason: "tool_calls" }],
+      }));
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const order: string[] = [];
+    let savedTitle: string | undefined;
+    const tools = {
+      todo: createCopilotTodoTool({
+        save: async (items) => {
+          const title = items[0]!.title;
+          order.push(`start:${title}`);
+          if (title === "first") {
+            entered.resolve();
+            await release.promise;
+            order.push("fail:first");
+            throw new Error("write failed");
+          }
+          savedTitle = title;
+          order.push(`saved:${title}`);
+        },
+      }),
+    };
+    const input = makeInput({
+      profile: makeProfile({ generationMode: GENERATION_MODE.chat }), tools, maxSteps: 1,
+    });
+    const execute = async () => {
+      if (mode === "nonstreaming") {
+        await nonstreamingProviderExecute(input);
+        return;
+      }
+      const result = await streamProviderExecutor(input);
+      for await (const _chunk of result.stream) {
+        // Drain the lazy SDK request and its tool executions.
+      }
+      await result.finished;
+    };
+    const execution = execute();
+    await entered.promise;
+    await setImmediate();
+    const whilePending = [...order];
+    release.resolve();
+    await execution;
+    expect(whilePending).toEqual(["start:first"]);
+    expect(order).toEqual(["start:first", "fail:first", "start:last", "saved:last"]);
+    expect(savedTitle).toBe("last");
+  });
+});
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
@@ -294,20 +357,23 @@ describe("completion mode — nonstreamingProviderExecute", () => {
       maxSteps: 1,
     }));
 
+    // @ai-sdk/google ≥4.0.70 sends tool schemas verbatim as
+    // `parametersJsonSchema` (no OpenAPI `nullable` conversion), so the
+    // normalized `anyOf` nullability is what reaches Gemini.
     const body = JSON.parse(String(calls[0]!.init.body)) as {
       tools?: Array<{
         functionDeclarations?: Array<{
           name?: string;
-          parameters?: { properties?: Record<string, Record<string, unknown>> };
+          parametersJsonSchema?: { properties?: Record<string, Record<string, unknown>> };
         }>;
       }>;
     };
     expect(findArrayTypePaths(body.tools)).toEqual([]);
     const declarations = body.tools?.flatMap((entry) => entry.functionDeclarations ?? []) ?? [];
     const createEntry = declarations.find((entry) => entry.name === "create_lore_entry");
-    const properties = createEntry?.parameters?.properties;
-    expect(properties?.useGroupScoring).toMatchObject({ type: "boolean", nullable: true });
-    expect(properties?.scanDepthOverride).toMatchObject({ type: "number", nullable: true });
+    const properties = createEntry?.parametersJsonSchema?.properties;
+    expect(properties?.useGroupScoring?.anyOf).toEqual([{ type: "boolean" }, { type: "null" }]);
+    expect(properties?.scanDepthOverride?.anyOf).toEqual([{ type: "number" }, { type: "null" }]);
   });
 });
 
@@ -488,6 +554,25 @@ describe("completion mode — streamProviderExecutor", () => {
 
     const body = JSON.parse(String(calls[0]!.init.body)) as { tools?: unknown[] };
     expect(findArrayTypePaths(body.tools)).toEqual([]);
+  });
+
+  it("rejects a native provider stream that ends without a completion signal, preserving partial deltas", async () => {
+    installFetchStub(() => new Response(`data: ${JSON.stringify({
+      candidates: [{ content: { role: "model", parts: [{ text: "Ready." }] }, index: 0 }],
+    })}\n\n`, { headers: { "Content-Type": "text/event-stream" } }));
+    const result = await streamProviderExecutor(makeInput({
+      profile: makeProfile({ providerPreset: "google", generationMode: GENERATION_MODE.chat }),
+      model: "gemini-2.5-pro",
+    }));
+    const deltas: string[] = [];
+    await expect((async () => {
+      for await (const chunk of result.stream) {
+        if (chunk.type === "text-delta") deltas.push(chunk.delta);
+      }
+    })()).rejects.toThrow("Provider response stream ended before completion");
+    expect(deltas).toEqual(["Ready."]);
+    expect((await result.finished).finishReason).toBe("error");
+    expect(await result.text).toBe("Ready.");
   });
 
   it("streams text deltas from the /completions SSE (same chunk contract as chat)", async () => {

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
+import { NoOutputGeneratedError } from "ai";
 import {
   createMappedStream,
   mapFinish,
-  isNoOutputGeneratedError,
   safeStreamTextPromise,
   safeReasoningPromise,
 } from "../src/infrastructure/ai/stream-helpers.js";
@@ -338,30 +338,20 @@ describe("mapFinish", () => {
     expect((await result).finishReason).toBe("error");
   });
 
-  it("maps unknown finish reason to error", async () => {
+  it.each(["interrupted", "other"] as const)("maps %s finish reason to error", async (reason) => {
     const result = mapFinish({
-      finishReason: Promise.resolve("unknown"),
+      finishReason: Promise.resolve(reason),
       usage: Promise.resolve({}),
     });
     expect((await result).finishReason).toBe("error");
   });
 
-  it("maps unrecognized finish reason to stop (default)", async () => {
+  it("does not mistake a failed generation for user cancellation", async () => {
     const result = mapFinish({
-      finishReason: Promise.resolve("some-new-reason"),
+      finishReason: Promise.reject(new NoOutputGeneratedError()),
       usage: Promise.resolve({}),
     });
-    expect((await result).finishReason).toBe("stop");
-  });
-
-  it("returns cancelled when promise rejects with NoOutputGeneratedError", async () => {
-    const error = new Error("No output generated");
-    error.name = "AI_NoOutputGeneratedError";
-    const result = mapFinish({
-      finishReason: Promise.reject(error),
-      usage: Promise.resolve({}),
-    });
-    expect((await result).finishReason).toBe("cancelled");
+    expect((await result).finishReason).toBe("error");
   });
 
   it("returns cancelled when signal is aborted and promise rejects", async () => {
@@ -390,57 +380,8 @@ describe("mapFinish", () => {
     expect((await result).usage).toBeUndefined();
   });
 
-  it("works with PromiseLike (non-native Promise)", async () => {
-    // Simulate AI SDK v6's PromiseLike (not a real Promise)
-    const likeFinish: PromiseLike<string> = {
-      then(onFulfilled) {
-        return onFulfilled!("stop") as any;
-      },
-    };
-    const likeUsage: PromiseLike<unknown> = {
-      then(onFulfilled) {
-        return onFulfilled!({ inputTokens: 5, outputTokens: 10, totalTokens: 15 }) as any;
-      },
-    };
-    const result = mapFinish({ finishReason: likeFinish, usage: likeUsage });
-    expect(await result).toEqual({
-      finishReason: "stop",
-      usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 },
-    });
-  });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// isNoOutputGeneratedError
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe("isNoOutputGeneratedError", () => {
-  it("matches AI_NoOutputGeneratedError name", () => {
-    const err = new Error("empty");
-    err.name = "AI_NoOutputGeneratedError";
-    expect(isNoOutputGeneratedError(err)).toBe(true);
-  });
-
-  it("matches NoOutputGeneratedError name (v4 compat)", () => {
-    const err = new Error("empty");
-    err.name = "NoOutputGeneratedError";
-    expect(isNoOutputGeneratedError(err)).toBe(true);
-  });
-
-  it("matches message containing 'No output generated'", () => {
-    expect(isNoOutputGeneratedError(new Error("No output generated from model"))).toBe(true);
-  });
-
-  it("does not match generic errors", () => {
-    expect(isNoOutputGeneratedError(new Error("Network timeout"))).toBe(false);
-  });
-
-  it("does not match non-Error values", () => {
-    expect(isNoOutputGeneratedError("string")).toBe(false);
-    expect(isNoOutputGeneratedError(null)).toBe(false);
-    expect(isNoOutputGeneratedError(42)).toBe(false);
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // safeStreamTextPromise
@@ -453,8 +394,7 @@ describe("safeStreamTextPromise", () => {
   });
 
   it("returns empty string on NoOutputGeneratedError", async () => {
-    const err = new Error("No output generated");
-    err.name = "AI_NoOutputGeneratedError";
+    const err = new NoOutputGeneratedError();
     const result = await safeStreamTextPromise(Promise.reject(err));
     expect(result).toBe("");
   });
@@ -471,15 +411,6 @@ describe("safeStreamTextPromise", () => {
     expect(result).toBe("");
   });
 
-  it("works with PromiseLike", async () => {
-    const like: PromiseLike<string> = {
-      then(onFulfilled) {
-        return onFulfilled!("resolved text") as any;
-      },
-    };
-    const result = await safeStreamTextPromise(like);
-    expect(result).toBe("resolved text");
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -498,8 +429,7 @@ describe("safeReasoningPromise", () => {
   });
 
   it("returns undefined on NoOutputGeneratedError", async () => {
-    const err = new Error("No output generated");
-    err.name = "AI_NoOutputGeneratedError";
+    const err = new NoOutputGeneratedError();
     const result = await safeReasoningPromise(Promise.reject(err));
     expect(result).toBeUndefined();
   });
@@ -516,13 +446,4 @@ describe("safeReasoningPromise", () => {
     expect(result).toBeUndefined();
   });
 
-  it("works with PromiseLike", async () => {
-    const like: PromiseLike<string | undefined> = {
-      then(onFulfilled) {
-        return onFulfilled!("thinking...") as any;
-      },
-    };
-    const result = await safeReasoningPromise(like);
-    expect(result).toBe("thinking...");
-  });
 });
