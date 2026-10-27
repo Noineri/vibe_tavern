@@ -50,7 +50,9 @@ export const SCRIPT_PROFILE_TOOL_LABEL_KEYS: Record<ScriptProfileToolKey, AgentI
 
 /** Sidechat labels — `sidechatOocToolSetSchema` order. The two DR-4a
  *  director toggles carry the plan's own copy (DIRECTOR_MODE_PLAN DR-10)
- *  — they landed with the keys (DR-4a), known-but-off in the OOC seed. */
+ *  — they landed with the keys (DR-4a), known-but-off in the OOC seed.
+ *  `ask_user` (DR-4b owner ruling 2026-10-27) shares the cross-kind label
+ *  key the experience/script maps already use. */
 export const SIDECHAT_PROFILE_TOOL_LABEL_KEYS: Record<SidechatProfileToolKey, AgentI18nKey> = {
 	search_context: "agent_tool_search_context",
 	read_context_item: "agent_tool_read_context_item",
@@ -60,6 +62,7 @@ export const SIDECHAT_PROFILE_TOOL_LABEL_KEYS: Record<SidechatProfileToolKey, Ag
 	read_message_prompt: "agent_tool_read_message_prompt",
 	propose_plan: "agent_tool_propose_plan",
 	propose_tracker_template: "agent_tool_propose_tracker_template",
+	ask_user: "agent_tool_ask_user",
 };
 
 /**

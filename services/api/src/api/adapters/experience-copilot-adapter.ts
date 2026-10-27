@@ -28,6 +28,8 @@ import {
   streamSidechatTurn,
   type SidechatStreamDeps,
 } from "../../domain/sidechat/sidechat-stream.js";
+import { createSessionTrackerDelegate } from "../../runtime/session/session-runtime-tracker-delegate.js";
+import { createTrackerDelegate } from "../../domain/coauthor/tracker/tracker-delegate.js";
 import type { AgentTurnDeleteTurn } from "../../domain/agent/agent-regenerate.js";
 import { buildContextSearchStoreReads } from "../../domain/context/context-search-store-reads.js";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
@@ -383,6 +385,8 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         traces: this.stores.traces,
         chatSummaries: this.stores.chatSummaries,
         experienceCopilot: this.stores.experienceCopilot,
+        // DR-4b: the branch-plan read for the <story_plan> context section.
+        agentPlans: this.stores.agentPlans,
         // SC-23c: pinned-preset existence for the RP prompt view arm.
         presets: this.stores.presets,
         assembly,
@@ -408,6 +412,16 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // SC-12: the shared agent-plan store's READ seam — `read_plan` over the
       // thread row's own branch plan (read-only; no plan-write tool exists).
       agentPlans: this.stores.agentPlans,
+      // DR-4b: the director's tracker-template generator — the SAME session
+      // binding the Co-Author's tracker generator resolves through
+      // (`createSessionTrackerDelegate`: the lore provider/model pair with the
+      // Co-Author pair as fallback — NO new user-facing setting). The stream
+      // resolves it lazily per tool call, so OOC turns pay nothing.
+      buildTrackerDelegate: () =>
+        createSessionTrackerDelegate({
+          stores: this.stores,
+          buildDelegate: createTrackerDelegate,
+        }),
       // SC-8c: the sidechat's own compaction service — the stream wires the
       //  auto hook to its discussion-against-room rule.
       ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),

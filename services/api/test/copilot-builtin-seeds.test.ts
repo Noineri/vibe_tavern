@@ -143,18 +143,23 @@ describe("the descriptor's builtinSeeds list (DR-1)", () => {
 // ─── 2. The director seed resolves as a valid shell ──────────────────────────
 
 describe("resolveBuiltinCopilotProfile('sidechat-ooc', …, 'builtin-director') (DR-1)", () => {
-  test("resolves the Director seed: the OOC base + OOC tools, differing from the first seed only in id and name", async () => {
+  test("resolves the Director seed: its own base and toggles since DR-4b (was the OOC shell)", async () => {
     const director = await resolveBuiltinCopilotProfile("sidechat-ooc", undefined, "builtin-director");
     const first = await resolveBuiltinCopilotProfile("sidechat-ooc");
     expect(director.id).toBe("builtin-director");
     expect(director.name).toBe(SIDECHAT_DIRECTOR_SEED_NAME);
     expect(director.isBuiltIn).toBe(true);
     expect(director.agentKind).toBe("sidechat-ooc");
-    // Until DR-4 the seed is a SHELL: the same base prompt and tool toggles
-    // as the OOC seed (DR-4 swaps in the director's own).
-    expect(director.basePrompt).toBe(first.basePrompt);
-    expect(director.toolSet).toEqual(first.toolSet);
-    // The shell is a VALID profile — it passes the wire schema.
+    // Behavior change (DR-4b): was the SHELL — the OOC base prompt + OOC
+    // tool toggles, differing only in id and name (DR-1's interim) → now
+    // the director's OWN asset (`sidechat_director_base`) and its own
+    // toggles (OOC six minus propose_objective plus the two proposal tools
+    // + ask_user), basis: DIRECTOR_MODE_PLAN DR-4b. Pinned in full in
+    // sidechat-ooc-kind.test.ts; here the DIVERGENCE is the point: the two
+    // seeds are no longer copies of each other.
+    expect(director.basePrompt).not.toBe(first.basePrompt);
+    expect(director.toolSet).not.toEqual(first.toolSet);
+    // The seed is a VALID profile — it passes the wire schema.
     expect(copilotProfileSchema.safeParse(director).success).toBe(true);
     // The dispatch reaches the sidechat kind's own resolver for either seed.
     expect(director).toEqual(await resolveBuiltinSidechatOocProfile(undefined, "builtin-director"));

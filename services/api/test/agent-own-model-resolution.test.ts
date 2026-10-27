@@ -116,6 +116,9 @@ beforeAll(async () => {
 	const profileResolver = new CopilotProfileResolver(stores);
 	deps = {
 		store: stores.experienceCopilot,
+		// SC-12: the shared plan store's READ seam — the stream's contract
+		// requires it (the production wiring, real store).
+		agentPlans: stores.agentPlans,
 		sync: {
 			chats: stores.chats,
 			messages: stores.messages,
@@ -129,6 +132,8 @@ beforeAll(async () => {
 			traces: stores.traces,
 			chatSummaries: stores.chatSummaries,
 			experienceCopilot: stores.experienceCopilot,
+			// DR-4b: the branch-plan read for the <story_plan> section.
+			agentPlans: stores.agentPlans,
 			presets: stores.presets,
 			assembly,
 		},

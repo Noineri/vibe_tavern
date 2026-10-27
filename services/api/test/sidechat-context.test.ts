@@ -11,8 +11,10 @@ import {
 import {
 	brandId,
 	defaultObjectiveState,
+	normalizeInsightsConfig,
 	OBJECTIVE_MODE,
 	OBJECTIVE_TASK_STATUS,
+	type AgentPlan,
 	type AgentThreadContextEventId,
 	type ChatBranchId,
 	type ChatId,
@@ -81,6 +83,8 @@ beforeAll(async () => {
 		traces: stores.traces,
 		chatSummaries: stores.chatSummaries,
 		experienceCopilot: stores.experienceCopilot,
+		// DR-4b: the branch-plan read for the <story_plan> section.
+		agentPlans: stores.agentPlans,
 		presets: stores.presets,
 		assembly,
 	};
@@ -733,5 +737,92 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 		for (const event of [...barePkg.eventMessages, ...linkedPkg.eventMessages]) {
 			expect(event.content).not.toContain("<rp_prompt");
 		}
+	});
+});
+
+// ─── DR-4b: the story-plan section ──────────────────────────────────────────
+
+describe("loadSidechatContext story plan (DR-4b)", () => {
+	const PLAN: AgentPlan = {
+		goal: "DR4B-CTX the lantern pact",
+		constraints: ["No lies after dusk"],
+		tasks: [
+			{ id: "e1", title: "The meeting", body: "The pact is sealed at the tide bell.", status: "active" },
+			{ id: "e2", title: "The crossing", body: "", status: "pending" },
+		],
+	};
+
+	it("renders the <story_plan> section (shared renderer + the tracker-facts line) whenever the branch plan is non-empty", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.agentPlans.save({ kind: "chatBranch", chatId, branchId }, PLAN);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.storyPlanSection).not.toBeNull();
+		// The section rides the static package verbatim.
+		expect(pkg.staticPackage).toContain(pkg.storyPlanSection!);
+		expect(pkg.staticPackage).toContain("<story_plan>");
+		// The SHARED renderer's lines (renderAgentPlanSection): premise,
+		// constraints, the ordered task list with statuses, the current
+		// event's body.
+		expect(pkg.staticPackage).toContain("Goal: DR4B-CTX the lantern pact");
+		expect(pkg.staticPackage).toContain("- No lies after dusk");
+		expect(pkg.staticPackage).toContain("[active] The meeting");
+		expect(pkg.staticPackage).toContain("[pending] The crossing");
+		expect(pkg.staticPackage).toContain("The pact is sealed at the tide bell.");
+		// The tracker-facts ONE line — the fixture chat's defaults (both off).
+		expect(pkg.staticPackage).toContain("Tracker facts: goal tracker off; Scene Tracker off.");
+		// Seat: after the character section (the story-direction group).
+		expect(pkg.staticPackage.indexOf("<character")).toBeLessThan(pkg.staticPackage.indexOf("<story_plan>"));
+	});
+
+	it("renders nothing plan-related when the branch has no plan (or an empty one)", async () => {
+		const noPlan = await makeSidechatFixture();
+		const noPlanPkg = await loadSidechatContext(contextDeps, noPlan.threadId);
+		expect(noPlanPkg.storyPlanSection).toBeNull();
+		expect(noPlanPkg.staticPackage).not.toContain("<story_plan>");
+		expect(noPlanPkg.staticPackage).not.toContain("Tracker facts:");
+
+		const empty = await makeSidechatFixture();
+		await stores.agentPlans.save(
+			{ kind: "chatBranch", chatId: empty.chatId, branchId: empty.branchId },
+			{ goal: "", constraints: [], tasks: [] },
+		);
+		const emptyPkg = await loadSidechatContext(contextDeps, empty.threadId);
+		expect(emptyPkg.storyPlanSection).toBeNull();
+		expect(emptyPkg.staticPackage).not.toContain("<story_plan>");
+	});
+
+	it("the tracker-facts line reflects the chat's tracker halves (auto-check cadence + a set schema)", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.agentPlans.save({ kind: "chatBranch", chatId, branchId }, PLAN);
+		await stores.chats.replaceTrackerSetup(
+			chatId,
+			normalizeInsightsConfig({
+				objectiveEnabled: true,
+				trackerEnabled: true,
+				tracker: { schema: { time: { $type: "string" } } },
+			}),
+			{ ...defaultObjectiveState(), autoCheckFrequency: 2 },
+		);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.staticPackage).toContain(
+			"Tracker facts: goal tracker on (auto-check after every 2 replies); Scene Tracker on (schema set).",
+		);
+	});
+
+	it("the tracker-facts line: manual-only checks and a schema-less Scene Tracker", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.agentPlans.save({ kind: "chatBranch", chatId, branchId }, PLAN);
+		await stores.chats.replaceTrackerSetup(
+			chatId,
+			normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: true }),
+			defaultObjectiveState(),
+		);
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.staticPackage).toContain(
+			"Tracker facts: goal tracker on (manual check only); Scene Tracker on (no schema yet).",
+		);
 	});
 });

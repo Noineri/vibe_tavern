@@ -1,5 +1,7 @@
 import {
 	brandId,
+	type AgentPlan,
+	type AgentPlanOwner,
 	type ChatBranchId,
 	type ChatId,
 	type ExperienceCopilotThreadId,
@@ -9,7 +11,6 @@ import {
 	SCENE_PROMPT_FORMAT,
 } from "@vibe-tavern/domain";
 import type {
-	AgentThreadContextEvent,
 	CharacterStore,
 	ChatStore,
 	ChatSummaryStore,
@@ -38,9 +39,6 @@ import {
 } from "../prompt/prompt-assembly-service.js";
 import {
 	RpSyncThreadNotChatOwnedError,
-	type RpSyncPayload,
-	type RpVariantSelection,
-	type SelectionChangedPayload,
 } from "./rp-sync.js";
 import { coverRpSyncPayload, createRpSummaryCoverage } from "./rp-summary-coverage.js";
 import {
@@ -55,11 +53,9 @@ import {
 	renderObjectivesSection,
 	renderPersonaSection,
 	renderTimelineEvent,
-	type BranchForkedPayload,
 	type LoreEntryInput,
-	type SidechatTimelineEvent,
-	type VariantsAttachedPayload,
 } from "./sidechat-xml.js";
+import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
 
 /**
  * The sidechat context loader (SIDECHAT_PLAN SC-3b, reshaped by SC-4d): loads
@@ -151,6 +147,16 @@ import {
  * path is untouched. A thread that is not chat-owned (script-owned, draft,
  * missing) is refused with SC-2c's typed error before any RP-chat read — the
  * same refusal the RP sync uses, one class, not a copy.
+ *
+ * DR-4b (DIRECTOR_MODE_PLAN): when the THREAD's branch plan is non-empty,
+ * the static package gains a SIXTH settled section — `<story_plan>` (the
+ * shared `renderAgentPlanSection` renderer + one line of tracker facts),
+ * seated after `<objectives>` (story-direction material grouped) and carried
+ * for EVERY sidechat profile (the OOC assistant discusses the same story);
+ * the section's text rides the package (`storyPlanSection`) so the stream's
+ * assembly can meter it into its own `story_plan` segment. Nothing renders
+ * when the plan is empty — the section, the package field and the meter
+ * segment are all absent/zero.
  */
 
 /** The stores/services this loader reads — `Pick`s so tests and callers can
@@ -171,6 +177,9 @@ export interface SidechatContextDeps {
 	chatSummaries: Pick<ChatSummaryStore, "listByChatBranch">;
 	/** The thread row + the merged frozen timeline. */
 	experienceCopilot: Pick<ExperienceCopilotStore, "getById" | "listTimeline">;
+	/** DR-4b: the shared agent-plan store's READ seam — the thread's branch
+	 *  plan for the `<story_plan>` section (the sidechat never writes it). */
+	agentPlans: { get(owner: AgentPlanOwner): Promise<AgentPlan | null> };
 	/** SC-23c: pinned-preset existence — a dangling id skips the pin, exactly
 	 *  like every other dangling context-link target. */
 	presets: Pick<PresetStore, "getById">;
@@ -199,19 +208,24 @@ export interface SidechatEventMessage {
 	readonly meterSegment: SidechatEventMeterSegment;
 }
 
-/** The sidechat kind's five meter segment keys (SC-9; the SC-0j wire
- *  vocabulary — labels land in SC-13's host descriptor, the web side keys
- *  off these same strings). Declared in THIS module (not the stream's,
- *  which imports it) because the loader classifies event rows into the two
- *  RP-layer keys and the stream builds the five-key array — one
- *  declaration, both consumers, no import cycle.
+/** The sidechat kind's six meter segment keys (SC-9's five, widened by
+ * DIRECTOR_MODE_PLAN DR-4b; the SC-0j wire vocabulary — labels land in the
+ * host descriptor, the web side keys off these same strings). Declared in
+ * THIS module (not the stream's, which imports it) because the loader
+ * classifies event rows into the two RP-layer keys and renders the
+ * story-plan section the new key meters — one declaration, both consumers,
+ * no import cycle.
  *  `context` = everything constant in the system message — base prompt,
  *  card, persona, active lore, objectives, scene, the skill catalog and the
  *  `@` links (the pinned block rides `attached` tokens) — one bucket
  *  because a narrower name (e.g. `cards_lore`) would hide the rest under a
- *  wrong label (owner decision 3, SIDECHAT_PLAN SC-9, 2026-10-20). */
+ *  wrong label (owner decision 3, SIDECHAT_PLAN SC-9, 2026-10-20).
+ *  `story_plan` (DR-4b) = the `<story_plan>` section the loader renders when
+ *  the thread's branch plan is non-empty — its own bucket so the meter shows
+ *  the plan's cost separately from the rest of the constant context. */
 export const SIDECHAT_OOC_METER_SEGMENT_KEYS = [
 	"context",
+	"story_plan",
 	"rp_summaries",
 	"rp_messages",
 	"digest",
@@ -241,6 +255,12 @@ function meterSegmentOfEvent(kind: string): SidechatEventMeterSegment {
 export interface SidechatContextPackage {
 	/** The static sections joined with a blank line (SC-3a grammar order). */
 	readonly staticPackage: string;
+	/** DR-4b: the thread's branch plan section (`<story_plan>` — the shared
+	 *  plan renderer + one line of tracker facts) or null when the branch has
+	 *  no plan. Already joined into `staticPackage`; carried separately so
+	 *  the stream's assembly meters its tokens into the `story_plan` segment
+	 *  without a second derivation of what the section is. */
+	readonly storyPlanSection: string | null;
 	/** The frozen events, in merged-timeline order (SC-4d placement counts). */
 	readonly eventMessages: readonly SidechatEventMessage[];
 	/** The merged timeline's MESSAGE row count — the flow builder's alignment
@@ -330,6 +350,13 @@ export async function loadSidechatContext(
 
 	const objectivesSection = renderObjectivesSection(loadObjectivesInput(chat));
 
+	// DR-4b: the thread's branch plan — the `<story_plan>` section renders for
+	// EVERY sidechat profile whenever the plan is non-empty (the OOC assistant
+	// discusses the same story the director plans); an empty plan renders
+	// nothing (null section, null package field, zero meter segment).
+	const branchPlan = await deps.agentPlans.get({ kind: "chatBranch", chatId, branchId });
+	const storyPlanSection = renderStoryPlanSection(branchPlan, chat);
+
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
 	// SC-23c: the pinned-preset RP prompt views — one trailing section per
@@ -346,7 +373,15 @@ export async function loadSidechatContext(
 	// Static package (SC-4d): the five settled sections (+ any pinned-preset
 	// RP prompt views, SC-23c) only — no timeline section exists anymore; the
 	// timeline walk below feeds the MESSAGE FLOW.
-	const sections = [characterSection, personaSection, loreSection, objectivesSection, sceneSection, ...presetViews];
+	const sections = [
+		characterSection,
+		personaSection,
+		loreSection,
+		objectivesSection,
+		storyPlanSection,
+		sceneSection,
+		...presetViews,
+	];
 	const staticPackage = sections.filter((section): section is string => section !== null).join("\n\n");
 
 	// Timeline walk (SC-4d): consume listTimeline's merged order ONCE — the
@@ -397,7 +432,7 @@ export async function loadSidechatContext(
 		});
 	}
 
-	return { staticPackage, eventMessages, messageCount, heldLoreEntryIds };
+	return { staticPackage, storyPlanSection, eventMessages, messageCount, heldLoreEntryIds };
 }
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
@@ -558,6 +593,46 @@ export function mapFinalPayloadMessages(
 	});
 }
 
+// ─── Story plan (DIRECTOR_MODE_PLAN DR-4b) ─────────────────────────────
+
+/** Render the ONE line of tracker facts under the plan: goal tracker on/off
+ *  (with the auto-check cadence when on) and Scene Tracker on/off (with
+ *  whether a schema is set). Pure — derived from the chat row's tracker
+ *  halves; the wording is the loader's own (the RP prompt path has no twin
+ *  for it). */
+function renderStoryPlanTrackerFactsLine(chat: ChatRow): string {
+	const config = chat.insightsConfig;
+	const goalFacts = !config.objectiveEnabled
+		? "goal tracker off"
+		: chat.insightsObjectiveState.autoCheckFrequency > 0
+			? `goal tracker on (auto-check after every ${
+					chat.insightsObjectiveState.autoCheckFrequency === 1
+						? "reply"
+						: `${chat.insightsObjectiveState.autoCheckFrequency} replies`
+				})`
+			: "goal tracker on (manual check only)";
+	const schemaSet =
+		config.tracker !== undefined &&
+		Object.keys(normalizeSceneTrackerConfig(config.tracker).schema).length > 0;
+	const sceneFacts = !config.trackerEnabled
+		? "Scene Tracker off"
+		: schemaSet
+			? "Scene Tracker on (schema set)"
+			: "Scene Tracker on (no schema yet)";
+	return `Tracker facts: ${goalFacts}; ${sceneFacts}.`;
+}
+
+/** Render the `<story_plan>` section: the SHARED `renderAgentPlanSection`
+ *  renderer's output (the one plan rendering every copilot prompt shares)
+ *  wrapped in this package's tag grammar, plus the tracker-facts line under
+ *  it. Null when the plan is empty — the renderer's own emptiness rule is
+ *  the section's gate (the DR-4b "only with a non-empty plan"). Pure. */
+function renderStoryPlanSection(plan: AgentPlan | null, chat: ChatRow): string | null {
+	const rendered = renderAgentPlanSection(plan);
+	if (rendered === "") return null;
+	return ["<story_plan>", rendered, "", renderStoryPlanTrackerFactsLine(chat), "</story_plan>"].join("\n");
+}
+
 // ─── Objectives (the chat row's state, via the RP path's own derivation) ─────
 
 type ChatRow = NonNullable<Awaited<ReturnType<ChatStore["getById"]>>>;
@@ -607,155 +682,8 @@ async function loadCurrentSceneText(
 
 // ─── Timeline (frozen payloads → SC-3a input types) ──────────────────────────
 
-/** Corrupt-payload refusal: a known kind whose stored payload does not match
- *  its frozen shape. Throwing (not skipping) is the contract — silently
- *  dropping an event would change what the model is shown. */
-function corrupt(threadId: string, kind: string, seq: number | null, detail: string): never {
-	throw new Error(
-		`loadSidechatContext: thread ${threadId} event ${kind} (seq ${seq ?? "none"}) payload is not the frozen shape (${detail}) — refusing to render corrupted frozen context`,
-	);
-}
-
-/** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type.
- * `where` names the row in every parser's refusal message. The `rp_sync`
- * case only PARSES — the walk routes that kind through SC-6's coverage
- * (its batch is split per message by summary coverage) before rendering.
- * Exported since SC-8c: the sidechat compaction service maps the SAME
- * frozen rows (through the SAME validation + refusal path) when it renders
- * the summarizer transcript's reference events — one derivation. */
-export function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
-	const where = { threadId, kind: entry.kind, seq: entry.seq };
-	switch (entry.kind) {
-		case "rp_sync":
-			return { rowType: "event", kind: "rp_sync", payload: parseRpSyncPayload(where, entry.payload) };
-		case "variants_attached":
-			return {
-				rowType: "event",
-				kind: "variants_attached",
-				payload: parseVariantsAttachedPayload(where, entry.payload),
-			};
-		case "selection_changed":
-			return {
-				rowType: "event",
-				kind: "selection_changed",
-				payload: parseSelectionChangedPayload(where, entry.payload),
-			};
-		case "branch_forked":
-			return { rowType: "event", kind: "branch_forked", payload: parseBranchForkedPayload(where, entry.payload) };
-	}
-	// No default: the store's kind union is closed. A new kind makes this
-	// switch non-exhaustive at compile time — teach this mapper before writing
-	// that kind.
-}
-
-interface EventWhere {
-	threadId: string;
-	kind: string;
-	seq: number | null;
-}
-
-function parseRpSyncPayload(where: EventWhere, payload: unknown): RpSyncPayload {
-	if (!isRecord(payload) || !Array.isArray(payload.messages)) {
-		corrupt(where.threadId, where.kind, where.seq, "messages array missing");
-	}
-	const messages = payload.messages.map((raw: unknown): RpSyncPayload["messages"][number] => {
-		if (!isRecord(raw)) corrupt(where.threadId, where.kind, where.seq, "message row is not a record");
-		const id = raw.id;
-		const position = raw.position;
-		const role = raw.role;
-		const authorName = raw.authorName ?? null;
-		const variantId = raw.variantId ?? null;
-		const model = raw.model ?? null;
-		const preset = raw.preset ?? null;
-		const text = raw.text;
-		if (typeof id !== "string" || typeof position !== "number" || typeof text !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "message id/position/text not strings/number");
-		}
-		if (
-			role !== "system" && role !== "user" && role !== "assistant" && role !== "tool"
-		) {
-			corrupt(where.threadId, where.kind, where.seq, `unknown message role "${String(role)}"`);
-		}
-		if (authorName !== null && typeof authorName !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "authorName is neither string nor null");
-		}
-		if (variantId !== null && typeof variantId !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "variantId is neither string nor null");
-		}
-		if (model !== null && typeof model !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "model is neither string nor null");
-		}
-		if (preset !== null && typeof preset !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "preset is neither string nor null");
-		}
-		return { id, position, role, authorName, variantId, model, preset, text };
-	});
-	const fromPosition = payload.fromPosition;
-	const toPosition = payload.toPosition;
-	if (typeof fromPosition !== "number" || typeof toPosition !== "number") {
-		corrupt(where.threadId, where.kind, where.seq, "fromPosition/toPosition not numbers");
-	}
-	return { fromPosition, toPosition, messages };
-}
-
-function parseVariantsAttachedPayload(where: EventWhere, payload: unknown): VariantsAttachedPayload {
-	if (!isRecord(payload) || typeof payload.position !== "number" || !Array.isArray(payload.variants)) {
-		corrupt(where.threadId, where.kind, where.seq, "position/variants missing");
-	}
-	const variants = payload.variants.map((raw: unknown): VariantsAttachedPayload["variants"][number] => {
-		if (!isRecord(raw) || typeof raw.text !== "string" || typeof raw.selected !== "boolean") {
-			corrupt(where.threadId, where.kind, where.seq, "variant text/selected missing");
-		}
-		// SC-23a provenance — absent on events frozen before the unit, so
-		// each normalizes to null (the attribute renders only when non-null).
-		const number = raw.number ?? null;
-		const model = raw.model ?? null;
-		const preset = raw.preset ?? null;
-		if (number !== null && typeof number !== "number") {
-			corrupt(where.threadId, where.kind, where.seq, "variant number is neither number nor null");
-		}
-		if (model !== null && typeof model !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "variant model is neither string nor null");
-		}
-		if (preset !== null && typeof preset !== "string") {
-			corrupt(where.threadId, where.kind, where.seq, "variant preset is neither string nor null");
-		}
-		return { text: raw.text, selected: raw.selected, number, model, preset };
-	});
-	return { position: payload.position, variants };
-}
-
-function parseSelectionChangedPayload(where: EventWhere, payload: unknown): SelectionChangedPayload {
-	if (!isRecord(payload) || typeof payload.messageId !== "string" || typeof payload.position !== "number") {
-		corrupt(where.threadId, where.kind, where.seq, "messageId/position missing");
-	}
-	return {
-		messageId: payload.messageId,
-		position: payload.position,
-		previous: parseVariantSelection(where, payload.previous),
-		current: parseVariantSelection(where, payload.current),
-	};
-}
-
-function parseVariantSelection(where: EventWhere, raw: unknown): RpVariantSelection {
-	if (!isRecord(raw) || typeof raw.variantId !== "string" || typeof raw.text !== "string") {
-		corrupt(where.threadId, where.kind, where.seq, "previous/current variant pair missing");
-	}
-	// SC-23a provenance — absent on events frozen before the unit → null.
-	const model = raw.model ?? null;
-	const preset = raw.preset ?? null;
-	if (model !== null && typeof model !== "string") {
-		corrupt(where.threadId, where.kind, where.seq, "previous/current model is neither string nor null");
-	}
-	if (preset !== null && typeof preset !== "string") {
-		corrupt(where.threadId, where.kind, where.seq, "previous/current preset is neither string nor null");
-	}
-	return { variantId: raw.variantId, text: raw.text, model, preset };
-}
-
-function parseBranchForkedPayload(where: EventWhere, payload: unknown): BranchForkedPayload {
-	if (!isRecord(payload) || typeof payload.at !== "number") {
-		corrupt(where.threadId, where.kind, where.seq, "at missing");
-	}
-	return { at: payload.at };
-}
+// The parsers + `mapTimelineEvent` live in `sidechat-timeline-payloads.ts`
+// (DR-4b arch-gate extraction — byte-identical code, one derivation for the
+// loader's walk below and the compaction service's reference rendering).
+import { mapTimelineEvent } from "./sidechat-timeline-payloads.js";
+export { mapTimelineEvent };

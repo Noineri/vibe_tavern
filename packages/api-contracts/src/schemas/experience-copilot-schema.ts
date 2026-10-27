@@ -559,22 +559,23 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
- * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a). A PARTIAL record over
- * exactly the 8 toggleable sidechat tools (search_context,
- * read_context_item, propose_objective, todo, read_plan, read_message_prompt,
- * propose_plan, propose_tracker_template) — the same convention as
- * {@link copilotToolSetSchema} and
+ * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a + DR-4b's owner
+ * ruling B). A PARTIAL record over exactly the 9 toggleable sidechat tools
+ * (search_context, read_context_item, propose_objective, todo, read_plan,
+ * read_message_prompt, propose_plan, propose_tracker_template, ask_user)
+ * — the same convention as {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
- * tool that is not yet served is simply absent from every set. The keys
+ * tool that is not served is simply absent from every set. The keys
  * exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
  * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
  * ahead of their implementations) because the tools arrive in later waves
  * and flip on one by one — until then a stored `true` is inert (the stream
  * serves no tools, `buildTools` returns the empty set). DR-4a added the two
- * DIRECTOR toggles this way: the tools are built
- * (`kinds/sidechat/sidechat-director-tools.ts`) but off in the OOC seed
- * (the first built-in) and not yet spread into the stream — DR-4b's
- * director seed turns them on. `.strict()` rejects
+ * DIRECTOR toggles this way; DR-4b turns them on in the `builtin-director`
+ * seed and spreads the builder into the stream. `ask_user` (owner ruling
+ * 2026-10-27, DIRECTOR_MODE_PLAN DR-4b): the shared factory
+ * (`domain/agent/agent-ask-user-tool.ts`) serves it, the director seed
+ * enables it, the OOC seed keeps it off. `.strict()` rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -590,6 +591,7 @@ export const sidechatOocToolSetSchema = z
     read_message_prompt: z.boolean().optional(),
     propose_plan: z.boolean().optional(),
     propose_tracker_template: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
   })
   .strict();
 

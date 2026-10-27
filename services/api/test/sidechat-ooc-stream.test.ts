@@ -12,6 +12,9 @@ import {
 } from "@vibe-tavern/db";
 import {
 	brandId,
+	defaultObjectiveState,
+	normalizeInsightsConfig,
+	trackerTemplateFromChat,
 	type AgentPlan,
 	type ChatBranchId,
 	type ChatId,
@@ -164,6 +167,8 @@ beforeAll(async () => {
 			traces: stores.traces,
 			chatSummaries: stores.chatSummaries,
 			experienceCopilot: stores.experienceCopilot,
+			// DR-4b: the branch-plan read for the <story_plan> section.
+			agentPlans: stores.agentPlans,
 			presets: stores.presets,
 			assembly,
 		},
@@ -334,9 +339,12 @@ function segmentMap(metrics: FinishMetrics): Record<string, number> {
 	return map;
 }
 
-/** The kind's five segment keys pinned as LITERALS — a production typo in
- *  the key list must fail here, not surface as a raw label in the meter. */
-const FIVE_SEGMENT_KEYS = ["context", "rp_summaries", "rp_messages", "digest", "discussion"];
+/** The kind's six segment keys pinned as LITERALS — a production typo in
+ *  the key list must fail here, not surface as a raw label in the meter.
+ *  Behavior change (DR-4b): was the five SC-9 keys → now six, `story_plan`
+ *  inserted after `context` (the <story_plan> context section's own meter
+ *  segment), basis: DIRECTOR_MODE_PLAN DR-4b. */
+const SIX_SEGMENT_KEYS = ["context", "story_plan", "rp_summaries", "rp_messages", "digest", "discussion"];
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -638,7 +646,7 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		const chunks = await drainTurn(threadId, "OOC-Q6 after the digest");
 
 		const metrics = finishMetrics(chunks);
-		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(SIX_SEGMENT_KEYS);
 		expect(metrics.source).toBe("estimate");
 		const seg = segmentMap(metrics);
 		// The digest segment is the SAME number the shell accounts as
@@ -655,7 +663,7 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		expect(seg["discussion"]!).toBeGreaterThan(0);
 		expect(seg["context"]!).toBe(metrics.systemTokens + metrics.attachedTokens);
 		expect(seg["context"]!).toBeGreaterThan(0);
-		// The invariant: the five reconstruct the metered total exactly, the
+		// The invariant: the six reconstruct the metered total exactly, the
 		// three history classes the history segment.
 		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
 		expect(seg["rp_summaries"]! + seg["rp_messages"]! + seg["discussion"]!).toBe(metrics.historyTokens);
@@ -742,8 +750,8 @@ describe("streamSidechatTurn meter segments (SC-9)", () => {
 		expect(prompt).toContain("SC9-SUMMARY");
 		expect(prompt).toContain("RP-SEED-TWO");
 
-		// Five keys, exactly, in the kind's settled order.
-		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		// Six keys, exactly, in the kind's settled order (DR-4b: story_plan after context).
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(SIX_SEGMENT_KEYS);
 		// The fixture's fake streamText reports no usage → the total is the
 		// assembler's estimate — the frame where the sum invariant is exact
 		// (a provider-sourced total is the honest exception, CM-4's rule).
@@ -760,7 +768,7 @@ describe("streamSidechatTurn meter segments (SC-9)", () => {
 		expect(seg["digest"]!).toBe(0);
 		expect(seg["discussion"]!).toBeGreaterThan(0);
 
-		// The invariant: the five reconstruct the metered total exactly, and
+		// The invariant: the six reconstruct the metered total exactly, and
 		// the three history classes partition the history segment.
 		expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
 		expect(seg["rp_summaries"]! + seg["rp_messages"]! + seg["discussion"]!).toBe(metrics.historyTokens);
@@ -776,7 +784,7 @@ describe("streamSidechatTurn meter segments (SC-9)", () => {
 		const chunks = await drainTurn(threadId, "no rp yet turn");
 		const metrics = finishMetrics(chunks);
 
-		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(FIVE_SEGMENT_KEYS);
+		expect((metrics.segments ?? []).map((s) => s.key)).toEqual(SIX_SEGMENT_KEYS);
 		const seg = segmentMap(metrics);
 		// No frozen events, no summaries, no digest — only the constant system
 		// message and the turn's own OOC row.
@@ -1412,18 +1420,23 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		setTokenCountFn(() => 0);
 	});
 
-	it("stopWhen = the ceiling + the MARKER-AWARE condition (a call answering unknown does not stop)", async () => {
+	it("stopWhen = the ceiling + BOTH wait families (ask on call, permission on marker; an unknown answer does not stop)", async () => {
 		const { threadId } = await makePromptReadThread("The studied reply.");
 		await drainTurn(threadId, "By which prompt was that written?");
 
-		// Two entries: the tool-loop ceiling, then the sidechat's single
-		// wait-tool condition — the SDK's isStepCount plus the marker-aware
-		// helper, NOT the name-based hasToolCall (unknown answers relay
-		// in-turn).
-		expect(capturedStopWhen).toHaveLength(2);
-		const markerCondition = capturedStopWhen[1] as (o: {
+		// Behavior change (DR-4b, owner ruling B): was TWO entries (the ceiling
+		// + the single marker-aware permission condition — the sidechat served
+		// no ask tool) → now THREE: the SDK's isStepCount, the ask family's
+		// hasToolCall("ask_user") (every ask call awaits by construction, so
+		// the name-based default condition is correct for it), then the
+		// permission family's marker-aware helper (unknown answers relay
+		// in-turn). Basis: DIRECTOR_MODE_PLAN DR-4b ruling B.
+		expect(capturedStopWhen).toHaveLength(3);
+		const askCondition = capturedStopWhen[1] as (o: unknown) => boolean;
+		const markerCondition = capturedStopWhen[2] as (o: {
 			steps: Array<{ toolResults?: Array<{ toolName?: string; output?: unknown }> }>;
 		}) => boolean;
+		expect(typeof askCondition).toBe("function");
 		expect(
 			markerCondition({
 				steps: [{ toolResults: [{ toolName: "read_message_prompt", output: { status: "awaiting_permission" } }] }],
@@ -1652,5 +1665,150 @@ describe("streamSidechatTurn regenerate (AP-9)", () => {
 		expect(capturedMessages[advanceIdx]!.role).toBe("user");
 		const lastMessage = capturedMessages[capturedMessages.length - 1]!;
 		expect(String(lastMessage.content)).not.toBe("OOC question one");
+	});
+});
+
+// ─── DR-4b: the director profile at the stream ─────────────────────────────
+
+describe("streamSidechatTurn director profile (DR-4b)", () => {
+	/** The plan's DR-4 enumeration + the 2026-10-27 ruling B: the OOC six
+	 *  MINUS propose_objective PLUS the two proposal tools and ask_user. */
+	const DIRECTOR_SERVED_SET = [
+		"ask_user",
+		"propose_plan",
+		"propose_tracker_template",
+		"read_context_item",
+		"read_message_prompt",
+		"read_plan",
+		"search_context",
+		"todo",
+	];
+
+	it("the director seed serves EXACTLY its set on the director base prompt", async () => {
+		const { threadId, chatId } = await makeSidechatThread("The director's stage.");
+		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: "builtin-director" });
+
+		const events = (await drainTurn(threadId, "Plan with me")).map((c) => c.event);
+		expect(events).toContain("finish");
+		expect(Object.keys(capturedTools).sort()).toEqual(DIRECTOR_SERVED_SET);
+		// The base prompt is the DIRECTOR asset — the OOC role line is gone.
+		const systemMessage = systemMessageText();
+		expect(systemMessage).toContain("You are the Director");
+		expect(systemMessage).not.toContain("You are the sidechat assistant.");
+	});
+
+	it("the OOC seed keeps its byte-identical set — no director tools, no ask_user", async () => {
+		const { threadId } = await makeSidechatThread("The OOC stage.");
+		await drainTurn(threadId, "Talk out of character");
+		// The positive enumeration lives in the SC-10 pin above (six tools,
+		// exactly — still green unedited); the DR-4b negative: none of the
+		// director-family tools leaks into an OOC turn even though the stream
+		// now spreads every builder.
+		for (const name of ["ask_user", "propose_plan", "propose_tracker_template"]) {
+			expect(Object.keys(capturedTools)).not.toContain(name);
+		}
+	});
+
+	it("the served propose_plan proposes against the thread row's own branch", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread("The plan's chat.");
+		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: "builtin-director" });
+		await drainTurn(threadId, "Propose");
+
+		const plan: AgentPlan = {
+			goal: "The lantern pact",
+			constraints: ["No lies after dusk"],
+			tasks: [{ id: "e1", title: "The meeting", body: "", status: "active" }],
+		};
+		const proposal = (await capturedTools.propose_plan!.execute(
+			{ plan },
+			{ toolCallId: "tc_dr_1" },
+		)) as RecordProposal;
+		expect(proposal).toMatchObject({
+			kind: "record",
+			recordType: "story-plan",
+			op: "update",
+			targetId: branchId,
+			status: "pending",
+		});
+	});
+
+	it("the tracker delegate resolves through the deps' factory lazily, per call", async () => {
+		const { threadId, chatId } = await makeSidechatThread("The tracker's chat.");
+		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: "builtin-director" });
+
+		const template = trackerTemplateFromChat(
+			normalizeInsightsConfig({ trackerEnabled: true }),
+			defaultObjectiveState(),
+		);
+		if (template === null || template.scene === null) {
+			throw new Error("fixture: expected a scene-bearing template");
+		}
+		let factoryCalls = 0;
+		const chunks = await drainTurn(threadId, "A tracker would help", {
+			...deps,
+			buildTrackerDelegate: async () => {
+				factoryCalls += 1;
+				return async () => ({ trackerTemplate: template });
+			},
+		});
+		expect(chunks.map((c) => c.event)).toContain("finish");
+		// Lazy: a turn that never calls the tool resolves the delegate zero
+		// times (an OOC turn reads no provider settings at all).
+		expect(factoryCalls).toBe(0);
+		const result = (await capturedTools.propose_tracker_template!.execute(
+			{ action: "create", focusNotes: "Track the weather" },
+			{ toolCallId: "tc_dr_2" },
+		)) as RecordProposal;
+		expect(factoryCalls).toBe(1);
+		expect(result).toMatchObject({
+			kind: "record",
+			recordType: "tracker-scene",
+			op: "update",
+			targetId: chatId,
+			payload: { scene: template.scene },
+		});
+	});
+
+	it("the plan section reaches the system message ONLY with a plan, with its own meter segment", async () => {
+		// A deterministic counter so the segment values are real measurements
+		// (the SC-9 blocks' pattern); restored after the test.
+		setTokenCountFn((text) => text.length);
+		try {
+			const planned = await makeSidechatThread("The planned story.");
+			await stores.agentPlans.save(
+				{ kind: "chatBranch", chatId: planned.chatId, branchId: planned.branchId },
+				{
+					goal: "DR4B-PREMISE the lantern pact must hold",
+					constraints: ["No lies after dusk"],
+					tasks: [{ id: "e1", title: "The meeting", body: "", status: "active" }],
+				},
+			);
+			const plannedChunks = await drainTurn(planned.threadId, "Where are we?");
+			const plannedSystem = systemMessageText();
+			expect(plannedSystem).toContain("<story_plan>");
+			expect(plannedSystem).toContain("Goal: DR4B-PREMISE the lantern pact must hold");
+			expect(plannedSystem).toContain("[active] The meeting");
+			// The tracker-facts ONE line: a fresh chat's defaults (both off).
+			expect(plannedSystem).toContain("Tracker facts: goal tracker off; Scene Tracker off.");
+			const metrics = finishMetrics(plannedChunks);
+			expect((metrics.segments ?? []).map((s) => s.key)).toEqual(SIX_SEGMENT_KEYS);
+			const seg = segmentMap(metrics);
+			expect(seg["story_plan"]!).toBeGreaterThan(0);
+			// context takes the remainder — the six reconstruct the total exactly.
+			expect(seg["context"]!).toBe(metrics.systemTokens + metrics.attachedTokens - seg["story_plan"]!);
+			expect((metrics.segments ?? []).reduce((acc, s) => acc + s.tokens, 0)).toBe(metrics.totalTokens);
+
+			// The same turn WITHOUT a plan: no section, no facts line, zero segment.
+			const bare = await makeSidechatThread("The unplanned story.");
+			await drainTurn(bare.threadId, "Where are we?");
+			const bareSystem = systemMessageText();
+			expect(bareSystem).not.toContain("<story_plan>");
+			expect(bareSystem).not.toContain("Tracker facts:");
+			const bareMetrics = finishMetrics(await drainTurn(bare.threadId, "And now?"));
+			const bareSeg = segmentMap(bareMetrics);
+			expect(bareSeg["story_plan"]!).toBe(0);
+		} finally {
+			setTokenCountFn(() => 0);
+		}
 	});
 });

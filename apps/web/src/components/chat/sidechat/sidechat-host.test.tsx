@@ -307,15 +307,15 @@ async function flushSessionLoad() {
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's eight toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's nine toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
     expect(host.renderEditorPane).toBeUndefined();
-    // Behavior change (DR-4a): was the 6 landed toggles → now 8 — the host
-    // derives toolKeys from the wire contract (SIDECHAT_OOC_TOOL_KEYS),
-    // which gained the two director proposal toggles known-but-off in the
-    // OOC seed's set, basis: DIRECTOR_MODE_PLAN DR-4a.
+    // Behavior change (DR-4b): was the 8 DR-4a toggles → now 9, `ask_user`
+    // appended (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B —
+    // off in the OOC seed, on in the director seed), basis: the wire
+    // contract (SIDECHAT_OOC_TOOL_KEYS) gained the key.
     expect([...host.toolKeys].sort()).toEqual(
       [
         "propose_objective",
@@ -326,6 +326,7 @@ describe("sidechat-host — registration (SC-13b)", () => {
         "read_plan",
         "search_context",
         "todo",
+        "ask_user",
       ].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
@@ -336,15 +337,19 @@ describe("sidechat-host — registration (SC-13b)", () => {
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
   });
 
-  it("carries the branch plan owner and the five meter labels", () => {
+  it("carries the branch plan owner and the six meter labels", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.planOwner?.({ owner: CHAT_OWNER })).toEqual({
       kind: "chatBranch",
       chatId: "chat-1",
       branchId: "branch-1",
     });
+    // Behavior change (DR-4b): was the five SC-9 labels → now six,
+    // `story_plan` after `context` (the <story_plan> context section's own
+    // meter segment), basis: DIRECTOR_MODE_PLAN DR-4b.
     expect(host.meterSegmentLabels).toEqual({
       context: "sidechat_meter_context",
+      story_plan: "sidechat_meter_story_plan",
       rp_summaries: "sidechat_meter_rp_summaries",
       rp_messages: "sidechat_meter_rp_messages",
       digest: "sidechat_meter_digest",

@@ -254,10 +254,12 @@ registerAgentHost({
   },
   toolCaption: (activity) => sidechatToolCaption(activity),
   defaultModelBinding: (ctx) => sidechatDefaultModelBinding(ctx),
-  // SC-0j: the kind-provided meter segment labels — the five SC-9 segment
+  // SC-0j + DR-4b: the kind-provided meter segment labels — the SC-9 segment
   // keys with their i18n keys (the meter resolves each through `useT`).
+  // `story_plan` (DR-4b) meters the <story_plan> context section.
   meterSegmentLabels: {
     context: "sidechat_meter_context",
+    story_plan: "sidechat_meter_story_plan",
     rp_summaries: "sidechat_meter_rp_summaries",
     rp_messages: "sidechat_meter_rp_messages",
     digest: "sidechat_meter_digest",
