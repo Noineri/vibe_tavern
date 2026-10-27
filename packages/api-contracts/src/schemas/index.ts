@@ -15,6 +15,8 @@ export type {
 } from "./agent-branch-sidechat-schema.js";
 export { agentThreadEventSchema } from "./agent-thread-event-schema.js";
 export type { AgentThreadEventWire } from "./agent-thread-event-schema.js";
+export { agentThreadProposalApplyRequestSchema } from "./agent-thread-proposal-schema.js";
+export type { AgentThreadProposalApplyRequest } from "./agent-thread-proposal-schema.js";
 export {
   agentKindSettingsSchema,
   agentKindSettingsPatchSchema,

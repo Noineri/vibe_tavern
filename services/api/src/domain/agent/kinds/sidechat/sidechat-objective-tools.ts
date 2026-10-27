@@ -36,6 +36,11 @@ const logger = log.tag("sidechat.tool");
  *  apply/reject status write all read. */
 export const SIDECHAT_OBJECTIVE_TOOL_NAME = "propose_objective";
 
+/** The objective proposal's record type — the DR-5 dispatch table's
+ *  `objective` key (one spelling shared by the tool and the apply route's
+ *  registry, mirroring the director tools' record-type constants). */
+export const OBJECTIVE_RECORD_TYPE = "objective";
+
 /** The tool's input contract (the plan's object root): the proposed item
  *  plus an optional one-line reason for the user's review. The description
  *  validators are the insights family's own `nonEmptyDescriptionSchema`
@@ -70,7 +75,7 @@ export function buildSidechatObjectiveTools(input: {
         const proposal: RecordProposal = {
           kind: "record",
           id: options.toolCallId,
-          recordType: "objective",
+          recordType: OBJECTIVE_RECORD_TYPE,
           op: "create",
           payload: reason !== undefined ? { description, reason } : { description },
           status: "pending",
