@@ -9,6 +9,7 @@ Everything mechanical — building, packing, verifying, publishing — lives in 
 
 A plain JavaScript bundle plus its assets, run by the user's own Bun.
 There is no compiled binary: anyone typing `bun install -g` already has the runtime, so shipping one buys nothing and would cost a per-platform artifact.
+Bun **1.4.4 or newer** is required. Provider proxies use the per-request `respectNoProxy: false` option instead of changing process-wide `NO_PROXY`.
 
 Two consequences worth knowing before touching any of it:
 
