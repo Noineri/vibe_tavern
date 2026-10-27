@@ -68,8 +68,11 @@ export function PendingUserMessage() {
         isCoauthorTurn: false,
         presetName: null,
         tokenCount: 0,
-        createdAt: Date.now().toString(),
+        // ERX-9: a millisecond string is not a parseable Date; MessageShell
+        // suppresses the entire metadata row when its timestamp is invalid.
+        createdAt: new Date().toISOString(),
         diceRolls: pendingDiceRolls,
+        experienceReports: activeGen.pendingExperienceReport ? [activeGen.pendingExperienceReport] : [],
       } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{}}

@@ -1177,6 +1177,74 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
   });
 
   // ── IR-73D experience send integration ─────────────────────────────
+
+  for (const streaming of [true, false]) {
+    test(`ERX-9: ${streaming ? "stream" : "non-stream"} captures the exact frozen report, survives queue replacement, and clears on settlement`, async () => {
+      useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: streaming } }));
+      const events = Array.from({ length: 105 }, (_, n) => ({ type: "move", participantId: "p1", detail: `played ${n}` }));
+      setExpAttachment(makeExpAttachment({ publicReport: { title: "Frozen Cards", events, participants: [{ id: "p1", label: "Player" }] } }));
+      let finish!: (value: { finishReason: string }) => void;
+      const parked = new Promise<{ finishReason: string }>((resolve) => { finish = resolve; });
+      sendChatMessageStream.mockImplementation(() => parked);
+      sendChatMessageAction.mockImplementation(() => parked);
+      const { result } = renderHook(() => useChatController());
+      let pending!: Promise<void>;
+      await act(async () => { pending = result.current.handleSend(); });
+      const captured = useChatStore.getState().generations[CHAT]?.pendingExperienceReport;
+      expect(captured).toEqual({ title: "Frozen Cards", eventCount: 105, events: events.slice(-100), participants: [{ id: "p1", label: "Player" }] });
+      setExpAttachment(makeExpAttachment({ publicReport: { title: "Replacement", events: [] } }));
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBe(captured);
+      const wireIntent = streaming ? sendChatMessageStream.mock.calls[0]?.[1] : sendChatMessageAction.mock.calls[0]?.[5];
+      expect(wireIntent).toMatchObject({ experienceAttachmentId: "att-1", experienceQueueRevision: 2, experienceSessionRevision: 3 });
+      expect(JSON.stringify(wireIntent)).not.toContain("Frozen Cards");
+      await act(async () => { finish({ finishReason: "stop" }); await pending; });
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+    });
+
+    test(`ERX-9: ${streaming ? "stream" : "non-stream"} a mismatched report never enters the pending capture`, async () => {
+      useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: streaming } }));
+      let fail!: (reason: Error) => void;
+      const parked = new Promise<never>((_resolve, reject) => { fail = reject; });
+      sendChatMessageStream.mockImplementation(() => parked);
+      sendChatMessageAction.mockImplementation(() => parked);
+      setExpAttachment(makeExpAttachment({ chatId: "foreign" }));
+      const { result } = renderHook(() => useChatController());
+      let pending!: Promise<void>;
+      await act(async () => { pending = result.current.handleSend(); });
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+      await act(async () => { fail(new ProviderStreamError("stale", "server_error", "stale_queue")); await pending; });
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+    });
+
+    test(`ERX-9: ${streaming ? "stream" : "non-stream"} a bind conflict clears the captured public report`, async () => {
+      useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: streaming } }));
+      setExpAttachment(makeExpAttachment());
+      let fail!: (reason: Error) => void;
+      const parked = new Promise<never>((_resolve, reject) => { fail = reject; });
+      sendChatMessageStream.mockImplementation(() => parked);
+      sendChatMessageAction.mockImplementation(() => parked);
+      const { result } = renderHook(() => useChatController());
+      let pending!: Promise<void>;
+      await act(async () => { pending = result.current.handleSend(); });
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport?.title).toBe("Game");
+      await act(async () => { fail(new ProviderStreamError("stale", "server_error", "stale_queue")); await pending; });
+      expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+      expect(useChatStore.getState().draft).toBe("hi");
+    });
+  }
+
+  test("ERX-9: generation capture is explicit, supports attachment-only drafts, and resets on abort or a non-send generation", () => {
+    const report = { title: "Cards", eventCount: 1, events: [{ type: "move", detail: "played" }] };
+    const store = useChatStore.getState();
+    store.startGeneration(CHAT, "", [], null, report);
+    expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toEqual(report);
+    store.abortGeneration(CHAT);
+    expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+    store.startGeneration(CHAT, null, [], MSG, report);
+    expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+    store.startGeneration(CHAT, "hi");
+    expect(useChatStore.getState().generations[CHAT]?.pendingExperienceReport).toBeNull();
+  });
   //
   // The experience path mirrors the Dice subtractive pattern: when no
   // attachment is queued (or the scope IDs mismatch), the send body is
