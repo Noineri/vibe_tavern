@@ -155,7 +155,7 @@ const INNER_HTML_EMPTY = /innerHTML\s*=\s*(?:""|'')/g;
 const AS_NEVER = /\bas\s+never\b/g;
 const SCREEN_DOT = /\bscreen\./g;
 const LONG_SLEEP = /await\s+(?:Bun\.)?(?:sleep|delay|wait)\(\s*(\d+)\s*\)/g;
-const STATIC_RTL_IMPORT = /^\s*import(?:\s+type)?\s+(?:[\s\S]*?\s+from\s+)?["']@testing-library\/react["']\s*;/gm;
+const STATIC_RTL_IMPORT = /^[ \t]*import(?!\s+type\b)\s+(?:[^;]*?\s+from\s+)?["']@testing-library\/react["'][ \t]*;/gm;
 
 /** Blank/comment lines never count as calls — incident reports are quoted in comments. */
 function isCommentLine(line: string): boolean {
