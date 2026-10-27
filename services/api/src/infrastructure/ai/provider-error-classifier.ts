@@ -77,6 +77,8 @@ const NETWORK_ERRNOS = new Set([
   "EHOSTUNREACH",
   "ENETUNREACH",
   "EAI_AGAIN",
+  // Bun fetch: the configured proxy refused the CONNECT tunnel.
+  "ERR_PROXY_TUNNEL",
 ]);
 
 const NETWORK_MESSAGE_RE = /fetch failed|getaddrinfo|socket hang up|write ECONN|network error|internet connection/i;

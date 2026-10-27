@@ -98,7 +98,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:
@@ -119,7 +119,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:
@@ -145,7 +145,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:
@@ -225,7 +225,7 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:
@@ -340,7 +340,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:

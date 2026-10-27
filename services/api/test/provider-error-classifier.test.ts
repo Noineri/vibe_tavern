@@ -224,6 +224,16 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(err)).toBe("network");
   });
 
+  it("classifies a refused proxy tunnel (Bun ERR_PROXY_TUNNEL) nested in APICallError.cause", () => {
+    const apiLike = {
+      statusCode: undefined,
+      cause: Object.assign(new Error("Proxy refused to open a tunnel: 597 Socks5 Authentication failed"), {
+        code: "ERR_PROXY_TUNNEL",
+      }),
+    };
+    expect(classifyProviderError(apiLike)).toBe("network");
+  });
+
   it("classifies 'fetch failed' message", () => {
     expect(classifyProviderError(new Error("fetch failed"))).toBe("network");
   });
