@@ -76,4 +76,19 @@ describe("pending user report chip (ERX-9)", () => {
     await act(async () => { fireEvent.click(view.getByTestId("experience-report-chip")); });
     expect(view.getByTestId("experience-report-chip-detail").textContent).toContain("Player: played a red six");
   });
+
+  it("ERX-9a: mounts the report on an attachment-only pending message and reconciles without duplication", async () => {
+    const attachments = [{ id: "file", assetId: "asset", type: "file" as const, name: "notes.txt", mimeType: "text/plain", sizeBytes: 10 }];
+    useChatStore.getState().startGeneration(chatId, "", attachments, null, report);
+    const view = render(<UserMessages />);
+    expect(view.getAllByTestId("experience-report-chip")).toHaveLength(1);
+    const message: AppMessage = { id: brandId<MessageId>("file-message"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
+      position: 1, content: "", state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
+      variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null, attachments, experienceReports: [report] };
+    await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
+    expect(view.getAllByTestId("experience-report-chip")).toHaveLength(1);
+    expect(view.container.querySelector('[data-message-id="__pending-user"]')).toBeNull();
+    await act(async () => { useChatStore.getState().finishGeneration(chatId); });
+    expect(view.getAllByTestId("experience-report-chip")).toHaveLength(1);
+  });
 });
