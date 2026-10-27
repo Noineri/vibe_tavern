@@ -15,11 +15,13 @@
  * store reads — it cannot ride this sync descriptor seam) spliced by SC-4b's
  * stream, so `renderContextPackage` renders nothing.
  *
- * The tool set (SC-5, widened by SC-23e): the wire contract's six toggleable
- * sidechat tools (`search_context`, `read_context_item`, `propose_objective`,
- * `todo`, `read_plan`, `read_message_prompt` — {@link sidechatOocToolSetSchema}
- * is the single source for the names) landed as SCHEMA KEYS first; each wave
- * flips a toggle on as its tool lands. SC-10 flipped `search_context` +
+ * The tool set (SC-5, widened by SC-23e and DR-4a): the wire contract's
+ * toggleable sidechat tools (`search_context`, `read_context_item`,
+ * `propose_objective`, `todo`, `read_plan`, `read_message_prompt`, plus the
+ * two DR-4a director toggles `propose_plan` / `propose_tracker_template` —
+ * {@link sidechatOocToolSetSchema} is the single source for the names)
+ * landed as SCHEMA KEYS first; each wave flips a toggle on as its tool
+ * lands. SC-10 flipped `search_context` +
  * `read_context_item` (the kind's search over the library and the branch —
  * `kinds/sidechat/sidechat-search-tools.ts`);
  * SC-11 flipped `propose_objective` (the objective proposal —
@@ -61,15 +63,19 @@ import { registerAgentKind } from "../agent-kind-registry.js";
 // ─── Descriptor ──────────────────────────────────────────────────────────────
 
 /**
- * The kind's declarative tool set — WHICH of the six wire-contract toggles
+ * The kind's declarative tool set — WHICH of the eight wire-contract toggles
  * (SIDECHAT_OOC_TOOL_KEYS) the species enables, the sidechat twin of the
  * script kind's `SCRIPT_AGENT_MODULE.toolSet` (the kind module is this
  * species' module home). Every entry starts `false` and each unit flips
  * exactly its own key to `true` ("enabled as the tools land" — the plan's
  * own semantics); SC-10 flipped the search pair, SC-11 `propose_objective`,
  * SC-12 the checklist + branch-plan-read pair, SC-23e the reply-prompt read
- * — all six tools have landed, none is served unless the resolved profile
- * enables its key.
+ * — all six OOC tools have landed, none is served unless the resolved
+ * profile enables its key. DR-4a declares the two DIRECTOR toggles
+ * KNOWN-BUT-OFF (the tools are built in
+ * `kinds/sidechat/sidechat-director-tools.ts`, but the OOC seed serves
+ * exactly its six tools and the stream does not spread the director
+ * builder yet); DR-4b's `builtin-director` seed turns them on.
  */
 const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
   search_context: true,
@@ -78,12 +84,16 @@ const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
   todo: true,
   read_plan: true,
   read_message_prompt: true,
+  propose_plan: false,
+  propose_tracker_template: false,
 };
 
 // Project the declarative set through the wire-contract tool keys (the same
 // projection the other kinds use) so the contract stays the single source of
 // truth for toggleable-tool names: the defaultToolSet carries exactly the
-// contract's keys that the species enables — all six tools today.
+// contract's keys that the species enables — the six OOC tools today (the
+// two DR-4a director keys are declared false above, so they stay off until
+// DR-4b's director seed enables them).
 const defaultToolSet: Record<string, boolean> = {};
 for (const key of SIDECHAT_OOC_TOOL_KEYS) {
   if (SIDECHAT_OOC_TOOL_SET[key] === true) defaultToolSet[key] = true;
@@ -199,9 +209,10 @@ export function resolveSidechatUserSkillsRoot(dataDir: string): string {
  * override replaces the asset base ONLY on this builtin path (SP-5 parity;
  * explicit sidechat profiles never consult it), and a tool set projected
  * through {@link SIDECHAT_OOC_TOOL_KEYS} from the declarative
- * {@link SIDECHAT_OOC_TOOL_SET} — all six tools (SC-10 search pair, SC-11
- * `propose_objective`, SC-12 `todo` + `read_plan`, SC-23e
- * `read_message_prompt`).
+ * {@link SIDECHAT_OOC_TOOL_SET} — the six OOC tools (SC-10 search pair,
+ * SC-11 `propose_objective`, SC-12 `todo` + `read_plan`, SC-23e
+ * `read_message_prompt`; the two DR-4a director toggles stay off in the
+ * declarative set).
  * `profileId` picks the seed (DR-1) — `"builtin"` (the first seed) by
  * default, `"builtin-director"` for the Director; until DR-4 both share
  * this exact base prompt and tool set (the Director shell), differing only

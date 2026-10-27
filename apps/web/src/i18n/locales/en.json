@@ -2729,6 +2729,8 @@
 	"agent_tool_read_context_item": "Read found items in full",
 	"agent_tool_propose_objective": "Propose tracker goals",
 	"agent_tool_read_message_prompt": "Read a reply's prompt (asks first)",
+	"agent_tool_propose_plan": "Propose a story plan",
+	"agent_tool_propose_tracker_template": "Propose a scene tracker",
 	"agent_kind_experience": "Mini-apps",
 	"agent_kind_script": "Scripts",
 	"agent_kind_sidechat": "Sidechat",

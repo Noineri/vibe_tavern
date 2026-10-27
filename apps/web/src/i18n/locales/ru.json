@@ -2779,6 +2779,8 @@
 	"agent_tool_read_context_item": "Читать найденное целиком",
 	"agent_tool_propose_objective": "Предлагать цели для трекера",
 	"agent_tool_read_message_prompt": "Читать промпт ответа (с разрешения)",
+	"agent_tool_propose_plan": "Предлагать план сюжета",
+	"agent_tool_propose_tracker_template": "Предлагать трекер сцены",
 	"agent_kind_experience": "Мини-приложения",
 	"agent_kind_script": "Скрипты",
 	"agent_kind_sidechat": "Сайдчат",

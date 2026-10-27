@@ -122,10 +122,13 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
-  test("the six toggles are known keys; all six landed tools are on", () => {
+  test("the eight toggles are known keys; the six landed OOC tools are on, the two DR-4a director keys are known-but-off", () => {
     const kind = getAgentKind("sidechat-ooc");
     // The toggle names are the plan's settled contract, carried by the wire
     // schema (the single source of truth, re-exported for consumers).
+    // Behavior change (DR-4a): was the 6 landed toggles → now 8, the two
+    // director proposal tools appended known-but-off, basis:
+    // DIRECTOR_MODE_PLAN DR-4a.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -133,12 +136,15 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
       "todo",
       "read_plan",
       "read_message_prompt",
+      "propose_plan",
+      "propose_tracker_template",
     ]);
-    // The schema accepts each of the six (either boolean) and the all-off
-    // `{}` — tool sets store only enabled keys, so `{}` IS “all six
+    // The schema accepts each of the keys (either boolean) and the all-off
+    // `{}` — tool sets store only enabled keys, so `{}` IS “all eight
     // disabled”, what a user profile can still choose.
     expect(kind.toolSetSchema.parse({ search_context: true })).toEqual({ search_context: true });
     expect(kind.toolSetSchema.parse({ read_plan: false })).toEqual({ read_plan: false });
+    expect(kind.toolSetSchema.parse({ propose_plan: true })).toEqual({ propose_plan: true });
     expect(kind.toolSetSchema.parse({})).toEqual({});
     // Foreign keys (the experience kind's write_buffer, the script kind's
     // run_script_test) are rejected, not silently stripped — no profile can
@@ -147,8 +153,9 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kind.toolSetSchema.safeParse({ run_script_test: true }).success).toBe(false);
     // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12
     // `todo` + `read_plan`, SC-23e `read_message_prompt` (each unit flips
-    // its own keys) — all six tools have landed and the default set
-    // carries them all.
+    // its own keys) — all six OOC tools have landed and the default set
+    // carries them all; the two DR-4a director keys stay OFF until DR-4b's
+    // director seed turns them on.
     expect(kind.defaultToolSet).toEqual({
       search_context: true,
       read_context_item: true,

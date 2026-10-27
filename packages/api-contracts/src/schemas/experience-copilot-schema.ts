@@ -559,9 +559,10 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
- * Wave 1 / SC-5). A PARTIAL record over exactly the 6 toggleable sidechat
- * tools (search_context, read_context_item, propose_objective, todo,
- * read_plan, read_message_prompt) — the same convention as
+ * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a). A PARTIAL record over
+ * exactly the 8 toggleable sidechat tools (search_context,
+ * read_context_item, propose_objective, todo, read_plan, read_message_prompt,
+ * propose_plan, propose_tracker_template) — the same convention as
  * {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
  * tool that is not yet served is simply absent from every set. The keys
@@ -569,7 +570,11 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
  * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
  * ahead of their implementations) because the tools arrive in later waves
  * and flip on one by one — until then a stored `true` is inert (the stream
- * serves no tools, `buildTools` returns the empty set). `.strict()` rejects
+ * serves no tools, `buildTools` returns the empty set). DR-4a added the two
+ * DIRECTOR toggles this way: the tools are built
+ * (`kinds/sidechat/sidechat-director-tools.ts`) but off in the OOC seed
+ * (the first built-in) and not yet spread into the stream — DR-4b's
+ * director seed turns them on. `.strict()` rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -583,6 +588,8 @@ export const sidechatOocToolSetSchema = z
     todo: z.boolean().optional(),
     read_plan: z.boolean().optional(),
     read_message_prompt: z.boolean().optional(),
+    propose_plan: z.boolean().optional(),
+    propose_tracker_template: z.boolean().optional(),
   })
   .strict();
 
@@ -594,7 +601,9 @@ export type SidechatOocToolSet = z.infer<typeof sidechatOocToolSetSchema>;
  * {@link SCRIPT_AGENT_TOOL_KEYS} derives from `scriptAgentToolSetSchema`
  * (the wire contract is the single source of truth for toggleable-tool
  * names — the kind's default set and builtin seed project through this, and
- * Wave 3 flips each key on by enabling it in the kind's declarative set).
+ * Wave 3 flipped each key on by enabling it in the kind's declarative set;
+ * DR-4a's two director keys are declared known-but-OFF there until DR-4b's
+ * director seed turns them on).
  */
 export const SIDECHAT_OOC_TOOL_KEYS = Object.keys(
   sidechatOocToolSetSchema.shape,

@@ -16,6 +16,9 @@
  * the payload when the model omitted it), `recordType: "objective"`,
  * `op: "create"`, `status: "pending"` — SC-13 renders this exact shape and
  * the review card's Accept/Reject posts back the `toolCallId`.
+ *
+ * forks: 1 — `kinds/sidechat/sidechat-director-tools.ts` (DR-4a: the
+ * director proposal tools clone this builder skeleton).
  */
 
 import { tool, type ToolSet } from "ai";

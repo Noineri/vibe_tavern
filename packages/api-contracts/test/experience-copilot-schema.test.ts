@@ -679,12 +679,19 @@ describe("copilotToolSetSchema (CP-1)", () => {
 // ─── SC-5: the sidechat-ooc tool set (keys before tools — the TAG-1 pattern) ──
 
 describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
-  test("accepts each of the 5 Wave-3 toggles with either boolean, and {} (all off)", () => {
+  test("accepts each known toggle with either boolean, and {} (all off)", () => {
     for (const key of SIDECHAT_OOC_TOOL_KEYS) {
       expect(sidechatOocToolSetSchema.parse({ [key]: true })).toEqual({ [key]: true });
       expect(sidechatOocToolSetSchema.parse({ [key]: false })).toEqual({ [key]: false });
     }
     expect(sidechatOocToolSetSchema.parse({})).toEqual({});
+    // DR-4a: the two DIRECTOR toggles are named here beside the loop — the
+    // keys exist on the wire before the director seed serves the tools
+    // (known-but-off in the OOC seed's set).
+    expect(sidechatOocToolSetSchema.parse({ propose_plan: true, propose_tracker_template: false })).toEqual({
+      propose_plan: true,
+      propose_tracker_template: false,
+    });
   });
 
   test("rejects the other kinds' keys and unknown keys (strict)", () => {
@@ -696,7 +703,9 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
     expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
   });
 
-  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 6 toggles in definition order", () => {
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 8 toggles in definition order", () => {
+    // Behavior change (DR-4a): was the 6 landed toggles → now 8, the two
+    // director proposal tools appended, basis: DIRECTOR_MODE_PLAN DR-4a.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -704,6 +713,8 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
       "todo",
       "read_plan",
       "read_message_prompt",
+      "propose_plan",
+      "propose_tracker_template",
     ]);
   });
 

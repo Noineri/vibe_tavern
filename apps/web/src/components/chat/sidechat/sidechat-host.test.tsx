@@ -307,13 +307,26 @@ async function flushSessionLoad() {
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's six toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's eight toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
     expect(host.renderEditorPane).toBeUndefined();
+    // Behavior change (DR-4a): was the 6 landed toggles → now 8 — the host
+    // derives toolKeys from the wire contract (SIDECHAT_OOC_TOOL_KEYS),
+    // which gained the two director proposal toggles known-but-off in the
+    // OOC seed's set, basis: DIRECTOR_MODE_PLAN DR-4a.
     expect([...host.toolKeys].sort()).toEqual(
-      ["propose_objective", "read_context_item", "read_message_prompt", "read_plan", "search_context", "todo"].sort(),
+      [
+        "propose_objective",
+        "propose_plan",
+        "propose_tracker_template",
+        "read_context_item",
+        "read_message_prompt",
+        "read_plan",
+        "search_context",
+        "todo",
+      ].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
     // AP-2: the sidechat renders RP colors without RP sizes.
