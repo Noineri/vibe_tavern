@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Icons } from "../../shared/icons.js";
 import { useChatNotifications } from "../../../stores/index.js";
+import { useChatStore } from "../../../stores/chat-store.js";
 
 interface MemBadgeProps {
   label: string;
@@ -20,20 +21,22 @@ interface MemBadgeProps {
 const READY_MS = 2000;
 
 export function MemBadge({ label, onClick }: MemBadgeProps) {
-  const status = useChatNotifications((s) => s.status);
-  const readySeq = useChatNotifications((s) => s.ready?.seq ?? 0);
+  const chatId = useChatStore((s) => s.activeChatId);
+  const notification = useChatNotifications((s) => chatId ? s.byChat[chatId] : undefined);
+  const status = notification?.status ?? "idle";
+  const readySeq = status === "ready" ? notification?.ready?.seq ?? 0 : 0;
   const setIdle = useChatNotifications((s) => s.setIdle);
 
   // Auto-revert the checkmark back to the idle dot after a short beat. Keyed on
   // `readySeq` so two summaries in quick succession each get their own window.
   useEffect(() => {
-    if (readySeq === 0) return;
-    const timer = setTimeout(() => setIdle(), READY_MS);
+    if (!chatId || readySeq === 0) return;
+    const timer = setTimeout(() => setIdle(chatId, readySeq), READY_MS);
     return () => clearTimeout(timer);
-  }, [readySeq, setIdle]);
+  }, [chatId, readySeq, setIdle]);
 
   const handleClick = () => {
-    setIdle();
+    if (chatId) setIdle(chatId, readySeq);
     onClick();
   };
 

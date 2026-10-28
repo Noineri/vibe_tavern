@@ -14,6 +14,7 @@ import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
+import { useChatNotifications } from "../chat-notifications-store.js";
 import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "../coauthor-turn-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { toast } from "sonner";
@@ -485,9 +486,16 @@ export async function deleteChatSummaryAction(chatId: ChatId, summaryId: string)
 }
 
 export async function generateChatSummaryAction(chatId: ChatId, input: Parameters<typeof generateChatSummary>[1], signal?: AbortSignal): Promise<ChatSummaryRecord> {
-  const result = await generateChatSummary(chatId, input, { signal });
-  syncSnapshot(result.snapshot);
-  return result.chatSummary;
+  const release = useChatNotifications.getState().retain(chatId);
+  let completedSummaryId: string | undefined;
+  try {
+    const result = await generateChatSummary(chatId, input, { signal });
+    completedSummaryId = result.chatSummary.id;
+    syncChatSnapshotIfActive(chatId, result.snapshot);
+    return result.chatSummary;
+  } finally {
+    release(completedSummaryId);
+  }
 }
 
 export async function updateMemorySettingsAction(chatId: ChatId, input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }): Promise<void> {
