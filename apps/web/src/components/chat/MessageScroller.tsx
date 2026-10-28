@@ -14,6 +14,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useStickToBottom } from "./use-stick-to-bottom.js";
 import { partitionMessageRenderWindow } from "./message-render-window.js";
+import { MessageScrollContext } from "./message-scroll-context.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -196,6 +197,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     onVirtualizedHeightChanged,
     pinned,
     scrollToBottom,
+    revealStart,
   } = useStickToBottom(resetKey, imageGenRunInFlight);
   const context = useMemo<MessageScrollerContext>(() => ({
     renderItem,
@@ -206,6 +208,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
   }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset]);
 
   return (
+    <MessageScrollContext.Provider value={revealStart}>
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
         <Virtuoso<string, MessageScrollerContext>
@@ -241,5 +244,6 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
         )}
       </div>
     </TranslateErrorBoundary>
+    </MessageScrollContext.Provider>
   );
 }

@@ -43,6 +43,13 @@ The 900ms pin did that unconditionally, overriding the position the user had cho
 
 Why the original decision missed this: the options table weighs three ways to fight Virtuoso's measurement cycle but does not separate the frequently resizing pinned surface from older virtualized history. Once those regions have different ownership, both can use their natural mechanism without racing.
 
+**Mobile reading-navigation update (2026-10-28):** a mobile variant landing is explicit reading intent, not passive content growth.
+`MessageScroller` supplies a scoped navigation callback through `MessageScrollContext`; the carousel requests it before committing the landing, and `useStickToBottom` remains the only owner of vertical scroll writes.
+The controller detaches bottom follow, reveals the variant start only if it is above the viewport, and preserves that reading position throughout the native height transition.
+After the carousel's native CSS animations settle (including cancellation), the controller recomputes the real bottom pin; a short landing can re-pin normally without a timer-based override.
+Wheel/touch/keyboard navigation, explicit bottom navigation and a chat/branch reset cancel the reading transaction; an older completion cannot override them.
+Desktop variant switching retains its portal overlay and ordinary bottom-follow rule.
+
 ---
 
 ## AD-002: True Carousel over Gesture-to-Slide for Mobile Variants

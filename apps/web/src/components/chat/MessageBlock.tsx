@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
+import { memo, useContext, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
@@ -44,6 +44,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
 import { MobileVariantCarousel, type MobileVariantCarouselHandle } from "./variants/mobile-variant-carousel.js";
+import { MessageScrollContext } from "./message-scroll-context.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
 import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
@@ -64,6 +65,7 @@ type VariantControlsOverlayState = {
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const chat = useChatController();
+  const revealMessageStart = useContext(MessageScrollContext);
   const [copied, setCopied] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
@@ -490,6 +492,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       {isMobile && variantCount > 1 && canSwitchVariant ? (
         <MobileVariantCarousel
           ref={mobileCarouselRef}
+          onBeforeSelect={revealMessageStart ?? undefined}
           selectedVariantIndex={selectedVariantIndex}
           variants={displayVariants}
           isBusy={isBusy}

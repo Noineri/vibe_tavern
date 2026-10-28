@@ -16,6 +16,8 @@ type MobileVariantCarouselProps = {
   /** Image slots keep the same busy exception as VariantControls. */
   swipeWhileBusy?: boolean;
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
+  /** The list's existing scroll controller owns vertical reading navigation. */
+  onBeforeSelect?: (viewport: HTMLElement) => (() => void) | void;
   /** IG-CF11 (mobile swipe zone): panel renderer for pure image slots. Their
    *  variant panels carry no text, so the Markdown panels collapsed to ~0
    *  height — the swipe gesture had no surface and phones could only use the
@@ -33,12 +35,20 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
   const slotWidthRef = useRef(0);
+  const finishNavigationRef = useRef<(() => void) | undefined>(undefined);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const currentIndex = Math.max(0, Math.min(variants.length - 1, selectedVariantIndex));
   const currentVariant = variants[currentIndex];
   const hasVariants = variants.length > 0;
   const swipeLocked = isBusy && !swipeWhileBusy;
   const renderWindow = getVariantRenderWindow(currentIndex, variants.length);
+
+  const selectSettledVariant = (index: number) => {
+    finishNavigationRef.current?.();
+    const el = viewportRef.current;
+    finishNavigationRef.current = (el ? props.onBeforeSelect?.(el) : undefined) ?? undefined;
+    onSelectVariant(index, index > currentIndex ? 1 : -1);
+  };
 
   useImperativeHandle(props.ref, () => ({
     selectVariant(index) {
@@ -47,7 +57,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
       // Preserve instant jump-list selection outside the adjacent render
       // window, or before layout exists; only chevrons need a visible slide.
       if (!el || slotWidthRef.current <= 0 || Math.abs(index - currentIndex) > 1) {
-        onSelectVariant(index, index > currentIndex ? 1 : -1);
+        selectSettledVariant(index);
         return;
       }
       el.scrollTo({
@@ -55,7 +65,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
         behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       });
     },
-  }), [currentIndex, swipeLocked, variants.length, onSelectVariant]);
+  }), [currentIndex, swipeLocked, variants.length, onSelectVariant, props.onBeforeSelect]);
 
   const alignSelected = useEffectEvent(() => {
     const el = viewportRef.current;
@@ -87,7 +97,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
       alignSelected();
       return;
     }
-    if (index !== currentIndex) onSelectVariant(index, index > currentIndex ? 1 : -1);
+    if (index !== currentIndex) selectSettledVariant(index);
   });
 
   useLayoutEffect(() => {
@@ -123,6 +133,28 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     observer.observe(el);
     return () => observer.disconnect();
   }, [currentIndex, currentVariant?.id, currentVariant?.content, renderPanel]);
+
+  useLayoutEffect(() => {
+    const finish = finishNavigationRef.current;
+    const el = viewportRef.current;
+    if (!finish || !el) return;
+    let cancelled = false;
+    // CSS transitions are native animations: finished rejects on interruption.
+    // allSettled handles both completion and cancellation without a timer or
+    // the unresolved Framer drag promise that caused the old carousel lock.
+    void Promise.allSettled(el.getAnimations().map((animation) => animation.finished)).then(() => {
+      if (cancelled || finishNavigationRef.current !== finish) return;
+      finishNavigationRef.current = undefined;
+      finish();
+    });
+    return () => { cancelled = true; };
+  }, [currentIndex, viewportHeight]);
+
+  useLayoutEffect(() => () => {
+    const finish = finishNavigationRef.current;
+    finishNavigationRef.current = undefined;
+    finish?.();
+  }, []);
 
   useLayoutEffect(() => {
     // Structural/external selection aligns instantly; chevrons use the handle

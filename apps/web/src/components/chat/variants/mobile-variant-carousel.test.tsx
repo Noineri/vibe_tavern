@@ -87,6 +87,32 @@ function mount(overrides: Partial<Parameters<typeof MobileVariantCarousel>[0]> =
 }
 
 describe("MobileVariantCarousel — native pager", () => {
+  test("reading navigation starts before selection and finishes after the native height transition", async () => {
+    for (const cancelTransition of [false, true]) {
+      let finishHeight: (() => void) | undefined;
+      const heightFinished = new Promise<void>((resolve, reject) => {
+        finishHeight = () => { if (cancelTransition) reject(new DOMException("Transition cancelled", "AbortError")); else resolve(); };
+      });
+      const animation = new Animation();
+      Object.defineProperty(animation, "finished", { value: heightFinished });
+      const finishNavigation = mock(() => {});
+      const beforeSelect = mock((_element: HTMLElement) => finishNavigation);
+      const s = mount({ onBeforeSelect: beforeSelect });
+      s.viewport.getAnimations = () => [animation];
+      s.scroll(996);
+      s.settle();
+      expect(beforeSelect.mock.calls.length).toBe(1);
+      expect(beforeSelect.mock.calls[0]?.[0] === s.viewport).toBe(true);
+      expect(s.onSelectVariant.mock.calls).toEqual([[3, 1]]);
+      s.update({ selectedVariantIndex: 3 });
+      await act(async () => { await Promise.resolve(); });
+      expect(finishNavigation.mock.calls.length).toBe(0);
+      await act(async () => { finishHeight?.(); await Promise.allSettled([heightFinished]); });
+      expect(finishNavigation.mock.calls.length).toBe(1);
+      s.unmount();
+    }
+  });
+
   test("chevron requests scroll smoothly and commit only after native settling", () => {
     const ref = createRef<MobileVariantCarouselHandle>();
     const s = mount({ ref });
