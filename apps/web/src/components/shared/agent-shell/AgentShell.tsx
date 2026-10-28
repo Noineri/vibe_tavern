@@ -26,8 +26,7 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatPane } from "./AgentChatPane.js";
-import { AgentSettingsModal } from "./AgentSettingsModal.js";
-import { AgentProfileModal } from "./AgentProfileModal.js";
+import { AgentShellModals } from "./agent-shell-modals.js";
 import { AgentProfileChip } from "./AgentProfileChip.js";
 import { useAgentEmptyProfile } from "./use-agent-empty-profile.js";
 import { useAgentInputPrefill } from "./use-agent-input-prefill.js";
@@ -278,13 +277,6 @@ export function AgentShell({
     [contextLinks, handleSetContextLinks],
   );
 
-  // ── Provider / model selection (per-kind binding, SC-0e) ─────────────────
-  // Each assistant kind remembers its own provider + model (the kind's
-  // settings, not the global uiSettings copilot pair) — changing the model
-  // in one assistant never changes another. Resolution and persistence live
-  // in the hook; the shell only consumes the current selection.
-  const { providerProfileId, model, handleProviderChange } = useAgentModelBinding(kind, owner);
-
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
 
@@ -322,7 +314,7 @@ export function AgentShell({
   //  derivation. Lives in `use-agent-empty-profile.ts` (file-size
   //  ratchet); the plan comes from the same `useAgentPlan` cache the plan
   //  section renders from (events = tasks).
-  const { emptyPresentation, starterKeys, handoffRow } = useAgentEmptyProfile({
+  const { effectiveProfileId: emptyStateProfileId, emptyPresentation, starterKeys, handoffRow } = useAgentEmptyProfile({
     kind,
     owner,
     scriptId,
@@ -331,6 +323,21 @@ export function AgentShell({
     bumpProfileChip: bumpProfileChipRead,
     t,
   });
+
+  // ── Provider / model selection (per-kind binding, SC-0e) ─────────────────
+  // Each assistant kind remembers its own provider + model (the kind's
+  // settings, not the global uiSettings copilot pair) — changing the model
+  // in one assistant never changes another. Resolution and persistence live
+  // in the hook; the shell only consumes the current selection.
+  // DR-8: the empty-profile hook's EFFECTIVE profile id rides along (the
+  // hook gates it to chat-target hosts itself) so an own profile model can
+  // override the displayed pair + write path; `ownModelCaption` is the
+  // composer's profile-model caption line (null = today's composer, byte-identical).
+  const { providerProfileId, model, handleProviderChange, ownModelCaption } = useAgentModelBinding(
+    kind,
+    owner,
+    emptyStateProfileId,
+  );
 
   // UX 2026-08-16 remark 6 — the prefill bridge lives in
   //  `use-agent-input-prefill.ts` (file-size ratchet); a fresh object per
@@ -641,6 +648,7 @@ export function AgentShell({
       providerProfileId={providerProfileId}
       model={model}
       handleProviderChange={handleProviderChange}
+      modelCaption={ownModelCaption}
       catalog={catalog}
       pinnedContext={pinnedContext}
       handlePinContext={handlePinContext}
@@ -662,44 +670,32 @@ export function AgentShell({
   const hasEditorPane = renderEditorPane !== undefined;
   const editorPane = hasEditorPane ? renderEditorPane(hostCtx) : null;
 
-  // ── Toolbar modals (AP-27: the settings summary only) ────────────────────
-  // XU-5/XU-6: the preview moved OUT of a modal into the editor's default tab
-  // (the inline `ExperienceFrame`), the sandbox became the inline Try tab in
-  // BOTH modes (quote 10), and the rules tester was absorbed into the
-  // sandbox's diagnostics (XU-4) — so no sandbox modal remains. The profile
-  // + skill modals open as the summary's children (with parentBack), never
-  // from the shell directly.
+  // ── Toolbar modals (AP-27: the gear's settings summary; DR-6: the chip's
+  //  standalone profiles modal) — the mounts live in `agent-shell-modals.tsx`
+  //  (file-size ratchet, DR-8); their closers also bump the profile-chip
+  //  read epoch (either modal's footers may write the (chat, kind) row
+  //  behind the chip's back).
   const modals = (
-    <>
-      <AgentSettingsModal
-        agentKind={kind}
-        scriptId={scriptId}
-        chatId={owner.kind === "chat" ? owner.chatId : undefined}
-        assignedProfileId={assignedProfileId}
-        providerProfileId={providerProfileId}
-        model={model}
-        onProviderChange={handleProviderChange}
-        isOpen={settingsModalOpen}
-        onClose={() => {
-          setSettingsModalOpen(false);
-          bumpProfileChipRead();
-        }}
-      />
-      {/* DR-6: the chip's standalone profiles modal (see `profileModalOpen`).
-          The close also bumps the chip epoch — the modal's footers may have
-          written the chat row behind the chip's back. */}
-      <AgentProfileModal
-        scriptId={scriptId}
-        chatId={owner.kind === "chat" ? owner.chatId : undefined}
-        agentKind={kind}
-        assignedProfileId={assignedProfileId}
-        isOpen={profileModalOpen}
-        onClose={() => {
-          setProfileModalOpen(false);
-          bumpProfileChipRead();
-        }}
-      />
-    </>
+    <AgentShellModals
+      agentKind={kind}
+      scriptId={scriptId}
+      chatId={owner.kind === "chat" ? owner.chatId : undefined}
+      assignedProfileId={assignedProfileId}
+      providerProfileId={providerProfileId}
+      model={model}
+      onProviderChange={handleProviderChange}
+      currentModel={{ providerProfileId, model }}
+      settingsOpen={settingsModalOpen}
+      profileOpen={profileModalOpen}
+      onSettingsClose={() => {
+        setSettingsModalOpen(false);
+        bumpProfileChipRead();
+      }}
+      onProfileClose={() => {
+        setProfileModalOpen(false);
+        bumpProfileChipRead();
+      }}
+    />
   );
 
   if (isMobile) {

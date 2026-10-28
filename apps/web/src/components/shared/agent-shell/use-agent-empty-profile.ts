@@ -42,6 +42,12 @@ import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
  * byte-identically to before this unit.
  */
 export interface AgentEmptyProfileResult {
+	/** The EFFECTIVE profile id this shell's owner answers through (the
+	 *  parked-choice chain: the chat's own choice → the kind default → the
+	 *  built-in seed for chat-target hosts; the assignment mirror for script
+	 *  hosts). DR-8: the shell forwards it to `useAgentModelBinding` so the
+	 *  composer pills can follow the profile's own model. */
+	effectiveProfileId: string;
 	/** The active built-in's own empty state, or undefined (the host's own).
 	 *  Built-ins only — a user profile never resolves a presentation (its
 	 *  title/subtitle/icon stay the host's). */
@@ -121,5 +127,5 @@ export function useAgentEmptyProfile({
 		profileHandoff !== undefined && plan.tasks.length === 0
 			? { ...profileHandoff, onActivate: () => choose(BUILTIN_DIRECTOR_PROFILE_ID) }
 			: undefined;
-	return { emptyPresentation, starterKeys, handoffRow };
+	return { effectiveProfileId: effectiveId, emptyPresentation, starterKeys, handoffRow };
 }

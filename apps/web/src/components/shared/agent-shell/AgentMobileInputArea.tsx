@@ -6,7 +6,7 @@ import { AutoTextarea } from "../auto-textarea.js";
 import { useT } from "../../../i18n/context.js";
 import { useAgentMention } from "./use-agent-mention.js";
 import { AgentContextPills } from "./AgentContextPills.js";
-import { AgentModelPills } from "./AgentModelPills.js";
+import { AgentModelPills, AgentModelCaption } from "./AgentModelPills.js";
 import { AttachmentPreview } from "../../chat/AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "../../chat/attachment-overflow-warning.js";
 import { AttachmentVisionWarning } from "../../chat/attachment-vision-warning.js";
@@ -33,6 +33,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
     providerProfileId,
     model,
     onProviderChange,
+    modelCaption,
     prefill,
     mentionCatalog,
     pinnedContext,
@@ -106,6 +107,11 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
       {attachment.attachmentVisionWarning && <AttachmentVisionWarning />}
       {attachment.attachmentOverflow.overflow && <AttachmentOverflowWarning {...attachment.attachmentOverflow} />}
       <div ref={cardRef} className={cn("flex flex-col gap-1.5 rounded-xl border bg-s2 p-1.5 transition-colors duration-150", answeringAsk ? "border-accent" : "border-transparent")}>
+        {/* DR-8 (mockup §11): the own-model caption line — above the pills
+            row (the card's flex-col gap carries the spacing; responsive
+            canon: no feature hidden on mobile). */}
+        {modelCaption != null && <AgentModelCaption label={modelCaption} />}
+
         {/* Toolbar row: provider + model pills (AP-26b: the one pills
             component's mobile variant — bottom sheets, same test ids). */}
         <div className="flex flex-wrap items-center gap-2">

@@ -92,6 +92,23 @@ export function buildAgentModelSections(
   ];
 }
 
+/**
+ * The composer's profile-model caption line (DR-8, mockup §11) — rendered
+ * by BOTH composer arms (desktop `AgentInputArea`, mobile
+ * `AgentMobileInputArea`) ABOVE their pills row while the effective profile
+ * answers on its own model. Text chrome only: the hosts own the placement
+ * and spacing, exactly as they own the pills' row layout (the fragment
+ * contract above) — so this is a sibling export of the model-picker family
+ * module, not a prop on the pills themselves.
+ */
+export function AgentModelCaption({ label }: { label: string }) {
+  return (
+    <span data-testid="copilot-model-caption" className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+      {label}
+    </span>
+  );
+}
+
 export function AgentModelPills(props: AgentModelPillsProps) {
   const { providerProfileId, model, onProviderChange, mobile = false } = props;
 

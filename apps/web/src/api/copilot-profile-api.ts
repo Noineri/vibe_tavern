@@ -7,6 +7,8 @@
  * soft link, and `null` = "use the built-in seed" (the resolver's fallback).
  */
 import type {
+  AgentProfileModelPutRequest,
+  AgentProfileModelWire,
   CopilotProfile,
   CopilotProfileCreate,
   CopilotProfileUpdate,
@@ -60,6 +62,53 @@ export async function reorderCopilotProfiles(
 export async function deleteCopilotProfile(profileId: string): Promise<void> {
   const response = await client.api.copilot.profiles[":profileId"].$delete({
     param: { profileId },
+  });
+  if (!response.ok) throw await unwrapError(response);
+}
+
+/**
+ * DR-2 (owner ruling M1): a profile's own model — the `agent_profile_models`
+ * row addressed per (agent kind, profile id), served by the same route family
+ * as the profile CRUD above (built-in seed ids included — the model is a
+ * SETTING, not an edit; the read-only guard protects prompt/tools only).
+ * Absent = same as sidechat (the existing chain).
+ */
+
+/** `GET /api/agent/kinds/:kind/profiles/:profileId/model` — the stored
+ *  binding, or null when the profile has no own model (same as sidechat). */
+export async function getCopilotProfileModel(
+  kind: string,
+  profileId: string,
+): Promise<AgentProfileModelWire | null> {
+  const response = await client.api.agent.kinds[":kind"].profiles[":profileId"].model.$get({
+    param: { kind, profileId },
+  });
+  const data = await unwrapRpc(response);
+  return data.model ?? null;
+}
+
+/** `PUT …/model` — set/replace the WHOLE binding (never a merge; clearing is
+ *  the DELETE below). `modelName` omitted/null pins the provider's default
+ *  model, resolved at turn time. Returns the stored row. */
+export async function setCopilotProfileModel(
+  kind: string,
+  profileId: string,
+  input: AgentProfileModelPutRequest,
+): Promise<AgentProfileModelWire> {
+  const response = await client.api.agent.kinds[":kind"].profiles[":profileId"].model.$put({
+    param: { kind, profileId },
+    json: input,
+  });
+  return unwrapRpc(response).then((data) => data.model);
+}
+
+/** `DELETE …/model` — clear the binding (back to same as sidechat). Idempotent. */
+export async function clearCopilotProfileModel(
+  kind: string,
+  profileId: string,
+): Promise<void> {
+  const response = await client.api.agent.kinds[":kind"].profiles[":profileId"].model.$delete({
+    param: { kind, profileId },
   });
   if (!response.ok) throw await unwrapError(response);
 }

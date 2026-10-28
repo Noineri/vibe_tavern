@@ -42,6 +42,7 @@ import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
@@ -52,8 +53,12 @@ const realProfileModal = await import("./AgentProfileModal.js");
 
 installI18nContextSeam({
 	custom: {
-		t: (key, opts?) =>
-			opts !== undefined ? `${key}:${String(opts.n)}` : key,
+		t: (key, opts?) => {
+			// DR-8: format `name` (the own-model subtitle's profile name) the
+			// same way the pre-existing arm formats `n`.
+			if (opts?.name !== undefined) return `${key}:${String(opts.name)}`;
+			return opts !== undefined ? `${key}:${String(opts.n)}` : key;
+		},
 		tDynamic: (key) => key,
 	},
 });
@@ -85,6 +90,9 @@ mock.module("../../../api/copilot-profile-api.js", () => ({
 	updateCopilotProfile: mock(),
 	deleteCopilotProfile: mock(),
 	setCopilotProfile,
+	getCopilotProfileModel: mock(async () => null),
+	setCopilotProfileModel: mock(),
+	clearCopilotProfileModel: mock(),
 }));
 
 const patchAgentKindSettingsAction = mock(async (_kind: string, _patch: { autoCompactDefault?: boolean }) => ({
@@ -214,12 +222,17 @@ installAgentSkillModalSeam({
 });
 
 let AgentSettingsModal: typeof import("./AgentSettingsModal.js").AgentSettingsModal;
+const { useAgentProfileModelStore } = await import("../../../stores/agent-profile-model-store.js");
+const { useProviderDataStore } = await import("../../../stores/provider-data-store.js");
+const { SIDECHAT_AGENT_KIND } = await import("../../../api/agent-kind-served-modes.js");
 beforeAll(async () => {
 	// The summary reads the host descriptor (kindLabel subtitle,
-	// profileAssignment variant) — registering the real host, like the
+	// profileAssignment variant) — registering the real hosts, like the
 	// profile modal suite does (never unregistered; the worker isolates the
-	// module registry per file).
+	// module registry per file). DR-8: the real SIDechat host too — the
+	// subtitle's own-model state is a chat-target-host behavior.
 	await import("../../build/editors/copilot/experience-agent-host.js");
+	await import("../../chat/sidechat/sidechat-host.js");
 	({ AgentSettingsModal } = await import("./AgentSettingsModal.js"));
 });
 
@@ -252,6 +265,8 @@ function seedBootstrap(autoCompactDefault: boolean): void {
 
 beforeEach(() => {
 	mobileOverride = false;
+	useAgentProfileModelStore.setState({ models: {} });
+	useProviderDataStore.setState({ profiles: [] });
 	listCopilotProfiles.mockReset();
 	listCopilotProfiles.mockResolvedValue([BUILTIN, USER]);
 	setCopilotProfile.mockReset();
@@ -277,6 +292,8 @@ afterEach(() => {
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 	useBootstrapStore.setState({ data: null, personas: null, isLoading: false });
+	useAgentProfileModelStore.setState({ models: {} });
+	useProviderDataStore.setState({ profiles: [] });
 });
 
 function renderSummary(over: Partial<React.ComponentProps<typeof AgentSettingsModal>> = {}) {
@@ -613,5 +630,112 @@ describe("AgentSettingsModal — localized built-in names (DR-7)", () => {
 		expect(options).toContain("Вне роли");
 		expect(options).toContain("Режиссёр");
 		expect(options).toContain("My grim director");
+	});
+});
+
+// ── DR-8 (mockup §11): the model row's subtitle — «Своя у профиля «X»» ────
+// Pins the two states: while the EFFECTIVE profile of a chat-target host
+// answers on its own model, the subtitle names it; otherwise today's
+// «Та же, что в поле ввода». Script-target hosts (the mini-app) keep
+// today's subtitle even when a row exists — the chat-target gate is the
+// plan's own must-stay-true.
+
+describe("AgentSettingsModal — the model row subtitle (DR-8)", () => {
+	const SIDECHAT_BUILTIN: CopilotProfile = {
+		id: "builtin",
+		name: "Sidechat seed",
+		isBuiltIn: true,
+		basePrompt: "You chat out of character.",
+		toolSet: { ask_user: true },
+		agentKind: SIDECHAT_AGENT_KIND,
+	};
+
+	// Scoped doubles: the file-shared chat-row mock defaults to the DR-7
+	// suite's director choice — this suite pins its OWN chat row (null) and
+	// restores the DR-7 default implementation on the way out.
+	beforeEach(() => {
+		getAgentChatSettings.mockReset();
+		getAgentChatSettings.mockResolvedValue({ chatId: "chat-1", agentKind: SIDECHAT_AGENT_KIND, profileId: null, updatedAt: "" });
+	});
+	afterEach(() => {
+		getAgentChatSettings.mockReset();
+		getAgentChatSettings.mockImplementation(async () => ({
+			chatId: "chat-ru",
+			agentKind: "sidechat-ooc",
+			profileId: "builtin-director" as string | null,
+			updatedAt: "",
+		}));
+	});
+
+	function seedSidechatBootstrap(): void {
+		useBootstrapStore.setState({
+			data: {
+				initialChatId: null,
+				snapshot: null,
+				isFirstRun: false,
+				allCharacters: [],
+				promptPresets: [],
+				uiSettings: wireUiSettings(),
+				agentKindSettings: {
+					[SIDECHAT_AGENT_KIND]: {
+						agentKind: SIDECHAT_AGENT_KIND,
+						providerProfileId: null,
+						modelName: null,
+						defaultProfileId: null,
+						updatedAt: "",
+						servesChatModes: [],
+						autoCompactDefault: true,
+					},
+				},
+				isArmServer: false,
+			},
+			personas: null,
+			isLoading: false,
+		});
+	}
+
+	function renderSidechatSummary() {
+		listCopilotProfiles.mockResolvedValue([SIDECHAT_BUILTIN]);
+		return render(
+			<AgentSettingsModal
+				agentKind={SIDECHAT_AGENT_KIND}
+				chatId="chat-1"
+				assignedProfileId={null}
+				providerProfileId="p1"
+				model="m1"
+				onProviderChange={mock()}
+				isOpen
+				onClose={mock()}
+			/>,
+		);
+	}
+
+	it("no own model → today's subtitle (and the effective row is read)", async () => {
+		seedSidechatBootstrap();
+		const { getByTestId } = renderSidechatSummary();
+		await waitFor(() => expect(getByTestId("agent-settings-row-model")).toBeDefined());
+		expect(getByTestId("agent-settings-row-model").textContent).toContain("agent_settings_model_sub");
+		expect(getByTestId("agent-settings-row-model").textContent).not.toContain("agent_settings_model_own_sub");
+	});
+
+	it("an own model on the effective profile → the «Своя у профиля» subtitle", async () => {
+		seedSidechatBootstrap();
+		// The built-in seed is the effective profile (no chat row, no default);
+		// its own model's provider must resolve (the dangling rule).
+		useProviderDataStore.setState({ profiles: [{ id: "p1", name: "Gate" }] as unknown as ProviderProfileRecord[] });
+		useAgentProfileModelStore.setState({ models: { [`${SIDECHAT_AGENT_KIND}:builtin`]: { providerProfileId: "p1", modelName: "m1" } } });
+		const { getByTestId } = renderSidechatSummary();
+		await waitFor(() =>
+			expect(getByTestId("agent-settings-row-model").textContent).toContain("agent_settings_model_own_sub:agent_profile_name_builtin"),
+		);
+	});
+
+	it("a script-target host keeps today's subtitle even with a stored row (the gate)", async () => {
+		useProviderDataStore.setState({ profiles: [{ id: "p1", name: "Gate" }] as unknown as ProviderProfileRecord[] });
+		useAgentProfileModelStore.setState({ models: { "experience:builtin": { providerProfileId: "p1", modelName: "m1" } } });
+		const { getByTestId } = renderSummary();
+		await waitFor(() => expect(getByTestId("agent-settings-row-model")).toBeDefined());
+		expect(getByTestId("agent-settings-row-model").textContent).toContain("agent_settings_model_sub");
+		expect(getByTestId("agent-settings-row-model").textContent).not.toContain("agent_settings_model_own_sub");
 	});
 });

@@ -290,6 +290,25 @@ describe("ExperienceCopilotInputArea", () => {
     expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
   });
 
+  it("DR-8: the model caption renders above the pills row when passed; absent → no caption", () => {
+    // With the caption (an own profile model active): the «модель профиля»
+    // line sits above the pills, inside the composer card. The caption prop
+    // is opaque here (the RU copy is pinned in the locale files).
+    const withCaption = renderInput({ modelCaption: "profile model caption" });
+    const caption = withCaption.getByTestId("copilot-model-caption");
+    expect(caption.textContent).toBe("profile model caption");
+    // Above = the caption node precedes the pills row in the card.
+    expect(
+      caption.compareDocumentPosition(withCaption.getByTestId("copilot-provider-pill")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    withCaption.unmount();
+
+    // Without the caption (today's composer): the line does not render.
+    const withoutCaption = renderInput();
+    expect(withoutCaption.queryByTestId("copilot-model-caption")).toBeNull();
+    withoutCaption.unmount();
+  });
+
   it("without answeringAsk the ordinary placeholder stays (AP-6)", () => {
     const { getByPlaceholderText, queryByPlaceholderText } = renderInput({ answeringAsk: false });
 

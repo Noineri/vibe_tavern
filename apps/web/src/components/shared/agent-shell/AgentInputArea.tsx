@@ -10,7 +10,7 @@ import { useT } from "../../../i18n/context.js";
 import { useAgentMention } from "./use-agent-mention.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentContextPills, type AgentContextPillItem } from "./AgentContextPills.js";
-import { AgentModelPills } from "./AgentModelPills.js";
+import { AgentModelPills, AgentModelCaption } from "./AgentModelPills.js";
 import { AttachmentPreview } from "../../chat/AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "../../chat/attachment-overflow-warning.js";
 import { AttachmentVisionWarning } from "../../chat/attachment-vision-warning.js";
@@ -36,6 +36,11 @@ export interface AgentInputAreaProps {
   providerProfileId: string | null;
   model?: string;
   onProviderChange: (profileId: string, model?: string) => void;
+  /** DR-8 (mockup §11): the profile-model caption rendered above the
+   *  pills row while the effective profile answers on its own model. Absent
+   *  — no caption (today's composer, byte-identical). Shared by BOTH
+   *  composer arms (the mobile area reuses this props interface). */
+  modelCaption?: string | null;
   /** Outside-set draft text (UX 2026-08-16 remark 6): the tester/playground
    *  "send to copilot" button COPIES the digest into the chat input instead of
    *  dispatching the turn — the user presses send themselves. Applied whenever
@@ -75,6 +80,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     providerProfileId,
     model,
     onProviderChange,
+    modelCaption,
     prefill,
     mentionCatalog,
     pinnedContext,
@@ -178,6 +184,14 @@ export function AgentInputArea(props: AgentInputAreaProps) {
           onKeyDown={(e) => mention.handleKeyDown(e, handleKeyDown)}
         />
         {attachments.length > 0 && <AttachmentPreview attachments={attachments} onRemove={attachment.remove} />}
+
+        {/* DR-8 (mockup §11): the own-model caption line — between the
+            attachments and the pills row, aligned with the row's padding. */}
+        {modelCaption != null && (
+          <div className="px-3 pt-2">
+            <AgentModelCaption label={modelCaption} />
+          </div>
+        )}
 
         <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           <AgentModelPills providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />

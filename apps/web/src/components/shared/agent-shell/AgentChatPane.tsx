@@ -89,6 +89,10 @@ export interface AgentChatPaneProps {
   providerProfileId: string | null;
   model: string | undefined;
   handleProviderChange: (profileId: string, nextModel?: string) => void;
+  /** DR-8 (mockup §11): the profile-model caption for the composers'
+   *  pills row — null/absent when no own profile model is active (today's
+   *  composers, byte-identical). */
+  modelCaption?: string | null;
   catalog: MentionAutocompleteItem[];
   pinnedContext: AgentContextPillItem[];
   handlePinContext: (item: MentionAutocompleteItem) => void;
@@ -147,6 +151,7 @@ export function AgentChatPane({
   providerProfileId,
   model,
   handleProviderChange,
+  modelCaption = null,
   catalog,
   pinnedContext,
   handlePinContext,
@@ -396,6 +401,7 @@ export function AgentChatPane({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              modelCaption={modelCaption}
               mentionCatalog={catalog}
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}
@@ -413,6 +419,7 @@ export function AgentChatPane({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              modelCaption={modelCaption}
               mentionCatalog={catalog}
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}

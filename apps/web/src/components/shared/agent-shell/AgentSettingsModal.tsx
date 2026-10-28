@@ -15,6 +15,8 @@ import { AgentSkillModal } from "./AgentSkillModal.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { resolveAgentProfileOwnModel, useAgentProfileModelStore } from "../../../stores/agent-profile-model-store.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
 import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
@@ -115,6 +117,33 @@ export function AgentSettingsModal({
 		t,
 	});
 
+	// DR-8 (mockup §11): the model row's subtitle — `agent_settings_model_own_sub`
+	// (own, naming the profile) while the EFFECTIVE profile (the parked-choice
+	// id above) answers on its own model, else today's
+	// `agent_settings_model_sub` (same as the composer input). Chat-target
+	// hosts only: the mini-app and script copilots keep today's subtitle
+	// wholesale (their kinds' surfaces stay byte-identical — the plan's own
+	// must-stay-true).
+	const providerProfiles = useProviderDataStore((s) => s.profiles);
+	const loadProfileModel = useAgentProfileModelStore((s) => s.load);
+	const activeOwnModel = useAgentProfileModelStore((s) =>
+		isChatTarget ? resolveAgentProfileOwnModel(agentKind, effectiveId, providerProfiles, s.models) : null,
+	);
+	useEffect(() => {
+		if (isOpen && isChatTarget) void loadProfileModel(agentKind, effectiveId);
+	}, [isOpen, isChatTarget, agentKind, effectiveId, loadProfileModel]);
+	const modelSub =
+		activeOwnModel !== null
+			? t("agent_settings_model_own_sub", {
+					name: builtinProfileDisplayName(
+						effectiveId,
+						agentKind,
+						profiles.find((p) => p.id === effectiveId)?.name ?? effectiveId,
+						t,
+					),
+				})
+			: t("agent_settings_model_sub");
+
 	const handleAutoCompact = (enabled: boolean) => {
 		// SC-0e: the write merges the returned row into the bootstrap
 		// kind-settings map, so sibling subscribers update immediately.
@@ -198,7 +227,7 @@ export function AgentSettingsModal({
 							testId="agent-settings-row-model"
 							icon={<Icons.Sparkles className="h-[18px] w-[18px]" />}
 							title={t("agent_settings_model")}
-							sub={t("agent_settings_model_sub")}
+							sub={modelSub}
 							control={
 								<AgentModelPills mobile={isMobile} providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />
 							}
@@ -240,6 +269,7 @@ export function AgentSettingsModal({
 				chatId={chatId}
 				agentKind={agentKind}
 				assignedProfileId={assignedProfileId}
+				currentModel={{ providerProfileId, model }}
 				isOpen={profileOpen}
 				onClose={() => setProfileOpen(false)}
 				parentBack={{ label: t("agent_settings_title"), onBack: () => setProfileOpen(false) }}

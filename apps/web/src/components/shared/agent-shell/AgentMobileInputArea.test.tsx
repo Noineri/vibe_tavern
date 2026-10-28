@@ -367,6 +367,24 @@ describe("ExperienceCopilotMobileInputArea — phone pills (AP-26b)", () => {
     expect(getByTestId("copilot-model-pill").textContent).toContain("Model One");
   });
 
+  it("DR-8: the model caption renders above the pills row when passed; absent → no caption (responsive canon)", () => {
+    // The caption prop is opaque here (the RU copy lives in the locale
+    // files); what this pins is that the MOBILE card renders it too —
+    // no feature hidden on mobile.
+    const withCaption = renderMobileInput({ modelCaption: "profile model caption" });
+    const caption = withCaption.getByTestId("copilot-model-caption");
+    expect(caption.textContent).toBe("profile model caption");
+    // Above = the caption node precedes the pills row inside the card.
+    expect(
+      caption.compareDocumentPosition(withCaption.getByTestId("copilot-provider-pill")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    withCaption.unmount();
+
+    const withoutCaption = renderMobileInput({});
+    expect(withoutCaption.queryByTestId("copilot-model-caption")).toBeNull();
+    withoutCaption.unmount();
+  });
+
   it("model sheet: favorites section with its label and leading stars, then all-models WITHOUT the favorited model", () => {
     seedTwoModelsWithFavorite();
     const { getByTestId, getByText, queryAllByTestId } = renderMobileInput({});
