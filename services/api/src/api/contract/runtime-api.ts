@@ -24,7 +24,6 @@ import type {
 	SceneStatusResponse,
 	SceneTargetResponse,
 	CoauthorApplyResponse,
-	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
 import type { AutoSummaryConfig, InsightsConfig, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
@@ -50,6 +49,8 @@ export type { AgentPlanRuntimeApi };
 import type { CopilotProfileRuntimeApi } from "./copilot-profile-contracts.js";
 export type { CopilotProfileRuntimeApi };
 import type { ChatMessageRuntimeApi } from "./chat-runtime-contracts.js";
+import type { ChatSummaryRuntimeApi } from "./chat-summary-contracts.js";
+export type { ChatSummaryRuntimeApi };
 export type { ChatSendBody, ChatMessageRuntimeApi } from "./chat-runtime-contracts.js";
 // Experience-copilot contracts live in their own module (extracted for the
 // size ratchet when AS-2c grew the interface — same pattern as the siblings
@@ -73,7 +74,6 @@ import type {
   UpdateServicePromptProfileRequest,
 } from "@vibe-tavern/api-contracts";
 import type {
-	ChatSummary,
 	FavoriteModel,
 	ProviderModelSettings,
 	LorebookLink,
@@ -83,7 +83,6 @@ import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
 import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, CreateRegexProfileBundleInput } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
-import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
 import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-service.js";
 import type { StDirectoryScanResult, StDirectoryImportResult, ImportStreamEvent } from "../../shared/st-directory-scanner.js";
@@ -141,7 +140,7 @@ export interface BootstrapRuntimeApi {
 
 // ─── Chat ────────────────────────────────────────────────────────────
 
-export interface ChatRuntimeApi extends ChatMessageRuntimeApi, CoauthorModuleRuntimeApi {
+export interface ChatRuntimeApi extends ChatMessageRuntimeApi, ChatSummaryRuntimeApi, CoauthorModuleRuntimeApi {
 	getChatSnapshot: (chatId: string) => Promise<ChatSwitchResponse>;
 	createChatForCharacter: (characterId: string, mode?: ChatMode) => Promise<ChatCreateResponse>;
 	/** Co-Author chats for a character (mode='coauthor'), for the Co-Author
@@ -185,16 +184,8 @@ export interface ChatRuntimeApi extends ChatMessageRuntimeApi, CoauthorModuleRun
 	getContextPreview: (chatId: string, branchId: string) => Promise<ContextPreviewResponse>;
 
 	// Summaries & Memory
-	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;
-	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
-	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
-	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
-	reorderChatSummaries: (chatId: string, body: { orderedIds: string[] }) => Promise<ChatSummary[]>;
-	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
 	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }) => Promise<ConfigPatchResponse>;
 	updateInsightsConfig: (chatId: string, body: { insightsConfig?: Partial<Omit<InsightsConfig, "tracker">> & { tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
-	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
-	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 	updateDynamicPrompt: (chatId: string, body: { content: string }) => Promise<ConfigPatchResponse>;
 }
 

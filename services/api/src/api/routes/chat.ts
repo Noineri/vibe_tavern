@@ -9,6 +9,7 @@ import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { userMessageSavedFlag } from "../../domain/chat/user-message-saved.js";
+import { AgentRunActiveError } from "../../domain/agent/agent-run-registry.js";
 
 type ChatStreamEvent = { event: string; data: string };
 type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
@@ -352,8 +353,17 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.summaries.generate", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, from: body.summarizedFrom, to: body.summarizedTo });
-      return c.json(await runtime.generateChatSummary(chatId, body, c.req.raw.signal));
+      try {
+        return c.json(await runtime.generateChatSummary(chatId, body));
+      } catch (error) {
+        if (error instanceof AgentRunActiveError) return c.json({ error: error.message, code: error.code }, 409);
+        throw error;
+      }
     })
+    .get("/api/chats/:chatId/summaries/generate", (c) =>
+      c.json(runtime.getManualSummaryRun(c.req.param("chatId"))))
+    .post("/api/chats/:chatId/summaries/generate/stop", (c) =>
+      c.json(runtime.stopManualSummary(c.req.param("chatId"))))
     .put("/api/chats/:chatId/summaries/reorder", zValidator("json", schemas.reorderChatSummariesSchema), async (c) => {
       // SUM-3b: manual summary-list order (store-side transactional rewrite
       // over the ACTIVE branch, matching listChatSummaries' branch scope).

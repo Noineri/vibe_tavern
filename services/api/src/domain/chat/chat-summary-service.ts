@@ -4,7 +4,9 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
-import { notFound, validation } from "../../shared/errors.js";
+import { cancelled, notFound, validation } from "../../shared/errors.js";
+import type { ManualSummaryRunState, ManualSummaryStopResponse } from "@vibe-tavern/api-contracts";
+import { AgentRunRegistry } from "../agent/agent-run-registry.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import {
@@ -59,8 +61,13 @@ export interface GenerateChatSummaryResult {
   snapshot: SummaryResponse;
 }
 
+type ManualSummaryOwner = { chatId: string; from: number; to: number; label: string };
+const manualSummaryKey = (chatId: string) => `summary:${chatId}`;
+
 export class ChatSummaryService {
   private readonly autoSummaryLocks = new BackgroundTaskLocks();
+  /** Independent from automatic summaries and chat/agent reply generation. */
+  private readonly manualRuns = new AgentRunRegistry<ManualSummaryOwner>();
 
   constructor(
     private readonly stores: StoreContainer,
@@ -71,6 +78,37 @@ export class ChatSummaryService {
     private readonly execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
     private readonly assetLoader?: AttachmentAssetLoader,
   ) {}
+
+  /** BR-1d: reserve before any await; the request never owns this signal.
+   * Keep the original result/error in memory only until the waiting handler
+   * settles, not serialized into a retained SSE log. */
+  async startManualSummary(input: Omit<GenerateChatSummaryInput, "signal" | "source">): Promise<GenerateChatSummaryResult> {
+    const owner = { chatId: input.chatId, ...resolveSummaryRange(input) };
+    const request = { ...input };
+    const service = this;
+    const outcome: { current?: { ok: true; result: GenerateChatSummaryResult } | { ok: false; error: unknown } } = {};
+    const run = this.manualRuns.start(manualSummaryKey(input.chatId), owner, async function* (signal) {
+      try {
+        outcome.current = { ok: true, result: await service.generateChatSummary({ ...request, source: "manual", signal }) };
+      } catch (error) {
+        outcome.current = { ok: false, error: signal.aborted ? cancelled("Summary generation was cancelled.") : error };
+        throw error;
+      }
+    });
+    await run.done;
+    if (!outcome.current) throw new Error("Manual summary run ended without a result.");
+    if (!outcome.current.ok) throw outcome.current.error;
+    return outcome.current.result;
+  }
+
+  getManualSummaryRun(chatId: string): ManualSummaryRunState {
+    const run = this.manualRuns.active().find(({ threadId }) => threadId === manualSummaryKey(chatId));
+    return run ? { from: run.owner.from, to: run.owner.to, label: run.owner.label, startedAt: run.startedAt } : null;
+  }
+
+  stopManualSummary(chatId: string): ManualSummaryStopResponse {
+    return { stopped: this.manualRuns.stop(manualSummaryKey(chatId)) };
+  }
 
   async summarizeChat(input: SummarizeChatInput): Promise<SummarizeChatResult> {
     const providerProfileId = input.providerProfileId.trim();
@@ -175,8 +213,7 @@ export class ChatSummaryService {
     const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, this.providerProfiles);
 
     const chatId = brandId<ChatId>(input.chatId);
-    const from = normalizeRangePoint(input.summarizedFrom, 1);
-    const to = normalizeRangePoint(input.summarizedTo, from);
+    const { from, to, label } = resolveSummaryRange(input);
     logSendDebug("summary.range.generate.start", { chatId: input.chatId, providerProfileId, model, from, to });
 
     const assembled = await this.sessionRuntime.chatLifecycle.assembleRangedSummaryPrompt({
@@ -206,10 +243,11 @@ export class ChatSummaryService {
       throw validation("Provider returned an empty summary.");
     }
 
-    const label = input.label?.trim() || `T${from}–T${to}`;
     const existing = input.targetSummaryId
       ? await this.stores.chatSummaries.getById(input.targetSummaryId)
       : null;
+    // Cancellation may arrive during the target-row lookup as well as the model call.
+    input.signal?.throwIfAborted();
     const chatSummary = existing
       ? await this.stores.chatSummaries.update(existing.id, {
           label,
@@ -324,6 +362,13 @@ export class ChatSummaryService {
     const snapshot = await this.sessionRuntime.chatLifecycle.updateChatSummary(chatId, summary);
     return { summary, snapshot };
   }
+}
+
+/** The same normalized range/label describes the active job and its saved row. */
+function resolveSummaryRange(input: Pick<GenerateChatSummaryInput, "summarizedFrom" | "summarizedTo" | "label">) {
+  const from = normalizeRangePoint(input.summarizedFrom, 1);
+  const to = normalizeRangePoint(input.summarizedTo, from);
+  return { from, to, label: input.label?.trim() || `T${from}–T${to}` };
 }
 
 function normalizeRangePoint(value: number, minimum: number): number {

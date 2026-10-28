@@ -548,11 +548,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return { ok: true, snapshot: await this.sessionRuntime.buildSummaryResponse(brandId<ChatId>(chatId)) };
 	};
 
-	generateChatSummary = (
-		chatId: string,
-		body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number },
-		signal?: AbortSignal,
-	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
+	generateChatSummary: ChatRuntimeApi["generateChatSummary"] = (chatId, body) =>
+		this.chatSummaryService.startManualSummary({ chatId, ...body });
+
+	getManualSummaryRun: ChatRuntimeApi["getManualSummaryRun"] = (chatId) =>
+		this.chatSummaryService.getManualSummaryRun(chatId);
+
+	stopManualSummary: ChatRuntimeApi["stopManualSummary"] = (chatId) =>
+		this.chatSummaryService.stopManualSummary(chatId);
 
 	updateMemorySettings: ChatRuntimeApi["updateMemorySettings"] = async (chatId, body) => {
 		const chat = await this.stores.chats.getById(chatId);

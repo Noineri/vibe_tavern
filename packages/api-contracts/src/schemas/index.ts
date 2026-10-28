@@ -189,11 +189,14 @@ export {
   createChatSummarySchema,
   updateChatSummarySchema,
   generateChatSummarySchema,
+  manualSummaryRunStateSchema,
+  manualSummaryStopResponseSchema,
   reorderChatSummariesSchema,
   updateMemorySettingsSchema,
   summarizeChatSchema,
   saveChatSummarySchema,
 } from "./summarize-schema.js";
+export type { ManualSummaryRunState, ManualSummaryStopResponse } from "./summarize-schema.js";
 
 export {
   insightsConfigSchema,
