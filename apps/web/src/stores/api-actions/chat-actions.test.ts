@@ -139,6 +139,7 @@ describe("committed assistant completion refresh", () => {
   });
 
   test("hydrates committed co-author proposals after a non-streaming send", async () => {
+    useChatStore.getState().setActiveChatId(chatId("chat-1"));
     // The carrier toolCall carries the operation INPUT (args); the non-streaming
     // hydration path (syncCommittedCoauthorTurn → extractPersistedCoauthorActivities)
     // must reconstruct the SAME name+input+output shape the streaming path builds.

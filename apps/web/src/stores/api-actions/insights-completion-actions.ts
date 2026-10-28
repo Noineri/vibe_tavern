@@ -125,7 +125,9 @@ export function startInsightsCompletionRefreshFromSnapshot(
   snapshot: AppSnapshot,
   previousTarget?: InsightsCompletionTarget | null,
 ): void {
-  const activeChat = useSnapshotStore.getState().activeChat;
+  // A reply can settle off screen; its returned configuration, not the visible
+  // chat's configuration, determines whether to join its background insight job.
+  const activeChat = snapshot.activeChat ?? useSnapshotStore.getState().activeChat;
   const insights = activeChat?.insightsConfig;
   if (
     activeChat?.id !== chatId ||

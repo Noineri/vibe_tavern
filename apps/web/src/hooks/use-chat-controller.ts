@@ -474,8 +474,8 @@ export function useChatController(): ChatControllerActions {
     try {
       await fn(controller.signal);
       const snapshot = useSnapshotStore.getState();
-      useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-      if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+      if (snapshot.activeChat?.id === chatId) useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+      if (snapshot.activeChat?.id === chatId && snapshot.promptTrace && snapshot.activeBranch?.id) {
         useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
       }
       return "done";

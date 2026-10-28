@@ -40,6 +40,14 @@ function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {
   }
 }
 
+/** A background completion must not navigate: returning to its chat refetches it. */
+function syncChatSnapshotIfActive(chatId: ChatId, snapshot: AppSnapshot): void {
+  // Read after the request settles, since the user may switch while it is in flight.
+  if (useChatStore.getState().activeChatId !== chatId) return;
+  syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
+}
+
 /** Hydrate proposals that non-streaming responses expose only after commit. */
 function syncCommittedCoauthorTurn(chatId: ChatId): void {
   const snapshot = useSnapshotStore.getState();
@@ -73,8 +81,7 @@ export async function waitForPendingVariantSelections(chatId: ChatId): Promise<v
 export async function fetchChatAction(chatId: ChatId): Promise<AppSnapshot> {
   await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
-  syncSnapshot(snapshot);
-  syncSelectedCharacterFromSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   return snapshot;
 }
 
@@ -180,20 +187,20 @@ export async function sendChatMessageAction(chatId: ChatId, content: string, att
   // LS-4b: `prefill` is the one-shot per-send override; absent ⇒ the preset
   // prefill cascade is untouched.
   const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit, ...(prefill !== undefined ? { prefill } : {}) }, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 
 export async function continueMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal): Promise<void> {
   const snapshot = await continueChatMessage(chatId, messageId, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
   const snapshot = await regenerateChatMessage(chatId, messageId, { signal, override });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
 }
 
@@ -434,7 +441,7 @@ export async function renameBranchAction(chatId: ChatId, branchId: ChatBranchId,
 export async function generateReplyAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
   const snapshot = await generateReply(chatId, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
