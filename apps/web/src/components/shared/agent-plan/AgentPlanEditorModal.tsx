@@ -11,6 +11,7 @@ import { Ic } from "../icons.js";
 import { Modal } from "../Modal.js";
 import { modalPanelCls } from "../modal-helpers.js";
 import { TextInput } from "../text-input.js";
+import { agentPlanEditorLabels } from "./agent-plan-editor-labels.js";
 
 export interface AgentPlanEditorModalProps {
   owner: AgentPlanOwner;
@@ -34,11 +35,14 @@ function newTask(): AgentPlanTask {
   return { id: `task_${crypto.randomUUID()}`, title: "", body: "", status: "pending" };
 }
 
-/** Full-screen mobile / wide desktop editor for a script-owned agent plan. */
+/** Full-screen mobile / wide desktop editor for a script-owned or branch-owned agent plan. */
 export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlanEditorModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const { plan, isLoading, save } = useAgentPlan(owner);
+  // DR-9 (mockup §7): the label set derives from the owner kind — a branch
+  // owner (the story plan) gets the story wording, a script owner today's.
+  const labels = agentPlanEditorLabels(owner);
   const [draft, setDraft] = useState<AgentPlan>(() => clonePlan(plan));
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -83,7 +87,7 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
   };
 
   return (
-    <Modal open={open} onClose={close} title={t("agent_plan_editor")} description={t("agent_plan_editor")}>
+    <Modal open={open} onClose={close} title={t(labels.title)} description={t(labels.title)}>
       <div className={cn(
         "flex flex-col",
         isMobile
@@ -91,7 +95,7 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
           : cn(modalPanelCls, "max-h-[calc(100vh-60px)] w-[1080px] max-w-[calc(100vw-32px)]"),
       )}>
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pb-3 pt-4" : "px-6 pb-4 pt-5")}>
-          <h2 className="font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{t("agent_plan_editor")}</h2>
+          <h2 className="font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{t(labels.title)}</h2>
           {locked && <p className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("agent_plan_locked")}</p>}
         </div>
         <div className={cn("min-h-0 flex-1 overflow-y-auto", isMobile ? "px-4 py-4" : "px-6 py-5")}>
@@ -100,11 +104,14 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
           ) : (
             <div className="flex flex-col gap-5">
               <div>
-                <label htmlFor="agent-plan-goal" className={lblCls}>{t("agent_plan_goal")}</label>
+                <label htmlFor="agent-plan-goal" className={lblCls}>{t(labels.goal)}</label>
                 <AutoTextarea id="agent-plan-goal" value={draft.goal} disabled={locked} minRows={2} onChange={(event) => setDraft((current) => ({ ...current, goal: event.target.value }))} />
+                {labels.goalHint !== undefined && (
+                  <p data-testid="agent-plan-goal-hint" className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t(labels.goalHint)}</p>
+                )}
               </div>
               <div>
-                <span className={lblCls}>{t("agent_plan_constraints")}</span>
+                <span className={lblCls}>{t(labels.constraints)}</span>
                 <div className="flex flex-col gap-2">
                   {draft.constraints.map((constraint, index) => (
                     <div key={index} className="flex items-start gap-2">
@@ -113,10 +120,10 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
                     </div>
                   ))}
                 </div>
-                <button type="button" disabled={locked} onClick={() => setDraft((current) => ({ ...current, constraints: [...current.constraints, ""] }))} className="mt-2 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40">{t("agent_plan_add_constraint")}</button>
+                <button type="button" disabled={locked} onClick={() => setDraft((current) => ({ ...current, constraints: [...current.constraints, ""] }))} className="mt-2 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40">{t(labels.addConstraint)}</button>
               </div>
               <div>
-                <span className={lblCls}>{t("agent_plan_tasks")}</span>
+                <span className={lblCls}>{t(labels.tasks)}</span>
                 <div className="flex flex-col gap-3">
                   {draft.tasks.map((task, index) => (
                     <div key={task.id} data-testid={`agent-plan-editor-task-${index}`} className="rounded-[6px] border border-border bg-s2 p-3">
@@ -129,11 +136,14 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
                           <button type="button" aria-label={t("agent_plan_remove")} title={t("agent_plan_remove")} disabled={locked} onClick={() => removeTask(index)} className="flex h-9 w-9 cursor-pointer items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"><Ic.close /></button>
                         </div>
                       </div>
-                      <AutoTextarea aria-label={`${t("agent_plan_task_body")} ${index + 1}`} value={task.body} disabled={locked} minRows={2} placeholder={t("agent_plan_task_body_placeholder")} onChange={(event) => updateTask(index, { body: event.target.value })} className="mt-2" />
+                      <AutoTextarea aria-label={`${t(labels.taskBody)} ${index + 1}`} value={task.body} disabled={locked} minRows={2} placeholder={t(labels.taskBodyPlaceholder)} onChange={(event) => updateTask(index, { body: event.target.value })} className="mt-2" />
+                      {labels.taskBodyHint !== undefined && (
+                        <p className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] leading-relaxed text-t3">{t(labels.taskBodyHint)}</p>
+                      )}
                     </div>
                   ))}
                 </div>
-                <button type="button" disabled={locked} onClick={() => setDraft((current) => ({ ...current, tasks: [...current.tasks, newTask()] }))} className="mt-2 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40">{t("agent_plan_add_task")}</button>
+                <button type="button" disabled={locked} onClick={() => setDraft((current) => ({ ...current, tasks: [...current.tasks, newTask()] }))} className="mt-2 cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1 disabled:cursor-not-allowed disabled:opacity-40">{t(labels.addTask)}</button>
               </div>
             </div>
           )}

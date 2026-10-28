@@ -399,8 +399,8 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		return { kind: "chat" as const, chatId: `dr7-chat-${branchId}`, branchId, agentKind: "sidechat-ooc" };
 	}
 
-	function renderSidechat(branchId: string) {
-		return render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={ownerFor(branchId)} isMobile={false} />));
+	function renderSidechat(branchId: string, mobile = false) {
+		return render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={ownerFor(branchId)} isMobile={mobile} />));
 	}
 
 	it("the director effective: ITS four starters + title/subtitle, no hand-off row", async () => {
@@ -449,7 +449,10 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 	it("hidden while the branch plan has events (tasks); the host's four starters stay", async () => {
 		dr7ChatProfileId = null;
 		dr7Plan = PLAN; // one task = one story event
-		const { getByTestId, queryByTestId } = renderSidechat("planned");
+		// DR-9 (P1) moved this pin to MOBILE: the desktop sidechat no longer
+		// renders the plan section (the strip, DR-11, becomes its home), so the
+		// panel-mounted anchor below lives in the mobile «Сайдчат» pane.
+		const { getByTestId, queryByTestId } = renderSidechat("planned", true);
 		// Terminal state: the plan PANEL mounts once the branch plan with a
 		// task lands — only then is the row's absence stable (before it, the
 		// still-empty cache would render the row).
@@ -490,5 +493,38 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		expect(queryByText("agent_director_empty_sub")).toBeNull();
 		// A user profile never offers the OOC hand-off row.
 		expect(queryByTestId("agent-handoff-row")).toBeNull();
+	});
+});
+
+// ─── DR-9 (P1): the sidechat plan section is desktop-hidden only ───────────
+// The REAL sidechat host on a chat+branch owner: the DESKTOP sidechat panel
+// drops its plan section (the story plan's desktop home becomes the chat
+// column's strip, DR-11); the MOBILE «Сайдчат» pane keeps it (mockup §9 —
+// the phone's strip lives in the «Чат» pane). Script hosts keep their
+// section on both viewports (pinned by the SC-0i describe above).
+describe("AgentShell sidechat plan section (DR-9 P1)", () => {
+	// Same shape as the DR-7 suite's ownerFor — local so this describe stands
+	// alone (per-test owners: `useAgentPlan`'s cache is keyed by owner).
+	function p1Owner(branchId: string) {
+		return { kind: "chat" as const, chatId: `dr7-chat-${branchId}`, branchId, agentKind: "sidechat-ooc" };
+	}
+
+	it("hidden on desktop, kept on mobile — same host, same plan", async () => {
+		dr7ChatProfileId = null;
+		dr7Plan = PLAN; // one task = one story event (the plan is fetched on both)
+
+		const desktop = render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={p1Owner("p1-desktop")} isMobile={false} />));
+		// Settle: the loaded-session branch (the input) plus the plan GET
+		// having been issued; the desktop pane's absence is prop-gated (the
+		// section is unmounted), so it cannot race the fetch.
+		await waitFor(() => expect(desktop.getByTestId("copilot-chat-input")).toBeDefined());
+		await waitFor(() => expect(planUrls.some((url) => url.includes("dr7-chat-p1-desktop"))).toBe(true));
+		expect(desktop.queryByTestId("agent-plan-panel")).toBeNull();
+		desktop.unmount();
+
+		const mobile = render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={p1Owner("p1-mobile")} isMobile />));
+		// Terminal state: the panel mounts once the branch plan lands.
+		await waitFor(() => expect(mobile.getByTestId("agent-plan-panel")).toBeDefined());
+		mobile.unmount();
 	});
 });

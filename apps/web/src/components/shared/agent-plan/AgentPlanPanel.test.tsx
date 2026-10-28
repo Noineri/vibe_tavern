@@ -115,3 +115,119 @@ describe("AgentPlanPanel — page translation (follow-up 2026-10-24)", () => {
     expect(getByTestId("agent-plan-open-editor").getAttribute("translate")).toBeNull();
   });
 });
+
+// ─── DR-9: curtain presentation (mockup §5/§9) ─────────────────────────────
+// behavior change: none — new OPTIONAL props. Default rendering is pinned
+// above (byte-identical); these pin the story plan's curtain: the expanded
+// part overlays below the constant row, the close paths, the actions slot,
+// the editor-button visibility switch, the premise line, and R4's revert.
+describe("AgentPlanPanel — curtain presentation (DR-9)", () => {
+  function renderCurtain(over: Partial<Parameters<typeof AgentPlanPanel>[0]> = {}) {
+    return render(<AgentPlanPanel plan={PLAN} onOpenEditor={mock()} locked={false} presentation="curtain" {...over} />);
+  }
+
+  it("renders the expanded part as an overlay below the CONSTANT row (no layout shift)", () => {
+    const { getByTestId, queryByTestId } = renderCurtain();
+    expect(getByTestId("agent-plan-panel").getAttribute("data-state")).toBe("collapsed");
+    expect(queryByTestId("agent-plan-curtain")).toBeNull();
+
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    const panel = getByTestId("agent-plan-panel");
+    expect(panel.getAttribute("data-state")).toBe("expanded");
+    // The in-flow row STAYS (its height never changes — the mechanism behind
+    // "no layout shift"); the curtain is the only addition, absolutely
+    // positioned from the row's bottom edge with the §5 geometry.
+    expect(getByTestId("agent-plan-toggle")).toBeDefined();
+    expect(panel.className).toContain("relative");
+    const curtain = getByTestId("agent-plan-curtain");
+    expect(curtain.className).toContain("absolute");
+    expect(curtain.className).toContain("left-0 right-0 top-full");
+    expect(curtain.className).toContain("max-h-[60vh]");
+    expect(curtain.className).toContain("overflow-y-auto");
+    expect(curtain.className).toContain("shadow-[var(--shadow-md)]");
+    // §5: the story title heads the curtain; the premise rides on top (P2).
+    expect(curtain.textContent).toContain("agent_plan_story_title");
+    expect(getByTestId("agent-plan-premise")).toBeDefined();
+  });
+
+  it("omits the premise line when the plan has no goal", () => {
+    const { getByTestId, queryByTestId } = renderCurtain({ plan: { goal: "", constraints: [], tasks: PLAN.tasks } });
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(queryByTestId("agent-plan-premise")).toBeNull();
+  });
+
+  it("closes on outside click, on Esc, and on either chevron", () => {
+    const { getByTestId, queryByTestId } = renderCurtain();
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(getByTestId("agent-plan-curtain")).toBeDefined();
+
+    // Outside click (a mousedown outside the panel root).
+    fireEvent.mouseDown(document.body);
+    expect(queryByTestId("agent-plan-curtain")).toBeNull();
+    expect(getByTestId("agent-plan-panel").getAttribute("data-state")).toBe("collapsed");
+
+    // Esc.
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(queryByTestId("agent-plan-curtain")).toBeNull();
+
+    // The curtain header's chevron.
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    fireEvent.click(getByTestId("agent-plan-curtain-close"));
+    expect(queryByTestId("agent-plan-curtain")).toBeNull();
+
+    // The row's own toggle chevron (open → shut).
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(queryByTestId("agent-plan-curtain")).toBeNull();
+  });
+
+  it("renders the actions slot in the collapsed row AND the curtain header", () => {
+    const { getByTestId, getAllByTestId } = renderCurtain({ actions: <span data-testid="curtain-action">Act</span> });
+    expect(getAllByTestId("curtain-action")).toHaveLength(1);
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(getAllByTestId("curtain-action")).toHaveLength(2);
+  });
+
+  it("hides the editor button in the collapsed row when asked; the curtain header keeps it", () => {
+    const { getByTestId, queryByTestId } = renderCurtain({ showEditorInCollapsedRow: false });
+    expect(queryByTestId("agent-plan-open-editor")).toBeNull();
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(getByTestId("agent-plan-open-editor")).toBeDefined();
+  });
+
+  it("R4: renders «Вернуть в работу» on completed events and reports the task id", () => {
+    const onRevertTask = mock();
+    const { getByTestId, queryByTestId } = renderCurtain({ onRevertTask });
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    const revert = getByTestId("agent-plan-revert-done");
+    expect(revert.textContent).toBe("agent_plan_revert");
+    // Only completed events carry it.
+    expect(queryByTestId("agent-plan-revert-active")).toBeNull();
+    fireEvent.click(revert);
+    expect(onRevertTask).toHaveBeenCalledTimes(1);
+    expect(onRevertTask).toHaveBeenCalledWith("done");
+  });
+
+  it("no revert button in INLINE mode, and none in curtain mode without a handler", () => {
+    const onRevertTask = mock();
+    const inline = render(<AgentPlanPanel plan={PLAN} onOpenEditor={mock()} locked={false} onRevertTask={onRevertTask} />);
+    fireEvent.click(inline.getByTestId("agent-plan-toggle"));
+    expect(inline.queryByTestId("agent-plan-revert-done")).toBeNull();
+
+    const bare = renderCurtain();
+    fireEvent.click(bare.getByTestId("agent-plan-toggle"));
+    expect(bare.queryByTestId("agent-plan-revert-done")).toBeNull();
+    expect(onRevertTask).not.toHaveBeenCalled();
+  });
+
+  it("the revert button locks with the turn (same lock as the editor)", () => {
+    const { getByTestId, getAllByTestId } = renderCurtain({ locked: true, onRevertTask: mock() });
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(getByTestId("agent-plan-revert-done").getAttribute("disabled")).toBe("");
+    // Both editor instances (the row's and the curtain header's) lock.
+    for (const button of getAllByTestId("agent-plan-open-editor")) {
+      expect(button.getAttribute("disabled")).toBe("");
+    }
+  });
+});

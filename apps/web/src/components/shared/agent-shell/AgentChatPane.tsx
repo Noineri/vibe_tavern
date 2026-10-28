@@ -85,6 +85,13 @@ export interface AgentChatPaneProps {
   ctrl: AgentController;
   sendWithOptions: (dispatch: (opts?: AgentSendOptions) => void) => void;
   planOwner: AgentPlanOwner | undefined;
+  /** DR-9 (P1): false unmounts the plan section for this pane. The SHELL
+   *  computes the distinction — the desktop sidechat drops its story-plan
+   *  section (the chat column's strip, DR-11, becomes its home), while the
+   *  mobile sidechat pane keeps it; script/mini-app hosts keep their
+   *  section on both viewports. Absent = today's rendering for every
+   *  host — one prop from the shell, the pane stays viewport-agnostic. */
+  showPlanSection?: boolean;
   inputPrefill: { text: string } | null;
   providerProfileId: string | null;
   model: string | undefined;
@@ -147,6 +154,7 @@ export function AgentChatPane({
   ctrl,
   sendWithOptions,
   planOwner,
+  showPlanSection = true,
   inputPrefill,
   providerProfileId,
   model,
@@ -339,7 +347,7 @@ export function AgentChatPane({
               turn streams. PM-7: todo (the thread's session) ABOVE plan (the
               owner's durable document) — each hides itself when empty.
               SC-0i: unmounted entirely when the host defines no plan owner. */}
-          {planOwner !== undefined && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
+          {planOwner !== undefined && showPlanSection && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
           <AgentMessageList
             kind={kind}
             threadId={threadId}

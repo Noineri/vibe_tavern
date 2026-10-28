@@ -169,6 +169,13 @@ export function AgentShell({
   ownerRef.current = owner;
   const planOwner = host.planOwner?.({ owner });
   const agentPlan = useAgentPlan(planOwner);
+  // DR-9 (P1): the DESKTOP sidechat panel drops its plan section — the story
+  // plan's desktop presentation becomes the chat column's strip (DR-11); the
+  // mobile sidechat pane keeps the section (the phone's strip lives in the
+  // Chat pane, mockup §9). One pane prop from here — the pane itself stays
+  // viewport-agnostic; script/mini-app owners (kind "script") keep their
+  // section on both viewports.
+  const showPlanSection = !(planOwner?.kind === "chatBranch" && !isMobile);
 
   // Characters come from the live snapshot store (already app-wide); the other
   // four catalog sources are fetched ONCE per shell mount (best-effort — a
@@ -644,6 +651,7 @@ export function AgentShell({
       ctrl={ctrl}
       sendWithOptions={sendWithOptions}
       planOwner={planOwner}
+      showPlanSection={showPlanSection}
       inputPrefill={inputPrefill}
       providerProfileId={providerProfileId}
       model={model}
