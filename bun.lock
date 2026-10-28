@@ -178,6 +178,9 @@
     "onnxruntime-node",
     "@swc/core",
   ],
+  "patchedDependencies": {
+    "@base-ui/react@1.9.0": "patches/@base-ui%2Freact@1.9.0.patch",
+  },
   "overrides": {
     "esbuild@<0.19": {
       ".": "0.25.12",

@@ -66,5 +66,8 @@
     "@swc/core",
     "esbuild",
     "onnxruntime-node"
-  ]
+  ],
+  "patchedDependencies": {
+    "@base-ui/react@1.9.0": "patches/@base-ui%2Freact@1.9.0.patch"
+  }
 }
