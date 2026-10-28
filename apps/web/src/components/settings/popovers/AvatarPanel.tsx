@@ -221,8 +221,7 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
 
 function MobileLightbox({ src, onClose }: AvatarPanelProps) {
   const { t } = useT();
-  const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { containerRef, imageRef, imageStyle, touchHandlers, handleTap } = useImageZoomPan();
 
   // Escape key
   useKeyDown("Escape", onClose);
@@ -252,13 +251,11 @@ function MobileLightbox({ src, onClose }: AvatarPanelProps) {
 
       {/* Image */}
       <img
+        ref={imageRef}
         src={src}
         alt={t("character_avatar_alt")}
         className="max-h-full max-w-full object-contain select-none"
-        style={{
-          transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
-          transition: isPinching ? "none" : "transform 0.15s ease-out",
-        }}
+        style={imageStyle}
         draggable={false}
         onClick={(e) => { e.stopPropagation(); handleTap(); }}
       />

@@ -80,6 +80,11 @@ function openLightbox() {
     .filter((el) => el.alt === "test image")
     .pop()!;
   expect(lightboxImg).toBeTruthy();
+  // happy-dom has no image layout. Keep this real touch-event/component
+  // boundary, but give the hook explicit fitted-image dimensions.
+  Object.defineProperties(lightboxImg, { offsetWidth: { value: 400 }, offsetHeight: { value: 400 } });
+  const imageArea = lightboxImg.parentElement!;
+  imageArea.getBoundingClientRect = () => new DOMRect(-50, 0, 400, 400);
   return lightboxImg;
 }
 

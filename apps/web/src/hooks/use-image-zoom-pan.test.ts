@@ -12,11 +12,14 @@
  * The other tests pin the load-bearing gesture behavior the hook must keep:
  * pinch scale ratio, pan-by-center-delta, and double-tap toggle.
  */
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 import type React from "react";
 
 useDomEnv();
+const realNow = Date.now;
+beforeEach(() => { Date.now = realNow; });
+afterAll(() => { Date.now = realNow; });
 
 let renderHook: typeof import("@testing-library/react").renderHook;
 let act: typeof import("@testing-library/react").act;
@@ -54,9 +57,21 @@ function touchEnd(remaining: Array<{ clientX: number; clientY: number }>): React
   } as unknown as React.TouchEvent;
 }
 
+/** Explicit fitted geometry, centered at (50, 0), with no global layout patch. */
+function mountZoom() {
+  const view = renderHook(() => useImageZoomPan());
+  const container = document.createElement("div");
+  container.getBoundingClientRect = () => new DOMRect(-50, -100, 200, 200);
+  const image = document.createElement("img");
+  Object.defineProperties(image, { offsetWidth: { value: 200 }, offsetHeight: { value: 200 } });
+  view.result.current.containerRef.current = container;
+  view.result.current.imageRef.current = image;
+  return view;
+}
+
 describe("useImageZoomPan", () => {
   test("CRASH (D5): translate updater queued by touchMove must survive touchEnd nulling the refs before the commit", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
+    const { result } = mountZoom();
     // Deliberately OUTSIDE act: the updates must stay queued across touchEnd
     // (the real-device race shape). The act warning in the log is expected.
     result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
@@ -71,7 +86,7 @@ describe("useImageZoomPan", () => {
   });
 
   test("pinch: scale follows the distance ratio, translate follows the pinch center", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
+    const { result } = mountZoom();
     await act(async () => {
       result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
       result.current.touchHandlers.onTouchMove(touch2(0, 0, 150, 0));
@@ -86,20 +101,14 @@ describe("useImageZoomPan", () => {
   });
 
   test("double-tap toggles 1 → 2.5 → 1 and resets the pan", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
-    // Pan the image first so the reset is observable (a {0,0}→{0,0} assertion
-    // would pin nothing). Monotonic fake clock: pairs of taps must be >300ms
+    const { result } = mountZoom();
+    // Pan the zoomed image so the reset is observable. Monotonic fake clock:
+    // pairs of taps must be >300ms
     // apart or four quick taps read as two double-taps and toggle twice.
     let now = 1_000_000;
     const realNow = Date.now;
     Date.now = () => now;
     try {
-      await act(async () => {
-        result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
-        result.current.touchHandlers.onTouchMove(touch2(30, 0, 130, 0));
-      });
-      expect(result.current.translate.x).toBeCloseTo(30);
-
       await act(async () => {
         result.current.handleTap();
         now += 50;
@@ -108,6 +117,14 @@ describe("useImageZoomPan", () => {
       expect(result.current.scale).toBe(2.5);
       expect(result.current.translate).toEqual({ x: 0, y: 0 });
 
+      // A fitted image can no longer pan at 1x. Make the reset observable by
+      // panning the zoomed image instead, preserving the same toggle boundary.
+      await act(async () => {
+        result.current.touchHandlers.onTouchStart(touch1(50, 0));
+        result.current.touchHandlers.onTouchMove(touch1(80, 0));
+      });
+      expect(result.current.translate.x).toBeCloseTo(30);
+
       now += 400;
       await act(async () => {
         result.current.handleTap();
@@ -115,13 +132,14 @@ describe("useImageZoomPan", () => {
         result.current.handleTap();
       });
       expect(result.current.scale).toBe(1);
+      expect(result.current.translate).toEqual({ x: 0, y: 0 });
     } finally {
       Date.now = realNow;
     }
   });
 
   test("single-finger move while zoomed in pans the image, incl. the 2→1 pinch handoff (D5b)", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
+    const { result } = mountZoom();
     // Zoom in via a SYMMETRIC pinch (spread around a fixed center): 1 → 2
     // with translate unchanged, so the pan assertions below are pure pan.
     await act(async () => {
@@ -145,7 +163,7 @@ describe("useImageZoomPan", () => {
   });
 
   test("single-finger move does nothing at scale 1 (no ghost-drag of a fitted image)", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
+    const { result } = mountZoom();
     await act(async () => {
       result.current.touchHandlers.onTouchStart(touch1(60, 0));
       result.current.touchHandlers.onTouchMove(touch1(120, 20));
@@ -154,7 +172,7 @@ describe("useImageZoomPan", () => {
   });
 
   test("touchcancel clears all gesture state — no stale refs, no phantom pinch", async () => {
-    const { result } = renderHook(() => useImageZoomPan());
+    const { result } = mountZoom();
     // Pinch in progress, then the browser takes the gesture over (cancel).
     result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
     result.current.touchHandlers.onTouchCancel(touchEnd([]));
@@ -165,5 +183,49 @@ describe("useImageZoomPan", () => {
     });
     expect(result.current.scale).toBe(1);
     expect(result.current.isPinching).toBe(false);
+  });
+
+  test("pinch keeps the image point under an off-center finger midpoint", async () => {
+    const { result } = mountZoom();
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch2(50, 20, 150, 20));
+      result.current.touchHandlers.onTouchMove(touch2(0, 20, 200, 20));
+    });
+    expect(result.current.scale).toBe(2);
+    expect(result.current.translate).toEqual({ x: -50, y: -20 });
+  });
+
+  test("pan uses screen pixels, clamps to bounds and recenters when zooming out", async () => {
+    const { result } = mountZoom();
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
+      result.current.touchHandlers.onTouchMove(touch2(-50, 0, 150, 0));
+      result.current.touchHandlers.onTouchEnd(touchEnd([{ clientX: 50, clientY: 0 }]));
+      result.current.touchHandlers.onTouchMove(touch1(70, 10));
+    });
+    expect(result.current.translate).toEqual({ x: 20, y: 10 });
+    expect(result.current.imageStyle.transform).toBe("translate(20px, 10px) scale(2)");
+    await act(async () => { result.current.touchHandlers.onTouchMove(touch1(1000, 1000)); });
+    expect(result.current.translate).toEqual({ x: 100, y: 100 });
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch2(-50, 0, 150, 0));
+      result.current.touchHandlers.onTouchMove(touch2(10, 0, 90, 0));
+    });
+    expect(result.current.scale).toBeCloseTo(0.8);
+    expect(result.current.translate).toEqual({ x: 0, y: 0 });
+  });
+
+  test("no transform easing runs while any finger is down, including the pinch-to-pan handoff", async () => {
+    const { result } = mountZoom();
+    await act(async () => { result.current.touchHandlers.onTouchStart(touch1(50, 0)); });
+    expect(result.current.imageStyle.transition).toBe("none");
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
+      result.current.touchHandlers.onTouchEnd(touchEnd([{ clientX: 50, clientY: 0 }]));
+    });
+    expect(result.current.isPinching).toBe(false);
+    expect(result.current.imageStyle.transition).toBe("none");
+    await act(async () => { result.current.touchHandlers.onTouchEnd(touchEnd([])); });
+    expect(result.current.imageStyle.transition).toBe("transform 0.15s ease-out");
   });
 });
