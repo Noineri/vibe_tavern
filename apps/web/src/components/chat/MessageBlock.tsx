@@ -19,12 +19,8 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import { brandId, parseStoredAttachments, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
-import {
-  applyRegexLayer,
-  createValueEscapingMacroSource,
-  filterRegexPresets,
-  type RegexMacroSource,
-} from "@vibe-tavern/prompt-pipeline";
+import { filterRegexPresets } from "@vibe-tavern/prompt-pipeline";
+import { deriveVariantDisplayText } from "../../lib/variant-display-text.js";
 import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
@@ -206,13 +202,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const regexPresetId = useSnapshotStore((s) => s.activeChat?.promptPresetId ?? null);
   const regexHistoryLength = useSnapshotStore((s) => s.messageOrder.length);
   const displayRegexPresets = useActiveRegexPresets(regexCharacterId, regexPresetId);
-  const displayRegexMacroSource = useMemo<RegexMacroSource>(
-    () =>
-      createValueEscapingMacroSource((text) =>
-        macroContext ? replaceUiMacros(text, macroContext) : text,
-      ),
-    [macroContext],
-  );
   const applicableDisplayRegex = useMemo(() => {
     if (!msg) return EMPTY_REGEX_PRESETS;
     const placement =
@@ -231,30 +220,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       .filter((preset) => preset.markdownOnly);
     return applicable.length > 0 ? applicable : EMPTY_REGEX_PRESETS;
   }, [msg, displayRegexPresets, regexHistoryLength, input.index]);
-  // Fully memoized so regex compilation reruns only when the variant content,
-  // the applicable preset set, or the macro context actually changes. The
-  // display text here is already macro-resolved (useDisplayMessage / variant
-  // memo); find-pattern macros still resolve via the preset's substituteRegex
-  // mode through the macro source above.
+  // Keep canonical/macro-only variants for metadata and actions. Both render
+  // paths consume this separate display derivation, so a landing never
+  // applies the regex a second time or writes display text into the store.
+  const displayVariants = useMemo(() => variants.map((variant) => ({
+    ...variant,
+    content: deriveVariantDisplayText(variant.content, {
+      macroContext, presets: applicableDisplayRegex, resolveBaseMacros: false,
+    }),
+  })), [variants, applicableDisplayRegex, macroContext]);
   const regexDisplayContent = useMemo(() => {
     if (!msg) return null;
-    const base = selectedVariant ? selectedVariant.content : msg.displayContent;
-    if (!base || applicableDisplayRegex.length === 0) return base;
-    const layerOutput = applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
-    // ST parity (R-14 bug 3): ST resolves macros on the replacement RESULT at
-    // regex time (engine.js:444 substituteParams(replaceWithGroups)), while
-    // this seam macro-resolves the base BEFORE the regex — so a macro born in
-    // the replacement would otherwise stay literal on screen. Resolve the
-    // layer OUTPUT with the same UI resolver, once after all scripts.
-    // Accepted micro-divergence vs ST's per-script timing: a later script's
-    // find pattern sees the pre-resolution text (ST would see per-script
-    // resolved text); in practice find-pattern macros are governed per-preset
-    // by its substituteRegex mode anyway. replaceUiMacros is idempotent —
-    // pure static value substitutions (names, descriptions, pronoun forms),
-    // no random/time/stateful macros — so re-resolving the already-resolved
-    // base text is a no-op except for the regex-introduced tokens.
-    return macroContext ? replaceUiMacros(layerOutput, macroContext) : layerOutput;
-  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource, macroContext]);
+    return displayVariants[selectedVariantIndex]?.content ?? deriveVariantDisplayText(msg.displayContent, {
+      macroContext, presets: applicableDisplayRegex, resolveBaseMacros: false,
+    });
+  }, [msg, displayVariants, selectedVariantIndex, applicableDisplayRegex, macroContext]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -504,7 +484,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       {isMobile && variantCount > 1 && canSwitchVariant ? (
         <MobileVariantCarousel
           selectedVariantIndex={selectedVariantIndex}
-          variants={variants}
+          variants={displayVariants}
           isBusy={isBusy}
           swipeWhileBusy={isPureImageSlot}
           onSelectVariant={handleSelectVariant}
