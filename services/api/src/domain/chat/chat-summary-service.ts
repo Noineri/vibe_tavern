@@ -134,6 +134,32 @@ export class ChatSummaryService {
   }
 
   async generateChatSummary(input: GenerateChatSummaryInput): Promise<GenerateChatSummaryResult> {
+    // Auto-summary owns its existing lifecycle in triggerAutoSummary; do not
+    // duplicate its events or change their payloads when sharing the generator.
+    if (input.source === "auto") return this.generateRangedSummary(input);
+    this.events?.emit("chat.notification", { chatId: input.chatId, kind: "summary.started", source: "manual" });
+    try {
+      const result = await this.generateRangedSummary(input);
+      this.events?.emit("chat.notification", {
+        chatId: input.chatId,
+        kind: "summary.generated",
+        source: "manual",
+        summaryId: result.chatSummary.id,
+        label: result.chatSummary.label,
+      });
+      return result;
+    } catch (error) {
+      this.events?.emit("chat.notification", {
+        chatId: input.chatId,
+        kind: input.signal?.aborted ? "summary.cancelled" : "summary.failed",
+        source: "manual",
+      });
+      throw error;
+    }
+  }
+
+  private async generateRangedSummary(input: GenerateChatSummaryInput): Promise<GenerateChatSummaryResult> {
+    input.signal?.throwIfAborted();
     const providerProfileId = input.providerProfileId.trim();
     if (!providerProfileId) {
       throw validation("Provider profile is required for summarization.");
@@ -172,6 +198,9 @@ export class ChatSummaryService {
       overrideMaxTokens: input.maxOutputTokens,
       overrideTemperature: input.temperature,
     });
+    // A provider may finish just after the user stops it; never save that late
+    // manual result or emit a successful completion for a cancelled request.
+    input.signal?.throwIfAborted();
     const summary = result.text.trim();
     if (!summary) {
       throw validation("Provider returned an empty summary.");
