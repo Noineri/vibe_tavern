@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { type AgentThreadEventWire, type ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -14,7 +14,10 @@ import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFail
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { agentFlowBoundaries } from "./agent-flow-boundaries.js";
 import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
-import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentI18nKey, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
+import type { AgentBuiltinProfileHandoff } from "../../../lib/agent-builtin-profiles.js";
+import { agentEventAnchors } from "./agent-event-anchors.js";
+import { useAgentListScroll } from "./agent-list-scroll.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
@@ -154,6 +157,19 @@ export interface AgentMessageListProps {
   onRetryTurn?: () => void;
   /** AP-18: starter click → the pane prefills the composer (never sent); absent = no starters. */
   onStarterPick?: (text: string) => void;
+  /** DR-7: the ACTIVE built-in profile's empty-state icon override (the
+   *  sidechat director's film glyph) — absent = the shared sparkles, exactly
+   *  as before this unit. A plain ReactNode (resolved by the pane), like
+   *  `emptyTitle`/`emptySub` are resolved strings. */
+  emptyIcon?: ReactNode;
+  /** DR-7: the ACTIVE built-in profile's own starter keys (from
+   *  `builtinProfilePresentation`) — absent = the host's `starterPromptKeys`
+   *  (also the fallback for every user profile — owner ruling 2026-10-27). */
+  starterKeysOverride?: readonly AgentI18nKey[];
+  /** DR-7: the OOC hand-off row under the starters (mockup §3) —
+   *  the shell resolves the config + the profile-switch callback; the
+   *  composer prefill rides the SAME onStarterPick path. Absent = no row. */
+  handoffRow?: AgentBuiltinProfileHandoff & { onActivate: () => void };
 }
 
 export function AgentMessageList({
@@ -178,6 +194,9 @@ export function AgentMessageList({
   onStarterPick,
   emptyTitle,
   emptySub,
+  emptyIcon,
+  starterKeysOverride,
+  handoffRow,
   events = EMPTY_EVENTS,
 }: AgentMessageListProps) {
   const { t } = useT();
@@ -365,10 +384,6 @@ export function AgentMessageList({
     }
   }, [kind, t]);
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const pinnedRef = useRef(true);
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-
   // CM-9 / AP-33: digest messages are APPENDED at the end by the backend
   // (anchor in `toolCallId`) and each renders at its own chronological slot —
   // where the compaction ran — with its covered-count caption derived from the
@@ -486,43 +501,15 @@ export function AgentMessageList({
   }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, pendingReasoning]);
 
   // SC-19b: frozen events interleave as separators BEFORE their anchor
-  // message; a null anchor — or an anchor naming no visible row — trails at
-  // the end, after the persisted rows (before the live pending rows, which
-  // only exist mid-turn and are cleared on the settle+refetch that refreshes
-  // these events).
-  const { eventAnchors, trailingEvents } = useMemo(() => {
-    const anchors = new Map<string, AgentThreadEventWire[]>();
-    const trailing: AgentThreadEventWire[] = [];
-    if (events.length === 0) return { eventAnchors: anchors, trailingEvents: trailing };
-    const visibleIds = new Set(visibleMessages.map((entry) => entry.message.id));
-    for (const event of events) {
-      const anchor = event.beforeMessageId;
-      if (anchor !== null && visibleIds.has(anchor)) {
-        const list = anchors.get(anchor);
-        if (list) list.push(event);
-        else anchors.set(anchor, [event]);
-      } else {
-        trailing.push(event);
-      }
-    }
-    return { eventAnchors: anchors, trailingEvents: trailing };
-  }, [events, visibleMessages]);
+  // message (the grouping lives in `agent-event-anchors.ts` — extracted
+  // under the file-size ratchet).
+  const { eventAnchors, trailingEvents } = useMemo(
+    () => agentEventAnchors(events, new Set(visibleMessages.map((entry) => entry.message.id))),
+    [events, visibleMessages],
+  );
 
   const renderEventSeparators = (list: readonly AgentThreadEventWire[] | undefined) =>
     list?.map((event) => <AgentTimelineSeparator key={event.id} event={event} />);
-
-  const scrollToBottom = () => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  };
-
-  const handleScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    pinnedRef.current = nearBottom;
-    setShowJumpToBottom(!nearBottom);
-  };
 
   const contentCount =
     visibleMessages.length +
@@ -530,9 +517,9 @@ export function AgentMessageList({
     (hasPendingUserContent ? 1 : 0) +
     feed.length;
 
-  useLayoutEffect(() => {
-    if (pinnedRef.current) scrollToBottom();
-  }, [contentCount, pendingText, feed.length]);
+  // Bottom-pinning auto-scroll (the co-author surface's intent; the hook
+  // is `agent-list-scroll.ts` — extracted under the file-size ratchet).
+  const { scrollRef, showJumpToBottom, handleScroll, jump } = useAgentListScroll(contentCount, pendingText, feed.length);
 
   const isEmpty =
     visibleMessages.length === 0 &&
@@ -544,7 +531,15 @@ export function AgentMessageList({
 
   if (isEmpty) {
     return (
-      <AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")} onStarterPick={onStarterPick} />
+      <AgentEmptyState
+        kind={kind}
+        title={emptyTitle ?? t("agent_title")}
+        sub={emptySub ?? t("agent_subtitle")}
+        icon={emptyIcon}
+        starterKeys={starterKeysOverride}
+        handoffRow={handoffRow}
+        onStarterPick={onStarterPick}
+      />
     );
   }
 
@@ -782,10 +777,7 @@ export function AgentMessageList({
         <button
           type="button"
           className="absolute bottom-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
-          onClick={() => {
-            pinnedRef.current = true;
-            scrollToBottom();
-          }}
+          onClick={jump}
         >
           <Icons.Caret direction="d" />
         </button>

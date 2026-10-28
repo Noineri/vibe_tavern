@@ -13,6 +13,7 @@ import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
 import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import type { AgentBuiltinProfileHandoff, AgentBuiltinProfilePresentation } from "../../../lib/agent-builtin-profiles.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { AgentController } from "./use-agent-controller.js";
@@ -96,6 +97,16 @@ export interface AgentChatPaneProps {
   /** AP-18: starter-prompt pick from the empty session — the shell turns the
    *  text into a composer prefill (never sent); the pane focuses the composer. */
   onStarterPick?: (text: string) => void;
+  /** DR-7: the ACTIVE built-in profile's own empty-state presentation (the
+   *  sidechat director today) — resolved by the shell (it owns the
+   *  effective-profile read); absent = the host's own starters/title/subtitle,
+   * byte-identical to before this unit. The pane resolves the keys through
+   * `t` and swaps the icon, exactly as it resolves the host's own keys. */
+  emptyPresentation?: AgentBuiltinProfilePresentation;
+  /** DR-7: the OOC hand-off row config + the shell's profile-switch
+   *  callback (the DR-6 write). Absent = no row. The prefill rides the SAME
+   *  AP-18 starter path below (never a second send seam). */
+  handoffRow?: AgentBuiltinProfileHandoff & { onActivate: () => void };
   /** CA-4f: the shell's ONE settle refresh (`AgentShell.handleTurnSettled`'s
    *  message/events reload). Sent-attachment actions refetch through it —
    *  the same path a turn delete uses, never a second one. */
@@ -133,6 +144,8 @@ export function AgentChatPane({
   handleUnpinContext,
   composerTopSlot,
   onStarterPick,
+  emptyPresentation,
+  handoffRow,
   refreshMessages,
 }: AgentChatPaneProps) {
   const { t } = useT();
@@ -332,8 +345,11 @@ export function AgentChatPane({
             hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
             pendingAskAnswer={ctrl.pendingAskAnswer}
             pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
-            emptyTitle={t(host.i18n.emptyTitle)}
-            emptySub={host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
+            emptyTitle={t(emptyPresentation !== undefined ? emptyPresentation.titleKey : host.i18n.emptyTitle)}
+            emptySub={emptyPresentation !== undefined ? t(emptyPresentation.subKey) : host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
+            emptyIcon={emptyPresentation !== undefined ? <Icons.film className="h-6 w-6 text-accent" /> : undefined}
+            starterKeysOverride={emptyPresentation?.starterKeys}
+            handoffRow={handoffRow}
             onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
             onAnswer={(askToolCallId, answer) => {
               sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));

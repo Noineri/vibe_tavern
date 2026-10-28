@@ -29,6 +29,8 @@ import { AgentChatPane } from "./AgentChatPane.js";
 import { AgentSettingsModal } from "./AgentSettingsModal.js";
 import { AgentProfileModal } from "./AgentProfileModal.js";
 import { AgentProfileChip } from "./AgentProfileChip.js";
+import { useAgentEmptyProfile } from "./use-agent-empty-profile.js";
+import { useAgentInputPrefill } from "./use-agent-input-prefill.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -306,20 +308,34 @@ export function AgentShell({
   // keep the always-visible label correct; the modals themselves are
   // untouched (their own surfaces re-read on open, as before).
   const [profileChipEpoch, setProfileChipEpoch] = useState(0);
-  const handleProfileSurfaceClosed = useCallback(() => {
+  // ONE bump, two causes (DR-6 + DR-7): a sibling assignment surface's
+  // close (the comment above) AND this shell's own effective-profile
+  // change (the DR-7 hand-off row's write, seen by the hook below) both
+  // remount the chip with a fresh (chat, kind) read.
+  const bumpProfileChipRead = useCallback(() => {
     setProfileChipEpoch((epoch) => epoch + 1);
   }, []);
 
-  // UX 2026-08-16 remark 6 — prefill handed to the chat input by a HOST
-  // surface (the experience "send to copilot" flow) through the bridge.
-  // Object identity is the trigger.
-  const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
-  // AP-18: a starter click fills the composer (never sent) — a fresh object
-  // per click retriggers the composers' prefill effect; focusing lives in
-  // the pane's handler (it owns the composer DOM).
-  const handleStarterPick = useCallback((text: string): void => {
-    setInputPrefill({ text });
-  }, []);
+  // ── DR-7: the ACTIVE profile drives the empty state; the OOC
+  //  hand-off row writes it — the shell's OWN parked-choice instance
+  //  (choose = exactly the DR-6 write) + the ONE built-in-presentation
+  //  derivation. Lives in `use-agent-empty-profile.ts` (file-size
+  //  ratchet); the plan comes from the same `useAgentPlan` cache the plan
+  //  section renders from (events = tasks).
+  const { emptyPresentation, handoffRow } = useAgentEmptyProfile({
+    kind,
+    owner,
+    scriptId,
+    assignedProfileId,
+    plan: agentPlan.plan,
+    bumpProfileChip: bumpProfileChipRead,
+    t,
+  });
+
+  // UX 2026-08-16 remark 6 — the prefill bridge lives in
+  //  `use-agent-input-prefill.ts` (file-size ratchet); a fresh object per
+  //  pick retriggers the composers' effect, focusing lives in the pane.
+  const { inputPrefill, setInputPrefill, handleStarterPick } = useAgentInputPrefill();
 
   // ── AS-6b2: the shell↔host bridge ────────────────────────────────────────
   // One stable object per shell; the host's editor pane assigns `session`
@@ -331,7 +347,6 @@ export function AgentShell({
     bridgeRef.current = { session: null, setInputPrefill };
   }
   const bridge = bridgeRef.current;
-
   // SC-19b: the events read is best-effort and host-optional — a failure (or
   // a host without the member) leaves the separators empty, never the
   // session. Called everywhere messages refetch (load / settle / switch);
@@ -632,6 +647,8 @@ export function AgentShell({
       handleUnpinContext={handleUnpinContext}
       composerTopSlot={composerTopSlot}
       onStarterPick={handleStarterPick}
+      emptyPresentation={emptyPresentation}
+      handoffRow={handoffRow}
       refreshMessages={refreshMessages}
     />
   );
@@ -664,7 +681,7 @@ export function AgentShell({
         isOpen={settingsModalOpen}
         onClose={() => {
           setSettingsModalOpen(false);
-          handleProfileSurfaceClosed();
+          bumpProfileChipRead();
         }}
       />
       {/* DR-6: the chip's standalone profiles modal (see `profileModalOpen`).
@@ -678,7 +695,7 @@ export function AgentShell({
         isOpen={profileModalOpen}
         onClose={() => {
           setProfileModalOpen(false);
-          handleProfileSurfaceClosed();
+          bumpProfileChipRead();
         }}
       />
     </>

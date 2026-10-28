@@ -24,7 +24,7 @@
  * are queryable at rest (this file's registration is live for its own run
  * only; the popover parts ride the seam's deterministic stub).
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { installRadixPopoverSeam } from "../../../../test/radix-popover-seam.js";
@@ -108,6 +108,7 @@ const CHAT_KIND = "dr6-chat";
 const CHAT_ID = "chat-1";
 
 let AgentProfileChip: typeof import("./AgentProfileChip.js").AgentProfileChip;
+let LocaleProvider: typeof import("../../../i18n/context.js").LocaleProvider;
 beforeAll(async () => {
 	// The real experience host registers the script-target variant (and the
 	// shared transport the fixture borrows).
@@ -356,5 +357,68 @@ describe("AgentProfileChip — the edit-profiles row", () => {
 		expect(getByTestId("agent-profile-menu-edit").textContent).toContain("agent_settings_edit_profiles");
 		fireEvent.click(getByTestId("agent-profile-menu-edit"));
 		expect(onOpenProfiles).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ─── DR-7: localized built-in names — real RU (consumer surface #1) ─────────
+// The two SIDECHAT built-ins render through the ONE display-name derivation
+// («Вне роли» / «Режиссёр"); user profiles and other kinds stay raw (their
+// pins live above — "Director"/"My grim director" under the fixture kind).
+// Real RU via a mounted LocaleProvider (the AgentTimelineSeparator
+// precedent — the context seam DELEGATES when a provider is ready);
+// provider-less renders in this file keep the identity echo (R13-safe).
+describe("AgentProfileChip — localized built-in names (DR-7)", () => {
+	/** The REAL sidechat kind's list — the only kind whose built-ins localize. */
+	const SIDECHAT_LIST: CopilotProfile[] = [
+		{ id: "builtin", name: "Sidechat OOC", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "builtin-director", name: "Director", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "cprof_1", name: "My grim director", isBuiltIn: false, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+	];
+
+	beforeAll(async () => {
+		// Real RU resources (bundled — synchronously available after init);
+		// the explicit changeLanguage makes this order-independent, the
+		// afterAll restores EN (the R13 contract).
+		const { initI18n, i18next: i18nInstance } = await import("../../../i18n/i18n.js");
+		initI18n("ru");
+		await i18nInstance.changeLanguage("ru");
+		// The REAL sidechat host registers the kind under test.
+		await import("../../chat/sidechat/sidechat-host.js");
+		({ LocaleProvider } = await import("../../../i18n/context.js"));
+	});
+
+	afterAll(async () => {
+		const { i18next } = await import("../../../i18n/i18n.js");
+		await i18next.changeLanguage("en");
+	});
+
+	function renderRuChip(profileId: string | null) {
+		getAgentChatSettings.mockResolvedValue({
+			chatId: CHAT_ID,
+			agentKind: "sidechat-ooc",
+			profileId,
+			updatedAt: "",
+		});
+		listCopilotProfiles.mockResolvedValue(SIDECHAT_LIST);
+		return render(
+			<LocaleProvider initialLocale="ru">
+				<AgentProfileChip agentKind="sidechat-ooc" chatId={CHAT_ID} assignedProfileId={null} onOpenProfiles={mock()} />
+			</LocaleProvider>,
+		);
+	}
+
+	it("the director built-in renders «Режиссёр» in the label and the menu rows localize both built-ins (a user row stays raw)", async () => {
+		const { getByTestId } = renderRuChip("builtin-director");
+		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toBe("Режиссёр"));
+		// Menu rows (the popover seam renders them inline at rest): the seed
+		// «Вне роли», the director «Режиссёр», the user profile its raw name.
+		expect(getByTestId("agent-profile-menu-row-builtin").textContent).toContain("Вне роли");
+		expect(getByTestId("agent-profile-menu-row-builtin-director").textContent).toContain("Режиссёр");
+		expect(getByTestId("agent-profile-menu-row-cprof_1").textContent).toContain("My grim director");
+	});
+
+	it("a user profile effective renders its raw stored name (never localized)", async () => {
+		const { getByTestId } = renderRuChip("cprof_1");
+		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toBe("My grim director"));
 	});
 });

@@ -20,7 +20,7 @@
  * first, spread); the profile dropdown rides a native-select fake (Radix
  * Popover.Content never mounts under happy-dom).
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
@@ -535,5 +535,83 @@ describe("AgentSettingsModal — auto-compact row", () => {
 		seedBootstrap(false);
 		const { getByRole } = renderSummary();
 		expect(getByRole("switch", { name: "agent_settings_autocompact" }).getAttribute("aria-checked")).toBe("false");
+	});
+});
+
+// ─── DR-7: localized built-in names — real RU (consumer surface #2) ─────────
+// The settings summary's profile dropdown under the REAL sidechat kind: the
+// two sidechat built-ins render through the ONE display-name derivation
+// («Вне роли» / «Режиссёр»); a user profile stays raw. Real RU via a mounted
+// LocaleProvider (the chip file pins the label/menu surface; this pins the
+// dropdown's option labels); restored in afterAll (R13).
+
+// The (chat, kind) row the effective-profile read resolves (module scope —
+// the file's `...real` spread pattern).
+const realChatSettingsApi = await import("../../../api/agent-chat-settings-api.js");
+const getAgentChatSettings = mock(async () => ({
+	chatId: "chat-ru",
+	agentKind: "sidechat-ooc",
+	profileId: "builtin-director" as string | null,
+	updatedAt: "",
+}));
+const patchAgentChatSettings = mock(async (_chatId: string, _kind: string, patch: { profileId?: string | null }) => ({
+	chatId: _chatId,
+	agentKind: _kind,
+	profileId: patch.profileId ?? null,
+	updatedAt: "",
+}));
+mock.module("../../../api/agent-chat-settings-api.js", () => ({
+	...realChatSettingsApi,
+	getAgentChatSettings,
+	patchAgentChatSettings,
+}));
+
+let LocaleProvider: typeof import("../../../i18n/context.js").LocaleProvider;
+
+describe("AgentSettingsModal — localized built-in names (DR-7)", () => {
+	const SIDECHAT_LIST: CopilotProfile[] = [
+		{ id: "builtin", name: "Sidechat OOC", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "builtin-director", name: "Director", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "cprof_1", name: "My grim director", isBuiltIn: false, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+	];
+
+	beforeAll(async () => {
+		// Real RU resources (the AgentTimelineSeparator precedent); the
+		// explicit changeLanguage keeps it order-independent, the afterAll
+		// restores EN (R13). The REAL sidechat host registers the kind.
+		const { initI18n, i18next: i18nInstance } = await import("../../../i18n/i18n.js");
+		initI18n("ru");
+		await i18nInstance.changeLanguage("ru");
+		await import("../../chat/sidechat/sidechat-host.js");
+		({ LocaleProvider } = await import("../../../i18n/context.js"));
+	});
+	afterAll(async () => {
+		const { i18next } = await import("../../../i18n/i18n.js");
+		await i18next.changeLanguage("en");
+	});
+
+	it("the dropdown options localize the two built-ins; a user profile stays raw", async () => {
+		listCopilotProfiles.mockResolvedValue(SIDECHAT_LIST);
+		const { getByTestId } = render(
+			<LocaleProvider initialLocale="ru">
+				<AgentSettingsModal
+					agentKind="sidechat-ooc"
+					chatId="chat-ru"
+					assignedProfileId={null}
+					providerProfileId="p1"
+					model="m1"
+					onProviderChange={mock()}
+					isOpen
+					onClose={mock()}
+				/>
+			</LocaleProvider>,
+		);
+		// Terminal state: the dropdown's value = the chat row's director.
+		await waitFor(() => expect((getByTestId("agent-settings-profile-select") as HTMLSelectElement).value).toBe("builtin-director"));
+		const options = Array.from(getByTestId("agent-settings-profile-select").querySelectorAll("option"))
+			.map((option) => option.textContent);
+		expect(options).toContain("Вне роли");
+		expect(options).toContain("Режиссёр");
+		expect(options).toContain("My grim director");
 	});
 });

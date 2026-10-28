@@ -240,6 +240,8 @@ function renderPane(over: {
   isMobile?: boolean;
   copilotContext?: CopilotContextController;
   onStarterPick?: (text: string) => void;
+  emptyPresentation?: import("../../../lib/agent-builtin-profiles.js").AgentBuiltinProfilePresentation;
+  handoffRow?: import("../../../lib/agent-builtin-profiles.js").AgentBuiltinProfileHandoff & { onActivate: () => void };
 } = {}) {
   const ctrl = over.ctrl ?? makeCtrl();
   const utils = render(
@@ -279,6 +281,8 @@ function renderPane(over: {
         handleUnpinContext={() => {}}
         composerTopSlot={null}
         onStarterPick={over.onStarterPick}
+        emptyPresentation={over.emptyPresentation}
+        handoffRow={over.handoffRow}
         refreshMessages={() => {}}
       />
     </I18nextProvider>,
@@ -712,6 +716,86 @@ describe("AgentChatPane — starter prompts (AP-18)", () => {
 
     expect(utils.queryByTestId("agent-starter-0")).toBeNull();
     // The empty title/subtitle still render (AS-8c3a, untouched).
+    expect(utils.getByText("agent_title")).toBeDefined();
+  });
+});
+
+// ─── DR-7: the active built-in's own empty state + the «Вне роли» hand-off ───
+// The pane resolves the presentation's keys through `t` (key echo under the
+// isolated i18n), swaps the icon, and forwards the hand-off row; the SHELL
+// owns WHICH profile is effective and the profile write (pinned in
+// AgentShellPlan.test.tsx). A click on the hand-off row rides the SAME
+// AP-18 path (prefill + focus) with the profile switch alongside.
+describe("AgentChatPane — per-profile empty state (DR-7)", () => {
+  const DIRECTOR_PRESENTATION = {
+    starterKeys: [
+      "agent_starter_director_plan",
+      "agent_starter_director_character_card",
+      "agent_starter_director_scene_tracker",
+      "agent_starter_director_recap",
+    ] as const,
+    titleKey: "agent_profile_name_builtin_director",
+    subKey: "agent_director_empty_sub",
+  } as const;
+
+  it("the director presentation replaces the host's starters, title, subtitle and icon", () => {
+    const utils = renderPane({
+      messages: [],
+      onStarterPick: () => {},
+      emptyPresentation: DIRECTOR_PRESENTATION,
+    });
+
+    // The director's four starters render INSTEAD of the host's.
+    expect(utils.getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan");
+    expect(utils.getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
+    expect(utils.queryByTestId("agent-starter-4")).toBeNull();
+    // The title/subtitle come from the presentation's keys (not the host's).
+    expect(utils.getByText("agent_profile_name_builtin_director")).toBeDefined();
+    expect(utils.getByText("agent_director_empty_sub")).toBeDefined();
+    // The icon swaps to the director's accent film glyph (default = sparkles
+    // at text-t3, pinned by every other empty-state test in this file).
+    const icon = document.querySelector(".empty-icon svg");
+    expect(icon?.getAttribute("class")).toContain("text-accent");
+  });
+
+  it("the hand-off row renders UNDER the host's starters; a click switches the profile and prefills the composer (never sent)", () => {
+    const seen: string[] = [];
+    const onActivate = mock();
+    const utils = renderPane({
+      messages: [],
+      onStarterPick: (text) => seen.push(text),
+      handoffRow: {
+        rowKey: "sidechat_director_row",
+        prefillKey: "agent_starter_director_plan",
+        onActivate,
+      },
+    });
+
+    // The row sits under the four starter rows (mockup §3: btn lead after
+    // the starters).
+    const row = utils.getByTestId("agent-handoff-row");
+    expect(row.textContent).toBe("sidechat_director_row");
+    const starter = utils.getByTestId("agent-starter-3");
+    expect((row.compareDocumentPosition(starter) & Node.DOCUMENT_POSITION_PRECEDING) !== 0).toBe(true);
+    // The host's own starters still render above it.
+    expect(utils.getByTestId("agent-starter-0").textContent).toBe("agent_starter_experience_game");
+
+    fireEvent.click(row);
+    // BOTH halves fire: the profile switch and the SAME AP-18 prefill path
+    // (the director's first starter text, key echo), composer focused.
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(["agent_starter_director_plan"]);
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("copilot-chat-input");
+    // Nothing was sent — the click only switches + prefills.
+    expect(utils.ctrl.handleSend).not.toHaveBeenCalled();
+    expect(utils.ctrl.handleAnswer).not.toHaveBeenCalled();
+  });
+
+  it("no hand-off row and the host's own starters without the DR-7 props (byte-identical default)", () => {
+    const utils = renderPane({ messages: [], onStarterPick: () => {} });
+
+    expect(utils.queryByTestId("agent-handoff-row")).toBeNull();
+    expect(utils.getByTestId("agent-starter-0").textContent).toBe("agent_starter_experience_game");
     expect(utils.getByText("agent_title")).toBeDefined();
   });
 });

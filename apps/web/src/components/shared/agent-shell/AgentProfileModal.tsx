@@ -29,6 +29,7 @@ import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.j
 import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
 import { resolveAgentProfileToolLabel } from "./agent-tool-labels.js";
 import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
@@ -544,7 +545,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 						data-testid={`copilot-profile-row-name-${p.id}`}
 						className="whitespace-normal break-words"
 					>
-						{p.name}
+						{builtinProfileDisplayName(p.id, agentKind, p.name, t)}
 					</span>
 				);
 				const tags = (p.isBuiltIn || showDefaultPill) ? (
@@ -586,7 +587,7 @@ function ProfileList({ profiles, isLoading, selectedId, activeProfileId, default
 				);
 			}}
 			renderOverlayRow={(item) => (
-				<MasterListDragOverlayRow active={item.id === activeProfileId} title={item.name} />
+				<MasterListDragOverlayRow active={item.id === activeProfileId} title={builtinProfileDisplayName(item.id, agentKind, item.name, t)} />
 			)}
 			footer={(
 				<div className="shrink-0 border-t border-border px-3 pt-3">
@@ -634,7 +635,7 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 		<div className="flex flex-col gap-5">
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
-					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{profile.name}</h3>
+					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{builtinProfileDisplayName(profile.id, profile.agentKind, profile.name, t)}</h3>
 					<span data-testid="copilot-profile-detail-tag">
 						<MasterListTag>
 							{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}

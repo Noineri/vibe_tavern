@@ -7,6 +7,7 @@ import { MasterListTag } from "../master-list/master-list-tag.js";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { BUILTIN_PROFILE_ID, useParkedProfileChoice } from "./use-agent-profile-assignment.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * AgentProfileChip (DIRECTOR_MODE_PLAN DR-6, mockup §2) — the header's
@@ -102,8 +103,13 @@ export function AgentProfileChip({
 	// the sentinel), and none until the list has loaded (an unloaded list
 	// resolves every id to the seed anyway, but the name lookup must not
 	// render an empty pill mid-load).
-	const effectiveName = profiles.find((p) => p.id === effectiveId)?.name;
-	if (effectiveId === BUILTIN_PROFILE_ID || effectiveName === undefined) return null;
+	const fallbackName = profiles.find((p) => p.id === effectiveId)?.name;
+	if (effectiveId === BUILTIN_PROFILE_ID || fallbackName === undefined) return null;
+	// DR-7: the two sidechat built-ins render localized (the OOC seed and
+	// the director, via their i18n name keys) through the ONE display-name
+	// derivation; every other
+	// profile (user profiles, other kinds' built-ins) renders the wire name.
+	const effectiveLabel = builtinProfileDisplayName(effectiveId, agentKind, fallbackName, t);
 
 	return (
 		<Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
@@ -118,7 +124,7 @@ export function AgentProfileChip({
 						"transition-[filter] duration-100 hover:brightness-110",
 					)}
 				>
-					<span className="whitespace-nowrap">{effectiveName}</span>
+					<span className="whitespace-nowrap">{effectiveLabel}</span>
 					<Icons.Caret direction={menuOpen ? "u" : "d"} className="h-3 w-3 shrink-0" />
 				</button>
 			</Popover.Trigger>
@@ -139,7 +145,7 @@ export function AgentProfileChip({
 								<>
 									{isActive && <Icons.Check className="h-3.5 w-3.5 shrink-0" />}
 									<span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)]">
-										{p.name}
+										{builtinProfileDisplayName(p.id, agentKind, p.name, t)}
 									</span>
 									<MasterListTag>
 										{p.isBuiltIn ? t("agent_profile_chip_tag_builtin") : t("agent_profile_chip_tag_own")}

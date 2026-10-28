@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, Dices, FileText, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -158,6 +158,12 @@ export const Ic = {
   play: (props?: { className?: string }) => <Play size={13} strokeWidth={2} {...props} />,
   // Lucide `Pause` — the playing twin of `play`.
   pause: (props?: { className?: string }) => <Pause size={13} strokeWidth={2} {...props} />,
+  // Lucide `Film` — the director's film-strip glyph (DIRECTOR_MODE_PLAN DR-7,
+  // mockup §3's ti-movie; owner ruling 2026-10-27: Film, not Clapperboard).
+  // Used by the director's empty state (h-6 w-6, accent) and the OOC
+  // hand-off row icon; adopts through the registry's usual lucide path
+  // (native size/stroke, className passthrough).
+  film: (props?: { className?: string }) => <Film size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

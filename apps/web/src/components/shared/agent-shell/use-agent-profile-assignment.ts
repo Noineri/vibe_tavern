@@ -5,6 +5,7 @@ import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
 import { getAgentChatSettings, patchAgentChatSettings } from "../../../api/agent-chat-settings-api.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import type { TFunc } from "../../../i18n/context.js";
+import { BUILTIN_PROFILE_ID } from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * Assignment logic for `AgentProfileModal` (AP-24 extraction — AP-27 reuses
@@ -24,7 +25,15 @@ import type { TFunc } from "../../../i18n/context.js";
  * (dropdown / menu) adapter that parks a choice and commits it through
  * the hook above; see that hook's header for its provenance.
  */
-export const BUILTIN_PROFILE_ID = "builtin";
+
+/**
+ * The first built-in profile's id sentinel — "builtin" (a stored null
+ * assignment resolves to the seed; a chat row pinning it pins the seed).
+ * Defined in `lib/agent-builtin-profiles.ts` (DR-7) so the sidechat
+ * built-in derivations and this hook share ONE spelling; re-exported here
+ * for the existing importers.
+ */
+export { BUILTIN_PROFILE_ID };
 
 /**
  * The effective profile id for a chat-target modal (SC-0k) — the modal-side

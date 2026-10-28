@@ -30,6 +30,7 @@ import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js"
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 
 useDomEnv();
 
@@ -193,6 +194,22 @@ function jsonResponse(value: unknown, status = 200): Response {
 	return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
+// DR-7: per-test mutable canned state — the (chat, kind) settings row the
+// effective-profile reads resolve, the branch plan payload, and the PATCH
+// bodies the hand-off row's write produces.
+const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
+let dr7ChatProfileId: string | null;
+let dr7Plan: AgentPlan;
+const dr7ChatSettingsPatches: string[] = [];
+
+const SIDECHAT_PROFILES = {
+	profiles: [
+		{ id: "builtin", name: "Sidechat OOC", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "builtin-director", name: "Director", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		{ id: "cprof_user", name: "My grim director", isBuiltIn: false, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+	],
+};
+
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 	const path = new URL(String(input), "http://gateway.test").pathname;
 	const method = (init?.method ?? "GET").toUpperCase();
@@ -202,7 +219,27 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 	}
 	if (path.includes("/branches/") && path.endsWith("/plan")) {
 		planUrls.push(path);
-		return jsonResponse({ plan: PLAN });
+		return jsonResponse({ plan: dr7Plan });
+	}
+	// DR-7: the sidechat host's chat-kind routes — the active thread (canned
+	// wire), the sessions list, the messages/events reads, the profiles list
+	// (the chip's load feeds BOTH parked-choice instances), and the (chat,
+	// kind) settings row (GET resolves the effective profile; PATCH is the
+	// hand-off row's write, recorded verbatim).
+	if (method === "GET" && path.endsWith("/active")) return jsonResponse(THREAD);
+	if (method === "GET" && path.endsWith("/sessions")) return jsonResponse([]);
+	if (method === "GET" && path.endsWith("/messages")) return jsonResponse([]);
+	if (method === "GET" && path.endsWith("/events")) return jsonResponse([]);
+	if (method === "GET" && path.includes("/api/copilot/profiles")) return jsonResponse(SIDECHAT_PROFILES);
+	if (path.endsWith("/settings")) {
+		const chatId = path.split("/")[4] ?? "";
+		if (method === "PATCH") {
+			dr7ChatSettingsPatches.push(String(init?.body ?? ""));
+			const body = JSON.parse(String(init?.body ?? "{}")) as { profileId?: string | null };
+			dr7ChatProfileId = body.profileId ?? null;
+			return jsonResponse({ chatId, agentKind: "sidechat-ooc", profileId: dr7ChatProfileId, updatedAt: "" });
+		}
+		return jsonResponse({ chatId, agentKind: "sidechat-ooc", profileId: dr7ChatProfileId, updatedAt: "" });
 	}
 	if (path.includes("personas") || path.includes("lorebook") || path.endsWith("/api/scripts/all")) return jsonResponse([]);
 	if (path.includes("coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
@@ -241,6 +278,9 @@ beforeAll(async () => {
 	({ AgentShell } = await import("./AgentShell.js"));
 	({ registerAgentHost, scriptOwnerId } = await import("../../../lib/agent-host-registry.js"));
 	const experienceApi = await import("../../../api/experience-copilot-api.js");
+	// DR-7: the REAL sidechat host registers the kind the empty-state tests
+	// mount (its transport + plan owner + meter labels all live there).
+	await import("../../chat/sidechat/sidechat-host.js");
 	stubTransport = () => ({
 		sendStream: experienceApi.streamExperienceCopilot,
 		answerAsk: experienceApi.answerCopilotAsk,
@@ -264,6 +304,12 @@ beforeAll(async () => {
 beforeEach(() => {
 	planUrls.length = 0;
 	fetchRouter.mockClear();
+	dr7ChatProfileId = null;
+	dr7Plan = PLAN;
+	dr7ChatSettingsPatches.length = 0;
+	// DR-7: the chip/shell profile reads ride the shared profile store —
+	// start every test empty so the chip's mount load is the only filler.
+	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false, kind: "experience" });
 	useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
 	useAgentReviewRoundStore.setState({ roundsByThread: {} });
 	useSnapshotStore.setState({ allCharacters: [] });
@@ -276,6 +322,8 @@ beforeEach(() => {
 
 afterAll(() => {
 	globalThis.fetch = realFetch;
+	// DR-7: no sidechat profile list leaks to later files sharing the worker.
+	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false, kind: "experience" });
 	for (const unsub of unsubs) unsub();
 	unsubs = [];
 });
@@ -330,5 +378,94 @@ describe("AgentShell chat owner (SC-13a)", () => {
 		const stub = getByTestId("sc0i-settings-modal-stub");
 		expect(stub.getAttribute("data-chat-id")).toBe("sc13a-chat");
 		expect(stub.getAttribute("data-script-id")).toBe("");
+	});
+});
+
+// ─── DR-7: the sidechat empty state is profile-aware ───────────────────────
+// The REAL sidechat host mounted on a chat+branch owner (fetch-level canned
+// routes — no module mocks); key-echo i18n (provider-less renders echo keys
+// by construction, so these pins are co-load safe). The branch plan's EVENTS
+// are its tasks (the story-plan sync's projection); the plan route serves
+// `dr7Plan` per test.
+describe("AgentShell sidechat empty state (DR-7)", () => {
+	// Each test mounts under its OWN chat+branch owner: `useAgentPlan`'s
+	// cache is module-global and keyed by owner, so a shared key would
+	// serve the first test's plan to every later one (loadPlan early-returns
+	// once loaded). The router serves any owner path from the same `dr7`
+	// canned state.
+	function ownerFor(branchId: string) {
+		return { kind: "chat" as const, chatId: `dr7-chat-${branchId}`, branchId, agentKind: "sidechat-ooc" };
+	}
+
+	function renderSidechat(branchId: string) {
+		return render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={ownerFor(branchId)} isMobile={false} />));
+	}
+
+	it("the director effective: ITS four starters + title/subtitle, no hand-off row", async () => {
+		dr7ChatProfileId = "builtin-director";
+		dr7Plan = EMPTY_PLAN;
+		const { getByTestId, getByText, getAllByText, queryByTestId } = renderSidechat("director");
+		// Terminal state: the director's starters replace the host's once the
+		// (chat, kind) read + profile list land (before that the fallback
+		// renders — the composer alone is not a settle signal).
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
+		// The director's localized name shows in BOTH surfaces that render it
+		// here: the empty state's title AND the header chip's label (DR-7's
+		// one-derivation name — key echo under the isolated i18n).
+		expect(getByTestId("agent-profile-chip").textContent).toBe("agent_profile_name_builtin_director");
+		expect(getAllByText("agent_profile_name_builtin_director").length).toBeGreaterThanOrEqual(1);
+		expect(getByText("agent_director_empty_sub")).toBeDefined();
+		// The hand-off row is «Вне роли»'s — not the director's own.
+		expect(queryByTestId("agent-handoff-row")).toBeNull();
+	});
+
+	it("the first built-in: its four starters + the hand-off row; the click writes the chat row AND prefills the composer (never sent)", async () => {
+		dr7ChatProfileId = null;
+		dr7Plan = EMPTY_PLAN;
+		const { getByTestId } = renderSidechat("handoff");
+		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
+
+		// «Вне роли»'s own state is byte-identical plus the accent row.
+		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		const row = getByTestId("agent-handoff-row");
+		expect(row.textContent).toBe("sidechat_director_row");
+
+		fireEvent.click(row);
+		// The write is EXACTLY the DR-6 one: PATCH the (chat, kind) row with
+		// the director's id.
+		await waitFor(() => expect(dr7ChatSettingsPatches.length).toBeGreaterThan(0));
+		expect(dr7ChatSettingsPatches.some((body) => body.includes("builtin-director"))).toBe(true);
+		// The composer carries the director's first starter (key echo) —
+		// prefilled, NOT sent (no stream call fired).
+		expect((getByTestId("copilot-chat-input") as HTMLTextAreaElement).value).toBe("agent_starter_director_plan");
+		// The write landed locally: the empty state flips to the director's
+		// own starters (the same read the shell's instance holds).
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
+	});
+
+	it("hidden while the branch plan has events (tasks); the host's four starters stay", async () => {
+		dr7ChatProfileId = null;
+		dr7Plan = PLAN; // one task = one story event
+		const { getByTestId, queryByTestId } = renderSidechat("planned");
+		// Terminal state: the plan PANEL mounts once the branch plan with a
+		// task lands — only then is the row's absence stable (before it, the
+		// still-empty cache would render the row).
+		await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+		expect(queryByTestId("agent-handoff-row")).toBeNull();
+		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+	});
+
+	it("a user profile falls back to the host's starters and shows no hand-off row (owner ruling 2026-10-27)", async () => {
+		dr7ChatProfileId = "cprof_user";
+		dr7Plan = EMPTY_PLAN;
+		const { getByTestId, queryByTestId } = renderSidechat("user");
+		// Terminal state: the chip's label proves the effective read + the
+		// profile list landed (the raw wire name — user profiles never
+		// localize); the starter fallback alone cannot (it is also the
+		// pre-read state).
+		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My grim director"));
+		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		expect(queryByTestId("agent-handoff-row")).toBeNull();
 	});
 });

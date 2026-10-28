@@ -16,6 +16,7 @@ import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * Assistant settings summary (AGENT_SHELL_POLISH AP-27, mockup §4) — the
@@ -175,7 +176,7 @@ export function AgentSettingsModal({
 								<>
 									<DropdownSelect
 										value={chosenId ?? effectiveId}
-										options={profiles.map((p) => ({ id: p.id, label: p.name }))}
+										options={profiles.map((p) => ({ id: p.id, label: builtinProfileDisplayName(p.id, agentKind, p.name, t) }))}
 										onChange={choose}
 										disabled={!profilesLoaded || profiles.length === 0}
 										searchable={false}
