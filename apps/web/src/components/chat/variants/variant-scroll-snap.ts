@@ -31,12 +31,20 @@ type VariantScrollSettleOptions = {
   /** Read at settle time, not from a stale render before resize or deletion. */
   readMetrics: () => VariantScrollMetrics;
   onSettle: (index: number) => void;
+  /** Explicit control intent only; reaching this exact slot can finish a
+   * programmatic scroll before a delayed native scrollend. Never infer it
+   * from touch displacement or velocity. Clear it on new user input. */
+  readRequestedIndex?: () => number | null;
   /** Clock boundary; a deterministic scheduler can be supplied by tests. */
   schedule?: ScheduleSettle;
 };
 
 const FALLBACK_QUIET_MS = 120;
 const SNAP_TOLERANCE_PX = 1;
+
+function isSnapAligned(metrics: VariantScrollMetrics, index: number): boolean {
+  return Math.abs(metrics.scrollLeft - index * metrics.slotWidth) <= SNAP_TOLERANCE_PX;
+}
 
 const scheduleTimeout: ScheduleSettle = (callback, delayMs) => {
   const timer = setTimeout(callback, delayMs);
@@ -46,9 +54,10 @@ const scheduleTimeout: ScheduleSettle = (callback, delayMs) => {
 /** Observe a native scroller without owning its motion or selection state.
  * Modern browsers own settling via scrollend; older engines get a quiet-scroll
  * fallback that only accepts an aligned snap point after all touches end.
+ * An explicit control request may finish at its own physical snap position.
  * Neither path uses an animation promise or an interruptible animation lock. */
 export function observeVariantScrollSettle(target: EventTarget, options: VariantScrollSettleOptions): () => void {
-  const { readMetrics, onSettle, schedule = scheduleTimeout } = options;
+  const { readMetrics, onSettle, readRequestedIndex = () => null, schedule = scheduleTimeout } = options;
   const nativeScrollEnd = "onscrollend" in target;
   let pending = false;
   let touching = false;
@@ -68,7 +77,7 @@ export function observeVariantScrollSettle(target: EventTarget, options: Variant
     if (index === null) return;
     // A quiet interval can occur mid-drag or during iOS rubber-banding.
     // Do not treat that as a landing; the next scroll will re-arm detection.
-    if (!nativeScrollEnd && Math.abs(metrics.scrollLeft - index * metrics.slotWidth) > SNAP_TOLERANCE_PX) return;
+    if (!nativeScrollEnd && !isSnapAligned(metrics, index)) return;
     pending = false;
     onSettle(index);
   };
@@ -84,6 +93,17 @@ export function observeVariantScrollSettle(target: EventTarget, options: Variant
     // Nested code blocks or other scrollable panel contents are not the pager.
     if (event.target !== target) return;
     pending = true;
+    const requested = readRequestedIndex();
+    if (requested !== null && !touching) {
+      const metrics = readMetrics();
+      if (getVariantScrollIndex(metrics) === requested && isSnapAligned(metrics, requested)) {
+        // A chevron has already named the destination. Its physical arrival
+        // is sufficient; do not keep the old panel height until scrollend.
+        cancel();
+        settle();
+        return;
+      }
+    }
     scheduleFallback();
   };
   const onScrollEnd = (event: Event) => {
@@ -101,13 +121,12 @@ export function observeVariantScrollSettle(target: EventTarget, options: Variant
   target.addEventListener("scroll", onScroll, { passive: true });
   if (nativeScrollEnd) {
     target.addEventListener("scrollend", onScrollEnd);
-  } else {
-    // Touch events retain their start target during native scrolling, unlike
-    // pointer events, which get pointercancel when the browser takes over.
-    target.addEventListener("touchstart", onTouchStart, { passive: true });
-    target.addEventListener("touchend", onTouchEnd, { passive: true });
-    target.addEventListener("touchcancel", onTouchEnd, { passive: true });
   }
+  // Touch events retain their start target during native scrolling, unlike
+  // pointer events. Both settle paths must reject arrival while a finger is down.
+  target.addEventListener("touchstart", onTouchStart, { passive: true });
+  target.addEventListener("touchend", onTouchEnd, { passive: true });
+  target.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
   return () => {
     disposed = true;

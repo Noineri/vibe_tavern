@@ -87,6 +87,11 @@ The browser now owns axis arbitration, momentum, snapping and interruption; ther
 **Feel trade-off:** a slow native drag crosses roughly half a slot to change pages (rather than the old ~22% threshold); native momentum still allows a flick to land early.
 This update covers the pager engine only; display-regex parity, smooth external chevrons and mobile scroll-to-start are separate report steps.
 
+**Chevron-arrival follow-up:** an explicit adjacent control request may commit when its named snap position is physically reached within the existing 1px rounding tolerance, without waiting for a later native `scrollend` notification.
+The former scrollend-only gate could leave the old height after the new panel was already visible.
+This fast path never infers intent from a touch gesture: new pointer/touch/wheel/keyboard input, resize, busy activation and external selection clear the request; ordinary swipes retain settle-only commits.
+Height measurement and the list-owned reading-navigation transaction still begin at the actual landing, not when the arrow is pressed; no timer or velocity threshold is added.
+
 ---
 
 ## AD-003: Portal Overlay for Desktop Variant Controls

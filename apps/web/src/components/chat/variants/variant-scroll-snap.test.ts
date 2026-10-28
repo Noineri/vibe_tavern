@@ -26,7 +26,7 @@ function createClock() {
   };
 }
 
-function setup(nativeScrollEnd: boolean) {
+function setup(nativeScrollEnd: boolean, readRequestedIndex?: () => number | null) {
   const target = new EventTarget();
   if (nativeScrollEnd) Object.defineProperty(target, "onscrollend", { value: null });
   const clock = createClock();
@@ -36,6 +36,7 @@ function setup(nativeScrollEnd: boolean) {
     readMetrics: () => metrics,
     onSettle: (index) => { settled.push(index); },
     schedule: clock.schedule,
+    readRequestedIndex,
   });
   return {
     target, clock, metrics, settled, dispose,
@@ -104,6 +105,45 @@ describe("getVariantRenderWindow", () => {
 });
 
 describe("observeVariantScrollSettle — native scrollend", () => {
+  test("an explicit request lands as soon as its own snap position is reached, without waiting for scrollend", () => {
+    for (const native of [true, false]) {
+      const s = setup(native, () => 2);
+      s.scrollTo(320); // Another aligned slot is not the requested destination.
+      s.scrollTo(620);
+      expect(s.settled).toEqual([]);
+      s.scrollTo(639.5);
+      expect(s.settled).toEqual([2]);
+      s.target.dispatchEvent(new Event("scrollend"));
+      s.clock.advance(200);
+      expect(s.settled).toEqual([2]);
+      expect(s.clock.pendingCount).toBe(0);
+      s.dispose();
+    }
+  });
+
+  test("an explicit request cannot commit while a finger is held, even on the native path", () => {
+    const s = setup(true, () => 2);
+    s.touch("touchstart", 1);
+    s.scrollTo(640);
+    expect(s.settled).toEqual([]);
+    s.touch("touchend", 0);
+    s.target.dispatchEvent(new Event("scrollend"));
+    expect(s.settled).toEqual([2]);
+    s.dispose();
+  });
+
+  test("removing a pending request restores normal native settle-only behavior", () => {
+    let requested: number | null = 2;
+    const s = setup(true, () => requested);
+    s.scrollTo(320);
+    requested = null;
+    s.scrollTo(640);
+    expect(s.settled).toEqual([]);
+    s.target.dispatchEvent(new Event("scrollend"));
+    expect(s.settled).toEqual([2]);
+    s.dispose();
+  });
+
   test("feature-detects support, waits for scrollend, and commits once per scroll sequence", () => {
     const s = setup(true);
     s.scrollTo(180);

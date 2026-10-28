@@ -183,7 +183,7 @@ div (viewport + flex track, overflow-x: auto, overflow-y: hidden, snap-x mandato
 - **Commit flow:** `variant-scroll-snap.ts` observes native `scrollend`, or a feature-detected quiet-scroll fallback on older browsers; the fallback requires an aligned snap point and all touches ending.
 - **Busy lock:** Hidden horizontal overflow and a settle-time guard apply the same `isBusy && !swipeWhileBusy` rule as the arrows; pure image slots retain their busy exception.
 - **Accessibility and translation:** Only the current slot is interactive and translated; neighbors are inert, `aria-hidden` and `translate="no"`.
-- **Chevron requests:** A narrow ref handle starts native `scrollTo({ behavior: "smooth" })`, or `"auto"` under reduced motion, without changing the selected variant or height until settle.
+- **Chevron requests:** A narrow ref handle starts native `scrollTo({ behavior: "smooth" })`, or `"auto"` under reduced motion, without changing the selected variant or height before arrival; reaching the explicitly requested snap position commits immediately instead of waiting for a delayed `scrollend`.
 - **External selection:** Structural changes and jump-list choices outside the adjacent render window still align instantly.
 - **Display text:** Static content and carousel panels share `deriveVariantDisplayText`; canonical variant text and metadata are not rewritten by display regex.
 

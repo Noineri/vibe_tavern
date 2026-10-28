@@ -35,6 +35,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
   const slotWidthRef = useRef(0);
+  const requestedIndexRef = useRef<number | null>(null);
   const finishNavigationRef = useRef<(() => void) | undefined>(undefined);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const currentIndex = Math.max(0, Math.min(variants.length - 1, selectedVariantIndex));
@@ -44,6 +45,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   const renderWindow = getVariantRenderWindow(currentIndex, variants.length);
 
   const selectSettledVariant = (index: number) => {
+    requestedIndexRef.current = null;
     finishNavigationRef.current?.();
     const el = viewportRef.current;
     finishNavigationRef.current = (el ? props.onBeforeSelect?.(el) : undefined) ?? undefined;
@@ -60,6 +62,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
         selectSettledVariant(index);
         return;
       }
+      requestedIndexRef.current = index;
       el.scrollTo({
         left: index * slotWidthRef.current,
         behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
@@ -82,6 +85,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     const gap = Number.parseFloat(getComputedStyle(el).columnGap) || 0;
     const pitch = width + gap;
     if (pitch === slotWidthRef.current) return;
+    requestedIndexRef.current = null;
     slotWidthRef.current = pitch;
     alignSelected();
   });
@@ -116,6 +120,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     return observeVariantScrollSettle(el, {
       readMetrics: () => readMetrics(),
       onSettle: (index) => commitSettled(index),
+      readRequestedIndex: () => requestedIndexRef.current,
     });
   }, [hasVariants]);
 
@@ -160,15 +165,22 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     // Structural/external selection aligns instantly; chevrons use the handle
     // above and do not change selection until the native motion settles.
     // Lock activation also cancels an in-flight swipe back to the selection.
+    requestedIndexRef.current = null;
     alignSelected();
   }, [currentIndex, currentVariant?.id, variants.length, swipeLocked]);
 
   if (!currentVariant) return null;
 
+  const clearRequestedIndex = () => { requestedIndexRef.current = null; };
+
   return (
     <div
       ref={viewportRef}
       data-testid="mobile-variant-carousel"
+      onPointerDown={clearRequestedIndex}
+      onTouchStart={clearRequestedIndex}
+      onWheel={clearRequestedIndex}
+      onKeyDown={clearRequestedIndex}
       className={cn(
         "relative flex items-start gap-3 overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide",
         swipeLocked ? "overflow-x-hidden" : "overflow-x-auto",

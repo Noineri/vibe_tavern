@@ -87,6 +87,73 @@ function mount(overrides: Partial<Parameters<typeof MobileVariantCarousel>[0]> =
 }
 
 describe("MobileVariantCarousel — native pager", () => {
+  test("a visually landed chevron updates selection and height without a delayed scrollend", () => {
+    for (const target of [1, 3]) {
+      const ref = createRef<MobileVariantCarouselHandle>();
+      const s = mount({ ref });
+      s.viewport.scrollTo = () => {};
+      act(() => { ref.current?.selectVariant(target); });
+      s.scroll((664 + target * 332) / 2);
+      expect(s.onSelectVariant.mock.calls).toEqual([]);
+      expect(s.viewport.style.height).toBe("200px");
+      s.scroll(target * 332);
+      const expected: [number, -1 | 1][] = [[target, target > 2 ? 1 : -1]];
+      expect(s.onSelectVariant.mock.calls).toEqual(expected);
+      s.update({ selectedVariantIndex: target });
+      expect(s.viewport.style.height).toBe(`${100 + target * 50}px`);
+      s.settle(); // A late native completion must not commit a second time.
+      expect(s.onSelectVariant.mock.calls).toEqual(expected);
+      s.unmount();
+    }
+  });
+
+  test("new touch input cancels the chevron fast path without changing ordinary swipe settling", () => {
+    const ref = createRef<MobileVariantCarouselHandle>();
+    const s = mount({ ref });
+    s.viewport.scrollTo = () => {};
+    act(() => { ref.current?.selectVariant(3); });
+    act(() => { s.viewport.dispatchEvent(Object.assign(new Event("touchstart", { bubbles: true }), { touches: { length: 1 } })); });
+    s.scroll(996);
+    expect(s.onSelectVariant.mock.calls).toEqual([]);
+    act(() => { s.viewport.dispatchEvent(Object.assign(new Event("touchend", { bubbles: true }), { touches: { length: 0 } })); });
+    s.scroll(996);
+    expect(s.onSelectVariant.mock.calls).toEqual([]);
+    s.settle();
+    expect(s.onSelectVariant.mock.calls).toEqual([[3, 1]]);
+  });
+
+  test("pointer, wheel and keyboard input also invalidate a pending explicit request", () => {
+    for (const type of ["pointerdown", "wheel", "keydown"]) {
+      const ref = createRef<MobileVariantCarouselHandle>();
+      const s = mount({ ref });
+      s.viewport.scrollTo = () => {};
+      act(() => { ref.current?.selectVariant(3); });
+      act(() => { s.viewport.dispatchEvent(new Event(type, { bubbles: true })); });
+      s.scroll(996);
+      expect(s.onSelectVariant.mock.calls).toEqual([]);
+      s.settle();
+      expect(s.onSelectVariant.mock.calls).toEqual([[3, 1]]);
+      s.unmount();
+    }
+  });
+
+  test("resize, busy activation and external selection invalidate old chevron intent", () => {
+    for (const change of ["resize", "busy", "selection"]) {
+      const ref = createRef<MobileVariantCarouselHandle>();
+      const s = mount({ ref });
+      s.viewport.scrollTo = () => {};
+      act(() => { ref.current?.selectVariant(3); });
+      if (change === "resize") s.resize(360);
+      else if (change === "busy") { s.update({ isBusy: true }); s.update({ isBusy: false }); }
+      else s.update({ selectedVariantIndex: 1 });
+      s.scroll(3 * (change === "resize" ? 372 : 332));
+      expect(s.onSelectVariant.mock.calls).toEqual([]);
+      s.settle();
+      expect(s.onSelectVariant.mock.calls).toEqual([[3, 1]]);
+      s.unmount();
+    }
+  });
+
   test("reading navigation starts before selection and finishes after the native height transition", async () => {
     for (const cancelTransition of [false, true]) {
       let finishHeight: (() => void) | undefined;
