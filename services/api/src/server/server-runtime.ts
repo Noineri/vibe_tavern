@@ -27,6 +27,7 @@ import {
 import { createProxyService } from "../domain/providers/proxy-service.js";
 import { QuotaService } from "../domain/quota/quota-service.js";
 import { createQuotaFeature } from "../domain/quota/quota-feature.js";
+import { createAgentRunEventsFeature } from "../domain/agent/agent-run-events-feature.js";
 import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
@@ -357,6 +358,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));
+	const agentRunEventsFeature = createAgentRunEventsFeature({ registry: runtime.experienceCopilot.agentRuns });
+	features.register(agentRunEventsFeature);
+	addRuntimeTeardown(() => agentRunEventsFeature.deactivate());
 
 	// Provider quota poller — automatic, per-profile, no manual refresh surface.
 	// Started after the feature registry so its events have subscribers.

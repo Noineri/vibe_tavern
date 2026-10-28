@@ -4,15 +4,28 @@
  * to a request. A subscriber owns only its cursor and cancellation signal;
  * only stop() can abort the turn. Logs live until the key's next start.
  */
-import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import { isRecord, log, type AgentThreadOwner, type AgentRunState } from "@vibe-tavern/domain";
 import type { AgentStreamEvent } from "./agent-stream.js";
 
 export type AgentRunEvent = Readonly<AgentStreamEvent> & { readonly seq: number };
+export interface AgentRunDescriptor {
+  readonly kind: string;
+  readonly title: string;
+}
+export type AgentRunLifecycle<OWNER extends object> = {
+  readonly threadId: string;
+  readonly owner: Readonly<OWNER>;
+  readonly state: AgentRunState;
+} & AgentRunDescriptor;
+const logger = log.tag("agent.run");
 
 export interface ActiveAgentRun<OWNER extends object = AgentThreadOwner> {
   readonly threadId: string;
   readonly owner: Readonly<OWNER>;
   readonly startedAt: number;
+  /** Present for app-visible runs; internal registry users may omit these. */
+  readonly kind?: string;
+  readonly title?: string;
 }
 
 export interface AgentRunHandle<OWNER extends object = AgentThreadOwner> extends ActiveAgentRun<OWNER> {
@@ -41,31 +54,35 @@ interface StoredRun<OWNER extends object> {
   readonly complete: () => void;
   running: boolean;
   failure: { readonly error: unknown } | null;
+  outcome: Exclude<AgentRunState, "started">;
 }
 
 type MakeTurn = (signal: AbortSignal) => AsyncIterable<AgentStreamEvent>;
 
 export class AgentRunRegistry<OWNER extends object = AgentThreadOwner> {
   private readonly runs = new Map<string, StoredRun<OWNER>>();
+  private readonly listeners = new Set<(event: AgentRunLifecycle<OWNER>) => void | Promise<void>>();
 
   constructor(private readonly deps: { readonly nowMs?: () => number } = {}) {}
 
-  start(threadId: string, owner: OWNER, makeTurn: MakeTurn): AgentRunHandle<OWNER> {
+  start(threadId: string, owner: OWNER, makeTurn: MakeTurn, descriptor?: AgentRunDescriptor): AgentRunHandle<OWNER> {
     if (this.runs.get(threadId)?.running) throw new AgentRunActiveError(threadId);
     const info: ActiveAgentRun<OWNER> = Object.freeze({
       threadId,
       owner: Object.freeze({ ...owner }),
       startedAt: (this.deps.nowMs ?? Date.now)(),
+      ...(descriptor ? { kind: descriptor.kind, title: descriptor.title } : {}),
     });
     let complete!: () => void;
     const done = new Promise<void>((resolve) => { complete = resolve; });
     const run: StoredRun<OWNER> = {
       info, controller: new AbortController(), events: [], waiters: new Set(),
-      complete, running: true, failure: null,
+      complete, running: true, failure: null, outcome: "finished",
     };
     // Reserve synchronously, BEFORE invoking user code or yielding control, so
     // concurrent/reentrant starts cannot both persist a turn in the same thread.
     this.runs.set(threadId, run);
+    this.publish(run, "started");
     void this.consume(run, makeTurn);
     return Object.freeze({ ...info, done });
   }
@@ -91,9 +108,29 @@ export class AgentRunRegistry<OWNER extends object = AgentThreadOwner> {
     return [...this.runs.values()].filter((run) => run.running).map((run) => ({ ...run.info }));
   }
 
+  /** App-lifetime observer, not a turn subscriber: cancellation never controls execution. */
+  onLifecycle(listener: (event: AgentRunLifecycle<OWNER>) => void | Promise<void>): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private publish(run: StoredRun<OWNER>, state: AgentRunState): void {
+    const { threadId, owner, kind, title } = run.info;
+    if (kind === undefined || title === undefined) return;
+    const notification = Object.freeze({ threadId, owner, kind, title, state });
+    for (const listener of this.listeners) {
+      try {
+        void Promise.resolve(listener(notification)).catch((error: unknown) => logger.error("Lifecycle listener failed", error));
+      } catch (error) {
+        logger.error("Lifecycle listener failed", error);
+      }
+    }
+  }
+
   private async consume(run: StoredRun<OWNER>, makeTurn: MakeTurn): Promise<void> {
     try {
       for await (const event of makeTurn(run.controller.signal)) {
+        observeOutcome(run, event);
         run.events.push(Object.freeze({ seq: run.events.length + 1, event: event.event, data: event.data }));
         wakeSubscribers(run);
       }
@@ -105,10 +142,26 @@ export class AgentRunRegistry<OWNER extends object = AgentThreadOwner> {
       // A finish/abort EVENT can precede persistence: only exhaustion releases
       // the slot, never the arrival of a terminal-looking payload in the log.
       run.running = false;
+      const state = run.controller.signal.aborted ? "stopped"
+        : run.failure || run.outcome === "failed" ? "failed" : run.outcome;
+      this.publish(run, state);
       run.complete();
       wakeSubscribers(run);
     }
   }
+}
+
+function observeOutcome<OWNER extends object>(run: StoredRun<OWNER>, event: AgentStreamEvent): void {
+  if (event.event === "error") run.outcome = "failed";
+  if (run.outcome === "failed") return;
+  if (event.event === "abort") run.outcome = "stopped";
+  if (event.event !== "tool-result" && event.event !== "finish") return;
+  let payload: unknown;
+  try { payload = JSON.parse(event.data); } catch { return; }
+  if (!isRecord(payload)) return;
+  if (event.event === "finish" && payload.finishReason === "error") run.outcome = "failed";
+  if (run.outcome === "finished" && event.event === "tool-result" && payload.toolName === "ask_user"
+    && payload.isError !== true && isRecord(payload.output) && payload.output.status === "awaiting_answer") run.outcome = "asking";
 }
 
 function wakeSubscribers<OWNER extends object>(run: StoredRun<OWNER>): void {

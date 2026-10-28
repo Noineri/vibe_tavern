@@ -14,6 +14,19 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { tag } from "./logger.js";
+import type { AgentThreadOwner } from "./agent-thread.js";
+
+/** Drafts have no host entity yet; never invent a script ID for them. */
+export type AgentRunOwner = AgentThreadOwner | { kind: "draft"; draftSessionId: string | null };
+export type AgentRunState = "started" | "finished" | "asking" | "failed" | "stopped";
+export interface AgentRunSummary {
+  readonly threadId: string;
+  readonly owner: AgentRunOwner;
+  readonly kind: string;
+  readonly title: string;
+  readonly startedAt: number;
+}
+export type AgentRunNotification = Omit<AgentRunSummary, "startedAt"> & { readonly state: AgentRunState };
 
 const eventBusLogger = tag("event-bus");
 
@@ -28,6 +41,8 @@ const eventBusLogger = tag("event-bus");
  *   }
  */
 export interface EventMap {
+  /** Server-owned agent turn lifecycle; terminal states follow persistence. */
+  "agent.run": AgentRunNotification;
   /** A message was fully appended to the chat (streaming done or non-streaming). */
   "message.appended": { chatId: string; branchId: string; messageId: string; role: "user" | "assistant" | "system" | "tool" };
   /** A new message was created (before any content is appended). */

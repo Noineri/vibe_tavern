@@ -73,7 +73,7 @@ import {
 import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
-import { ExperienceCopilotRunAdapter } from "./experience-copilot-run-adapter.js";
+import { ExperienceCopilotRunAdapter, describeCopilotRun } from "./experience-copilot-run-adapter.js";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
 
@@ -156,7 +156,11 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
      *  routes through (production runs vision-gate's real `describeAttachments`). */
     private readonly attachmentDescribeExecutor?: AttachmentDescribeExecutor,
   ) {
-    super(stores.experienceCopilot, async (threadId) => this.getKindStream(await this.resolveThreadKind(threadId)));
+    super(
+      stores.experienceCopilot,
+      async (threadId) => this.getKindStream(await this.resolveThreadKind(threadId)),
+      async (thread) => describeCopilotRun(stores, thread, await this.resolveThreadKind(thread.id)),
+    );
     this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
     // The resolver is constructed FIRST — the chat-settings pair below
     // receives the same instance the stream wiring uses.
