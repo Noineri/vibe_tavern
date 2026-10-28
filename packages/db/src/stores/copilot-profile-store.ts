@@ -35,6 +35,10 @@ export interface CopilotProfileRow {
   /** Owning agent kind (AS-3) — 'experience' for every pre-AS-3 row (the
    *  column default); immutable after create (update never writes it). */
   agentKind: string;
+  /** DR-7b: provenance — the built-in seed id this profile was duplicated
+   *  from (null = no source); immutable after create (update never writes
+   *  it, mirroring `agentKind`). */
+  sourceBuiltinId: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +50,9 @@ export interface CreateCopilotProfileData {
   toolSet: StoredCopilotToolSet;
   /** Omitted = 'experience' (the current web client sends no kind). */
   agentKind?: string;
+  /** DR-7b: provenance — the built-in seed id this profile is duplicated
+   *  from. Omitted = no source (stored as null). */
+  sourceBuiltinId?: string;
 }
 
 export type UpdateCopilotProfileData = Partial<CreateCopilotProfileData>;
@@ -109,6 +116,7 @@ export class CopilotProfileStore {
         basePrompt: data.basePrompt,
         toolSetJson: JSON.stringify(data.toolSet),
         agentKind,
+        sourceBuiltinId: data.sourceBuiltinId ?? null,
         sortOrder: nextSortOrder,
         createdAt: now,
         updatedAt: now,
@@ -123,8 +131,10 @@ export class CopilotProfileStore {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`Copilot profile '${id}' not found`);
 
-    // AS-3: `agent_kind` is immutable — intentionally no branch for it here,
-    // so an update can never convert a profile to another kind.
+    // AS-3 / DR-7b: `agent_kind` and `source_builtin_id` are immutable —
+    // intentionally no branch for either here, so an update can never
+    // convert a profile to another kind nor re-point (or clear) its
+    // recorded source.
     const values: Partial<typeof copilotProfiles.$inferInsert> = { updatedAt: this.clock.now() };
     if (data.name !== undefined) values.name = data.name;
     if (data.basePrompt !== undefined) values.basePrompt = data.basePrompt;
@@ -170,6 +180,7 @@ export class CopilotProfileStore {
       basePrompt: row.basePrompt,
       toolSet: parseToolSet(row.toolSetJson),
       agentKind: row.agentKind,
+      sourceBuiltinId: row.sourceBuiltinId ?? null,
       sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

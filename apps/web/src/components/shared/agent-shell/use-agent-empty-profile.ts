@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import type { TFunc } from "../../../i18n/context.js";
-import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
+import { getAgentHost, type AgentI18nKey, type AgentKind } from "../../../lib/agent-host-registry.js";
 import {
 	builtinProfileHandoff,
 	builtinProfilePresentation,
+	effectiveProfileStarterKeys,
 	BUILTIN_DIRECTOR_PROFILE_ID,
 	type AgentBuiltinProfileHandoff,
 	type AgentBuiltinProfilePresentation,
@@ -25,9 +26,12 @@ import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
  * instance — two consumers of the ONE hook; the shared profile store the
  * always-mounted chip loads feeds this instance's loaded-id resolution.
  *
- * Owner ruling 2026-10-27 (binding): EVERY user profile — duplicates of a
- * built-in included — falls back to the HOST's starters; the per-profile
- * presentation applies to built-in profiles only. The hand-off row is
+ * Owner ruling 2026-10-27 (split by DR-7b): the per-profile PRESENTATION
+ * (title/subtitle/icon) applies to built-in profiles only — a user profile
+ * keeps the host's own — while a user profile duplicated from a built-in
+ * (`sourceBuiltinId`, carried on the wire row) resolves the SOURCE's
+ * STARTERS through `effectiveProfileStarterKeys` (starters are the one
+ * thing a duplicate inherits). The hand-off row is
  * offered ONLY while the kind's FIRST built-in is effective (a user profile
  * never shows it) AND the branch plan has no events — the story plan's
  * events are its tasks, and the caller passes the same `useAgentPlan` value
@@ -38,8 +42,15 @@ import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
  * byte-identically to before this unit.
  */
 export interface AgentEmptyProfileResult {
-	/** The active built-in's own empty state, or undefined (the host's own). */
+	/** The active built-in's own empty state, or undefined (the host's own).
+	 *  Built-ins only — a user profile never resolves a presentation (its
+	 *  title/subtitle/icon stay the host's). */
 	emptyPresentation: AgentBuiltinProfilePresentation | undefined;
+	/** DR-7b: the effective profile's STARTER keys — the built-in's own
+	 *  (same four as `emptyPresentation.starterKeys` when that exists) or,
+	 *  for a user profile duplicated from a built-in, the SOURCE's starters.
+	 *  undefined = the host's `starterPromptKeys`. */
+	starterKeys: readonly AgentI18nKey[] | undefined;
 	/** The OOC hand-off row config + its profile-switch callback, or
 	 *  undefined (no row — another profile active, or the plan has events). */
 	handoffRow: (AgentBuiltinProfileHandoff & { onActivate: () => void }) | undefined;
@@ -99,10 +110,16 @@ export function useAgentEmptyProfile({
 	}, [effectiveId, bumpProfileChip]);
 
 	const emptyPresentation = builtinProfilePresentation(kind, effectiveId);
+	// DR-7b: starters resolve through the ONE derivation — a built-in's own,
+	// or the SOURCE built-in's for a user duplicate. The effective USER row
+	// comes from the same loaded list the parked choice resolved against;
+	// a built-in id (never a row) simply has no source to read.
+	const effectiveProfile = profiles.find((p) => p.id === effectiveId);
+	const starterKeys = effectiveProfileStarterKeys(kind, effectiveId, effectiveProfile?.sourceBuiltinId);
 	const profileHandoff = builtinProfileHandoff(kind, effectiveId);
 	const handoffRow =
 		profileHandoff !== undefined && plan.tasks.length === 0
 			? { ...profileHandoff, onActivate: () => choose(BUILTIN_DIRECTOR_PROFILE_ID) }
 			: undefined;
-	return { emptyPresentation, handoffRow };
+	return { emptyPresentation, starterKeys, handoffRow };
 }

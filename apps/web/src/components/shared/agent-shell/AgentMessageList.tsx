@@ -163,8 +163,11 @@ export interface AgentMessageListProps {
    *  `emptyTitle`/`emptySub` are resolved strings. */
   emptyIcon?: ReactNode;
   /** DR-7: the ACTIVE built-in profile's own starter keys (from
-   *  `builtinProfilePresentation`) — absent = the host's `starterPromptKeys`
-   *  (also the fallback for every user profile — owner ruling 2026-10-27). */
+   *  `builtinProfilePresentation`) — absent = the host's `starterPromptKeys`.
+   *  DR-7b: for a USER profile duplicated from a built-in the pane passes
+   *  the SOURCE built-in's starters instead (starters-only inheritance —
+   *  owner split ruling 2026-10-27); every user profile without a source
+   *  keeps the host's. */
   starterKeysOverride?: readonly AgentI18nKey[];
   /** DR-7: the OOC hand-off row under the starters (mockup §3) —
    *  the shell resolves the config + the profile-switch callback; the

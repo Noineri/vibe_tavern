@@ -245,6 +245,16 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   // recreated under the right kind, never converted. Default-only migration:
   // existing rows read as 'experience' with unchanged tool sets.
   agentKind: text('agent_kind').notNull().default('experience'),
+  // DR-7b: provenance — the built-in seed id this user profile was
+  // duplicated from (null = created from scratch, no recorded source).
+  // Immutable after create, exactly like `agent_kind` above: the store
+  // never writes it and the update contract omits it (a PATCH smuggling it
+  // is strict-rejected) — provenance is recorded once at duplication and
+  // never re-pointed. A duplicate inherits its source's STARTERS only
+  // (owner split ruling 2026-10-27); name/prompt/tools stay its own
+  // snapshots. Nullable with NO backfill: existing rows have no recorded
+  // source by definition.
+  sourceBuiltinId: text('source_builtin_id'),
   // superseded: skills are ungated (EXPERIENCE_COPILOT_PLAN_MODE_PLAN PM-8) —
   // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),

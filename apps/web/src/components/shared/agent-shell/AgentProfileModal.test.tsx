@@ -7,6 +7,8 @@
  *   - user profiles show edit + delete affordances;
  *   - "+ New profile" opens a blank editor; empty name blocks save (no RPC);
  *   - "Duplicate" on the built-in seed opens a create editor with a copy suffix;
+ *   - DR-7b: the duplicate's create body records provenance — the built-in's
+ *     own id, a user row's source passed through, no key without a source;
  *   - editing a user profile populates the editor and Save calls update;
  *     the PATCH body carries name/basePrompt/toolSet but NEVER agentKind
  *     (the update contract omits the immutable kind — owner-report edit 422),
@@ -543,6 +545,53 @@ describe("CopilotProfileModal — duplicate built-in", () => {
 		expect(value).toContain("Experience Authoring");
 		// The suffix key is returned verbatim by the mocked useT.
 		expect(value).toContain("copilot_profile_duplicate_suffix");
+	});
+});
+
+describe("CopilotProfileModal — duplicate provenance (DR-7b)", () => {
+	it("seeds the create body's sourceBuiltinId: built-in → its id; user-with-source → passthrough; user-without → no key", async () => {
+		// A user row that is itself a duplicate (source recorded on the wire).
+		const SOURCED: CopilotProfile = {
+			id: "cprof_sourced",
+			name: "My grim director",
+			isBuiltIn: false,
+			basePrompt: "You direct.",
+			toolSet: { write_buffer: true },
+			agentKind: "experience",
+			sourceBuiltinId: "builtin",
+		};
+		listCopilotProfiles.mockResolvedValue([BUILTIN, SOURCED, USER]);
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+
+		// 1) Duplicate the built-in seed → save: the create body records the seed's id.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(1));
+		expect(createCopilotProfile.mock.calls[0]![0].sourceBuiltinId).toBe("builtin");
+
+		// 2) Duplicate the SOURCED user row → save: the source passes through
+		//    (a copy of a duplicate is still a duplicate of the source).
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_sourced"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(2));
+		expect(createCopilotProfile.mock.calls[1]![0].sourceBuiltinId).toBe("builtin");
+
+		// 3) Duplicate the source-less user row → save: NO source key at all
+		//    (from-scratch shapes stay byte-identical for old payloads).
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(3));
+		expect("sourceBuiltinId" in createCopilotProfile.mock.calls[2]![0]).toBe(false);
 	});
 });
 

@@ -6,9 +6,12 @@
  * T0 pure-logic pins (no DOM, no i18n init — the display-name helper's `t`
  * is injected, so these pin WHICH keys are read, never locale files):
  *   - the presentation exists ONLY for the sidechat director built-in;
- *   - every other id — the first built-in, user profiles (duplicates
- *     included), other kinds' built-ins — falls back to the host's own
- *     (undefined), per the owner ruling 2026-10-27;
+ *   - every other id — the first built-in, other kinds' built-ins — falls
+ *     back to the host's own (undefined), per the owner ruling 2026-10-27;
+ *   - DR-7b: the STARTER-key derivation resolves the SOURCE built-in's
+ *     starters for a user duplicate (starters-only inheritance), the
+ *     built-in's own for a built-in, and the host's (undefined) everywhere
+ *     else;
  *   - the hand-off row exists ONLY for the sidechat kind's FIRST built-in;
  *   - the display name maps the two sidechat built-ins to their keys and
  *     passes every other id/kind through to the wire name.
@@ -20,6 +23,7 @@ import {
 	builtinProfileDisplayName,
 	builtinProfileHandoff,
 	builtinProfilePresentation,
+	effectiveProfileStarterKeys,
 } from "./agent-builtin-profiles.js";
 
 /** The injected t records the key it was called with (the locale files are
@@ -43,13 +47,34 @@ describe("agent-builtin-profiles (DR-7)", () => {
 	});
 
 	it("no presentation for the first built-in, user profiles, or other kinds — the host's own stays the fallback", () => {
-		// The owner ruling 2026-10-27: EVERY user profile (duplicates of a
-		// built-in included) falls back to the host's starters.
+		// The presentation stays BUILT-IN-only (title/subtitle/icon for a
+		// user profile remain the host's — owner split ruling 2026-10-27).
 		expect(builtinProfilePresentation("sidechat-ooc", BUILTIN_PROFILE_ID)).toBeUndefined();
 		expect(builtinProfilePresentation("sidechat-ooc", "cprof_dup_of_director")).toBeUndefined();
 		expect(builtinProfilePresentation("sidechat-ooc", BUILTIN_DIRECTOR_PROFILE_ID + "-wrong")).toBeUndefined();
 		expect(builtinProfilePresentation("experience", BUILTIN_DIRECTOR_PROFILE_ID)).toBeUndefined();
 		expect(builtinProfilePresentation("script", BUILTIN_PROFILE_ID)).toBeUndefined();
+	});
+
+	it("DR-7b: a user duplicate resolves the SOURCE built-in's starters — starters only", () => {
+		const directorStarters = builtinProfilePresentation("sidechat-ooc", BUILTIN_DIRECTOR_PROFILE_ID)?.starterKeys;
+		expect(directorStarters).toBeDefined();
+		// A user profile duplicated from the director inherits ITS starters.
+		expect(effectiveProfileStarterKeys("sidechat-ooc", "cprof_dup", "builtin-director")).toEqual(directorStarters);
+		// A built-in effective profile keeps its OWN starters (same four).
+		expect(effectiveProfileStarterKeys("sidechat-ooc", "builtin-director", undefined)).toEqual(directorStarters);
+		// Without a source → the host's own (undefined), for null and absent alike.
+		expect(effectiveProfileStarterKeys("sidechat-ooc", "cprof_dup", null)).toBeUndefined();
+		expect(effectiveProfileStarterKeys("sidechat-ooc", "cprof_dup", undefined)).toBeUndefined();
+		// A source with no presentation of its own (the FIRST built-in's empty
+		// state IS the host's) inherits nothing.
+		expect(effectiveProfileStarterKeys("sidechat-ooc", "cprof_dup", BUILTIN_PROFILE_ID)).toBeUndefined();
+		// A foreign kind's built-in id never resolves (presentations are keyed
+		// by kind — the server's same-kind create rule, defended client-side).
+		expect(effectiveProfileStarterKeys("experience", "cprof_dup", "builtin-director")).toBeUndefined();
+		// A built-in WITHOUT a presentation (the first built-in) keeps the
+		// host's starters even though it is a built-in.
+		expect(effectiveProfileStarterKeys("sidechat-ooc", BUILTIN_PROFILE_ID, undefined)).toBeUndefined();
 	});
 
 	it("the hand-off row exists only for the sidechat kind's FIRST built-in", () => {

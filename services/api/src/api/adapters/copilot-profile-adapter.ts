@@ -44,6 +44,14 @@ import { copilotProfileRowToWire } from "../../domain/interactive/copilot/copilo
  * not an edit: set/clear is served for built-in seed ids too (the read-only
  * guard above protects prompt/tools only), and deleting a USER profile
  * removes its model row with it.
+ *
+ * DR-7b: create accepts `sourceBuiltinId` (provenance — the built-in this
+ * duplicate came from). The source must be a built-in seed the OWNING kind
+ * declares (the same `builtinSeeds` resolution `requireAddressableProfile`
+ * reads); anything else — a foreign kind's built-in, a user id, an unknown
+ * id — is a 422 `copilot_profile_invalid_source_builtin`, never a silent
+ * strip. Update never sees the field (the update contract omits it — the
+ * `agentKind` immutability pattern).
  */
 export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -90,6 +98,11 @@ export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 		const agentKind = input.agentKind ?? "experience";
 		const descriptor = this.requireKind(agentKind);
 		this.requireToolSetForKind(descriptor.id, input.toolSet);
+		// DR-7b: provenance is validated at create — set once, immutable after
+		// (the update contract omits the field entirely).
+		if (input.sourceBuiltinId !== undefined) {
+			this.requireSourceBuiltinForKind(descriptor.id, input.sourceBuiltinId);
+		}
 		return copilotProfileRowToWire(
 			await this.stores.copilotProfiles.create({ ...input, agentKind: descriptor.id }),
 		);
@@ -197,6 +210,20 @@ export class CopilotProfileAdapter implements CopilotProfileRuntimeApi {
 			throw unprocessable(`Tool set is not valid for agent kind '${descriptor.id}'.`, {
 				code: "copilot_profile_invalid_tool_set",
 			});
+		}
+	}
+
+	/** Reject a create source the kind does not declare as a built-in seed
+	 *  (422 — the `requireToolSetForKind` validity family). Reads the SAME
+	 *  `builtinSeeds` declaration `requireAddressableProfile` accepts ids
+	 *  through, so a foreign kind's built-in is rejected exactly like an
+	 *  unknown id. */
+	private requireSourceBuiltinForKind(kind: string, sourceBuiltinId: string): void {
+		if (!isBuiltinCopilotProfileOfKind(sourceBuiltinId, kind)) {
+			throw unprocessable(
+				`Source profile '${sourceBuiltinId}' is not a built-in of agent kind '${kind}'.`,
+				{ code: "copilot_profile_invalid_source_builtin" },
+			);
 		}
 	}
 }

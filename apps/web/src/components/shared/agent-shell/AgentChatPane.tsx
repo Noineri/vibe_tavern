@@ -12,7 +12,7 @@ import type { Attachment } from "@vibe-tavern/domain";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
-import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentI18nKey, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { AgentBuiltinProfileHandoff, AgentBuiltinProfilePresentation } from "../../../lib/agent-builtin-profiles.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
@@ -99,10 +99,19 @@ export interface AgentChatPaneProps {
   onStarterPick?: (text: string) => void;
   /** DR-7: the ACTIVE built-in profile's own empty-state presentation (the
    *  sidechat director today) — resolved by the shell (it owns the
-   *  effective-profile read); absent = the host's own starters/title/subtitle,
+   *  effective-profile read); absent = the host's own title/subtitle/icon,
    * byte-identical to before this unit. The pane resolves the keys through
-   * `t` and swaps the icon, exactly as it resolves the host's own keys. */
+   * `t` and swaps the icon, exactly as it resolves the host's own keys.
+   *  Built-ins only — a user profile never resolves a presentation (its
+   *  title/subtitle/icon stay the host's). */
   emptyPresentation?: AgentBuiltinProfilePresentation;
+  /** DR-7b: the effective profile's STARTER keys — decoupled from the
+   *  presentation because a USER duplicate of a built-in inherits the
+   *  SOURCE's starters while keeping the HOST's title/subtitle/icon (owner
+   *  split ruling 2026-10-27). Resolved by the shell through the ONE
+   *  derivation (`effectiveProfileStarterKeys`); absent falls back to the
+   *  presentation's own starters (the built-in case), then the host's. */
+  starterKeysOverride?: readonly AgentI18nKey[];
   /** DR-7: the OOC hand-off row config + the shell's profile-switch
    *  callback (the DR-6 write). Absent = no row. The prefill rides the SAME
    *  AP-18 starter path below (never a second send seam). */
@@ -145,6 +154,7 @@ export function AgentChatPane({
   composerTopSlot,
   onStarterPick,
   emptyPresentation,
+  starterKeysOverride,
   handoffRow,
   refreshMessages,
 }: AgentChatPaneProps) {
@@ -348,7 +358,7 @@ export function AgentChatPane({
             emptyTitle={t(emptyPresentation !== undefined ? emptyPresentation.titleKey : host.i18n.emptyTitle)}
             emptySub={emptyPresentation !== undefined ? t(emptyPresentation.subKey) : host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
             emptyIcon={emptyPresentation !== undefined ? <Icons.film className="h-6 w-6 text-accent" /> : undefined}
-            starterKeysOverride={emptyPresentation?.starterKeys}
+            starterKeysOverride={starterKeysOverride ?? emptyPresentation?.starterKeys}
             handoffRow={handoffRow}
             onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
             onAnswer={(askToolCallId, answer) => {

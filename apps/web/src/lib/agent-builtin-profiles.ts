@@ -9,10 +9,11 @@
  * (`builtin` — the OOC seed, `builtin-director` — the director) get localized
  * names; every other kind's built-ins (e.g. Experience Authoring) keep
  * their seed names verbatim, and user profiles always render their own
- * stored name. Owner ruling 2026-10-27 (binding for this unit): EVERY user
- * profile — duplicates of a built-in included — falls back to the HOST's
- * starters; the per-profile starters here apply to built-in profiles only
- * (a duplicate's source field arrives with DR-7b's schema).
+ * stored name. Owner ruling 2026-10-27, split by DR-7b: the per-profile
+ * PRESENTATION here (title/subtitle/icon) applies to built-in profiles
+ * only, while a user profile duplicated from a built-in resolves the
+ * SOURCE's STARTERS through `effectiveProfileStarterKeys` — starters are
+ * the one thing a duplicate inherits.
  *
  * Consumers render, never re-derive: the empty state resolves its starter
  * chips and title/sub through `builtinProfilePresentation`, every name
@@ -84,12 +85,43 @@ const PRESENTATIONS_BY_KIND: Readonly<
  * The ACTIVE built-in profile's empty-state presentation, or undefined (the
  * caller renders the host's own starters/title/subtitle then). Unknown kinds
  * and ids never throw — a host without entries renders exactly as before.
+ * Built-in profiles ONLY: a user profile never resolves a presentation
+ * through here (its title/subtitle/icon stay the host's — owner split
+ * ruling 2026-10-27; its inherited starters come from
+ * `effectiveProfileStarterKeys` below).
  */
 export function builtinProfilePresentation(
 	kind: AgentKind,
 	profileId: string,
 ): AgentBuiltinProfilePresentation | undefined {
 	return PRESENTATIONS_BY_KIND[kind]?.[profileId];
+}
+
+/**
+ * DR-7b: the EFFECTIVE profile's STARTER keys — the ONE source-inheritance
+ * derivation (a second hand-written source→starters map anywhere is a §3
+ * defect). A built-in effective profile keeps its own presentation
+ * starters (`builtinProfilePresentation(kind, profileId)?.starterKeys`);
+ * a USER profile duplicated from a built-in
+ * (`sourceBuiltinId`) resolves THAT built-in's starters instead — STARTERS
+ * ONLY: the title/subtitle/icon stay the host's (the presentation stays
+ * built-in-only, per the 2026-10-27 split ruling). Every other case — a
+ * user profile without a source, a source with no presentation of its own
+ * (the FIRST built-in's empty state IS the host's), a foreign kind's id
+ * (presentations are keyed by kind) — returns undefined, the host's
+ * `starterPromptKeys`.
+ */
+export function effectiveProfileStarterKeys(
+	kind: AgentKind,
+	effectiveProfileId: string,
+	sourceBuiltinId: string | null | undefined,
+): readonly AgentI18nKey[] | undefined {
+	const own = builtinProfilePresentation(kind, effectiveProfileId);
+	if (own !== undefined) return own.starterKeys;
+	if (sourceBuiltinId != null) {
+		return builtinProfilePresentation(kind, sourceBuiltinId)?.starterKeys;
+	}
+	return undefined;
 }
 
 /**

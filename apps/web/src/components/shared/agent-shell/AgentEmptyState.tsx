@@ -48,8 +48,11 @@ export interface AgentEmptyStateProps {
    *  sparkles; absent = the sparkles, byte-identical to before. */
   icon?: ReactNode;
   /** DR-7: the ACTIVE built-in profile's own starter keys (from
-   *  `builtinProfilePresentation`) — absent = the host's `starterPromptKeys`
-   *  (also the fallback for every user profile — owner ruling 2026-10-27). */
+   *  `builtinProfilePresentation` / DR-7b's `effectiveProfileStarterKeys`) —
+   *  absent = the host's `starterPromptKeys`. DR-7b: a user profile
+   *  duplicated from a built-in passes the SOURCE built-in's starters here
+   *  (starters are the one thing a duplicate inherits — owner split ruling
+   *  2026-10-27); every user profile without a source keeps the host's. */
   starterKeys?: readonly AgentI18nKey[];
   /** DR-7: the OOC hand-off row (mockup §3 `btn lead`) under the
    *  starters — switches the chat to the built-in it points at

@@ -207,6 +207,8 @@ const SIDECHAT_PROFILES = {
 		{ id: "builtin", name: "Sidechat OOC", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
 		{ id: "builtin-director", name: "Director", isBuiltIn: true, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
 		{ id: "cprof_user", name: "My grim director", isBuiltIn: false, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc" },
+		// DR-7b: a user row duplicated from the director — source recorded.
+		{ id: "cprof_dup", name: "My director copy", isBuiltIn: false, basePrompt: "", toolSet: {}, agentKind: "sidechat-ooc", sourceBuiltinId: "builtin-director" },
 	],
 };
 
@@ -466,6 +468,27 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// pre-read state).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My grim director"));
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		expect(queryByTestId("agent-handoff-row")).toBeNull();
+	});
+
+	it("DR-7b: a user DUPLICATE of the director shows the SOURCE's starters with the HOST's title — no hand-off row", async () => {
+		dr7ChatProfileId = "cprof_dup";
+		dr7Plan = EMPTY_PLAN;
+		const { getByTestId, getAllByText, queryByTestId, queryByText } = renderSidechat("dup");
+		// Terminal state: the chip proves the effective read landed (the raw
+		// wire name — a user profile never localizes, even with a source).
+		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My director copy"));
+		// STARTERS are the one thing a duplicate inherits: the director's four.
+		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan");
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
+		expect(queryByTestId("agent-starter-4")).toBeNull();
+		// The PRESENTATION stays built-in-only: the host's own title renders
+		// (the kind label — its empty-state title), never the director's
+		// localized name or its empty-state line.
+		expect(getAllByText("agent_kind_sidechat").length).toBeGreaterThanOrEqual(1);
+		expect(queryByText("agent_profile_name_builtin_director")).toBeNull();
+		expect(queryByText("agent_director_empty_sub")).toBeNull();
+		// A user profile never offers the OOC hand-off row.
 		expect(queryByTestId("agent-handoff-row")).toBeNull();
 	});
 });

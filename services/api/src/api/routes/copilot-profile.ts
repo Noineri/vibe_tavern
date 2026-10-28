@@ -15,6 +15,11 @@ import type { CopilotProfileRuntimeApi } from "../contract/runtime-api.js";
  *    stored). `?kind=` selects the kind (default `'experience'`); an unknown
  *    kind is a 400 carrying `UNKNOWN_AGENT_KIND`.
  *  - `POST   /api/copilot/profiles`              — create a user profile.
+ *    DR-7b: an optional `sourceBuiltinId` records provenance (the built-in
+ *    this duplicate came from); it must name a built-in seed of the SAME
+ *    kind — anything else is a 422 `copilot_profile_invalid_source_builtin`
+ *    (never a silent strip), and the field is immutable after create (the
+ *    update contract omits it).
  *  - `PATCH  /api/copilot/profiles/reorder`      — rewrite ONE kind's user
  *    profiles' manual list order (ML-6); `?kind=` selects the kind (default
  *    `'experience'`, like the GET). Registered BEFORE the `:profileId` PATCH

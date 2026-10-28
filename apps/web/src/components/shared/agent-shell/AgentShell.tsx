@@ -322,7 +322,7 @@ export function AgentShell({
   //  derivation. Lives in `use-agent-empty-profile.ts` (file-size
   //  ratchet); the plan comes from the same `useAgentPlan` cache the plan
   //  section renders from (events = tasks).
-  const { emptyPresentation, handoffRow } = useAgentEmptyProfile({
+  const { emptyPresentation, starterKeys, handoffRow } = useAgentEmptyProfile({
     kind,
     owner,
     scriptId,
@@ -648,6 +648,7 @@ export function AgentShell({
       composerTopSlot={composerTopSlot}
       onStarterPick={handleStarterPick}
       emptyPresentation={emptyPresentation}
+      starterKeysOverride={starterKeys}
       handoffRow={handoffRow}
       refreshMessages={refreshMessages}
     />

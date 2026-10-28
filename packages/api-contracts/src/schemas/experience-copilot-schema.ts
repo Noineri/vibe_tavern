@@ -664,6 +664,12 @@ export const copilotProfileSchema = z
     // Required on the wire profile — the server always emits it (seed and
     // rows alike) so a list consumer can tell kinds apart.
     agentKind: z.string().min(1),
+    // DR-7b: provenance — the built-in seed id this USER profile was
+    // duplicated from (null/absent = no source; built-in seeds never carry
+    // one). Starters-only inheritance (owner split ruling 2026-10-27): a
+    // duplicate resolves its SOURCE's starter prompts and nothing else —
+    // name/prompt/toolSet are its own snapshots.
+    sourceBuiltinId: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -688,19 +694,30 @@ export const copilotProfileCreateSchema = z
     // AS-3: optional with an 'experience' default so the current web client
     // (which sends no kind) keeps creating experience profiles untouched.
     agentKind: z.string().min(1).optional().default("experience"),
+    // DR-7b: provenance — the built-in seed id this profile is duplicated
+    // from. No default: absent = created from scratch (no source). The
+    // server validates it names a built-in seed of the SAME kind (422
+    // `copilot_profile_invalid_source_builtin`) — never a foreign kind's
+    // built-in, never a user id, never a silent strip.
+    sourceBuiltinId: z.string().min(1).optional(),
   })
   .strict();
 
 export type CopilotProfileCreate = z.input<typeof copilotProfileCreateSchema>;
 
 /**
- * Partial update for a user profile. Every field is optional. `agentKind` is
- * OMITTED (not merely optional) — the kind is immutable after create, and
- * the object stays `.strict()`, so a PATCH smuggling an `agentKind` key is
- * rejected with a 400 instead of being silently stripped. A wrong-kind
- * profile is recreated under the right kind, never converted.
+ * Partial update for a user profile. Every field is optional. `agentKind`
+ * and `sourceBuiltinId` are OMITTED (not merely optional) — both are
+ * immutable after create (`agentKind`: the kind is fixed at create, and a
+ * wrong-kind profile is recreated under the right kind, never converted;
+ * `sourceBuiltinId`: provenance is recorded once at duplication and can
+ * never be re-pointed or cleared) — and the object stays `.strict()`, so a
+ * PATCH smuggling either key is rejected with a 400 instead of being
+ * silently stripped.
  */
-export const copilotProfileUpdateSchema = copilotProfileCreateSchema.omit({ agentKind: true }).partial();
+export const copilotProfileUpdateSchema = copilotProfileCreateSchema
+  .omit({ agentKind: true, sourceBuiltinId: true })
+  .partial();
 
 export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;
 

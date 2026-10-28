@@ -34,11 +34,18 @@ import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.j
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
  *  a profile is name + basePrompt + toolSet. The toolSet is a loose boolean
- *  record (AS-8b: which keys are valid depends on the profile's agent kind). */
+ *  record (AS-8b: which keys are valid depends on the profile's agent kind).
+ *  DR-7b adds `sourceBuiltinId` — create-only provenance: duplicating a
+ *  BUILT-IN row records that row's id; duplicating a USER row passes its own
+ *  source through (a copy of a director copy is still a director copy); a
+ *  user row without a source stays undefined. It never rides the edit save
+ *  (`draftToUpdateInput` omits it — provenance is immutable after create). */
 interface ProfileDraft {
 	name: string;
 	basePrompt: string;
 	toolSet: Record<string, boolean>;
+	/** DR-7b: the built-in this copy came from (undefined = no source). */
+	sourceBuiltinId?: string;
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
@@ -52,6 +59,10 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 		name: p.name,
 		basePrompt: p.basePrompt,
 		toolSet: { ...p.toolSet },
+		// DR-7b: provenance rides the draft for the create that follows a
+		// duplicate — a built-in row's own id, or a user row's existing source
+		// passed through (undefined when it has none).
+		sourceBuiltinId: p.isBuiltIn ? p.id : p.sourceBuiltinId ?? undefined,
 	};
 }
 
@@ -61,13 +72,18 @@ function draftToCreateInput(d: ProfileDraft, agentKind: string): CopilotProfileC
 		basePrompt: d.basePrompt,
 		toolSet: d.toolSet,
 		agentKind,
+		// DR-7b: provenance rides the create only when the draft carries one —
+		// a from-scratch create sends NO key (byte-identical to before).
+		...(d.sourceBuiltinId !== undefined ? { sourceBuiltinId: d.sourceBuiltinId } : {}),
 	};
 }
 
 /** The edit-save body: the create shape MINUS `agentKind` — the kind is
  *  immutable (AS-3), and the strict update contract omits the key, so a
  *  PATCH carrying it is rejected with a 422. The server re-validates
- *  toolSet against the stored row's kind. */
+ *  toolSet against the stored row's kind. DR-7b: `sourceBuiltinId` is
+ *  omitted the same way (provenance is immutable after create — the update
+ *  contract strict-rejects the key). */
 function draftToUpdateInput(d: ProfileDraft): CopilotProfileUpdate {
 	return {
 		name: d.name.trim(),
@@ -206,7 +222,9 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	/** Duplicate the built-in (read-only) seed into an editable user copy. The
 	 *  draft is seeded from the RESOLVED fields — basePrompt is the inline text
 	 *  the API already materialized for the seed. Later seed changes never
-	 *  mutate the copy. */
+	 *  mutate the copy. DR-7b: the draft also records the duplicate's SOURCE
+	 *  (`profileToDraft` — the duplicated row's id for a built-in, a user
+	 *  row's own source passed through), so the create persists provenance. */
 	const handleDuplicate = (profile: CopilotProfile, openDetail?: () => void) => {
 		if (dirty) {
 			setConfirmDiscardOpen(true);

@@ -55,7 +55,11 @@ const BUILTIN_PROFILE_SENTINEL = BUILTIN_PROFILE_ID;
  * survive, producing a strict per-kind tool set.
  * `skillIds` is NOT projected (PM-8, owner ruling 2026-10-12): the skill
  * catalog is ungated, so the stored `skill_ids_json` column is legacy data
- * the resolver simply never reads.
+ * the resolver simply never reads. DR-7b adds `sourceBuiltinId`: a user
+ * row emits its recorded provenance (null = none) so the web's starter
+ * inheritance can resolve the source's starters; built-in seeds never
+ * carry the field (they ARE the source, and their empty state is served
+ * by their own presentation derivation).
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
 	// Per-kind projection (AS-7): a script row projects through the script tool
@@ -90,6 +94,7 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 		basePrompt: row.basePrompt,
 		toolSet,
 		agentKind: row.agentKind,
+		sourceBuiltinId: row.sourceBuiltinId,
 	};
 }
 

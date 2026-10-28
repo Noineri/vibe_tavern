@@ -15,6 +15,7 @@ import {
   copilotToolSetSchema,
   copilotProfileSchema,
   copilotProfileCreateSchema,
+  copilotProfileUpdateSchema,
   reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
   sidechatOocToolSetSchema,
@@ -841,6 +842,56 @@ describe("copilotProfileSchema (CP-1)", () => {
       agentKind: "experience",
     };
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
+  });
+});
+
+// ─── DR-7b: sourceBuiltinId provenance (additive + immutable) ─────────────
+// The wire profile gains an optional nullable `sourceBuiltinId` (old
+// payloads parse unchanged — the field is additive on a strict object);
+// create gains it with NO default (absent = no source); update OMITS it
+// (provenance is set once at create, exactly like `agentKind`).
+describe("copilotProfile sourceBuiltinId (DR-7b)", () => {
+  const wireBase = {
+    id: "cprof_1",
+    name: "Card games",
+    isBuiltIn: false,
+    basePrompt: "p",
+    toolSet: {},
+    agentKind: "sidechat-ooc",
+  };
+
+  test("wire profile accepts a source id and an explicit null", () => {
+    expect(copilotProfileSchema.parse({ ...wireBase, sourceBuiltinId: "builtin-director" })).toEqual({
+      ...wireBase,
+      sourceBuiltinId: "builtin-director",
+    });
+    expect(copilotProfileSchema.parse({ ...wireBase, sourceBuiltinId: null })).toEqual({
+      ...wireBase,
+      sourceBuiltinId: null,
+    });
+  });
+
+  test("wire profile without the key parses unchanged (additive — old payloads byte-identical)", () => {
+    expect(copilotProfileSchema.parse(wireBase)).toEqual(wireBase);
+  });
+
+  test("create accepts an optional source and keeps it; absent = no key added (no default)", () => {
+    const base = { name: "X", basePrompt: "p", toolSet: {} };
+    expect(copilotProfileCreateSchema.parse({ ...base, sourceBuiltinId: "builtin" })).toEqual({
+      ...base,
+      agentKind: "experience",
+      sourceBuiltinId: "builtin",
+    });
+    const parsed = copilotProfileCreateSchema.parse(base);
+    expect(parsed).toEqual({ ...base, agentKind: "experience" });
+    expect("sourceBuiltinId" in parsed).toBe(false);
+  });
+
+  test("update omits sourceBuiltinId — a PATCH smuggling it is strict-rejected", () => {
+    // Same immutability family as agentKind: omitted (not optional) from the
+    // update contract, so the strict object rejects the key outright.
+    expect(() => copilotProfileUpdateSchema.parse({ name: "Y", sourceBuiltinId: "builtin" })).toThrow();
+    expect(copilotProfileUpdateSchema.parse({ name: "Y" })).toEqual({ name: "Y" });
   });
 });
 
