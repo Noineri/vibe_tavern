@@ -43,7 +43,7 @@ import type { DiscussScope } from "./DiscussInSidechatMenu.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
-import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
+import { MobileVariantCarousel, type MobileVariantCarouselHandle } from "./variants/mobile-variant-carousel.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
 import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
@@ -68,6 +68,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const variantControlsRef = useRef<HTMLSpanElement>(null);
+  const mobileCarouselRef = useRef<MobileVariantCarouselHandle>(null);
   const variantOverlayTimerRef = useRef<number | undefined>(undefined);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
@@ -374,19 +375,24 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     chat.handleSelectMessageVariant(msg.id, targetVariant.variantIndex);
   };
 
+  const handleRequestVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
+    if (isMobile && mobileCarouselRef.current) mobileCarouselRef.current.selectVariant(targetIndex);
+    else handleSelectVariant(targetIndex, swipeDirection);
+  };
+
   // ── Greeting counter controls ──
   const greetingControls = greetingActive ? (
     <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
       <button type="button"
         className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
         disabled={!canSwitchVariant || selectedVariantIndex <= 0}
-        onClick={() => { handleSelectVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
+        onClick={() => { handleRequestVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
       >◀</button>
       {t("greeting_counter", { n: selectedVariantIndex + 1, total: variantCount })}
       <button type="button"
         className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
         disabled={!canSwitchVariant || selectedVariantIndex >= variantCount - 1}
-        onClick={() => { handleSelectVariant(Math.min(variantCount - 1, selectedVariantIndex + 1), 1); }}
+        onClick={() => { handleRequestVariant(Math.min(variantCount - 1, selectedVariantIndex + 1), 1); }}
       >▶</button>
     </span>
   ) : undefined;
@@ -415,7 +421,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
       items={pickerItems}
-      onSelectVariant={handleSelectVariant}
+      onSelectVariant={handleRequestVariant}
     />
   );
 
@@ -483,6 +489,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <div>
       {isMobile && variantCount > 1 && canSwitchVariant ? (
         <MobileVariantCarousel
+          ref={mobileCarouselRef}
           selectedVariantIndex={selectedVariantIndex}
           variants={displayVariants}
           isBusy={isBusy}

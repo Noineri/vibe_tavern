@@ -5,9 +5,12 @@ useDomEnv({ failOnNetwork: true });
 
 const { act, render } = await import("@testing-library/react");
 const { MobileVariantCarousel } = await import("./mobile-variant-carousel.js");
+const { createRef } = await import("react");
+import type { MobileVariantCarouselHandle } from "./mobile-variant-carousel.js";
 
 const originalObserver = globalThis.ResizeObserver;
 const originalWindowObserver = window.ResizeObserver;
+const originalMatchMedia = window.matchMedia;
 const originalScrollEnd = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "onscrollend");
 const observers = new Set<MeasuredResizeObserver>();
 
@@ -20,6 +23,7 @@ class MeasuredResizeObserver implements ResizeObserver {
 }
 
 function restoreBrowserBoundaries() {
+  window.matchMedia = originalMatchMedia;
   globalThis.ResizeObserver = originalObserver;
   window.ResizeObserver = originalWindowObserver;
   if (originalScrollEnd) Object.defineProperty(HTMLElement.prototype, "onscrollend", originalScrollEnd);
@@ -83,6 +87,50 @@ function mount(overrides: Partial<Parameters<typeof MobileVariantCarousel>[0]> =
 }
 
 describe("MobileVariantCarousel — native pager", () => {
+  test("chevron requests scroll smoothly and commit only after native settling", () => {
+    const ref = createRef<MobileVariantCarouselHandle>();
+    const s = mount({ ref });
+    const scrollTo = mock((_options?: ScrollToOptions | number, _y?: number) => {});
+    s.viewport.scrollTo = scrollTo;
+    expect(ref.current !== null).toBe(true);
+    act(() => { ref.current?.selectVariant(3); });
+    expect(scrollTo.mock.calls).toEqual([[{ left: 996, behavior: "smooth" }]]);
+    expect(s.onSelectVariant.mock.calls).toEqual([]);
+    expect(s.viewport.style.height).toBe("200px");
+    s.scroll(996);
+    s.settle();
+    expect(s.onSelectVariant.mock.calls).toEqual([[3, 1]]);
+  });
+
+  test("reduced-motion chevrons use auto and busy requests do not start scrolling", () => {
+    window.matchMedia = (media: string) => ({
+      matches: media === "(prefers-reduced-motion: reduce)", media, onchange: null,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
+    });
+    const ref = createRef<MobileVariantCarouselHandle>();
+    const s = mount({ ref });
+    const scrollTo = mock((_options?: ScrollToOptions | number, _y?: number) => {});
+    s.viewport.scrollTo = scrollTo;
+    act(() => { ref.current?.selectVariant(1); });
+    expect(scrollTo.mock.calls).toEqual([[{ left: 332, behavior: "auto" }]]);
+    s.update({ isBusy: true });
+    act(() => { ref.current?.selectVariant(3); });
+    expect(scrollTo.mock.calls.length).toBe(1);
+    expect(s.onSelectVariant.mock.calls).toEqual([]);
+  });
+
+  test("a changed or interrupted chevron request commits the actual landing, never a promised target", () => {
+    const ref = createRef<MobileVariantCarouselHandle>();
+    const s = mount({ ref });
+    const scrollTo = mock((_options?: ScrollToOptions | number, _y?: number) => {});
+    s.viewport.scrollTo = scrollTo;
+    act(() => { ref.current?.selectVariant(3); ref.current?.selectVariant(1); });
+    s.scroll(332);
+    s.settle();
+    expect(s.onSelectVariant.mock.calls).toEqual([[1, -1]]);
+    expect(scrollTo.mock.calls.length).toBe(2);
+  });
+
   test("uses equal full-width snap slots, with only current ±1 content mounted", () => {
     const s = mount();
     expect(s.slots().length).toBe(7);

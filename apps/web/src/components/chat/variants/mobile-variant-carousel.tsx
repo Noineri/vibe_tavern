@@ -1,10 +1,15 @@
-import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffectEvent, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Markdown } from "../../../lib/markdown.js";
 import { cn } from "../../../lib/cn.js";
 import type { SwipeDirection } from "./types.js";
 import { getVariantRenderWindow, observeVariantScrollSettle } from "./variant-scroll-snap.js";
 
+export type MobileVariantCarouselHandle = {
+  selectVariant: (index: number) => void;
+};
+
 type MobileVariantCarouselProps = {
+  ref?: Ref<MobileVariantCarouselHandle>;
   selectedVariantIndex: number;
   variants: { id?: string; variantIndex?: number; content: string }[];
   isBusy: boolean;
@@ -34,6 +39,23 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   const hasVariants = variants.length > 0;
   const swipeLocked = isBusy && !swipeWhileBusy;
   const renderWindow = getVariantRenderWindow(currentIndex, variants.length);
+
+  useImperativeHandle(props.ref, () => ({
+    selectVariant(index) {
+      if (swipeLocked || !Number.isInteger(index) || index < 0 || index >= variants.length || index === currentIndex) return;
+      const el = viewportRef.current;
+      // Preserve instant jump-list selection outside the adjacent render
+      // window, or before layout exists; only chevrons need a visible slide.
+      if (!el || slotWidthRef.current <= 0 || Math.abs(index - currentIndex) > 1) {
+        onSelectVariant(index, index > currentIndex ? 1 : -1);
+        return;
+      }
+      el.scrollTo({
+        left: index * slotWidthRef.current,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+    },
+  }), [currentIndex, swipeLocked, variants.length, onSelectVariant]);
 
   const alignSelected = useEffectEvent(() => {
     const el = viewportRef.current;
@@ -103,7 +125,8 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   }, [currentIndex, currentVariant?.id, currentVariant?.content, renderPanel]);
 
   useLayoutEffect(() => {
-    // External selection is still instant here; step 4 adds smooth chevrons.
+    // Structural/external selection aligns instantly; chevrons use the handle
+    // above and do not change selection until the native motion settles.
     // Lock activation also cancels an in-flight swipe back to the selection.
     alignSelected();
   }, [currentIndex, currentVariant?.id, variants.length, swipeLocked]);

@@ -183,7 +183,9 @@ div (viewport + flex track, overflow-x: auto, overflow-y: hidden, snap-x mandato
 - **Commit flow:** `variant-scroll-snap.ts` observes native `scrollend`, or a feature-detected quiet-scroll fallback on older browsers; the fallback requires an aligned snap point and all touches ending.
 - **Busy lock:** Hidden horizontal overflow and a settle-time guard apply the same `isBusy && !swipeWhileBusy` rule as the arrows; pure image slots retain their busy exception.
 - **Accessibility and translation:** Only the current slot is interactive and translated; neighbors are inert, `aria-hidden` and `translate="no"`.
-- **External selection:** Aligns instantly in this engine step; smooth chevrons, display-regex parity and mobile scroll-to-start remain separate steps in the mobile swipe gestures report.
+- **Chevron requests:** A narrow ref handle starts native `scrollTo({ behavior: "smooth" })`, or `"auto"` under reduced motion, without changing the selected variant or height until settle.
+- **External selection:** Structural changes and jump-list choices outside the adjacent render window still align instantly.
+- **Display text:** Static content and carousel panels share `deriveVariantDisplayText`; canonical variant text and metadata are not rewritten by display regex.
 
 **Greeting carousel:** Greeting messages use the same message-variant array and carousel branch in `MessageBlock`; the existing `canSwitchVariant` gate still applies.
 
