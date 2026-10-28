@@ -165,7 +165,10 @@ registerAgentHost({
     kindLabel: "agent_kind_sidechat",
     placeholder: "sidechat_input_placeholder",
     loading: "agent_loading",
-    emptyTitle: "agent_title",
+    // DR-7 (owner 2026-10-27, mock §3): the OOC empty state's title reads the
+    // kind label «Сайдчат»/"Sidechat" — the panel HEADER keeps the generic
+    // agent title above.
+    emptyTitle: "agent_kind_sidechat",
     emptySub: "sidechat_empty_hint",
   },
   // AP-17: the empty-session starter prompts (mockup §3, sidechat row) —

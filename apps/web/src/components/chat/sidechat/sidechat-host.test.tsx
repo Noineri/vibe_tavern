@@ -362,6 +362,14 @@ describe("sidechat-host — registration (SC-13b)", () => {
     expect(host.i18n.placeholder).toBe("sidechat_input_placeholder");
     expect(host.i18n.emptySub).toBe("sidechat_empty_hint");
   });
+
+  it("labels its empty state with the kind label, not the generic assistant title (DR-7, owner 2026-10-27)", () => {
+    // Mock §3: the OOC empty state's title reads «Сайдчат»/"Sidechat" — the
+    // kind label — while the panel header keeps the generic agent title.
+    const host = getAgentHost(SIDECHAT_AGENT_KIND);
+    expect(host.i18n.emptyTitle).toBe("agent_kind_sidechat");
+    expect(host.i18n.title).toBe("agent_title");
+  });
 });
 
 describe("sidechat-host — owner and served modes (SC-13b)", () => {
