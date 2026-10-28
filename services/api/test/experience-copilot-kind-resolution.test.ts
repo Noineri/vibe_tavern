@@ -27,6 +27,7 @@ import "../src/domain/agent/kinds/script-kind.js";
 import type {
   ExperienceCopilotRuntimeApi,
 } from "../src/api/contract/runtime-api.js";
+import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
 
 /**
  * AS-2c — kind resolution at the stream-turn start. The adapter resolves the
@@ -246,15 +247,13 @@ describe("ExperienceCopilotAdapter.experienceCopilotStartNewSession auto-compact
 // ─── Route-level: the 400 mapping at the stream-turn start ───────────────────
 
 function makeRouteApp(throwFromAssert: Error | null) {
-  const runtime = {
-    experienceCopilotAssertStreamKind: async () => {
-      if (throwFromAssert) throw throwFromAssert;
-    },
-    experienceCopilotStream: async function* () {
+  const runtime = new ExperienceCopilotRunAdapter({ getById: async () => makeThread() }, async () => {
+    if (throwFromAssert) throw throwFromAssert;
+    return async function* () {
       yield { event: "finish", data: JSON.stringify({ finishReason: "stop" }) };
-    },
-  } as unknown as ExperienceCopilotRuntimeApi;
-  return createExperienceCopilotRoutes(runtime);
+    };
+  });
+  return createExperienceCopilotRoutes(runtime as unknown as ExperienceCopilotRuntimeApi);
 }
 
 describe("POST /api/experience-copilot/:threadId/stream kind-resolution mapping (AS-2c)", () => {

@@ -9,6 +9,8 @@ import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, Experie
 import type { RecordProposal, AgentThreadProposalApplyRequest } from "@vibe-tavern/api-contracts";
 import type { AgentPlan, Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { ConfigPatchResponse } from "./session-types.js";
+import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
+import type { ExperienceCopilotStopRunResponse } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -112,6 +114,14 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  `tool-result`, `finish`, `error`). Persists the turn (user message + tool
 	 *  calls/results + final assistant text) to the ER-3 store. */
 	experienceCopilotStream: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) => AsyncGenerator<ExperienceCopilotStreamEvent>;
+
+	/** Start detached execution; the signal cancels only the returned subscription.
+	 * Kind errors and AgentRunActiveError are thrown before SSE opens. */
+	experienceCopilotStartRun: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, subscriberSignal?: AbortSignal) => Promise<AgentRunSubscription>;
+	/** Replay strictly after the cursor and tail live events; null means no log since boot (204). */
+	experienceCopilotSubscribeRun: (threadId: string, after: number, signal?: AbortSignal) => AgentRunSubscription | null;
+	/** Idempotent cooperative stop; false when absent, finished, or already stopping. */
+	experienceCopilotStopRun: (threadId: string) => ExperienceCopilotStopRunResponse;
 
 	/** The single active (unarchived) thread for a script, or null. Delegates to
 	 *  the ER-3 store's `getActive`. */

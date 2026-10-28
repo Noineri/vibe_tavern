@@ -24,6 +24,7 @@ import type { AgentReviewSnapshot, CoauthorEditorState, ExperienceCopilotStreamR
 import type { ExperienceCopilotMessage, ExperienceCopilotStore, ExperienceCopilotThread, ExperienceVisualRow, ProviderProfile, ScriptRow } from "@vibe-tavern/db";
 import { EventBus } from "@vibe-tavern/domain";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import { streamExperienceCopilot, type ExperienceCopilotStreamDeps } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
@@ -348,11 +349,9 @@ async function replayCopilotRequest(request: FixtureRequest): Promise<CapturedCo
       };
     }) as unknown as ExperienceCopilotStreamDeps["streamText"],
   };
-  const experienceCopilot = {
-    experienceCopilotAssertStreamKind: async () => {},
-    experienceCopilotStream: (threadId: string, streamBody: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) =>
-      streamExperienceCopilot({ ...streamBody, threadId }, deps, signal),
-  } as unknown as RuntimeApi["experienceCopilot"];
+  const experienceCopilot = new ExperienceCopilotRunAdapter(deps.store, async () =>
+    (threadId, streamBody, signal) => streamExperienceCopilot({ ...streamBody, threadId }, deps, signal),
+  ) as unknown as RuntimeApi["experienceCopilot"];
   const app = await createApp({ runtime: { experienceCopilot } as RuntimeApi });
   const response = await app.request(`/api/experience-copilot/${THREAD_ID}/stream`, {
     method: "POST",

@@ -27,6 +27,24 @@ import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
 import { attachmentSchema } from "./chat-schema.js";
 import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
+/** BR-1b GET /:threadId/run: replay strictly after this run-local SSE id.
+ * 204 means no retained run; otherwise the response is replay + live SSE. */
+export const experienceCopilotRunQuerySchema = z.object({
+  after: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)).default(0),
+});
+export type ExperienceCopilotRunQuery = z.infer<typeof experienceCopilotRunQuerySchema>;
+
+/** POST /:threadId/stop does not wait for cooperative finalization. */
+export const experienceCopilotStopRunResponseSchema = z.object({ stopped: z.boolean() });
+export type ExperienceCopilotStopRunResponse = z.infer<typeof experienceCopilotStopRunResponseSchema>;
+
+/** POST /:threadId/stream refuses a concurrent turn before opening SSE (409). */
+export const experienceCopilotRunActiveErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal("AGENT_RUN_ACTIVE"),
+});
+export type ExperienceCopilotRunActiveError = z.infer<typeof experienceCopilotRunActiveErrorSchema>;
+
 /**
  * Which buffer a copilot proposed edit lands on. Drives which editor surface
  * shows the diff (the rules editor vs the visual editor). Mirrors

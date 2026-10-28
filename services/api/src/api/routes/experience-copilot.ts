@@ -7,13 +7,14 @@ import * as schemas from "@vibe-tavern/api-contracts";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { AgentRunActiveError } from "../../domain/agent/agent-run-registry.js";
 import {
   NoAgentKindForScriptKindError,
   UnknownAgentKindError,
   AgentKindNotWiredError,
 } from "../../domain/agent/agent-kind-registry.js";
 
-type CopilotStreamEvent = { event: string; data: string };
+type CopilotStreamEvent = { event: string; data: string; seq?: number };
 
 type RouteAbortBridge = {
   signal: AbortSignal;
@@ -50,7 +51,7 @@ function createRouteAbortBridge(
 type SseStreamWriter = {
   aborted: boolean;
   onAbort: (callback: () => void) => void;
-  writeSSE: (options: CopilotStreamEvent) => Promise<void>;
+  writeSSE: (options: { event: string; data: string; id?: string }) => Promise<void>;
   /** Raw socket write (from hono's StreamingApi base) — used for SSE comments. */
   write: (message: string) => Promise<unknown>;
 };
@@ -79,7 +80,7 @@ export async function writeCopilotSseEvents(
   let pendingNext: Promise<IteratorResult<CopilotStreamEvent, unknown>> | undefined;
   try {
     while (true) {
-      if (stream.aborted) {
+      if (stream.aborted || abortBridge.signal.aborted) {
         abortBridge.abort("sse-aborted-flag");
         break;
       }
@@ -104,7 +105,10 @@ export async function writeCopilotSseEvents(
       }
       pendingNext = undefined;
       if (raced.done) break;
-      await stream.writeSSE({ event: raced.value.event, data: raced.value.data });
+      await stream.writeSSE({
+        event: raced.value.event, data: raced.value.data,
+        ...(raced.value.seq !== undefined ? { id: String(raced.value.seq) } : {}),
+      });
     }
   } catch (err) {
     if (abortBridge.signal.aborted || stream.aborted) {
@@ -120,6 +124,9 @@ export async function writeCopilotSseEvents(
       abortBridge.abort("sse-error-write-failed");
     }
   } finally {
+    // Returning a registry subscription only detaches this writer; it never
+    // returns/stops the underlying turn generator or skips its persistence.
+    await iterator.return?.();
     abortBridge.cleanup();
   }
 }
@@ -137,15 +144,21 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
           contentLength: body.content?.length ?? 0,
           answerToolCallId: body.answer?.toolCallId ?? null,
         });
-        // AS-2c kind resolution at the stream-turn start: run BEFORE the SSE
+        // AS-2c kind resolution inside StartRun: run BEFORE the SSE
         // headers are sent so an unserved script kind is a 400 JSON response
         // (mirrors this file's `{ error }` response shape, plus the registry
         // error's machine-readable `code`), never an in-stream SSE error.
         // Today interactive → experience always resolves, so behavior is
         // unchanged on every reachable state.
+        const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
         try {
-          await runtime.experienceCopilotAssertStreamKind(threadId);
+          const events = await runtime.experienceCopilotStartRun(threadId, body, abortBridge.signal);
+          return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, events, abortBridge));
         } catch (err) {
+          abortBridge.cleanup();
+          if (err instanceof AgentRunActiveError) {
+            return c.json({ error: err.message, code: err.code } satisfies schemas.ExperienceCopilotRunActiveError, 409);
+          }
           if (
             err instanceof NoAgentKindForScriptKindError ||
             err instanceof UnknownAgentKindError ||
@@ -155,11 +168,24 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
           }
           throw err;
         }
-        const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
-        const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
-        return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));
       },
     )
+    .get(
+      "/api/experience-copilot/:threadId/run",
+      zValidator("query", schemas.experienceCopilotRunQuerySchema),
+      (c) => {
+        const threadId = c.req.param("threadId");
+        const bridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-run", { threadId });
+        const events = runtime.experienceCopilotSubscribeRun(threadId, c.req.valid("query").after, bridge.signal);
+        if (!events) {
+          bridge.cleanup();
+          return c.body(null, 204);
+        }
+        return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, events, bridge));
+      },
+    )
+    .post("/api/experience-copilot/:threadId/stop", (c) =>
+      c.json(runtime.experienceCopilotStopRun(c.req.param("threadId"))))
     .get("/api/experience-copilot/script/:scriptId/active", async (c) => {
       const scriptId = c.req.param("scriptId");
       return c.json(await runtime.experienceCopilotGetActive(scriptId));
