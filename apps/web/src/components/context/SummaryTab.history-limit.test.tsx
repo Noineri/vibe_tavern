@@ -61,6 +61,9 @@ async function routerFetch(input: RequestInfo | URL, init?: RequestInit): Promis
 	if (method === "GET" && apiPath === "/api/chats/chat/summaries") {
 		return Response.json([]);
 	}
+	if (method === "GET" && apiPath === "/api/chats/chat/summaries/generate") {
+		return Response.json(null);
+	}
 	if (method === "PATCH" && apiPath === "/api/chats/chat/memory-settings") {
 		const body = input instanceof Request
 			? await input.clone().json() as { messageHistoryLimit?: number }

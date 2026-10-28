@@ -5,6 +5,7 @@ import { useT } from "../i18n/context.js";
 import { useChatNotifications, useModalStore } from "../stores/index.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { switchChatAction } from "../stores/api-actions/chat-actions.js";
+import { publishChatSummaryEvent } from "../lib/chat-summary-events.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // useChatEvents — per-chat SSE subscription (W7 / SPC-7b)
@@ -31,6 +32,14 @@ interface SummaryGeneratedPayload {
   summaryId: string;
   label: string;
   source?: "manual";
+}
+
+function manualSource(event: MessageEvent): "manual" | undefined {
+  try {
+    return JSON.parse(event.data)?.source === "manual" ? "manual" : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useChatEvents(activeChatId: string | null): void {
@@ -62,7 +71,11 @@ export function useChatEvents(activeChatId: string | null): void {
       sources.current.set(chatId, eventSource);
       const isCurrent = () => sources.current.get(chatId) === eventSource;
       const { setGenerating, setReady, settle } = useChatNotifications.getState();
-      const onStarted = () => { if (isCurrent()) setGenerating(chatId); };
+      const onStarted = (event: MessageEvent) => {
+        if (!isCurrent()) return;
+        setGenerating(chatId);
+        publishChatSummaryEvent({ chatId, kind: "summary.started", source: manualSource(event) });
+      };
 
       const onGenerated = (event: MessageEvent) => {
         if (!isCurrent()) return;
@@ -74,6 +87,7 @@ export function useChatEvents(activeChatId: string | null): void {
         }
         if (!payload?.summaryId) return;
         setReady(chatId, payload.summaryId, payload.label ?? "");
+        publishChatSummaryEvent({ chatId, kind: "summary.generated", summaryId: payload.summaryId, label: payload.label ?? "", source: payload.source });
         if (payload.source === "manual" && useChatStore.getState().activeChatId === chatId && useModalStore.getState().isContextMemoryOpen) return;
         toast.success(tRef.current("summary_generated_toast", { label: payload.label ?? "" }), {
           action: {
@@ -93,12 +107,17 @@ export function useChatEvents(activeChatId: string | null): void {
         });
       };
 
-      const onFailed = () => {
+      const onFailed = (event: MessageEvent) => {
         if (!isCurrent()) return;
         settle(chatId);
+        publishChatSummaryEvent({ chatId, kind: "summary.failed", source: manualSource(event) });
         toast.error(tRef.current("summary_failed_toast"));
       };
-      const onCancelled = () => { if (isCurrent()) settle(chatId); };
+      const onCancelled = () => {
+        if (!isCurrent()) return;
+        settle(chatId);
+        publishChatSummaryEvent({ chatId, kind: "summary.cancelled", source: "manual" });
+      };
 
       eventSource.addEventListener("summary.started", onStarted as EventListener);
       eventSource.addEventListener("summary.generated", onGenerated as EventListener);
