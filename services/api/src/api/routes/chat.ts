@@ -65,6 +65,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.applyCoauthorDraft(c.req.param("chatId"), body));
     })
+    .get("/api/chats/:chatId/coauthor/review", async (c) => c.json(await runtime.getCoauthorReview(c.req.param("chatId"))))
+    .put("/api/chats/:chatId/coauthor/review", zValidator("json", schemas.coauthorReviewEnvelopeSchema), async (c) =>
+      c.json(await runtime.putCoauthorReview(c.req.param("chatId"), c.req.valid("json"))))
+    .delete("/api/chats/:chatId/coauthor/review", async (c) => c.json(await runtime.deleteCoauthorReview(c.req.param("chatId"))))
     .post("/api/chats/:chatId/clone", async (c) => {
       return c.json(await runtime.cloneChat(c.req.param("chatId")));
     })

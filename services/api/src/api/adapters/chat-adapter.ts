@@ -24,6 +24,7 @@ import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.j
 import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js";
 import type { AgentRunOwner } from "@vibe-tavern/domain";
 import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
+import { CoauthorReviewService } from "../../domain/chat/coauthor-review-service.js";
 
 export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntimeApi {
 	constructor(
@@ -45,6 +46,10 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal) {
 		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal));
 	}
+
+	getCoauthorReview: ChatRuntimeApi["getCoauthorReview"] = (id) => new CoauthorReviewService(this.stores).get(id);
+	putCoauthorReview: ChatRuntimeApi["putCoauthorReview"] = (id, envelope) => new CoauthorReviewService(this.stores).put(id, envelope);
+	deleteCoauthorReview: ChatRuntimeApi["deleteCoauthorReview"] = (id) => new CoauthorReviewService(this.stores).delete(id);
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 

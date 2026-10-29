@@ -1,4 +1,4 @@
-import type { CoauthorEditorState, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { CoauthorEditorState, CoauthorReviewEnvelope, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { MessageResponse, VariantResponse } from "./session-types.js";
 import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
@@ -17,6 +17,9 @@ export interface ChatSendBody {
 
 /** Message mutation segment of the route/runtime contract. */
 export interface ChatMessageRuntimeApi {
+  getCoauthorReview: (chatId: string) => Promise<CoauthorReviewEnvelope | null>;
+  putCoauthorReview: (chatId: string, envelope: CoauthorReviewEnvelope) => Promise<CoauthorReviewEnvelope>;
+  deleteCoauthorReview: (chatId: string) => Promise<{ ok: true }>;
   startChatGeneration: (chatId: string, turn: ChatGenerationTurn, subscriberSignal?: AbortSignal) => Promise<AgentRunSubscription>;
   subscribeChatGeneration: (chatId: string, after: number, signal?: AbortSignal) => AgentRunSubscription | null;
   stopChatGeneration: (chatId: string) => { stopped: boolean };
