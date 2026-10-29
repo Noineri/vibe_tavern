@@ -21,6 +21,12 @@ interface ThreadPersistence {
   watched: boolean;
 }
 
+/** The same active-run condition as an HTTP 409, found before a buffer POST. */
+export class AgentReviewRunActiveError extends Error {
+  readonly code = "AGENT_RUN_ACTIVE";
+  constructor() { super("Agent run already owns this review"); }
+}
+
 /** One ordered lane per thread, independent of React mount lifetimes. Browser
  * writes never race THIS client's turn POST. A changed server predecessor wins
  * over stale memory (including a run completed while the editor was absent).
@@ -150,7 +156,7 @@ export class AgentReviewPersistence {
       if (!state.ready) await this.load(id, state);
       await this.synchronize(id, state);
       signal.throwIfAborted();
-      if (state.phase !== "idle") throw new Error("Agent run already owns this review");
+      if (state.phase !== "idle") throw new AgentReviewRunActiveError();
       state.phase = "prepared";
       signal.addEventListener("abort", () => {
         // Cancelling preparation is safe to release. Cancelling an attached

@@ -23,6 +23,8 @@ import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js
 import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import { toSendAttachment } from "../../../lib/send-attachments.js";
+import { guardAgentStreamCallbacks } from "./agent-stream-guard.js";
+import { useAgentRunAttachment } from "./use-agent-run-attachment.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import {
   coauthorSkillReadOutputSchema,
@@ -217,6 +219,7 @@ export function useAgentController(
     return () => { mountedRef.current = false; };
   }, []);
   const prepareTurn = useCallback((id: string, signal: AbortSignal): void | Promise<void> => {
+    attachment.preparing();
     const checkTarget = () => {
       signal.throwIfAborted();
       if (!mountedRef.current || currentThreadRef.current !== id) {
@@ -305,11 +308,12 @@ export function useAgentController(
   // persisted extraction (CD-1), so both entry points drive the IDENTICAL
   // wiring; `sawStreamEvent` lets the answer path distinguish a pre-stream
   // failure (backend never rewrote the ask row) from a mid-stream one.
-  const buildStreamCallbacks = (
+  const createStreamCallbacks = (
     activeThreadId: string,
     sawStreamEvent: { current: boolean },
   ): CopilotStreamOpts => ({
     onStatus: (status) => {
+      if (status === "preparing" || status === "streaming") attachment.observing();
       if (status === "streaming") sawStreamEvent.current = true;
     },
     onChunk: (delta) => {
@@ -482,9 +486,44 @@ export function useAgentController(
       });
     },
   });
+  const buildStreamCallbacks = (id: string, saw: { current: boolean }): CopilotStreamOpts => {
+    const controller = abortRef.current;
+    return guardAgentStreamCallbacks(createStreamCallbacks(id, saw),
+      () => controller !== null && !controller.signal.aborted && attachment.isCurrent(controller, id));
+  };
+
+  const attachment = useAgentRunAttachment({
+    kind, threadId, transport, abortRef, isSendingRef,
+    setIsSending,
+    buildCallbacks: buildStreamCallbacks,
+    clearOptimistic: () => {
+      setPendingUserContent("");
+      setPendingUserAttachments([]);
+      setPendingAskAnswer(null);
+      setPendingPermissionAnswer(null);
+    },
+    reset: () => {
+      // LAG-2/LAG-3: drain, then drop the live pair; the store outlives a
+      // remount, and a replay rebuilds the text from cursor zero.
+      flushDeltaBuffer();
+      if (threadId !== null) useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+      setIsSending(false);
+      setPendingUserContent("");
+      setPendingUserAttachments([]);
+    },
+    settled: (result, error) => {
+      if (threadId === null) return;
+      writeTurnFailure(agentThreadKey(kind, threadId), error ? copilotTurnFailureOf(error) : null);
+      const metrics = experienceCopilotContextMetricsSchema.safeParse(result?.metrics);
+      onMetrics?.(metrics.success ? metrics.data : null);
+      onTurnSettled?.(error === undefined && result !== null && result.finishReason !== "cancelled");
+    },
+  });
 
   const handleSend = useCallback(
     async (content: string, opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? attachment.waitForDiscovery(threadId) : undefined;
+      if (discovery && !await discovery) return;
       const trimmed = content.trim();
       // CA-4e3: an attachment-only send is legal (the schema allows content
       // OR non-empty attachments; an empty string is refused — content is
@@ -505,7 +544,7 @@ export function useAgentController(
       abortRef.current = controller;
       isSendingRef.current = true;
       const failureKey = agentThreadKey(kind, threadId);
-      try {
+      const start = async () => {
         const prepared = prepareTurn(threadId, controller.signal);
         if (prepared) await prepared;
         // Preparation is durable before the old activities disappear or the
@@ -523,7 +562,7 @@ export function useAgentController(
         setPendingUserContent(trimmed);
         setPendingUserAttachments(attachments);
 
-        const streamResult = await transport.sendStream(
+        return transport.sendStream(
           threadId,
           {
             // CA-4e3: an attachment-only send omits `content` (the schema
@@ -555,6 +594,10 @@ export function useAgentController(
             ...buildStreamCallbacks(threadId, { current: false }),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => attachment.followExisting(error, threadId, controller, buildStreamCallbacks(threadId, { current: false })));
+        if (!attachment.isCurrent(controller, threadId)) return;
 
         // CM-7: surface the finish event's segmented metrics to the meter.
         // The stream return value carries `metrics` (unknown from the parser);
@@ -573,8 +616,9 @@ export function useAgentController(
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
         writeTurnFailure(failureKey, null);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (!attachment.isCurrent(controller, threadId)) return;
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
@@ -593,9 +637,11 @@ export function useAgentController(
         // for a retry — same as a failure.
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
-        setPendingUserContent("");
-        setPendingUserAttachments([]);
+        if (attachment.isCurrent(controller, threadId)) {
+          abortRef.current = null;
+          setPendingUserContent("");
+          setPendingUserAttachments([]);
+        }
       }
     },
     [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
@@ -603,6 +649,8 @@ export function useAgentController(
 
   const handleAnswer = useCallback(
     async (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? attachment.waitForDiscovery(threadId) : undefined;
+      if (discovery && !await discovery) return;
       // SC-23f: the decision is just another answer-union member on this
       // SAME path — `decision` present = the permission family, absent =
       // the ask family. The wire union members are both `.strict()`, so a
@@ -630,7 +678,7 @@ export function useAgentController(
       isSendingRef.current = true;
       const failureKey = agentThreadKey(kind, threadId);
       const sawStreamEvent = { current: false };
-      try {
+      const start = async () => {
         const prepared = prepareTurn(threadId, controller.signal);
         if (prepared) await prepared;
         // Both split-turn answer families obey the same durable barrier.
@@ -655,7 +703,7 @@ export function useAgentController(
           });
         }
 
-        const streamResult = await transport.answerAsk(
+        return transport.answerAsk(
           threadId,
           {
             answer: {
@@ -688,6 +736,10 @@ export function useAgentController(
             ...buildStreamCallbacks(threadId, sawStreamEvent),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => attachment.followExisting(error, threadId, controller, buildStreamCallbacks(threadId, sawStreamEvent)));
+        if (!attachment.isCurrent(controller, threadId)) return;
 
         // Same CM-7 metrics surfacing as handleSend.
         const rawMetrics = streamResult.metrics;
@@ -703,8 +755,9 @@ export function useAgentController(
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
         writeTurnFailure(failureKey, null);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (!attachment.isCurrent(controller, threadId)) return;
         // A failure BEFORE the stream opened (validation 400, network) means
         // the backend never rewrote the ask row — roll the optimistic flip
         // back so the card returns to interactive. A failure after the SSE
@@ -730,7 +783,7 @@ export function useAgentController(
         isSendingRef.current = false;
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
+        if (attachment.isCurrent(controller, threadId)) abortRef.current = null;
       }
     },
     [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
@@ -740,6 +793,9 @@ export function useAgentController(
   // ratchet) — fed with the controller's send, callback builder, and turn
   // state, re-exposed on the controller's contract below.
   const turnActions = useAgentTurnActions({
+    waitForDiscovery: attachment.waitForDiscovery,
+    isCurrentTurn: attachment.isCurrent,
+    followExistingRun: attachment.followExisting,
     prepareTurn,
     kind,
     transport,
@@ -775,10 +831,7 @@ export function useAgentController(
     },
   });
 
-  const handleCancel = useCallback((): void => {
-    abortRef.current?.abort();
-    toast.info(getT()("cancelling_generation"));
-  }, []);
+  const handleCancel = attachment.cancel;
 
   return { isSending, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

@@ -104,7 +104,9 @@ for (const mode of ["cancel", "failure", "switch", "unmount"] as const) {
         await pending;
       });
       expect(requests).toHaveLength(0);
-      expect(outcomes).toEqual([false]);
+      // Detached views must not settle/refetch the replacement host. Actual
+      // preparation refusal/cancellation still reports failure to its own view.
+      expect(outcomes).toEqual(mode === "switch" || mode === "unmount" ? [] : [false]);
       expect(useAgentTurnStore.getState().getActivities("experience", "thread")).toEqual([prior]);
       expect(h.result.current.isSending).toBe(false);
     } finally {

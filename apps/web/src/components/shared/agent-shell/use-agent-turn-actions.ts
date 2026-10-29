@@ -20,6 +20,7 @@ import {
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 import type { Attachment } from "@vibe-tavern/domain";
+import { isAgentRunActiveError } from "./agent-stream-guard.js";
 
 /**
  * Agent turn actions (AGENT_SHELL_POLISH, Wave 3 / AP-10) — the turn-action
@@ -187,6 +188,9 @@ export interface UseAgentTurnActionsArgs {
   /** The host descriptor's transport — the actions' ONLY API seam. */
   transport: AgentHostTransport;
   prepareTurn?: (threadId: string, signal: AbortSignal) => void | Promise<void>;
+  isCurrentTurn?: (controller: AbortController, threadId: string) => boolean;
+  waitForDiscovery?: (threadId: string) => Promise<boolean> | undefined;
+  followExistingRun?: (error: unknown, threadId: string, controller: AbortController, callbacks: CopilotStreamOpts) => ReturnType<AgentHostTransport["sendStream"]>;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -487,6 +491,8 @@ export function useAgentTurnActions(
 
   const handleRegenerate = useCallback(
     async (opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? args.waitForDiscovery?.(threadId) : undefined;
+      if (discovery && !await discovery) return;
       // Silent guards (no toast): missing thread, already sending.
       if (!threadId || isSendingRef.current) return;
       // Missing provider is the one guard that deserves feedback.
@@ -499,7 +505,7 @@ export function useAgentTurnActions(
       abortRef.current = controller;
       isSendingRef.current = true;
       const sawStreamEvent = { current: false };
-      try {
+      const start = async () => {
         const prepared = args.prepareTurn?.(threadId, controller.signal);
         if (prepared) await prepared;
         controller.signal.throwIfAborted();
@@ -521,7 +527,7 @@ export function useAgentTurnActions(
         clearLiveStreamText();
         // No new user row: the server reruns the surviving thread state.
 
-        const streamResult = await transport.sendStream(
+        return transport.sendStream(
           threadId,
           {
             regenerate: true,
@@ -549,6 +555,19 @@ export function useAgentTurnActions(
             ...buildStreamCallbacks(threadId, sawStreamEvent),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => {
+          if (isAgentRunActiveError(error)) {
+            // A refused regenerate removed no rows. The winning run may be a
+            // normal send, so its completion must not keep old rows hidden.
+            setIsRegenerating(false);
+            setHiddenRegeneratedIds(null);
+          }
+          if (args.followExistingRun) return args.followExistingRun(error, threadId, controller, buildStreamCallbacks(threadId, sawStreamEvent));
+          throw error;
+        });
+        if (args.isCurrentTurn?.(controller, threadId) === false) return;
 
         // Same CM-7 metrics surfacing as handleSend.
         const rawMetrics = streamResult.metrics;
@@ -570,8 +589,9 @@ export function useAgentTurnActions(
         // (no settle → refetch contract change: the effect below drops the
         // set when `threadMessages` no longer contains them).
         setIsRegenerating(false);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (args.isCurrentTurn?.(controller, threadId) === false) return;
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
@@ -592,7 +612,7 @@ export function useAgentTurnActions(
         setHiddenRegeneratedIds(null);
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
+        if (args.isCurrentTurn?.(controller, threadId) !== false) abortRef.current = null;
       }
     },
     [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer, args.prepareTurn],
