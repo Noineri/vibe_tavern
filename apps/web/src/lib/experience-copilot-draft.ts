@@ -56,6 +56,7 @@ import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import type { AgentReviewRound } from "../stores/agent-review-store.js";
 import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
 import { agentThreadKey } from "./agent-host-registry.js";
+import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 
 /** The draft envelope is experience-scoped (the `vt:experience-copilot-draft:`
  *  prefix, the store slices below) — its store-map keys go through the shared
@@ -67,21 +68,13 @@ const DRAFT_KIND = "experience";
 const DRAFT_PREFIX = "vt:experience-copilot-draft:";
 const DRAFT_VERSION = 2;
 
-/** localStorage envelope — versioned so a future schema change can migrate/discard. */
-interface DraftEnvelope {
-  _v: number;
-  activities: unknown[];
-  /** V2: the review round (snapshots / hunk selections / dangling). */
-  round: AgentReviewRound | null;
-}
+/** The legacy reader also examines V1/unknown versions before narrowing. */
+type DraftEnvelope = Omit<AgentReviewEnvelope, "_v"> & { _v: number };
 
 /** What a parsed envelope yields: the finalized activities plus (V2 only) the
  *  review round. `round` is null for V1 envelopes and for a malformed round —
  *  the activities still load, degraded. */
-export interface ParsedCopilotDraft {
-  activities: AgentToolActivity[];
-  round: AgentReviewRound | null;
-}
+export type ParsedCopilotDraft = Pick<AgentReviewEnvelope, "activities" | "round">;
 
 /**
  * Type guard for a finalized, proposed-producing activity. Mirrors the filter

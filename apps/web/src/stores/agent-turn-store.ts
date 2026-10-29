@@ -7,7 +7,12 @@ import {
   type ExperienceCopilotMessageWire,
   type ExperienceCopilotTarget,
   type CopilotTodoItem,
+  type AgentToolActivity,
+  type AgentTodoActivityResult,
+  type AgentAskState,
+  type AgentPermissionState,
 } from "@vibe-tavern/api-contracts";
+export type { AgentToolStatus, AgentToolActivity, AgentTodoActivityResult, AgentAskState, AgentPermissionState } from "@vibe-tavern/api-contracts";
 
 /**
  * Agent turn store (AS-5) — the generic rename of the Experience-Copilot turn
@@ -49,105 +54,6 @@ import {
  * semantics: the newest call's list replaces the whole state. The durable
  * plan is NOT here: the plan is script-owned (`useAgentPlan` cache).
  */
-
-/** Lifecycle of a single tool call within an experience-copilot turn. */
-export type AgentToolStatus = "streaming" | "done" | "error";
-
-/** The `todo` tool's result envelope, projected onto the activity card
- *  payload (TAG-7, restored PM-7). `items` is the FULL rewritten list
- *  (Cline-style — every call replaces the session checklist); `remaining`
- *  counts pending+active items (the collapsed panel's "N remaining goals"),
- *  `activeTitle` is the current step's title. The backend computes both; the
- *  parser recomputes them defensively when an envelope omits one, so live and
- *  persisted renders of the same call can never disagree. */
-export interface AgentTodoActivityResult {
-  items: readonly CopilotTodoItem[];
-  remaining: number;
-  activeTitle?: string;
-}
-
-/** One `ask_user` call's lifecycle state (TAG-7), keyed by the activity's
- *  `toolCallId`. `awaiting_answer` is the live/persisted marker the ask card
- *  (TAG-9) renders interactively; `answered`/`skipped` are the REWRITTEN
- *  tool-row payloads (the answer replaces the awaiting marker in place — no
- *  separate user row). The question/options/recommended always come from the
- *  carrier tool-call args (the answered/skipped rewrites carry no question),
- *  with the awaiting marker's verbatim echo as the fallback. */
-export interface AgentAskState {
-  question: string;
-  options?: readonly string[];
-  recommended?: string;
-  status: "awaiting_answer" | "answered" | "skipped";
-  /** The user's answer text — present iff `status === "answered"`. */
-  answer?: string;
-}
-
-/** One `read_message_prompt` call's lifecycle state (SC-23f), keyed by the
- *  activity's `toolCallId`. `awaiting_permission` is the live/persisted
- *  marker the permission card renders interactively (the card renders
- *  ENTIRELY from it — the reply's first line, variant number and token
- *  estimate, no second fetch); `granted`/`denied` are the REWRITTEN tool-row
- *  payloads (the decision replaces the awaiting marker in place — allow
- *  stores the real rendered prompt, deny `{ status: "denied" }` — and the
- *  card's resolved states read the ROW, not local state alone). */
-export interface AgentPermissionState {
-  status: "awaiting_permission" | "granted" | "denied";
-  /** The reply's branch position (the tool input, echoed by the marker). */
-  position?: number;
-  /** The RP UI's variant number (`variantIndex + 1`). */
-  variantNumber?: number;
-  /** The reply's first line — how the user recognizes the swipe. */
-  replyFirstLine?: string;
-  /** The token estimate of the exact rendered prompt text. */
-  promptTokens?: number;
-  /** The preset name the trace froze (the reply's provenance). */
-  presetName?: string;
-}
-
-/**
- * One tool call's accumulated state. The `tool-result` event finalizes the
- * entry with the proposal fields (summary/proposed/target); earlier events
- * (tool-call/tool-input-start) populate a `streaming` placeholder so the card
- * can render "AI is editing…" while args stream.
- */
-export interface AgentToolActivity {
-  toolCallId: string;
-  toolName: string;
-  status: AgentToolStatus;
-  /** Opaque tool-call args — the operation INPUT (edits / whole-buffer content
-   * for `edit_buffer` / `write_buffer`). Captured from the streaming
-   * `onToolCall` event and from the persisted assistant `toolCalls` entry on
-   * reload, so a later operation card (ER-11) can render a scoped SEARCH/REPLACE
-   * or buffer-write preview instead of only the cumulative `proposed`.
-   * `undefined` for historical rows whose carrier assistant call is missing. */
-  args?: unknown;
-  /** From ExperienceCopilotToolOutput — populated on tool-result. */
-  summary?: string;
-  target?: ExperienceCopilotTarget;
-  proposed?: string;
-  /** Present iff this is a `read_skill_file` activity (the model read a skill
-   *  file on demand). Read activities carry NO `target`/`proposed`, so they
-   *  never enter proposal aggregation (ER-9) — they render only as glanceable
-   *  tool activity (the path read). */
-  readPath?: string;
-  /** Present iff this is a `todo` activity whose result envelope parsed
-   *  (TAG-7, restored PM-7): the card payload (items + remaining +
-   *  activeTitle). A failed save (`ok:false`) or malformed envelope leaves
-   *  this unset and the card renders as an error with the raw content —
-   *  mirroring the write_buffer branch's failure shape. */
-  todo?: AgentTodoActivityResult;
-  /** Present iff this is an `ask_user` activity (TAG-7): the question/
-   *  options/recommended plus the awaiting/answered/skipped status the ask
-   *  card (TAG-9) renders. Produced by ONE parser (`parseAgentAskState`)
-   *  from both the live SSE path and the persisted extraction, so the two
-   *  paths cannot drift. */
-  ask?: AgentAskState;
-  /** Present iff this is a `read_message_prompt` activity (SC-23f): the
-   *  awaiting/granted/denied status the permission card renders. Produced
-   *  by ONE parser (`parseAgentPermissionState`) from both the live SSE
-   *  path and the persisted extraction, so the two paths cannot drift. */
-  permission?: AgentPermissionState;
-}
 
 /** TF-4: one ordered feed entry of the active turn — a closed-or-open TEXT
  *  segment or a reference to a tool activity (rendered by id via the

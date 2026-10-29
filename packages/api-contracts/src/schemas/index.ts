@@ -1,6 +1,17 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export {
+  agentToolStatusSchema, agentTodoActivityResultSchema, agentAskStateSchema,
+  agentPermissionStateSchema, agentToolActivitySchema, agentReviewActivitySchema,
+  agentReviewBufferSnapshotSchema, agentDanglingCaptureSchema,
+  agentReviewRoundSchema, agentReviewEnvelopeSchema,
+} from "./agent-review-round-schema.js";
+export type {
+  AgentToolStatus, AgentTodoActivityResult, AgentAskState, AgentPermissionState,
+  AgentToolActivity, AgentReviewBufferSnapshot, AgentDanglingCapture,
+  AgentReviewRound, AgentReviewEnvelope,
+} from "./agent-review-round-schema.js";
 export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
 export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
 export {

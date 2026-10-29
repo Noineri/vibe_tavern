@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
+import type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
+export type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
 
 /**
  * Agent review ROUND store (AS-5) — the generic rename of the
@@ -39,54 +41,8 @@ import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
  * later kinds namespace to `${kind}:${threadId}`.
  */
 
-/** CD-2 snapshot of one turn's starting buffers — the revert target AND the
- *  diff "before" side for the inline review (the editor is frozen while the
- *  model works, so the buffers at proposal time equal the snapshot). */
-export interface AgentReviewSnapshot {
-  /** Monotonic per-thread id (turn order within the round). */
-  id: number;
-  rules: string;
-  visual: string;
-}
-
-/** CD-8 dangling capture: the still-pending proposal frozen right before a
- *  new turn's send clears the live turn store. Per-buffer `rules`/`visual`
- *  carry the proposal texts; `base*` carry the diff bases they were captured
- *  against. Buffers the live turn later touches fall back to this. */
-export interface AgentDanglingCapture {
-  rules?: string;
-  visual?: string;
-  baseRules: string;
-  baseVisual: string;
-}
-
 /** Which buffer a per-buffer piece of round state belongs to. */
 export type AgentReviewBuffer = "rules" | "visual";
-
-/** The serializable round record. Hunk selections are arrays (not Sets) so
- *  the record round-trips through the localStorage envelope unchanged. */
-export interface AgentReviewRound {
-  /** Turn-start snapshots, oldest first (a future checkpoint timeline can use
-   *  the stack; revert + diff base read only the last one). */
-  snapshots: AgentReviewSnapshot[];
-  /** Id for the NEXT snapshot (per-thread monotonic; serialized with the
-   *  round so rehydration keeps ids increasing). */
-  nextSnapshotId: number;
-  /** CD-6: accepted hunk ids per buffer (RV-1 tooLarge sentinel id included). */
-  acceptedRules: number[];
-  acceptedVisual: number[];
-  /** RV-2: dismissed hunk ids per buffer. */
-  dismissedRules: number[];
-  dismissedVisual: number[];
-  /** RV-1: the review key (`base\0proposed`) each buffer's sets belong to.
-   *  `ensureReviewKey` resets a buffer's sets ONLY when the key actually
-   *  changed (a new proposal) — a remount with the same proposal must keep
-   *  the progress. Null while no proposal is pending for that buffer. */
-  rulesKey: string | null;
-  visualKey: string | null;
-  /** CD-8 dangling capture, if any. */
-  dangling: AgentDanglingCapture | null;
-}
 
 export const EMPTY_REVIEW_ROUND: AgentReviewRound = Object.freeze({
   snapshots: [],
