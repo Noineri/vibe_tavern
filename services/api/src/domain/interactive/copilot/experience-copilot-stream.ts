@@ -42,6 +42,8 @@ import {
 import type { AgentOwnModelBinding } from "../../agent/agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../../agent/agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
+import type { AgentReviewService } from "../../agent/agent-review-service.js";
+import { ExperienceCopilotReviewPersistence } from "./experience-copilot-review-persistence.js";
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotAssembleResult,
@@ -68,6 +70,8 @@ export type {
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ExperienceCopilotStreamDeps {
+  /** BR-2b: optional for raw legacy callers; production always supplies it. */
+  readonly reviews?: Pick<AgentReviewService, "get" | "put">;
   readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The ER-3 store (thread + message persistence). */
   readonly store: ExperienceCopilotStore;
@@ -228,6 +232,7 @@ export async function* streamExperienceCopilot(
   deps: ExperienceCopilotStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
+  const review = deps.reviews ? new ExperienceCopilotReviewPersistence(deps.reviews, request.threadId) : null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -246,7 +251,11 @@ export async function* streamExperienceCopilot(
     assembleDebugFields: (context) => ({ rulesTrusted: context.rulesTrusted }),
 
     // ── Experience context: rules / visual / bound visuals / trust flag ──
-    loadContext: (thread) => loadCopilotContext(thread.scriptId, deps),
+    loadContext: async (thread) => {
+      const context = await loadCopilotContext(thread.scriptId, deps);
+      await review?.begin({ rules: request.rules ?? context.rules, visual: request.visual ?? context.visual ?? "" });
+      return context;
+    },
 
     // ── Copilot profile (CP-6/CP-7 + SC-0f): a CHAT-OWNED thread resolves
     //  through the chat chain (chat row → kind default → the kind's built-in);
@@ -357,5 +366,14 @@ export async function* streamExperienceCopilot(
     ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
-  yield* streamAgentTurn(request, streamDeps, seams, signal);
+  // Exhaust the core first: tool/message persistence must settle before review
+  // is committed, and a client reacting to finish must see the saved envelope.
+  let terminal: ExperienceCopilotStreamEvent | undefined;
+  for await (const event of streamAgentTurn(request, streamDeps, seams, signal)) {
+    review?.observe(event);
+    if (event.event === "finish" || event.event === "abort" || event.event === "error") terminal = event;
+    else yield event;
+  }
+  await review?.persist();
+  if (terminal) yield terminal;
 }

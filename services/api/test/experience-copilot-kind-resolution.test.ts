@@ -403,6 +403,11 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
   const stores = {
     experienceCopilot: store,
     agentPlans: { get: async () => null, save: async () => {} },
+    // BR-2b: these dispatch-only provider replies contain no buffer proposals.
+    agentReviewRounds: {
+      get: async () => null,
+      put: async () => { throw new Error("A non-proposal dispatch turn must not write a review"); },
+    },
     // DR-2 (M1): the provider-deps wiring reads the own-model store on
     // every turn now — null = no row, the pre-DR-2 resolution these dispatch
     // tests pin.
