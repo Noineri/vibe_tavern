@@ -7,6 +7,8 @@ import type { GenerationMetadata } from "./generation-metadata.js";
 export interface ParseSSEStreamOptions {
   response: Response;
   signal?: AbortSignal;
+  /** Numbered replay consumers may reject an already-projected frame. */
+  onEventId?: (id: string) => boolean | void;
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
@@ -92,6 +94,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
 
   const parser = createParser({
     onEvent(ev: EventSourceMessage) {
+      if (ev.id !== undefined && opts.onEventId?.(ev.id) === false) return;
       // Server-relayed cancel (the request abort was bounced back through the
       // orchestrator). Resolve as cancelled without throwing an error.
       if (ev.event === "abort") throw new AbortSentinel();

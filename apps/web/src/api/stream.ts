@@ -13,6 +13,7 @@ import type { GenerationMetadata } from "../lib/generation-metadata.js";
 
 export interface StreamOpts {
   signal?: AbortSignal;
+  onEventId?: (id: string) => boolean | void;
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
@@ -33,18 +34,19 @@ export async function streamChatEndpoint(
   url: string,
   body: unknown,
   opts: StreamOpts,
+  method: "POST" | "GET" = "POST",
 ): Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown }> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   opts.onStatus("preparing");
 
   const response = await fetch(appendTokenQuery(`${baseUrl}${url}`), {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     signal: opts.signal,
   });
 
@@ -72,13 +74,14 @@ export async function streamChatEndpoint(
     const category = typeof errorObj?.details?.category === "string"
       ? (errorObj.details.category as ProviderErrorCategory)
       : "unknown";
-    throw new ProviderStreamError(message, category);
+    throw new ProviderStreamError(message, category, errorObj?.code);
   }
 
   opts.onStatus("streaming");
   return parseSSEStream({
     response,
     signal: opts.signal,
+    onEventId: opts.onEventId,
     onStatus: opts.onStatus,
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,

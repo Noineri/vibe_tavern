@@ -255,6 +255,9 @@ export interface RecordProposalCardProps {
  * type unification generalize these behind per-kind wire types.
  */
 export interface AgentHostTransport {
+  /** Server-owned run lifecycle. Built-in hosts all wire this; transports for
+   * embedded/synchronous clients may omit background-run support. */
+  runs?: typeof import("../api/agent-run-api.js").agentThreadRuns;
   /** Stream one agent turn for a thread (the send path). */
   sendStream: typeof streamExperienceCopilot;
   /** Answer a pending `ask_user` question — the split-turn continuation

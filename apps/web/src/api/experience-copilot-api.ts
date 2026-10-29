@@ -14,7 +14,8 @@
  */
 import { streamChatEndpoint } from "./stream.js";
 import type { StreamOpts } from "./stream.js";
-import { apiFetch, client, getGatewayBaseUrl } from "./client.js";
+import { client } from "./client.js";
+import { isAgentThreadRunning } from "./agent-run-api.js";
 import { unwrapRpc } from "./unwrap.js";
 import type {
   ExperienceCopilotStreamRequest,
@@ -117,11 +118,7 @@ export async function deleteExperienceCopilotReview(threadId: string): Promise<{
 }
 
 /** The feature-registered run-list route is outside the static Hono RPC tree. */
-export async function isExperienceCopilotRunning(threadId: string): Promise<boolean> {
-  const active: unknown = await unwrapRpc(await apiFetch(`${getGatewayBaseUrl()}/api/agent-runs`));
-  if (!Array.isArray(active)) throw new Error("Invalid agent run list");
-  return active.some((run: unknown) => typeof run === "object" && run !== null && "threadId" in run && run.threadId === threadId);
-}
+export const isExperienceCopilotRunning = isAgentThreadRunning;
 
 /** Archive the current active thread (if any) and start a fresh one. */
 export async function startExperienceCopilotSession(
