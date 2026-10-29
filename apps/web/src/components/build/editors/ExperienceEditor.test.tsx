@@ -38,6 +38,8 @@ import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from ".
 import { getVisualStarter, VISUAL_STARTERS } from "../../experience/starters/index.js";
 import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+const navigationBeforeSuite = useBuildNavigationStore.getState();
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
@@ -298,6 +300,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  useBuildNavigationStore.setState(navigationBeforeSuite, true);
   const host = getAgentHost("experience");
   host.renderEditorPane = originalExperiencePane;
 });
@@ -324,6 +327,7 @@ function holdNextUpdate() {
 }
 
 beforeEach(() => {
+  useBuildNavigationStore.setState(navigationBeforeSuite, true);
   mobileMocks.mobile = false;
   listAllScripts.mockClear();
   createScript.mockClear();
@@ -563,6 +567,18 @@ async function waitForExperienceDeleteSecondary(): Promise<HTMLElement> {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("ExperienceEditor", () => {
+  it("notification Open selects the requested mini-app and keeps its unsaved rules buffer", async () => {
+    serverScripts = [{ ...baseScript }];
+    useScriptDraftStore.getState().ensure(baseScript);
+    useScriptDraftStore.getState().patch(baseScript.id, { code: "Unsaved rules" });
+    useBuildNavigationStore.getState().requestAgentOpen("experience", baseScript.id);
+    const ui = render(<ExperienceEditor />);
+    await waitFor(() => expect((ui.getByPlaceholderText("script_name") as HTMLInputElement).value).toBe(baseScript.name));
+    await waitFor(() => expect(useBuildNavigationStore.getState().agentOpenIntent).toBeNull());
+    expect(useScriptDraftStore.getState().drafts[baseScript.id]!.values.code).toBe("Unsaved rules");
+    expect(createScript).not.toHaveBeenCalled();
+    expect(updateScript).not.toHaveBeenCalled();
+  });
   it("lists only interactive scripts; the blank create persists a fresh script and opens the editor in creation mode", async () => {
     serverScripts = [
       { ...baseScript },

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { Ic } from "../../shared/icons.js";
@@ -25,6 +25,7 @@ import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-ta
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+import { useAgentScriptOpen } from "../../../hooks/use-agent-script-open.js";
 import {
   isScriptDraftDirty,
   useScriptDraftStore,
@@ -163,8 +164,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   })();
 
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
+  const scriptLoad = useRef(0);
 
   const refreshScripts = useCallback(async () => {
+    const load = ++scriptLoad.current;
     // "all" — overview mode (read-only), returns all scripts with no scope filter.
     // Otherwise — filtered by scope + owner.
     // Interactive scripts are owned exclusively by the Experience editor;
@@ -175,10 +178,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       : scope === "current"
         ? chatId ? await listParticipatingScripts(chatId) : []
         : await listScripts(scope, scopeId);
-    setScripts(all.filter((s) => s.scriptKind !== "interactive"));
+    if (load === scriptLoad.current) setScripts(all.filter((s) => s.scriptKind !== "interactive"));
   }, [scope, scopeId, chatId]);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
+  useAgentScriptOpen("script", (row) => {
+    ++scriptLoad.current; // A previous scope read must not erase this destination.
+    setScripts((rows) => [...rows.filter((item) => item.id !== row.id), row]);
+    setActiveScriptId(row.id);
+  }, scope === "all");
 
   // ── Explicit authoring draft ────────────────────────────
   // Server records are the loaded base/list cache; editor fields come from a

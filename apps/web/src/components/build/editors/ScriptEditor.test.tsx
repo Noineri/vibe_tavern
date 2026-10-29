@@ -23,6 +23,8 @@ import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../..
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+const navigationBeforeSuite = useBuildNavigationStore.getState();
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { installBootstrapActionsSeam } from "../../../../test/bootstrap-actions-seam.js";
@@ -207,6 +209,7 @@ function holdNextUpdate() {
 }
 
 beforeEach(() => {
+  useBuildNavigationStore.setState(navigationBeforeSuite, true);
   listScripts.mockClear();
   listAllScripts.mockClear();
   listParticipatingScripts.mockClear();
@@ -283,6 +286,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
+  useBuildNavigationStore.setState(navigationBeforeSuite, true);
 	globalThis.fetch = realFetch;
 });
 
@@ -362,6 +366,23 @@ function barScope(nameInput: HTMLElement) {
 }
 
 describe("useScriptPanel explicit save", () => {
+  it("notification Open selects a script directly without replacing its dirty draft", async () => {
+    listAllScripts.mockResolvedValue([{ ...baseScript }]);
+    useScriptDraftStore.getState().ensure(baseScript);
+    useScriptDraftStore.getState().patch(baseScript.id, { code: "Notification draft" });
+    useBuildNavigationStore.getState().requestAgentOpen("script", baseScript.id);
+    function Destination() {
+      const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all", ownerId: null });
+      return <>{panel.modals}{panel.scriptAgentPanel ?? panel.scriptListContent}</>;
+    }
+    const ui = render(<Destination />);
+    await waitFor(() => expect((ui.getByPlaceholderText("script_name") as HTMLInputElement).value).toBe(baseScript.name));
+    await waitFor(() => expect(useBuildNavigationStore.getState().agentOpenIntent).toBeNull());
+    const editor = ui.container.querySelector<HTMLElement>(".cm-editor")!;
+    expect(EditorView.findFromDOM(editor)?.state.doc.toString()).toBe("Notification draft");
+    expect(updateScript).not.toHaveBeenCalled();
+    expect(createScript).not.toHaveBeenCalled();
+  });
   it("keeps every field local until Save, then PATCHes one complete snapshot without refetching", async () => {
     const { container, findByText, getByPlaceholderText, getByRole } = render(<Harness />);
     const view = await openEditor(container, findByText);
