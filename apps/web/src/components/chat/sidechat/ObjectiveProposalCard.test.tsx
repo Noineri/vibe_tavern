@@ -13,7 +13,7 @@
  * (seeded/reset per test); `useT`, the proposals API, `fetchChatAction`, and
  * the sonner toast are mocked (the objective-zone.test.tsx precedent).
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
@@ -285,5 +285,163 @@ describe("ObjectiveProposalCard — page translation (follow-up 2026-10-24)", ()
     expect(getByTestId("objective-proposal-description").getAttribute("translate")).toBe("yes");
     expect(getByTestId("objective-proposal-reason").getAttribute("translate")).toBe("yes");
     expect(getByTestId("objective-proposal-accept").getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── Plan mode (DIRECTOR_MODE_PLAN DR-10b, R3) ──────────────────────────
+// behavior addition: while the ACTIVE branch plan has events, the same
+// objective proposal renders as «Новое событие в плане» (mock §6) — Accept
+// inserts the goal as the next plan event. The plan comes through the SAME
+// useAgentPlan cache seam (the plan GET mocked below); with no plan events
+// the card is exactly today's goal card (the SC-11 pins above, untouched).
+// The seam re-registration serves the one interpolated key from the bundled
+// EN table; every other key keeps the raw-key echo the pins above rely on.
+installI18nContextSeam({ interpolateKeys: ["agent.objective_proposal.plan_next_line"] });
+
+const plansByBranch = new Map<string, ReturnType<typeof planOf>>();
+const planOf = (tasks: { id: string; title: string; body: string; status: string }[]) => ({
+  goal: "Cat becomes human",
+  constraints: [],
+  tasks,
+});
+const PLAN_WITH_EVENTS = planOf([
+  { id: "ev1", title: "Morning after the transformation", body: "", status: "completed" },
+  { id: "ev2", title: "House rules", body: "Noah said do not jump out the window", status: "active" },
+]);
+const INSERTED_PLAN = planOf([
+  ...PLAN_WITH_EVENTS.tasks,
+  { id: "task_new", title: "Cross the ravine before dawn", body: "", status: "pending" },
+]);
+const originalFetch = globalThis.fetch;
+const fetchCalls: string[] = [];
+beforeEach(() => {
+  plansByBranch.clear();
+  fetchCalls.length = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+    fetchCalls.push(url);
+    if (url.includes("/plan")) {
+      const branchId = url.split("/branches/")[1]?.split("/")[0] ?? "";
+      return new Response(
+        JSON.stringify({ plan: plansByBranch.get(branchId) ?? planOf([]) }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+});
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
+
+/** Seed the ACTIVE chat WITH a branch (the plan owner's second half) — the
+ *  branch-less seed above is exactly the no-owner case (today's card). */
+function seedChatWithBranch(branchId: string) {
+  useSnapshotStore.getState().ingestSnapshot({
+    activeChat: {
+      id: "c1",
+      activeBranchId: branchId,
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
+    },
+  } as unknown as AppSnapshot);
+}
+
+describe("ObjectiveProposalCard — plan mode (DR-10b / R3)", () => {
+  it("with plan events: the plan-mode title, chip, interpolated next line and Add button (mock §6)", async () => {
+    plansByBranch.set("b-plan", PLAN_WITH_EVENTS);
+    seedChatWithBranch("b-plan");
+    const { getByTestId } = render(
+      <ObjectiveProposalCard proposal={proposal({})} threadId="thread-1" />,
+    );
+    await waitFor(() =>
+      expect(getByTestId("objective-proposal-status").textContent).toBe(
+        "agent.objective_proposal.plan_status_pending",
+      ),
+    );
+    const card = getByTestId("objective-proposal-card");
+    expect(card.textContent).toContain("agent.objective_proposal.plan_mode_title");
+    // The current event (the active one — ev2) interpolates into the line.
+    expect(getByTestId("objective-plan-next-line").textContent).toBe(
+      'It will go next, after “House rules”.',
+    );
+    expect(getByTestId("objective-proposal-accept").textContent).toBe(
+      "agent.objective_proposal.plan_accept",
+    );
+    expect(getByTestId("objective-proposal-reject").textContent).toBe("coauthor.review.reject");
+  });
+
+  it("with NO plan events: exactly today's card (chip, accept label, no plan strings)", async () => {
+    plansByBranch.set("b-empty", planOf([]));
+    seedChatWithBranch("b-empty");
+    const { getByTestId, queryByTestId } = render(
+      <ObjectiveProposalCard proposal={proposal({})} threadId="thread-1" />,
+    );
+    await waitFor(() => expect(fetchCalls.some((url) => url.includes("/plan"))).toBe(true));
+    await waitFor(() =>
+      expect(getByTestId("objective-proposal-status").textContent).toBe(
+        "agent.record_proposal.status_pending",
+      ),
+    );
+    expect(getByTestId("objective-proposal-accept").textContent).toBe("agent.record_proposal.accept");
+    expect(queryByTestId("objective-plan-next-line")).toBeNull();
+    const card = getByTestId("objective-proposal-card");
+    expect(card.textContent).not.toContain("agent.objective_proposal.plan_mode_title");
+    expect(card.textContent).not.toContain("agent.objective_proposal.plan_accept");
+  });
+
+  it("an all-completed plan keeps the plan mode but renders no next line (no current event)", async () => {
+    plansByBranch.set(
+      "b-done",
+      planOf([{ id: "ev1", title: "All wrapped up", body: "", status: "completed" }]),
+    );
+    seedChatWithBranch("b-done");
+    const { getByTestId, queryByTestId } = render(
+      <ObjectiveProposalCard proposal={proposal({})} threadId="thread-1" />,
+    );
+    await waitFor(() =>
+      expect(getByTestId("objective-proposal-status").textContent).toBe(
+        "agent.objective_proposal.plan_status_pending",
+      ),
+    );
+    expect(queryByTestId("objective-plan-next-line")).toBeNull();
+  });
+
+  it("Accept under a plan calls the body-less apply, ingests the plan companion and shows the plan applied line", async () => {
+    plansByBranch.set("b-apply", PLAN_WITH_EVENTS);
+    seedChatWithBranch("b-apply");
+    const { renderHook } = await import("@testing-library/react");
+    const { useAgentPlan } = await import("../../../hooks/use-agent-plan.js");
+    const hook = renderHook(() =>
+      useAgentPlan({ kind: "chatBranch", chatId: "c1", branchId: "b-apply" }),
+    );
+    const { getByTestId } = render(
+      <ObjectiveProposalCard proposal={proposal({})} threadId="thread-1" />,
+    );
+    await waitFor(() => expect(hook.result.current.plan.tasks).toHaveLength(2));
+    mocks.applyObjectiveProposal.mockResolvedValue({
+      proposal: proposal({ status: "applied" }),
+      plan: INSERTED_PLAN,
+    });
+    mocks.fetchChatAction.mockResolvedValue(undefined);
+    const getsBefore = fetchCalls.length;
+
+    fireEvent.click(getByTestId("objective-proposal-accept"));
+
+    await waitFor(() => expect(mocks.applyObjectiveProposal).toHaveBeenCalledTimes(1));
+    expect(mocks.applyObjectiveProposal).toHaveBeenCalledWith("thread-1", "tc-prop");
+    await waitFor(() => expect(mocks.fetchChatAction).toHaveBeenCalledTimes(1));
+    // The companion plan lands in the cache — no second GET.
+    await waitFor(() => expect(hook.result.current.plan.tasks).toHaveLength(3));
+    expect(fetchCalls.length).toBe(getsBefore);
+    await waitFor(() =>
+      expect(getByTestId("objective-proposal-card").getAttribute("data-status")).toBe("applied"),
+    );
+    expect(getByTestId("objective-proposal-status").textContent).toBe(
+      "agent.objective_proposal.plan_status_applied",
+    );
+    expect(getByTestId("objective-plan-applied-line").textContent).toBe(
+      "agent.objective_proposal.plan_applied_line",
+    );
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 });

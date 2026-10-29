@@ -57,6 +57,7 @@ import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
+import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
 
 useDomEnv();
 
@@ -333,13 +334,17 @@ describe("sidechat-host — registration (SC-13b)", () => {
     expect(host.profileAssignment).toEqual({ target: "chat" });
     // AP-2: the sidechat renders RP colors without RP sizes.
     expect(host.messageMarkup).toBe("rp-colors");
-    // SC-13c + DR-10a: the objective card renders `recordType: "objective"`
-    // in place; the story-plan card renders the `propose_plan` tool's record
-    // type (the web-side pin of the proposal domain's constant).
-    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan"]);
+    // SC-13c + DR-10a + DR-10b: the objective card renders
+    // `recordType: "objective"` in place; the story-plan card renders the
+    // `propose_plan` tool's record type and the tracker-scene card
+    // `propose_tracker_template`'s (the web-side pins of the proposal
+    // domain's constants).
+    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan", "tracker-scene"]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
     expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
+    expect(host.recordProposalRenderers["tracker-scene"]).toBe(TrackerSceneProposalCard);
     expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
+    expect(TRACKER_SCENE_RECORD_TYPE).toBe("tracker-scene");
   });
 
   it("carries the branch plan owner and the six meter labels", () => {

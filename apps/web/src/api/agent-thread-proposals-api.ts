@@ -128,3 +128,34 @@ export async function rejectStoryPlanProposal(
   });
   return unwrapProposal(response);
 }
+
+// ─── The tracker-scene arm (DIRECTOR_MODE_PLAN DR-10b) ─────────────────────
+// Same routes, same envelope/typed-409 handling as the objective pair above
+// (the backend dispatches by the row's recordType — DR-5). Both calls stay
+// BODY-LESS: the scene half rides the addressed row's payload, and the apply
+// turns the chat's scene tracker on with it. The response's `patch`
+// companion is display-only for the card (its Accept refetches the chat,
+// which carries the same config to every consumer).
+
+/** Apply one pending tracker-scene proposal: the chat's scene tracker setup
+ *  is replaced with the proposed scene half. */
+export async function applyTrackerSceneProposal(
+  threadId: string,
+  toolCallId: string,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].apply.$post({
+    param: { threadId, toolCallId },
+  });
+  return unwrapProposal(response);
+}
+
+/** Reject one pending tracker-scene proposal: nothing is written. */
+export async function rejectTrackerSceneProposal(
+  threadId: string,
+  toolCallId: string,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].reject.$post({
+    param: { threadId, toolCallId },
+  });
+  return unwrapProposal(response);
+}

@@ -121,6 +121,11 @@ export const Ic = {
   // The story-plan proposal card's header glyph (DIRECTOR_MODE_DR-10a, mock
   // §1/§6) — a plan under review, distinct from the objective card's target.
   listCheck:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,4 3,6 6.2,2"/><line x1="8.5" y1="4" x2="15" y2="4"/><line x1="8.5" y1="8.5" x2="15" y2="8.5"/><line x1="8.5" y1="13" x2="15" y2="13"/></svg>,
+  // Layout list — a leading square with a line beside it and two full lines
+  // (the mockup's ti-layout-list reduced to the listCheck three-row rhythm).
+  // The tracker-scene proposal card's header glyph (DIRECTOR_MODE DR-10b,
+  // mock §6) — scene fields under review.
+  layoutList:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="4.5" height="4.5" rx="1"/><line x1="8" y1="3.25" x2="15" y2="3.25"/><line x1="1" y1="8.5" x2="15" y2="8.5"/><line x1="1" y1="13.5" x2="15" y2="13.5"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
   // Progress ring — a faint full track with a partial arc drawn over it. The
