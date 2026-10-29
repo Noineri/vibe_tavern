@@ -733,3 +733,29 @@ Threads stay **script-owned with no kind column**: `experience_copilot_threads` 
 - The thread kind is derived, never stored: no `kind` column on `experience_copilot_threads`, and client-side store keys alone are kind-qualified (`agentThreadKey`; server keys stay bare).
 
 **Revisit trigger:** A kind that needs user-defined behaviour (users authoring or installing kinds) reopens the internal-kinds ruling; a thread that must move between kinds (outliving its script's ownership, or a non-script owner like a sidechat chat thread) reopens the script-owned-thread model.
+
+---
+
+## AD-029: The Director as a Sidechat Profile Driving the Goal Tracker
+
+**Context:** The narrator design (2026-09-22) needed a director that plans a story, keeps the roleplay on it, and checks progress. Two structural questions had no defaults: where the director lives (its own agent kind? a tab beside the sidechat?) and how the plan reaches the roleplay prompt (a new injection/check layer?). The owner ruled both at once (DIRECTOR_MODE_PLAN, rulings R1 and 3a, 2026-10): the director is a built-in profile of the existing sidechat kind, and the goal tracker — already injecting and checking goals per turn — executes the plan's current event instead of a second mechanism doing the same job.
+
+**Options considered:**
+
+| Approach | Problem |
+|----------|---------|
+| A dedicated director agent kind | A second chat-owned kind means a second host, a second session list, and mode tabs — all to duplicate the sidechat's turn/review/session machinery; a kind is a species, and the director differs from «Out of character» only by prompt and tool toggles, which profiles already are. |
+| A separate injection/check layer for plan events | A second per-turn injection plus a second scheduled check would restate the goal tracker's existing task layer and completion check; two layers double the prompt cost and can disagree about what is current. |
+| **A sidechat built-in profile + the goal tracker riding the branch plan** | Chosen. `builtin-director` is a seed of `sidechat-ooc` (its own base prompt and tool set); the branch plan projects onto the tracker's goals 1:1, the tracker injects and checks the current event, and a passed check advances the plan through follow-back — no new kind, no new check machinery. |
+
+**Decision:** The director is a built-in profile (`builtin-director`, declared in `services/api/src/domain/agent/kinds/sidechat-ooc-kind.ts` beside the OOC seed since DR-1) of the one sidechat kind — not a second kind, not a tab. Ruling 3a is the tracker half: `services/api/src/domain/director/story-plan-sync.ts` projects the ACTIVE branch's plan onto the goal tracker's short-term goals (event id → goal id, premise never injected — the RP model sees only the current event), and a passed check follows back into the plan's statuses with no extra model call. The switch is gated by capability, not identity: the plan tool `propose_plan` decides it — a profile that carries it (the seed, or any user copy with the toggle on) IS the director for that chat, and `callDirector` switches the chat only when the active profile lacks the tool. The goals UI defers authoring to the plan (DR-13): while a plan has events, the tracker's config shows the muted note and hides manual goal authoring; nothing from the director reaches the plan or the tracker without the user's Accept.
+
+**Consequences:**
+- One sidechat kind serves both OOC discussion and the director through its built-in seeds — the profile chip, the assignment write, the model binding and the sessions are all shared; a per-chat choice picks which profile answers.
+- The director's tools are ordinary profile toggles (`propose_plan`, `propose_tracker_template`, `ask_user` on; `propose_objective` off — its goals come from the plan), so a user copy of the director is just a profile, and the strict tool schema keeps kinds from smuggling each other's tools.
+- While a plan drives a chat, that chat's goal tracker is occupied by the plan (accepted cost, ruling 3a): the goals section is the plan's projection, and an objective proposal becomes the next plan event instead of a tracker goal (R3).
+- Branch ownership is preserved for free: the tracker re-projects from the ACTIVE branch's plan on every branch change (R2), because the plan — not the tracker — is the source of truth for events and statuses.
+
+**Evidence:** The seeds and their tool sets are pinned by `services/api/test/sidechat-ooc-kind.test.ts` and `services/api/test/sidechat-director-tools.test.ts`; the projection/follow-back/reconcile by `services/api/test/story-plan-sync.test.ts` and `services/api/test/story-plan-wiring.test.ts`; the capability-gated switch by `apps/web/src/stores/sidechat-call-director-store.test.ts`; the plan-driven goals UI by `apps/web/src/components/build/editors/ObjectiveConfig.test.tsx`. The record-proposal registry that keeps Accept the only write path is `SIDECHAT_RECORD_PROPOSAL_REGISTRY` (`services/api/src/domain/sidechat/sidechat-objective-proposal.ts`, pinned by `services/api/test/agent-thread-proposals.test.ts`).
+
+**Revisit trigger:** A director capability that the sidechat's profile shape cannot express (per-turn model routing, several drafts with a judge — the deferred design phases) reopens the profile-not-kind ruling; a second chat-owned kind would then be the honest shape, not a workaround.
