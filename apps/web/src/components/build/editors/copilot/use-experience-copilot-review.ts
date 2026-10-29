@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { ExperienceCopilotLaunchContext, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
-import { captureAgentReviewProposal } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import type { CopilotBufferReview } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { TFunc } from "../../../../i18n/locale-helpers.js";
 import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-state.js";
 import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/agent-turn-store.js";
-import { syncPersistedCopilotRound } from "../../../../lib/experience-copilot-draft.js";
+import { syncPersistedCopilotRound, rehydrateExperienceCopilotDrafts, prepareExperienceCopilotReviewTurn } from "../../../../lib/experience-copilot-draft.js";
 import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
 import { useAgentPendingReviewPublish } from "../../../shared/agent-shell/use-agent-pending-review-publish.js";
 import { useShallow } from "zustand/react/shallow";
@@ -178,6 +177,17 @@ export function useExperienceCopilotReviewSession({
   onRulesChangeRef.current = onRulesChange;
   onVisualChangeRef.current = onVisualChange;
 
+  const [loadedThread, setLoadedThread] = useState<string | null>(null);
+  useEffect(() => {
+    if (!threadId) return;
+    let mounted = true;
+    void rehydrateExperienceCopilotDrafts(threadId).then(() => {
+      if (mounted) setLoadedThread(threadId);
+    }).catch((error: unknown) => console.warn("[agent-review] hydration failed", error));
+    return () => { mounted = false; };
+  }, [threadId]);
+  const reviewLoaded = loadedThread === threadId;
+
   // ── Review state (CD-2/CD-3): freeze, snapshots, revert ────────────────
   // The live turn's activities feed the review hook (proposal aggregation);
   // the SAME store read the MessageList does — never from inside a render.
@@ -197,6 +207,7 @@ export function useExperienceCopilotReviewSession({
     kind: kind,
     threadId: threadId ?? "",
     isSending,
+    snapshotOnSend: false,
     rulesCode,
     visualSource,
     activities: turnActivities,
@@ -253,15 +264,10 @@ export function useExperienceCopilotReviewSession({
   // proposal is captured here before the send — it keeps hanging until the
   // model revises it or the user resolves it by hand. Nothing is auto-applied.
   const dangling = round.dangling;
-  const proposalRef = useRef(review.proposal);
-  const proposalBaseRef = useRef(review.proposalBase);
-  proposalRef.current = review.proposal;
-  proposalBaseRef.current = review.proposalBase;
-  const captureDangling = useCallback(() => {
-    if (!threadId) return;
-    const capture = captureAgentReviewProposal(proposalRef.current, proposalBaseRef.current, { rules: rulesCode, visual: visualSource });
-    if (capture) useAgentReviewRoundStore.getState().captureDangling(kind, threadId, capture);
-  }, [rulesCode, visualSource, threadId]);
+  const captureDangling = useCallback(async (id: string, signal: AbortSignal) => {
+    await prepareExperienceCopilotReviewTurn(id, signal, { rules: rulesCodeRef.current, visual: visualSourceRef.current });
+    setLoadedThread(id);
+  }, []);
 
   // Effective per-buffer inputs: the LIVE proposal wins its buffers; a buffer
   // the live turn did not touch falls back to the dangling capture.
@@ -302,19 +308,16 @@ export function useExperienceCopilotReviewSession({
   // isolate threads, and wiping on the "" → threadId transition would destroy
   // the restored round — the exact bug this store exists to fix.
   useEffect(() => {
-    if (threadId) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "rules", rulesReviewKey);
-  }, [threadId, rulesReviewKey]);
+    if (threadId && reviewLoaded) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "rules", rulesReviewKey);
+  }, [threadId, rulesReviewKey, reviewLoaded]);
   useEffect(() => {
-    if (threadId) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "visual", visualReviewKey);
-  }, [threadId, visualReviewKey]);
-  // Envelope-v2 persistence (the write side of ER-10): keep the localStorage
-  // draft (finalized activities + the round) in sync on every mutation. The
-  // last write before an unmount/reload captures the hanging state that
-  // `rehydrateExperienceCopilotDrafts` seeds both stores from on the next mount.
+    if (threadId && reviewLoaded) useAgentReviewRoundStore.getState().ensureReviewKey(kind, threadId, "visual", visualReviewKey);
+  }, [threadId, visualReviewKey, reviewLoaded]);
+  // Initial empty renders and live replay are never durable review writes.
   useEffect(() => {
-    if (!threadId) return;
-    syncPersistedCopilotRound(threadId);
-  }, [threadId, round, turnActivities]);
+    if (!threadId || !reviewLoaded || isSending) return;
+    void syncPersistedCopilotRound(threadId).catch((error: unknown) => console.warn("[agent-review] write failed", error));
+  }, [threadId, round, turnActivities, reviewLoaded, isSending]);
 
   const rulesReview = useMemo(
     () => buildBufferReview(effRules.base, effRules.proposed, acceptedRulesHunks, !isSending, dismissedRulesHunks),
@@ -610,8 +613,7 @@ export function useExperienceCopilotReviewSession({
   ]);
 
   // ── The bridge session handle ────────────────────────────────────────────
-  // Assigned every render (the latest-callback-ref pattern the captureDangling
-  // refs already use): the shell reads it AT SEND TIME, so a click always sees
+  // Assigned every render: the shell reads it AT SEND TIME, so a click sees
   // the last committed render's closures — the same freshness the pre-split
   // shell's inline handlers had.
   const buildSendOptions = useCallback((): AgentSendOptions => {

@@ -44,6 +44,18 @@ test("a fresh coordinator restores activities, original bases and accept/dismiss
   expect(h.writes).toEqual([]);
 });
 
+test("mount hydration restores a discarded memory slice, but preparation preserves progress not yet queued by an effect", async () => {
+  const h = fixture(envelope());
+  await h.persistence.hydrate("thread");
+  h.local.delete("thread");
+  await h.persistence.hydrate("thread");
+  expect(h.local.get("thread")).toEqual(envelope());
+  h.local.get("thread")!.round!.acceptedRules = [2];
+  await h.persistence.ensureHydrated("thread");
+  await h.persistence.prepare("thread", new AbortController().signal);
+  expect(h.server.get("thread")!.round!.acceptedRules).toEqual([2]);
+});
+
 test("legacy upload succeeds before key removal and occurs only once across reloads", async () => {
   const h = fixture();
   h.legacy.set("thread", envelope());
@@ -229,6 +241,21 @@ test("a fast watched finish may precede registry idle; later synchronization sti
   h.running.delete("thread");
   await h.persistence.sync("thread");
   expect(h.local.get("thread")!.round!.snapshots).toHaveLength(2);
+  expect(h.writes).toHaveLength(0);
+});
+
+test("an EOF reported as watched cannot overwrite finalized proposals it never received", async () => {
+  const h = fixture(envelope());
+  await h.persistence.hydrate("thread");
+  await h.persistence.prepare("thread", new AbortController().signal);
+  h.persistence.start("thread");
+  h.running.add("thread");
+  h.local.set("thread", envelope("Partial replay"));
+  await h.persistence.finish("thread", true);
+  h.running.delete("thread");
+  h.server.set("thread", envelope("Final server proposal"));
+  await h.persistence.sync("thread");
+  expect(h.local.get("thread")!.activities[0]!.proposed).toBe("Final server proposal");
   expect(h.writes).toHaveLength(0);
 });
 

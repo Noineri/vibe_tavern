@@ -67,7 +67,7 @@ export class AgentReviewPersistence {
     }
     const encoded = this.encode(envelope);
     if (this.encode(this.deps.read(id)) !== before) throw new Error("Agent review changed during hydration; retry before sending");
-    if ((!state.ready && envelope !== null) || (state.ready && encoded !== state.expected)) {
+    if ((envelope !== null && encoded !== before) || (state.ready && encoded !== state.expected)) {
       this.deps.apply(id, envelope);
     }
     state.expected = encoded;
@@ -80,6 +80,12 @@ export class AgentReviewPersistence {
 
   hydrate(id: string): Promise<void> {
     return this.enqueue(id, (state) => this.load(id, state));
+  }
+
+  /** Preparation must not reload an already-ready predecessor: a click can
+   * arrive before the effect that queues its latest hunk progress. */
+  ensureHydrated(id: string): Promise<void> {
+    return this.enqueue(id, async (state) => { if (!state.ready) await this.load(id, state); });
   }
 
   private async write(id: string, state: ThreadPersistence): Promise<void> {
@@ -107,7 +113,22 @@ export class AgentReviewPersistence {
       state.phase = "idle";
       return;
     }
-    if (state.phase === "detached" && state.watched) state.expected = encoded;
+    if (state.phase === "detached" && state.watched) {
+      // The parser may return at a clean EOF without having seen the producer's
+      // final tool result. Even a seemingly watched turn must not replace a
+      // different finalized proposal set committed by the server.
+      const current = this.deps.read(id);
+      const remoteActivities = envelope === null ? [] : agentReviewEnvelopeSchema.parse(envelope).activities;
+      const currentActivities = current === null ? [] : agentReviewEnvelopeSchema.parse(current).activities;
+      if (encoded !== state.expected && JSON.stringify(remoteActivities) !== JSON.stringify(currentActivities)) {
+        this.deps.apply(id, envelope);
+        state.expected = encoded;
+        state.phase = "idle";
+        state.watched = false;
+        return;
+      }
+      state.expected = encoded;
+    }
     else if (encoded !== state.expected) {
       this.deps.apply(id, envelope);
       state.expected = encoded;

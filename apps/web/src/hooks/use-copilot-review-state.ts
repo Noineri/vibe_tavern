@@ -67,6 +67,8 @@ export interface UseCopilotReviewStateArgs {
 	threadId: string;
 	/** True while the model is generating (the snapshot trigger). */
 	isSending: boolean;
+	/** Server-backed hosts explicitly append after their durable flush. */
+	snapshotOnSend?: boolean;
 	/** Live rules draft buffer (controlled by the parent editor). */
 	rulesCode: string;
 	/** Live visual draft buffer (controlled by the parent editor). */
@@ -104,6 +106,7 @@ export function useCopilotReviewState({
 	kind,
 	threadId,
 	isSending,
+	snapshotOnSend = true,
 	rulesCode,
 	visualSource,
 	activities,
@@ -129,12 +132,12 @@ export function useCopilotReviewState({
 	useEffect(() => {
 		const was = prevSendingRef.current;
 		prevSendingRef.current = isSending;
-		if (isSending && !was) {
+		if (snapshotOnSend && isSending && !was) {
 			useAgentReviewRoundStore
 				.getState()
 				.pushSnapshot(kind, threadId, { rules: rulesRef.current, visual: visualRef.current });
 		}
-	}, [isSending, kind, threadId]);
+	}, [isSending, kind, threadId, snapshotOnSend]);
 
 	const lastSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
 
