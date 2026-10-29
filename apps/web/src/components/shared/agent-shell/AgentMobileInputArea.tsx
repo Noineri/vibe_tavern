@@ -106,6 +106,23 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
       {attachment.attachmentVisionWarning && <AttachmentVisionWarning />}
       {attachment.attachmentOverflow.overflow && <AttachmentOverflowWarning {...attachment.attachmentOverflow} />}
+      {/* DR-15 (mockup §9): everything attached to the next message in ONE
+          wrapping row directly above the card — pinned-context pills, the
+          host's chips (topSlot), then the draft attachments; nothing inside
+          the card but the caption, the pills row and the input row.
+          `empty:hidden` keeps the strip gap-free when nothing is attached
+          (the host slot's emptiness is only knowable after render, so the
+          row is not conditionally mounted). */}
+      <div data-testid="agent-attached-row" className="mb-2 flex flex-wrap items-center gap-1.5 empty:hidden">
+        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        {topSlot}
+        {/* CF13: the composed string is base + these appends — `w-full` and
+            the card-interior paddings are `!`-overridden so the chip group
+            slots inline and wraps (6px rhythm like the rest of the row). */}
+        {attachments.length > 0 && (
+          <AttachmentPreview attachments={attachments} onRemove={attachment.remove} className="!w-auto !p-0 !gap-1.5 flex-wrap" />
+        )}
+      </div>
       <div ref={cardRef} className={cn("flex flex-col gap-1.5 rounded-xl border bg-s2 p-1.5 transition-colors duration-150", answeringAsk ? "border-accent" : "border-transparent")}>
         {/* DR-8 (mockup §11): the own-model caption line — above the pills
             row (the card's flex-col gap carries the spacing; responsive
@@ -118,12 +135,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
           <AgentModelPills mobile providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />
         </div>
 
-        {/* CX-6: pinned-context pills between the toolbar row and the input. */}
-        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
-        {topSlot}
-
         {/* Input row. */}
-        {attachments.length > 0 && <AttachmentPreview attachments={attachments} onRemove={attachment.remove} />}
         <div className="flex items-end gap-2">
           <input type="file" ref={attachment.fileInputRef} className="hidden" accept={attachment.accept} multiple onChange={attachment.onFileInputChange} />
           <AutoTextarea

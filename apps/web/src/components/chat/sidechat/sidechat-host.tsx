@@ -246,7 +246,8 @@ registerAgentHost({
     const triple = chatOwnerTriple(ctx.owner);
     useSidechatVariantAttachmentsStore.getState().clearVariantAttachments(triple.chatId, triple.branchId);
   },
-  // SC-18: the pending chips row inside the composer's input card.
+  // SC-18 / DR-15: the pending chips row above the composer's input card
+  // (the shell's attached row renders it after the pinned-context pills).
   composerTopSlot: (ctx) => {
     const triple = chatOwnerTriple(ctx.owner);
     return <SidechatVariantChips chatId={triple.chatId} branchId={triple.branchId} />;
