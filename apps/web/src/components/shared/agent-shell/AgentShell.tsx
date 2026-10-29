@@ -419,10 +419,8 @@ export function AgentShell({
     }
   }, [ownerKey, transport]);
 
-  // (The experience host's draft rehydration — rehydrateExperienceCopilotDrafts
-  // — runs in the HOST pane's mount effect: child effects run before this one,
-  // so the stores are seeded before loadSession's threadId lands, exactly as
-  // the pre-split shell's single ordered effect guaranteed.)
+  // Hosts hydrate durable reviews once this load resolves their thread id;
+  // their async preparation barrier also protects a send before that read ends.
   useEffect(() => {
     void loadSession();
     void fetchSessions();

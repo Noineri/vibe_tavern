@@ -5,6 +5,8 @@ import * as api from "../../../api/experience-copilot-api.js";
 import type { AgentHostTransport } from "../../../lib/agent-host-registry.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentController, type AgentController } from "./use-agent-controller.js";
+import { AgentReviewPersistence } from "../../../lib/agent-review-persistence.js";
+import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
 const { act, renderHook } = await import("@testing-library/react");
@@ -107,6 +109,56 @@ for (const mode of ["cancel", "failure", "switch", "unmount"] as const) {
       expect(h.result.current.isSending).toBe(false);
     } finally {
       await act(async () => { gate.resolve(); await pending; });
+      h.unmount();
+    }
+  });
+}
+
+for (const mode of ["switch", "unmount"] as const) {
+  test(`host ${mode} releases the real coordinator's prepared lane for future writes`, async () => {
+    const entered = parked();
+    const release = parked();
+    let saved: AgentReviewEnvelope = { _v: 2, activities: [prior], round: null };
+    let writes = 0;
+    let preparationSignal: AbortSignal | undefined;
+    useAgentTurnStore.getState().upsertActivity("experience", "thread", prior);
+    const persistence = new AgentReviewPersistence({
+      api: {
+        isRunning: async () => false, get: async () => saved,
+        put: async (_id, envelope) => { writes++; saved = envelope; return envelope; },
+        delete: async () => { throw new Error("This proposal must not be deleted"); },
+      },
+      read: (id) => ({ _v: 2, activities: useAgentTurnStore.getState().getActivities("experience", id), round: null }),
+      apply: (id, envelope) => useAgentTurnStore.setState((s) => ({ turnsByThread: { ...s.turnsByThread, [id]: envelope?.activities ?? [] } })),
+      readLegacy: () => null, removeLegacy: () => {},
+    });
+    const h = renderHook(({ threadId }) => useAgentController({
+      kind: "experience", threadId, providerProfileId: "provider", transport,
+      prepareTurn: async (id, signal) => {
+        preparationSignal = signal;
+        await persistence.prepare(id, signal);
+        entered.resolve();
+        await release.promise;
+      },
+    }), { initialProps: { threadId: "thread" } });
+    let pending!: Promise<void>;
+    try {
+      await act(async () => { pending = h.result.current.handleSend("Revise"); await entered.promise; });
+      await act(async () => {
+        if (mode === "switch") h.rerender({ threadId: "other" });
+        else h.unmount();
+      });
+      await act(async () => { release.resolve(); await pending; });
+      expect(requests).toHaveLength(0);
+      expect(preparationSignal?.aborted).toBe(true);
+      await act(async () => {
+        useAgentTurnStore.getState().upsertActivity("experience", "thread", { ...prior, summary: "Still writable" });
+        await persistence.sync("thread");
+      });
+      expect(writes).toBe(1);
+      expect(saved.activities[0]!.summary).toBe("Still writable");
+    } finally {
+      await act(async () => { release.resolve(); await pending; });
       h.unmount();
     }
   });

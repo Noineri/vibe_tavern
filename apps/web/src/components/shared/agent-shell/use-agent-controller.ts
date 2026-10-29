@@ -219,7 +219,12 @@ export function useAgentController(
   const prepareTurn = useCallback((id: string, signal: AbortSignal): void | Promise<void> => {
     const checkTarget = () => {
       signal.throwIfAborted();
-      if (!mountedRef.current || currentThreadRef.current !== id) throw new Error("Agent host changed during turn preparation");
+      if (!mountedRef.current || currentThreadRef.current !== id) {
+        // No POST has opened yet. Release any host-owned preparation lease,
+        // without turning an unmount into a stop of an already-running turn.
+        if (abortRef.current?.signal === signal) abortRef.current.abort();
+        throw new Error("Agent host changed during turn preparation");
+      }
     };
     const prepared = args.prepareTurn?.(id, signal);
     // Preserve synchronous hosts: even awaiting undefined adds a microtask,
