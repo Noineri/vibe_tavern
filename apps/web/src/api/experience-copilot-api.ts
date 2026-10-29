@@ -14,7 +14,7 @@
  */
 import { streamChatEndpoint } from "./stream.js";
 import type { StreamOpts } from "./stream.js";
-import { client } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 import type {
   ExperienceCopilotStreamRequest,
@@ -24,6 +24,7 @@ import type {
   ExperienceCopilotMessageWire,
   ExperienceCopilotContextMetrics,
   ExperienceCopilotContextLink,
+  AgentReviewEnvelope,
 } from "@vibe-tavern/api-contracts";
 
 /** Stream opts for the copilot endpoint — `StreamOpts` without the co-author
@@ -100,6 +101,26 @@ export async function listExperienceCopilotMessages(
     param: { threadId },
   });
   return unwrapRpc(response);
+}
+
+/** BR-2c: durable review CRUD, independent of the transient message feed. */
+export async function getExperienceCopilotReview(threadId: string): Promise<AgentReviewEnvelope | null> {
+  return unwrapRpc(await client.api["experience-copilot"][":threadId"].review.$get({ param: { threadId } }));
+}
+
+export async function putExperienceCopilotReview(threadId: string, envelope: AgentReviewEnvelope): Promise<AgentReviewEnvelope> {
+  return unwrapRpc(await client.api["experience-copilot"][":threadId"].review.$put({ param: { threadId }, json: envelope }));
+}
+
+export async function deleteExperienceCopilotReview(threadId: string): Promise<{ ok: true }> {
+  return unwrapRpc(await client.api["experience-copilot"][":threadId"].review.$delete({ param: { threadId } }));
+}
+
+/** The feature-registered run-list route is outside the static Hono RPC tree. */
+export async function isExperienceCopilotRunning(threadId: string): Promise<boolean> {
+  const active: unknown = await unwrapRpc(await apiFetch(`${getGatewayBaseUrl()}/api/agent-runs`));
+  if (!Array.isArray(active)) throw new Error("Invalid agent run list");
+  return active.some((run: unknown) => typeof run === "object" && run !== null && "threadId" in run && run.threadId === threadId);
 }
 
 /** Archive the current active thread (if any) and start a fresh one. */
