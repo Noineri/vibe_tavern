@@ -17,7 +17,7 @@ import { tag } from "./logger.js";
 import type { AgentThreadOwner } from "./agent-thread.js";
 
 /** Drafts have no host entity yet; never invent a script ID for them. */
-export type AgentRunOwner = AgentThreadOwner | { kind: "draft"; draftSessionId: string | null };
+export type AgentRunOwner = AgentThreadOwner | { kind: "chat"; chatId: string; mode: import("./platform-constants.js").ChatMode } | { kind: "draft"; draftSessionId: string | null };
 export type AgentRunState = "started" | "finished" | "asking" | "failed" | "stopped";
 export interface AgentRunSummary {
   readonly threadId: string;

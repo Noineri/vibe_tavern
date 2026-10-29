@@ -13,12 +13,12 @@ type KindStream = ExperienceCopilotRuntimeApi["experienceCopilotStream"];
 
 export class ExperienceCopilotRunAdapter {
   /** One instance per server adapter, shared by every request and agent kind. */
-  readonly agentRuns = new AgentRunRegistry<CopilotRunOwner>();
 
   constructor(
     private readonly runStore: Pick<ExperienceCopilotStore, "getById">,
     private readonly resolveRunStream: (threadId: string) => Promise<KindStream>,
     private readonly describeRun?: (thread: ExperienceCopilotThread) => Promise<AgentRunDescriptor>,
+    readonly agentRuns = new AgentRunRegistry<CopilotRunOwner>(),
   ) {}
 
   /** AS-8b kind dispatch: the thread resolves to its agent kind through the

@@ -19,8 +19,10 @@ import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, Co
 import { isTextMime } from "@vibe-tavern/domain";
 import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { resolveChatImageRoute } from "./chat-image-route.js";
+import { ChatGenerationRunAdapter } from "./chat-generation-run-adapter.js";
+import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.js";
 
-export class ChatAdapter implements ChatRuntimeApi {
+export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntimeApi {
 	constructor(
 		private readonly stores: StoreContainer,
 		private readonly sessionRuntime: SessionRuntime,
@@ -34,7 +36,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		 *  with the isDefault fallback. */
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
-	) {}
+	) { super(stores); }
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 
@@ -746,30 +748,6 @@ const COAUTHOR_MODEL_REQUIRED_CODE = "coauthor_model_required";
  * CG-4 maps this code to the Co-Author model-selection state. */
 function coauthorModelRequired() {
 	return validation("Choose a model for the Co-Author.", { code: COAUTHOR_MODEL_REQUIRED_CODE });
-}
-
-/** Map the validated send body's optional Dice commit intent (the wire shape
- *  `{diceMode, pendingRevision}`, both-or-neither enforced by the Zod refine)
- *  to the internal `diceCommit` the orchestrator threads into prepareLiveTurn.
- *  Absent ⇒ undefined (no-Dice send behavior). DICE-B11. */
-function resolveDiceCommit(body: { diceMode?: "normal" | "immersive"; pendingRevision?: number }): { mode: "normal" | "immersive"; pendingRevision: number } | undefined {
-	if (body.diceMode !== undefined && body.pendingRevision !== undefined) {
-		return { mode: body.diceMode, pendingRevision: body.pendingRevision };
-	}
-	return undefined;
-}
-
-/** Map the validated send body's optional experience attachment commit intent
- *  (the wire shape `{experienceAttachmentId, experienceQueueRevision,
- *  experienceSessionRevision}`, all-or-none enforced by the Zod refine) to the
- *  internal `experienceCommit` the orchestrator threads into prepareLiveTurn.
- *  Absent ⇒ undefined (no-experience send behavior). IR-51. Carries ONLY the
- *  identifiers of an already-stored queued attachment — never raw state. */
-function resolveExperienceCommit(body: { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }): { attachmentId: string; queueRevision: number; sessionRevision: number } | undefined {
-	if (body.experienceAttachmentId !== undefined && body.experienceQueueRevision !== undefined && body.experienceSessionRevision !== undefined) {
-		return { attachmentId: body.experienceAttachmentId, queueRevision: body.experienceQueueRevision, sessionRevision: body.experienceSessionRevision };
-	}
-	return undefined;
 }
 
 /** Map a stored user-module row to the API `CoauthorModule` shape: drop the
