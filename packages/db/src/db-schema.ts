@@ -2073,13 +2073,16 @@ export const agentThreadContextEvents = sqliteTable('agent_thread_context_events
 }));
 
 // ─── agentReviewRounds (AGENT_BACKGROUND_RUNS_PLAN BR-2a) ────────────────────
-// One complete review envelope per thread, not per turn. Its owning thread's
-// deletion cascades; archiving/starting another session must retain the review.
+// One complete review per thread OR Co-Author chat, not per turn. Separate
+// cascade FKs and an exactly-one CHECK prevent ambiguous/dangling ownership.
 export const agentReviewRounds = sqliteTable('agent_review_rounds', {
-  threadId: text('thread_id').primaryKey().notNull().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  threadId: text('thread_id').unique().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  chatId: text('chat_id').unique().references(() => chats.id, { onDelete: 'cascade' }),
   envelopeJson: text('envelope_json').notNull(),
   updatedAt: text('updated_at').notNull(),
-});
+}, (table) => ({
+  ownerCheck: check('agent_review_rounds_one_owner', sql`(${table.threadId} IS NOT NULL AND ${table.chatId} IS NULL) OR (${table.threadId} IS NULL AND ${table.chatId} IS NOT NULL)`),
+}));
 
 // ─── agentPlans ──────────────────────────────────────────────────────────────
 // One persisted agent plan belongs to each saved script. script_id is a soft

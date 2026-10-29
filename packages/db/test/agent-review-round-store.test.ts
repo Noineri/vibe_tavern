@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { join } from "node:path";
 import { createDb } from "../src/db-connection.js";
-import { agentReviewRounds, experienceCopilotThreads } from "../src/db-schema.js";
+import { agentReviewRounds, experienceCopilotThreads, characters, chats } from "../src/db-schema.js";
+import { ChatStore } from "../src/stores/chat-store.js";
 import { AgentReviewRoundStore } from "../src/stores/agent-review-round-store.js";
 import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
 
@@ -28,6 +30,62 @@ async function setup(realMigrations = false) {
 }
 
 describe("AgentReviewRoundStore", () => {
+  async function chatOwner(db: Awaited<ReturnType<typeof createDb>>) {
+    const now = "2026-10-30T00:00:00.000Z";
+    await db.insert(characters).values({ id: "review_character", name: "Review", createdAt: now, updatedAt: now }).onConflictDoNothing().run();
+    return new ChatStore(db).createChat({ characterId: "review_character", title: "Coauthor review", mode: "coauthor", promptPresetId: null });
+  }
+
+  test("chat reviews replace atomically and remain independent of thread rows and deletes", async () => {
+    const { db, store, thread } = await setup();
+    const chat = await chatOwner(db);
+    await store.put(thread.id, envelope());
+    await store.putChat(chat.id, '{"_v":1,"activities":[]}');
+    await store.putChat(chat.id, '{"_v":1,"activities":[{"proposed":"New"}]}');
+    expect(await store.getChat(chat.id)).toEqual({ chatId: chat.id, envelopeJson: '{"_v":1,"activities":[{"proposed":"New"}]}', updatedAt: "2026-10-29T00:00:02.000Z" });
+    expect((await store.get(thread.id))!.envelopeJson).toBe(envelope());
+    expect(await db.select().from(agentReviewRounds).all()).toHaveLength(2);
+    await store.delete(chat.id);
+    expect(await store.getChat(chat.id)).not.toBeNull();
+    await store.deleteChat(thread.id);
+    expect(await store.get(thread.id)).not.toBeNull();
+    await store.deleteChat(chat.id);
+    await store.deleteChat(chat.id);
+    expect(await store.getChat(chat.id)).toBeNull();
+    expect(await store.get(thread.id)).not.toBeNull();
+  });
+
+  test("database CHECK rejects both/neither owner; chat FK and uniqueness remain enforced", async () => {
+    const { db, store, thread } = await setup();
+    const chat = await chatOwner(db);
+    const row = { envelopeJson: "{}", updatedAt: "now" };
+    expect(() => db.insert(agentReviewRounds).values(row).run()).toThrow();
+    expect(() => db.insert(agentReviewRounds).values({ ...row, threadId: thread.id, chatId: chat.id }).run()).toThrow();
+    await expect(store.putChat("missing", "{}")).rejects.toThrow();
+    await store.putChat(chat.id, "{}");
+    expect(() => db.insert(agentReviewRounds).values({ ...row, chatId: chat.id }).run()).toThrow();
+    await store.put(thread.id, envelope());
+    await db.delete(chats).where(eq(chats.id, chat.id)).run();
+    expect(await store.getChat(chat.id)).toBeNull();
+    expect(await store.get(thread.id)).not.toBeNull();
+  });
+
+  test("the actual rebuild SQL preserves pre-BR-4b thread review bytes and timestamps", async () => {
+    const { db, store, thread } = await setup(true);
+    await db.run(sql`DROP TABLE agent_review_rounds`);
+    await db.run(sql`CREATE TABLE agent_review_rounds (thread_id text PRIMARY KEY NOT NULL REFERENCES experience_copilot_threads(id) ON DELETE CASCADE, envelope_json text NOT NULL, updated_at text NOT NULL)`);
+    const json = envelope();
+    await db.run(sql`INSERT INTO agent_review_rounds VALUES (${thread.id}, ${json}, 'before-upgrade')`);
+    const migration = await Bun.file(join(import.meta.dir, "../drizzle/0131_giant_namora.sql")).text();
+    for (const statement of migration.split("--> statement-breakpoint")) if (statement.trim()) await db.run(sql.raw(statement));
+    expect(await store.get(thread.id)).toEqual({ threadId: thread.id, envelopeJson: json, updatedAt: "before-upgrade" });
+    const chat = await chatOwner(db);
+    await store.putChat(chat.id, "{}");
+    expect(await store.getChat(chat.id)).not.toBeNull();
+    await db.delete(experienceCopilotThreads).where(eq(experienceCopilotThreads.id, thread.id)).run();
+    expect(await store.get(thread.id)).toBeNull();
+    expect(await store.getChat(chat.id)).not.toBeNull();
+  });
   test("the real migration creates an empty table and the complete envelope round-trips", async () => {
     const { db, store, thread } = await setup(true);
     expect(await db.select().from(agentReviewRounds).all()).toEqual([]);
