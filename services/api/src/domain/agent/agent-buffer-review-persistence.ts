@@ -1,16 +1,16 @@
-import { buildAgentReviewEnvelope, experienceCopilotToolOutputSchema, type AgentReviewEnvelope, type AgentToolActivity } from "@vibe-tavern/api-contracts";
-import type { AgentReviewService } from "../../agent/agent-review-service.js";
-import type { ExperienceCopilotStreamEvent } from "./experience-copilot-stream-contract.js";
+import { buildAgentReviewEnvelope, buildScriptAgentReviewEnvelope, experienceCopilotToolOutputSchema, type AgentBufferReviewKind, type AgentReviewEnvelope, type AgentToolActivity } from "@vibe-tavern/api-contracts";
+import type { AgentReviewService } from "./agent-review-service.js";
+import type { ExperienceCopilotStreamEvent } from "../interactive/copilot/experience-copilot-stream-contract.js";
 
 /** Turn-local projection of the SAME call/result events the browser receives.
  * Only successful finalized buffer results enter review persistence. No tool
  * output is changed and no draft buffer is written or auto-applied here. */
-export class ExperienceCopilotReviewPersistence {
+export class AgentBufferReviewPersistence {
   private previous: AgentReviewEnvelope | null = null;
   private buffers: { rules: string; visual: string } | null = null;
   private readonly activities = new Map<string, AgentToolActivity>();
 
-  constructor(private readonly service: Pick<AgentReviewService, "get" | "put">, private readonly threadId: string) {}
+  constructor(private readonly service: Pick<AgentReviewService, "get" | "put">, private readonly threadId: string, private readonly kind: AgentBufferReviewKind = "experience") {}
 
   async begin(buffers: { rules: string; visual: string }): Promise<void> {
     this.previous = await this.service.get(this.threadId);
@@ -36,7 +36,22 @@ export class ExperienceCopilotReviewPersistence {
 
   async persist(): Promise<void> {
     if (!this.buffers) return;
-    const envelope = buildAgentReviewEnvelope(this.previous, [...this.activities.values()], this.buffers);
+    const envelope = this.kind === "script"
+      ? buildScriptAgentReviewEnvelope(this.previous, [...this.activities.values()], this.buffers.rules)
+      : buildAgentReviewEnvelope(this.previous, [...this.activities.values()], this.buffers);
     if (envelope) await this.service.put(this.threadId, envelope);
   }
+}
+
+/** Kind-specific review persistence wraps, but never changes, the generic
+ * core's events. Commit after message persistence, BEFORE terminal delivery. */
+export async function* persistAgentBufferReviewStream(stream: AsyncIterable<ExperienceCopilotStreamEvent>, review: AgentBufferReviewPersistence | null): AsyncGenerator<ExperienceCopilotStreamEvent> {
+  let terminal: ExperienceCopilotStreamEvent | undefined;
+  for await (const event of stream) {
+    review?.observe(event);
+    if (event.event === "finish" || event.event === "abort" || event.event === "error") terminal = event;
+    else yield event;
+  }
+  await review?.persist();
+  if (terminal) yield terminal;
 }

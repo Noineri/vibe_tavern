@@ -335,6 +335,7 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
     const contextItemsResolver = this.buildContextItemsResolver(this.scriptSkillService);
     return {
       store: this.stores.experienceCopilot,
+      reviews: new AgentReviewService(this.stores),
       agentPlans: this.stores.agentPlans,
       getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
       getContextCards: (input: {

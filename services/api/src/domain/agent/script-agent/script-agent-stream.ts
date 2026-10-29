@@ -33,6 +33,8 @@ import { streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams } from "..
 import type { AgentOwnModelBinding } from "../agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../agent-thread-owner.js";
+import type { AgentReviewService } from "../agent-review-service.js";
+import { AgentBufferReviewPersistence, persistAgentBufferReviewStream } from "../agent-buffer-review-persistence.js";
 import { renderAttachedContext, type CopilotContextItem } from "../agent-context.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "../../interactive/copilot/copilot-limits.js";
 import { assembleScriptAgentPrompt, type ScriptAgentAssembleResult } from "./script-agent-prompt.js";
@@ -44,6 +46,8 @@ import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } fro
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ScriptAgentStreamDeps {
+  /** Production supplies the shared review service; raw legacy callers may omit it. */
+  readonly reviews?: Pick<AgentReviewService, "get" | "put">;
   readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The shared agent-thread store (thread + message persistence — script
    *  threads live in the same store as experience threads; only the assembly
@@ -199,6 +203,7 @@ export async function* streamScriptAgentTurn(
   deps: ScriptAgentStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
+  const review = deps.reviews ? new AgentBufferReviewPersistence(deps.reviews, request.threadId, "script") : null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -221,15 +226,19 @@ export async function* streamScriptAgentTurn(
     // ── Script context: identity, scope, linked owners + full cards, stored
     // ── code, trust. The request's build-panel ids ride the closure (the
     // ── generic loop's loadContext seam only passes the thread). ──
-    loadContext: (thread) =>
-      loadScriptAgentContext(thread.scriptId, deps, {
+    loadContext: async (thread) => {
+      const context = await loadScriptAgentContext(thread.scriptId, deps, {
         ...(request.contextCharacterId !== undefined
           ? { contextCharacterId: request.contextCharacterId }
           : {}),
         ...(request.contextPersonaId !== undefined
           ? { contextPersonaId: request.contextPersonaId }
           : {}),
-      }),
+      });
+      // The existing script round stores its code snapshot in the rules slot.
+      await review?.begin({ rules: request.code ?? context.storedCode, visual: "" });
+      return context;
+    },
 
     // ── Agent profile (SC-0f): a CHAT-OWNED thread resolves through the
     //  chat chain (chat row → kind default → the kind's built-in); every
@@ -322,5 +331,5 @@ export async function* streamScriptAgentTurn(
     ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
-  yield* streamAgentTurn(request, streamDeps, seams, signal);
+  yield* persistAgentBufferReviewStream(streamAgentTurn(request, streamDeps, seams, signal), review);
 }

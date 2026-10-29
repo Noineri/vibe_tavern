@@ -43,7 +43,7 @@ import type { AgentOwnModelBinding } from "../../agent/agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../../agent/agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
 import type { AgentReviewService } from "../../agent/agent-review-service.js";
-import { ExperienceCopilotReviewPersistence } from "./experience-copilot-review-persistence.js";
+import { AgentBufferReviewPersistence, persistAgentBufferReviewStream } from "../../agent/agent-buffer-review-persistence.js";
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotAssembleResult,
@@ -232,7 +232,7 @@ export async function* streamExperienceCopilot(
   deps: ExperienceCopilotStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
-  const review = deps.reviews ? new ExperienceCopilotReviewPersistence(deps.reviews, request.threadId) : null;
+  const review = deps.reviews ? new AgentBufferReviewPersistence(deps.reviews, request.threadId) : null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -366,14 +366,5 @@ export async function* streamExperienceCopilot(
     ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
-  // Exhaust the core first: tool/message persistence must settle before review
-  // is committed, and a client reacting to finish must see the saved envelope.
-  let terminal: ExperienceCopilotStreamEvent | undefined;
-  for await (const event of streamAgentTurn(request, streamDeps, seams, signal)) {
-    review?.observe(event);
-    if (event.event === "finish" || event.event === "abort" || event.event === "error") terminal = event;
-    else yield event;
-  }
-  await review?.persist();
-  if (terminal) yield terminal;
+  yield* persistAgentBufferReviewStream(streamAgentTurn(request, streamDeps, seams, signal), review);
 }

@@ -587,6 +587,10 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
     const stores = {
       experienceCopilot: store,
       agentPlans: { get: async () => null, save: async () => {} },
+      agentReviewRounds: {
+        get: async () => null,
+        put: async () => { throw new Error("A context-card/skill-only turn must not write a review"); },
+      },
       // DR-2 (M1): as above — the own-model read fires on every turn.
       agentProfileModels: { get: async () => null },
       scripts: {
