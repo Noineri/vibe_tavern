@@ -153,11 +153,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		// stays unset in production — the backends' global-fetch default applies
 		// (the same seam can carry the proxy-aware provider fetch later, per-backend).
 		this.imageGen = new ImageGenAdapter(stores, assetService, undefined, { providerProfiles: providerProfileService });
-		this.chat = new ChatAdapter(
-			stores, sessionRuntime, liveChatOrchestrator,
-			chatSummaryService, providerProfileService, assetService,
-			sttAdapter.transcribeSttAudio,
-		);
 		this.character = new CharacterAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.lorebook = new LorebookAdapter(stores);
@@ -215,6 +210,12 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			sidechatSkillService,
 			attachmentAssetLoader,
 			(assetId) => assetService.cleanup(assetId),
+		);
+		// One registry for every app-visible agent/chat generation and lifecycle.
+		this.chat = new ChatAdapter(
+			stores, sessionRuntime, liveChatOrchestrator,
+			chatSummaryService, providerProfileService, assetService,
+			sttAdapter.transcribeSttAudio, undefined, this.experienceCopilot.agentRuns,
 		);
 		// SC-11 + DR-5: the thread-proposal apply/reject slice, wired with the
 		// REUSED seams — the insights runtime's add-task member (route mode),

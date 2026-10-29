@@ -21,6 +21,8 @@ import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./c
 import { resolveChatImageRoute } from "./chat-image-route.js";
 import { ChatGenerationRunAdapter } from "./chat-generation-run-adapter.js";
 import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.js";
+import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js";
+import type { AgentRunOwner } from "@vibe-tavern/domain";
 
 export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntimeApi {
 	constructor(
@@ -36,7 +38,8 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 		 *  with the isDefault fallback. */
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
-	) { super(stores); }
+		agentRuns?: AgentRunRegistry<AgentRunOwner>,
+	) { super(stores, agentRuns); }
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 
