@@ -205,6 +205,7 @@ export async function appendContinueVariant<TSnapshot extends FallbackVariantSna
   rawReply: string,
   reasoning: string | undefined,
   startedAt: number,
+  toolData?: Pick<GenerationResult, "toolCalls" | "toolResults">,
 ): Promise<{
   promptMessageCount: number;
   reply: string;
@@ -222,6 +223,8 @@ export async function appendContinueVariant<TSnapshot extends FallbackVariantSna
   // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only). The variant is created already-transformed.
   reply = await deps.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
   const snapshot = await deps.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+    ...(toolData?.toolCalls ? { toolCalls: toolData.toolCalls } : {}),
+    ...(toolData?.toolResults ? { toolResults: toolData.toolResults } : {}),
     content: reply,
     latencyMs,
     reasoning: finalReasoning,
@@ -312,7 +315,7 @@ export async function runContinueFallback<TSnapshot extends FallbackVariantSnaps
   logSendDebug("live.continue.fallback.stitch", { chatId: input.chatId, messageId: input.messageId, overlapLength: merged.overlapLength });
   // The merge runs BEFORE thinking-tag extraction, mirroring the prefill
   // path (ensurePrefillInResponse also runs before extraction).
-  return await appendContinueVariant(deps, input, prompt, merged.content, result.reasoning, startedAt);
+  return await appendContinueVariant(deps, input, prompt, merged.content, result.reasoning, startedAt, result);
 }
 
 /** Streaming fallback attempt — see the module doc for the request shape.

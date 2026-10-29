@@ -94,7 +94,7 @@ import {
 	CharacterRuntime,
 } from "../../domain/character/character-runtime.js";
 import { type PersonaRecord, PersonaRuntime } from "../../domain/persona/persona-runtime.js";
-import { ChatRuntime } from "./session-runtime-chat.js";
+import { createChatRuntime, type ChatRuntime } from "./session-runtime-chat.js";
 import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
@@ -151,14 +151,8 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		this.getSkillCatalog =
 			options?.getSkillCatalog ?? (async () => []);
 		this.chatOrder = new ChatOrderService(stores.chats);
-		this.chatRuntime = new ChatRuntime({
-			chats: stores.chats,
-			messages: stores.messages,
-			traces: stores.traces,
+		this.chatRuntime = createChatRuntime(stores, {
 			chatApp: this.chatApp,
-			diceRolls: stores.diceRolls,
-			uiSettings: stores.uiSettings,
-			experiences: stores.experiences,
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),

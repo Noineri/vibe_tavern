@@ -45,8 +45,8 @@ export class AgentBufferReviewPersistence {
 
 /** Kind-specific review persistence wraps, but never changes, the generic
  * core's events. Commit after message persistence, BEFORE terminal delivery. */
-export async function* persistAgentBufferReviewStream(stream: AsyncIterable<ExperienceCopilotStreamEvent>, review: AgentBufferReviewPersistence | null): AsyncGenerator<ExperienceCopilotStreamEvent> {
-  let terminal: ExperienceCopilotStreamEvent | undefined;
+export async function* persistAgentBufferReviewStream<T extends ExperienceCopilotStreamEvent>(stream: AsyncIterable<T>, review: Pick<AgentBufferReviewPersistence, "observe" | "persist"> | null): AsyncGenerator<T> {
+  let terminal: T | undefined;
   for await (const event of stream) {
     review?.observe(event);
     if (event.event === "finish" || event.event === "abort" || event.event === "error") terminal = event;

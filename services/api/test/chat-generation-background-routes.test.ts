@@ -15,7 +15,7 @@ import { getChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { ProviderExecutionInput, ExtractedToolResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 
@@ -95,19 +95,28 @@ async function setup(mode: Mode, dir: string) {
   const release = deferred();
   const entered = deferred();
   const inputs: ProviderExecutionInput[] = [];
-  const provider = { fail: false, ask: false };
+  const provider = { fail: false, ask: false, proposals: [] as ExtractedToolResult[] };
   const events = new EventBus();
   const lifecycle: AgentRunNotification[] = [];
   events.on("agent.run", (event) => { lifecycle.push(event); });
   const orchestrator = new LiveChatOrchestrator(runtime.chatRuntime, runtime.chatApp, new ProviderOrchestrator(profiles), events,
     async () => getChatModeStrategy(mode), undefined, undefined, {
-      nonstreaming: async () => { throw new Error("Wrong executor"); },
+      nonstreaming: async (input) => {
+        inputs.push(input);
+        return { text: "Native reply", providerResponse: { mode: "nonstream", steps: [] },
+          toolCalls: provider.proposals.map((result) => ({ toolCallId: result.toolCallId, toolName: result.toolName, args: result.args })),
+          toolResults: provider.proposals };
+      },
       stream: async (input) => {
         inputs.push(input);
         return {
           stream: (async function* () {
             yield { type: "reasoning-delta" as const, textDelta: "Thinking" };
             yield { type: "text-delta" as const, delta: "Partial reply" };
+            for (const result of provider.proposals) {
+              yield { type: "tool-call" as const, toolCallId: result.toolCallId, toolName: result.toolName, args: result.args };
+              yield { type: "tool-result" as const, toolCallId: result.toolCallId, toolName: result.toolName, output: result.result, isError: result.isError };
+            }
             // The registry is pulling after the first delta before we park.
             if (input.signal?.aborted) release.resolve();
             else input.signal?.addEventListener("abort", release.resolve, { once: true });
@@ -391,5 +400,121 @@ test("different chats execute together; stopping one cannot stop the other", asy
       expect((await h.stores.messages.getMessages(h.chat.activeBranchId)).at(-1)!.content).toBe("Partial reply completed");
       expect((await h.stores.messages.getMessages(other.activeBranch.id)).at(-1)!.content).toBe("Partial reply");
     } finally { h.release.resolve(); await second.cancel(); }
+  });
+});
+
+const proposalResult = (): ExtractedToolResult => ({ toolCallId: "profile", toolName: "write_profile", args: { profileMd: "Proposed card" }, result: { target: "profile", proposed: "Proposed card", summary: "Changed" }, isError: false });
+const expectedReview = () => ({ _v: 1, activities: [{ toolCallId: "profile", toolName: "write_profile", status: "done", args: { profileMd: "Proposed card" }, target: "profile", proposed: "Proposed card", summary: "Changed" }] });
+
+for (const operation of operations) {
+  test(`Co-Author ${operation}: completed proposals persist before the detached finish, without applying the card`, async () => {
+    await withEnv("coauthor", async (h) => {
+      h.provider.proposals = [proposalResult()];
+      const before = await h.stores.characters.getById(h.chat.characterId);
+      const response = await h.start(operation);
+      await h.entered.promise;
+      await response.body!.cancel();
+      h.release.resolve();
+      const frames = await all(await h.app.request(`${h.path}/generation`));
+      expect(frames.at(-1)!.event).toBe("finish");
+      expect(await h.adapter.getCoauthorReview(h.chat.id)).toEqual(expectedReview());
+      expect(h.lifecycle.at(-1)!.state).toBe("finished");
+      expect(await h.stores.characters.getById(h.chat.characterId)).toEqual(before);
+    });
+  });
+
+  test(`Co-Author ${operation}: completed proposals survive a later explicit stop`, async () => {
+    await withEnv("coauthor", async (h) => {
+      h.provider.proposals = [proposalResult()];
+      const response = await h.start(operation);
+      await h.entered.promise;
+      await response.body!.cancel();
+      await h.app.request(`${h.path}/generation/stop`, { method: "POST" });
+      expect((await all(await h.app.request(`${h.path}/generation`))).at(-1)!.event).toBe("abort");
+      expect(await h.adapter.getCoauthorReview(h.chat.id)).toEqual(expectedReview());
+    });
+  });
+
+  test(`Co-Author ${operation}: native non-streaming tool results also persist review proposals`, async () => {
+    await withEnv("coauthor", async (h) => {
+      h.provider.proposals = [proposalResult()];
+      const path = operation === "send" ? `${h.path}/messages` : operation === "generate" ? `${h.path}/generate-reply` : `${h.path}/messages/${h.assistant.id}/${operation}`;
+      const response = await h.app.request(path, { method: "POST", headers: { "content-type": "application/json" },
+        ...(operation === "send" ? { body: '{"content":"Native send"}' } : operation === "regenerate" ? { body: "{}" } : {}) });
+      expect(response.status).toBe(200);
+      await response.json();
+      expect(await h.adapter.getCoauthorReview(h.chat.id)).toEqual(expectedReview());
+    });
+  });
+}
+
+test("no-proposal/error/read-only turns preserve existing Co-Author review bytes and timestamp", async () => {
+  await withEnv("coauthor", async (h) => {
+    await h.adapter.putCoauthorReview(h.chat.id, { _v: 1, activities: [{ toolCallId: "old", toolName: "write_profile", status: "done", target: "profile", proposed: "Keep" }] });
+    const before = await h.stores.agentReviewRounds.getChat(h.chat.id);
+    h.provider.proposals = [{ ...proposalResult(), isError: true }, { toolCallId: "read", toolName: "read_skill_file", args: {}, result: { path: "skill.md", content: "Read" }, isError: false }];
+    const watching = all(await h.start("generate"));
+    await h.entered.promise;
+    h.release.resolve();
+    await watching;
+    expect(await h.stores.agentReviewRounds.getChat(h.chat.id)).toEqual(before);
+    h.provider.proposals = [];
+    await h.adapter.generateReply(h.chat.id);
+    expect(await h.stores.agentReviewRounds.getChat(h.chat.id)).toEqual(before);
+  });
+});
+
+test("a provider error after a successful tool result still stores its proposal before the error frame", async () => {
+  await withEnv("coauthor", async (h) => {
+    h.provider.proposals = [proposalResult()]; h.provider.fail = true;
+    const watching = all(await h.start("generate"));
+    await h.entered.promise;
+    h.release.resolve();
+    expect((await watching).at(-1)!.event).toBe("error");
+    expect(await h.adapter.getCoauthorReview(h.chat.id)).toEqual(expectedReview());
+    expect(h.lifecycle.at(-1)!.state).toBe("failed");
+  });
+});
+
+test("RP tool-shaped output never creates a Co-Author review", async () => {
+  await withEnv("rp", async (h) => {
+    h.provider.proposals = [proposalResult()];
+    const watching = all(await h.start("generate"));
+    await h.entered.promise; h.release.resolve(); await watching;
+    expect(await h.stores.agentReviewRounds.getChat(h.chat.id)).toBeNull();
+  });
+});
+
+for (const stream of [true, false]) {
+  test(`Co-Author ${stream ? "stream" : "native"}: greeting, lore and tracker proposals retain their typed review data`, async () => {
+    await withEnv("coauthor", async (h) => {
+      h.provider.proposals = [
+        { toolCallId: "greeting", toolName: "edit_greeting", args: { index: 0, content: "Hi" }, result: { target: "greeting", proposed: "Hi", summary: "Greeting", greetingIndex: 0, isAdd: false }, isError: false },
+        { toolCallId: "lore", toolName: "edit_lore", args: {}, result: { target: "lore_bundle", summary: "Lore", bundle: { revision: 3, lorebooks: [], entries: [] } }, isError: false },
+        { toolCallId: "tracker", toolName: "set_tracker_template", args: {}, result: { summary: "Tracker", trackerTemplate: { version: 1, scene: { enabled: true, config: { schema: { mood: { $type: "string" } } } } } }, isError: false },
+      ];
+      if (stream) {
+        const watching = all(await h.start("generate"));
+        await h.entered.promise; h.release.resolve(); await watching;
+      } else await h.adapter.generateReply(h.chat.id);
+      const review = await h.adapter.getCoauthorReview(h.chat.id);
+      expect(review!.activities.map(({ toolCallId }) => toolCallId)).toEqual(["greeting", "lore", "tracker"]);
+      expect(review!.activities[0]).toMatchObject({ target: "greeting", proposed: "Hi", greetingIndex: 0, isAdd: false, args: { index: 0, content: "Hi" } });
+      expect(review!.activities[1]!.loreBundle).toEqual({ revision: 3, lorebooks: [], entries: [] });
+      expect(review!.activities[2]!.trackerTemplate).toMatchObject({ version: 1, scene: { enabled: true, config: { schema: { mood: { $type: "string" } } } } });
+    });
+  });
+}
+
+test("a producer review-write failure cannot announce successful completion", async () => {
+  await withEnv("coauthor", async (h) => {
+    h.provider.proposals = [proposalResult()];
+    h.stores.agentReviewRounds.putChat = async () => { throw new Error("Review write failed"); };
+    const watching = all(await h.start("generate"));
+    await h.entered.promise; h.release.resolve();
+    const frames = await watching;
+    expect(frames.some(({ event }) => event === "finish")).toBe(false);
+    expect(frames.at(-1)).toMatchObject({ event: "error", data: { message: "Review write failed" } });
+    expect(h.lifecycle.at(-1)!.state).toBe("failed");
   });
 });

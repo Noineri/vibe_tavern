@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore, ExperienceStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore, ExperienceStore, StoreContainer } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
@@ -19,6 +19,9 @@ import type { SessionPromptAssemblyOptions } from "./session-runtime-prompt-asse
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound } from "../../shared/errors.js";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { CoauthorReviewService, type CoauthorReviewResult } from "../../domain/chat/coauthor-review-service.js";
+import { CoauthorReviewPersistence } from "../../domain/chat/coauthor-review-persistence.js";
+import { persistAgentBufferReviewStream } from "../../domain/agent/agent-buffer-review-persistence.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
@@ -55,6 +58,7 @@ interface PendingPromptTraceTurn {
 }
 
 export interface ChatRuntimeDeps {
+  persistCoauthorReview?: (chatId: string, results: readonly CoauthorReviewResult[]) => Promise<void>;
   chats: ChatStore;
   messages: MessageStore;
   traces: PromptTraceStore;
@@ -115,9 +119,11 @@ export class ChatRuntime {
   /** Bind EVERY iterator pull, not just generator creation: lazy bodies execute
    * on next(). Navigation/preview requests keep their own idle trace state and
    * cannot erase or retarget a detached producer's prompt/partial/final reply. */
-  withGenerationScope<T>(chatId: ChatId, branchId: ChatBranchId, events: AsyncIterable<T>): AsyncIterable<T> {
+  withGenerationScope<T extends { event: string; data: string }>(chatId: ChatId, branchId: ChatBranchId, events: AsyncIterable<T>): AsyncIterable<T> {
     const scope = { chatId, branchId, traces: new Map<ChatId, PendingPromptTraceTurn>() };
-    const iterator = this.generationScope.run(scope, () => events[Symbol.asyncIterator]());
+    const stream = this.deps.persistCoauthorReview
+      ? persistAgentBufferReviewStream(events, new CoauthorReviewPersistence(chatId, this.deps.persistCoauthorReview)) : events;
+    const iterator = this.generationScope.run(scope, () => stream[Symbol.asyncIterator]());
     return {
       [Symbol.asyncIterator]: () => ({
         next: () => this.generationScope.run(scope, () => iterator.next()),
@@ -357,6 +363,7 @@ export class ChatRuntime {
       .filter(o => o.alert)
       .map(o => ({ name: o.name, dropped: o.dropped }));
 
+    await this.persistUnscopedReview(chatId, reasoningData?.toolResults ?? []);
     return {
       response,
       branchId,
@@ -381,6 +388,7 @@ export class ChatRuntime {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
+      await this.persistUnscopedReview(chatId, input.toolResults ?? []);
       return await buildMessageResponse(chatId);
     }
 
@@ -437,6 +445,7 @@ export class ChatRuntime {
       .filter(o => o.alert)
       .map(o => ({ name: o.name, dropped: o.dropped }));
     const response = await buildMessageResponse(chatId);
+    await this.persistUnscopedReview(chatId, input.toolResults ?? []);
     return overflowAlerts.length > 0 ? { ...response, overflowAlerts } : response;
   }
 
@@ -642,4 +651,21 @@ export class ChatRuntime {
   peekPendingPresetName(chatId: ChatId): string | null {
     return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
+
+  private async persistUnscopedReview(chatId: ChatId, results: readonly CoauthorReviewResult[]) {
+    // Detached streams flush their collector once, after exhaustion. Native
+    // non-streaming/raw callers commit from the exact append input instead.
+    if (!this.generationScope.getStore()) await this.deps.persistCoauthorReview?.(chatId, results);
+  }
+}
+
+/** Core composition extracted so SessionRuntime does not grow beyond its ratchet. */
+export function createChatRuntime(stores: StoreContainer, deps: Omit<ChatRuntimeDeps,
+  "chats" | "messages" | "traces" | "diceRolls" | "uiSettings" | "experiences" | "persistCoauthorReview">): ChatRuntime {
+  const reviews = new CoauthorReviewService(stores);
+  return new ChatRuntime({ ...deps,
+    chats: stores.chats, messages: stores.messages, traces: stores.traces,
+    diceRolls: stores.diceRolls, uiSettings: stores.uiSettings, experiences: stores.experiences,
+    persistCoauthorReview: (chatId, results) => reviews.persistResults(chatId, results),
+  });
 }

@@ -4,6 +4,8 @@ import { coauthorReviewEnvelopeSchema, buildCoauthorReviewEnvelope, coauthorRevi
 import type { StoreContainer } from "@vibe-tavern/db";
 import { internal, notFound, validation } from "../../shared/errors.js";
 
+export type CoauthorReviewResult = Parameters<typeof coauthorReviewActivityFromResult>[0];
+
 export class CoauthorReviewService {
   constructor(private readonly stores: Pick<StoreContainer, "chats" | "agentReviewRounds">) {}
 
@@ -35,7 +37,7 @@ export class CoauthorReviewService {
   }
 
   /** No proposals means no write: preserve prior review bytes AND timestamp. */
-  async persistResults(chatId: string, results: ReadonlyArray<Parameters<typeof coauthorReviewActivityFromResult>[0]>): Promise<void> {
+  async persistResults(chatId: string, results: readonly CoauthorReviewResult[]): Promise<void> {
     if ((await this.stores.chats.getById(chatId))?.mode !== "coauthor") return;
     const envelope = buildCoauthorReviewEnvelope(results.map(coauthorReviewActivityFromResult));
     if (envelope) await this.put(chatId, envelope);

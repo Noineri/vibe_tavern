@@ -4,7 +4,7 @@ import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js"
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderStreamResult, ExtractedToolCall, ExtractedToolResult } from "../../infrastructure/ai/provider-execution-types.js";
+import type { ProviderStreamResult, ExtractedToolCall, ExtractedToolResult, GenerationResult } from "../../infrastructure/ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
@@ -578,10 +578,9 @@ export class LiveChatOrchestrator {
     // as the pushed assistant message — the continuation text, not the preset.
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
     const startedAt = Date.now();
-    let reply: string;
-    let reasoning: string | undefined;
+    let result: GenerationResult;
     try {
-      const result = await this.executeNonstreaming({
+      result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -592,8 +591,6 @@ export class LiveChatOrchestrator {
         maxSteps: prompt.maxSteps,
         ...replyExecutionOptions(input, prompt, this.chatApp),
       });
-      reply = ensurePrefillInResponse(result.text, prefill);
-      reasoning = result.reasoning;
       this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
         ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
         providerResponse: result.providerResponse,
@@ -625,7 +622,7 @@ export class LiveChatOrchestrator {
     return await appendContinueVariant({
       chatRuntime: this.chatRuntime,
       applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
-    }, input, prompt, reply, reasoning, startedAt);
+    }, input, prompt, ensurePrefillInResponse(result.text, prefill), result.reasoning, startedAt, result);
   }
 
   /** Streaming continue (LS-4a): same seam as {@link continueMessage} — the
