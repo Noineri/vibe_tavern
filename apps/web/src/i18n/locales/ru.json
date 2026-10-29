@@ -2922,7 +2922,7 @@
 	"agent.story_plan_proposal.marker_new": "новое",
 	"agent.story_plan_proposal.marker_changed": "изменено",
 	"agent.story_plan_proposal.marker_removed": "убрано",
-	"agent.story_plan_proposal.warning_replace_goals": "Цели в трекера целей заменятся событиями плана",
+	"agent.story_plan_proposal.warning_replace_goals": "Цели в трекере целей заменятся событиями плана",
 	"agent.story_plan_proposal.auto_check_label": "Проверять выполнение после каждого ответа",
 	"agent_plan_task_title": "Название",
 	"agent_plan_task_body": "Расшифровка задачи",

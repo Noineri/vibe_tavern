@@ -528,7 +528,7 @@ describe("StoryPlanProposalCard (DR-10a)", () => {
     expect(ruRecord["agent.story_plan_proposal.marker_changed"]).toBe("изменено");
     expect(ruRecord["agent.story_plan_proposal.marker_removed"]).toBe("убрано");
     expect(ruRecord["agent.story_plan_proposal.warning_replace_goals"]).toBe(
-      "Цели в трекера целей заменятся событиями плана",
+      "Цели в трекере целей заменятся событиями плана",
     );
     expect(ruRecord["agent.story_plan_proposal.auto_check_label"]).toBe(
       "Проверять выполнение после каждого ответа",
