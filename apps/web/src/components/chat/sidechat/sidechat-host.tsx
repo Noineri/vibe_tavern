@@ -20,6 +20,7 @@
  */
 import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import { agentThreadRuns } from "../../../api/agent-run-api.js";
 import {
   chatOwnerTriple,
   registerAgentHost,
@@ -196,6 +197,7 @@ registerAgentHost({
   // the SC-0c chat client's owner-keyed members (chat owners route to the
   // SC-0b routes, narrowed back to chat+branch+kind in one line each).
   transport: {
+    runs: agentThreadRuns,
     sendStream: streamExperienceCopilot,
     answerAsk: answerCopilotAsk,
     // AP-10: the turn-delete REST call — the experience client's

@@ -9,6 +9,7 @@ import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
 import { agentThreadKey } from "./agent-host-registry.js";
 import { AgentReviewPersistence } from "./agent-review-persistence.js";
+import { agentThreadRuns } from "../api/agent-run-api.js";
 
 type Buffers = { rules: string; visual: string };
 
@@ -93,6 +94,19 @@ export function createBufferAgentReviewPersistence(kind: AgentBufferReviewKind, 
   }
 
   return {
+    runs: {
+      ...agentThreadRuns,
+      subscribe: async (threadId: string, after: number, opts: Parameters<typeof agentThreadRuns.subscribe>[2]) => {
+        // Replay is observation, never a new turn: no preparation, flush or
+        // checkpoint. The producer owns the anchor even after browser reload.
+        await persistence.hydrate(threadId);
+        opts.signal?.throwIfAborted();
+        persistence.start(threadId);
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        try { return await agentThreadRuns.subscribe(threadId, after, opts); }
+        finally { await persistence.finish(threadId, false); }
+      },
+    },
     hydrate: (threadId: string) => persistence.hydrate(threadId),
     sync: (threadId: string) => persistence.sync(threadId),
     prepare,

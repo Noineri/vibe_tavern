@@ -255,6 +255,8 @@ const reviewPersistence = createBufferAgentReviewPersistence(DRAFT_KIND, {
   remove: clearDraft,
 });
 
+export const experienceCopilotRuns = reviewPersistence.runs;
+
 /** Per-thread server hydration; never boot-scan legacy keys into live stores. */
 export function rehydrateExperienceCopilotDrafts(threadId: string): Promise<void> {
   return reviewPersistence.hydrate(threadId);

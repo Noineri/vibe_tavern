@@ -35,7 +35,7 @@ import {
 } from "../../../api/script-agent-api.js";
 import {
   rehydrateScriptAgentDraft, syncPersistedScriptAgentRound, prepareScriptAgentReviewTurn,
-  streamPersistedScriptAgent, answerPersistedScriptAgentAsk,
+  streamPersistedScriptAgent, answerPersistedScriptAgentAsk, scriptAgentRuns,
 } from "../../../lib/script-agent-draft.js";
 import { ScriptAgentEditorTabs, type ScriptEditorTab } from "./script-agent-editor-pane.js";
 import { useAgentPendingReviewPublish } from "../../shared/agent-shell/use-agent-pending-review-publish.js";
@@ -652,6 +652,7 @@ registerAgentHost({
   // typeof-mirrored member types keep this delegation compiler-checked).
   transport: {
     sendStream: streamPersistedScriptAgent,
+    runs: scriptAgentRuns,
     answerAsk: answerPersistedScriptAgentAsk,
     // AP-10: the turn-delete REST call (required member — the script twin,
     // structurally identical to the experience `typeof` the registry pins).

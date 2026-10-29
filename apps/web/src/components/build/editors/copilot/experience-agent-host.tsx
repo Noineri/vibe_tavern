@@ -9,7 +9,7 @@ import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useT } from "../../../../i18n/context.js";
 import type { ScriptRecord } from "../../../../api/types.js";
-import { streamPersistedExperienceCopilot, answerPersistedCopilotAsk } from "../../../../lib/experience-copilot-draft.js";
+import { streamPersistedExperienceCopilot, answerPersistedCopilotAsk, experienceCopilotRuns } from "../../../../lib/experience-copilot-draft.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
@@ -467,6 +467,7 @@ registerAgentHost({
   // types keep this delegation compiler-checked).
   transport: {
     sendStream: streamPersistedExperienceCopilot,
+    runs: experienceCopilotRuns,
     answerAsk: answerPersistedCopilotAsk,
     // AP-10: the turn-delete REST call (required member — forgetting it is
     // a compile break). The thread route dispatches by thread, never kind.

@@ -4,6 +4,7 @@ import { streamScriptAgent, answerScriptAgentAsk } from "../api/script-agent-api
 import { createBufferAgentReviewPersistence } from "./buffer-agent-review-persistence.js";
 
 const persistence = createBufferAgentReviewPersistence("script");
+export const scriptAgentRuns = persistence.runs;
 
 export const rehydrateScriptAgentDraft = (threadId: string): Promise<void> => persistence.hydrate(threadId);
 export const syncPersistedScriptAgentRound = (threadId: string): Promise<void> => persistence.sync(threadId);
