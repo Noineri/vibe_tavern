@@ -11,7 +11,7 @@ import { create } from "zustand";
  * PUBLISHES a one-way derived copy here (a WRITE from its existing state
  * machine; the controller stays the only truth — nothing ever writes back).
  * Readers outside the shell subscribe by owner key: the story strip's
- * «Позвать режиссёра» disables while the sidechat of the same chat+branch
+ * The call-director button disables while the sidechat of the same chat+branch
  * streams (mock §4).
  *
  * A tiny shared UI store (canon: plain store for UI state — the

@@ -19,7 +19,7 @@ export interface AgentPlanPanelProps {
    *  director" action, wired by DR-11). */
   actions?: ReactNode;
   /** DR-11 (mock §5/§9): actions rendered in the EXPANDED headers BEFORE
-   *  the editor button — the story strip's «Проверить сейчас». The mock's
+   *  the editor button — the story strip's check-now (`story_plan_check_now`). The mock's
    *  interleaved order (check · editor · call) is not expressible through
    *  the trailing `actions` slot, which always lands after the editor
    *  button; this slot fills the gap. While set in curtain mode the header
@@ -30,7 +30,7 @@ export interface AgentPlanPanelProps {
    *  byte-identical. */
   headerActionsBefore?: ReactNode;
   /** DR-11 (mock §4): while a non-empty string in CURTAIN mode, the
-   *  collapsed row shows «Выполнено: {title}» on the success tint with the
+   *  collapsed row shows the flash (`agent_plan_story_flash_done`) on the success tint with the
    *  completed glyph — the passed-check flash the story strip drives for
    *  ~6 s after the tracker's check completes the current event; the count
    *  and chevron stay live (the refreshed plan drives them). */
@@ -84,9 +84,9 @@ export function NodeGlyph({ status }: { status: TaskStatus }) {
   );
 }
 
-/** The panel's text-button chrome — the «Редактор плана» button's classes.
- *  Exported since DR-11: the story strip's «Позвать режиссёра» composes THE
- *  SAME base (mock §1: "the composed classes of today's «Редактор плана»
+/** The panel's text-button chrome — the editor button's (`agent_plan_editor`) classes.
+ *  Exported since DR-11: the story strip's call-director button composes THE
+ *  SAME base (mock §1: "the composed classes of today's editor button
  *  text button + shrink-0 whitespace-nowrap" — the base already carries
  *  `shrink-0`), so the strip's action can never drift from the row's own
  *  button. */
@@ -259,7 +259,7 @@ export function AgentPlanPanel({
               (owner follow-up 2026-10-24); the count beside it is chrome.
               DR-11: the flash label interpolates that same model title, so it
               opts in with the span; the all-done line is the story label
-              (§4 «План сюжета выполнен» — the curtain is the story
+              (§4 story-done label `agent_plan_story_done` — the curtain is the story
               presentation, like the header's story title since DR-9). */}
           <span translate="yes" className={cn("min-w-0 flex-1 truncate", flashing && "text-success-text")}>
             {flashing
@@ -286,8 +286,8 @@ export function AgentPlanPanel({
                 {actions}
               </>
             ) : (
-              /* DR-11 (§5/§9): §5's interleaved order — «Проверить сейчас»
-                 BEFORE the editor button, «Позвать режиссёра» (the `actions`
+              /* DR-11 (§5/§9): §5's interleaved order — check-now
+                 BEFORE the editor button, call-director (the `actions`
                  slot) after it. On the phone (§9) the wrapper's w-full under
                  the wrapped header takes its own row and its stretch default
                  gives every child a 44px target; `md:contents` dissolves the

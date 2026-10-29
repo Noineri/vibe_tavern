@@ -94,7 +94,7 @@ export interface UseAgentControllerArgs {
   /** DR-11 (DIRECTOR_MODE_PLAN): when set, the controller publishes its
    *  `isSending` into `useAgentStreamingStore` under this key (the shell's
    *  `agentOwnerKey`) — a ONE-WAY mirror so readers OUTSIDE the shell (the
-   *  story strip's «Позвать режиссёра» disable while a sidechat turn
+   *  story strip's call-director button disable while a sidechat turn
    *  streams) can subscribe without owning the turn. The controller stays
    *  the only truth; nothing ever reads the mirror back here. */
   streamingMirrorKey?: string;

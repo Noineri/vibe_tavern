@@ -144,7 +144,7 @@ function PlayModeMobileSidechat({
  * the mobile chat pane so the two never fork the composer stack.
  * DR-11: the story-plan strip rides as the FIRST child — in-flow and
  * constant-height (only its curtain overlays), above the message list so
- * desktop and the mobile «Чат» pane share it. It renders null while the
+ * desktop and the mobile Chat pane share it. It renders null while the
  * active branch has no plan (byte-identical without one).
  */
 function PlayModeChatPane() {

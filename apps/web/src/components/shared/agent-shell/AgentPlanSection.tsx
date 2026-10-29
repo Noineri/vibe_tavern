@@ -39,7 +39,7 @@ export function AgentPlanSection({
 }: {
   owner: AgentPlanOwner;
   locked: boolean;
-  /** DR-11: forwarded to the panel — the story strip's «Позвать режиссёра»
+  /** DR-11: forwarded to the panel — the story strip's call-director
    *  (the `actions` slot: end of the collapsed row, after the editor button
    *  in the curtain header). */
   actions?: ReactNode;
@@ -48,10 +48,10 @@ export function AgentPlanSection({
    *  actions take their own row (§9). */
   headerActionsBefore?: ReactNode;
   /** DR-11: forwarded — the strip hides the editor button in its collapsed
-   *  row (§1: the row carries only «Позвать режиссёра»; the curtain header
+   *  row (§1: the row carries only the call-director action; the curtain header
    *  keeps the editor button whatever this says). */
   showEditorInCollapsedRow?: boolean;
-  /** DR-11: forwarded — the passed-check flash (§4): «Выполнено: {title}»
+  /** DR-11: forwarded — the passed-check flash (§4, `agent_plan_story_flash_done`)
    *  on the success tint while set (curtain presentation only). */
   flashTitle?: string | null;
 }) {

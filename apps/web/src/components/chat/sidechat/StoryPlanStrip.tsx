@@ -2,20 +2,20 @@
  * StoryPlanStrip (DIRECTOR_MODE_PLAN DR-11) — the chat column's story-plan
  * row: the active branch's story plan as a compact, CONSTANT-height strip
  * pinned above the message list, shared by the desktop surface and the
- * mobile «Чат» pane (mount: the first child of `PlayModeChatPane`).
+ * mobile Chat pane (mount: the first child of `PlayModeChatPane`).
  *
  * Renders NOTHING while the active branch's plan is empty — without a plan
  * the chat is exactly as before this unit; the strip disappears only when
  * the plan is emptied in the editor (A8 keeps it after the last event
- * completes: «План сюжета выполнен»).
+ * completes: the story-done label, `agent_plan_story_done`).
  *
  * Composition, not a fork: the strip is a thin mount of the shared
  * `AgentPlanSection` — the SAME `useAgentPlan` owner cache, editor modal,
  * and R4 revert write the mobile sidechat pane uses — extended with the
  * strip's curtain extras: no editor button in the collapsed row (§1),
- * «Проверить сейчас» before the editor button in the curtain header (§5's
+ * check-now label (`story_plan_check_now`) before the editor button in the curtain header (§5's
  * interleaved order, the panel's `headerActionsBefore` slot), and
- * «Позвать режиссёра» through the `actions` slot (the row's text-button
+ * call-the-director label (`story_plan_call_director`) through the `actions` slot (the row's text-button
  * chrome, `agentPlanTextButtonCls`).
  *
  * Seams — each ONE path, never a second:
@@ -30,14 +30,14 @@
  * - passed-check flash (R4): the projection copies plan event ids into
  *   goal ids 1:1 (`projectStoryPlanGoals`), so a goal-status transition of
  *   the plan's CURRENT event IS "the check passed this event" — the strip
- *   shows «Выполнено: <event>» on the success tint for ~6 s, then the
+ *   shows the passed-check flash (`agent_plan_story_flash_done`) on the success tint for ~6 s, then the
  *   refreshed plan's next event. No toast (§4).
  * - streaming: the sidechat turn's `isSending` is controller-local state;
  *   the shell's controller mirrors it (keyed by owner) into
  *   `useAgentStreamingStore` — a one-way derived view; the strip subscribes
- *   for the sidechat of the same chat+branch and disables «Позвать
- *   режиссёра» while it streams (§4).
- * - «Проверить сейчас» (P3): the goal tracker's EXISTING manual check —
+ *   for the sidechat of the same chat+branch and disables the call-director
+ *   action while it streams (§4).
+ * - check-now (`story_plan_check_now`, P3): the goal tracker's EXISTING manual check —
  *   `checkObjectiveCompletionAction`, the same api-action the objective
  *   zone's check button runs, moved here from the message headers (§8).
  *
@@ -149,7 +149,7 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
   // the switched-away conversation's event.
   useEffect(() => stopFlash, [stopFlash, chatId, branchId]);
 
-  // ── «Проверить сейчас» — the tracker's existing manual check (P3) ────────
+  // ── Check-now — the tracker's existing manual check (P3) ────────
   const [checkBusy, setCheckBusy] = useState(false);
   const checkAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
