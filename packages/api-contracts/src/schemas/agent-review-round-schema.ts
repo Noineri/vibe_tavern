@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { copilotTodoItemSchema, experienceCopilotTargetSchema } from "./experience-copilot-schema.js";
-import { isFinalizedReviewActivity } from "../agent-review-round.js";
+import { isPersistableAgentReviewActivity } from "../agent-review-round.js";
 
 export const agentToolStatusSchema = z.enum(["streaming", "done", "error"]);
 export type AgentToolStatus = z.infer<typeof agentToolStatusSchema>;
@@ -52,13 +52,13 @@ export const agentToolActivitySchema = z.object({
 });
 export type AgentToolActivity = z.infer<typeof agentToolActivitySchema>;
 
-/** Experience reviews persist only done rules/visual proposals, never streaming,
- * errors, read-only tools or the script kind's separate code-buffer proposals.
+/** Persist finalized rules/visual or code proposals, never streaming/errors or
+ * read-only activities. Each kind's producer/adapter selects its own targets.
  * Keep the activity's structural type so existing live-store callers do not
  * need casts or a second handwritten projection at the persistence boundary. */
 export const agentReviewActivitySchema = agentToolActivitySchema.refine(
-  (activity): boolean => isFinalizedReviewActivity(activity),
-  { message: "A review activity must be a finalized rules or visual proposal." },
+  (activity): boolean => isPersistableAgentReviewActivity(activity),
+  { message: "A review activity must be a finalized buffer proposal." },
 );
 
 /** Turn-start buffers, oldest snapshot first; id is monotonic per thread. */

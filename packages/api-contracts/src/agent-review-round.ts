@@ -10,11 +10,31 @@ export function isFinalizedReviewActivity(x: unknown): x is AgentToolActivity {
     && (a.target === "rules" || a.target === "visual") && typeof a.proposed === "string" && a.proposed.length > 0;
 }
 
+/** Script code may intentionally become empty. Keep the legacy mini-app guard
+ * above nonempty and rules/visual-only rather than changing old migrations. */
+export function isFinalizedCodeReviewActivity(x: unknown): x is AgentToolActivity {
+  if (typeof x !== "object" || x === null) return false;
+  const a = x as Record<string, unknown>;
+  return a.status === "done" && typeof a.toolCallId === "string" && typeof a.toolName === "string"
+    && a.target === "code" && typeof a.proposed === "string";
+}
+
+export function isPersistableAgentReviewActivity(x: unknown): x is AgentToolActivity {
+  return isFinalizedReviewActivity(x) || isFinalizedCodeReviewActivity(x);
+}
+
+export type AgentBufferReviewKind = "experience" | "script";
+
+export function finalizeBufferReviewActivities(activities: readonly AgentToolActivity[], kind: AgentBufferReviewKind): AgentToolActivity[] {
+  const guard = kind === "script" ? isFinalizedCodeReviewActivity : isFinalizedReviewActivity;
+  const byId = new Map<string, AgentToolActivity>();
+  for (const activity of activities) if (guard(activity)) byId.set(activity.toolCallId, activity);
+  return [...byId.values()];
+}
+
 /** Later duplicate wins without changing the first occurrence's position. */
 export function finalizeReviewActivities(activities: readonly AgentToolActivity[]): AgentToolActivity[] {
-  const byId = new Map<string, AgentToolActivity>();
-  for (const activity of activities) if (isFinalizedReviewActivity(activity)) byId.set(activity.toolCallId, activity);
-  return [...byId.values()];
+  return finalizeBufferReviewActivities(activities, "experience");
 }
 
 /** Live aggregation deliberately also recognizes code targets as proposals;

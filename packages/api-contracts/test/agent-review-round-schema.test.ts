@@ -41,14 +41,21 @@ describe("agent review v2 envelope", () => {
     ]) expect(agentReviewEnvelopeSchema.safeParse(invalid).success).toBe(false);
   });
 
-  test("never admits streaming/errors/read-only activities or a script code proposal", () => {
+  test("never admits streaming/errors/read-only activities or an empty mini-app proposal", () => {
     const valid = envelope().activities[0]!;
     for (const activity of [
       { ...valid, status: "streaming" }, { ...valid, status: "error" },
       { toolCallId: "read", toolName: "read_skill_file", status: "done", readPath: "skills/example.md" },
-      { ...valid, target: "code" }, { ...valid, proposed: "" }, { ...valid, proposed: 12 },
+      { ...valid, proposed: "" }, { ...valid, proposed: 12 },
       { ...valid, toolCallId: null }, { ...valid, toolName: null },
     ]) expect(agentReviewEnvelopeSchema.safeParse({ ...envelope(), activities: [activity] }).success).toBe(false);
+  });
+
+  test("accepts native script code proposals, including an intentional empty buffer", () => {
+    for (const proposed of ["return 1;", ""]) {
+      const code: AgentToolActivity = { ...envelope().activities[0]!, target: "code", proposed };
+      expect(agentReviewEnvelopeSchema.parse({ ...envelope(), activities: [code] }).activities).toEqual([code]);
+    }
   });
 
   test("generic live activity types still include code proposals and non-proposal card metadata", () => {
