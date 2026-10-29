@@ -8,6 +8,7 @@ import {
   type AgentFeedEntry,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
+import { agentLiveReasoningOf, agentLiveTextOf, useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure } from "./use-agent-controller.js";
@@ -55,7 +56,10 @@ const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
  * reads ONLY the ephemeral turn store (the one store read allowed inside these
  * presentation components, mirroring how `CoauthorMessageList` reads its turn
  * store) and renders the current turn's ordered feed (text segments + tool
- * activity cards, TF-4/TF-5) inline.
+ * activity cards, TF-4/TF-5) inline. LAG-3: the LIVE stream text/reasoning
+ * arrive through the live-stream store's subscriptions below — NOT props —
+ * so a per-flush store write re-renders only this list (and the scroll hook
+ * through its render), never the shell root above it.
  *
  * Auto-scroll mirrors the co-author surface's bottom-pinning intent (stick to
  * the bottom while the user is already there; a jump-to-bottom button appears
@@ -69,15 +73,6 @@ export interface AgentMessageListProps {
   kind: AgentKind;
   threadId: string;
   messages: ExperienceCopilotMessageWire[];
-  /** Live assistant text accumulated this turn (cleared by the shell on settle). */
-  pendingText: string;
-  /** Live model reasoning for the pending turn — rendered with the
-   *  co-author's MessageReasoning `inline` preset on the live caption line
-   *  (AP-29 — the same preset, same place as the persisted toggle). Live-only
-   *  state: cleared on settle, when the reloaded turn carries the persisted
-   *  pair (the handover shows no gap and no duplicate — the clear precedes
-   *  the async refetch, so production never renders both at once). */
-  pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
@@ -179,8 +174,6 @@ export function AgentMessageList({
   kind,
   threadId,
   messages,
-  pendingText,
-  pendingReasoning,
   pendingUserContent,
   pendingUserAttachments = [],
   isSending = false,
@@ -209,6 +202,15 @@ export function AgentMessageList({
   const feed = useAgentTurnStore(
     useShallow((s) => s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED),
   );
+  // LAG-3: the live stream pair — ONE derivation, read through the
+  // live-stream store's selectors (primitive results: a flush that changes
+  // only the text never re-renders through the reasoning selector, and a
+  // store write that changes neither never re-renders this list at all).
+  // The value pair is the controller's flush target with the exact
+  // pre-LAG-3 `pendingText`/`pendingReasoning` lifecycle (appended per
+  // flush, cleared at settle/abort/failure/turn start).
+  const liveText = useAgentLiveStreamStore((s) => agentLiveTextOf(s, kind, threadId));
+  const liveReasoning = useAgentLiveStreamStore((s) => agentLiveReasoningOf(s, kind, threadId));
 
   // CD-1 (TF-5 inline form): persisted tool rows render as audit cards at their
   // chronological position, not anchored before/after a turn's final reply.
@@ -427,12 +429,12 @@ export function AgentMessageList({
   const isHiddenReplacedRow = (role: string, visibleIndex: number, messageId: string): boolean =>
     (isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex) ||
     activeHiddenIds.has(messageId);
-  const hasPendingText = pendingText.trim().length > 0;
+  const hasPendingText = liveText.trim().length > 0;
   // CA-4e3: the optimistic user row shows when it has text OR attachments.
   const hasPendingUserContent = pendingUserContent.trim().length > 0 || pendingUserAttachments.length > 0;
   // AP-29: live reasoning streams as text-only (no duration lands until the
   // turn persists) — the duration slot stays null like the minimal row did.
-  const hasLiveReasoning = pendingReasoning.trim().length > 0;
+  const hasLiveReasoning = liveReasoning.trim().length > 0;
 
   // AP-4 (AP-29 follow-up): one caption per assistant turn, at the TOP of
   // the turn — above its tool accordion, an ask / permission / proposal
@@ -491,17 +493,17 @@ export function AgentMessageList({
         captionBefore: turnCaptions.captionBefore,
         trailingCaption: withLiveReasoning(
           turnCaptions.trailingCaption ?? undefined,
-          pendingReasoning,
+          liveReasoning,
         ),
       };
     }
     const next = new Map(turnCaptions.captionBefore);
     next.set(
       turnCaptions.lastTurnSlotId,
-      withLiveReasoning(next.get(turnCaptions.lastTurnSlotId), pendingReasoning),
+      withLiveReasoning(next.get(turnCaptions.lastTurnSlotId), liveReasoning),
     );
     return { captionBefore: next, trailingCaption: turnCaptions.trailingCaption };
-  }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, pendingReasoning]);
+  }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, liveReasoning]);
 
   // SC-19b: frozen events interleave as separators BEFORE their anchor
   // message (the grouping lives in `agent-event-anchors.ts` — extracted
@@ -522,14 +524,17 @@ export function AgentMessageList({
 
   // Bottom-pinning auto-scroll (the co-author surface's intent; the hook
   // is `agent-list-scroll.ts` — extracted under the file-size ratchet).
-  const { scrollRef, showJumpToBottom, handleScroll, jump } = useAgentListScroll(contentCount, pendingText, feed.length);
+  // LAG-3: the scroll hook's text input is the store-derived live text —
+  // the hook stays param-driven off THIS render, so it fires per flush
+  // (this list's own re-render) without any store subscription of its own.
+  const { scrollRef, showJumpToBottom, handleScroll, jump } = useAgentListScroll(contentCount, liveText, feed.length);
 
   const isEmpty =
     visibleMessages.length === 0 &&
     events.length === 0 &&
     !hasPendingUserContent &&
     !hasPendingText &&
-    !pendingReasoning &&
+    !liveReasoning &&
     feed.length === 0;
 
   if (isEmpty) {
@@ -671,14 +676,14 @@ export function AgentMessageList({
             hostTitle !== null &&
             (hasPendingText || hasLiveReasoning) &&
             !liveJoinsLastTurn && (
-              <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? pendingReasoning : null} />
+              <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? liveReasoning : null} />
             )}
           {/* AP-29 follow-up 2: the fallback live row (no host title) is
               the bare reasoning toggle — no avatar anywhere in the feed
               (AP-4). */}
           {hasLiveReasoning && hostTitle === null && (
             <div className="flex flex-wrap items-center gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
-              <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="inline" />
+              <MessageReasoning reasoning={liveReasoning} reasoningDurationMs={null} variant="inline" />
             </div>
           )}
 
@@ -724,8 +729,9 @@ export function AgentMessageList({
                 }
                 continue;
               }
-              // Post-settle: the controller clears `pendingText`, so feed text
-              // is suppressed while refetched history owns the persisted rows.
+              // Post-settle: the live-stream store is cleared (LAG-3 — the
+              // settle clear drops the live pair), so feed text is suppressed
+              // while refetched history owns the persisted rows.
               // AP-29: live text never carries its own caption — the hoisted
               // live caption above (fresh turn) or the joined turn caption
               // (continuation) owns it (one site, never duplicated).
@@ -754,7 +760,7 @@ export function AgentMessageList({
                   id: "__pending-assistant",
                   threadId,
                   role: "assistant",
-                  content: pendingText,
+                  content: liveText,
                 })}
               />
             );

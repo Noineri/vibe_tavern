@@ -3,8 +3,8 @@
  *
  * Pins the load-bearing contract: the SSE→turn-store wiring (tool events upsert
  * activities with the SAME shapes the persisted path
- * `extractPersistedAgentActivities` produces), `pendingText`
- * accumulation, and the settle (done/cancelled/failed) → `onTurnSettled`
+ * `extractPersistedAgentActivities` produces), the live stream
+ * text/reasoning accumulation, and the settle (done/cancelled/failed) → `onTurnSettled`
  * signal. The controller calls the real transport against a deterministic
  * fetch/SSE router, so the stream lifecycle is observed at the HTTP boundary.
  */
@@ -158,6 +158,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 
 const { useAgentController } = await import("./use-agent-controller.js");
 const { useAgentTurnStore } = await import("../../../stores/agent-turn-store.js");
+const { useAgentLiveStreamStore, agentLiveTextOf, agentLiveReasoningOf } = await import("../../../stores/agent-live-stream-store.js");
 const { useAgentStreamingStore } = await import("../../../stores/agent-streaming-store.js");
 const { ProviderStreamError } = await import("../../../api/provider-stream-error.js");
 // AS-6c-i: the controller receives its transport through args — this wires
@@ -192,6 +193,13 @@ type CopilotTodoItem = import("@vibe-tavern/api-contracts").CopilotTodoItem;
 const THREAD = "thread-1";
 const PROVIDER = "provider-1";
 const routerFetch = Object.assign(fetchRouter, { preconnect: () => {} });
+
+// LAG-3: the controller no longer carries the live stream pair on its
+// contract — the assertions below read the SAME accumulated values through
+// the live-stream store (the ONE derivation the message list renders), so
+// the asserted boundary (the flushed live text/reasoning) is unchanged.
+const liveText = () => agentLiveTextOf(useAgentLiveStreamStore.getState(), "experience", THREAD);
+const liveReasoning = () => agentLiveReasoningOf(useAgentLiveStreamStore.getState(), "experience", THREAD);
 
 // CA-4e3: the one draft attachment fixture + its `toSendAttachment`
 // projection (the ONE send mapper — tokenCount preserved, no extra fields).
@@ -268,6 +276,7 @@ beforeEach(() => {
   toastError.mockClear();
   toastInfo.mockClear();
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+  useAgentLiveStreamStore.setState({ liveByThread: {} });
 });
 
 afterAll(() => {
@@ -364,7 +373,7 @@ describe("useExperienceCopilotController — attachments (CA-4e3)", () => {
 });
 
 describe("useExperienceCopilotController — handleSend stream lifecycle", () => {
-  test("streams a turn: accumulates pendingText, upserts activity shapes, settles once", async () => {
+  test("streams a turn: accumulates the live stream text, upserts activity shapes, settles once", async () => {
     const onTurnSettled = mock();
     const d = deferred<{ finishReason: string }>();
     let capturedThreadId!: string;
@@ -403,11 +412,11 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(capturedThreadId).toBe(THREAD);
     expect(capturedBody).toEqual({ content: "hello world", providerProfileId: PROVIDER });
     expect(result.current.isSending).toBe(true);
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
     // clearTurn dropped the prior turn at start.
     expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([]);
 
-    // Drive text deltas; pendingText accumulates live — LAG-2: only once the
+    // Drive text deltas; the live text accumulates — LAG-2: only once the
     // frame ticks (both chunks coalesce into ONE flush).
     await act(async () => {
       captured.onChunk("Hel");
@@ -416,9 +425,9 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     await act(async () => {
       scheduler.tickNextFrame();
     });
-    expect(result.current.pendingText).toBe("Hello");
+    expect(liveText()).toBe("Hello");
 
-    // UX 2026-08-16 remark 4: reasoning-deltas accumulate into pendingReasoning
+    // UX 2026-08-16 remark 4: reasoning-deltas accumulate into the live reasoning
     // (rendered with the co-author's MessageReasoning minimal pattern).
     await act(async () => {
       captured.onReasoningChunk!("think");
@@ -427,7 +436,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     await act(async () => {
       scheduler.tickNextFrame();
     });
-    expect(result.current.pendingReasoning).toBe("thinking");
+    expect(liveReasoning()).toBe("thinking");
 
     // Drive the tool-event wiring: onToolCall captures args + a streaming
     // placeholder, onToolResult finalizes each card with the persisted shape.
@@ -457,8 +466,8 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     expect(result.current.isSending).toBe(false);
-    expect(result.current.pendingText).toBe("");
-    expect(result.current.pendingReasoning).toBe("");
+    expect(liveText()).toBe("");
+    expect(liveReasoning()).toBe("");
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
 
     const activities = useAgentTurnStore.getState().getActivities("experience", THREAD);
@@ -796,14 +805,14 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
       // Buffered, not yet flushed: NO store write and NO state change before
       // the frame ticks.
       expect(feedWrites.count()).toBe(0);
-      expect(result.current.pendingText).toBe("");
+      expect(liveText()).toBe("");
 
       await act(async () => {
         scheduler.tickNextFrame();
       });
       // ONE flush for the whole frame: one write carrying the concatenated
-      // delta, one pendingText update.
-      expect(result.current.pendingText).toBe("Hello world");
+      // delta, one live-text update.
+      expect(liveText()).toBe("Hello world");
       expect(feedWrites.count()).toBe(1);
       expect(useAgentTurnStore.getState().feedByThread[THREAD]![0]).toMatchObject({
         kind: "text",
@@ -818,7 +827,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
         await pending;
       });
       expect(feedWrites.count()).toBe(1);
-      expect(result.current.pendingText).toBe("");
+      expect(liveText()).toBe("");
     } finally {
       feedWrites.done();
     }
@@ -847,7 +856,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
     });
     // Buffered: the feed holds NOTHING yet (the frame never ticked).
     expect(useAgentTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
 
     // The tool event itself flushes synchronously — no frame tick needed.
     await act(async () => {
@@ -898,7 +907,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
       // Buffered — nothing written before the cancel (red before LAG-2: the
       // per-token writes had already landed).
       expect(feedWrites.count()).toBe(0);
-      expect(result.current.pendingText).toBe("");
+      expect(liveText()).toBe("");
 
       await act(async () => {
         result.current.handleCancel();
@@ -912,7 +921,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
         kind: "text",
         text: "Hello",
       });
-      expect(result.current.pendingText).toBe("");
+      expect(liveText()).toBe("");
       expect(result.current.isSending).toBe(false);
 
       // The cancelled frame never runs — no write after the clear.
@@ -921,7 +930,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
       });
       expect(feedWrites.count()).toBe(1);
       expect(useAgentTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
-      expect(result.current.pendingText).toBe("");
+      expect(liveText()).toBe("");
     } finally {
       feedWrites.done();
     }
@@ -965,7 +974,7 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
     });
   });
 
-  test("pendingText (the scroll hook's input) changes per FLUSH, not per token", async () => {
+  test("the live stream text (the scroll hook's input) changes per FLUSH, not per token", async () => {
     const scheduler = createManualScheduler();
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
@@ -984,32 +993,33 @@ describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-
     });
 
     // Three tokens, three separate acts (un-batched, like real SSE arrivals)
-    // — pendingText holds at "" through all of them.
+    // — the live text holds at "" through all of them.
     await act(async () => {
       captured.onChunk("a");
     });
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
     await act(async () => {
       captured.onChunk("b");
     });
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
     await act(async () => {
       captured.onChunk("c");
     });
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
 
-    // ONE flush flips it once — the scroll hook's input (and the shell root)
-    // re-render per frame, not per token.
+    // ONE flush flips it once — the scroll hook's input (and the message
+    // list) re-render per frame, not per token; the shell root never
+    // re-renders per flush (LAG-3).
     await act(async () => {
       scheduler.tickNextFrame();
     });
-    expect(result.current.pendingText).toBe("abc");
+    expect(liveText()).toBe("abc");
 
     await act(async () => {
       d.resolve({ finishReason: "stop" });
       await pending;
     });
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
   });
 });
 
@@ -1668,7 +1678,7 @@ describe("useExperienceCopilotController — handleRegenerate (AP-10)", () => {
     });
 
     expect(result.current.isSending).toBe(false);
-    expect(result.current.pendingText).toBe("");
+    expect(liveText()).toBe("");
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
     expect(onTurnSettled).toHaveBeenCalledWith(true);
   });

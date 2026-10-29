@@ -431,7 +431,7 @@ export function AgentShell({
   // ── Stream controller ────────────────────────────────────────────────────
   // The refresh/settle trio lives in `use-agent-thread-refresh.ts` (file-size
   // ratchet, DR-11): refetch persisted messages after each turn settles —
-  // the live `pendingText` is cleared and the persisted assistant message
+  // the live stream text is cleared (LAG-3) and the persisted assistant message
   // takes over.
   const { refreshThread, handleTurnSettled, refreshMessages } = useAgentThreadRefresh({
     transport,

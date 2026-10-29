@@ -1,5 +1,4 @@
 import { useCallback, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { toast } from "sonner";
 import { copyText } from "../../../lib/clipboard.js";
 import type {
@@ -55,8 +54,9 @@ import { AgentAttachmentActionsContext } from "./agent-attachment-actions-contex
  * logic of its own; `t` comes from the same i18n context the shell uses.
  */
 
-/** Stable empties for the AP-6 turn-store subscriptions (a fresh `[]` per
- *  selector call would defeat `useShallow` and resubscribe every render). */
+/** Stable empties for the store subscriptions' fallbacks (a fresh `[]` per
+ *  selector call would allocate per store write — the selectors below return
+ *  PRIMITIVES (the derived ask id), so the arrays are only parser inputs). */
 const EMPTY_FEED: never[] = [];
 const EMPTY_ACTIVITIES: never[] = [];
 
@@ -173,31 +173,29 @@ export function AgentChatPane({
 }: AgentChatPaneProps) {
   const { t } = useT();
 
-  // AP-6: the answering state is the SAME live ask the AP-5 send routing
-  // reads — one derivation (`selectAgentLiveAsk`), two consumers (send
-  // routing at event time via `getState()`, this visual flag at render time
-  // via a standard zustand subscription). Render-time subscription is fine
-  // here (the `getState()` rule covers async/event callbacks only); the
-  // `useShallow` + stable-empty shape mirrors the message list's.
-  const liveAskFeed = useAgentTurnStore(
-    useShallow((s) => (threadId !== null ? (s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED) : EMPTY_FEED)),
-  );
-  const liveAskActivities = useAgentTurnStore(
-    useShallow((s) => (threadId !== null ? (s.turnsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES)),
-  );
-  const answeringAsk = useMemo(
-    () =>
-      threadId !== null
-        ? selectAgentLiveAsk({
-            feed: liveAskFeed,
-            activities: liveAskActivities,
-            messages,
-            pendingAskAnswer: ctrl.pendingAskAnswer,
-            isSending: ctrl.isSending,
-          }) !== null
-        : false,
-    [threadId, kind, liveAskFeed, liveAskActivities, messages, ctrl.pendingAskAnswer, ctrl.isSending],
-  );
+  // AP-6 / LAG-3: the answering state is the SAME live ask the AP-5 send
+  // routing reads — one derivation (`selectAgentLiveAsk`), two consumers
+  // (send routing at event time via `getState()` below, this visual flag at
+  // render time). The subscription selects the derived ASK ID (a primitive),
+  // never the feed/activity arrays: a per-flush feed write re-runs the
+  // selector but the result is unchanged (while a turn streams the selector
+  // short-circuits to null), so this pane — and the header, meter and
+  // composers under it — does not re-render per flush; only the message
+  // list does (LAG-3's contract). The event-time reads below stay
+  // `getState()` (the render closure would go stale mid-stream).
+  const answeringAsk = useAgentTurnStore((s) => {
+    if (threadId === null || ctrl.isSending) return false;
+    const key = agentThreadKey(kind, threadId);
+    return (
+      selectAgentLiveAsk({
+        feed: s.feedByThread[key] ?? EMPTY_FEED,
+        activities: s.turnsByThread[key] ?? EMPTY_ACTIVITIES,
+        messages,
+        pendingAskAnswer: ctrl.pendingAskAnswer,
+        isSending: ctrl.isSending,
+      }) !== null
+    );
+  });
 
   // AP-11: the turn-row callbacks the list merges per bubble — copy through
   // the shared clipboard helper (success toasts, the TrackerConfig icon-copy
@@ -353,8 +351,6 @@ export function AgentChatPane({
             threadId={threadId}
             messages={messages}
             events={events}
-            pendingText={ctrl.pendingText}
-            pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
             pendingUserAttachments={ctrl.pendingUserAttachments}
             isSending={ctrl.isSending}

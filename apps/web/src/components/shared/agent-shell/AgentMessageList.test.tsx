@@ -5,6 +5,8 @@ import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ExperienceCopilotMessageWire, RecordProposal } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
+import { agentThreadKey } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
 
@@ -47,10 +49,11 @@ installAgentMessageMarkdownSeam();
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let act: typeof import("@testing-library/react").act;
 let AgentMessageList: typeof import("./AgentMessageList.js").AgentMessageList;
 
 beforeAll(async () => {
-  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   // Tool cards resolve target labels through the registered host
   // descriptor — the real experience host registers kind "experience"
   // (same side-effect pattern as AgentProfileModal.test.tsx).
@@ -141,8 +144,32 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
   };
 }
 
+// LAG-3: the live stream pair arrives through the live-stream store (the
+// ONE derivation), not props — the seeds below replace the pre-LAG-3
+// pendingText/pendingReasoning props with the SAME values at the SAME
+// moments, so every assertion boundary below is unchanged.
+function seedLive(kind: string, threadId: string, live: { text?: string; reasoning?: string }): void {
+  useAgentLiveStreamStore.setState((s) => ({
+    liveByThread: {
+      ...s.liveByThread,
+      [agentThreadKey(kind, threadId)]: { text: live.text ?? "", reasoning: live.reasoning ?? "" },
+    },
+  }));
+}
+
+/** The settle clear: the live pair drops when the turn lands (the store
+ *  equivalent of the old empty pendingText/pendingReasoning props). */
+function clearLive(kind: string, threadId: string): void {
+  useAgentLiveStreamStore.setState((s) => {
+    const next = { ...s.liveByThread };
+    delete next[agentThreadKey(kind, threadId)];
+    return { liveByThread: next };
+  });
+}
+
 beforeEach(() => {
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  useAgentLiveStreamStore.setState({ liveByThread: {} });
 });
 
 describe("ExperienceCopilotMessageList", () => {
@@ -154,8 +181,6 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "u1", role: "user", content: "Make it scarier" }),
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -176,20 +201,17 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
 
     expect(queryByTestId("copilot-host-caption")).toBeNull();
 
+    act(() => { seedLive("experience", "thread-1", { reasoning: "thinking about the rules" }); });
     rerender(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning="thinking about the rules"
         pendingUserContent=""
       />,
     );
@@ -214,12 +236,11 @@ describe("ExperienceCopilotMessageList", () => {
   });
 
   it("shows the live pendingText assistant bubble when non-empty", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "streaming reply…" }); });
     const { getByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="streaming reply…"
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -235,8 +256,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent="make the visual darker"
       />,
     );
@@ -264,8 +283,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -312,8 +329,6 @@ describe("ExperienceCopilotMessageList", () => {
           }),
           message({ id: "a2", role: "assistant", content: "second reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -376,8 +391,6 @@ describe("ExperienceCopilotMessageList", () => {
           }),
           message({ id: "a2", role: "assistant", content: "second reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -405,12 +418,11 @@ describe("ExperienceCopilotMessageList", () => {
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "I'll edit the rulesDone" }); });
     const { container } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="I'll edit the rulesDone"
-        pendingReasoning=""
         pendingUserContent="go"
       />,
     );
@@ -433,12 +445,11 @@ describe("ExperienceCopilotMessageList", () => {
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "Hello" }); });
     const { getByText, queryAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="Hello"
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -467,8 +478,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -504,8 +513,6 @@ describe("ExperienceCopilotMessageList", () => {
             }),
           }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -528,8 +535,6 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "u1", role: "user", content: "Make it scarier" }),
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -543,8 +548,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -560,8 +563,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -578,8 +579,6 @@ describe("ExperienceCopilotMessageList", () => {
       <AgentMessageList
         kind="script" threadId="thread-9"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         emptyTitle="Write me a script"
         emptySub="Ask the assistant to write or fix this script"
@@ -603,8 +602,6 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a2", role: "assistant", content: "Second answer" }),
           message({ id: "d1", role: "digest", content: "summarized", toolCallId: "u2" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -638,8 +635,6 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a2", role: "assistant", content: "Second answer" }),
           message({ id: "d1", role: "digest", content: "summarized", toolCallId: "u2" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -691,8 +686,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={(id, a) => answers.push([id, a])}
       />,
@@ -731,8 +724,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
             toolCallId: "tc-todo",
           }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -751,8 +742,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
           askCarrier("a1"),
           askToolRow({ status: "answered", answer: "Rules" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -768,8 +757,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         pendingAskAnswer={{ toolCallId: "tc-ask", status: "answered", answer: "Visual, actually" }}
         onAnswer={() => {}}
@@ -785,8 +772,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         isSending
         onAnswer={() => {}}
@@ -809,8 +794,6 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -872,8 +855,6 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
           }),
           message({ id: "a4", role: "assistant", content: "second reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -918,8 +899,6 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
           editRow("tool2", "c2"),
           message({ id: "a3", role: "assistant", content: "closing text" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -969,12 +948,11 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "Step oneStep twoDone" }); });
     const { container, getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="Step oneStep twoDone"
-        pendingReasoning=""
         pendingUserContent="go"
       />,
     );
@@ -1025,12 +1003,11 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "ThinkingDone" }); });
     const { container, getByTestId, getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="ThinkingDone"
-        pendingReasoning=""
         pendingUserContent="go"
       />,
     );
@@ -1132,8 +1109,6 @@ describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
           }),
           message({ id: "a3", role: "assistant", content: "closing text" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1172,8 +1147,6 @@ describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
           proposalToolRow("ptool1", "c-prop", "test-widget"),
           message({ id: "a2", role: "assistant", content: "done" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1220,12 +1193,11 @@ describe("ExperienceCopilotMessageList — record proposals (SC-13a)", () => {
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "ThinkingDone" }); });
     const { container, getByTestId, getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText="ThinkingDone"
-        pendingReasoning=""
         pendingUserContent="go"
       />,
     );
@@ -1274,8 +1246,6 @@ describe("ExperienceCopilotMessageList — message markup (AP-2)", () => {
           message({ id: "u1", role: "user", content: "Make it scarier" }),
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1291,8 +1261,6 @@ describe("ExperienceCopilotMessageList — message markup (AP-2)", () => {
         messages={[
           message({ id: "a1", role: "assistant", content: "A shiver runs down her spine" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1343,8 +1311,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           message({ id: "u2", role: "user", content: "second" }),
           message({ id: "a3", role: "assistant", content: "third reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1375,8 +1341,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u1" }),
           message({ id: "a2", role: "assistant", content: "second half", reasoning: "thought two" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1406,8 +1370,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           captionToolRow("t1", "c1"),
           message({ id: "a1", role: "assistant", content: "visible reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1429,8 +1391,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "c1", role: "assistant", content: "" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1447,8 +1407,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           captionCarrier("c1", "c1"),
           captionToolRow("t1", "c1"),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1459,12 +1417,11 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
   });
 
   it("the pending streaming reply carries the caption when the turn has no visible text yet", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "streaming reply…" }); });
     const { getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "go" })]}
-        pendingText="streaming reply…"
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1476,6 +1433,7 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
   });
 
   it("no caption on the pending reply when the turn already showed persisted text", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "streaming more…" }); });
     const { getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -1483,8 +1441,6 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "earlier reply" }),
         ]}
-        pendingText="streaming more…"
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1506,12 +1462,11 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
       },
     });
 
+    act(() => { seedLive("experience", "thread-1", { text: "Step oneStep two" }); });
     const { getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "go" })]}
-        pendingText="Step oneStep two"
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1538,8 +1493,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1561,8 +1514,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1593,8 +1544,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           captionToolRow("t1", "c1"),
           message({ id: "a1", role: "assistant", content: "visible reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1615,8 +1564,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "visible reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1635,8 +1582,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -1656,8 +1601,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "visible reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1674,6 +1617,7 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
     // follow-up): the live reasoning joins the caption block it streams
     // into (the same blank-line join) — one toggle, and the block holds
     // the same text when the turn lands.
+    act(() => { seedLive("experience", "thread-1", { reasoning: "continuation thought" }); });
     const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -1681,8 +1625,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "earlier reply", reasoning: "kept thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText=""
-        pendingReasoning="continuation thought"
         pendingUserContent=""
       />,
     );
@@ -1699,6 +1641,7 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
     // The turn shows persisted text but carries no kept reasoning yet (bare
     // title); the streaming delta still joins that caption's block instead
     // of opening its own row.
+    act(() => { seedLive("experience", "thread-1", { reasoning: "live thought" }); });
     const { getByTestId, getByText, queryByTestId, queryAllByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -1706,8 +1649,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "earlier reply" }),
         ]}
-        pendingText=""
-        pendingReasoning="live thought"
         pendingUserContent=""
       />,
     );
@@ -1732,8 +1673,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           askToolRow({ status: "answered", answer: "Rules" }),
           message({ id: "a2", role: "assistant", content: "second reply", reasoning: "second thought", reasoningDurationMs: 4000 }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -1765,8 +1704,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           }),
           captionToolRow("t1", "c1"),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1791,12 +1728,11 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
         "thread-1": [{ kind: "activity", id: "t1" }],
       },
     });
+    act(() => { seedLive("experience", "thread-1", { reasoning: "thinking" }); });
     const { getByTestId, rerender } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "go" })]}
-        pendingText=""
-        pendingReasoning="thinking"
         pendingUserContent=""
       />,
     );
@@ -1804,8 +1740,10 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
     expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
       "copilot-tool-accordion",
     );
-    // Land the turn: the persisted caption takes the same site.
+    // Land the turn: the persisted caption takes the same site. The settle
+    // clear drops the live pair (the store clear LAG-3 moved off the props).
     useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    act(() => { clearLive("experience", "thread-1"); });
     rerender(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -1827,8 +1765,6 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
           }),
           message({ id: "a1", role: "assistant", content: "visible reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1869,8 +1805,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -1884,8 +1818,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -1907,8 +1839,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -1926,8 +1856,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -1945,8 +1873,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -1958,12 +1884,11 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
 
   it("streaming hides every row, either role", () => {
     const turnRow = turnRowCallbacks();
+    act(() => { seedLive("experience", "thread-1", { text: "streaming…" }); });
     const { queryByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText="streaming…"
-        pendingReasoning=""
         pendingUserContent=""
         isSending
         turnRow={turnRow}
@@ -1985,8 +1910,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
           message({ id: "u2", role: "user", content: "new question" }),
           message({ id: "a2", role: "assistant", content: "new answer" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -2019,8 +1942,6 @@ describe("ExperienceCopilotMessageList — turn action rows (AP-11)", () => {
           message({ id: "a2", role: "assistant", content: "new answer" }),
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
       />,
@@ -2055,8 +1976,6 @@ describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
         onEditLast={onEditLast}
@@ -2075,8 +1994,6 @@ describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRow}
         onEditLast={(content) => seen.push(content)}
@@ -2099,8 +2016,6 @@ describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
       />,
@@ -2111,12 +2026,11 @@ describe("ExperienceCopilotMessageList — inline edit (AP-12)", () => {
   });
 
   it("streaming: no edit opener on any row", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "streaming…" }); });
     const { queryByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText="streaming…"
-        pendingReasoning=""
         pendingUserContent=""
         isSending
         turnRow={turnRowCallbacks()}
@@ -2135,8 +2049,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnFailure={{ category: "rate_limit" }}
         onRetryTurn={onRetryTurn}
@@ -2163,8 +2075,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onRetryTurn={onRetryTurn}
       />,
@@ -2194,8 +2104,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
           message({ id: "u1", role: "user", content: "stuck question" }),
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u1" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onRetryTurn={onRetryTurn}
       />,
@@ -2210,8 +2118,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnFailure={{ category: "authentication" }}
         onRetryTurn={mock(() => {})}
@@ -2230,8 +2136,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent="stuck question"
         isSending
         onRetryTurn={mock(() => {})}
@@ -2246,8 +2150,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onRetryTurn={mock(() => {})}
       />,
@@ -2261,8 +2163,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onRetryTurn={mock(() => {})}
       />,
@@ -2276,8 +2176,6 @@ describe("ExperienceCopilotMessageList — error card (AP-13)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "stuck question" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnFailure={{ category: "timeout" }}
       />,
@@ -2307,8 +2205,6 @@ describe("ExperienceCopilotMessageList — starter prompts (AP-18)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onStarterPick={over.onStarterPick}
       />,
@@ -2359,8 +2255,6 @@ describe("ExperienceCopilotMessageList — starter prompts (AP-18)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "go" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onStarterPick={mock((_text: string) => {})}
       />,
@@ -2375,8 +2269,6 @@ describe("ExperienceCopilotMessageList — starter prompts (AP-18)", () => {
       <AgentMessageList
         kind="unknown-kind" threadId="thread-1"
         messages={[]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onStarterPick={mock((_text: string) => {})}
       />,
@@ -2416,12 +2308,11 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
   }
 
   it("hides the replaced turn and streams the new turn as a fresh caption with only the live reasoning", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "new reply", reasoning: "new thought" }); });
     const { getByText, queryByText, queryByTestId, getAllByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={oldTurnThread()}
-        pendingText="new reply"
-        pendingReasoning="new thought"
         pendingUserContent=""
         isSending
         isRegenerating
@@ -2449,6 +2340,7 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
   });
 
   it("keeps the digest card and everything before the replaced turn", () => {
+    act(() => { seedLive("experience", "thread-1", { text: "new reply", reasoning: "new thought" }); });
     const { container, getByText, queryByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -2459,8 +2351,6 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
           message({ id: "a2", role: "assistant", content: "second answer" }),
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
         ]}
-        pendingText="new reply"
-        pendingReasoning="new thought"
         pendingUserContent=""
         isSending
         isRegenerating
@@ -2483,8 +2373,6 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnFailure={{ category: "rate_limit" }}
         onRetryTurn={onRetryTurn}
@@ -2500,6 +2388,7 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
     // The same props as the fresh-turn test but WITHOUT isRegenerating —
     // the ask-answer shape: the old turn stays and the live reasoning
     // folds into its caption block (the fb55c477a behavior, unchanged).
+    act(() => { seedLive("experience", "thread-1", { text: "more", reasoning: "new thought" }); });
     const { getByTestId, getByText, queryAllByText } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -2507,8 +2396,6 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a1", role: "assistant", content: "old reply", reasoning: "old thought", reasoningDurationMs: 4200 }),
         ]}
-        pendingText="more"
-        pendingReasoning="new thought"
         pendingUserContent=""
         isSending
       />,
@@ -2523,12 +2410,11 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
   });
 
   it("the fallback row (no host title) renders the live toggle with no avatar", () => {
+    act(() => { seedLive("unknown-kind", "thread-1", { reasoning: "live thought" }); });
     const { getByTestId, getByText, queryByText } = render(
       <AgentMessageList
         kind="unknown-kind" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "go" })]}
-        pendingText=""
-        pendingReasoning="live thought"
         pendingUserContent=""
         isSending
       />,
@@ -2579,8 +2465,6 @@ describe("ExperienceCopilotMessageList — replaced turn stays hidden past the s
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={oldTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         hiddenRegeneratedIds={["c1", "a1"]}
       />,
@@ -2613,8 +2497,6 @@ describe("ExperienceCopilotMessageList — replaced turn stays hidden past the s
           message({ id: "u1", role: "user", content: "go" }),
           message({ id: "a9", role: "assistant", content: "new reply" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         hiddenRegeneratedIds={["c1", "a1"]}
       />,
@@ -2633,8 +2515,6 @@ describe("ExperienceCopilotMessageList — replaced turn stays hidden past the s
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         hiddenRegeneratedIds={null}
         turnFailure={{ category: "rate_limit" }}
@@ -2658,8 +2538,6 @@ describe("ExperienceCopilotMessageList — replaced turn stays hidden past the s
           message({ id: "a2", role: "assistant", content: "second answer" }),
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         hiddenRegeneratedIds={["a2"]}
       />,
@@ -2701,8 +2579,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditLast={mock((_content: string) => {})}
@@ -2719,8 +2595,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditLast={mock((_content: string) => {})}
@@ -2742,8 +2616,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
           message({ id: "u2", role: "user", content: "new question" }),
           message({ id: "a2", role: "assistant", content: "new answer" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2769,8 +2641,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
           message({ id: "a2", role: "assistant", content: "new answer" }),
           message({ id: "d1", role: "digest", content: "summary", toolCallId: "u2" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2796,8 +2666,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
           }),
           message({ id: "a1", role: "assistant", content: "the answer" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2813,8 +2681,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2837,8 +2703,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2860,8 +2724,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2891,8 +2753,6 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
             reasoningDurationMs: 4200,
           }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         turnRow={turnRowCallbacks()}
         onEditAssistant={stubs.onEditAssistant}
@@ -2913,12 +2773,11 @@ describe("ExperienceCopilotMessageList — assistant edit (AP-32)", () => {
 
   it("streaming: no assistant edit opener on any row", () => {
     const stubs = editStubs(true);
+    act(() => { seedLive("experience", "thread-1", { text: "streaming…" }); });
     const { queryByTestId } = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={twoTurnThread()}
-        pendingText="streaming…"
-        pendingReasoning=""
         pendingUserContent=""
         isSending
         turnRow={turnRowCallbacks()}

@@ -20,6 +20,7 @@ import {
   parseAgentPermissionState,
 } from "../../../stores/agent-turn-store.js";
 import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
+import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import { toSendAttachment } from "../../../lib/send-attachments.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -43,16 +44,20 @@ import {
  * the RP-chat `useChatController`. This hook ports the stream half of
  * `executeStreamAction`, retargeted and simplified: the copilot is stream-only,
  * with no dice/attachments/variants/regenerate/non-stream/insights and no
- * StreamingReveal — `pendingText` is a plain accumulated string, written once
- * per FRAME (LAG-2: deltas buffer in refs and flush through the same
- * `RevealScheduler` seam `lib/streaming-reveal.ts` owns; the buffering lives
- * in `use-agent-delta-buffer.ts`).
+ * StreamingReveal — the live stream text/reasoning accumulate in the
+ * live-stream store (LAG-3), written once per FRAME (LAG-2: deltas buffer
+ * in refs and flush through the same `RevealScheduler` seam
+ * `lib/streaming-reveal.ts` owns; the buffering lives in
+ * `use-agent-delta-buffer.ts`).
  *
- * State is LOCAL (no new Zustand store): the copilot editor shell owns a single
- * controller instance and threads values down via props/context (ER-11c/11d).
- * The hook feeds the ER-8 turn store from the SSE tool events (exactly what the
- * shell renders as activity cards) and signals `onTurnSettled` so the shell can
- * refetch persisted messages once a turn settles.
+ * State is LOCAL except the live stream pair (LAG-3: it lives in the
+ * live-stream store so a flush re-renders only the message list, never
+ * this hook's host — the AgentShell root): the copilot editor shell owns a
+ * single controller instance and threads values down via props/context
+ * (ER-11c/11d). The hook feeds the ER-8 turn store from the SSE tool events
+ * (exactly what the shell renders as activity cards) and signals
+ * `onTurnSettled` so the shell can refetch persisted messages once a turn
+ * settles.
  */
 
 export interface UseAgentControllerArgs {
@@ -104,10 +109,10 @@ export interface UseAgentControllerArgs {
    *  the only truth; nothing ever reads the mirror back here. */
   streamingMirrorKey?: string;
   /** LAG-2 (AGENT_SHELL_RENDER_LAG_REPORT, fix step 3): schedules the
-   *  frame-coalesced stream-delta flush — ONE setPendingText /
-   *  setPendingReasoning and ONE `appendTextDelta` per frame. Defaults to
-   *  the rAF scheduler exported from `lib/streaming-reveal.ts`; tests inject
-   *  a manual stepper for deterministic flush timing. */
+   *  frame-coalesced stream-delta flush — ONE `appendTextDelta` (the feed)
+   *  and ONE `appendLiveDeltas` (the live-stream store) per frame. Defaults
+   *  to the rAF scheduler exported from `lib/streaming-reveal.ts`; tests
+   *  inject a manual stepper for deterministic flush timing. */
   scheduler?: RevealScheduler;
 }
 
@@ -122,17 +127,10 @@ export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFail
 
 export interface AgentController extends AgentTurnActions {
   isSending: boolean;
-  /** Live assistant text accumulated from text-deltas this turn (cleared on
-   *  settle). LAG-2: updated once per frame, not per token — the deltas
-   *  coalesce in a ref buffer flushed through the injected scheduler. */
-  pendingText: string;
-  /** Live model reasoning accumulated from reasoning-deltas this turn,
-   *  rendered with the co-author's MessageReasoning `inline` preset on the
-   *  live caption line (AP-29). Cleared on settle alongside pendingText —
-   *  the settle+refetch handover replaces it with the persisted caption
-   *  toggle (the clear precedes the async refetch, so the handover shows
-   *  no gap and no duplicate: production never renders both at once). */
-  pendingReasoning: string;
+  // LAG-3: the live stream text/reasoning are NOT on this contract — they
+  // live in the live-stream store (`agent-live-stream-store.ts`, the ONE
+  // derivation) so a flush never re-renders this hook's host. The message
+  // list subscribes to the store directly.
   /** The user's just-sent message, shown optimistically while the model
    *  generates — the persisted user row only appears after the turn settles
    *  and the shell refetches, so without this the user's own message is
@@ -191,8 +189,6 @@ export function useAgentController(
   const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey, scheduler } = args;
 
   const [isSending, setIsSending] = useState(false);
-  const [pendingText, setPendingText] = useState("");
-  const [pendingReasoning, setPendingReasoning] = useState("");
   // Optimistic user message: shown immediately on send so the user sees their
   // own message while the model generates (the persisted row only arrives
   // after the turn settles + the shell refetches). Cleared in `finally` so
@@ -213,14 +209,14 @@ export function useAgentController(
   const isSendingRef = useRef(false);
 
   // LAG-2: frame-coalesced stream deltas — the buffering derivation lives in
-  // its own module (the file-size ratchet); this hook hands it the state
-  // writers and drains the returned flush handle before every tool event
-  // (via the stream callbacks below) and every settle/abort/failure clear.
+  // its own module (the file-size ratchet); this hook drains the returned
+  // flush handle before every tool event (via the stream callbacks below)
+  // and every settle/abort/failure clear. LAG-3: the flush writes land in
+  // the stores (feed + live-stream), never hook state — no flush render
+  // reaches this hook's host.
   const { pushStreamDelta, flushDeltaBuffer } = useAgentDeltaBuffer({
     kind,
     scheduler,
-    setPendingText,
-    setPendingReasoning,
   });
 
   // DR-11: publish the local streaming flag into the shared mirror store —
@@ -500,8 +496,7 @@ export function useAgentController(
       // LAG-2: drain anything still buffered before the turn-start clear
       // (a settled turn already drained; this is the no-drop belt-and-braces).
       flushDeltaBuffer();
-      setPendingText("");
-      setPendingReasoning("");
+      useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
       setPendingUserContent(trimmed);
       setPendingUserAttachments(attachments);
 
@@ -551,8 +546,7 @@ export function useAgentController(
         // LAG-2: drain before the settle clear — the last frame's buffered
         // deltas land in the feed so the persisted/live text stays identical.
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
@@ -570,8 +564,7 @@ export function useAgentController(
         // in the feed (byte-identical to per-token writes), the frame is
         // cancelled, and nothing can write after the clear.
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // A cancelled turn is NOT a success (SC-18): the pending chips stay
@@ -626,8 +619,7 @@ export function useAgentController(
       // LAG-2: drain anything still buffered before the turn-start clear
       // (same belt-and-braces as the send path).
       flushDeltaBuffer();
-      setPendingText("");
-      setPendingReasoning("");
+      useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
       // NO pendingUserContent — the answer has no user row (it replaces the
       // awaiting tool-result row server-side).
       // Optimistic flip: the card shows the resolution immediately instead of
@@ -692,8 +684,7 @@ export function useAgentController(
 
         // LAG-2: drain before the settle clear (the send path's invariant).
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
@@ -720,8 +711,7 @@ export function useAgentController(
         // LAG-2: drain before the failure/abort clear (the send path's
         // invariant — nothing can write after the clear).
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         onTurnSettled?.(false);
@@ -751,8 +741,11 @@ export function useAgentController(
       isSendingRef,
       abortRef,
       setIsSending,
-      setPendingText,
-      setPendingReasoning,
+      // LAG-3: the live stream pair clears through the live-stream store
+      // (bound to the CURRENT thread — the regenerate guards it non-null).
+      clearLiveStreamText: () => {
+        if (threadId !== null) useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+      },
       // LAG-2: the turn actions drain the shared buffer before their clears —
       // the ONE buffering derivation stays here in the controller.
       flushDeltaBuffer,
@@ -772,5 +765,5 @@ export function useAgentController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
+  return { isSending, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

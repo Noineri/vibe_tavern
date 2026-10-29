@@ -92,8 +92,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow(MARKER)]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={(id, a) => answers.push([id, a])}
       />,
@@ -115,8 +113,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow(MARKER)]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={(id, a) => answers.push([id, a])}
       />,
@@ -151,8 +147,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
           // the turn's last tool row, so the card stays interactive.
           permToolRow(MARKER),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -191,8 +185,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
             toolCallId: "tc-todo",
           }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -207,8 +199,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow(MARKER)]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         isSending
         onAnswer={() => {}}
@@ -223,8 +213,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow(MARKER)]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         pendingPermissionAnswer={{ toolCallId: "tc-perm", decision: "allow" }}
         onAnswer={() => {}}
@@ -239,8 +227,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow({ status: "denied" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -254,8 +240,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" }), permCarrier("a1"), permToolRow({ status: "granted", prompt: "<rp_prompt/>", promptTokens: 9, position: 7, variantNumber: 2, presetName: "Preset" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -278,8 +262,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "which prompt wrote this?" })]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={() => {}}
       />,
@@ -313,8 +295,6 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
           }),
           permToolRow(MARKER),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
         onAnswer={(id, a) => answers.push([id, a])}
       />,

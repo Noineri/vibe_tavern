@@ -177,8 +177,8 @@ function makeIsolatedI18n() {
 function makeCtrl(over: Partial<AgentController> = {}): AgentController {
   return {
     isSending: false,
-    pendingText: "",
-    pendingReasoning: "",
+    // LAG-3: the live stream text/reasoning are no longer controller
+    // fields — the list reads them from the live-stream store.
     pendingUserContent: "",
     pendingUserAttachments: [],
     pendingAskAnswer: null,

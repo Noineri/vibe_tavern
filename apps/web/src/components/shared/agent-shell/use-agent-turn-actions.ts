@@ -164,17 +164,19 @@ export interface AgentTurnStateControls {
   isSendingRef: { current: boolean };
   abortRef: { current: AbortController | null };
   setIsSending: (value: boolean) => void;
-  setPendingText: (value: string) => void;
-  setPendingReasoning: (value: string) => void;
+  /** LAG-3: clear the CURRENT thread's live stream pair (the live-stream
+   *  store's clear — the controller binds kind + threadId; the regenerate
+   *  guards the thread non-null before touching it). */
+  clearLiveStreamText: () => void;
   setPendingAskAnswer: (value: AgentPendingAskAnswer | null) => void;
   setPendingPermissionAnswer: (value: AgentPendingPermissionAnswer | null) => void;
   /** AP-13: write/clear the thread's last turn failure (the error card's
    *  live state — bound to the controller's current thread). */
   setTurnFailure: (failure: AgentTurnFailure | null) => void;
   /** LAG-2: drain the controller's frame-coalesced delta buffer NOW —
-   *  called before every pendingText/pendingReasoning clear below so no
-   *  buffered delta is lost at the clear (the controller owns the ONE
-   *  buffering derivation; this is its flush handle). */
+   *  called before every live-stream clear below so no buffered delta is
+   *  lost at the clear (the controller owns the ONE buffering derivation;
+   *  this is its flush handle). */
   flushDeltaBuffer: () => void;
 }
 
@@ -413,7 +415,7 @@ export function useAgentTurnActions(
   args: UseAgentTurnActionsArgs,
 ): AgentTurnActions {
   const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, turnState } = args;
-  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer } = turnState;
+  const { isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer } = turnState;
 
   // AP-10: the shared delete core for handleDeleteTurn and handleEditLast —
   // guards, busy flags, the transport call, the send-style error path. The
@@ -523,8 +525,7 @@ export function useAgentTurnActions(
       // LAG-2: drain anything still buffered before the turn-start clear
       // (the controller's send/answer paths' belt-and-braces, mirrored here).
       flushDeltaBuffer();
-      setPendingText("");
-      setPendingReasoning("");
+      clearLiveStreamText();
       // NO pendingUserContent — a regenerate has no new user row (the server
       // reruns the last turn against the surviving thread state).
 
@@ -569,8 +570,7 @@ export function useAgentTurnActions(
         // LAG-2: drain before the settle clear — the last frame's buffered
         // deltas land in the feed (the controller's send-path invariant).
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        clearLiveStreamText();
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the retry answered — the card clears with the failure.
@@ -592,8 +592,7 @@ export function useAgentTurnActions(
         // LAG-2: drain before the failure/abort clear (nothing can write
         // after the clear).
         flushDeltaBuffer();
-        setPendingText("");
-        setPendingReasoning("");
+        clearLiveStreamText();
         setIsSending(false);
         isSendingRef.current = false;
         // AP-29 follow-up 3: refusal / failure / cancel drops the hide at
@@ -606,7 +605,7 @@ export function useAgentTurnActions(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer],
   );
 
   const handleEditLast = useCallback(

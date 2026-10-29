@@ -167,8 +167,6 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
           selectionEvent("e-sel", null),
           forkEvent("e-fork", null),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -213,8 +211,6 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
             beforeMessageId: null,
           },
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -241,8 +237,6 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
           selectionEvent("e-sel", null),
           forkEvent("e-fork", null),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -300,8 +294,6 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
           rpSyncEvent("e-3", ["one", "two", "three"], null),
           rpSyncEvent("e-5", ["one", "two", "three", "four", "five"], null),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -324,8 +316,6 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
           message({ id: "u1", role: "user", content: "user says hi" }),
           message({ id: "a1", role: "assistant", content: "assistant replies" }),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -353,8 +343,6 @@ describe("AgentTimelineSeparator — page translation (follow-up 2026-10-24)", (
           selectionEvent("e-sel", null),
           forkEvent("e-fork", null),
         ]}
-        pendingText=""
-        pendingReasoning=""
         pendingUserContent=""
       />,
     );

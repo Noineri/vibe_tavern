@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { Dispatch, SetStateAction } from "react";
 import { rafScheduler, type RevealScheduler } from "../../../lib/streaming-reveal.js";
 import type { AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 
 /**
  * Frame-coalesced stream deltas (LAG-2, AGENT_SHELL_RENDER_LAG_REPORT fix
@@ -10,9 +10,10 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
  *
  * Text/reasoning deltas accumulate in a REF (no state write per token) and
  * flush ONCE per frame through the injected `scheduler` (default: the rAF
- * scheduler `lib/streaming-reveal.ts` owns): ONE `setPendingText` /
- * `setPendingReasoning` and ONE `appendTextDelta` per flush, so the shell
- * root and the scroll hook fire per flush, not per token.
+ * scheduler `lib/streaming-reveal.ts` owns): ONE `appendTextDelta` (the
+ * feed) and ONE `appendLiveDeltas` (the live-stream store — LAG-3) per
+ * flush, so only the message list (and the scroll hook through its
+ * render) fire per flush, never per token and never the shell root.
  *
  * The buffer drains SYNCHRONOUSLY before every tool event (text must never
  * land after the activity that followed it), before every settle/abort/
@@ -24,9 +25,8 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
  * never a render closure a re-render could age.
  *
  * Split from `use-agent-controller.ts` under the file-size ratchet (LAG-2);
- * the controller passes its state writers in and drains the returned flush
- * handle at every clear site (its send/answer paths and the regenerate path
- * in `use-agent-turn-actions.ts`).
+ * the controller drains the returned flush handle at every clear site (its
+ * send/answer paths and the regenerate path in `use-agent-turn-actions.ts`).
  */
 export interface UseAgentDeltaBufferArgs {
   /** Store-key half of `agentThreadKey` — the kind of the owning controller. */
@@ -34,10 +34,6 @@ export interface UseAgentDeltaBufferArgs {
   /** LAG-2: the flush scheduler. Defaults to the rAF scheduler from
    *  `lib/streaming-reveal.ts`; tests inject a manual stepper. */
   scheduler?: RevealScheduler;
-  /** The controller's `pendingText` writer (accumulated per flush). */
-  setPendingText: Dispatch<SetStateAction<string>>;
-  /** The controller's `pendingReasoning` writer (accumulated per flush). */
-  setPendingReasoning: Dispatch<SetStateAction<string>>;
 }
 
 /** The push/flush pair the controller routes its stream callbacks through. */
@@ -51,7 +47,7 @@ export interface AgentDeltaBuffer {
 export function useAgentDeltaBuffer(
   args: UseAgentDeltaBufferArgs,
 ): AgentDeltaBuffer {
-  const { kind, scheduler = rafScheduler, setPendingText, setPendingReasoning } = args;
+  const { kind, scheduler = rafScheduler } = args;
 
   const deltaBufferRef = useRef<{ threadId: string | null; text: string; reasoning: string }>({
     threadId: null,
@@ -61,7 +57,7 @@ export function useAgentDeltaBuffer(
   const cancelFlushRef = useRef<(() => void) | null>(null);
 
   /** Drain the buffer NOW — cancel the pending frame, write the buffered
-   *  deltas through (one store append + one state accumulation per buffer),
+   *  deltas through (one feed append + one live-stream append per buffer),
    *  reset the buffer. No-op when nothing is buffered. */
   const flushDeltaBuffer = useCallback((): void => {
     cancelFlushRef.current?.();
@@ -76,11 +72,15 @@ export function useAgentDeltaBuffer(
     buffer.text = "";
     buffer.reasoning = "";
     if (text !== "") {
-      setPendingText((p) => p + text);
       useAgentTurnStore.getState().appendTextDelta(kind, threadId, text);
     }
-    if (reasoning !== "") setPendingReasoning((p) => p + reasoning);
-  }, [kind, setPendingText, setPendingReasoning]);
+    if (text !== "" || reasoning !== "") {
+      useAgentLiveStreamStore.getState().appendLiveDeltas(kind, threadId, {
+        ...(text !== "" ? { text } : {}),
+        ...(reasoning !== "" ? { reasoning } : {}),
+      });
+    }
+  }, [kind]);
 
   /** Buffer one delta for the flushing turn and ensure exactly ONE frame is
    *  scheduled while anything is buffered. */
@@ -96,9 +96,10 @@ export function useAgentDeltaBuffer(
     [scheduler, flushDeltaBuffer],
   );
 
-  // Drain on unmount — the turn store survives the component, so a delta
-  // that arrived before the unmount must still land in the feed (the React
-  // state writes above are no-ops on an unmounted component).
+  // Drain on unmount — the stores survive the component, so a delta that
+  // arrived before the unmount must still land in the feed (the live-stream
+  // pair with it — a stale non-empty entry would keep the next mount's
+  // feed text rendered past its settle).
   useEffect(() => () => flushDeltaBuffer(), [flushDeltaBuffer]);
 
   return { pushStreamDelta, flushDeltaBuffer };
