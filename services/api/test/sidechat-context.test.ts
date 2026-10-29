@@ -156,6 +156,35 @@ async function saveBranchTrace(chatId: ChatId, branchId: ChatBranchId, messageId
 }
 
 describe("loadSidechatContext (SC-3b)", () => {
+	it("DR-12: the `profile_changed` separator never reaches the model flow", async () => {
+		const { threadId } = await makeSidechatFixture();
+		const thread = await stores.experienceCopilot.getById(threadId);
+		if (thread === null || thread.chatId === null || thread.branchId === null) throw new Error("fixture: thread row missing owner columns");
+		await stores.messages.addMessage({
+			chatId: brandId<ChatId>(thread.chatId),
+			branchId: brandId<ChatBranchId>(thread.branchId),
+			role: "user",
+			authorType: "user",
+			content: "a message",
+		});
+		await syncBeforeUserMessage(syncDeps, threadId);
+		// The sidechat's own row rides the flow as a real history message.
+		await stores.experienceCopilot.appendMessage(threadId, { role: "user", content: "sidechat turn" });
+		// The separator writer's exact frozen shape, AFTER the sync — the
+		// walk must skip it entirely.
+		await stores.experienceCopilot.appendContextEvent(threadId, "profile_changed", {
+			from: { id: "builtin", name: "Sidechat OOC" },
+			to: { id: "builtin-director", name: "Sidechat Director" },
+		});
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		// The sync's event rides the flow as always; the profile switch adds
+		// NOTHING — no row, and the count keeps counting messages only.
+		expect(pkg.eventMessages).toHaveLength(1);
+		expect(pkg.eventMessages[0]!.content).toContain("<rp_sync");
+		expect(pkg.messageCount).toBe(1);
+	});
+
 	it("CA-1f characterization: a no-attachment sync keeps its frozen text and exact event body", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatFixture();
 		const message = await stores.messages.addMessage({

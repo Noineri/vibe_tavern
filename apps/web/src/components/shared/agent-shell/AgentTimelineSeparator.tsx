@@ -5,6 +5,8 @@ import { Icons } from "../icons.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
+import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 
 /**
  * One frozen-context timeline separator (SIDECHAT_PLAN Wave 5 / SC-19b) — the
@@ -15,7 +17,8 @@ import { formatRelativeTime } from "../../layout/sidebar-utils.js";
  * copy itself, owner 2026-10-21 — no invented chrome around it). The three
  * content-carrying kinds (`rp_sync`, `variants_attached`, `selection_changed`)
  * expand on click to the frozen content the assistant saw; `branch_forked`
- * carries nothing to show and never expands. The expanded body scrolls
+ * and the DR-12 `profile_changed` separator carry nothing to show and never
+ * expand. The expanded body scrolls
  * internally (`max-h-64`) and never stretches the feed. The body opens
  * through the shared `AnimatedDisclosure` (AP-29 — the height+opacity motion
  * the lorebook accordion uses); its own sizing/scroll/chrome classes stay on
@@ -31,7 +34,10 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
 
   // The label N is what the payload carries, nothing derived: the frozen
   // message count for `rp_sync` (the same rows the expanded body lists), the
-  // variant count for `variants_attached`.
+  // variant count for `variants_attached`. The `profile_changed` names come
+  // from the ONE built-in name derivation — a built-in id renders localized
+  // (the frozen name is the English seed), every other id the frozen name
+  // (a renamed user profile never rewrites history).
   let label: string;
   switch (event.kind) {
     case "rp_sync": {
@@ -48,11 +54,18 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
     case "branch_forked":
       label = t("sidechat_event_branch_forked");
       break;
+    case "profile_changed":
+      label = t("sidechat_event_profile_changed", {
+        from: builtinProfileDisplayName(event.payload.from.id, SIDECHAT_AGENT_KIND, event.payload.from.name, t),
+        to: builtinProfileDisplayName(event.payload.to.id, SIDECHAT_AGENT_KIND, event.payload.to.name, t),
+      });
+      break;
   }
 
-  // `branch_forked` maps `{ at }` only — no frozen content to show, so the
-  // row is a static line (never a button, no caret, no toggle).
-  if (event.kind === "branch_forked") {
+  // `branch_forked` maps `{ at }` only and `profile_changed` is a one-line
+  // provenance note — neither carries content to show, so both render as a
+  // static line (never a button, no caret, no toggle).
+  if (event.kind === "branch_forked" || event.kind === "profile_changed") {
     return (
       <div
         data-testid="timeline-separator"
@@ -184,12 +197,17 @@ export function AgentDigestSeparator({
 }
 
 /**
- * The frozen content the assistant saw, per kind — `branch_forked` never
- * reaches here (it has no expandable row). Only payload-carried content
- * renders: the sync diff's message texts, the attached variants with their
- * selected marker, the previous + current reply texts in order.
+ * The frozen content the assistant saw, per kind — `branch_forked` and
+ * `profile_changed` never reach here (neither has an expandable row). Only
+ * payload-carried content renders: the sync diff's message texts, the
+ * attached variants with their selected marker, the previous + current
+ * reply texts in order.
  */
-function SeparatorBody({ event }: { event: Exclude<AgentThreadEventWire, { kind: "branch_forked" }> }) {
+function SeparatorBody({
+  event,
+}: {
+  event: Exclude<AgentThreadEventWire, { kind: "branch_forked" | "profile_changed" }>;
+}) {
   const { t } = useT();
   switch (event.kind) {
     case "rp_sync":

@@ -45,6 +45,7 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { SIDECHAT_WIDTH_KEY } from "./SidechatPanel.js";
 import { useSidechatOpenStore } from "../../../stores/sidechat-open-store.js";
+import { useSidechatCallDirectorStore } from "../../../stores/sidechat-call-director-store.js";
 
 useDomEnv();
 
@@ -82,6 +83,14 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   }
   if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
     return jsonResponse(router.newSession);
+  }
+  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream/.test(path)) {
+    // DR-12: a minimal well-formed SSE stream (one finishReason event) so
+    // the queued-call send settles cleanly through the real parser.
+    return new Response('data: {"finishReason":"stop"}\n\n', {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
     return jsonResponse(router.messages);
@@ -533,5 +542,54 @@ describe("sidechat-panel — served-modes gate (SC-14)", () => {
     const { queryByTestId } = render(withIsolatedI18n(<SidechatPanel />));
     expect(queryByTestId("sidechat-closed")).toBeNull();
     expect(queryByTestId("sidechat-panel")).toBeNull();
+  });
+});
+
+// ── The pending director call (DR-12) ───────────────────────────────────────
+
+describe("sidechat-panel — the pending director call (DR-12)", () => {
+  /** The (chat, branch, kind) owner key the shell and the call queue share. */
+  const CALL_KEY = `chat:${CHAT_A.id}:${BRANCH_A.id}:${SIDECHAT_AGENT_KIND}`;
+
+  /** The stream POST bodies captured by the router (JSON-parsed). */
+  function streamBodies(): Array<Record<string, unknown>> {
+    return fetchRouter.mock.calls
+      .filter(([input, init]) => {
+        const path = new URL(String(input), "http://gateway.test").pathname;
+        return (init?.method ?? "GET").toUpperCase() === "POST" && /\/api\/experience-copilot\/[^/]+\/stream/.test(path);
+      })
+      .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>);
+  }
+
+  it("a queued call with NO active session: the bootstrap creates one, then sends the message once", async () => {
+    // The kind carries a provider binding (the send guard requires one).
+    seedStores({
+      [SIDECHAT_AGENT_KIND]: {
+        ...kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]),
+        providerProfileId: "d12-provider",
+        modelName: "d12-model",
+      },
+    });
+    router.activeThread = null;
+    // What `callDirector` leaves behind: an open surface + a queued call.
+    useSidechatOpenStore.getState().setOpen(CHAT_A.id, true);
+    useSidechatCallDirectorStore.getState().enqueue(CALL_KEY);
+
+    render(withIsolatedI18n(<SidechatPanel />));
+    await flushSessionLoad();
+
+    // The shell's bootstrap created a session (none was active)…
+    const sessionPosts = fetchRouter.mock.calls.filter(([input, init]) => {
+      const path = new URL(String(input), "http://gateway.test").pathname;
+      return (init?.method ?? "GET").toUpperCase() === "POST" && /\/session$/.test(path);
+    });
+    expect(sessionPosts).toHaveLength(1);
+
+    // …and the queued call sent EXACTLY ONE message through it — the content
+    // is the call's i18n key (the isolated i18n echoes keys verbatim).
+    await waitFor(() => expect(streamBodies()).toHaveLength(1));
+    expect(streamBodies()[0]!.content).toBe("story_plan_call_director_message");
+    // The queue entry is consumed — no second send ever fires.
+    expect(useSidechatCallDirectorStore.getState().pending[CALL_KEY]).toBeUndefined();
   });
 });

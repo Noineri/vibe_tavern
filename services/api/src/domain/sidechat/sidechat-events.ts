@@ -86,6 +86,9 @@ export async function listAgentThreadEvents(
 			case "branch_forked":
 				events.push({ id: entry.id, kind: mapped.kind, payload: mapped.payload, beforeMessageId: null });
 				break;
+			case "profile_changed":
+				events.push({ id: entry.id, kind: mapped.kind, payload: mapped.payload, beforeMessageId: null });
+				break;
 			default:
 				// `mapTimelineEvent` is TYPED against the renderer's union, which
 				// also carries `rp_summary` — the LIVE summary arm (SC-6 renders

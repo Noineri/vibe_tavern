@@ -8,8 +8,9 @@
  * order is §5's («Проверить сейчас» · «Редактор плана» · «Позвать
  * режиссёра») with the §9 phone own-row wrapper; «Проверить сейчас» calls
  * the goal tracker's existing check action (the objective zone's, P3); the
- * call button disables while the sidechat streams (the mirror store) and
- * while DR-12's handler is absent; the passed-check flash (R4) — «Выполнено:
+ * call button disables while the sidechat streams (the mirror store) and,
+ * since DR-12, runs the store action by default (the prop stays an
+ * override); the passed-check flash (R4) — «Выполнено:
  * <event>» on the success tint for the parked ~6 s timer, then the refreshed
  * plan's next event, one refresh GET per objective change (never a second
  * fetch path); the all-done row «План сюжета выполнен» keeps the strip
@@ -44,6 +45,7 @@ import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   checkObjectiveCompletionAction: mock(),
+  callDirector: mock(),
 };
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 
@@ -54,6 +56,14 @@ installI18nContextSeam({ interpolateKeys: ["agent_plan_story_flash_done"] });
 mock.module("../../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
+}));
+
+// DR-12: the strip's default handler runs the store action — mock it here
+// (load-time copy, R15) so the strip tests never touch the network seam.
+const realCallDirectorStore = { ...(await import("../../../stores/sidechat-call-director-store.js")) };
+mock.module("../../../stores/sidechat-call-director-store.js", () => ({
+  ...realCallDirectorStore,
+  callDirector: mocks.callDirector,
 }));
 
 let StoryPlanStrip: typeof import("./StoryPlanStrip.js").StoryPlanStrip;
@@ -144,6 +154,8 @@ beforeEach(() => {
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
   mocks.checkObjectiveCompletionAction.mockReset();
+  mocks.callDirector.mockReset();
+  mocks.callDirector.mockResolvedValue(undefined);
   useAgentStreamingStore.setState({ streaming: {} });
 });
 
@@ -236,22 +248,28 @@ describe("StoryPlanStrip (DR-11)", () => {
     expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("chat-1", expect.any(AbortSignal));
   });
 
-  it("«Позвать режиссёра»: disabled with no handler (DR-12 wires it), disabled while streaming, enabled + firing otherwise", async () => {
-    const onCallDirector = mock();
-    // No handler (DR-11's interim mount): the button renders disabled.
-    const view = await mountStrip();
-    expect(view.getByTestId("story-plan-call-director").getAttribute("disabled")).toBe("");
+  it("«Позвать режиссёра» (DR-12): the default handler runs the store action; disabled while streaming; an explicit prop overrides", async () => {
+    // The DEFAULT mount (no prop): DR-12 wires the store action — enabled,
+    // and a click calls it with the strip's chat + branch.
+    const view = await mountStrip({ branchId: "b1" });
+    expect(view.getByTestId("story-plan-call-director").getAttribute("disabled")).toBeNull();
+    fireEvent.click(view.getByTestId("story-plan-call-director"));
+    expect(mocks.callDirector).toHaveBeenCalledTimes(1);
+    expect(mocks.callDirector.mock.calls[0]).toEqual(["chat-1", "b1"]);
     view.unmount();
 
-    // Handler wired; the sidechat of this chat+branch streams (the mirror).
+    // The sidechat of this chat+branch streams (the mirror): disabled, and a
+    // click fires nothing.
+    const onCallDirector = mock();
     const view2 = await mountStrip({ branchId: "b2", onCallDirector });
     useAgentStreamingStore.setState({ streaming: { "chat:chat-1:b2:sidechat-ooc": true } });
     await waitFor(() => expect(view2.getByTestId("story-plan-call-director").getAttribute("disabled")).toBe(""));
     fireEvent.click(view2.getByTestId("story-plan-call-director"));
     expect(onCallDirector).not.toHaveBeenCalled();
+    expect(mocks.callDirector).toHaveBeenCalledTimes(1);
     view2.unmount();
 
-    // Not streaming: enabled, one fire per click.
+    // Not streaming + an explicit prop (the override path): one fire per click.
     const view3 = await mountStrip({ branchId: "b3", onCallDirector });
     expect(view3.getByTestId("story-plan-call-director").getAttribute("disabled")).toBeNull();
     fireEvent.click(view3.getByTestId("story-plan-call-director"));

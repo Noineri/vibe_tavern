@@ -31,6 +31,7 @@ import { AgentShellModals } from "./agent-shell-modals.js";
 import { AgentProfileChip } from "./AgentProfileChip.js";
 import { useAgentEmptyProfile } from "./use-agent-empty-profile.js";
 import { useAgentInputPrefill } from "./use-agent-input-prefill.js";
+import { useAgentCallDirector } from "./use-agent-call-director.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -494,6 +495,20 @@ export function AgentShell({
     bridge.session?.onBeforeSend();
     dispatch(host.buildSendOptions(hostCtx));
   };
+
+  // DR-12: the pending director call (`story_plan_call_director`) —
+  // `callDirector` queues it
+  // after opening the panel; the shell sends it once its controller is
+  // ready (the bootstrap above has created the session when none was
+  // active). No-op for owners that never queued (every non-sidechat host).
+  useAgentCallDirector({
+    ownerKey,
+    threadId,
+    sessionLoading,
+    isSending: ctrl.isSending,
+    send: (content) => sendWithOptions((opts) => void ctrl.handleSend(content, opts)),
+    t,
+  });
 
   // ── Session switch / new (ER-12b) ────────────────────────────────────────
   // Both are NO-OP while a turn is streaming (the switcher is also visually

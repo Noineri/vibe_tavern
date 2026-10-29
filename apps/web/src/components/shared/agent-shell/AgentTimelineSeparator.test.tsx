@@ -188,6 +188,48 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
     ]);
   });
 
+  it("DR-12: the profile_changed separator — built-in ids localized, own names frozen, static line at its anchor", () => {
+    const { container, getByText } = renderRu(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "user says hi" })]}
+        events={[
+          {
+            id: "e-prof-1",
+            kind: "profile_changed",
+            payload: {
+              from: { id: "builtin", name: "Sidechat OOC" },
+              to: { id: "builtin-director", name: "Sidechat Director" },
+            },
+            beforeMessageId: "u1",
+          },
+          {
+            id: "e-prof-2",
+            kind: "profile_changed",
+            payload: {
+              from: { id: "builtin-director", name: "Sidechat Director" },
+              to: { id: "cprof_mine", name: "My grim director" },
+            },
+            beforeMessageId: null,
+          },
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // The RU canon (mock §5): built-in ids render LOCALIZED names; an own
+    // profile id renders the name frozen at write time (a renamed profile
+    // never rewrites history).
+    expect(getByText("── Профиль сменён: Вне роли → Режиссёр ──")).toBeDefined();
+    expect(getByText("── Профиль сменён: Режиссёр → My grim director ──")).toBeDefined();
+    // Interleaved: the anchored row before the message, the null anchor at
+    // the end — and never a toggle (a static line, the branch_forked shape).
+    expect(feedOrder(container)).toEqual(["profile_changed", "user", "profile_changed"]);
+    expect(container.querySelectorAll('[data-testid="timeline-separator-toggle"]')).toHaveLength(0);
+  });
+
   it("the three content kinds expand to the frozen content; branch_forked has no toggle", async () => {
     const { container, getByText, queryByText } = renderRu(
       <AgentMessageList

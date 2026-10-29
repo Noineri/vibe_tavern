@@ -25,6 +25,38 @@ import type { TFunc } from "../i18n/context.js";
 import type { AgentI18nKey, AgentKind } from "./agent-host-registry.js";
 
 /**
+ * The effective profile id for a chat-target assignment (SC-0k) — the
+ * web-side mirror of `CopilotProfileResolver.resolveForChat` (same hop
+ * order): the chat's own choice when it resolves (the built-in sentinel
+ * always resolves; a stored custom id resolves when its row is in the
+ * loaded list) → the kind default when it resolves (a built-in default
+ * reads as null) → the built-in seed. Dangling ids fall through, never
+ * mark a missing row.
+ *
+ * Lives HERE (DR-12) so components (the assignment hook — which re-exports
+ * it for its existing importers) AND stores (the call-director action)
+ * share the one derivation; the store layering forbids a store importing
+ * from components.
+ */
+export function resolveChatEffectiveProfileId(
+	chatProfileId: string | null,
+	kindDefaultProfileId: string | null,
+	loadedProfileIds: ReadonlySet<string>,
+): string {
+	if (chatProfileId !== null && (chatProfileId === BUILTIN_PROFILE_ID || loadedProfileIds.has(chatProfileId))) {
+		return chatProfileId;
+	}
+	if (
+		kindDefaultProfileId !== null &&
+		kindDefaultProfileId !== BUILTIN_PROFILE_ID &&
+		loadedProfileIds.has(kindDefaultProfileId)
+	) {
+		return kindDefaultProfileId;
+	}
+	return BUILTIN_PROFILE_ID;
+}
+
+/**
  * The first built-in profile's id — the sentinel the API uses for "the
  * kind's seed" (a stored `null` assignment resolves to it, and pinning it
  * on a chat row pins the seed itself). Lives HERE so this module and the

@@ -22,6 +22,7 @@ import type {
 	SidechatTimelineEvent,
 	VariantsAttachedPayload,
 } from "./sidechat-xml.js";
+import type { ProfileChangedPayload } from "./sidechat-profile-change.js";
 
 // ─── Timeline (frozen payloads → SC-3a input types) ──────────────────────────
 
@@ -34,14 +35,34 @@ function corrupt(threadId: string, kind: string, seq: number | null, detail: str
 	);
 }
 
+/** The `profile_changed` row as mapped — user-feed provenance that never
+ *  renders for the model (no renderer-union member): the events route serves
+ *  it, while the context loader and the compaction service filter it out.
+ *  Kept OUT of `SidechatTimelineEvent` on purpose — that union feeds the
+ *  model-facing tag grammar (the owner's settled contract), and a profile
+ *  switch is not RP context. */
+export interface ProfileChangedTimelineEvent {
+	readonly rowType: "event";
+	readonly kind: "profile_changed";
+	readonly payload: ProfileChangedPayload;
+}
+
+/** Everything `mapTimelineEvent` can return — the renderer's events plus the
+ *  one feed-only kind. Model-facing consumers (the loader walk, the
+ *  compaction transcript) must handle `profile_changed` by SKIPPING it; the
+ *  events route serves it onto the wire. */
+export type MappedAgentTimelineEvent = SidechatTimelineEvent | ProfileChangedTimelineEvent;
+
 /** Map one merged-timeline EVENT row (SC-1) onto the renderer's entry type.
  * `where` names the row in every parser's refusal message. The `rp_sync`
  * case only PARSES — the walk routes that kind through SC-6's coverage
  * (its batch is split per message by summary coverage) before rendering.
  * Exported since SC-8c: the sidechat compaction service maps the SAME
  * frozen rows (through the SAME validation + refusal path) when it renders
- * the summarizer transcript's reference events — one derivation. */
-export function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): SidechatTimelineEvent {
+ * the summarizer transcript's reference events — one derivation. DR-12
+ * adds the `profile_changed` arm (feed-only — see
+ * {@link ProfileChangedTimelineEvent}). */
+export function mapTimelineEvent(threadId: string, entry: AgentThreadContextEvent): MappedAgentTimelineEvent {
 	const where = { threadId, kind: entry.kind, seq: entry.seq };
 	switch (entry.kind) {
 		case "rp_sync":
@@ -60,6 +81,12 @@ export function mapTimelineEvent(threadId: string, entry: AgentThreadContextEven
 			};
 		case "branch_forked":
 			return { rowType: "event", kind: "branch_forked", payload: parseBranchForkedPayload(where, entry.payload) };
+		case "profile_changed":
+			return {
+				rowType: "event",
+				kind: "profile_changed",
+				payload: parseProfileChangedPayload(where, entry.payload),
+			};
 	}
 	// No default: the store's kind union is closed. A new kind makes this
 	// switch non-exhaustive at compile time — teach this mapper before writing
@@ -176,4 +203,21 @@ function parseBranchForkedPayload(where: EventWhere, payload: unknown): BranchFo
 		corrupt(where.threadId, where.kind, where.seq, "at missing");
 	}
 	return { at: payload.at };
+}
+
+/** The parked/frozen from-to pair of a profile switch (DR-12) — both sides
+ *  carry the profile id and the write-time display name. */
+function parseProfileChangedPayload(where: EventWhere, payload: unknown): ProfileChangedPayload {
+	function side(which: "from" | "to"): { id: string; name: string } {
+		const raw = isRecord(payload) ? payload[which] : undefined;
+		if (
+			!isRecord(raw) ||
+			typeof raw.id !== "string" ||
+			typeof raw.name !== "string"
+		) {
+			corrupt(where.threadId, where.kind, where.seq, `${which} id/name missing`);
+		}
+		return { id: raw.id, name: raw.name };
+	}
+	return { from: side("from"), to: side("to") };
 }

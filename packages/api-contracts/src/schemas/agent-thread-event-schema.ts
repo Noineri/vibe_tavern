@@ -92,6 +92,20 @@ const branchForkedPayloadSchema = z.object({
   at: z.number(),
 }).readonly();
 
+/** `profile_changed` payload wire — mirrors `ProfileChangedPayload`
+ * (domain/sidechat/sidechat-profile-change.ts). The from/to profile ids plus
+ * the display names frozen at WRITE time (server seed names for built-ins —
+ * the WEB localizes built-in ids through its own name derivation and falls
+ * back to the frozen name for user profiles, exactly like the profile chip).
+ * DR-12: user-feed provenance only — the context loader and the compaction
+ * service skip this kind; only the events route serves it. */
+const profileChangedPayloadSchema = z
+  .object({
+    from: z.object({ id: z.string(), name: z.string() }).readonly(),
+    to: z.object({ id: z.string(), name: z.string() }).readonly(),
+  })
+  .readonly();
+
 /**
  * One frozen event on the events route's response: the event row's id and
  * kind, its payload as the loader's own mapper produces it, and the
@@ -122,6 +136,12 @@ export const agentThreadEventSchema = z.discriminatedUnion("kind", [
     id: z.string(),
     kind: z.literal("branch_forked"),
     payload: branchForkedPayloadSchema,
+    beforeMessageId: z.string().nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    kind: z.literal("profile_changed"),
+    payload: profileChangedPayloadSchema,
     beforeMessageId: z.string().nullable(),
   }),
 ]);

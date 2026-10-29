@@ -405,6 +405,10 @@ export async function loadSidechatContext(
 			continue;
 		}
 		const mapped = mapTimelineEvent(threadId, entry);
+		// DR-12: the profile-switch separator is user-feed provenance — the
+		// model never sees it (the new profile's own prompt carries the
+		// switch); it exists for the events route / the web feed only.
+		if (mapped.kind === "profile_changed") continue;
 		if (mapped.kind === "rp_sync") {
 			for (const row of coverRpSyncPayload(mapped.payload, coverage)) {
 				eventMessages.push({

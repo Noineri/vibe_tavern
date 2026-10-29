@@ -2143,11 +2143,16 @@ export const agentKindSettings = sqliteTable('agent_kind_settings', {
 // the stored id dangle, and the RESOLVER falls through to the next chain step
 // at read time; the delete is never blocked. Deleting the chat cascades the
 // rows away (FK ON DELETE cascade) — the settings live and die with the chat.
+// DR-12 adds pending_profile_change_json: the profile-switch separator
+// payload that could not be materialized as a timeline event at PATCH time
+// (the pair had no active thread) — the next session creation for the pair
+// consumes it. Server-written only; never on the HTTP wire.
 export const chatAgentSettings = sqliteTable('chat_agent_settings', {
   chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   agentKind: text('agent_kind').notNull(),
   profileId: text('profile_id'),
   updatedAt: text('updated_at').notNull(),
+  pendingProfileChangeJson: text('pending_profile_change_json'),
 }, (table) => ({
   pk: primaryKey({ columns: [table.chatId, table.agentKind] }),
 }));

@@ -10,12 +10,24 @@ import {
 } from "./experience-copilot-wire-mappers.js";
 import { buildAgentProviderDeps } from "./experience-copilot-provider-deps.js";
 import { createAgentAttachmentActions, type AttachmentAssetCleanup, type AttachmentDescribeExecutor } from "./experience-copilot-attachment-actions.js";
+import {
+  createChatOwnerLifecycle,
+  type ChatOwnerLifecycle,
+} from "./experience-copilot-adapter-chat-owner.js";
+import {
+  createChatSettingsPair,
+  type ChatSettingsPair,
+} from "./experience-copilot-adapter-chat-settings.js";
 import type { AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { notFound } from "../../shared/errors.js";
 import { resolveProfileImageRoute } from "./chat-image-route.js";
 import { requireChatBranch } from "../../domain/chat/chat-branch-ownership.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
+import {
+	materializePendingSidechatProfileChange,
+	recordSidechatProfileChange,
+} from "../../domain/sidechat/sidechat-profile-change.js";
 import {
   streamExperienceCopilot,
   type ExperienceCopilotStreamDeps,
@@ -105,6 +117,12 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   private readonly deleteTurnForRegenerate: AgentTurnDeleteTurn;
   private readonly providerDeps: ReturnType<typeof buildAgentProviderDeps>;
   private readonly attachmentActions: ReturnType<typeof createAgentAttachmentActions>;
+  /** SC-0b chat-owner lifecycle — extracted module (arch-gate size cap);
+   *  the three delegating members below are its only consumers. */
+  private readonly chatOwnerLifecycle: ChatOwnerLifecycle;
+  /** SC-0f (chat, kind) settings pair — extracted module (arch-gate size
+   *  cap, DR-12); the two delegating members below are its only consumers. */
+  private readonly chatSettingsPair: ChatSettingsPair;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -138,6 +156,21 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     private readonly attachmentDescribeExecutor?: AttachmentDescribeExecutor,
   ) {
     this.providerDeps = buildAgentProviderDeps({ stores, attachmentAssetLoader });
+    // The resolver is constructed FIRST — the chat-settings pair below
+    // receives the same instance the stream wiring uses.
+    this.profileResolver = new CopilotProfileResolver(stores);
+    this.chatOwnerLifecycle = createChatOwnerLifecycle({
+      experienceCopilot: stores.experienceCopilot,
+      chatAgentSettings: stores.chatAgentSettings,
+      chats: stores.chats,
+      kindAutoCompactDefault: (kindId) => this.kindAutoCompactDefault(kindId),
+    });
+    this.chatSettingsPair = createChatSettingsPair({
+      chats: stores.chats,
+      chatAgentSettings: stores.chatAgentSettings,
+      experienceCopilot: stores.experienceCopilot,
+      profileResolver: this.profileResolver,
+    });
     this.attachmentActions = createAgentAttachmentActions({
       db: stores.db,
       store: stores.experienceCopilot,
@@ -147,7 +180,6 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       execute: attachmentSummaryExecutor,
       ...(attachmentDescribeExecutor !== undefined ? { describe: attachmentDescribeExecutor } : {}),
     });
-    this.profileResolver = new CopilotProfileResolver(stores);
     this.deleteTurnForRegenerate = makeRegenerateDeleteTurn(stores.db);
     this.compaction = providerProfileService
       ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService, undefined, stores.db, attachmentAssetLoader)
@@ -556,15 +588,9 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     branchId: string,
     kind: string,
   ): Promise<ExperienceCopilotThreadWire | null> => {
-    const agentKind = this.requireChatOwnedKind(kind);
-    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
-    // SC-7b: a chat whose mode the kind does not serve READS empty — the
-    // active twin of the sessions list's empty array, so a chat whose mode
-    // changed after its sessions were born never shows an active session
-    // its own list omits (the rows stay; the mode may change back).
-    if (!kindServesChatMode(agentKind, chat.mode)) return null;
-    const thread = await this.stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
-    return thread ? toThreadWire(thread) : null;
+    // SC-0b lifecycle — thin seam over `experience-copilot-adapter-chat-owner.ts`
+    // (extracted at the arch-gate size cap); the contracts are documented there.
+    return this.chatOwnerLifecycle.getActive(chatId, branchId, kind);
   };
 
   agentChatListSessions = async (
@@ -572,14 +598,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     branchId: string,
     kind: string,
   ): Promise<ExperienceCopilotThreadWire[]> => {
-    const agentKind = this.requireChatOwnedKind(kind);
-    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
-    // SC-7b: listing on a chat whose mode the kind does not serve answers
-    // EMPTY, not an error — reads never 400 on the mode (only the create
-    // path does; see agentChatStartNewSession).
-    if (!kindServesChatMode(agentKind, chat.mode)) return [];
-    const threads = await this.stores.experienceCopilot.listSessionsForChat(chatId, branchId, kind);
-    return threads.map((t) => toThreadWire(t));
+    return this.chatOwnerLifecycle.listSessions(chatId, branchId, kind);
   };
 
   agentChatStartNewSession = async (
@@ -588,18 +607,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     kind: string,
     title?: string,
   ): Promise<ExperienceCopilotThreadWire> => {
-    const agentKind = this.requireChatOwnedKind(kind);
-    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
-    // SC-7b: a chat-owned session is born only on a mode the kind serves —
-    // the registry's typed error, mapped by the route to the shared 400
-    // `{ error, code }` shape naming the kind and the mode. Runs before the
-    // store write, so a refused create leaves no row behind.
-    requireKindServesChatMode(agentKind, chat.mode);
-    // AP-20: the new thread's auto_compact seeds from this kind's default —
-    // the per-thread toggle is authoritative from here on.
-    const autoCompact = await this.kindAutoCompactDefault(agentKind.id);
-    const thread = await this.stores.experienceCopilot.startNewChatSession(chatId, branchId, kind, title, autoCompact);
-    return toThreadWire(thread);
+    return this.chatOwnerLifecycle.startNewSession(chatId, branchId, kind, title);
   };
 
   // ─── Per-kind model settings (SIDECHAT_PLAN SC-0d) ──────────────────────
@@ -639,28 +647,15 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   };
 
   // ─── Per-(chat, kind) profile choice (SIDECHAT_PLAN SC-0f) ──────────────
-
-  /** The chat path segment of the SC-0f chat-settings routes: the chat must
-   *  exist (404) — these routes carry no branch segment, so there is no
-   *  branch-ownership check to pair with it (unlike the shared
-   *  requireChatBranch pair check in domain/chat/chat-branch-ownership). */
-  private async requireChat(chatId: string): Promise<void> {
-    const chat = await this.stores.chats.getById(chatId);
-    if (!chat) {
-      throw notFound("Chat", `Chat '${chatId}' was not found.`);
-    }
-  }
+  // Thin seams over `experience-copilot-adapter-chat-settings.ts` (extracted
+  // at the arch-gate size cap, DR-12); the validation order and the DR-12
+  // profile-change separator write are documented there.
 
   agentChatGetSettings = async (
     chatId: string,
     kind: string,
   ): Promise<AgentChatSettingsWire> => {
-    // The SC-0b validation order: the kind is chat-owner-validated FIRST
-    // (400 class, no store I/O — a script-owned kind on a chat route is the
-    // 400 AGENT_KIND_NOT_CHAT_OWNED), then the chat's existence (404).
-    this.requireChatOwnedKind(kind);
-    await this.requireChat(chatId);
-    return toChatSettingsWire(await this.stores.chatAgentSettings.get(chatId, kind));
+    return this.chatSettingsPair.getSettings(chatId, kind);
   };
 
   agentChatPatchSettings = async (
@@ -668,9 +663,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     kind: string,
     body: AgentChatSettingsPatchRequest,
   ): Promise<AgentChatSettingsWire> => {
-    this.requireChatOwnedKind(kind);
-    await this.requireChat(chatId);
-    return toChatSettingsWire(await this.stores.chatAgentSettings.patch(chatId, kind, body));
+    return this.chatSettingsPair.patchSettings(chatId, kind, body);
   };
 
   /** SC-19a: the events route's read — thin wiring over the domain walk

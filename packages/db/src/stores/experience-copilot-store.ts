@@ -10,6 +10,11 @@ import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copil
 import { updateAssistantMessageContent, type CopilotMessageEditResult } from './experience-copilot-message-edit.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
+import {
+  listSessionsForChat,
+  listActiveChatThreadsForBranch,
+  listActiveChatThreadsForPair,
+} from './experience-copilot-chat-listings.js';
 import { findMessageAttachment, updateMessageAttachment, removeMessageAttachment, hasMessageAttachmentAssetReference } from './experience-copilot-attachments.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -199,43 +204,31 @@ export class ExperienceCopilotStore {
   }
 
   /** Active + archived chat-owned threads for a (chat, branch, kind) triple,
-   *  newest first — the chat-owner twin of {@link listSessions}. Scoped to the
-   *  exact triple: other kinds on the same branch, other branches of the same
-   *  chat, and script-owned sessions never appear. */
+   *  newest first — thin seam over `experience-copilot-chat-listings.ts`
+   *  (extracted at the arch-gate size cap); the contract is documented
+   *  there. Scoped to the exact triple: other kinds on the same branch,
+   *  other branches of the same chat, and script-owned sessions never
+   *  appear. */
   async listSessionsForChat(chatId: string, branchId: string, kind: string): Promise<ExperienceCopilotThread[]> {
-    const rows = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(
-        and(
-          eq(experienceCopilotThreads.chatId, chatId),
-          eq(experienceCopilotThreads.branchId, branchId),
-          eq(experienceCopilotThreads.agentKind, kind),
-        ),
-      )
-      .orderBy(desc(experienceCopilotThreads.updatedAt), desc(experienceCopilotThreads.createdAt))
-      .all();
-    return rows.map((r) => mapThread(r));
+    return listSessionsForChat({ db: this.db }, chatId, branchId, kind);
   }
 
   /** Every ACTIVE (unarchived) chat-owned thread on one branch, across ALL
-   *  agent kinds, oldest first (createdAt, then id as tiebreaker). Kinds are
-   *  NEVER enumerated by the caller — whatever kinds have active threads on
-   *  the branch are what this returns. Script/draft rows never match. */
+   *  agent kinds, oldest first — thin seam over
+   *  `experience-copilot-chat-listings.ts`; the contract is documented
+   *  there. Kinds are NEVER enumerated by the caller. Script/draft rows
+   *  never match. */
   async listActiveChatThreadsForBranch(chatId: string, branchId: string): Promise<ExperienceCopilotThread[]> {
-    const rows = await this.db
-      .select()
-      .from(experienceCopilotThreads)
-      .where(
-        and(
-          eq(experienceCopilotThreads.chatId, chatId),
-          eq(experienceCopilotThreads.branchId, branchId),
-          isNull(experienceCopilotThreads.archivedAt),
-        ),
-      )
-      .orderBy(asc(experienceCopilotThreads.createdAt), asc(experienceCopilotThreads.id))
-      .all();
-    return rows.map((r) => mapThread(r));
+    return listActiveChatThreadsForBranch({ db: this.db }, chatId, branchId);
+  }
+
+  /** Every ACTIVE (unarchived) chat-owned thread of one (chat, kind) pair,
+   *  across ALL branches, oldest first — DR-12's profile-switch separator
+   *  writes into every live feed the pair has. Thin seam over
+   *  `experience-copilot-chat-listings.ts`; the contract is documented
+   *  there. Script/draft rows never match. */
+  async listActiveChatThreadsForPair(chatId: string, kind: string): Promise<ExperienceCopilotThread[]> {
+    return listActiveChatThreadsForPair({ db: this.db }, chatId, kind);
   }
 
   /**

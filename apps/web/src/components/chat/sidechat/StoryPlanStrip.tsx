@@ -41,9 +41,12 @@
  *   `checkObjectiveCompletionAction`, the same api-action the objective
  *   zone's check button runs, moved here from the message headers (§8).
  *
- * `onCallDirector` is DR-12's `callDirector` store action — until that unit
- * wires the handler the prop stays absent and the button renders DISABLED
- * (interim state, named in the DR-11 report).
+ * DR-12: the strip owns the call itself — it already reads the active
+ * chat/branch from the snapshot, so `onCallDirector` stays an override
+ * (tests / future callers) and the default handler runs the
+ * `callDirector` store action (open + switch + one queued message). The
+ * button is ENABLED while a handler exists (always, since DR-12) and
+ * disabled only while a sidechat turn streams (§4).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -56,6 +59,7 @@ import { AgentPlanSection } from "../../shared/agent-shell/AgentPlanSection.js";
 import { agentPlanTextButtonCls, pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { agentOwnerKey } from "../../../lib/agent-host-registry.js";
+import { callDirector } from "../../../stores/sidechat-call-director-store.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 
@@ -183,6 +187,19 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
     }
   }
 
+  // ── Call the director (DR-12) ───────────────────────────────────────
+  // The default handler runs the store action; the catch reuses the
+  // assignment-failure copy — the switch is the same (chat, kind) write the
+  // profile surfaces make, and the action still opens + queues on failure
+  // (its own ordering contract, see the store's module doc).
+  const callDirectorDefault = useCallback(() => {
+    if (chatId === null || branchId === null) return;
+    void callDirector(chatId, branchId).catch(() => {
+      toast.error(t("copilot_profile_assign_failed"));
+    });
+  }, [chatId, branchId, t]);
+  const callDirectorHandler = onCallDirector ?? callDirectorDefault;
+
   if (planOwner === undefined) return null;
   // Empty plan → no strip: `PlayModeChatPane` renders byte-identically (the
   // panel's own emptiness rule, mirrored so the modal never mounts either).
@@ -202,13 +219,14 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
   );
   // §4/§1: the row's text-button chrome composed with `shrink-0
   // whitespace-nowrap` (the base already carries shrink-0). Disabled while a
-  // sidechat turn streams, and while DR-12's handler is not wired yet.
+  // sidechat turn streams; enabled whenever a handler exists — DR-12 wired
+  // the default (the store action), so the interim no-handler state is gone.
   const callDirectorButton = (
     <button
       type="button"
       data-testid="story-plan-call-director"
-      disabled={streaming || onCallDirector === undefined}
-      onClick={onCallDirector}
+      disabled={streaming}
+      onClick={callDirectorHandler}
       className={cn(agentPlanTextButtonCls, "whitespace-nowrap")}
     >
       {t("story_plan_call_director")}

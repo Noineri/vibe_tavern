@@ -6,6 +6,9 @@ import { getAgentChatSettings, patchAgentChatSettings } from "../../../api/agent
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import type { TFunc } from "../../../i18n/context.js";
 import { BUILTIN_PROFILE_ID } from "../../../lib/agent-builtin-profiles.js";
+import {
+	resolveChatEffectiveProfileId,
+} from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * Assignment logic for `AgentProfileModal` (AP-24 extraction — AP-27 reuses
@@ -35,31 +38,11 @@ import { BUILTIN_PROFILE_ID } from "../../../lib/agent-builtin-profiles.js";
  */
 export { BUILTIN_PROFILE_ID };
 
-/**
- * The effective profile id for a chat-target modal (SC-0k) — the modal-side
- * mirror of `CopilotProfileResolver.resolveForChat` (same hop order): the
- * chat's own choice when it resolves (the built-in sentinel always resolves;
- * a stored custom id resolves when its row is in the loaded list) → the
- * kind default when it resolves (a built-in default reads as null) → the
- * built-in seed. Dangling ids fall through, never mark a missing row.
- */
-export function resolveChatEffectiveProfileId(
-	chatProfileId: string | null,
-	kindDefaultProfileId: string | null,
-	loadedProfileIds: ReadonlySet<string>,
-): string {
-	if (chatProfileId !== null && (chatProfileId === BUILTIN_PROFILE_ID || loadedProfileIds.has(chatProfileId))) {
-		return chatProfileId;
-	}
-	if (
-		kindDefaultProfileId !== null &&
-		kindDefaultProfileId !== BUILTIN_PROFILE_ID &&
-		loadedProfileIds.has(kindDefaultProfileId)
-	) {
-		return kindDefaultProfileId;
-	}
-	return BUILTIN_PROFILE_ID;
-}
+// DR-12: the SC-0k effective-profile chain moved to its lib home
+// (`agent-builtin-profiles.ts`) so the call-director STORE can share the one
+// derivation — stores never import from components. Re-exported here for the
+// hook's own callers (the derivation itself is unchanged).
+export { resolveChatEffectiveProfileId };
 
 export interface AgentProfileAssignmentInput {
 	/** The agent kind whose profiles this instance manages (AS-8b). */

@@ -15,12 +15,16 @@ const logger = log.tag('agent-thread-context-events');
 
 /** The kinds of frozen-context event a chat-owned thread's timeline can
  *  record (SC-1). Single source for the derived union; the writer of each
- *  kind's payload ships in later units (SC-2c+). */
+ *  kind's payload ships in later units (SC-2c+). DR-12 adds `profile_changed`
+ *  (the sidechat profile-switch separator) — the ONE stored kind that is
+ *  user-feed provenance only: the context loader and the compaction service
+ *  skip it (it never reaches the model), the events route serves it. */
 export const AGENT_THREAD_CONTEXT_EVENT_KINDS = [
   'rp_sync',
   'variants_attached',
   'selection_changed',
   'branch_forked',
+  'profile_changed',
 ] as const;
 export type AgentThreadContextEventKind = (typeof AGENT_THREAD_CONTEXT_EVENT_KINDS)[number];
 
