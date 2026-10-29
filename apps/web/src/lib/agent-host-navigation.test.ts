@@ -1,7 +1,10 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 useDomEnv();
-const { openBuildAgent, openSidechatAgent } = await import("./agent-host-navigation.js");
+await import("../components/build/editors/copilot/experience-agent-host.js");
+await import("../components/build/editors/script-agent-host.js");
+await import("../components/chat/sidechat/sidechat-host.js");
+const { getAgentHost } = await import("./agent-host-registry.js");
 const { useBuildNavigationStore } = await import("../stores/build-navigation-store.js");
 const { useCharacterStore } = await import("../stores/character-store.js");
 const { useNavigationStore } = await import("../stores/navigation-store.js");
@@ -36,12 +39,12 @@ afterAll(reset);
 
 for (const kind of ["experience", "script"] as const) {
   test(`${kind} Open selects its build panel and a fresh entity intent`, async () => {
-    await openBuildAgent(kind, { kind: "script", scriptId: "destination-script" });
+    await getAgentHost(kind).open!({ kind: "script", scriptId: "destination-script" });
     expect(useNavigationStore.getState().mode).toBe("build");
     expect(useCharacterStore.getState().buildTab).toBe(kind === "experience" ? "experience" : "lorebook");
     const first = useBuildNavigationStore.getState().agentOpenIntent!;
     expect(first).toEqual({ kind, scriptId: "destination-script" });
-    await openBuildAgent(kind, { kind: "script", scriptId: "next-script" });
+    await getAgentHost(kind).open!({ kind: "script", scriptId: "next-script" });
     useBuildNavigationStore.getState().consumeAgentOpen(first);
     expect(useBuildNavigationStore.getState().agentOpenIntent!.scriptId).toBe("next-script");
     expect(requests).toEqual([]);
@@ -49,7 +52,7 @@ for (const kind of ["experience", "script"] as const) {
 }
 
 test("sidechat Open loads its chat and exact branch, then opens both desktop and mobile destinations", async () => {
-  await openSidechatAgent({ kind: "chat", chatId: "destination-chat", branchId: "destination-branch", agentKind: "sidechat-ooc" });
+  await getAgentHost("sidechat-ooc").open!({ kind: "chat", chatId: "destination-chat", branchId: "destination-branch", agentKind: "sidechat-ooc" });
   expect(requests.map(([method, path]) => [method, path.replace(/^.*\/api/, "/api")])).toEqual([
     ["GET", "/api/chats/destination-chat"], ["POST", "/api/chats/destination-chat/branches/destination-branch/activate"],
   ]);
