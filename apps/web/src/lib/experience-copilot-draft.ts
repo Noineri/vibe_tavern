@@ -51,16 +51,11 @@
  * stores' source of truth).
  */
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
-import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import type { AgentReviewRound } from "../stores/agent-review-store.js";
-import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
-import { agentThreadKey } from "./agent-host-registry.js";
 import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { isFinalizedReviewActivity as isFinalizedActivity, finalizeReviewActivities as finalizeForPersistence } from "@vibe-tavern/api-contracts";
-import { aggregateExperienceCopilotProposal, captureAgentReviewProposal } from "@vibe-tavern/api-contracts";
-import { AgentReviewPersistence } from "./agent-review-persistence.js";
+import { createBufferAgentReviewPersistence, serializeBufferAgentReview } from "./buffer-agent-review-persistence.js";
 import {
-  getExperienceCopilotReview, putExperienceCopilotReview, deleteExperienceCopilotReview, isExperienceCopilotRunning,
   streamExperienceCopilot, answerCopilotAsk,
 } from "../api/experience-copilot-api.js";
 export { isFinalizedActivity, finalizeForPersistence };
@@ -130,10 +125,7 @@ export function serializeDraft(
   activities: AgentToolActivity[],
   round: AgentReviewRound | null,
 ): string | null {
-  const finalized = finalizeForPersistence(activities);
-  if (finalized.length === 0 && round?.dangling == null) return null;
-  const envelope: DraftEnvelope = { _v: DRAFT_VERSION, activities: finalized, round };
-  return JSON.stringify(envelope);
+  return serializeBufferAgentReview(activities, round, DRAFT_KIND);
 }
 
 /**
@@ -255,33 +247,12 @@ export function loadAllDrafts(): Record<string, ParsedCopilotDraft> {
   return out;
 }
 
-/**
- * Project both live stores into the durable envelope, excluding transient
- * placeholders and retaining dangling-only rounds. Never write draft buffers.
- */
-function readCurrentReview(threadId: string): AgentReviewEnvelope | null {
-  const key = agentThreadKey(DRAFT_KIND, threadId);
-  const activities = useAgentTurnStore.getState().turnsByThread[key] ?? [];
-  const round = useAgentReviewRoundStore.getState().roundsByThread[key] ?? null;
-  const json = serializeDraft(activities, round);
-  return json === null ? null : JSON.parse(json) as AgentReviewEnvelope;
-}
-
-const reviewPersistence = new AgentReviewPersistence({
-  api: { get: getExperienceCopilotReview, put: putExperienceCopilotReview, delete: deleteExperienceCopilotReview, isRunning: isExperienceCopilotRunning },
-  read: readCurrentReview,
-  apply: (threadId, envelope) => {
-    const key = agentThreadKey(DRAFT_KIND, threadId);
-    useAgentTurnStore.setState((s) => ({ turnsByThread: { ...s.turnsByThread, [key]: envelope?.activities ?? [] } }));
-    if (envelope?.round) {
-      useAgentReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, [key]: envelope.round! } }));
-    } else useAgentReviewRoundStore.getState().resetRound(DRAFT_KIND, threadId);
-  },
-  readLegacy: (threadId) => {
+const reviewPersistence = createBufferAgentReviewPersistence(DRAFT_KIND, {
+  read: (threadId) => {
     const parsed = loadDraft(threadId);
     return parsed === null ? null : { _v: 2, ...parsed };
   },
-  removeLegacy: clearDraft,
+  remove: clearDraft,
 });
 
 /** Per-thread server hydration; never boot-scan legacy keys into live stores. */
@@ -295,46 +266,12 @@ export function syncPersistedCopilotRound(threadId: string): Promise<void> {
   return reviewPersistence.sync(threadId);
 }
 
-const preparedBuffers = new Map<string, { rules: string; visual: string }>();
-
 /** The shared controller awaits this before destructive turn-start changes. */
-export async function prepareExperienceCopilotReviewTurn(threadId: string, signal: AbortSignal, buffers: { rules: string; visual: string }): Promise<void> {
-  await reviewPersistence.ensureHydrated(threadId);
-  signal.throwIfAborted();
-  const key = agentThreadKey(DRAFT_KIND, threadId);
-  const activities = useAgentTurnStore.getState().turnsByThread[key] ?? [];
-  const round = useAgentReviewRoundStore.getState().roundsByThread[key];
-  const capture = captureAgentReviewProposal(aggregateExperienceCopilotProposal(activities), round?.snapshots.at(-1) ?? null, buffers);
-  if (capture) useAgentReviewRoundStore.getState().captureDangling(DRAFT_KIND, threadId, capture);
-  await reviewPersistence.prepare(threadId, signal);
-  signal.throwIfAborted();
-  preparedBuffers.set(threadId, buffers);
-  signal.addEventListener("abort", () => { preparedBuffers.delete(threadId); }, { once: true });
-}
-
-async function runPersistedTurn<T>(threadId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
-  const buffers = preparedBuffers.get(threadId);
-  if (!buffers) throw new Error("Agent review turn was not prepared");
-  preparedBuffers.delete(threadId);
-  // Explicit after the flush and clearTurn, before network I/O: a very short
-  // stream cannot batch the checkpoint away, and the server sees no duplicate.
-  useAgentReviewRoundStore.getState().pushSnapshot(DRAFT_KIND, threadId, buffers);
-  reviewPersistence.start(threadId);
-  let watched = false;
-  try {
-    const result = await run();
-    watched = !signal?.aborted;
-    return result;
-  } finally {
-    await reviewPersistence.finish(threadId, watched).catch((error: unknown) => {
-      // Preserve the stream's original success/error. The next load/sync retries
-      // reconciliation; never pretend a failed server read means no review.
-      console.warn("[agent-review] settlement persistence failed", error);
-    });
-  }
+export function prepareExperienceCopilotReviewTurn(threadId: string, signal: AbortSignal, buffers: { rules: string; visual: string }): Promise<void> {
+  return reviewPersistence.prepare(threadId, signal, buffers);
 }
 
 export const streamPersistedExperienceCopilot: typeof streamExperienceCopilot = (threadId, body, opts) =>
-  runPersistedTurn(threadId, opts.signal, () => streamExperienceCopilot(threadId, body, opts));
+  reviewPersistence.run(threadId, opts.signal, () => streamExperienceCopilot(threadId, body, opts));
 export const answerPersistedCopilotAsk: typeof answerCopilotAsk = (threadId, body, opts) =>
-  runPersistedTurn(threadId, opts.signal, () => answerCopilotAsk(threadId, body, opts));
+  reviewPersistence.run(threadId, opts.signal, () => answerCopilotAsk(threadId, body, opts));

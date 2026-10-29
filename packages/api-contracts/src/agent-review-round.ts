@@ -78,6 +78,20 @@ export function captureAgentReviewProposal(proposal: BufferProposal, base: { rul
   return { rules: proposal.proposedRules, visual: proposal.proposedVisual, baseRules: base?.rules ?? buffers.rules, baseVisual: base?.visual ?? buffers.visual };
 }
 
+/** Reconcile diff identities after event projection, independently of React's
+ * effect timing. A live buffer uses the latest checkpoint; dangling keeps its
+ * original anchor. Script hosts select only the existing rules slot. */
+export function updateAgentReviewKeys(round: AgentReviewRound, proposal: { proposedRules?: string; proposedVisual?: string }, buffers: readonly ("rules" | "visual")[] = ["rules", "visual"]): AgentReviewRound {
+  const snapshot = round.snapshots.at(-1);
+  for (const buffer of buffers) {
+    const live = buffer === "rules" ? proposal.proposedRules : proposal.proposedVisual;
+    const proposed = live ?? round.dangling?.[buffer];
+    const base = live !== undefined ? snapshot?.[buffer] : buffer === "rules" ? round.dangling?.baseRules : round.dangling?.baseVisual;
+    round = ensureAgentReviewKey(round, buffer, proposed === undefined ? null : `${base ?? ""}\0${proposed}`);
+  }
+  return round;
+}
+
 /** null means no review write, NOT deletion: a non-proposal turn must leave
  * the persisted round and its timestamp untouched. Never mutates its inputs. */
 export function buildAgentReviewEnvelope(previous: AgentReviewEnvelope | null, activities: readonly AgentToolActivity[], buffers: { rules: string; visual: string }): AgentReviewEnvelope | null {
@@ -89,11 +103,6 @@ export function buildAgentReviewEnvelope(previous: AgentReviewEnvelope | null, a
   if (captured) round = { ...round, dangling: captured };
   round = appendAgentReviewSnapshot(round, buffers);
   const proposal = aggregateExperienceCopilotProposal(finalized);
-  const rules = proposal.proposedRules ?? round.dangling?.rules;
-  const visual = proposal.proposedVisual ?? round.dangling?.visual;
-  const rulesBase = proposal.proposedRules !== undefined ? buffers.rules : round.dangling?.baseRules;
-  const visualBase = proposal.proposedVisual !== undefined ? buffers.visual : round.dangling?.baseVisual;
-  round = ensureAgentReviewKey(round, "rules", rules === undefined ? null : `${rulesBase ?? ""}\0${rules}`);
-  round = ensureAgentReviewKey(round, "visual", visual === undefined ? null : `${visualBase ?? ""}\0${visual}`);
+  round = updateAgentReviewKeys(round, proposal);
   return { _v: 2, activities: finalized, round };
 }

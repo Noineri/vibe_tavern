@@ -1,7 +1,7 @@
 /** Script review uses native code activities and the existing rules slot for
  * its ONE buffer's snapshots/keys/hunks/dangling. Never relabel tool outputs. */
 import type { AgentToolActivity, AgentReviewRound, AgentReviewEnvelope, AgentDanglingCapture } from "./schemas/agent-review-round-schema.js";
-import { appendAgentReviewSnapshot, createEmptyAgentReviewRound, ensureAgentReviewKey, finalizeBufferReviewActivities } from "./agent-review-round.js";
+import { appendAgentReviewSnapshot, createEmptyAgentReviewRound, updateAgentReviewKeys, finalizeBufferReviewActivities } from "./agent-review-round.js";
 
 /** The script host's existing last-wins aggregation, including empty code. */
 export function aggregateScriptAgentCodeProposal(activities: readonly AgentToolActivity[]): string | undefined {
@@ -28,6 +28,6 @@ export function buildScriptAgentReviewEnvelope(previous: AgentReviewEnvelope | n
   const dangling = captureScriptAgentReviewProposal(previous?.activities ?? [], round, code);
   if (dangling) round = { ...round, dangling };
   round = appendAgentReviewSnapshot(round, { rules: code, visual: "" });
-  round = ensureAgentReviewKey(round, "rules", `${code}\0${aggregateScriptAgentCodeProposal(finalized)!}`);
+  round = updateAgentReviewKeys(round, { proposedRules: aggregateScriptAgentCodeProposal(finalized) }, ["rules"]);
   return { _v: 2, activities: finalized, round };
 }
