@@ -461,6 +461,7 @@ export function AgentShell({
   });
 
   const ctrl = useAgentController({
+    prepareTurn: (id, signal) => bridge.session?.onBeforeSend(id, signal),
     kind,
     transport,
     threadId,
@@ -492,7 +493,6 @@ export function AgentShell({
   // variant chips; undefined for hosts that define no slot).
   const composerTopSlot = host.composerTopSlot?.(hostCtx);
   const sendWithOptions = (dispatch: (opts?: AgentSendOptions) => void) => {
-    bridge.session?.onBeforeSend();
     dispatch(host.buildSendOptions(hostCtx));
   };
 

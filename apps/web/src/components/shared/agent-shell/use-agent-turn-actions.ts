@@ -186,6 +186,7 @@ export interface UseAgentTurnActionsArgs {
   kind: AgentKind;
   /** The host descriptor's transport — the actions' ONLY API seam. */
   transport: AgentHostTransport;
+  prepareTurn?: (threadId: string, signal: AbortSignal) => void | Promise<void>;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -494,43 +495,32 @@ export function useAgentTurnActions(
         return;
       }
 
-      // AP-29 follow-up 2: the replaced turn is already gone server-side
-      // once this stream opens (the regenerate mode deletes it before the
-      // history load), so the feed hides it from HERE to the settle — the
-      // new turn streams as a fresh turn, never joined to the replaced one.
-      // A refusal/failure clears it below, and the settle refetch shows the
-      // stored truth (the old turn) again, not a blank.
-      // AP-29 follow-up 3: record the replaced rows' ids alongside the flag
-      // (a later regenerate overwrites them with a fresh set) — the flag
-      // drops at the settle below, but the SET survives a success until the
-      // refetch lands (see the threadMessages effect next to the flag state).
-      setIsRegenerating(true);
-      const replacedIds = findReplacedAssistantIds(threadMessages);
-      setHiddenRegeneratedIds(replacedIds.length > 0 ? replacedIds : null);
-
-      // Same turn-start reset as a send: the replaced turn's live activities
-      // drop (the SSE below rebuilds them), and any stale ask/permission
-      // override clears (the settle+refetch shows the persisted truth).
-      // AP-13: a retry supersedes the card — the stale failure clears while
-      // the new turn runs (its failure replaces the card below).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      setPendingAskAnswer(null);
-      setPendingPermissionAnswer(null);
-      setTurnFailure(null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      // LAG-2: drain anything still buffered before the turn-start clear
-      // (the controller's send/answer paths' belt-and-braces, mirrored here).
-      flushDeltaBuffer();
-      clearLiveStreamText();
-      // NO pendingUserContent — a regenerate has no new user row (the server
-      // reruns the last turn against the surviving thread state).
-
       const sawStreamEvent = { current: false };
       try {
+        const prepared = args.prepareTurn?.(threadId, controller.signal);
+        if (prepared) await prepared;
+        controller.signal.throwIfAborted();
+        // Hide the replaced rows only AFTER preparation succeeds. The hide
+        // set survives success until the refetch lands (AP-29).
+        setIsRegenerating(true);
+        const replacedIds = findReplacedAssistantIds(threadMessages);
+        setHiddenRegeneratedIds(replacedIds.length > 0 ? replacedIds : null);
+
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        setPendingAskAnswer(null);
+        setPendingPermissionAnswer(null);
+        setTurnFailure(null);
+
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (the controller's send/answer paths' belt-and-braces, mirrored here).
+        flushDeltaBuffer();
+        clearLiveStreamText();
+        // No new user row: the server reruns the surviving thread state.
+
         const streamResult = await transport.sendStream(
           threadId,
           {
@@ -605,7 +595,7 @@ export function useAgentTurnActions(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer, args.prepareTurn],
   );
 
   const handleEditLast = useCallback(

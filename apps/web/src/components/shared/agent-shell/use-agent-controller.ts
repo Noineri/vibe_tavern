@@ -70,6 +70,8 @@ export interface UseAgentControllerArgs {
    *  Typed through the registry so this module imports no kind-specific
    *  client. */
   transport: AgentHostTransport;
+  /** BR-2c: flush host review state before clearing activities / opening a run. */
+  prepareTurn?: (threadId: string, signal: AbortSignal) => void | Promise<void>;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -207,6 +209,24 @@ export function useAgentController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+  const currentThreadRef = useRef(threadId);
+  currentThreadRef.current = threadId;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const prepareTurn = useCallback((id: string, signal: AbortSignal): void | Promise<void> => {
+    const checkTarget = () => {
+      signal.throwIfAborted();
+      if (!mountedRef.current || currentThreadRef.current !== id) throw new Error("Agent host changed during turn preparation");
+    };
+    const prepared = args.prepareTurn?.(id, signal);
+    // Preserve synchronous hosts: even awaiting undefined adds a microtask,
+    // which can collapse a short stream's sending edge into its settlement.
+    if (prepared) return prepared.then(checkTarget);
+    checkTarget();
+  }, [args.prepareTurn]);
 
   // LAG-2: frame-coalesced stream deltas — the buffering derivation lives in
   // its own module (the file-size ratchet); this hook drains the returned
@@ -476,31 +496,28 @@ export function useAgentController(
         return;
       }
 
-      // Start the turn fresh: drop the previous turn's tool activities (same
-      // rationale as the RP controller's co-author clearTurn). Also drop any
-      // stale optimistic ask resolution (TAG-9) — by now the persisted rows
-      // carry the true ask state. SC-23f: the permission override drops with
-      // it (same truth — the persisted rows). AP-13: the stale failure drops
-      // with them — a new turn supersedes the card while it runs (its
-      // failure replaces the card in the catch below).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      setPendingAskAnswer(null);
-      setPendingPermissionAnswer(null);
-      const failureKey = agentThreadKey(kind, threadId);
-      writeTurnFailure(failureKey, null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      // LAG-2: drain anything still buffered before the turn-start clear
-      // (a settled turn already drained; this is the no-drop belt-and-braces).
-      flushDeltaBuffer();
-      useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
-      setPendingUserContent(trimmed);
-      setPendingUserAttachments(attachments);
-
+      const failureKey = agentThreadKey(kind, threadId);
       try {
+        const prepared = prepareTurn(threadId, controller.signal);
+        if (prepared) await prepared;
+        // Preparation is durable before the old activities disappear or the
+        // rising-edge effect takes the next turn's snapshot.
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        setPendingAskAnswer(null);
+        setPendingPermissionAnswer(null);
+        writeTurnFailure(failureKey, null);
+
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (a settled turn already drained; this is the no-drop belt-and-braces).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+        setPendingUserContent(trimmed);
+        setPendingUserAttachments(attachments);
+
         const streamResult = await transport.sendStream(
           threadId,
           {
@@ -576,7 +593,7 @@ export function useAgentController(
         setPendingUserAttachments([]);
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
   );
 
   const handleAnswer = useCallback(
@@ -603,44 +620,36 @@ export function useAgentController(
         return;
       }
 
-      // The answer resumes the question turn (style B): clear the live turn
-      // so the awaiting activity yields to the persisted row (TAG-7 note),
-      // and drop any stale override from a previous answer. AP-13: the
-      // stale failure drops with them (the answer is a new turn attempt —
-      // same supersede rule as a send).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      const failureKey = agentThreadKey(kind, threadId);
-      writeTurnFailure(failureKey, null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      // LAG-2: drain anything still buffered before the turn-start clear
-      // (same belt-and-braces as the send path).
-      flushDeltaBuffer();
-      useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
-      // NO pendingUserContent — the answer has no user row (it replaces the
-      // awaiting tool-result row server-side).
-      // Optimistic flip: the card shows the resolution immediately instead of
-      // waiting for the settle+refetch round-trip. The decision flips the
-      // permission card; the ask flip is untouched (one family per call —
-      // the guard above refused mixed bodies, so nulling the other family's
-      // override cannot drop a live value).
-      if (decision !== undefined) {
-        setPendingAskAnswer(null);
-        setPendingPermissionAnswer({ toolCallId, decision });
-      } else {
-        setPendingPermissionAnswer(null);
-        setPendingAskAnswer({
-          toolCallId,
-          status: skipped ? "skipped" : "answered",
-          ...(text ? { answer: text } : {}),
-        });
-      }
-
+      const failureKey = agentThreadKey(kind, threadId);
       const sawStreamEvent = { current: false };
       try {
+        const prepared = prepareTurn(threadId, controller.signal);
+        if (prepared) await prepared;
+        // Both split-turn answer families obey the same durable barrier.
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        writeTurnFailure(failureKey, null);
+
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (same belt-and-braces as the send path).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+        // No new user row; flip only the submitted answer family.
+        if (decision !== undefined) {
+          setPendingAskAnswer(null);
+          setPendingPermissionAnswer({ toolCallId, decision });
+        } else {
+          setPendingPermissionAnswer(null);
+          setPendingAskAnswer({
+            toolCallId,
+            status: skipped ? "skipped" : "answered",
+            ...(text ? { answer: text } : {}),
+          });
+        }
+
         const streamResult = await transport.answerAsk(
           threadId,
           {
@@ -719,13 +728,14 @@ export function useAgentController(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
   );
 
   // AP-10: the turn actions live in their own module (the file-size
   // ratchet) — fed with the controller's send, callback builder, and turn
   // state, re-exposed on the controller's contract below.
   const turnActions = useAgentTurnActions({
+    prepareTurn,
     kind,
     transport,
     threadId,
