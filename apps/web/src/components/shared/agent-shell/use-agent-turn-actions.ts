@@ -171,6 +171,11 @@ export interface AgentTurnStateControls {
   /** AP-13: write/clear the thread's last turn failure (the error card's
    *  live state — bound to the controller's current thread). */
   setTurnFailure: (failure: AgentTurnFailure | null) => void;
+  /** LAG-2: drain the controller's frame-coalesced delta buffer NOW —
+   *  called before every pendingText/pendingReasoning clear below so no
+   *  buffered delta is lost at the clear (the controller owns the ONE
+   *  buffering derivation; this is its flush handle). */
+  flushDeltaBuffer: () => void;
 }
 
 export interface UseAgentTurnActionsArgs {
@@ -408,7 +413,7 @@ export function useAgentTurnActions(
   args: UseAgentTurnActionsArgs,
 ): AgentTurnActions {
   const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, turnState } = args;
-  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure } = turnState;
+  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer } = turnState;
 
   // AP-10: the shared delete core for handleDeleteTurn and handleEditLast —
   // guards, busy flags, the transport call, the send-style error path. The
@@ -515,6 +520,9 @@ export function useAgentTurnActions(
       abortRef.current = controller;
       isSendingRef.current = true;
       setIsSending(true);
+      // LAG-2: drain anything still buffered before the turn-start clear
+      // (the controller's send/answer paths' belt-and-braces, mirrored here).
+      flushDeltaBuffer();
       setPendingText("");
       setPendingReasoning("");
       // NO pendingUserContent — a regenerate has no new user row (the server
@@ -558,6 +566,9 @@ export function useAgentTurnActions(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
+        // LAG-2: drain before the settle clear — the last frame's buffered
+        // deltas land in the feed (the controller's send-path invariant).
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -578,6 +589,9 @@ export function useAgentTurnActions(
           // the category description, so the toast is gone.
           setTurnFailure(copilotTurnFailureOf(error));
         }
+        // LAG-2: drain before the failure/abort clear (nothing can write
+        // after the clear).
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -592,7 +606,7 @@ export function useAgentTurnActions(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer],
   );
 
   const handleEditLast = useCallback(

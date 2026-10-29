@@ -10,6 +10,8 @@ import {
   type CopilotAnswerInput,
   type CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
+import type { RevealScheduler } from "../../../lib/streaming-reveal.js";
+import { useAgentDeltaBuffer } from "./use-agent-delta-buffer.js";
 import {
   useAgentTurnStore,
   parseTodoToolResult,
@@ -41,7 +43,10 @@ import {
  * the RP-chat `useChatController`. This hook ports the stream half of
  * `executeStreamAction`, retargeted and simplified: the copilot is stream-only,
  * with no dice/attachments/variants/regenerate/non-stream/insights and no
- * StreamingReveal — `pendingText` is a plain accumulated string.
+ * StreamingReveal — `pendingText` is a plain accumulated string, written once
+ * per FRAME (LAG-2: deltas buffer in refs and flush through the same
+ * `RevealScheduler` seam `lib/streaming-reveal.ts` owns; the buffering lives
+ * in `use-agent-delta-buffer.ts`).
  *
  * State is LOCAL (no new Zustand store): the copilot editor shell owns a single
  * controller instance and threads values down via props/context (ER-11c/11d).
@@ -98,6 +103,12 @@ export interface UseAgentControllerArgs {
    *  streams) can subscribe without owning the turn. The controller stays
    *  the only truth; nothing ever reads the mirror back here. */
   streamingMirrorKey?: string;
+  /** LAG-2 (AGENT_SHELL_RENDER_LAG_REPORT, fix step 3): schedules the
+   *  frame-coalesced stream-delta flush — ONE setPendingText /
+   *  setPendingReasoning and ONE `appendTextDelta` per frame. Defaults to
+   *  the rAF scheduler exported from `lib/streaming-reveal.ts`; tests inject
+   *  a manual stepper for deterministic flush timing. */
+  scheduler?: RevealScheduler;
 }
 
 /** AS-6c-ii: re-exported from the host registry (which owns the type —
@@ -111,7 +122,9 @@ export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFail
 
 export interface AgentController extends AgentTurnActions {
   isSending: boolean;
-  /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
+  /** Live assistant text accumulated from text-deltas this turn (cleared on
+   *  settle). LAG-2: updated once per frame, not per token — the deltas
+   *  coalesce in a ref buffer flushed through the injected scheduler. */
   pendingText: string;
   /** Live model reasoning accumulated from reasoning-deltas this turn,
    *  rendered with the co-author's MessageReasoning `inline` preset on the
@@ -175,7 +188,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey, scheduler } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -198,6 +211,17 @@ export function useAgentController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+
+  // LAG-2: frame-coalesced stream deltas — the buffering derivation lives in
+  // its own module (the file-size ratchet); this hook hands it the state
+  // writers and drains the returned flush handle before every tool event
+  // (via the stream callbacks below) and every settle/abort/failure clear.
+  const { pushStreamDelta, flushDeltaBuffer } = useAgentDeltaBuffer({
+    kind,
+    scheduler,
+    setPendingText,
+    setPendingReasoning,
+  });
 
   // DR-11: publish the local streaming flag into the shared mirror store —
   // a derived copy only (see `streamingMirrorKey`). The cleanup drops the
@@ -268,13 +292,15 @@ export function useAgentController(
       if (status === "streaming") sawStreamEvent.current = true;
     },
     onChunk: (delta) => {
-      setPendingText((p) => p + delta);
-      useAgentTurnStore.getState().appendTextDelta(kind, activeThreadId, delta);
+      pushStreamDelta(activeThreadId, "text", delta);
     },
     onReasoningChunk: (delta) => {
-      setPendingReasoning((p) => p + delta);
+      pushStreamDelta(activeThreadId, "reasoning", delta);
     },
     onToolCall: (info) => {
+      // LAG-2: buffered text must never land after the activity that follows
+      // it — drain BEFORE closeTextSegment closes the segment.
+      flushDeltaBuffer();
       useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
       useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
       useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
@@ -297,6 +323,9 @@ export function useAgentController(
       }
     },
     onToolInputStart: (info) => {
+      // LAG-2: same drain-before-close as onToolCall (the invariant holds for
+      // every tool event that closes the text segment).
+      flushDeltaBuffer();
       useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
       useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
       useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
@@ -306,6 +335,9 @@ export function useAgentController(
       });
     },
     onToolResult: (info) => {
+      // LAG-2: same drain-before-close as onToolCall (the invariant holds for
+      // every tool event that closes the text segment).
+      flushDeltaBuffer();
       useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
       useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
       // This routing MUST stay field-for-field with ER-8's
@@ -465,6 +497,9 @@ export function useAgentController(
       abortRef.current = controller;
       isSendingRef.current = true;
       setIsSending(true);
+      // LAG-2: drain anything still buffered before the turn-start clear
+      // (a settled turn already drained; this is the no-drop belt-and-braces).
+      flushDeltaBuffer();
       setPendingText("");
       setPendingReasoning("");
       setPendingUserContent(trimmed);
@@ -513,6 +548,9 @@ export function useAgentController(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
+        // LAG-2: drain before the settle clear — the last frame's buffered
+        // deltas land in the feed so the persisted/live text stays identical.
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -528,6 +566,10 @@ export function useAgentController(
           // category description, so the toast is gone.
           writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
+        // LAG-2: drain before the failure/abort clear — buffered deltas land
+        // in the feed (byte-identical to per-token writes), the frame is
+        // cancelled, and nothing can write after the clear.
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -541,7 +583,7 @@ export function useAgentController(
         setPendingUserAttachments([]);
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer],
   );
 
   const handleAnswer = useCallback(
@@ -581,6 +623,9 @@ export function useAgentController(
       abortRef.current = controller;
       isSendingRef.current = true;
       setIsSending(true);
+      // LAG-2: drain anything still buffered before the turn-start clear
+      // (same belt-and-braces as the send path).
+      flushDeltaBuffer();
       setPendingText("");
       setPendingReasoning("");
       // NO pendingUserContent — the answer has no user row (it replaces the
@@ -645,6 +690,8 @@ export function useAgentController(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
+        // LAG-2: drain before the settle clear (the send path's invariant).
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -670,6 +717,9 @@ export function useAgentController(
           // category description, so the toast is gone.
           writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
+        // LAG-2: drain before the failure/abort clear (the send path's
+        // invariant — nothing can write after the clear).
+        flushDeltaBuffer();
         setPendingText("");
         setPendingReasoning("");
         setIsSending(false);
@@ -679,7 +729,7 @@ export function useAgentController(
         abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer],
   );
 
   // AP-10: the turn actions live in their own module (the file-size
@@ -703,6 +753,9 @@ export function useAgentController(
       setIsSending,
       setPendingText,
       setPendingReasoning,
+      // LAG-2: the turn actions drain the shared buffer before their clears —
+      // the ONE buffering derivation stays here in the controller.
+      flushDeltaBuffer,
       setPendingAskAnswer,
       setPendingPermissionAnswer,
       // AP-13: the regenerate path writes the same per-thread failure the

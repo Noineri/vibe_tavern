@@ -11,6 +11,7 @@
 import { afterAll, beforeEach, describe, test, expect, mock, spyOn } from "bun:test";
 
 import type { CopilotStreamOpts } from "../../../api/experience-copilot-api.js";
+import type { RevealScheduler } from "../../../lib/streaming-reveal.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
@@ -216,6 +217,42 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** LAG-2: a manual RevealScheduler — a frame runs ONLY when the test ticks
+ *  it, so the controller's delta-flush timing is deterministic (no rAF under
+ *  the test runner). Cancelled frames never run, mirroring
+ *  cancelAnimationFrame. */
+function createManualScheduler() {
+  const frames: Array<{ run: () => void; cancelled: boolean }> = [];
+  const schedule: RevealScheduler = (callback) => {
+    const frame = { run: callback, cancelled: false };
+    frames.push(frame);
+    return () => {
+      frame.cancelled = true;
+    };
+  };
+  return {
+    schedule,
+    /** Run the OLDEST scheduled frame (one flush per tick). */
+    tickNextFrame: (): void => {
+      const frame = frames.shift();
+      if (frame !== undefined && !frame.cancelled) frame.run();
+    },
+  };
+}
+
+/** LAG-2: the store-write counter — one count per zustand `set` that swaps
+ *  the feed (exactly what a text delta's append does; no tool events fire in
+ *  the counting tests, so nothing else swaps the feed). A SUBSCRIPTION, not
+ *  a spy on the live state object: a spy there is copied into every later
+ *  zustand snapshot by setState merges and chains across tests. */
+function createFeedWriteCounter(): { count: () => number; done: () => void } {
+  let writes = 0;
+  const unsubscribe = useAgentTurnStore.subscribe((state, prev) => {
+    if (state.feedByThread !== prev.feedByThread) writes += 1;
+  });
+  return { count: () => writes, done: unsubscribe };
+}
+
 beforeEach(() => {
   if (fetchBeforeController === null) fetchBeforeController = globalThis.fetch;
   globalThis.fetch = routerFetch;
@@ -348,8 +385,12 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
       summary: "stale",
     });
 
+    // LAG-2: the scheduler seam — deltas coalesce in the controller's buffer
+    // until a frame ticks, so this harness flushes on demand. The ONLY change
+    // this test gains; its assertions are unchanged.
+    const scheduler = createManualScheduler();
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled, scheduler: scheduler.schedule }),
     );
 
     let pending!: Promise<void>;
@@ -366,10 +407,14 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     // clearTurn dropped the prior turn at start.
     expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([]);
 
-    // Drive text deltas; pendingText accumulates live.
+    // Drive text deltas; pendingText accumulates live — LAG-2: only once the
+    // frame ticks (both chunks coalesce into ONE flush).
     await act(async () => {
       captured.onChunk("Hel");
       captured.onChunk("lo");
+    });
+    await act(async () => {
+      scheduler.tickNextFrame();
     });
     expect(result.current.pendingText).toBe("Hello");
 
@@ -378,6 +423,9 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     await act(async () => {
       captured.onReasoningChunk!("think");
       captured.onReasoningChunk!("ing");
+    });
+    await act(async () => {
+      scheduler.tickNextFrame();
     });
     expect(result.current.pendingReasoning).toBe("thinking");
 
@@ -710,6 +758,258 @@ describe("feed wiring (TF-4)", () => {
     });
 
     expect(useAgentTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
+  });
+});
+
+// ─── LAG-2: frame-coalesced stream deltas ─────────────────────────────
+// (AGENT_SHELL_RENDER_LAG_REPORT fix step 3) Text/reasoning deltas buffer in
+// refs and flush ONCE per frame through the injected scheduler; the buffer
+// drains synchronously before every tool event / settle clear / unmount.
+describe("useExperienceCopilotController — frame-coalesced stream deltas (LAG-2)", () => {
+  test("N text chunks arriving within one frame coalesce into ONE store write", async () => {
+    const scheduler = createManualScheduler();
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, scheduler: scheduler.schedule }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hi");
+      await Promise.resolve();
+    });
+
+    // The store-write counter — the ONE derivation of "how many feed writes
+    // happened" (a text delta's append is the only feed swap in this test).
+    const feedWrites = createFeedWriteCounter();
+    try {
+      await act(async () => {
+        captured.onChunk("Hel");
+        captured.onChunk("lo");
+        captured.onChunk(" world");
+      });
+      // Buffered, not yet flushed: NO store write and NO state change before
+      // the frame ticks.
+      expect(feedWrites.count()).toBe(0);
+      expect(result.current.pendingText).toBe("");
+
+      await act(async () => {
+        scheduler.tickNextFrame();
+      });
+      // ONE flush for the whole frame: one write carrying the concatenated
+      // delta, one pendingText update.
+      expect(result.current.pendingText).toBe("Hello world");
+      expect(feedWrites.count()).toBe(1);
+      expect(useAgentTurnStore.getState().feedByThread[THREAD]![0]).toMatchObject({
+        kind: "text",
+        text: "Hello world",
+        closed: false,
+      });
+
+      // Byte-identity across the settle: the feed holds the full text (the
+      // per-token writes this replaced produced the same segment text).
+      await act(async () => {
+        d.resolve({ finishReason: "stop" });
+        await pending;
+      });
+      expect(feedWrites.count()).toBe(1);
+      expect(result.current.pendingText).toBe("");
+    } finally {
+      feedWrites.done();
+    }
+  });
+
+  test("a tool event mid-frame flushes the buffer BEFORE the activity (text never lands after it)", async () => {
+    const scheduler = createManualScheduler();
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, scheduler: scheduler.schedule }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("edit the rules");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      captured.onChunk("before the tool");
+    });
+    // Buffered: the feed holds NOTHING yet (the frame never ticked).
+    expect(useAgentTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
+    expect(result.current.pendingText).toBe("");
+
+    // The tool event itself flushes synchronously — no frame tick needed.
+    await act(async () => {
+      captured.onToolInputStart!({ toolCallId: "t1", toolName: "write_buffer" });
+    });
+    const feed = useAgentTurnStore.getState().feedByThread[THREAD]!;
+    expect(feed.map((entry) => entry.kind)).toEqual(["text", "activity"]);
+    expect(feed[0]).toMatchObject({ kind: "text", text: "before the tool", closed: true });
+    expect(feed[1]).toEqual({ kind: "activity", id: "t1" });
+
+    // The tool-event flush consumed the buffer — a later frame tick writes
+    // nothing after the activity.
+    await act(async () => {
+      scheduler.tickNextFrame();
+    });
+    expect(useAgentTurnStore.getState().feedByThread[THREAD]).toHaveLength(2);
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+  });
+
+  test("cancel mid-frame drains the buffer at the clear — no write lands after it", async () => {
+    const scheduler = createManualScheduler();
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const feedWrites = createFeedWriteCounter();
+    try {
+      const { result } = renderHook(() =>
+        useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, scheduler: scheduler.schedule }),
+      );
+
+      let pending!: Promise<void>;
+      await act(async () => {
+        pending = result.current.handleSend("hi");
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        captured.onChunk("Hel");
+        captured.onChunk("lo");
+      });
+      // Buffered — nothing written before the cancel (red before LAG-2: the
+      // per-token writes had already landed).
+      expect(feedWrites.count()).toBe(0);
+      expect(result.current.pendingText).toBe("");
+
+      await act(async () => {
+        result.current.handleCancel();
+        await pending;
+      });
+
+      // The abort path DRAINED before its clear: exactly one write, the
+      // buffered text — no delta dropped, byte-identical to per-token writes.
+      expect(feedWrites.count()).toBe(1);
+      expect(useAgentTurnStore.getState().feedByThread[THREAD]![0]).toMatchObject({
+        kind: "text",
+        text: "Hello",
+      });
+      expect(result.current.pendingText).toBe("");
+      expect(result.current.isSending).toBe(false);
+
+      // The cancelled frame never runs — no write after the clear.
+      await act(async () => {
+        scheduler.tickNextFrame();
+      });
+      expect(feedWrites.count()).toBe(1);
+      expect(useAgentTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
+      expect(result.current.pendingText).toBe("");
+    } finally {
+      feedWrites.done();
+    }
+  });
+
+  test("unmount mid-frame drains the buffer into the store feed", async () => {
+    const scheduler = createManualScheduler();
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const { result, unmount } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, scheduler: scheduler.schedule }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hi");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      captured.onChunk("Hel");
+      captured.onChunk("lo");
+    });
+
+    // The turn store survives the component — the buffered deltas must land
+    // in the feed on unmount (no frame ever ticked).
+    unmount();
+    expect(useAgentTurnStore.getState().feedByThread[THREAD]![0]).toMatchObject({
+      kind: "text",
+      text: "Hello",
+    });
+
+    // Settle the parked turn so nothing dangles past the file.
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending.catch(() => undefined);
+    });
+  });
+
+  test("pendingText (the scroll hook's input) changes per FLUSH, not per token", async () => {
+    const scheduler = createManualScheduler();
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, scheduler: scheduler.schedule }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hi");
+      await Promise.resolve();
+    });
+
+    // Three tokens, three separate acts (un-batched, like real SSE arrivals)
+    // — pendingText holds at "" through all of them.
+    await act(async () => {
+      captured.onChunk("a");
+    });
+    expect(result.current.pendingText).toBe("");
+    await act(async () => {
+      captured.onChunk("b");
+    });
+    expect(result.current.pendingText).toBe("");
+    await act(async () => {
+      captured.onChunk("c");
+    });
+    expect(result.current.pendingText).toBe("");
+
+    // ONE flush flips it once — the scroll hook's input (and the shell root)
+    // re-render per frame, not per token.
+    await act(async () => {
+      scheduler.tickNextFrame();
+    });
+    expect(result.current.pendingText).toBe("abc");
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.pendingText).toBe("");
   });
 });
 

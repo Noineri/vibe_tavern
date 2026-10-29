@@ -502,6 +502,9 @@ function hookArgs(over: { threadId?: string | null } = {}) {
       setPendingAskAnswer: mock(() => {}),
       setPendingPermissionAnswer: mock(() => {}),
       setTurnFailure: mock(() => {}),
+      // LAG-2: the controller's flush handle — never buffered in this suite
+      // (no stream runs here), so the stub only satisfies the contract.
+      flushDeltaBuffer: mock(() => {}),
     },
   };
 }

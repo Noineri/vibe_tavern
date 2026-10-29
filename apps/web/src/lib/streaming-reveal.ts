@@ -21,7 +21,12 @@ import { useChatStore } from "../stores/chat-store.js";
  */
 export type RevealScheduler = (callback: () => void) => () => void;
 
-const rafScheduler: RevealScheduler = (callback) => {
+/**
+ * The default scheduler: one callback per animation frame. Exported so the
+ * agent controller's frame-coalesced delta flush (LAG-2) shares the SAME rAF
+ * derivation instead of forking its own.
+ */
+export const rafScheduler: RevealScheduler = (callback) => {
   const id = requestAnimationFrame(() => callback());
   return () => cancelAnimationFrame(id);
 };
