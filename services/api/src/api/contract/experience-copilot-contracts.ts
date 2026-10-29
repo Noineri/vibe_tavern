@@ -10,7 +10,7 @@ import type { RecordProposal, AgentThreadProposalApplyRequest } from "@vibe-tave
 import type { AgentPlan, Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { ConfigPatchResponse } from "./session-types.js";
 import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
-import type { ExperienceCopilotStopRunResponse } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotStopRunResponse, AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -76,6 +76,10 @@ export interface AgentThreadProposalResolveWire {
 }
 
 export interface ExperienceCopilotRuntimeApi {
+	/** Server-owned V2 review; null means this existing thread has no review. */
+	experienceCopilotGetReview: (threadId: string) => Promise<AgentReviewEnvelope | null>;
+	experienceCopilotPutReview: (threadId: string, envelope: AgentReviewEnvelope) => Promise<AgentReviewEnvelope>;
+	experienceCopilotDeleteReview: (threadId: string) => Promise<{ ok: true }>;
 	experienceCopilotSummarizeAttachment: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<Attachment>;
 	experienceCopilotClearAttachmentSummary: (threadId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
 	experienceCopilotSetAttachmentIncluded: (threadId: string, messageId: string, attachmentId: string, included: boolean) => Promise<{ ok: true }>;

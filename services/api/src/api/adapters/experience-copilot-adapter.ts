@@ -74,6 +74,7 @@ import type { AgentKind, AgentKindId } from "../../domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { ExperienceCopilotRunAdapter, describeCopilotRun } from "./experience-copilot-run-adapter.js";
+import { AgentReviewService } from "../../domain/agent/agent-review-service.js";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
 
@@ -517,6 +518,13 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
     const thread = await this.stores.experienceCopilot.getActive(scriptId);
     return thread ? toThreadWire(thread) : null;
   };
+
+  experienceCopilotGetReview: ExperienceCopilotRuntimeApi["experienceCopilotGetReview"] =
+    (threadId) => new AgentReviewService(this.stores).get(threadId);
+  experienceCopilotPutReview: ExperienceCopilotRuntimeApi["experienceCopilotPutReview"] =
+    (threadId, envelope) => new AgentReviewService(this.stores).put(threadId, envelope);
+  experienceCopilotDeleteReview: ExperienceCopilotRuntimeApi["experienceCopilotDeleteReview"] =
+    (threadId) => new AgentReviewService(this.stores).delete(threadId);
 
   experienceCopilotListMessages = async (threadId: string): Promise<ExperienceCopilotMessageWire[]> => {
     const messages = await this.stores.experienceCopilot.listMessages(threadId);

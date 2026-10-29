@@ -186,6 +186,12 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
     )
     .post("/api/experience-copilot/:threadId/stop", (c) =>
       c.json(runtime.experienceCopilotStopRun(c.req.param("threadId"))))
+    .get("/api/experience-copilot/:threadId/review", async (c) =>
+      c.json(await runtime.experienceCopilotGetReview(c.req.param("threadId"))))
+    .put("/api/experience-copilot/:threadId/review", zValidator("json", schemas.agentReviewEnvelopeSchema), async (c) =>
+      c.json(await runtime.experienceCopilotPutReview(c.req.param("threadId"), c.req.valid("json"))))
+    .delete("/api/experience-copilot/:threadId/review", async (c) =>
+      c.json(await runtime.experienceCopilotDeleteReview(c.req.param("threadId"))))
     .get("/api/experience-copilot/script/:scriptId/active", async (c) => {
       const scriptId = c.req.param("scriptId");
       return c.json(await runtime.experienceCopilotGetActive(scriptId));
