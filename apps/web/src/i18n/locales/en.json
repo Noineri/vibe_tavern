@@ -231,6 +231,7 @@
 	"obj_generate_goals_button": "Generate goals",
 	"obj_stop_button": "Stop",
 	"obj_check_button": "Check completion",
+	"obj_plan_driven_note": "The director's story plan drives these goals",
 	"obj_advanced_label": "Advanced",
 	"obj_empty_title": "No tasks yet",
 	"obj_empty_sub": "Write an objective above, then click Generate tasks — or add one manually.",

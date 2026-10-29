@@ -20,6 +20,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bu
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { type ReactNode } from "react";
+import type { AgentPlan } from "@vibe-tavern/api-contracts";
+import { ingestAgentPlan } from "../../../hooks/use-agent-plan.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -92,10 +94,11 @@ afterEach(() => {
   cancelInsightsCompletionRefresh("c1" as never);
 });
 
-function seedState(state: ObjectiveState, objectiveEnabled: boolean) {
+function seedState(state: ObjectiveState, objectiveEnabled: boolean, branchId?: string) {
   useSnapshotStore.setState({
     activeChat: {
       id: "c1",
+      ...(branchId !== undefined ? { activeBranchId: branchId } : {}),
       insightsConfig: { objectiveEnabled, trackerEnabled: false },
       insightsObjectiveState: state,
     } as never,
@@ -409,6 +412,88 @@ describe("Objective slot + real AssistantContextHeader", () => {
     });
 
     await waitFor(() => expect(container.textContent).toContain("Enter the forest"));
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
+  });
+});
+
+// ─── The zone vs the story plan (DIRECTOR_MODE_PLAN DR-13, §8/P3) ─────────
+// behavior addition: while the ACTIVE branch plan has events (the SAME
+// useAgentPlan cache seam — seeded through `ingestAgentPlan`, the proposal-
+// card pattern), the slot does not resolve: the header is identity-only and
+// the tracker line lives on the story strip (its manual check moved to the
+// curtain, DR-11). Without plan events the zone is exactly as today (the
+// INS-6 pins above, untouched — their seeds carry no branch, the no-owner
+// case).
+
+const PLAN_WITH_EVENTS: AgentPlan = {
+  goal: "Cat becomes human",
+  constraints: [],
+  tasks: [
+    { id: "ev1", title: "Morning after the transformation", body: "", status: "completed" },
+    { id: "ev2", title: "House rules", body: "", status: "active" },
+  ],
+};
+const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
+
+function headerHarness() {
+  return render(
+    <AssistantContextHeader
+      author={{
+        name: "Aria",
+        avatarAssetId: null,
+        avatarCropJson: null,
+        avatarSrc: null,
+        avatarNode: undefined,
+      }}
+      slotCtx={{
+        chatId: "c1",
+        messageId: "m1",
+        messageRole: "assistant",
+        variantIndex: 0,
+        isStreaming: false,
+        extras: {},
+      }}
+      isMobile={false}
+      isEditing={false}
+      isGenerating={false}
+      onToggleMobileMenu={() => {}}
+    />,
+  );
+}
+
+describe("Objective slot vs the story plan (DR-13 §8)", () => {
+  it("plan with events: the slot does not resolve — identity-only header, no zone DOM", () => {
+    seedState(ROUTE, true, "b-dr13-hid");
+    ingestAgentPlan({ kind: "chatBranch", chatId: "c1", branchId: "b-dr13-hid" }, PLAN_WITH_EVENTS);
+    const { container } = headerHarness();
+
+    expect(container.textContent).toContain("Aria");
+    expect(container.textContent).not.toContain("Enter the forest");
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).toBeNull();
+  });
+
+  it("the zone hides reactively when the plan lands in the cache (the DR-13 subscription seam)", async () => {
+    seedState(ROUTE, true, "b-dr13-live");
+    const { container } = headerHarness();
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
+
+    act(() => {
+      ingestAgentPlan({ kind: "chatBranch", chatId: "c1", branchId: "b-dr13-live" }, PLAN_WITH_EVENTS);
+    });
+
+    await waitFor(() => expect(container.querySelector('[aria-label="obj_zone_expand"]')).toBeNull());
+    expect(container.textContent).not.toContain("Enter the forest");
+    expect(container.querySelector('[class*="bg-border"]')).toBeNull();
+  });
+
+  it("an events-empty plan on the active branch keeps today's zone", () => {
+    seedState(ROUTE, true, "b-dr13-keep");
+    ingestAgentPlan({ kind: "chatBranch", chatId: "c1", branchId: "b-dr13-keep" }, EMPTY_PLAN);
+    const { container } = headerHarness();
+
+    expect(container.textContent).toContain("Enter the forest");
     expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
   });

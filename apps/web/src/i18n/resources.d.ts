@@ -2198,6 +2198,7 @@ export default interface Resources {
     "obj_model_unpin": "Unpin model",
     "obj_move_task_down": "Move task down",
     "obj_move_task_up": "Move task up",
+    "obj_plan_driven_note": "The director's story plan drives these goals",
     "obj_prompt_hint": "Leave empty to use the built-in default.",
     "obj_provider_label": "Provider",
     "obj_route_label": "Task route",

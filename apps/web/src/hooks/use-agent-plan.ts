@@ -88,6 +88,30 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
     });
 }
 
+/** DR-13 (DIRECTOR_MODE_PLAN): non-hook read of one owner's cached plan
+ *  through the SAME cache entry `useAgentPlan` serves — for visibility
+ *  predicates that run as plain functions (message-slot `visible` /
+ *  `visibility.getSnapshot`), where mounting the hook is impossible. The
+ *  read never starts a fetch: `entryFor` only reads (creating an empty
+ *  entry at most), and loading stays with the hook's consumers — in play
+ *  mode the story strip is always mounted and owns the branch GET. */
+export function readAgentPlan(owner: AgentPlanOwner): AgentPlan {
+  return entryFor(owner).plan;
+}
+
+/** DR-13: non-hook subscription to one owner's cache entry — the same
+ *  listener set the hook subscribes to; fires on every load/replace of that
+ *  entry (GET completions, ingested proposal companions, streamed tool
+ *  results), so imperative consumers re-run their predicates exactly when a
+ *  hook consumer would re-render. */
+export function subscribeAgentPlan(owner: AgentPlanOwner, listener: () => void): () => void {
+  const entry = entryFor(owner);
+  entry.listeners.add(listener);
+  return () => {
+    entry.listeners.delete(listener);
+  };
+}
+
 /** Push a plan the SERVER already persisted (an accepted story-plan
  *  proposal's refreshed `plan` companion — DIRECTOR_MODE_PLAN DR-10a) into
  *  the owner's cache entry: every mounted consumer of that owner (the mobile

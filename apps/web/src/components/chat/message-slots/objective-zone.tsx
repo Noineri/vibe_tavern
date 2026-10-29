@@ -32,12 +32,20 @@
  * (primitive) + `useMemo` reconstruction for the same reason. See the CS-6
  * note in CoauthorToolActivitySlot.tsx for why `useShallow` on freshly-rebuilt
  * objects does NOT work here.
+ *
+ * DR-13 (DIRECTOR_MODE_PLAN §8, P3): while the ACTIVE branch plan has events
+ * (the `useAgentPlan` cache seam, read imperatively — see
+ * `activePlanHasEvents`), the slot does not resolve at all: the header line
+ * would repeat the strip's on every reply, and the manual check moved to the
+ * curtain (`story_plan_check_now`, DR-11). Without plan events the zone is
+ * exactly as before this unit.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type AgentPlanOwner, type ChatId } from "@vibe-tavern/domain";
 import { registerMessageSlot, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
+import { readAgentPlan, subscribeAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useHeaderZoneOpen, useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import {
   checkObjectiveCompletionAction,
@@ -92,7 +100,35 @@ function getObjectiveVisibilitySnapshot(): string {
   const activeTaskId = enabled ? pickActiveTask(currentItems(state))?.id ?? "" : "";
   const goal = goalsModeLongTerm(state);
   const longTerm = enabled && isOpenLongTerm(goal) ? `${goal.status}:${goal.description}` : "";
-  return `${enabled ? "1" : "0"}:${mode}:${activeTaskId}:${longTerm}`;
+  // DR-13: the plan flag participates so plan-cache changes (GET landing,
+  // ingested companions) re-run resolution exactly like store changes.
+  return `${enabled ? "1" : "0"}:${mode}:${activeTaskId}:${longTerm}:${activePlanHasEvents() ? "1" : "0"}`;
+}
+
+/** The active chat + active branch plan owner, or undefined when the store
+ *  has no chat/branch — the same owner derivation the story strip and the
+ *  DR-10b proposal cards use. */
+function activePlanOwner(): AgentPlanOwner | undefined {
+  const chat = useSnapshotStore.getState().activeChat;
+  const branchId = chat?.activeBranchId ?? null;
+  if (!chat || branchId === null) return undefined;
+  return { kind: "chatBranch", chatId: chat.id, branchId };
+}
+
+/** DR-13 (§8, P3): while the ACTIVE branch plan has events the zone does
+ *  NOT resolve — the header line would repeat the strip's on every reply,
+ *  and the manual check moved to the curtain (`story_plan_check_now`,
+ *  DR-11). The plan comes through the ONE cache seam (`useAgentPlan`'s
+ *  chatBranch entry) — `readAgentPlan` is the plain-function read of that
+ *  entry and never fetches; in play mode the strip is always mounted and
+ *  owns the branch GET. `tasks.length > 0` is the same has-events predicate
+ *  DR-10b reads. Deliberately NOT held off while a load runs: this is pure
+ *  hiding, so a cached plan (even mid-refresh) stays authoritative — an
+ *  isLoading gate would flash the zone back during DR-11's post-check plan
+ *  refresh. No branch → no owner → no events → today's zone. */
+function activePlanHasEvents(): boolean {
+  const owner = activePlanOwner();
+  return owner !== undefined && readAgentPlan(owner).tasks.length > 0;
 }
 
 function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: string }) {
@@ -523,18 +559,43 @@ registerMessageSlot({
     getSnapshot: getObjectiveVisibilitySnapshot,
     subscribe: (_ctx, listener) => {
       let current = getObjectiveVisibilitySnapshot();
-      return useSnapshotStore.subscribe(() => {
+      let unsubPlan: (() => void) | null = null;
+      const check = () => {
         const next = getObjectiveVisibilitySnapshot();
         if (next === current) return;
         current = next;
         listener();
+      };
+      // DR-13: the snapshot also reads the plan cache entry, so it must be
+      // subscribed too. The subscription is REBOUND on every store change:
+      // the owner follows the active chat/branch, and a chat switch would
+      // otherwise leave this listening to the switched-away branch's entry —
+      // the new branch's cold GET landing would never be heard (the store
+      // itself notifies on the switch, but the entry's later load does not).
+      const bindPlan = () => {
+        unsubPlan?.();
+        unsubPlan = null;
+        const owner = activePlanOwner();
+        if (owner === undefined) return;
+        unsubPlan = subscribeAgentPlan(owner, check);
+      };
+      bindPlan();
+      const unsubStore = useSnapshotStore.subscribe(() => {
+        bindPlan();
+        check();
       });
+      return () => {
+        unsubStore();
+        unsubPlan?.();
+      };
     },
   },
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
     const chat = useSnapshotStore.getState().activeChat;
     if (!chat?.insightsConfig.objectiveEnabled) return false;
+    // DR-13 (§8): the strip owns the tracker line while the plan drives.
+    if (activePlanHasEvents()) return false;
     const state = chat.insightsObjectiveState;
     return pickActiveTask(currentItems(state)) !== null || isOpenLongTerm(goalsModeLongTerm(state));
   },

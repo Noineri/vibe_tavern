@@ -237,6 +237,7 @@
 	"obj_generate_goals_button": "Сгенерировать цели",
 	"obj_stop_button": "Остановить",
 	"obj_check_button": "Проверить выполнение",
+	"obj_plan_driven_note": "Цели ведёт режиссёр по плану сюжета",
 	"obj_advanced_label": "Дополнительно",
 	"obj_empty_title": "Задач пока нет",
 	"obj_empty_sub": "Напишите цель выше и нажмите «Сгенерировать задачи» — или добавьте вручную.",

@@ -5,7 +5,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 useDomEnv();
 
 const { act, renderHook, waitFor } = await import("@testing-library/react");
-const { parseAgentPlanToolArgs, parseAgentPlanToolResult, ingestAgentPlan, useAgentPlan } = await import("./use-agent-plan.js");
+const { parseAgentPlanToolArgs, parseAgentPlanToolResult, ingestAgentPlan, readAgentPlan, subscribeAgentPlan, useAgentPlan } = await import("./use-agent-plan.js");
 
 const originalFetch = globalThis.fetch;
 const calls: Array<{ url: string; method: string; body?: string }> = [];
@@ -137,5 +137,34 @@ describe("useAgentPlan", () => {
 
     expect(result.current.plan).toEqual(accepted);
     expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+  });
+});
+
+describe("readAgentPlan / subscribeAgentPlan (DR-13)", () => {
+  it("readAgentPlan returns the entry's plan and never starts a fetch (a pure visibility read)", () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr13-read-chat", branchId: "dr13-read-branch" };
+    const getsBefore = calls.filter((call) => call.method === "GET").length;
+
+    // A cold entry reads empty — and creates no GET (the strip owns loading).
+    expect(readAgentPlan(owner)).toEqual({ goal: "", constraints: [], tasks: [] });
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+
+    act(() => ingestAgentPlan(owner, PLAN));
+    expect(readAgentPlan(owner)).toEqual(PLAN);
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+  });
+
+  it("subscribeAgentPlan fires on every entry replace and stops after unsubscribe", () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr13-sub-chat", branchId: "dr13-sub-branch" };
+    let notifications = 0;
+    const unsubscribe = subscribeAgentPlan(owner, () => { notifications += 1; });
+
+    act(() => ingestAgentPlan(owner, PLAN));
+    act(() => ingestAgentPlan(owner, { ...PLAN, goal: "Second replace" }));
+    expect(notifications).toBe(2);
+
+    unsubscribe();
+    act(() => ingestAgentPlan(owner, { ...PLAN, goal: "After unsubscribe" }));
+    expect(notifications).toBe(2);
   });
 });
