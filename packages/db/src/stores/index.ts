@@ -1,4 +1,6 @@
 export { CharacterStore } from './character-store.js';
+export { AgentReviewRoundStore } from './agent-review-round-store.js';
+export type { AgentReviewRoundRecord } from './agent-review-round-store.js';
 export type { Character, CreateCharacterData, UpdateCharacterData } from './character-store.js';
 
 export { CharacterFolder } from './character-folder.js';

@@ -2072,6 +2072,15 @@ export const agentThreadContextEvents = sqliteTable('agent_thread_context_events
   threadIdx: index('idx_agent_thread_context_events_thread').on(table.threadId),
 }));
 
+// ─── agentReviewRounds (AGENT_BACKGROUND_RUNS_PLAN BR-2a) ────────────────────
+// One complete review envelope per thread, not per turn. Its owning thread's
+// deletion cascades; archiving/starting another session must retain the review.
+export const agentReviewRounds = sqliteTable('agent_review_rounds', {
+  threadId: text('thread_id').primaryKey().notNull().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  envelopeJson: text('envelope_json').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── agentPlans ──────────────────────────────────────────────────────────────
 // One persisted agent plan belongs to each saved script. script_id is a soft
 // link with NO FK: deleting a script never cascade-deletes copilot data, and
