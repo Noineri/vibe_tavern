@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { copilotTodoItemSchema, experienceCopilotTargetSchema } from "./experience-copilot-schema.js";
+import { isFinalizedReviewActivity } from "../agent-review-round.js";
 
 export const agentToolStatusSchema = z.enum(["streaming", "done", "error"]);
 export type AgentToolStatus = z.infer<typeof agentToolStatusSchema>;
@@ -56,9 +57,7 @@ export type AgentToolActivity = z.infer<typeof agentToolActivitySchema>;
  * Keep the activity's structural type so existing live-store callers do not
  * need casts or a second handwritten projection at the persistence boundary. */
 export const agentReviewActivitySchema = agentToolActivitySchema.refine(
-  (activity): boolean => activity.status === "done"
-    && (activity.target === "rules" || activity.target === "visual")
-    && typeof activity.proposed === "string" && activity.proposed.length > 0,
+  (activity): boolean => isFinalizedReviewActivity(activity),
   { message: "A review activity must be a finalized rules or visual proposal." },
 );
 

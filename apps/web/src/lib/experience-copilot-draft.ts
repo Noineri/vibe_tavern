@@ -57,6 +57,8 @@ import type { AgentReviewRound } from "../stores/agent-review-store.js";
 import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
 import { agentThreadKey } from "./agent-host-registry.js";
 import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
+import { isFinalizedReviewActivity as isFinalizedActivity, finalizeReviewActivities as finalizeForPersistence } from "@vibe-tavern/api-contracts";
+export { isFinalizedActivity, finalizeForPersistence };
 
 /** The draft envelope is experience-scoped (the `vt:experience-copilot-draft:`
  *  prefix, the store slices below) — its store-map keys go through the shared
@@ -83,19 +85,7 @@ export type ParsedCopilotDraft = Pick<AgentReviewEnvelope, "activities" | "round
  * value that fails any clause is dropped on load (corruption / version-skew
  * defense).
  */
-export function isFinalizedActivity(x: unknown): x is AgentToolActivity {
-  if (typeof x !== "object" || x === null) return false;
-  const a = x as Record<string, unknown>;
-  if (
-    a.status !== "done"
-    || typeof a.toolCallId !== "string"
-    || typeof a.toolName !== "string"
-    || (a.target !== "rules" && a.target !== "visual")
-    || typeof a.proposed !== "string"
-    || a.proposed.length === 0
-  ) return false;
-  return true;
-}
+// The shared guard above preserves the legacy reader's permissive filter.
 
 /** Type guard for the V2 review-round payload. Mirrors the round store's
  *  `AgentReviewRound` shape field by field — a value that fails any clause
@@ -130,18 +120,7 @@ export function isReviewRound(x: unknown): x is AgentReviewRound {
  * deduped by `toolCallId` (later wins) in insertion order — mirroring the
  * store's own upsert-merge semantics. Pure: no I/O.
  */
-export function finalizeForPersistence(activities: AgentToolActivity[]): AgentToolActivity[] {
-  // Map (not Set) so a later duplicate toolCallId OVERWRITES the value while
-  // preserving the first occurrence's POSITION — mirroring both the store's
-  // upsert-merge (later fields win) and `aggregateExperienceCopilotProposal`'s
-  // finalizedActivities dedup. Map iteration is insertion order.
-  const byId = new Map<string, AgentToolActivity>();
-  for (const a of activities) {
-    if (!isFinalizedActivity(a)) continue;
-    byId.set(a.toolCallId, a);
-  }
-  return [...byId.values()];
-}
+// The shared finalizer above retains first-call order with later values winning.
 
 /**
  * Serialize a thread's activities + review round to the versioned persistence

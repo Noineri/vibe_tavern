@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { ExperienceCopilotLaunchContext, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
+import { captureAgentReviewProposal } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import type { CopilotBufferReview } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
@@ -258,13 +259,8 @@ export function useExperienceCopilotReviewSession({
   proposalBaseRef.current = review.proposalBase;
   const captureDangling = useCallback(() => {
     if (!threadId) return;
-    if (!proposalRef.current.hasProposal) return;
-    useAgentReviewRoundStore.getState().captureDangling(kind, threadId, {
-      rules: proposalRef.current.proposedRules,
-      visual: proposalRef.current.proposedVisual,
-      baseRules: proposalBaseRef.current?.rules ?? rulesCode,
-      baseVisual: proposalBaseRef.current?.visual ?? visualSource,
-    });
+    const capture = captureAgentReviewProposal(proposalRef.current, proposalBaseRef.current, { rules: rulesCode, visual: visualSource });
+    if (capture) useAgentReviewRoundStore.getState().captureDangling(kind, threadId, capture);
   }, [rulesCode, visualSource, threadId]);
 
   // Effective per-buffer inputs: the LIVE proposal wins its buffers; a buffer

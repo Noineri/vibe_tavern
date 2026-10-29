@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 import type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
+import { appendAgentReviewSnapshot, ensureAgentReviewKey } from "@vibe-tavern/api-contracts";
 export type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
 
 /**
@@ -101,11 +102,7 @@ export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => (
   pushSnapshot: (kind, threadId, snapshot) => {
     const key = agentThreadKey(kind, threadId);
     set((s) =>
-      writeRound(s, key, (round) => ({
-        ...round,
-        snapshots: [...round.snapshots, { ...snapshot, id: round.nextSnapshotId }],
-        nextSnapshotId: round.nextSnapshotId + 1,
-      })),
+      writeRound(s, key, (round) => appendAgentReviewSnapshot(round, snapshot)),
     );
   },
   popSnapshot: (kind, threadId) => {
@@ -137,14 +134,9 @@ export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => (
   ensureReviewKey: (kind, threadId, buffer, key) => {
     const storeKey = agentThreadKey(kind, threadId);
     const round = roundOf(get(), storeKey);
-    const currentKey = buffer === "rules" ? round.rulesKey : round.visualKey;
-    if (currentKey === key) return;
+    if (ensureAgentReviewKey(round, buffer, key) === round) return;
     set((s) =>
-      writeRound(s, storeKey, (r) =>
-        buffer === "rules"
-          ? { ...r, rulesKey: key, acceptedRules: [], dismissedRules: [] }
-          : { ...r, visualKey: key, acceptedVisual: [], dismissedVisual: [] },
-      ),
+      writeRound(s, storeKey, (r) => ensureAgentReviewKey(r, buffer, key)),
     );
   },
   captureDangling: (kind, threadId, capture) => {
