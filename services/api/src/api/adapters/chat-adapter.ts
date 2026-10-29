@@ -23,6 +23,7 @@ import { ChatGenerationRunAdapter } from "./chat-generation-run-adapter.js";
 import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.js";
 import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js";
 import type { AgentRunOwner } from "@vibe-tavern/domain";
+import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
 
 export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntimeApi {
 	constructor(
@@ -40,6 +41,10 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
 		agentRuns?: AgentRunRegistry<AgentRunOwner>,
 	) { super(stores, agentRuns); }
+
+	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal) {
+		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal));
+	}
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 

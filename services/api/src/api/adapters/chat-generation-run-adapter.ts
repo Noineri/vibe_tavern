@@ -22,7 +22,8 @@ export class ChatGenerationRunAdapter {
     const character = await this.runStores.characters.getById(chat.characterId);
     const key = chatGenerationKey(chatId);
     this.agentRuns.start(key, { kind: "chat", chatId, mode: chat.mode },
-      (signal) => this.loggedTurn(turn, signal), { kind: chat.mode, title: character?.name ?? chat.title });
+      (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, chat.activeBranchId, turn, ownedSignal), signal),
+      { kind: chat.mode, title: character?.name ?? chat.title });
     return this.agentRuns.subscribe(key, 0, subscriberSignal)!;
   };
 
@@ -31,6 +32,11 @@ export class ChatGenerationRunAdapter {
 
   stopChatGeneration: ChatMessageRuntimeApi["stopChatGeneration"] =
     (chatId) => ({ stopped: this.agentRuns.stop(chatGenerationKey(chatId)) });
+
+  /** Runtime composition may give the turn isolated branch/trace state. */
+  protected runGenerationTurn(_chatId: string, _branchId: string, turn: ChatGenerationTurn, signal: AbortSignal) {
+    return turn(signal);
+  }
 
   private async *loggedTurn(turn: ChatGenerationTurn, signal: AbortSignal) {
     try {
