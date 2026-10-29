@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
+import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor, useEditingDraftFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -256,7 +256,10 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
   const streamingReveal = useStreamingRevealedFor(messageId);
   const chat = useChatController();
   const isEditingThisPart = useChatStore(s => s.editingMessageId === messageId);
-  const editingDraft = useChatStore(s => s.editingDraft);
+  // LAG-1: edit text reaches only the part being edited — sibling parts get
+  // the stable "" and never re-render per keystroke (shared derivation with
+  // MessageBlock in chat-selectors.ts).
+  const editingDraft = useEditingDraftFor(messageId);
   const isSending = useIsSending();
   const isMessageAction = useChatStore(s => s.messageActionId === messageId);
   const isBusy = isSending || isMessageAction;

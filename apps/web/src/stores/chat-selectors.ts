@@ -266,3 +266,21 @@ export function useStreamingRevealedFor(messageId: string): StreamingRevealInfo 
     }),
   );
 }
+
+/**
+ * Returns the in-progress edit draft, but ONLY for the message currently
+ * being edited. Non-edited blocks receive the stable "" primitive, so a
+ * keystroke in one message's edit field never re-renders the other mounted
+ * blocks (LAG-1, AGENT_SHELL_RENDER_LAG_REPORT step 2 — the edit-text twin
+ * of {@link useIsStreamingTarget}'s target gating). The edited block gets the
+ * live `editingDraft` store value itself, so its textarea stays controlled by
+ * the same store value as before the narrowing.
+ *
+ * ONE derivation rule for every feed consumer (MessageBlock and the
+ * co-author turn parts both read this hook — never a copied selector).
+ * Pinned by message-block-isolation.test.tsx and
+ * coauthor-turn-edit-isolation.test.tsx.
+ */
+export function useEditingDraftFor(messageId: string): string {
+  return useChatStore((s) => (s.editingMessageId === messageId ? s.editingDraft : ""));
+}

@@ -35,7 +35,12 @@
  *   editor pane, so the shell renders the mini-app assistant's chat pane with
  *   no restyle): session switcher, meter, profile gear, model picker,
  *   checklist, plan block, feed, input.
+ * - LAG-1: the panel is a `memo` boundary (the MessageBlock pattern — no
+ *   props, so any parent re-render stops here) and its snapshot selectors are
+ *   the primitives it reads (chat id/mode, branch id), not the whole
+ *   activeChat/activeBranch objects. Pinned by app-shell-render-isolation.test.tsx.
  */
+import { memo } from "react";
 import { AgentShell } from "../../shared/agent-shell/AgentShell.js";
 import { ResizableSidePane } from "../../shared/resizable-side-pane.js";
 import { useT } from "../../../i18n/context.js";
@@ -62,20 +67,22 @@ export const SIDECHAT_DEFAULT_WIDTH = 400;
 /** Minimum panel width (px) — plan-settled, enforced by the persisted hook. */
 export const SIDECHAT_MIN_WIDTH = 320;
 
-export function SidechatPanel() {
+export const SidechatPanel = memo(function SidechatPanel() {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const activeChat = useSnapshotStore((s) => s.activeChat);
-  const activeBranch = useSnapshotStore((s) => s.activeBranch);
+  // LAG-1: primitive selectors — the whole activeChat/activeBranch objects
+  // swapped on every snapshot ingest, re-rendering the full shell for nothing
+  // (the panel reads only the chat id/mode and the branch id below).
+  const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const chatMode = useSnapshotStore((s) => s.activeChat?.mode ?? "rp");
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   const agentKindSettings = useBootstrapStore((s) => s.data?.agentKindSettings);
-  const chatId = activeChat?.id ?? null;
-  const chatMode = activeChat?.mode ?? "rp";
   const served = selectSidechatServedChatModes(agentKindSettings).includes(chatMode);
   const [open, setOpen] = useSidechatOpen(chatId);
 
   const owner = selectSidechatOwner(
     chatId === null ? null : { id: chatId },
-    activeBranch === null ? null : { id: activeBranch.id },
+    branchId === null ? null : { id: branchId },
   );
   if (isMobile || owner === null || !served) return null;
 
@@ -105,4 +112,4 @@ export function SidechatPanel() {
       </div>
     </ResizableSidePane>
   );
-}
+});

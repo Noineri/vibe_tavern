@@ -8,7 +8,7 @@ import { copyText } from "../../lib/clipboard.js";
 
 import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
-import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
+import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor, useEditingDraftFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -79,7 +79,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const macroContext = useMacroContext();
 
   const editingMessageId = useChatStore(s => s.editingMessageId);
-  const editingDraft = useChatStore(s => s.editingDraft);
+  // LAG-1: edit text reaches only the block being edited — every other block
+  // gets the stable "" and never re-renders per keystroke (shared derivation
+  // with the co-author turn parts in chat-selectors.ts).
+  const editingDraft = useEditingDraftFor(input.messageId);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
   // LS-4a: Continue rides the SAME prefill capability the backend registry

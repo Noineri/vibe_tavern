@@ -9,7 +9,7 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
-import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -71,9 +71,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const activePersona = useSnapshotStore((s) => s.persona);
   const activeBranch = useSnapshotStore((s) => s.activeBranch);
   const messageCount = useSnapshotStore((s) => s.messageOrder.length);
-  const draft = useChatStore((s) => s.draft);
-  const isSending = useIsSending();
-  const editingDraft = useChatStore((s) => s.editingDraft);
+  // LAG-1: the root's `draft` / `editingDraft` / `isSending` subscriptions are
+  // gone (dead since a848c0582 — the play surface reads both drafts from the
+  // store itself); each per-keystroke write re-rendered the whole app tree,
+  // sidechat included. Pinned by app-shell-render-isolation.test.tsx.
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);

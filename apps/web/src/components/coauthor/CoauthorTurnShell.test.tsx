@@ -72,6 +72,9 @@ mock.module("../../stores/chat-selectors.js", () => ({
   }),
   useIsStreamingTarget: () => false,
   useStreamingRevealedFor: () => ({ revealedText: "", reasoningText: "" }),
+  // LAG-1: the real derivation narrowed per-message — the fixture store is
+  // static here (no edit flow in this suite), so the narrowed answer is "".
+  useEditingDraftFor: () => "",
 }));
 
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({
