@@ -61,13 +61,9 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
  * and the profile modal open flag — the per-kind provider/model selection
  * lives in `use-agent-model-binding.ts` (SC-0e) and is only consumed here.
  *
- * AS-6c SEAMS (remaining for later units): the turn/review stores keep their
- * `experience-copilot-*` names (AS-10 owns the call-site rename), and the
- * transport/wire types stay the experience client's (server keys stay bare
- * threadId — only the in-client store maps re-key through `agentThreadKey`).
- * AS-6c-ii landed here: the controller takes the host `kind` (required) and
- * every store read/write keys through the helper; the send path itself is
- * fully behind the descriptor's `transport` (AS-6c-i).
+ * Thread ids stay bare on the server; client stores use agentThreadKey.
+ * An owner change remounts the session view so late reads/settles from the
+ * previous owner cannot enter the new owner's local session or host bridge.
  */
 
 export interface AgentShellProps {
@@ -104,7 +100,11 @@ type MobileTab = "chat" | "edit";
  *  CoauthorMode. */
 const EDIT_TAB_PULSE_MS = 2200;
 
-export function AgentShell({
+export function AgentShell(props: AgentShellProps) {
+  return <AgentShellSession key={`${props.kind}:${agentOwnerKey(props.owner)}`} {...props} />;
+}
+
+function AgentShellSession({
   kind,
   owner,
   isMobile,

@@ -45,6 +45,7 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 
 useDomEnv();
+const { EditorView } = await import("@codemirror/view");
 
 // ── Mutable viewport override (mock `use-mobile` reads this) ────────────────
 let mobileOverride = false;
@@ -65,6 +66,21 @@ interface RouterState {
 }
 let router: RouterState;
 let serverReviews: Map<string, AgentReviewEnvelope>;
+let runningThread: string | null;
+let runFrames: string[];
+let runReader: ReadableStreamDefaultController<Uint8Array> | null;
+let detachedReaders: number;
+let onActiveRead: ((scriptId: string) => Promise<ExperienceCopilotThreadWire | null>) | undefined;
+function emitRun(event: string, data: unknown) {
+  const frame = `id: ${runFrames.length + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  runFrames.push(frame);
+  runReader?.enqueue(new TextEncoder().encode(frame));
+  if (["finish", "abort", "error"].includes(event)) {
+    runningThread = null;
+    runReader?.close();
+    runReader = null;
+  }
+}
 
 const jsonResponse = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -86,7 +102,17 @@ const sseResponse = (events: readonly string[]) =>
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
-  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse(runningThread ? [{ threadId: runningThread }] : []);
+  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/run$/.test(path)) {
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of runFrames) controller.enqueue(new TextEncoder().encode(frame));
+        if (runningThread) runReader = controller;
+        else controller.close();
+      },
+      cancel() { runReader = null; detachedReaders++; },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }
   const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
   if (reviewId) {
     if (method === "PUT") serverReviews.set(reviewId, agentReviewEnvelopeSchema.parse(JSON.parse(String(init?.body))));
@@ -94,6 +120,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse(serverReviews.get(reviewId) ?? null);
   }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
+    if (onActiveRead) return jsonResponse(await onActiveRead(path.split("/").at(-2)!));
     return jsonResponse(router.activeThread);
   }
   if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
@@ -301,6 +328,7 @@ beforeEach(() => {
   globalThis.fetch = realFetch;
   globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
   serverReviews = new Map();
+  runningThread = null; runReader = null; runFrames = []; detachedReaders = 0; onActiveRead = undefined;
   mobileOverride = false;
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
@@ -403,6 +431,78 @@ describe("script-agent-host — registration (AP-2)", () => {
 });
 
 describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
+  it("owner switch detaches before the replacement session loads; equal owner objects keep the reader", async () => {
+    const script = makeScript({ id: "running-owner-old", code: "Old draft" });
+    const other = makeScript({ id: "running-owner-new", code: "New draft" });
+    const oldId = "running-owner-old-thread";
+    const newId = "running-owner-new-thread";
+    router.activeThread = thread(oldId, script.id);
+    runningThread = oldId;
+    emitRun("text-delta", { delta: "Old run caption" });
+    let release!: (value: ExperienceCopilotThreadWire) => void;
+    const nextSession = new Promise<ExperienceCopilotThreadWire>((resolve) => { release = resolve; });
+    const first = renderScriptShell(script);
+    try {
+      await waitFor(() => expect(first.getByText("Old run caption")).toBeDefined());
+      first.rerender(withIsolatedI18n(
+        <AgentShell kind="script" owner={{ kind: "script", scriptId: script.id }} isMobile={false} hostProps={first.hostProps} />,
+      ));
+      await flushSessionLoad();
+      expect(apiCalls("GET", /\/run$/)).toHaveLength(1);
+      expect(detachedReaders).toBe(0);
+
+      onActiveRead = () => nextSession;
+      const beforeSwitch = apiCalls("GET", /\/messages$/).length;
+      first.rerender(withIsolatedI18n(
+        <AgentShell kind="script" owner={{ kind: "script", scriptId: other.id }} isMobile={false}
+          hostProps={{ ...first.hostProps, activeScript: other }} />,
+      ));
+      await waitFor(() => expect(detachedReaders).toBe(1));
+      expect(runningThread).toBe(oldId);
+      expect(first.queryByText("Old run caption")).toBeNull();
+      await act(async () => { emitRun("finish", { finishReason: "stop" }); });
+      expect(apiCalls("GET", /\/messages$/)).toHaveLength(beforeSwitch);
+      expect(apiCalls("POST", /\/stop$/)).toHaveLength(0);
+      await act(async () => { release(thread(newId, other.id)); });
+      await flushSessionLoad();
+      expect(apiCalls("GET", /\/messages$/).slice(beforeSwitch).map(({ path }) => path.split("/").at(-2))).toEqual([newId]);
+      const editor = first.container.querySelector<HTMLElement>(".cm-editor")!;
+      expect(EditorView.findFromDOM(editor)?.state.doc.toString()).toBe("New draft");
+    } finally {
+      release(thread(newId, other.id));
+      first.unmount();
+      if (runningThread) emitRun("finish", { finishReason: "stop" });
+      await flushSessionLoad();
+    }
+  });
+
+  it("reattached code proposals settle from the producer anchor with no replay PUT or duplicate snapshot", async () => {
+    const script = makeScript({ id: "running-review-script", code: BASE_CODE });
+    const id = "running-review-thread";
+    router.activeThread = thread(id, script.id);
+    runningThread = id;
+    emitRun("text-delta", { delta: "Working in background" });
+    const saved = buildScriptAgentReviewEnvelope(null, [{ toolCallId: "background-code", toolName: "write_buffer", status: "done", target: "code", proposed: PROPOSED_CODE }], "Producer base")!;
+    const utils = renderScriptShell(script);
+    try {
+      await waitFor(() => expect(utils.getByText("Working in background")).toBeDefined());
+      await act(async () => {
+        emitRun("tool-result", { toolCallId: "background-code", toolName: "write_buffer", output: { target: "code", proposed: PROPOSED_CODE, summary: "Updated" }, isError: false });
+        serverReviews.set(id, saved);
+        emitRun("finish", { finishReason: "stop" });
+      });
+      await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+      expect(useAgentReviewRoundStore.getState().roundsByThread[`script:${id}`]!.snapshots).toEqual(saved.round!.snapshots);
+      expect(serverReviews.get(id)).toEqual(saved);
+      expect(apiCalls("PUT", /\/review$/)).toHaveLength(0);
+      expect(streamCalls()).toHaveLength(0);
+    } finally {
+      utils.unmount();
+      if (runningThread) emitRun("finish", { finishReason: "stop" });
+      await flushSessionLoad();
+    }
+  });
+
   it("a write_buffer proposal for `code` shows hunk review and Apply writes the draft", async () => {
     const onUpdateDraft = mock();
     const script = makeScript({ id: "script-review", code: BASE_CODE });

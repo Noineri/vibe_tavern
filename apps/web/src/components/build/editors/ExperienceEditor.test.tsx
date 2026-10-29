@@ -1835,7 +1835,10 @@ describe("ExperienceEditor", () => {
     expect(container.textContent).not.toContain("experience_editor_back");
 
     // The chevron navigates back to the picker without the Правка detour.
-    fireEvent.click(chevron);
+    // Duplicate selected a different owner and remounted its session view;
+    // click the current control, not the old owner's detached DOM node.
+    fireEvent.click(getByRole("button", { name: "cancel" }));
+    fireEvent.click(await findByRole("button", { name: "experience_editor_back" }));
     expect(await findByText("experience_editor_create_new")).toBeTruthy();
   });
 
