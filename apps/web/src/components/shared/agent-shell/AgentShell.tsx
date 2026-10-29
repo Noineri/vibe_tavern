@@ -15,6 +15,7 @@ import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentThreadRefresh } from "./use-agent-thread-refresh.js";
+import { useVisibleAgentThread } from "../../../lib/agent-run-visibility.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
 import { useAgentPresetCatalog } from "./use-agent-preset-catalog.js";
@@ -69,6 +70,8 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
 export interface AgentShellProps {
   /** The registered host kind driving this shell (`getAgentHost(kind)`). */
   kind: AgentKind;
+  /** False for a mounted but hidden host (closed pane/nonselected mobile tab). */
+  visible?: boolean;
   /** The typed thread owner — both script hosts pass
    *  `{ kind: "script", scriptId }` (the unsaved mini-app draft passes its
    *  local draft id here, exactly as it passed it as `ownerId` before). */
@@ -106,6 +109,7 @@ export function AgentShell(props: AgentShellProps) {
 
 function AgentShellSession({
   kind,
+  visible = true,
   owner,
   isMobile,
   onBack,
@@ -122,6 +126,7 @@ function AgentShellSession({
 
   // ── Session lifecycle state ──────────────────────────────────────────────
   const [threadId, setThreadId] = useState<string | null>(null);
+  useVisibleAgentThread(kind, threadId, visible);
   const [messages, setMessages] = useState<ExperienceCopilotMessageWire[]>([]);
   // SC-19b: the thread's frozen context events (merged-timeline order) —
   // fetched whenever messages refetch, rendered as separators by the list.

@@ -108,7 +108,7 @@ export const SidechatPanel = memo(function SidechatPanel() {
           above the drag line, so a press on the handle toggles instead. */}
       <SidechatHandle variant="panel-close" label={label} onToggle={() => setOpen(false)} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />
+        <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} visible={open} />
       </div>
     </ResizableSidePane>
   );

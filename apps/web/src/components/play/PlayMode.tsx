@@ -130,7 +130,7 @@ function PlayModeMobileSidechat({
             data-testid="sidechat-mobile-pane-sidechat"
             className={cn("flex min-w-0 flex-1 flex-col", tab !== "sidechat" && "hidden")}
           >
-            <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile />
+            <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile visible={tab === "sidechat"} />
           </div>
         )}
       </div>

@@ -31,6 +31,7 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { agentReviewEnvelopeSchema, buildScriptAgentReviewEnvelope, type AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { syncPersistedScriptAgentRound } from "../../../lib/script-agent-draft.js";
+import { isAgentThreadVisible } from "../../../lib/agent-run-visibility.js";
 import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -431,6 +432,24 @@ describe("script-agent-host — registration (AP-2)", () => {
 });
 
 describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
+  it("the real shell publishes only a visible thread and releases it on hide/unmount", async () => {
+    const script = makeScript({ id: "visible-script" });
+    const id = "visible-script-thread";
+    router.activeThread = thread(id, script.id);
+    const ui = renderScriptShell(script);
+    try {
+      await waitFor(() => expect(isAgentThreadVisible("script", id)).toBe(true));
+      ui.rerender(withIsolatedI18n(
+        <AgentShell kind="script" owner={{ kind: "script", scriptId: script.id }} isMobile={false} visible={false} hostProps={ui.hostProps} />,
+      ));
+      expect(isAgentThreadVisible("script", id)).toBe(false);
+      ui.rerender(withIsolatedI18n(
+        <AgentShell kind="script" owner={{ kind: "script", scriptId: script.id }} isMobile={false} hostProps={ui.hostProps} />,
+      ));
+      expect(isAgentThreadVisible("script", id)).toBe(true);
+    } finally { ui.unmount(); }
+    expect(isAgentThreadVisible("script", id)).toBe(false);
+  });
   it("owner switch detaches before the replacement session loads; equal owner objects keep the reader", async () => {
     const script = makeScript({ id: "running-owner-old", code: "Old draft" });
     const other = makeScript({ id: "running-owner-new", code: "New draft" });
