@@ -5,7 +5,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 useDomEnv();
 
 const { act, renderHook, waitFor } = await import("@testing-library/react");
-const { parseAgentPlanToolArgs, parseAgentPlanToolResult, useAgentPlan } = await import("./use-agent-plan.js");
+const { parseAgentPlanToolArgs, parseAgentPlanToolResult, ingestAgentPlan, useAgentPlan } = await import("./use-agent-plan.js");
 
 const originalFetch = globalThis.fetch;
 const calls: Array<{ url: string; method: string; body?: string }> = [];
@@ -120,5 +120,22 @@ describe("useAgentPlan", () => {
 
     act(() => result.current.applyToolResult({ args: { plan: PLAN }, output: { ok: false, error: "not saved" } }));
     expect(result.current.plan).toEqual(replacement);
+  });
+
+  it("ingestAgentPlan pushes an already-saved server plan into the cache with no fetch (DR-10a)", async () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr10-chat", branchId: "dr10-branch" };
+    const { result } = renderHook(() => useAgentPlan(owner));
+    await waitFor(() => expect(result.current.plan.goal).toBe("Branch plan"));
+    const getsBefore = calls.filter((call) => call.method === "GET").length;
+
+    const accepted: AgentPlan = {
+      goal: "Accepted proposal",
+      constraints: [],
+      tasks: [{ id: "ev1", title: "First event", body: "", status: "active" }],
+    };
+    act(() => ingestAgentPlan(owner, accepted));
+
+    expect(result.current.plan).toEqual(accepted);
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
   });
 });

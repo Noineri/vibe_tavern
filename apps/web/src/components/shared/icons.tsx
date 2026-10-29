@@ -117,6 +117,10 @@ export const Ic = {
   clipboard:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1.5" width="6" height="2.5" rx="0.5"/><path d="M10.5 2.5h2v12h-9v-12h2"/><path d="M5.5 8h5M5.5 11h3"/></svg>,
   // Checkmark in a circle — the Objective Tracker section icon (INS-2).
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
+  // Checklist — a check beside a three-line list (the mockup's ti-list-check).
+  // The story-plan proposal card's header glyph (DIRECTOR_MODE_DR-10a, mock
+  // §1/§6) — a plan under review, distinct from the objective card's target.
+  listCheck:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,4 3,6 6.2,2"/><line x1="8.5" y1="4" x2="15" y2="4"/><line x1="8.5" y1="8.5" x2="15" y2="8.5"/><line x1="8.5" y1="13" x2="15" y2="13"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
   // Progress ring — a faint full track with a partial arc drawn over it. The

@@ -5,7 +5,9 @@
  *   POST /api/agent/threads/:threadId/proposals/:toolCallId/apply
  *   POST /api/agent/threads/:threadId/proposals/:toolCallId/reject
  *
- * Body-less (the proposal payload lives in the addressed tool row); the
+ * Body-less by default (the proposal payload lives in the addressed tool
+ * row); the story-plan arm's apply is the one body-carrying caller
+ * (`enableAutoCheck`, A6 — DR-10a). The
  * resolved proposal (with its final `applied` / `rejected` status) comes back
  * as the `{ proposal }` envelope. Typed 409s surface through
  * {@link ObjectiveProposalApiError} — the shared `unwrapRpc` collapses the
@@ -14,7 +16,7 @@
  * precedent in `dice-api.ts`), preserving the status, the code, and — for an
  * already-resolved proposal — the server's final `status`.
  */
-import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type { AgentThreadProposalApplyRequest, RecordProposal } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import type { RpcBody, RpcData, RpcResponse } from "./unwrap.js";
 
@@ -84,6 +86,40 @@ export async function applyObjectiveProposal(
 
 /** Reject one pending objective proposal: nothing lands in the tracker. */
 export async function rejectObjectiveProposal(
+  threadId: string,
+  toolCallId: string,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].reject.$post({
+    param: { threadId, toolCallId },
+  });
+  return unwrapProposal(response);
+}
+
+// ─── The story-plan arm (DIRECTOR_MODE_PLAN DR-10a) ─────────────────────────
+// Same routes, same envelope/typed-409 handling as the objective pair above
+// (the backend dispatches by the row's recordType — DR-5). The apply carries
+// the body: `enableAutoCheck: true` turns the goal tracker's auto-check on
+// with the apply (A6); an empty body changes nothing. The reject stays
+// body-less (nothing is written on reject). The response's `plan` companion
+// is the target branch's refreshed plan — the card ingests it into the plan
+// cache so mounted plan consumers re-render without a second fetch.
+
+/** Apply one pending story-plan proposal: the branch plan is replaced and,
+ *  when the body asks for it, the tracker's auto-check turns on. */
+export async function applyStoryPlanProposal(
+  threadId: string,
+  toolCallId: string,
+  body: AgentThreadProposalApplyRequest,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].apply.$post({
+    param: { threadId, toolCallId },
+    json: body,
+  });
+  return unwrapProposal(response);
+}
+
+/** Reject one pending story-plan proposal: the plan does not change. */
+export async function rejectStoryPlanProposal(
   threadId: string,
   toolCallId: string,
 ): Promise<ObjectiveProposalResolveResponse> {

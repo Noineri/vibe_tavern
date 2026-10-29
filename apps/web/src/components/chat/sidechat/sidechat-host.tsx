@@ -53,6 +53,7 @@ import {
 } from "../../../stores/sidechat-variant-attachments-store.js";
 import { Icons } from "../../shared/icons.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { SidechatVariantChips } from "./SidechatVariantChips.js";
 
 /**
@@ -269,8 +270,11 @@ registerAgentHost({
     discussion: "sidechat_meter_discussion",
   },
   // SC-13c: the objective proposal card renders `recordType: "objective"`
-  // in place; every other recordType still falls back to the AS-5 card.
-  recordProposalRenderers: { objective: ObjectiveProposalCard },
+  // in place; DR-10a adds the story-plan card for the `propose_plan` tool's
+  // record type (the record-type string's home is the proposal domain —
+  // the card module pins the web-side spelling). Every other recordType
+  // still falls back to the AS-5 card.
+  recordProposalRenderers: { objective: ObjectiveProposalCard, [STORY_PLAN_RECORD_TYPE]: StoryPlanProposalCard },
   // AP-2: RP colors without RP sizes for the sidechat's bubbles.
   messageMarkup: "rp-colors",
   // SC-16: «В поле ввода РП» under each assistant reply — the RP row's copy

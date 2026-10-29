@@ -3,6 +3,9 @@
  * sidechat `propose_objective` record proposal (`recordType: "objective"`),
  * registered as `recordProposalRenderers.objective` in the sidechat host.
  *
+ * forks: 1 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
+ * skeleton; its header carries the correspondence map).
+ *
  * fork #1 of RecordProposalFallbackCard
  * (`apps/web/src/components/shared/agent-shell/RecordProposalFallbackCard.tsx`).
  * Correspondence map (frame cloned, content specialized):

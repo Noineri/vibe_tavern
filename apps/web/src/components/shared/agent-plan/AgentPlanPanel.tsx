@@ -30,7 +30,12 @@ export interface AgentPlanPanelProps {
 
 type TaskStatus = AgentPlanTask["status"];
 
-function pickCurrent(tasks: AgentPlanTask[]): AgentPlanTask | null {
+/** The plan's CURRENT task (first `active`, else first `pending`) — the web
+ *  twin of the server's `pickCurrentStoryEvent` (story-plan-sync.ts names
+ *  this rule G2; later per-event features read ONE derivation). Exported
+ *  since DR-10a: the story-plan proposal card picks the event whose body it
+ *  shows through the same rule. */
+export function pickCurrent(tasks: AgentPlanTask[]): AgentPlanTask | null {
   return tasks.find((task) => task.status === "active") ?? tasks.find((task) => task.status === "pending") ?? null;
 }
 
@@ -46,7 +51,10 @@ function statusClass(status: TaskStatus): string {
   }
 }
 
-function NodeGlyph({ status }: { status: TaskStatus }) {
+/** The task-status node glyph (pending/active/completed/abandoned circle).
+ *  Exported since DR-10a: the story-plan proposal card's event rows render
+ *  the same glyph as the plan panel — one derivation. */
+export function NodeGlyph({ status }: { status: TaskStatus }) {
   return (
     <span
       data-testid={`agent-plan-glyph-${status}`}

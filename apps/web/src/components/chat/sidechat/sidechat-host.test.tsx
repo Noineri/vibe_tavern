@@ -56,6 +56,7 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 
 useDomEnv();
 
@@ -332,9 +333,13 @@ describe("sidechat-host — registration (SC-13b)", () => {
     expect(host.profileAssignment).toEqual({ target: "chat" });
     // AP-2: the sidechat renders RP colors without RP sizes.
     expect(host.messageMarkup).toBe("rp-colors");
-    // SC-13c: the objective card renders `recordType: "objective"` in place.
-    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective"]);
+    // SC-13c + DR-10a: the objective card renders `recordType: "objective"`
+    // in place; the story-plan card renders the `propose_plan` tool's record
+    // type (the web-side pin of the proposal domain's constant).
+    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan"]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
+    expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
+    expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
   });
 
   it("carries the branch plan owner and the six meter labels", () => {

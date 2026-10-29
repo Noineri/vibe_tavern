@@ -88,6 +88,17 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
     });
 }
 
+/** Push a plan the SERVER already persisted (an accepted story-plan
+ *  proposal's refreshed `plan` companion — DIRECTOR_MODE_PLAN DR-10a) into
+ *  the owner's cache entry: every mounted consumer of that owner (the mobile
+ *  sidechat plan section, the story strip) re-renders with the new plan
+ *  without a second fetch. The response is authoritative — the same trust as
+ *  `applyToolResult`'s streamed replace; an entry that has not loaded yet
+ *  simply starts from this value (its lazy GET re-reads the same row). */
+export function ingestAgentPlan(owner: AgentPlanOwner, plan: AgentPlan): void {
+  replacePlan(entryFor(owner), plan);
+}
+
 /** Parse the complete plan sent as a streamed `plan` tool-call argument. */
 export function parseAgentPlanToolArgs(args: unknown): AgentPlan | null {
   if (typeof args !== "object" || args === null) return null;

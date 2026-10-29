@@ -62,8 +62,11 @@ function pickActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
   return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "pending") ?? null;
 }
 
-/** The current mode's items: short-term goals in goals mode, else the route tasks. */
-function currentItems(state: ObjectiveState | undefined): ObjectiveTask[] {
+/** The current mode's items: short-term goals in goals mode, else the route
+ *  tasks. Exported since DR-10a: the story-plan proposal card compares these
+ *  (the tracker's current goals) against a proposed plan's event ids — the
+ *  ONE derivation of "what the tracker shows now". */
+export function currentItems(state: ObjectiveState | undefined): ObjectiveTask[] {
   if (!state) return EMPTY;
   return state.mode === "goals" ? state.shortTermGoals : state.tasks;
 }
@@ -74,7 +77,10 @@ function goalsModeLongTerm(state: ObjectiveState | undefined): ObjectiveLongTerm
   return state?.mode === "goals" ? state.longTermGoal : null;
 }
 
-function isOpenLongTerm(goal: ObjectiveLongTermGoal | null): goal is ObjectiveLongTermGoal {
+/** An OPEN (not completed/abandoned) long-term goal. Exported since DR-10a:
+ *  the story-plan card's replace warning counts an open long-term goal as a
+ *  foreign goal (the plan projection nulls the slot — A2/A5). */
+export function isOpenLongTerm(goal: ObjectiveLongTermGoal | null): goal is ObjectiveLongTermGoal {
   return goal !== null && goal.status !== "completed" && goal.status !== "abandoned";
 }
 
