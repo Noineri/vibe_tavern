@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { Extension } from "@codemirror/state";
 import { SCRIPT_AGENT_TOOL_KEYS, aggregateScriptAgentCodeProposal } from "@vibe-tavern/api-contracts";
+import { openBuildAgent } from "../../../lib/agent-host-navigation.js";
 import { agentThreadKey, registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
@@ -617,6 +618,7 @@ function ScriptAgentEditorPane({
  * instead of branching on the kind.
  */
 registerAgentHost({
+  open: (owner) => openBuildAgent("script", owner),
   kind: SCRIPT_KIND,
   i18n: {
     title: "agent_title",

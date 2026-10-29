@@ -12,6 +12,7 @@ import type { ScriptRecord } from "../../../../api/types.js";
 import { streamPersistedExperienceCopilot, answerPersistedCopilotAsk, experienceCopilotRuns } from "../../../../lib/experience-copilot-draft.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
+import { openBuildAgent } from "../../../../lib/agent-host-navigation.js";
 import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
 import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import {
@@ -427,6 +428,7 @@ function experienceTestCaption(activity: AgentToolActivity): { titleKey: "agent_
  */
 registerAgentHost({
   kind: EXPERIENCE_KIND,
+  open: (owner) => openBuildAgent("experience", owner),
   i18n: {
     // AS-6b2a renamed the copilot_* keys to agent_*; `experience_editor_back`
     // stays host-flavored — it is the EDITOR's shared back label, and the

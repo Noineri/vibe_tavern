@@ -390,6 +390,9 @@ export type AgentProfileAssignment = { target: "script" } | { target: "chat" };
 /** Everything the generic shell needs to host one agent kind. */
 export interface AgentHostDescriptor {
   kind: AgentKind;
+  /** Optional for embedded hosts without app navigation; every built-in host
+   * supplies this destination for background-run notification actions. */
+  open?: (owner: AgentThreadOwner) => void | Promise<void>;
   /** i18n KEYS (not strings) — the shell resolves them through `useT`. */
   i18n: {
     title: AgentI18nKey;

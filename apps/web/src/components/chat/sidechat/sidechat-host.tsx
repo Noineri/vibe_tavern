@@ -21,6 +21,7 @@
 import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import { agentThreadRuns } from "../../../api/agent-run-api.js";
+import { openSidechatAgent } from "../../../lib/agent-host-navigation.js";
 import {
   chatOwnerTriple,
   registerAgentHost,
@@ -160,6 +161,7 @@ function copySidechatReplyToComposer(text: string): void {
 export { SIDECHAT_OPEN_KEY_PREFIX } from "../../../stores/sidechat-open-store.js";
 
 registerAgentHost({
+  open: openSidechatAgent,
   kind: SIDECHAT_AGENT_KIND,
   i18n: {
     title: "agent_title",
