@@ -3,3 +3,4 @@ export * from "./wire-types.js";
 export * from "./agent-proposal.js";
 export * from "./agent-review-round.js";
 export * from "./script-agent-review-round.js";
+export * from "./coauthor-review.js";
