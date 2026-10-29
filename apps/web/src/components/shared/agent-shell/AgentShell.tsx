@@ -14,6 +14,7 @@ import { Icons } from "../icons.js";
 import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
+import { useAgentThreadRefresh } from "./use-agent-thread-refresh.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
 import { useAgentPresetCatalog } from "./use-agent-preset-catalog.js";
@@ -427,40 +428,22 @@ export function AgentShell({
   }, [loadSession, fetchSessions]);
 
   // ── Stream controller ────────────────────────────────────────────────────
-  // Refetch persisted messages after each turn settles: the live `pendingText`
-  // is cleared and the persisted assistant message takes over. SC-18: the
-  // host learns the outcome first (its per-turn attachments clear on success
-  // and stay for a retry on failure) — built fresh at call time from the
-  // ref-carried owner (the outcome lands after awaits, never the render
-  // closure); the only caller is the controller's settle path below.
-  // CA-4f: the message/events reload half is ONE callback (`refreshThread`) —
-  // `handleTurnSettled` calls it after a turn, and the pane exposes it to
-  // sent-attachment actions through the CA-4f context: the same refetch path,
-  // never a second one.
-  const refreshThread = useCallback((id: string) => {
-    transport.listMessages(id)
-      .then(setMessages)
-      .catch(() => {
-        // Best-effort refetch — swallow so a transient list failure leaves the
-        // last-known messages on screen rather than surfacing a spurious error.
-      });
-    // SC-19b: the separators refetch alongside the messages (a host without
-    // the member keeps its empty list — no separators, exactly as today).
-    void fetchEvents(id).then(setEvents);
-  }, [transport, fetchEvents]);
-  const handleTurnSettled = useCallback((ok: boolean) => {
-    host.onSendSettled?.(
-      { owner: ownerRef.current, scriptId, threadId, isSending: false, hostProps, bridge },
-      ok,
-    );
-    if (!threadId) return;
-    refreshThread(threadId);
-  }, [threadId, host, scriptId, hostProps, bridge, fetchEvents, refreshThread]);
-  // The pane-side refresh (CA-4f context): the CURRENT thread through the
-  // same `refreshThread` the settle path uses.
-  const refreshMessages = useCallback(() => {
-    if (threadId !== null) refreshThread(threadId);
-  }, [threadId, refreshThread]);
+  // The refresh/settle trio lives in `use-agent-thread-refresh.ts` (file-size
+  // ratchet, DR-11): refetch persisted messages after each turn settles —
+  // the live `pendingText` is cleared and the persisted assistant message
+  // takes over.
+  const { refreshThread, handleTurnSettled, refreshMessages } = useAgentThreadRefresh({
+    transport,
+    fetchEvents,
+    setMessages,
+    setEvents,
+    host,
+    ownerRef,
+    scriptId,
+    threadId,
+    hostProps,
+    bridge,
+  });
 
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
@@ -487,6 +470,7 @@ export function AgentShell({
     applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
     threadTodo, // TAG-7 (restored PM-7): seeds the session-scoped todo panel state (mount/switch)
     threadMessages: messages, // AP-10: the edit-last delete target resolves from the live list
+    streamingMirrorKey: ownerKey, // DR-11: publish isSending for outside readers (the story strip)
   });
 
   // ── AS-6b2: the dispatch seam (host's dangling-review capture + options) ─

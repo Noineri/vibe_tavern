@@ -99,6 +99,21 @@ export function ingestAgentPlan(owner: AgentPlanOwner, plan: AgentPlan): void {
   replacePlan(entryFor(owner), plan);
 }
 
+/** DR-11 (DIRECTOR_MODE_PLAN): re-run the owner's GET through the SAME
+ *  cache entry (`loadPlan`) — never a second fetch path, the one path
+ *  re-run. The story strip calls this whenever the chat's objective state
+ *  changes in the snapshot: the goal tracker executes the current event and
+ *  the server's follow-back writes completed statuses into the plan row, so
+ *  the re-GET is how mounted consumers learn the next current event. A GET
+ *  already in flight wins (its result is at least as fresh as now); the next
+ *  objective change re-runs this, so nothing is lost. */
+export function refreshAgentPlan(owner: AgentPlanOwner): void {
+  const entry = entryFor(owner);
+  if (entry.loadPromise) return;
+  entry.loaded = false;
+  loadPlan(owner, entry);
+}
+
 /** Parse the complete plan sent as a streamed `plan` tool-call argument. */
 export function parseAgentPlanToolArgs(args: unknown): AgentPlan | null {
   if (typeof args !== "object" || args === null) return null;

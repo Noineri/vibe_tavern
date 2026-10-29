@@ -157,6 +157,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 
 const { useAgentController } = await import("./use-agent-controller.js");
 const { useAgentTurnStore } = await import("../../../stores/agent-turn-store.js");
+const { useAgentStreamingStore } = await import("../../../stores/agent-streaming-store.js");
 const { ProviderStreamError } = await import("../../../api/provider-stream-error.js");
 // AS-6c-i: the controller receives its transport through args — this wires
 // the REAL experience client fns exactly as the experience host's descriptor
@@ -2027,6 +2028,81 @@ describe("useExperienceCopilotController — regenerate hide set (AP-29 follow-u
       await result.current.handleAnswer("tc-1", { text: "yes" });
     });
     expect(result.current.hiddenRegeneratedIds).toBeNull();
+  });
+});
+
+describe("useExperienceCopilotController — streaming mirror (DR-11)", () => {
+  test("isSending is published under the mirror key while a turn runs, dropped on settle; no key = no publish", async () => {
+    const key = "chat:c1:b1:sidechat-ooc";
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    useAgentStreamingStore.setState({ streaming: {} });
+
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, streamingMirrorKey: key }),
+    );
+    expect(useAgentStreamingStore.getState().streaming).toEqual({});
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hello director");
+      await Promise.resolve();
+    });
+    // The turn is mid-stream: the local flag AND its mirror are live.
+    expect(result.current.isSending).toBe(true);
+    expect(useAgentStreamingStore.getState().streaming).toEqual({ [key]: true });
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.isSending).toBe(false);
+    expect(useAgentStreamingStore.getState().streaming).toEqual({});
+
+    // Without the key the controller never touches the mirror.
+    const d2 = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d2.promise);
+    const bare = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+    let barePending!: Promise<void>;
+    await act(async () => {
+      barePending = bare.result.current.handleSend("no mirror");
+      await Promise.resolve();
+    });
+    expect(bare.result.current.isSending).toBe(true);
+    expect(useAgentStreamingStore.getState().streaming).toEqual({});
+    await act(async () => {
+      d2.resolve({ finishReason: "stop" });
+      await barePending;
+    });
+  });
+
+  test("an unmount mid-turn drops the mirrored flag (no stuck streaming key)", async () => {
+    const key = "chat:c2:b2:sidechat-ooc";
+    const d = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => d.promise);
+    useAgentStreamingStore.setState({ streaming: {} });
+
+    const { result, unmount } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, streamingMirrorKey: key }),
+    );
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("unmount me mid-turn");
+      await Promise.resolve();
+    });
+    expect(useAgentStreamingStore.getState().streaming).toEqual({ [key]: true });
+
+    unmount();
+    expect(useAgentStreamingStore.getState().streaming).toEqual({});
+
+    // Settle the parked turn so nothing dangles past the file.
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending.catch(() => undefined);
+    });
+    expect(useAgentStreamingStore.getState().streaming).toEqual({});
   });
 });
 });

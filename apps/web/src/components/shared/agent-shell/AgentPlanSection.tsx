@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import { useT } from "../../../i18n/context.js";
@@ -29,7 +29,32 @@ import { AgentPlanEditorModal } from "../agent-plan/AgentPlanEditorModal.js";
  * strip becomes the story plan's desktop home, DR-11). Script/mini-app
  * owners pass no presentation props: today's inline panel, byte-identical.
  */
-export function AgentPlanSection({ owner, locked }: { owner: AgentPlanOwner; locked: boolean }) {
+export function AgentPlanSection({
+  owner,
+  locked,
+  actions,
+  headerActionsBefore,
+  showEditorInCollapsedRow,
+  flashTitle,
+}: {
+  owner: AgentPlanOwner;
+  locked: boolean;
+  /** DR-11: forwarded to the panel — the story strip's «Позвать режиссёра»
+   *  (the `actions` slot: end of the collapsed row, after the editor button
+   *  in the curtain header). */
+  actions?: ReactNode;
+  /** DR-11: forwarded — rendered in the curtain header BEFORE the editor
+   *  button (§5's interleaved order); on the phone the curtain header's
+   *  actions take their own row (§9). */
+  headerActionsBefore?: ReactNode;
+  /** DR-11: forwarded — the strip hides the editor button in its collapsed
+   *  row (§1: the row carries only «Позвать режиссёра»; the curtain header
+   *  keeps the editor button whatever this says). */
+  showEditorInCollapsedRow?: boolean;
+  /** DR-11: forwarded — the passed-check flash (§4): «Выполнено: {title}»
+   *  on the success tint while set (curtain presentation only). */
+  flashTitle?: string | null;
+}) {
   const { t } = useT();
   const { plan, save } = useAgentPlan(owner);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -65,6 +90,10 @@ export function AgentPlanSection({ owner, locked }: { owner: AgentPlanOwner; loc
         locked={locked}
         presentation={story ? "curtain" : undefined}
         onRevertTask={revertTask}
+        actions={actions}
+        headerActionsBefore={headerActionsBefore}
+        showEditorInCollapsedRow={showEditorInCollapsedRow}
+        flashTitle={flashTitle}
       />
       {/* The editor locks (fields + save) while a turn streams so the model's
           rewrite and the user's edit can never race. */}

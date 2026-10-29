@@ -17,6 +17,7 @@ import {
   parseAgentAskState,
   parseAgentPermissionState,
 } from "../../../stores/agent-turn-store.js";
+import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import { toSendAttachment } from "../../../lib/send-attachments.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -90,6 +91,13 @@ export interface UseAgentControllerArgs {
    *  pattern above), never a fetch. Omitted (undefined) leaves edit-last
    *  without a resolvable target — the shell wires this to `messages`. */
   threadMessages?: ExperienceCopilotMessageWire[];
+  /** DR-11 (DIRECTOR_MODE_PLAN): when set, the controller publishes its
+   *  `isSending` into `useAgentStreamingStore` under this key (the shell's
+   *  `agentOwnerKey`) — a ONE-WAY mirror so readers OUTSIDE the shell (the
+   *  story strip's «Позвать режиссёра» disable while a sidechat turn
+   *  streams) can subscribe without owning the turn. The controller stays
+   *  the only truth; nothing ever reads the mirror back here. */
+  streamingMirrorKey?: string;
 }
 
 /** AS-6c-ii: re-exported from the host registry (which owns the type —
@@ -167,7 +175,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -190,6 +198,18 @@ export function useAgentController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+
+  // DR-11: publish the local streaming flag into the shared mirror store —
+  // a derived copy only (see `streamingMirrorKey`). The cleanup drops the
+  // flag so an owner switch or unmount can never leave a stuck "streaming"
+  // key behind; the effect body then re-publishes the current value.
+  useEffect(() => {
+    if (streamingMirrorKey === undefined) return;
+    useAgentStreamingStore.getState().setStreaming(streamingMirrorKey, isSending);
+    return () => {
+      useAgentStreamingStore.getState().setStreaming(streamingMirrorKey, false);
+    };
+  }, [streamingMirrorKey, isSending]);
 
   // TAG-7 (restored PM-7): seed/reset the session-scoped todo panel state
   // from the persisted thread wire (the durable truth — `todo_json` on the
