@@ -29,6 +29,8 @@ import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import { agentReviewEnvelopeSchema, buildScriptAgentReviewEnvelope, type AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
+import { syncPersistedScriptAgentRound } from "../../../lib/script-agent-draft.js";
 import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -62,6 +64,7 @@ interface RouterState {
   streamEvents: string[];
 }
 let router: RouterState;
+let serverReviews: Map<string, AgentReviewEnvelope>;
 
 const jsonResponse = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -83,6 +86,13 @@ const sseResponse = (events: readonly string[]) =>
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+  const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
+  if (reviewId) {
+    if (method === "PUT") serverReviews.set(reviewId, agentReviewEnvelopeSchema.parse(JSON.parse(String(init?.body))));
+    if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
+    return jsonResponse(serverReviews.get(reviewId) ?? null);
+  }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
     return jsonResponse(router.activeThread);
   }
@@ -200,6 +210,8 @@ let act: typeof import("@testing-library/react").act;
 let AgentShell: typeof import("../../shared/agent-shell/AgentShell.js").AgentShell;
 
 const realFetch = globalThis.fetch;
+const turnsBeforeSuite = useAgentTurnStore.getState();
+const roundsBeforeSuite = useAgentReviewRoundStore.getState();
 const outcomesBeforeSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
 const supersededBeforeSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
 const safetyBeforeSuite = useScriptSafetySettingsStore.getState().suppressImportWarnings;
@@ -214,6 +226,8 @@ beforeAll(async () => {
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
+  useAgentTurnStore.setState(turnsBeforeSuite, true);
+  useAgentReviewRoundStore.setState(roundsBeforeSuite, true);
   useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeSuite, supersededByThread: supersededBeforeSuite });
   useScriptSafetySettingsStore.setState({ suppressImportWarnings: safetyBeforeSuite });
 });
@@ -284,6 +298,9 @@ function makeHostProps(script: ScriptRecord, isMobile: boolean, over: Partial<Sc
 }
 
 beforeEach(() => {
+  globalThis.fetch = realFetch;
+  globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+  serverReviews = new Map();
   mobileOverride = false;
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
@@ -419,6 +436,87 @@ describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
     // Accept-all writes the proposed buffer into the draft.
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onUpdateDraft).toHaveBeenCalledWith({ code: PROPOSED_CODE });
+  });
+
+  for (const kind of ["prompt", "dice"] as const) {
+    it(`${kind} code review survives reload with accepted hunks and its original anchor`, async () => {
+      const script = makeScript({ id: `script-reload-${kind}`, scriptKind: kind, code: BASE_CODE });
+      const id = `script-reload-thread-${kind}`;
+      router.newSession = thread(id, script.id);
+      const sse = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+      router.streamEvents = [
+        sse("tool-call", { toolCallId: "code", toolName: "write_buffer", args: { target: "code", content: PROPOSED_CODE } }),
+        sse("tool-result", { toolCallId: "code", toolName: "write_buffer", output: { target: "code", proposed: PROPOSED_CODE, summary: "Two changes" }, isError: false }),
+        FINISH_STOP,
+      ];
+      const onUpdateDraft = mock();
+      const first = renderScriptShell(script, { onUpdateDraft });
+      await flushSessionLoad();
+      fireEvent.change(first.container.querySelector("textarea")!, { target: { value: "rewrite it" } });
+      fireEvent.click(first.getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(first.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+      fireEvent.click(first.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+      const hybrid = BASE_CODE.replace("// code buffer", "// CODE v2");
+      await waitFor(() => expect(onUpdateDraft).toHaveBeenCalledWith({ code: hybrid }));
+      await waitFor(() => expect(serverReviews.get(id)?.round?.acceptedRules).toEqual([0]));
+      expect(serverReviews.get(id)!.activities[0]!.target).toBe("code");
+
+      if (kind === "dice") {
+        // A no-proposal follow-up must retain the unresolved old code diff,
+        // including its old base, even though clearTurn removes live activities.
+        first.rerender(withIsolatedI18n(
+          <AgentShell kind="script" owner={{ kind: "script", scriptId: script.id }} isMobile={false}
+            hostProps={{ ...first.hostProps, activeScript: { ...script, code: hybrid }, draftDirty: true }} />,
+        ));
+        router.streamEvents = [FINISH_STOP];
+        fireEvent.change(first.container.querySelector("textarea")!, { target: { value: "explain the remaining change" } });
+        fireEvent.click(first.getByTestId("copilot-send-btn"));
+        await waitFor(() => expect(streamCalls()).toHaveLength(2));
+        expect(streamCalls()[1]!.body).toMatchObject({ code: hybrid, codeSaved: false });
+        await flushSessionLoad();
+        await waitFor(() => expect(serverReviews.get(id)!.round!.snapshots).toHaveLength(2));
+        expect(serverReviews.get(id)!.round!.dangling!.baseRules).toBe(BASE_CODE);
+      }
+      await act(async () => { await syncPersistedScriptAgentRound(id); });
+      first.unmount();
+      useAgentTurnStore.setState({ turnsByThread: {} });
+      useAgentReviewRoundStore.setState({ roundsByThread: {} });
+      localStorage.clear();
+
+      const afterReload = mock();
+      const second = renderScriptShell({ ...script, code: hybrid }, { onUpdateDraft: afterReload, draftDirty: true });
+      await flushSessionLoad();
+      await waitFor(() => expect(second.getByTestId("copilot-review-bar")).toBeDefined());
+      await waitFor(() => expect(second.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+      expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
+      expect(useAgentReviewRoundStore.getState().roundsByThread[`script:${id}`]!.acceptedRules).toEqual([0]);
+      expect(useAgentReviewRoundStore.getState().roundsByThread[`script:${id}`]!.snapshots[0]!.rules).toBe(BASE_CODE);
+      expect(afterReload).not.toHaveBeenCalled();
+      expect(localStorage.getItem(`vt:experience-copilot-draft:${id}`)).toBeNull();
+      expect(localStorage.getItem(`vt:script-agent-draft:${id}`)).toBeNull();
+    });
+  }
+
+  it("server-only accepted and dismissed hunks restore without an empty-render DELETE or draft mutation", async () => {
+    const base = ["A: old", ...Array.from({ length: 8 }, (_, i) => `a-gap-${i}`), "B: old", ...Array.from({ length: 8 }, (_, i) => `b-gap-${i}`), "C: old"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    const script = makeScript({ id: "script-server-only", code: base.replace("A: old", "A: new") });
+    const id = "script-server-only-thread";
+    router.newSession = thread(id, script.id);
+    const saved = buildScriptAgentReviewEnvelope(null, [{ toolCallId: "server-code", toolName: "edit_buffer", status: "done", target: "code", proposed }], base)!;
+    saved.round!.acceptedRules = [0];
+    saved.round!.dismissedRules = [1];
+    serverReviews.set(id, saved);
+    const onUpdateDraft = mock();
+    const utils = renderScriptShell(script, { onUpdateDraft });
+    await flushSessionLoad();
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    expect(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("2");
+    expect(useAgentReviewRoundStore.getState().roundsByThread[`script:${id}`]!.dismissedRules).toEqual([1]);
+    expect(onUpdateDraft).not.toHaveBeenCalled();
+    expect(streamCalls()).toHaveLength(0);
+    expect(apiCalls("DELETE", /\/review$/)).toHaveLength(0);
+    expect(serverReviews.get(id)).toEqual(saved);
   });
 });
 

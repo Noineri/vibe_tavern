@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { Extension } from "@codemirror/state";
-import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { SCRIPT_AGENT_TOOL_KEYS, aggregateScriptAgentCodeProposal } from "@vibe-tavern/api-contracts";
 import { agentThreadKey, registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { useT } from "../../../i18n/context.js";
@@ -24,7 +24,6 @@ import { mergeSelectedBody } from "../../../lib/coauthor-hunk-merge.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
 import {
   activateScriptAgentSession,
-  answerScriptAgentAsk,
   deleteScriptAgentTurn,
   editScriptAgentMessage,
   getScriptAgentActive,
@@ -33,8 +32,11 @@ import {
   renameScriptAgentSession,
   setScriptAgentContextLinks,
   startScriptAgentSession,
-  streamScriptAgent,
 } from "../../../api/script-agent-api.js";
+import {
+  rehydrateScriptAgentDraft, syncPersistedScriptAgentRound, prepareScriptAgentReviewTurn,
+  streamPersistedScriptAgent, answerPersistedScriptAgentAsk,
+} from "../../../lib/script-agent-draft.js";
 import { ScriptAgentEditorTabs, type ScriptEditorTab } from "./script-agent-editor-pane.js";
 import { useAgentPendingReviewPublish } from "../../shared/agent-shell/use-agent-pending-review-publish.js";
 
@@ -201,6 +203,17 @@ function useScriptAgentReviewSession({
   codeRef.current = code;
   onUpdateDraftRef.current = onUpdateDraft;
 
+  const [loadedThread, setLoadedThread] = useState<string | null>(null);
+  useEffect(() => {
+    if (!threadId) return;
+    let mounted = true;
+    void rehydrateScriptAgentDraft(threadId).then(() => {
+      if (mounted) setLoadedThread(threadId);
+    }).catch((error: unknown) => console.warn("[agent-review] script hydration failed", error));
+    return () => { mounted = false; };
+  }, [threadId]);
+  const reviewLoaded = threadId !== null && loadedThread === threadId;
+
   const turnActivities = useAgentTurnStore(
     useShallow((s) => (threadId ? s.turnsByThread[agentThreadKey(SCRIPT_KIND, threadId)] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
   );
@@ -208,33 +221,10 @@ function useScriptAgentReviewSession({
     useShallow((s) => (threadId ? s.roundsByThread[agentThreadKey(SCRIPT_KIND, threadId)] ?? EMPTY_REVIEW_ROUND : EMPTY_REVIEW_ROUND)),
   );
 
-  // CD-2: snapshot the code buffer on the RISING edge of the turn — the diff
-  // "before" side and the revert target. The snapshot rides the round store
-  // (survives pane unmounts: switching to another script or leaving the
-  // editor mid-review must not lose the round).
-  const prevSending = useRef(isSending);
-  useEffect(() => {
-    if (threadId === null) return;
-    if (!prevSending.current && isSending) {
-      useAgentReviewRoundStore.getState().pushSnapshot(SCRIPT_KIND, threadId, {
-        rules: codeRef.current,
-        visual: "",
-      });
-    }
-    prevSending.current = isSending;
-  }, [isSending, threadId]);
-
   // Last-wins proposal over the live turn's `code`-target activities (each
-  // write_buffer/edit_buffer result is the complete cumulative buffer).
-  const proposedLive = useMemo(() => {
-    let last: string | undefined;
-    for (const activity of turnActivities) {
-      if (activity.status === "done" && activity.target === "code" && activity.proposed !== undefined) {
-        last = activity.proposed;
-      }
-    }
-    return last;
-  }, [turnActivities]);
+  // write_buffer/edit_buffer result is the complete cumulative buffer). The
+  // transport appends its checkpoint explicitly after the preparation flush.
+  const proposedLive = useMemo(() => aggregateScriptAgentCodeProposal(turnActivities), [turnActivities]);
 
   // Effective proposal: the live turn's first; the dangling capture (frozen
   // right before a newer turn cleared the live store) when the live turn
@@ -263,8 +253,12 @@ function useScriptAgentReviewSession({
   // resolved after its proposal becomes dangling).
   const reviewKey = effective !== null ? `${effective.base ?? ""}\u0000${effective.proposed}` : null;
   useEffect(() => {
-    if (threadId) useAgentReviewRoundStore.getState().ensureReviewKey(SCRIPT_KIND, threadId, "rules", reviewKey);
-  }, [threadId, reviewKey]);
+    if (threadId && reviewLoaded) useAgentReviewRoundStore.getState().ensureReviewKey(SCRIPT_KIND, threadId, "rules", reviewKey);
+  }, [threadId, reviewKey, reviewLoaded]);
+  useEffect(() => {
+    if (!threadId || !reviewLoaded || isSending) return;
+    void syncPersistedScriptAgentRound(threadId).catch((error: unknown) => console.warn("[agent-review] script write failed", error));
+  }, [threadId, round, turnActivities, reviewLoaded, isSending]);
 
   const review = useMemo(
     () => buildBufferReview(effective?.base, effective?.proposed, acceptedHunkIds, !isSending, dismissedHunkIds),
@@ -426,16 +420,10 @@ function useScriptAgentReviewSession({
   // CD-8: freeze the still-pending proposal right before a new turn's send
   // clears the live turn store — it keeps hanging until the model revises it
   // or the user resolves it. Nothing is auto-applied.
-  const captureDangling = useCallback(() => {
-    if (threadId === null) return;
-    const pending = effectiveRef.current;
-    if (pending === null) return;
-    useAgentReviewRoundStore.getState().captureDangling(SCRIPT_KIND, threadId, {
-      rules: pending.proposed,
-      baseRules: pending.base ?? codeRef.current,
-      baseVisual: "",
-    });
-  }, [threadId]);
+  const captureDangling = useCallback(async (id: string, signal: AbortSignal) => {
+    await prepareScriptAgentReviewTurn(id, signal, codeRef.current);
+    setLoadedThread(id);
+  }, []);
 
   // The per-turn send options: the LIVE merged draft (what the user sees —
   // unsaved edits included; never a stale DB read), the runtime kind, the
@@ -663,8 +651,8 @@ registerAgentHost({
   // The transport seam — the script client's own fns (the registry's
   // typeof-mirrored member types keep this delegation compiler-checked).
   transport: {
-    sendStream: streamScriptAgent,
-    answerAsk: answerScriptAgentAsk,
+    sendStream: streamPersistedScriptAgent,
+    answerAsk: answerPersistedScriptAgentAsk,
     // AP-10: the turn-delete REST call (required member — the script twin,
     // structurally identical to the experience `typeof` the registry pins).
     deleteTurn: deleteScriptAgentTurn,
