@@ -1415,6 +1415,7 @@
 	"agent_run_asking_toast": "Помощник ждёт ответа: {name}",
 	"agent_run_failed_toast": "Помощник остановился с ошибкой: {name}",
 	"agent_run_open": "Открыть",
+	"chat_new_reply_toast": "Новый ответ: {name}",
 	"enabled": "Включена",
 	"disabled": "Отключена",
 	"position_label": "Позиция",

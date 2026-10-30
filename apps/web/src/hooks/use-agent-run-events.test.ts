@@ -1,9 +1,9 @@
 import { afterAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type AgentThreadOwner } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 useDomEnv();
-const { renderHook } = await import("@testing-library/react");
+const { renderHook, waitFor, act } = await import("@testing-library/react");
 const { toast } = await import("sonner");
 const { registerAgentHost } = await import("../lib/agent-host-registry.js");
 const { registerVisibleAgentThread, useVisibleAgentThread } = await import("../lib/agent-run-visibility.js");
@@ -207,14 +207,113 @@ test("the mounted Co-Author visibility lease suppresses only its chat and releas
   } finally { view.unmount(); h.unmount(); }
 });
 
-test("RP generations and mismatched Co-Author owners never create notifications", () => {
+test("mismatched Co-Author owners never create notifications", () => {
   const h = renderHook(() => useAgentRunEvents());
   try {
     const event = coauthorEvent();
-    Source.instances[0]!.emit({ ...event, kind: "rp", owner: { ...event.owner, mode: "rp" } });
     Source.instances[0]!.emit({ ...event, owner: { ...event.owner, mode: "rp" } });
     Source.instances[0]!.emit({ ...event, threadId: "chat:another-chat" });
     Source.instances[0]!.emit({ ...event, owner: { ...event.owner, chatId: "" } });
+    expect(success).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled();
+  } finally { h.unmount(); }
+});
+
+const replyEvent = (state = "finished", chatId = "rp-chat") => ({ threadId: `chat:${chatId}`, kind: "rp", title: "Reply header character", state,
+  owner: { kind: "chat", chatId, mode: "rp" } });
+
+test("a background RP reply uses the header name and Open navigates to its exact roleplay chat", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = (async (input) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith("/queue")) return Response.json([]);
+    return Response.json({ activeChat: { id: "rp-chat", characterId: "rp-character", mode: "rp" }, activeBranch: { id: "branch" } });
+  }) as typeof fetch;
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    Source.instances[0]!.emit(replyEvent());
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(success.mock.calls[0]![0]))).toEqual({ key: "chat_new_reply_toast", values: { name: "Reply header character" }, language: "en" });
+    const action = success.mock.calls[0]![1]!.action;
+    if (typeof action !== "object" || !action || !("onClick" in action)) throw new Error("No Open action");
+    await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+    expect(String(useChatStore.getState().activeChatId)).toBe("rp-chat");
+    expect(useChatStore.getState().selectedCharacterId).toBe("rp-character");
+    expect(useNavigationStore.getState().mode).toBe("play");
+    expect(requests.some((url) => url.includes("/experience-copilot/"))).toBe(false);
+  } finally { h.unmount(); }
+});
+
+test("a queue of three toasts only after the final job, not per variant", async () => {
+  let pending = 2;
+  globalThis.fetch = Object.assign(async () => Response.json(pending ? [{ id: "waiting", chatId: "rp-chat", messageId: "assistant", model: "model", promptPresetId: null, status: "pending", enqueuedAt: 1 }] : []), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    const source = Source.instances[0]!;
+    for (let index = 0; index < 3; index++) {
+      await act(async () => { source.emit(replyEvent("started")); source.emit(replyEvent()); });
+      if (index < 2) expect(success).not.toHaveBeenCalled();
+      else await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+      pending -= 1;
+    }
+    await act(async () => { source.emit(replyEvent()); });
+    expect(success).toHaveBeenCalledTimes(1); // Duplicate terminal delivery without another start.
+  } finally { h.unmount(); }
+});
+
+test("fast queue finishes cannot race late canonical reads into multiple completion toasts", async () => {
+  const releases: Array<(response: Response) => void> = [];
+  globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { releases.push(resolve); }), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    for (let index = 0; index < 3; index++) { Source.instances[0]!.emit(replyEvent("started")); Source.instances[0]!.emit(replyEvent()); }
+    expect(releases).toHaveLength(3);
+    await act(async () => { for (const release of releases) release(Response.json([])); });
+    expect(success).toHaveBeenCalledTimes(1);
+  } finally { h.unmount(); }
+});
+
+test("visible RP, errors, stops, asking and owner/key mismatches stay quiet", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = (async (input) => { requests.push(String(input)); return Response.json([]); }) as typeof fetch;
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
+    useSnapshotStore.setState({ activeChat: { id: "rp-chat", mode: "rp" } as typeof originalSnapshot.activeChat });
+    for (const state of ["started", "finished", "failed", "stopped", "asking"]) Source.instances[0]!.emit(replyEvent(state));
+    Source.instances[0]!.emit({ ...replyEvent(), threadId: "chat:wrong" });
+    Source.instances[0]!.emit({ ...replyEvent(), owner: { kind: "chat", chatId: "rp-chat", mode: "coauthor" } });
+    expect(requests).toEqual([]);
+    expect(success).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled();
+  } finally { h.unmount(); }
+});
+
+test("a late queue read after navigation or unmount cannot toast the now-visible reply", async () => {
+  let release!: (response: Response) => void;
+  globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { release = resolve; }), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  Source.instances[0]!.emit(replyEvent());
+  useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
+  useSnapshotStore.setState({ activeChat: { id: "rp-chat", mode: "rp" } as typeof originalSnapshot.activeChat });
+  await act(async () => { release(Response.json([])); });
+  expect(success).not.toHaveBeenCalled();
+  useNavigationStore.getState().setMode("build");
+  Source.instances[0]!.emit(replyEvent("started")); Source.instances[0]!.emit(replyEvent());
+  h.unmount();
+  await act(async () => { release(Response.json([])); });
+  expect(success).not.toHaveBeenCalled();
+});
+
+test("background errors and stops stay quiet and invalidate older in-flight completion checks", async () => {
+  const releases: Array<(response: Response) => void> = [];
+  globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { releases.push(resolve); }), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    for (const state of ["failed", "stopped", "asking"]) {
+      const source = Source.instances[0]!;
+      source.emit(replyEvent("started")); source.emit(replyEvent());
+      source.emit(replyEvent("started")); source.emit(replyEvent(state));
+    }
+    await act(async () => { for (const release of releases) release(Response.json([])); });
     expect(success).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled();
   } finally { h.unmount(); }
 });

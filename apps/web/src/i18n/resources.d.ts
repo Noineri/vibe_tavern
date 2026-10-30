@@ -405,6 +405,7 @@ export default interface Resources {
     "chat_create_failed": "Failed to create chat.",
     "chat_import_sub": "Upload a SillyTavern JSONL history file.",
     "chat_import_title": "Import chat history",
+    "chat_new_reply_toast": "New reply: {name}",
     "chat_rename_failed": "Failed to rename chat.",
     "chat_search_clear": "Clear search",
     "chat_search_no_results": "No chats match \"{query}\"",

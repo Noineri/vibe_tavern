@@ -1399,6 +1399,7 @@
 	"agent_run_asking_toast": "Assistant is waiting for your answer: {name}",
 	"agent_run_failed_toast": "Assistant stopped with an error: {name}",
 	"agent_run_open": "Open",
+	"chat_new_reply_toast": "New reply: {name}",
 	"enabled": "Enabled",
 	"disabled": "Disabled",
 	"position_label": "Position",

@@ -44,3 +44,13 @@ export async function openCoauthorChat(id: string): Promise<void> {
   useNavigationStore.getState().setMode("play");
   await coauthorReviews.hydrate(chatId);
 }
+
+/** Roleplay completion uses ordinary chat navigation, never an agent host. */
+export async function openRoleplayChat(id: string): Promise<void> {
+  const chatId = brandId<ChatId>(id);
+  await switchChatAction(chatId);
+  const chat = useSnapshotStore.getState().activeChat;
+  if (chat?.id !== chatId || chat.mode !== "rp") throw new Error("Roleplay chat no longer exists");
+  useChatStore.getState().setActiveChatId(chatId);
+  useNavigationStore.getState().setMode("play");
+}
