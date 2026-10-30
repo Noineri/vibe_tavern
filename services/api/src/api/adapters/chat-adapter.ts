@@ -19,14 +19,14 @@ import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, Co
 import { isTextMime } from "@vibe-tavern/domain";
 import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { resolveChatImageRoute } from "./chat-image-route.js";
-import { ChatGenerationRunAdapter } from "./chat-generation-run-adapter.js";
+import { ChatGenerationQueueAdapter } from "./chat-generation-queue-adapter.js";
 import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.js";
 import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js";
 import type { AgentRunOwner } from "@vibe-tavern/domain";
 import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
 import { CoauthorReviewService } from "../../domain/chat/coauthor-review-service.js";
 
-export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntimeApi {
+export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRuntimeApi {
 	constructor(
 		private readonly stores: StoreContainer,
 		private readonly sessionRuntime: SessionRuntime,
@@ -179,6 +179,7 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 	}
 
 	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
+		this.assertGenerationIdle(chatId);
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -246,6 +247,7 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 	};
 
 	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
+		this.assertGenerationIdle(chatId);
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
@@ -282,6 +284,7 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 	 *  continuation, so the request fails honestly instead of silently
 	 *  generating a fresh reply. */
 	continueMessage = async (chatId: string, messageId: string, signal?: AbortSignal) => {
+		this.assertGenerationIdle(chatId);
 		const message = await this.stores.messages.getMessageById(messageId);
 		if (!message || message.chatId !== chatId) {
 			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
@@ -333,6 +336,7 @@ export class ChatAdapter extends ChatGenerationRunAdapter implements ChatRuntime
 	};
 
 	generateReply = async (chatId: string, signal?: AbortSignal) => {
+		this.assertGenerationIdle(chatId);
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,

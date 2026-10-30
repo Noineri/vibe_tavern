@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
 import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
+import { AgentRunActiveError } from "../domain/agent/agent-run-registry.js";
 import {
 	OpenAiCompatTtsConfigError,
 	OpenAiCompatTtsError,
@@ -100,6 +101,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	app.use("*", authMiddleware);
 
 	app.onError((err, c) => {
+		if (err instanceof AgentRunActiveError) return c.json({ error: err.message, code: err.code }, 409);
 		const url = c.req.url;
 		const method = c.req.method;
 		if (url.includes("/messages")) {

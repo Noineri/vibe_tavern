@@ -18,6 +18,9 @@ import { ProviderOrchestrator } from "../src/domain/providers/provider-orchestra
 import type { ProviderExecutionInput, ExtractedToolResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { AgentRunActiveError } from "../src/domain/agent/agent-run-registry.js";
+import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 type Mode = "rp" | "coauthor";
 type Operation = "send" | "regenerate" | "continue" | "generate";
@@ -67,6 +70,7 @@ async function withEnv(mode: Mode, run: (h: Awaited<ReturnType<typeof setup>>) =
   try { h = await setup(mode, dir); await run(h); }
   finally {
     if (h) {
+      h.adapter.generationQueue.deactivate();
       h.release.resolve();
       for (const active of h.adapter.agentRuns.active()) {
         h.adapter.agentRuns.stop(active.threadId);
@@ -75,6 +79,7 @@ async function withEnv(mode: Mode, run: (h: Awaited<ReturnType<typeof setup>>) =
       }
       const sub = h.adapter.subscribeChatGeneration(h.chat.id, 0);
       if (sub) for await (const _event of sub) { /* Join persistence before DB/filesystem cleanup. */ }
+      await h.adapter.generationQueue.kick(h.chat.id);
       h.feature.deactivate?.();
     }
     await rm(dir, { recursive: true, force: true });
@@ -141,8 +146,14 @@ async function setup(mode: Mode, dir: string) {
   const adapter = new ChatAdapter(stores, runtime, orchestrator, new ChatSummaryService(stores, runtime, profiles), profiles,
     new AssetService(join(dir, "assets")), async () => null, undefined, copilot.agentRuns);
   const app = createChatRoutes(adapter);
+  app.onError((error, c) => {
+    if (error instanceof AgentRunActiveError) return c.json({ error: error.message, code: error.code }, 409);
+    if (isDomainError(error)) return c.json(domainErrorToJson(error), httpStatusForDomainError(error) as ContentfulStatusCode);
+    throw error;
+  });
   const feature = createAgentRunEventsFeature({ registry: copilot.agentRuns });
   feature.activate({ events, router: app });
+  await adapter.generationQueue.activate(events);
   const path = `/api/chats/${chat.id}`;
   const operationPath = (operation: Operation) => operation === "send" ? `${path}/messages/stream`
     : operation === "generate" ? `${path}/generate-reply/stream` : `${path}/messages/${assistant.id}/${operation}/stream`;
@@ -152,6 +163,94 @@ async function setup(mode: Mode, dir: string) {
   });
   return { stores, runtime, chat, assistant, inputs, provider, entered, release, adapter, copilot, orchestrator, app, feature, path, start, lifecycle };
 }
+
+test("queue routes execute ordered overrides without a browser and expose replay/409 while running", async () => {
+  await withEnv("rp", async (h) => {
+    const preset = await h.stores.presets.create({ name: "Queued preset", systemPrompt: "Queue-specific system instructions" });
+    const post = (model: string, promptPresetId: string | null = null) => h.app.request(`${h.path}/queue`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId: h.assistant.id, model, promptPresetId }) });
+    const first = await post("first");
+    expect(first.status).toBe(201);
+    await h.entered.promise;
+    await post("second", preset.id); await post("third");
+    const pending = await (await h.app.request(`${h.path}/queue`)).json();
+    expect(pending.map((job: { status: string }) => job.status)).toEqual(["running", "pending", "pending"]);
+    for (const operation of operations) {
+      const conflict = await h.start(operation);
+      expect(conflict.status).toBe(409);
+      expect(await conflict.json()).toMatchObject({ code: "AGENT_RUN_ACTIVE" });
+    }
+    const conflict = await h.app.request(`${h.path}/messages/${h.assistant.id}/regenerate`, { method: "POST" });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({ code: "AGENT_RUN_ACTIVE" });
+    const reader = readSse(await h.app.request(`${h.path}/generation`));
+    expect((await reader.next())?.data).toMatchObject({ messageId: h.assistant.id, operation: "regenerate" });
+    await reader.cancel();
+    h.release.resolve();
+    await h.adapter.generationQueue.kick(h.chat.id);
+    expect(h.inputs.map((input) => input.model)).toEqual(["first", "second", "third"]);
+    expect(JSON.stringify(h.inputs[1]?.prompt)).toContain("Queue-specific system instructions");
+    expect((await h.stores.messages.getVariants(h.assistant.id))[2]?.presetName).toBe("Queued preset");
+    expect((await h.stores.chats.getById(h.chat.id))?.promptPresetId).toBe(h.chat.promptPresetId);
+    const settled = await (await h.app.request(`${h.path}/queue`)).json();
+    expect(settled.map((job: { status: string; variantIndex: number }) => [job.status, job.variantIndex])).toEqual([["done", 1], ["done", 2], ["done", 3]]);
+    expect(h.lifecycle.map((event) => event.state)).toEqual(["started", "finished", "started", "finished", "started", "finished"]);
+  });
+});
+
+test("queue DELETE stops with a saved partial on the original branch and next pending job continues there", async () => {
+  await withEnv("rp", async (h) => {
+    const first = await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "first", promptPresetId: null });
+    await h.entered.promise;
+    await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "second", promptPresetId: null });
+    const fork = await h.runtime.chatRuntime.forkBranch(h.chat.id, h.assistant.id);
+    const response = await h.app.request(`${h.path}/queue/${first.id}`, { method: "DELETE" });
+    expect(response.status).toBe(200);
+    await h.adapter.generationQueue.kick(h.chat.id);
+    const jobs = await h.adapter.getGenerationQueue(h.chat.id);
+    expect(jobs.map((job) => [job.status, job.variantIndex])).toEqual([["cancelled", 1], ["done", 2]]);
+    expect((await h.stores.messages.getVariants(h.assistant.id)).map((variant) => variant.content)).toEqual(["Continue here", "Partial reply", "Partial reply completed"]);
+    expect((await h.stores.chats.getById(h.chat.id))?.activeBranchId).toBe(fork.activeBranch.id);
+    const replay = await all(await h.app.request(`${h.path}/generation`));
+    expect(replay[0]?.data.branchId).toBe(h.chat.activeBranchId);
+    expect(h.lifecycle.map((event) => event.state)).toEqual(["started", "stopped", "started", "finished"]);
+  });
+});
+
+test("queue routes reject malformed/foreign targets, cancel only pending, and Clear preserves the ordinary regenerate", async () => {
+  await withEnv("rp", async (h) => {
+    const ordinary = await h.start("regenerate");
+    const watch = all(ordinary);
+    await h.entered.promise;
+    expect(await h.adapter.getGenerationQueue(h.chat.id)).toEqual([]); // D4: first regenerate is not queued.
+    const one = await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "one", promptPresetId: null });
+    await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "two", promptPresetId: null });
+    expect((await h.app.request(`${h.path}/queue/${one.id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await h.app.request(`${h.path}/queue/clear`, { method: "POST" })).status).toBe(200);
+    expect((await h.adapter.getGenerationQueue(h.chat.id)).map((job) => job.status)).toEqual(["cancelled"]);
+    expect(h.adapter.agentRuns.active()).toHaveLength(1);
+    const invalid = await h.app.request(`${h.path}/queue`, { method: "POST", headers: { "content-type": "application/json" }, body: '{"messageId":"foreign","model":""}' });
+    expect(invalid.status).toBe(400);
+    const missing = await h.app.request(`${h.path}/queue`, { method: "POST", headers: { "content-type": "application/json" }, body: '{"messageId":"foreign","model":"one","promptPresetId":null}' });
+    expect(missing.status).toBe(404);
+    expect((await h.app.request("/api/chats/missing/queue")).status).toBe(404);
+    h.release.resolve(); await watch; await h.adapter.generationQueue.kick(h.chat.id);
+    expect(h.inputs).toHaveLength(1);
+  });
+});
+
+test("a queued provider cut retains its partial variant and a later job still succeeds", async () => {
+  await withEnv("rp", async (h) => {
+    h.provider.fail = true;
+    h.adapter.agentRuns.onLifecycle((event) => { if (event.state === "failed") h.provider.fail = false; });
+    await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "cut", promptPresetId: null });
+    await h.entered.promise;
+    await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "next", promptPresetId: null });
+    h.release.resolve(); await h.adapter.generationQueue.kick(h.chat.id);
+    expect(await h.adapter.getGenerationQueue(h.chat.id)).toMatchObject([{ status: "failed", error: "Provider cut", variantIndex: 1 }, { status: "done", variantIndex: 2 }]);
+    expect((await h.stores.messages.getVariants(h.assistant.id)).map((variant) => variant.content)).toEqual(["Continue here", "Partial reply", "Partial reply completed"]);
+  });
+});
 
 for (const mode of ["rp", "coauthor"] as const) {
   for (const operation of operations) {

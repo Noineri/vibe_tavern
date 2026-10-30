@@ -27,6 +27,12 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
+    .get("/api/chats/:chatId/queue", async (c) => c.json(await runtime.getGenerationQueue(c.req.param("chatId"))))
+    .post("/api/chats/:chatId/queue", zValidator("json", schemas.enqueueChatGenerationJobSchema), async (c) =>
+      c.json(await runtime.enqueueGenerationJob(c.req.param("chatId"), c.req.valid("json")), 201))
+    .delete("/api/chats/:chatId/queue/:jobId", async (c) =>
+      c.json(await runtime.cancelGenerationJob(c.req.param("chatId"), c.req.param("jobId"))))
+    .post("/api/chats/:chatId/queue/clear", async (c) => c.json(await runtime.clearGenerationQueue(c.req.param("chatId"))))
     .get("/api/chats/:chatId/image-route", async (c) => {
       return c.json(await runtime.getImageRoute(c.req.param("chatId")));
     })

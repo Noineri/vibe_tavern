@@ -384,6 +384,10 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		enforceMobileAuth: true,
 		configureFeatures: (router) => features.activateAll({ events, router }),
 	});
+	// Reconcile before accepting requests; execution itself stays detached. The
+	// existing lifecycle/events subscribers are already active at this point.
+	await runtime.chat.generationQueue.activate(events);
+	addRuntimeTeardown(() => runtime.chat.generationQueue.deactivate());
 
 	addRuntimeTeardown(() => quotaService.stop());
 	// Test instances (scripts/test-instance.ts) boot on a snapshot of the owner's
