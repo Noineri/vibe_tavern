@@ -29,7 +29,7 @@ async function appRecordingOverrides(): Promise<{
   // createApiRouter hands createChatRoutes `runtime.chat`; only the method
   // under test is stubbed.
   const runs = new ChatGenerationRunAdapter({
-    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", mode: "rp", title: "Regenerate" }) },
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Regenerate" }) },
     characters: { getById: async () => ({ name: "Regenerate" }) },
   } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
   const runtime = { chat: { regenerateMessageStream, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;

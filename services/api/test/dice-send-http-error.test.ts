@@ -33,7 +33,7 @@ const SEND_BODY = { content: "roll for me", diceMode: "normal", pendingRevision:
 // (runtime.chat)), so the stub nests the send methods under `chat`.
 function runtimeWithSend(send: { sendMessage?: RuntimeApi["chat"]["sendMessage"]; sendMessageStream?: RuntimeApi["chat"]["sendMessageStream"] }): RuntimeApi {
   const runs = new ChatGenerationRunAdapter({
-    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", mode: "rp", title: "Dice" }) },
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Dice" }) },
     characters: { getById: async () => ({ name: "Dice" }) },
   } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
   return { chat: { ...send, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;

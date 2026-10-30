@@ -55,7 +55,7 @@ function runtimeWithSend(send: {
   sendMessageStream?: RuntimeApi["chat"]["sendMessageStream"];
 }): RuntimeApi {
   const runs = new ChatGenerationRunAdapter({
-    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", mode: "rp", title: "Experience" }) },
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Experience" }) },
     characters: { getById: async () => ({ name: "Experience" }) },
   } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
   return { chat: { ...send, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
