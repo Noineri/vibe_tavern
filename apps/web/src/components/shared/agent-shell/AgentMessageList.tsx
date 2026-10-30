@@ -739,6 +739,7 @@ export function AgentMessageList({
               const segment = (
                 <AgentMessageBlock
                   messageMarkup={messageMarkup}
+                  isStreaming={!entry.closed}
                   message={syntheticAgentMessage({
                     id: entry.id,
                     threadId,
@@ -756,6 +757,7 @@ export function AgentMessageList({
             const pendingBlock = (
               <AgentMessageBlock
                 messageMarkup={messageMarkup}
+                isStreaming
                 message={syntheticAgentMessage({
                   id: "__pending-assistant",
                   threadId,

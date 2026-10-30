@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { cn } from "../../../lib/cn.js";
 import { Markdown } from "../../../lib/markdown.js";
+import { AgentStreamingMarkdown } from "./agent-streaming-markdown.js";
 import { AgentDigestSeparator } from "./AgentTimelineSeparator.js";
 import { AgentEditMessage } from "./AgentEditMessage.js";
 import { Icons } from "../icons.js";
@@ -76,6 +77,14 @@ export interface AgentMessageBlockProps {
    *  disable, and a stream started from another row's action closes an
    *  open editor (editing is impossible while streaming). */
   isBusy?: boolean;
+  /** LAG-4: the bubble's text is the LIVE stream (grows per flush) — the
+   *  body renders through the block-split path (agent-streaming-markdown.tsx:
+   *  the completed blocks through one memoized `Markdown` whose string is
+   *  byte-stable across tail-growing flushes; only the open tail re-parses).
+   *  Absent/false = the normal single-`Markdown` path — every persisted
+   *  message, so the settle handover renders byte-identically to before
+   *  this unit (AP-29). */
+  isStreaming?: boolean;
 }
 
 export const AgentMessageBlock = memo(function AgentMessageBlock({
@@ -89,6 +98,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   canEditAssistant = false,
   onEditAssistant,
   isBusy = false,
+  isStreaming = false,
 }: AgentMessageBlockProps) {
   // AP-12: block-local editing state — the draft itself lives in
   // `AgentEditMessage` (local useState; the agent shell has no chat store
@@ -170,6 +180,9 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // assistant AND user message (the streaming reply goes through this block
   // too), so `translate="yes"` sits on it, never on the chrome around it
   // (the MessageActionRow buttons stay untranslated — already our language).
+  // AP-2: the host markup resolves to the Markdown variant ONCE here — the
+  // streaming arm below consumes it pre-resolved (one derivation).
+  const markdownVariant = messageMarkup === "rp-colors" ? "agent-rp" : "agent-plain";
   const body = (
     <div translate="yes" className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
       {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
@@ -177,8 +190,14 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
        * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
        * internal scroll with preserved indentation (lib/markdown contract).
        * AP-2: no em override here — the agent-rp / agent-plain Markdown
-       * variants own `em` (RP colors vs plain typography). */}
-      <Markdown text={message.content} variant={messageMarkup === "rp-colors" ? "agent-rp" : "agent-plain"} />
+       * variants own `em` (RP colors vs plain typography). LAG-4: a live
+       * streaming bubble swaps in the block-split renderer; every other
+       * body renders the single-`Markdown` path exactly as before. */}
+      {isStreaming ? (
+        <AgentStreamingMarkdown text={message.content} variant={markdownVariant} />
+      ) : (
+        <Markdown text={message.content} variant={markdownVariant} />
+      )}
     </div>
   );
 

@@ -44,7 +44,7 @@
  * Runner: bun:test with scoped happy-dom (useDomEnv).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
@@ -82,10 +82,22 @@ mock.module("../../../hooks/use-mobile.js", () => ({
 
 // Markdown internals are pinned elsewhere; the isolation test only needs
 // message text to reach the DOM (the ExperienceCopilotShell suite's stub).
+// LAG-4: the stub is ALSO the render-count instrument — memoized exactly
+// like the real Markdown (whose memo bail is the whole point of step 5),
+// recording every text it actually renders, so the LAG-4 pin below can
+// prove a tail-growing flush re-renders NO completed block's markdown.
+// Empty text renders null like the real component (the split's empty
+// prefix side stays DOM-less).
+let markdownRenderTexts: string[] = [];
+const CountingMarkdown = memo(function CountingMarkdown({ text }: { text: string }) {
+  markdownRenderTexts.push(text);
+  if (!text) return null;
+  return <div>{text}</div>;
+});
 const realMarkdown = { ...(await import("../../../lib/markdown.js")) };
 mock.module("../../../lib/markdown.js", () => ({
   ...realMarkdown,
-  Markdown: ({ text }: { text: string }) => <div>{text}</div>,
+  Markdown: CountingMarkdown,
 }));
 
 // LAG-2's RevealScheduler seam, pinned at the ONE rafScheduler export: a
@@ -295,6 +307,7 @@ beforeEach(() => {
   composerRenders = 0;
   editorPaneRenders = 0;
   headerRenders = 0;
+  markdownRenderTexts = [];
   seedStores();
 });
 
@@ -426,5 +439,92 @@ describe("LAG-3 step 4 — a stream flush re-renders only the message list", () 
     // the AgentShell root per flush (the defect this unit removed).
     expect(src).not.toContain("pendingText");
     expect(src).not.toContain("pendingReasoning");
+  });
+});
+
+describe("LAG-4 step 5 — the streaming bubble block-splits its markdown", () => {
+  it("a tail-growing flush re-renders no completed block's markdown", async () => {
+    const { container, unmount } = render(
+      <ExperienceCopilotShell
+        scriptId="script-1"
+        rulesCode="// rules buffer"
+        visualSource=""
+        onRulesChange={mock()}
+        onVisualChange={mock()}
+      />,
+    );
+    await flushSessionLoad();
+
+    // A real send through the real composer opens the held-open stream.
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "stream me" } });
+    fireEvent.click(container.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(enqueueStream).not.toBeNull());
+    await flushSessionLoad();
+
+    // ── Establish phase: two completed paragraphs land (one flush each) —
+    // the bubble's completed-block markdown instances mount here.
+    await act(async () => {
+      enqueueStream?.(sseTextDelta("First paragraph.\n\n"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      tickNextFrame();
+    });
+    await waitFor(() => expect(feedTextOf("thread-1")).toBe("First paragraph.\n\n"));
+    await act(async () => {
+      enqueueStream?.(sseTextDelta("Second paragraph.\n\n"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      tickNextFrame();
+    });
+    await waitFor(() => expect(feedTextOf("thread-1")).toBe("First paragraph.\n\nSecond paragraph.\n\n"));
+
+    // ── Measured phase: ONLY tail-growth flushes from here ───────────────
+    markdownRenderTexts = [];
+
+    await act(async () => {
+      enqueueStream?.(sseTextDelta("The open tail gro"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      tickNextFrame();
+    });
+    await waitFor(() =>
+      expect(feedTextOf("thread-1")).toBe("First paragraph.\n\nSecond paragraph.\n\nThe open tail gro"),
+    );
+
+    // POSITIVE CONTROL (the flush landed and the stub is live): the open
+    // tail's markdown re-parsed — the only live re-parse per flush.
+    expect(markdownRenderTexts.some((t) => t.includes("The open tail"))).toBe(true);
+    // THE PIN: neither completed paragraph's markdown re-entered the stub —
+    // the memoized completed prefix bailed (byte-stable across the flush).
+    expect(markdownRenderTexts.some((t) => t.includes("First paragraph"))).toBe(false);
+    expect(markdownRenderTexts.some((t) => t.includes("Second paragraph"))).toBe(false);
+
+    // A SECOND tail-growth flush stays clean too (repeated, not a one-off).
+    markdownRenderTexts = [];
+    await act(async () => {
+      enqueueStream?.(sseTextDelta("ws."));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      tickNextFrame();
+    });
+    await waitFor(() =>
+      expect(feedTextOf("thread-1")).toBe("First paragraph.\n\nSecond paragraph.\n\nThe open tail grows."),
+    );
+    expect(markdownRenderTexts.some((t) => t.includes("The open tail"))).toBe(true);
+    expect(markdownRenderTexts.some((t) => t.includes("First paragraph"))).toBe(false);
+    expect(markdownRenderTexts.some((t) => t.includes("Second paragraph"))).toBe(false);
+
+    // Settle cleanly (the finish event closes the stream) before unmount.
+    await act(async () => {
+      releaseStream?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await flushSessionLoad();
+    unmount();
   });
 });
