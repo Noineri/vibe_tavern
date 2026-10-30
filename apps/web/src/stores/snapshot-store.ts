@@ -72,6 +72,9 @@ interface SnapshotActions {
    *
    * Immer's structural sharing preserves object references for unchanged
    * data — components only re-render when their specific values change.
+   * The per-entry dedup comparisons read the plain PRE-INGEST state
+   * (`base`, captured via `get()` before `set`) — never the draft — so an
+   * unchanged entry costs no Immer proxy walk (LC-3 / D3).
    */
   ingestSnapshot(snapshot: AppSnapshot): void;
 
@@ -228,7 +231,17 @@ export const useSnapshotStore = create<SnapshotStore>()(
   immer((set, get) => ({
     ...initialState,
 
-    ingestSnapshot: (snapshot) =>
+    ingestSnapshot: (snapshot) => {
+      // LC-3: the dedup comparisons below read the PRE-INGEST plain state,
+      // never the draft — comparing through `draft` proxy-walks every nested
+      // object the comparator touches (Immer creates and finalizes proxies
+      // for the whole stored message tree per entry: 600 messages × 4.7 MB on
+      // every delete/edit/swipe/send; D3 in LONG_CHAT_PERFORMANCE_REPORT).
+      // Reading the plain base is behaviorally identical for comparison —
+      // ids are unique within one snapshot, so no write in this ingest ever
+      // changes a value a later comparison re-reads — and only the write
+      // path goes through the draft.
+      const base = get();
       set((draft) => {
         // ── Absence pipeline (Phase 3.4.1) ──
         // Every field is written ONLY when present in the snapshot. Absence
@@ -245,7 +258,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             if (!nextChatIds.has(id)) delete draft.chatsById[id];
           }
           for (const chat of snapshot.chats) {
-            if (!deepEqual(draft.chatsById[chat.id], chat)) {
+            // LC-3: compare against the plain base — no draft proxy walk.
+            if (!deepEqual(base.chatsById[chat.id], chat)) {
               draft.chatsById[chat.id] = chat;
             }
           }
@@ -272,9 +286,10 @@ export const useSnapshotStore = create<SnapshotStore>()(
           for (const msg of snapshot.messages) {
             // IG-CF10: stamp the message-level attachment shadow BEFORE the
             // dedup comparison — a re-ingested identical snapshot keeps both
-            // its reference (Wave B2) and its shadow.
-            const stamped = withMessageLevelShadow(draft.messagesById[msg.id], msg);
-            if (!deepEqual(draft.messagesById[msg.id], stamped)) {
+            // its reference (Wave B2) and its shadow. The stamp reads its
+            // `prev` off the plain base, same as the comparison (LC-3).
+            const stamped = withMessageLevelShadow(base.messagesById[msg.id], msg);
+            if (!deepEqual(base.messagesById[msg.id], stamped)) {
               draft.messagesById[msg.id] = stamped;
             }
           }
@@ -324,7 +339,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             draft.allCharacters = snapshot.allCharacters;
           }
         }
-      }),
+      });
+    },
 
     applyInsightsCompletionPatch: (response) => {
       const current = get();

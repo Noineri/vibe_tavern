@@ -253,6 +253,66 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
   });
 });
 
+/**
+ * LC-3 — per-entry reference identity against the plain pre-ingest state.
+ *
+ * ingestSnapshot's dedup comparator reads the store's PRE-INGEST state
+ * (`get()` captured before `set`), never the Immer draft — comparing
+ * through a draft proxy-walks the whole stored subtree per entry (D3 in
+ * LONG_CHAT_PERFORMANCE_REPORT: 600 messages × the full tree on every
+ * delete/edit/swipe/send). The observable contract of that seam: within one
+ * snapshot, exactly the entries whose content differs from the store get a
+ * new reference; every sibling keeps its exact stored object — at any
+ * snapshot size, not just Wave B2's single-sibling cases.
+ */
+describe("ingestSnapshot — one changed entry, all siblings stable (LC-3)", () => {
+  test("a snapshot with ONE changed message replaces only that message's reference", () => {
+    useSnapshotStore.getState().ingestSnapshot(fullSeed());
+    // A full-branch refresh carrying four messages (delete/edit/swipe
+    // responses re-send the whole list).
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeMessage("m1"), makeMessage("m2"), makeMessage("m3"), makeMessage("m4")],
+    } as AppSnapshot);
+    const before = useSnapshotStore.getState().messagesById;
+    expect(Object.keys(before).sort()).toEqual(["m1", "m2", "m3", "m4"]);
+
+    // Same four re-sent, only m3's content differs.
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeMessage("m1"), makeMessage("m2"), makeMessage("m3", "edited"), makeMessage("m4")],
+    } as AppSnapshot);
+
+    const after = useSnapshotStore.getState().messagesById;
+    expect(after["m3"]).not.toBe(before["m3"]); // changed → NEW reference
+    expect(after["m3"]?.content).toBe("edited");
+    expect(after["m1"]).toBe(before["m1"]); // every sibling keeps its exact object
+    expect(after["m2"]).toBe(before["m2"]);
+    expect(after["m4"]).toBe(before["m4"]);
+  });
+
+  test("a snapshot with ONE changed chat replaces only that chat's reference", () => {
+    const chat = (id: string, title: string) => ({
+      id, title, characterId: "c1", characterName: "Char c1",
+      subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 1, updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    useSnapshotStore.getState().ingestSnapshot({
+      chats: [chat("c-a", "A"), chat("c-b", "B"), chat("c-c", "C")],
+    } as AppSnapshot);
+    const before = useSnapshotStore.getState().chatsById;
+    expect(Object.keys(before).sort()).toEqual(["c-a", "c-b", "c-c"]);
+
+    // Same three re-sent, only c-b's title differs.
+    useSnapshotStore.getState().ingestSnapshot({
+      chats: [chat("c-a", "A"), chat("c-b", "B (renamed)"), chat("c-c", "C")],
+    } as AppSnapshot);
+
+    const after = useSnapshotStore.getState().chatsById;
+    expect(after["c-b"]).not.toBe(before["c-b"]); // changed → NEW reference
+    expect(after["c-b"]?.title).toBe("B (renamed)");
+    expect(after["c-a"]).toBe(before["c-a"]); // every sibling keeps its exact object
+    expect(after["c-c"]).toBe(before["c-c"]);
+  });
+});
+
 // ── SCN-4: variant Scene projection + local selected-swap ────────────────
 
 describe("selectVariant — Scene swap (SCN-4)", () => {
