@@ -15,6 +15,7 @@ import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type A
 import type { AgentBuiltinProfileHandoff, AgentBuiltinProfilePresentation } from "../../../lib/agent-builtin-profiles.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
+import { TranslateErrorBoundary } from "../../layout/TranslateErrorBoundary.js";
 import type { AgentController } from "./use-agent-controller.js";
 import type { CopilotContextController } from "../../../hooks/use-copilot-context.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
@@ -346,49 +347,66 @@ export function AgentChatPane({
               owner's durable document) — each hides itself when empty.
               SC-0i: unmounted entirely when the host defines no plan owner. */}
           {planOwner !== undefined && showPlanSection && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
-          <AgentMessageList
-            kind={kind}
-            threadId={threadId}
-            messages={messages}
-            events={events}
-            pendingUserContent={ctrl.pendingUserContent}
-            pendingUserAttachments={ctrl.pendingUserAttachments}
-            isSending={ctrl.isSending}
-            // AP-29 follow-up 2: a regenerate in flight hides the replaced
-            // turn (the server already deleted it) and streams the new turn
-            // as a fresh turn.
-            // AP-29 follow-up 3: the recorded ids keep it hidden past the
-            // settle until the refetch lands without them (no flash of the
-            // replaced turn).
-            isRegenerating={ctrl.isRegenerating}
-            hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
-            pendingAskAnswer={ctrl.pendingAskAnswer}
-            pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
-            emptyTitle={t(emptyPresentation !== undefined ? emptyPresentation.titleKey : host.i18n.emptyTitle)}
-            emptySub={emptyPresentation !== undefined ? t(emptyPresentation.subKey) : host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
-            emptyIcon={emptyPresentation !== undefined ? <Icons.film className="h-6 w-6 text-accent" /> : undefined}
-            starterKeysOverride={starterKeysOverride ?? emptyPresentation?.starterKeys}
-            handoffRow={handoffRow}
-            onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
-            onAnswer={(askToolCallId, answer) => {
-              sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
-            }}
-            turnRow={turnRow}
-            // AP-13: the error card's live failure + retry (the failure is
-            // keyed per thread in the controller; the quiet after-reload
-            // card derives from the messages inside the list).
-            turnFailure={ctrl.turnFailure}
-            onRetryTurn={handleRetryTurn}
-            // AP-12: the inline-edit submit (delete the last exchange, then
-            // send) — straight from the controller (the same fire-and-forget
-            // shape as the onAnswer arm above).
-            onEditLast={(content) => { void ctrl.handleEditLast(content); }}
-            // AP-32: the assistant's in-place save — the controller's
-            // `handleEditAssistant` (AP-31) returns the outcome to the
-            // block, so the promise threads through untouched (failure
-            // keeps the draft open; the settle refetch shows saved text).
-            onEditAssistant={(messageId, content) => ctrl.handleEditAssistant(messageId, content)}
-          />
+          {/* LAG-5 (AGENT_SHELL_RENDER_LAG_REPORT step 6): Chrome page
+              translation wraps text nodes in <font> elements, and the LAG-4
+              prefix+tail completion removeChild's the completed block's
+              text fibers out of the reused tail paragraph — the owner's
+              2026-10-30 page crash. The EXISTING TranslateErrorBoundary
+              (the MessageScroller precedent — the one boundary class,
+              reused) wraps ONLY this list: a recovery remounts the list,
+              never the pane around it, so the composer's local draft, the
+              header and the open session survive (LAG-3's isolation is
+              untouched — the pane is not under the boundary). The live
+              stream survives by construction: LAG-3 keeps it in
+              agent-live-stream-store, so the remounted list re-renders the
+              current live text and keeps streaming. Non-DOM errors still
+              propagate — the boundary re-throws what it does not recognize
+              as translate corruption. */}
+          <TranslateErrorBoundary>
+            <AgentMessageList
+              kind={kind}
+              threadId={threadId}
+              messages={messages}
+              events={events}
+              pendingUserContent={ctrl.pendingUserContent}
+              pendingUserAttachments={ctrl.pendingUserAttachments}
+              isSending={ctrl.isSending}
+              // AP-29 follow-up 2: a regenerate in flight hides the replaced
+              // turn (the server already deleted it) and streams the new turn
+              // as a fresh turn.
+              // AP-29 follow-up 3: the recorded ids keep it hidden past the
+              // settle until the refetch lands without them (no flash of the
+              // replaced turn).
+              isRegenerating={ctrl.isRegenerating}
+              hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
+              pendingAskAnswer={ctrl.pendingAskAnswer}
+              pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
+              emptyTitle={t(emptyPresentation !== undefined ? emptyPresentation.titleKey : host.i18n.emptyTitle)}
+              emptySub={emptyPresentation !== undefined ? t(emptyPresentation.subKey) : host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
+              emptyIcon={emptyPresentation !== undefined ? <Icons.film className="h-6 w-6 text-accent" /> : undefined}
+              starterKeysOverride={starterKeysOverride ?? emptyPresentation?.starterKeys}
+              handoffRow={handoffRow}
+              onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
+              onAnswer={(askToolCallId, answer) => {
+                sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
+              }}
+              turnRow={turnRow}
+              // AP-13: the error card's live failure + retry (the failure is
+              // keyed per thread in the controller; the quiet after-reload
+              // card derives from the messages inside the list).
+              turnFailure={ctrl.turnFailure}
+              onRetryTurn={handleRetryTurn}
+              // AP-12: the inline-edit submit (delete the last exchange, then
+              // send) — straight from the controller (the same fire-and-forget
+              // shape as the onAnswer arm above).
+              onEditLast={(content) => { void ctrl.handleEditLast(content); }}
+              // AP-32: the assistant's in-place save — the controller's
+              // `handleEditAssistant` (AP-31) returns the outcome to the
+              // block, so the promise threads through untouched (failure
+              // keeps the draft open; the settle refetch shows saved text).
+              onEditAssistant={(messageId, content) => ctrl.handleEditAssistant(messageId, content)}
+              />
+          </TranslateErrorBoundary>
           {/* AP-16: the pending-changes strip — ONE mount above BOTH composer
               arms (both sit under this pane, so a single site covers desktop
               + phone; the mockup strip is viewport-agnostic). The strip hides
