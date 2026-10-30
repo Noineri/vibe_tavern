@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test";
+import { describe, expect, test, beforeEach, afterAll, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
 
@@ -107,7 +107,7 @@ let currentData: { profiles: TtsProfileRecord[]; links: Array<{ ttsProfileId: st
   links: [],
 };
 
-const realVoiceMapData = await import("../lib/tts/voice-map-data.js");
+const realVoiceMapData = { ...(await import("../lib/tts/voice-map-data.js")) };
 mock.module("../lib/tts/voice-map-data.js", () => ({
   ...realVoiceMapData,
   useVoiceMapData: () => ({
@@ -123,6 +123,17 @@ const { useAutoNarrate } = await import("./use-auto-narrate.js");
 // Restore point: tests replace startNarration with capture mocks; reset the
 // real implementation between tests so order never matters.
 const realStartNarration = useTtsPlaybackStore.getState().startNarration;
+const originalTts = useTtsPlaybackStore.getState();
+const originalChat = useChatStore.getState();
+const originalSnapshot = useSnapshotStore.getState();
+const originalNarrationMode = window.localStorage.getItem(TTS_NARRATION_MODE_KEY);
+afterAll(() => {
+  useTtsPlaybackStore.setState(originalTts, true);
+  useChatStore.setState(originalChat, true);
+  useSnapshotStore.setState(originalSnapshot, true);
+  if (originalNarrationMode === null) window.localStorage.removeItem(TTS_NARRATION_MODE_KEY);
+  else window.localStorage.setItem(TTS_NARRATION_MODE_KEY, originalNarrationMode);
+});
 
 function Probe() {
   useAutoNarrate();
@@ -153,13 +164,51 @@ function seedActiveChatWith(message: AppMessage): void {
 beforeEach(() => {
   useTtsPlaybackStore.setState({ narrations: {}, rate: 1, autoNarrate: false, startNarration: realStartNarration });
   useChatStore.setState({ activeChatId: null, generations: {} });
-  useSnapshotStore.setState({ activeChat: undefined, messagesById: {}, messageOrder: [] });
+  useSnapshotStore.setState({ activeChat: undefined, activeBranch: undefined, messagesById: {}, messageOrder: [] });
   currentData = { profiles: [pDefault], links: [] };
   window.localStorage.removeItem(TTS_NARRATION_MODE_KEY);
   cleanup();
 });
 
 describe("useAutoNarrate", () => {
+  test("detaching a reattached variant does not narrate the old text; its eventual real completion still does", async () => {
+    const fired: string[] = [];
+    useTtsPlaybackStore.setState({ autoNarrate: true, startNarration: async (_id, text) => { fired.push(text); } });
+    seedActiveChatWith(makeMessage("m1", "Old reply"));
+    const view = render(React.createElement(Probe));
+    try {
+      await act(async () => {
+        // The attachment cleanup leaves the last status non-terminal.
+        useChatStore.getState().finishGeneration("c1");
+      });
+      expect(fired).toEqual([]);
+      await act(async () => {
+        useChatStore.setState({ generations: { c1: genState("m1") } });
+      });
+      await act(async () => {
+        useSnapshotStore.setState({ messagesById: { m1: makeMessage("m1", "Final reply") } });
+        useChatStore.getState().setGenerationStatus("c1", "idle");
+        useChatStore.getState().finishGeneration("c1");
+      });
+      expect(fired).toEqual(["Final reply"]);
+    } finally { view.unmount(); }
+  });
+
+  test("moving to another branch never consumes a disappearing target as a completed reply", async () => {
+    const fired: string[] = [];
+    useTtsPlaybackStore.setState({ autoNarrate: true, startNarration: async (_id, text) => { fired.push(text); } });
+    seedActiveChatWith(makeMessage("m1", "Old reply"));
+    const view = render(React.createElement(Probe));
+    try {
+      await act(async () => {
+        useSnapshotStore.setState({ activeChat: makeActiveChat({ activeBranchId: brandId<ChatBranchId>("b2") }),
+          activeBranch: { id: brandId<ChatBranchId>("b2") } as NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]> });
+        useChatStore.setState({ generations: { c1: genState(null) } });
+      });
+      expect(fired).toEqual([]);
+    } finally { view.unmount(); }
+  });
+
   test("fires once on streaming id->null when autoNarrate on, passing macro-seam text and resolved profile", async () => {
     const fired: Captured[] = [];
     useTtsPlaybackStore.setState({

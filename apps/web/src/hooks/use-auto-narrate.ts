@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { useChatStore } from "../stores/chat-store.js";
+import { generationMatchesBranch, useChatStore } from "../stores/chat-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useMacroContext } from "../stores/chat-selectors.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
@@ -25,13 +25,27 @@ export function useAutoNarrate(): void {
 
   const prevStreamingIdRef = useRef<string | null>(null);
   const lastAutoNarratedIdRef = useRef<string | null>(null);
+  const previousScopeRef = useRef({ chatId: activeChatId, branchId: activeBranchId });
 
   useEffect(() => {
     const prev = prevStreamingIdRef.current;
     const cur = streamingMessageId;
+    const previousScope = previousScopeRef.current;
+    previousScopeRef.current = { chatId: activeChatId, branchId: activeBranchId };
+    if (previousScope.chatId !== activeChatId || previousScope.branchId !== activeBranchId) {
+      prevStreamingIdRef.current = cur;
+      return;
+    }
 
     // Detect transition id -> null : a stream just finished.
     if (prev !== null && cur === null) {
+      const gen = activeChatId ? useChatStore.getState().generations[activeChatId] : undefined;
+      // A detached GET drops its local target without settling the producer.
+      // Only an actual terminal refresh may narrate the persisted variant.
+      if (gen?.generationStatus === "preparing" || gen?.generationStatus === "streaming" || !generationMatchesBranch(gen, activeBranchId)) {
+        prevStreamingIdRef.current = cur;
+        return;
+      }
       const finishedId = prev;
       // Guard: fire once per finished message.
       if (lastAutoNarratedIdRef.current === finishedId) {

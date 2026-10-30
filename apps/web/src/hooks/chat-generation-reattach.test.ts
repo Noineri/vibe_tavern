@@ -53,6 +53,8 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
   const readers: Array<{ writer: ReadableStreamDefaultController<Uint8Array>; closed: boolean; seq: number }> = [];
   const encoder = new TextEncoder();
   let snapshotOverride: (() => Promise<Response>) | undefined;
+  let replayBarrier: Promise<void> | undefined;
+  let noRetainedRun = false;
   const context = { ...operation, runId: "run-a", chatId: A, branchId: `branch-${A}` };
   const send = (reader: typeof readers[number], event: string, data: unknown) => {
     if (!reader.closed) reader.writer.enqueue(encoder.encode(frame(++reader.seq, event, data)));
@@ -63,7 +65,10 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
     requests.push(`${method} ${path}`);
     if (path === "/api/agent-runs") return Response.json(active ? [{ threadId: `chat:${A}` }] : []);
     if (path === `/api/chats/${A}/generation/stop`) return Response.json({ stopped: true });
-    if (path === `/api/chats/${A}/generation`) return new Response(new ReadableStream<Uint8Array>({
+    if (path === `/api/chats/${A}/generation`) {
+      if (replayBarrier) await replayBarrier;
+      if (noRetainedRun) { current = snapshot(A, mode, "Final reply"); return new Response(null, { status: 204 }); }
+      return new Response(new ReadableStream<Uint8Array>({
       start(writer) {
         const reader = { writer, closed: false, seq: 0 };
         readers.push(reader);
@@ -74,7 +79,8 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
         send(reader, "text-delta", { delta: "Partial reply" });
       },
       cancel() { const reader = readers.at(-1); if (reader) reader.closed = true; },
-    }));
+      }));
+    }
     if (path === `/api/chats/${A}`) return snapshotOverride ? snapshotOverride() : Response.json(current);
     if (path === `/api/chats/${B}`) return Response.json(snapshot(B, "rp", "Other chat"));
     if (method === "POST" && refused) return Response.json({ code: "AGENT_RUN_ACTIVE", error: "Already running" }, { status: 409 });
@@ -96,6 +102,8 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
     setActive(value: boolean) { active = value; },
     refuse() { refused = true; },
     delaySnapshot(fn: () => Promise<Response>) { snapshotOverride = fn; },
+    delayReplay(barrier: Promise<void>) { replayBarrier = barrier; },
+    loseRetainedRun() { noRetainedRun = true; },
     finish(cancelled = false) {
       active = false; current = snapshot(A, mode, cancelled ? "Partial reply" : "Final reply");
       for (const reader of readers) if (!reader.closed) {
@@ -240,5 +248,32 @@ test("a slow saved-user snapshot from a detached subscription cannot repaint a r
       await act(async () => { await Promise.resolve(); });
       expect(useSnapshotStore.getState().messagesById.assistant?.content).not.toBe("Stale");
     } finally { hook.unmount(); }
+  });
+});
+
+test("Stop before the first context waits for server ownership without detaching or losing the request", async () => {
+  await fixture("rp", { operation: "generate", messageId: null }, async (h) => {
+    const ready = deferred<void>(); h.delayReplay(ready.promise);
+    const hook = h.mount();
+    try {
+      await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(true));
+      await act(async () => { hook.result.current.handleCancelGeneration(); });
+      expect(h.requests.filter((request) => request.endsWith("/stop"))).toHaveLength(0);
+      expect(useChatStore.getState().generations[A]?.abortController?.signal.aborted).toBe(false);
+      await act(async () => { ready.resolve(); });
+      await waitFor(() => expect(h.requests.filter((request) => request.endsWith("/stop"))).toHaveLength(1));
+      await act(async () => { h.finish(true); });
+      await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(false));
+    } finally { ready.resolve(); }
+  });
+});
+
+test("a run disappearing between discovery and GET settles from the canonical snapshot", async () => {
+  await fixture("rp", { operation: "generate", messageId: null }, async (h) => {
+    h.loseRetainedRun(); h.mount();
+    await waitFor(() => expect(useSnapshotStore.getState().messagesById.assistant?.content).toBe("Final reply"));
+    expect(useChatStore.getState().generations[A]?.isSending).toBe(false);
+    expect(h.requests.filter((request) => request.startsWith("POST"))).toEqual([]);
+    expect(h.readers).toHaveLength(0);
   });
 });
