@@ -257,7 +257,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
 	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
 	const summaryAssetLoader = (assetId: string) => assetService.loadBuffer(assetId);
-	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService, null, undefined, summaryAssetLoader);
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService, events, undefined, summaryAssetLoader);
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 	// DR-3a — story-plan ↔ goal-tracker sync: the ACTIVE branch's plan drives
 	// the tracker (projection on applyPlan/reconcile), and committed tracker
