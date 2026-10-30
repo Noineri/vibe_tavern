@@ -28,7 +28,8 @@ import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
+import { chatStreamToolCallbacks } from "./chat-stream-tool-callbacks.js";
 import {
   sendChatMessageAction,
   regenerateMessageAction,
@@ -251,100 +252,7 @@ export function useChatController(): ChatControllerActions {
           useChatStore.getState().setGenerationMetadata(chatId, metadata);
           onGenerationMetadata?.(metadata);
         },
-        onToolCall: (info) => {
-          // Capture the full operation INPUT (args) here — onToolCall fires once
-          // the call's args are complete, before execution. onToolResult later
-          // merges result fields without erasing args (CED-5), so the activity
-          // carries both the input and the cumulative output for the operation card.
-          useCoauthorTurnStore.getState().upsertActivity(chatId, {
-            toolCallId: info.toolCallId,
-            toolName: info.toolName,
-            args: info.args,
-            status: "streaming",
-          });
-        },
-        onToolInputStart: (info) => {
-          useCoauthorTurnStore.getState().upsertActivity(chatId, {
-            toolCallId: info.toolCallId,
-            toolName: info.toolName,
-            status: "streaming",
-          });
-        },
-        onToolResult: (info) => {
-          // CTX-S6: a read_skill_file result is {path, content} — NOT a proposal.
-          // Recognize it before the proposal-schema parse so the card renders as
-          // a normal done read (green check + path) instead of an error card.
-          if (info.toolName === "read_skill_file") {
-            const read = coauthorSkillReadOutputSchema.safeParse(info.output);
-            useCoauthorTurnStore.getState().upsertActivity(chatId, {
-              toolCallId: info.toolCallId,
-              toolName: info.toolName,
-              status: info.isError || !read.success ? "error" : "done",
-              ...(read.success ? { readPath: read.data.path } : {}),
-            });
-            return;
-          }
-          // CTX-L3/CE-B1: a lore_bundle is a distinct proposal arm. Its wire
-          // discriminator, rather than a parallel tool-name list, recognizes
-          // every current and future lore tool before the profile/greeting parse.
-          const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
-          if (lore.success) {
-            useCoauthorTurnStore.getState().upsertActivity(chatId, {
-              toolCallId: info.toolCallId,
-              toolName: info.toolName,
-              status: info.isError ? "error" : "done",
-              loreBundle: lore.data.bundle,
-              summary: lore.data.summary,
-            });
-            return;
-          }
-          // CE-D2: a search_context result is {results:[...locator rows]} — a
-          // read-only search, NOT a proposal (the proposal parse below would
-          // flag it an error — the reported bug: a successful search rendered
-          // as a red error card). The query label comes from the args captured
-          // at onToolCall (this upsert merges into that same entry).
-          if (info.toolName === "search_context") {
-            const search = coauthorSearchOutputSchema.safeParse(info.output);
-            useCoauthorTurnStore.getState().upsertActivity(chatId, {
-              toolCallId: info.toolCallId,
-              toolName: info.toolName,
-              status: info.isError || !search.success ? "error" : "done",
-              ...(search.success ? { search: { results: search.data.results } } : {}),
-            });
-            return;
-          }
-          // CE-D2: a read_context_item result is {type,id,title,content} — a
-          // read of one located entity, NOT a proposal. The body is dropped
-          // (large); only the locator reaches the card, mirroring the
-          // read_skill_file precedent.
-          if (info.toolName === "read_context_item") {
-            const ctxRead = coauthorContextReadOutputSchema.safeParse(info.output);
-            useCoauthorTurnStore.getState().upsertActivity(chatId, {
-              toolCallId: info.toolCallId,
-              toolName: info.toolName,
-              status: info.isError || !ctxRead.success ? "error" : "done",
-              ...(ctxRead.success ? { contextRead: { type: ctxRead.data.type, title: ctxRead.data.title } } : {}),
-            });
-            return;
-          }
-          // Narrow the opaque `output` to the CoauthorToolOutput wire contract; a
-          // malformed payload (or an explicit tool error) marks the card as error.
-          const parsed = coauthorToolOutputSchema.safeParse(info.output);
-          useCoauthorTurnStore.getState().upsertActivity(chatId, {
-            toolCallId: info.toolCallId,
-            toolName: info.toolName,
-            status: info.isError || !parsed.success ? "error" : "done",
-            ...(parsed.success
-              ? {
-                  summary: parsed.data.summary,
-                  target: parsed.data.target,
-                  proposed: parsed.data.proposed,
-                  greetingIndex: parsed.data.greetingIndex,
-                  isAdd: parsed.data.isAdd,
-                }
-              : {}),
-          });
-        },
+        ...chatStreamToolCallbacks(chatId),
       });
 
       await reveal.waitForReveal();
