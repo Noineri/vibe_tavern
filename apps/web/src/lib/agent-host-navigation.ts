@@ -7,6 +7,7 @@ import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useSidechatOpenStore } from "../stores/sidechat-open-store.js";
 import { useSidechatMobileStore } from "../stores/sidechat-mobile-store.js";
 import { switchChatAction, switchModeAction, activateBranchAction } from "../stores/api-actions/chat-actions.js";
+import { coauthorReviews } from "./coauthor-draft.js";
 
 /** Use the existing Build intent path, not a second editor or direct DOM jump.
  * Both buffer editors already show their assistant whenever an entity opens. */
@@ -30,4 +31,16 @@ export async function openSidechatAgent(owner: AgentThreadOwner): Promise<void> 
   useNavigationStore.getState().setMode("play");
   useSidechatOpenStore.getState().setOpen(owner.chatId, true);
   useSidechatMobileStore.getState().setTab("sidechat");
+}
+
+/** Co-Author runs are chat-owned, not copilot threads. Reuse the existing chat
+ * switch path so the character selection and canonical shell follow its chat. */
+export async function openCoauthorChat(id: string): Promise<void> {
+  const chatId = brandId<ChatId>(id);
+  await switchChatAction(chatId);
+  const chat = useSnapshotStore.getState().activeChat;
+  if (chat?.id !== chatId || chat.mode !== "coauthor") throw new Error("Co-Author chat no longer exists");
+  useChatStore.getState().setActiveChatId(chatId);
+  useNavigationStore.getState().setMode("play");
+  await coauthorReviews.hydrate(chatId);
 }

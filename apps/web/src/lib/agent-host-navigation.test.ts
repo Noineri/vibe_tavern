@@ -5,6 +5,10 @@ await import("../components/build/editors/copilot/experience-agent-host.js");
 await import("../components/build/editors/script-agent-host.js");
 await import("../components/chat/sidechat/sidechat-host.js");
 const { getAgentHost } = await import("./agent-host-registry.js");
+const { openCoauthorChat } = await import("./agent-host-navigation.js");
+const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
+const { snapshotCoauthorEditorSnapshotStateForTests, restoreCoauthorEditorSnapshotStateForTests } = await import("./coauthor-editor-snapshot.js");
+const originalEditor = snapshotCoauthorEditorSnapshotStateForTests();
 const { useBuildNavigationStore } = await import("../stores/build-navigation-store.js");
 const { useCharacterStore } = await import("../stores/character-store.js");
 const { useNavigationStore } = await import("../stores/navigation-store.js");
@@ -16,23 +20,27 @@ function snapshot<T>(store: { getState: () => T; setState: (state: T, replace: t
   const before = store.getState();
   return () => store.setState(before, true);
 }
-const restore = [snapshot(useBuildNavigationStore), snapshot(useCharacterStore), snapshot(useNavigationStore), snapshot(useChatStore), snapshot(useSnapshotStore), snapshot(useSidechatOpenStore), snapshot(useSidechatMobileStore)];
+const restore = [snapshot(useBuildNavigationStore), snapshot(useCharacterStore), snapshot(useNavigationStore), snapshot(useChatStore), snapshot(useSnapshotStore), snapshot(useSidechatOpenStore), snapshot(useSidechatMobileStore), snapshot(useCoauthorTurnStore)];
 const originalFetch = globalThis.fetch;
 const storageKey = `${SIDECHAT_OPEN_KEY_PREFIX}destination-chat`;
 const originalStorage = localStorage.getItem(storageKey);
 let requests: Array<[string, string]>;
+let chatMode: "rp" | "coauthor";
 function reset() {
+  restoreCoauthorEditorSnapshotStateForTests(originalEditor);
   globalThis.fetch = originalFetch;
   for (const apply of restore) apply();
   if (originalStorage === null) localStorage.removeItem(storageKey);
   else localStorage.setItem(storageKey, originalStorage);
 }
 beforeEach(() => {
-  reset(); requests = [];
+  reset(); requests = []; chatMode = "rp";
   globalThis.fetch = (async (input, init) => {
     const path = new URL(String(input), "http://gateway.test").pathname;
     requests.push([init?.method ?? "GET", path]);
-    return Response.json({ activeChat: { id: "destination-chat", characterId: "character", mode: "rp" }, activeBranch: { id: path.endsWith("/activate") ? "destination-branch" : "previous-branch" } });
+    if (path.endsWith("/api/agent-runs")) return Response.json([]);
+    if (path.endsWith("/coauthor/review")) return Response.json(null);
+    return Response.json({ activeChat: { id: "destination-chat", characterId: "character", mode: chatMode }, activeBranch: { id: path.endsWith("/activate") ? "destination-branch" : "previous-branch" } });
   }) as typeof fetch;
 });
 afterAll(reset);
@@ -61,4 +69,22 @@ test("sidechat Open loads its chat and exact branch, then opens both desktop and
   expect(useNavigationStore.getState().mode).toBe("play");
   expect(useSidechatOpenStore.getState().openByChat["destination-chat"]).toBe(true);
   expect(useSidechatMobileStore.getState().tab).toBe("sidechat");
+});
+
+test("Co-Author Open loads the exact chat, character and server review through existing navigation", async () => {
+  chatMode = "coauthor";
+  useNavigationStore.getState().setMode("build");
+  await openCoauthorChat("destination-chat");
+  expect(useNavigationStore.getState().mode).toBe("play");
+  expect(String(useChatStore.getState().activeChatId)).toBe("destination-chat");
+  expect(useChatStore.getState().selectedCharacterId).toBe("character");
+  expect(useSnapshotStore.getState().activeChat?.mode).toBe("coauthor");
+  expect(requests.map(([method, path]) => [method, path.replace(/^.*\/api/, "/api")])).toEqual([
+    ["GET", "/api/chats/destination-chat"], ["GET", "/api/agent-runs"], ["GET", "/api/chats/destination-chat/coauthor/review"],
+  ]);
+});
+
+test("Co-Author Open refuses a non-Co-Author destination without loading its review", async () => {
+  await expect(openCoauthorChat("destination-chat")).rejects.toThrow("Co-Author chat no longer exists");
+  expect(requests).toHaveLength(1);
 });

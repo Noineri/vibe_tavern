@@ -6,7 +6,15 @@ useDomEnv();
 const { renderHook } = await import("@testing-library/react");
 const { toast } = await import("sonner");
 const { registerAgentHost } = await import("../lib/agent-host-registry.js");
-const { registerVisibleAgentThread } = await import("../lib/agent-run-visibility.js");
+const { registerVisibleAgentThread, useVisibleAgentThread } = await import("../lib/agent-run-visibility.js");
+const { useChatStore } = await import("../stores/chat-store.js");
+const { useSnapshotStore } = await import("../stores/snapshot-store.js");
+const { useNavigationStore } = await import("../stores/navigation-store.js");
+const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
+const { snapshotCoauthorEditorSnapshotStateForTests, restoreCoauthorEditorSnapshotStateForTests } = await import("../lib/coauthor-editor-snapshot.js");
+const originalEditor = snapshotCoauthorEditorSnapshotStateForTests();
+const originalChat = useChatStore.getState(), originalSnapshot = useSnapshotStore.getState(), originalNavigation = useNavigationStore.getState(), originalTurn = useCoauthorTurnStore.getState();
+const originalFetch = globalThis.fetch;
 const api = await import("../api/experience-copilot-api.js");
 let language = "en";
 installI18nContextSeam({ custom: { t: (key, values) => JSON.stringify({ key, values, language }) } });
@@ -46,7 +54,14 @@ function restoreToken() {
   if (originalToken === null) localStorage.removeItem(tokenKey);
   else localStorage.setItem(tokenKey, originalToken);
 }
+function restoreStores() {
+  globalThis.fetch = originalFetch;
+  restoreCoauthorEditorSnapshotStateForTests(originalEditor);
+  useChatStore.setState(originalChat, true); useSnapshotStore.setState(originalSnapshot, true);
+  useNavigationStore.setState(originalNavigation, true); useCoauthorTurnStore.setState(originalTurn, true);
+}
 beforeEach(() => {
+  restoreStores();
   globalThis.EventSource = originalSource;
   restoreToken(); language = "en";
   Source.instances = [];
@@ -55,6 +70,7 @@ beforeEach(() => {
   globalThis.EventSource = Source as unknown as typeof EventSource;
 });
 afterAll(() => {
+  restoreStores();
   globalThis.EventSource = originalSource;
   restoreToken(); success.mockRestore(); info.mockRestore(); error.mockRestore();
   for (const off of unregister) off();
@@ -149,5 +165,56 @@ test("a failed Open action reports the existing request error instead of rejecti
     if (typeof action !== "object" || action === null || !("onClick" in action)) throw new Error("No Open action");
     await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
     expect(error).toHaveBeenCalledWith("Destination no longer exists");
+  } finally { h.unmount(); }
+});
+
+const coauthorEvent = (state = "finished") => ({ threadId: "chat:coauthor-chat", kind: "coauthor", title: "Character", state,
+  owner: { kind: "chat", chatId: "coauthor-chat", mode: "coauthor" } });
+
+for (const [state, level] of [["finished", success], ["failed", error]] as const) {
+  test(`Co-Author ${state} notification opens the exact existing character chat, not an agent thread`, async () => {
+    const requests: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input); requests.push(url);
+      if (url.endsWith("/api/agent-runs")) return Response.json([]);
+      if (url.endsWith("/coauthor/review")) return Response.json(null);
+      return Response.json({ activeChat: { id: "coauthor-chat", characterId: "coauthor-character", mode: "coauthor" }, activeBranch: { id: "branch" } });
+    }) as typeof fetch;
+    const h = renderHook(() => useAgentRunEvents());
+    try {
+      Source.instances[0]!.emit(coauthorEvent(state));
+      expect(level).toHaveBeenCalledTimes(1);
+      const action = level.mock.calls[0]![1]!.action;
+      if (typeof action !== "object" || !action || !("onClick" in action)) throw new Error("No Open action");
+      await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+      expect(String(useChatStore.getState().activeChatId)).toBe("coauthor-chat");
+      expect(useChatStore.getState().selectedCharacterId).toBe("coauthor-character");
+      expect(useNavigationStore.getState().mode).toBe("play");
+      expect(requests.some((url) => url.includes("/experience-copilot/"))).toBe(false);
+    } finally { h.unmount(); }
+  });
+}
+
+test("the mounted Co-Author visibility lease suppresses only its chat and releases on unmount", () => {
+  const view = renderHook(() => useVisibleAgentThread("coauthor", "chat:coauthor-chat", true));
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    Source.instances[0]!.emit(coauthorEvent());
+    expect(success).not.toHaveBeenCalled();
+    view.unmount();
+    Source.instances[0]!.emit(coauthorEvent());
+    expect(success).toHaveBeenCalledTimes(1);
+  } finally { view.unmount(); h.unmount(); }
+});
+
+test("RP generations and mismatched Co-Author owners never create notifications", () => {
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    const event = coauthorEvent();
+    Source.instances[0]!.emit({ ...event, kind: "rp", owner: { ...event.owner, mode: "rp" } });
+    Source.instances[0]!.emit({ ...event, owner: { ...event.owner, mode: "rp" } });
+    Source.instances[0]!.emit({ ...event, threadId: "chat:another-chat" });
+    Source.instances[0]!.emit({ ...event, owner: { ...event.owner, chatId: "" } });
+    expect(success).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled();
   } finally { h.unmount(); }
 });

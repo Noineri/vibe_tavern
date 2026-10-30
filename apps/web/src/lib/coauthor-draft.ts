@@ -73,6 +73,7 @@ function key(chatId: string): string {
 }
 
 /**
+ * Legacy CA-15 writer, retained for migration fixtures; new turns never call it.
  * Persist a chat's activities (filtered to the finalized subset). If none
  * qualify, the key is removed instead. Best-effort: any localStorage failure
  * (quota / disabled / absent) is swallowed — the in-memory proposal still
@@ -104,7 +105,7 @@ export function loadDraft(chatId: string): CoauthorToolActivity[] | null {
   return parseDraft(raw);
 }
 
-/** Remove a chat's persisted draft (Apply / Reject / turn-start). No-op without localStorage. */
+/** Remove a migrated/resolved legacy key. Turn-start never calls this. */
 export function clearDraft(chatId: string): void {
   if (typeof localStorage === "undefined") return;
   try {
@@ -115,7 +116,7 @@ export function clearDraft(chatId: string): void {
 }
 
 /**
- * Load ALL persisted drafts (for boot rehydration). Iterates localStorage keys
+ * Inspect ALL legacy drafts (migration characterization). Iterates localStorage keys
  * with the draft prefix; returns a map keyed by chatId. Malformed / versioned /
  * empty entries are pruned so they don't linger. No-op without localStorage.
  */

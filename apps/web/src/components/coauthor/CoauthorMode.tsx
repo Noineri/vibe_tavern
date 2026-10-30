@@ -16,6 +16,8 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
+import { useVisibleAgentThread } from "../../lib/agent-run-visibility.js";
+import { isFinalizedActivity } from "../../lib/coauthor-draft.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -106,12 +108,13 @@ export function CoauthorMode() {
   // (CA-9.2). Reading the single source of truth here lets the tab bar know a
   // turn just produced reviewable edits, without coupling the two components.
   const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  useVisibleAgentThread("coauthor", chatId ? `chat:${chatId}` : null, true);
   const isSending = useIsSending();
   const activities = useCoauthorTurnStore(
     (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
   );
   const hasProposal =
-    !isSending && activities.some((a) => a.status === "done" && !!a.proposed && !!a.target);
+    !isSending && activities.some(isFinalizedActivity);
 
   const { mobileTab, setMobileTab, docPulse } = useCoauthorMobileTab(isMobile, hasProposal);
 

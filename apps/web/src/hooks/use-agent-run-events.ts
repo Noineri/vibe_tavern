@@ -6,6 +6,7 @@ import { appendTokenQuery } from "../lib/mobile-token.js";
 import { getAgentHost } from "../lib/agent-host-registry.js";
 import { isAgentThreadVisible } from "../lib/agent-run-visibility.js";
 import { useT } from "../i18n/context.js";
+import { openCoauthorChat } from "../lib/agent-host-navigation.js";
 
 function navigableOwner(value: unknown): AgentThreadOwner | null {
   if (!isRecord(value)) return null;
@@ -36,17 +37,28 @@ export function useAgentRunEvents(): void {
         : event.state === "asking" ? "agent_run_asking_toast"
         : event.state === "failed" ? "agent_run_failed_toast" : null;
       if (key === null || isAgentThreadVisible(event.kind, event.threadId)) return;
-      const owner = navigableOwner(event.owner);
-      if (!owner || (owner.kind === "chat" && owner.agentKind !== event.kind)) return;
-      let open: ReturnType<typeof getAgentHost>["open"];
-      try { open = getAgentHost(event.kind).open; } catch { return; }
+      let open: (() => void | Promise<void>) | undefined;
+      if (event.kind === "coauthor") {
+        const owner = event.owner;
+        if (!isRecord(owner) || owner.kind !== "chat" || owner.mode !== "coauthor"
+          || typeof owner.chatId !== "string" || owner.chatId.length === 0 || event.threadId !== `chat:${owner.chatId}`) return;
+        const chatId = owner.chatId;
+        open = () => openCoauthorChat(chatId);
+      } else {
+        const owner = navigableOwner(event.owner);
+        if (!owner || (owner.kind === "chat" && owner.agentKind !== event.kind)) return;
+        try {
+          const navigate = getAgentHost(event.kind).open;
+          if (navigate) open = () => navigate(owner);
+        } catch { return; }
+      }
       if (!open) return;
       const notify = event.state === "failed" ? toast.error : event.state === "asking" ? toast.info : toast.success;
       notify(tRef.current(key, { name: event.title }), {
         action: {
           label: tRef.current("agent_run_open"),
           onClick: async () => {
-            try { await open(owner); }
+             try { await open(); }
             catch (error) { toast.error(error instanceof Error ? error.message : tRef.current("request_failed")); }
           },
         },
