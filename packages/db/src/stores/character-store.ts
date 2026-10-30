@@ -248,6 +248,22 @@ export class CharacterStore {
     return rows.map((row) => this.mapRow(row));
   }
 
+  /** LC-2 (LONG_CHAT_PERFORMANCE_REPORT D2): bulk light read for the sidebar
+   *  chat list — id → name in ONE query, without loading full character
+   *  records (the per-chat resolver.getCharacter reads were the D2 cost; the
+   *  sidebar needs only the name — subtitle is constant "" on that path).
+   *  Deliberately NOT filtered by status: getById (the path this replaces)
+   *  resolves archived characters too, so an archived character's chats keep
+   *  showing her real name. A since-deleted row simply misses → the caller's
+   *  "Unknown" placeholder. */
+  async listIdNameMap(): Promise<Map<string, string>> {
+    const rows = await this.db
+      .select({ id: characters.id, name: characters.name })
+      .from(characters)
+      .all();
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
   async search(query: string): Promise<Character[]> {
     const rows = await this.db
       .select()

@@ -55,6 +55,7 @@ export type {
   Chat,
   ChatBranch,
 } from './chat-store.js';
+export type { ChatListSummary } from './chat-list-queries.js';
 
 export { MessageStore } from './message-store.js';
 export type { Message, MessageVariant, AddMessageInput, SceneBackfillRun } from './message-store.js';

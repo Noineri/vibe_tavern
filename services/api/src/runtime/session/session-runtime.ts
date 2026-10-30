@@ -22,6 +22,7 @@ import {
 import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { buildMessagesWithVariants } from "./session-runtime-messages.js";
+import { buildChatListItems } from "./session-runtime-chat-list.js";
 import { getPromptTraceHistory, listPromptTraces } from "./session-runtime-traces.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
@@ -258,7 +259,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 				this.resolver.getPersona(
 					chat.personaId ?? await this.persona.resolveDefaultId(),
 				),
-				Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id))),
+				this.fetchChatList(),
 				this.getAllCharacterEntries(),
 			]);
 
@@ -532,9 +533,10 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		}));
 	}
 
-	/** Ordered sidebar chat list (derived from the in-memory chat order). */
+	/** Ordered sidebar chat list (derived from the in-memory chat order). LC-2:
+	 * one aggregate read — see session-runtime-chat-list.ts. */
 	private async fetchChatList(): Promise<SessionSnapshot["chats"]> {
-		return Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id)));
+		return buildChatListItems(this.stores, this.chatOrder.items);
 	}
 
 	async getPromptTraceHistory(
@@ -674,13 +676,15 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
 	/**
 	 * List a character's co-author chats for the Co-Author mode entry screen.
-	 * Reuses mapChatToListItem so items carry the same shape (lastMessageAt,
-	 * messageCount, …) the sidebar uses. Several co-author chats per character
+	 * Items carry the same shape (lastMessageAt, messageCount, …) the sidebar
+	 * uses — from the ONE chat-list aggregate (LC-2), with
+	 * listByCharacterAndMode supplying the ordered id list (insertion order,
+	 * the pre-aggregate order, pinned). Several co-author chats per character
 	 * fall out for free: each is a chats row with mode='coauthor'.
 	 */
 	async listCoauthorChats(characterId: CharacterId): Promise<ChatListItem[]> {
 		const chats = await this.stores.chats.listByCharacterAndMode(characterId, "coauthor");
-		return Promise.all(chats.map((c) => this.mapChatToListItem(c.id as ChatId)));
+		return buildChatListItems(this.stores, chats.map((c) => c.id));
 	}
 
 	/**
@@ -804,39 +808,6 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,
-		};
-	}
-
-	private async mapChatToListItem(chatId: ChatId): Promise<ChatListItem> {
-		const chat = (await this.stores.chats.getById(chatId))!;
-		const chatState = await this.chatApp.getChatState(chatId, chat.activeBranchId as ChatBranchId);
-		let characterName = "Unknown";
-		let subtitle = "";
-		try {
-			const charRecord = await this.resolver.getCharacter(chat.characterId);
-			characterName = charRecord.name;
-			subtitle = charRecord.subtitle ?? "";
-		} catch { /* chat may reference a since-deleted character; keep default name/subtitle */ }
-		const messageCount = chatState.messages.length;
-		// Recency signal for the sidebar's "recent" sort: the newest message in the
-		// active branch (chat.updatedAt reflects metadata edits, not generation).
-		// getMessages() returns position-ascending, but reduce on createdAt is
-		// order-robust and empty-safe (→ "" → falls back to chat.updatedAt).
-		const lastMessageAt = chatState.messages.reduce<string>(
-			(max, m) => (m.createdAt > max ? m.createdAt : max),
-			"",
-		) || chat.updatedAt;
-		return {
-			id: chat.id as ChatId,
-			title: chat.title,
-			characterId: chat.characterId as CharacterId,
-			characterName,
-			subtitle,
-			activeBranchLabel: chatState.branch.label,
-			mode: chat.mode,
-			messageCount,
-			lastMessageAt,
-			updatedAt: chat.updatedAt,
 		};
 	}
 

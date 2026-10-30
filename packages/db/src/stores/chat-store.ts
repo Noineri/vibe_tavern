@@ -3,6 +3,13 @@ import { chats, chatBranches, characters, messages, messageVariants } from '../d
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { createChatInsertValues, type CreateChatInput } from './chat-create-values.js';
+import {
+  getBranch,
+  getBranches,
+  getBranchMessageCounts,
+  getChatListSummaries,
+  type ChatListSummary,
+} from './chat-list-queries.js';
 import { copyForkPromptTraces } from './chat-store-fork-trace-copy.js';
 import { replaceChatTrackerSetup, updateChatInsightsConfig, updateChatObjectiveState } from './chat-tracker-setup.js';
 import {
@@ -383,25 +390,18 @@ export class ChatStore {
   // ─── Branches ──────────────────────────────────────────────────────────────
 
   async getBranches(chatId: string): Promise<ChatBranch[]> {
-    const rows = await this.db
-      .select()
-      .from(chatBranches)
-      .where(eq(chatBranches.chatId, chatId))
-      .all();
-    return rows.map((row) => this.mapRowBranch(row));
+    return getBranches(this.db, chatId);
   }
 
   async getBranchMessageCounts(chatId: string): Promise<Map<string, number>> {
-    const rows = await this.db
-      .select({
-        branchId: messages.branchId,
-        count: count(),
-      })
-      .from(messages)
-      .where(eq(messages.chatId, chatId))
-      .groupBy(messages.branchId)
-      .all();
-    return new Map(rows.map((r) => [r.branchId, r.count]));
+    return getBranchMessageCounts(this.db, chatId);
+  }
+
+  /** LC-2: sidebar chat-list aggregate — every chat's active-branch count /
+   *  newest message createdAt / branch label in ONE query
+   *  (chat-list-queries.ts; moved off this file for the size ratchet). */
+  async getChatListSummaries(): Promise<Map<string, ChatListSummary>> {
+    return getChatListSummaries(this.db);
   }
 
   async getActiveBranch(chatId: string): Promise<ChatBranch | null> {
@@ -412,12 +412,7 @@ export class ChatStore {
   }
 
   async getBranch(branchId: string): Promise<ChatBranch | null> {
-    const row = await this.db
-      .select()
-      .from(chatBranches)
-      .where(eq(chatBranches.id, branchId))
-      .get();
-    return row ? this.mapRowBranch(row) : null;
+    return getBranch(this.db, branchId);
   }
 
   async activateBranch(chatId: string, branchId: string): Promise<Chat> {
@@ -558,7 +553,7 @@ export class ChatStore {
     });
 
     const row = await this.db.select().from(chatBranches).where(eq(chatBranches.id, branchId)).get();
-    return this.mapRowBranch(row!);
+    return mapRowBranch(row!);
   }
 
   async renameBranch(branchId: string, label: string): Promise<ChatBranch> {
@@ -568,7 +563,7 @@ export class ChatStore {
       .where(eq(chatBranches.id, branchId))
       .returning();
     if (!row) throw new Error(`Branch '${branchId}' not found after rename`);
-    return this.mapRowBranch(row);
+    return mapRowBranch(row);
   }
 
   async deleteBranch(branchId: string): Promise<void> {
@@ -874,19 +869,23 @@ export class ChatStore {
     };
   }
 
-  private mapRowBranch(row: typeof chatBranches.$inferSelect): ChatBranch {
-    return {
-      id: row.id,
-      chatId: row.chatId,
-      parentBranchId: row.parentBranchId,
-      forkedFromMessageId: row.forkedFromMessageId,
-      label: row.label,
-      loreActivationState: safeParseJson(row.loreActivationStateJson),
-      createdAt: row.createdAt,
-    };
-  }
 
 
+}
+
+/** Row mapper for chat_branches — module-level so the sibling list-query
+ *  module (chat-list-queries.ts) maps identical rows to the same ChatBranch
+ *  shape (size-ratchet extraction kept it out of the class). */
+export function mapRowBranch(row: typeof chatBranches.$inferSelect): ChatBranch {
+  return {
+    id: row.id,
+    chatId: row.chatId,
+    parentBranchId: row.parentBranchId,
+    forkedFromMessageId: row.forkedFromMessageId,
+    label: row.label,
+    loreActivationState: safeParseJson(row.loreActivationStateJson),
+    createdAt: row.createdAt,
+  };
 }
 
 function safeParseJson(text: string): Record<string, unknown> {
