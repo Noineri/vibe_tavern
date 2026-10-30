@@ -25,7 +25,7 @@ import { listAllLorebooks } from "../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../api/script-api.js";
 import { listCoauthorSkills } from "../../../api/skill-api.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentShellMobileTab } from "./use-agent-shell-mobile-tab.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatPane } from "./AgentChatPane.js";
 import { AgentShellModals } from "./agent-shell-modals.js";
@@ -95,13 +95,6 @@ export interface AgentShellProps {
    *  `AgentHostContext.hostProps` to renderEditorPane/buildSendOptions. */
   hostProps?: unknown;
 }
-
-type MobileTab = "chat" | "edit";
-
-/** E6: how long the Edit-tab pulse plays after the clean→dirty edge.
- *  Matches the CSS animation total (~2 × 1.1s), same as DOC_PULSE_MS in
- *  CoauthorMode. */
-const EDIT_TAB_PULSE_MS = 2200;
 
 export function AgentShell(props: AgentShellProps) {
   return <AgentShellSession key={`${props.kind}:${agentOwnerKey(props.owner)}`} {...props} />;
@@ -290,9 +283,6 @@ function AgentShellSession({
     },
     [contextLinks, handleSetContextLinks],
   );
-
-  // ── UI-only tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<MobileTab>("chat");
 
   // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
   //  the profile modal is its child now) ───────────────────────────────────
@@ -576,44 +566,8 @@ function AgentShellSession({
     [fetchSessions, transport, t],
   );
 
-  // ── Mobile auto-switch on proposal ───────────────────────────────────────
-  // A proposal becomes reviewable in the Chat pane (activity cards + Apply),
-  // so when one lands on mobile the surface jumps there. Ref-guarded edge
-  // mirroring CoauthorMode's `useCoauthorMobileTab`.
-  const hasProposal = useAgentTurnStore((s) => {
-    if (!threadId) return false;
-    const activities = s.turnsByThread[agentThreadKey(kind, threadId)] ?? [];
-    return activities.some(
-      (a) => a.status === "done" && a.target !== undefined && a.proposed !== undefined,
-    );
-  });
-  const prevHasProposal = useRef(hasProposal);
-  useEffect(() => {
-    const was = prevHasProposal.current;
-    prevHasProposal.current = hasProposal;
-    if (!was && hasProposal && isMobile) {
-      setActiveTab("chat");
-    }
-  }, [hasProposal, isMobile]);
-
-  // ── E6: Edit-tab dirty badge + one-shot pulse ───────────────────────
-  // Ref-guarded clean→dirty edge (proposal edge above, CA-14): the dot shows
-  // while dirty and on Chat; the pulse plays once per edge. NO auto-switch —
-  // a user-chosen Apply doesn't yank them off the chat tab.
-  const [editTabPulse, setEditTabPulse] = useState(false);
-  const prevEditTabDirty = useRef(editTabDirty);
-  useEffect(() => {
-    const was = prevEditTabDirty.current;
-    prevEditTabDirty.current = editTabDirty;
-    if (!was && editTabDirty) setEditTabPulse(true);
-  }, [editTabDirty]);
-  // Clear the highlight once the pulse animation has played
-  // (coauthor-tab-pulse ≈ 2 × 1.1s, same as DOC_PULSE_MS in CoauthorMode).
-  useEffect(() => {
-    if (!editTabPulse) return;
-    const id = setTimeout(() => setEditTabPulse(false), EDIT_TAB_PULSE_MS);
-    return () => clearTimeout(id);
-  }, [editTabPulse]);
+  // ── Mobile Chat/Edit tab: proposal auto-switch + E6 dirty pulse ─────────
+  const { activeTab, setActiveTab, editTabPulse } = useAgentShellMobileTab(kind, threadId, isMobile, editTabDirty);
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   // AP-3b: the pane JSX lives in AgentChatPane.tsx (this shell sits at the

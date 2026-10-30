@@ -173,6 +173,14 @@ let releaseStream: (() => void) | null = null;
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
+  // BR-3a / BR-2c: run discovery (nothing running) and the durable review
+  // round (none stored; writes are acknowledged) — the shell reads both on mount.
+  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+  if (/\/api\/experience-copilot\/[^/]+\/review$/.test(path)) {
+    if (method === "PUT") return jsonResponse(JSON.parse(String(init?.body)));
+    if (method === "DELETE") return jsonResponse({ ok: true });
+    return jsonResponse(null);
+  }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
     return jsonResponse(activeThread);
   }
