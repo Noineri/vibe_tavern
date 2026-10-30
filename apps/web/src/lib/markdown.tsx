@@ -6,6 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
 import { copyText } from "./clipboard.js";
+import { lookupMarkdownResult, storeMarkdownResult, type MarkdownVariant } from "./markdown-result-cache.js";
 import { preserveEscapedUnderscoreTags, rehypeRestoreEscapedUnderscoreTags, remarkUnderscoreCustomTags } from "./markdown-underscore-tags.js";
 import { ImageBlock } from "../components/chat/ImageBlock.js";
 
@@ -31,7 +32,7 @@ interface MarkdownProps {
    * `"agent-plain"` is the plain feature set with explicit plain em/strong
    * styling (surrounding color and size, no quote coloring).
    */
-  variant?: "chat" | "plain" | "agent-rp" | "agent-plain";
+  variant?: MarkdownVariant;
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
@@ -612,10 +613,12 @@ function extractText(children: React.ReactNode): string {
 // ─── Public API ───
 
 // react-markdown caches nothing: it rebuilds its unified processor and re-parses
-// the whole string on every render it is handed. React.memo is therefore the only
-// thing that keeps a finished message from being re-parsed on every streaming tick
-// of a sibling. The plugin lists sit at module scope so that render also stops
-// rebuilding the pipeline description each time.
+// the whole string on every render it is handed. React.memo keeps a finished
+// message from being re-parsed on every streaming tick of a sibling; the result
+// cache (markdown-result-cache.ts, LC-4) additionally skips the parse on REMOUNTS
+// of already-rendered text (chat reopen, branch create/switch). The plugin lists
+// sit at module scope so that render also stops rebuilding the pipeline
+// description each time.
 const REMARK_PLUGINS: PluggableList = [remarkGfm];
 
 const CHAT_REMARK_PLUGINS: PluggableList = [
@@ -676,6 +679,16 @@ function AgentSyncMarkdown({ text, variant }: { text: string; variant: "agent-rp
   );
 }
 
+// ─── Result cache wiring (LC-4) ───
+//
+// The bounded LRU over react-markdown's returned element tree lives in its own
+// module (markdown-result-cache.ts — the arch-gate 800-line cap forced the
+// split, the LC-1 session-runtime-traces.ts precedent). On a miss the element
+// tree is computed here — react-markdown's default is a plain synchronous
+// function of its options — and stored; a hit reuses the tree, so a remount
+// (chat reopen, branch create/switch) builds the DOM without re-running the
+// parse. Key and bounds: see that module's header.
+
 export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
@@ -700,15 +713,18 @@ export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, 
       : CHAT_REHYPE_PLUGINS;
   const markdownText = isPlainPipeline ? text : preserveEscapedUnderscoreTags(text);
 
+  const cached = lookupMarkdownResult(variant, markdownText);
+  const markdownElement = cached ?? ReactMarkdown({
+    children: markdownText,
+    remarkPlugins,
+    rehypePlugins,
+    components: isAgent ? AGENT_COMPONENTS : components,
+  });
+  if (cached === null) storeMarkdownResult(variant, markdownText, markdownElement);
+
   return (
     <div className={className || VARIANT_DEFAULT_CLASS[variant]}>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
-        components={isAgent ? AGENT_COMPONENTS : components}
-      >
-        {markdownText}
-      </ReactMarkdown>
+      {markdownElement}
     </div>
   );
 });
