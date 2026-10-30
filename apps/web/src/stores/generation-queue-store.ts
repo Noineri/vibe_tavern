@@ -140,7 +140,10 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
         const count = visible ? snapshot.messagesById[job.messageId]?.variants.length : undefined;
         return [{ id: job.id, messageId: job.messageId, origin: "queue", status: job.status,
           model: job.model, presetId: job.promptPresetId, presetName: presetNames[job.promptPresetId ?? (visible ? snapshot.activeChat?.promptPresetId : null) ?? ""] ?? old?.presetName ?? null,
-          startVariantPosition: job.variantIndex ?? (old?.status === job.status ? old.startVariantPosition : count ?? old?.startVariantPosition ?? 0),
+          // A newly observed background job has no snapshot anchor yet. Do not
+          // freeze a fabricated zero: returning must anchor it to that target's
+          // actual saved variants before the running row hides an in-flight one.
+          startVariantPosition: job.variantIndex ?? (old?.status === job.status && old.startVariantPosition >= 0 ? old.startVariantPosition : count ?? old?.startVariantPosition ?? -1),
           ...(job.error === undefined ? {} : { error: job.error }),
         }];
       });

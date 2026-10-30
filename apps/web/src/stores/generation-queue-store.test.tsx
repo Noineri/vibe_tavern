@@ -10,6 +10,7 @@ import {
   useQueueJobStatus,
   useHasActiveQueue,
   useGenerationBatchSummary,
+  deriveGenerationBatchSummary,
 } from "./generation-queue-store.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 
@@ -77,6 +78,19 @@ describe("BR-4g server projection", () => {
     expect(useGenerationQueueStore.getState().recordsByChat.c1).toEqual([]);
     expect(useGenerationQueueStore.getState().jobsByChat.c2?.[0]?.id).toBe("other");
     expect(useGenerationQueueStore.getState().batchesByChat.c1).toBeUndefined();
+  });
+
+  test("a job first observed in the background acquires its real anchor on return, not a fabricated first-variant slot", () => {
+    const job = { id: "background", chatId: "c1", messageId: "m1", model: "queued", promptPresetId: null, status: "running" as const, enqueuedAt: 1 };
+    const store = useGenerationQueueStore.getState();
+    store.replaceServerJobs("c1", [job]);
+    setVisibleTarget(["original", "previous-swipe"]);
+    const message = useSnapshotStore.getState().messagesById.m1!;
+    useSnapshotStore.setState({ activeChat: { id: "c1" } as AppSnapshot["activeChat"], messagesById: { m1: { ...message, role: "assistant" } } });
+    store.replaceServerJobs("c1", [job]);
+    const records = useGenerationQueueStore.getState().recordsByChat.c1!;
+    expect(records[0]?.startVariantPosition).toBe(2);
+    expect(deriveGenerationBatchSummary(2, records)).toEqual({ done: 2, failed: 0, running: 1, pending: 0, total: 3 });
   });
 });
 
