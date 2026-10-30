@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock, afterAll } from "bun:test";
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type ExperienceMessageReport } from "@vibe-tavern/domain";
 import type { AppMessage, AppSnapshot } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -19,6 +19,7 @@ const { TooltipProvider } = await import("../../shared/Tooltip.js");
 const { PendingUserMessage } = await import("./pending-user-message.js");
 const { MessageBlock } = await import("../MessageBlock.js");
 const { useDisplayMessageIds } = await import("../MessageScroller.js");
+const { countTokens: realCountTokens, getTokenizer, resetTokenCountCacheForTests } = await import("../../../utils/tokenizer.js");
 
 const chatId = brandId<ChatId>("chat-pending");
 const report = { title: "Frozen Cards", eventCount: 1,
@@ -37,6 +38,77 @@ beforeEach(() => {
   useSnapshotStore.setState({ character: wireCharacter(),
     activeChat: { id: chatId, mode: "rp" } as AppSnapshot["activeChat"] });
   useChatStore.setState({ activeChatId: chatId, generations: {} });
+});
+
+// ─── LC-5: the pending stub shows the real token count ────────────────────
+// LONG_CHAT_PERFORMANCE_REPORT step 5: the stub counts its displayed text
+// through the SAME path as the persisted message (the same macro substitution,
+// then countTokens' cache), so both rows show the identical number — no
+// 0 → N jump on settle. The metadata row's token span is the only
+// `tabular-nums` span carrying the tokens label.
+describe("pending user token count (LC-5)", () => {
+  const PENDING_CONTENT = "Hi {{user}}, the dice show 42!";
+
+  // Encode spy on the shared encoder singleton (own-property shadow,
+  // removed in afterAll): the real BPE still runs, so the rendered numbers
+  // stay real while the test sees every encode.
+  const tokenizer = getTokenizer();
+  const realEncode = tokenizer.encode.bind(tokenizer);
+  const encodedTexts: string[] = [];
+  tokenizer.encode = mock((text: string) => {
+    encodedTexts.push(text);
+    return realEncode(text);
+  });
+  beforeEach(() => {
+    encodedTexts.length = 0;
+    resetTokenCountCacheForTests();
+  });
+  afterAll(() => {
+    delete (tokenizer as { encode?: unknown }).encode;
+  });
+
+  function readTokenCount(view: ReturnType<typeof render>): number {
+    const label = Array.from(view.container.querySelectorAll("span.tabular-nums"))
+      .map((s) => s.textContent ?? "")
+      .find((t) => t.endsWith("tokens_label"));
+    expect(label).toBeDefined();
+    return Number((label ?? "").replace(/\D+/g, ""));
+  }
+
+  it("stub renders the same count the persisted message renders for identical content", async () => {
+    useChatStore.getState().startGeneration(chatId, PENDING_CONTENT);
+    const view = render(<UserMessages />);
+    const stubCount = readTokenCount(view);
+    expect(stubCount).toBeGreaterThan(0);
+
+    const message: AppMessage = { id: brandId<MessageId>("lc5-counted"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
+      position: 1, content: PENDING_CONTENT, state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
+      variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
+    await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
+    expect(readTokenCount(view)).toBe(stubCount);
+    await act(async () => { useChatStore.getState().finishGeneration(chatId); });
+    expect(readTokenCount(view)).toBe(stubCount);
+  });
+
+  it("the substituted text is encoded exactly once — the persisted row hits the cache", async () => {
+    // sanity: the real count is what the shared path returns
+    expect(realCountTokens("Hi User, the dice show 42!")).toBeGreaterThan(0);
+    useChatStore.getState().startGeneration(chatId, PENDING_CONTENT);
+    const view = render(<UserMessages />);
+    const stubCount = readTokenCount(view);
+
+    const message: AppMessage = { id: brandId<MessageId>("lc5-cached"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
+      position: 1, content: PENDING_CONTENT, state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
+      variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
+    await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
+    await act(async () => { useChatStore.getState().finishGeneration(chatId); });
+    expect(readTokenCount(view)).toBe(stubCount);
+    // one encode across the whole flow, and it counted the SUBSTITUTED text
+    // (both paths share the same macro substitution before counting)
+    expect(encodedTexts).toHaveLength(1);
+    expect(encodedTexts[0]).not.toBe(PENDING_CONTENT);
+    expect(encodedTexts[0]).toContain("User");
+  });
 });
 
 describe("pending user report chip (ERX-9)", () => {
