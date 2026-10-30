@@ -104,7 +104,7 @@ export class ChatRuntime {
   private readonly deps: ChatRuntimeDeps;
   private readonly idlePromptTraces = new Map<ChatId, PendingPromptTraceTurn>();
   private readonly generationScope = new AsyncLocalStorage<{
-    chatId: ChatId; branchId: ChatBranchId; traces: Map<ChatId, PendingPromptTraceTurn>;
+    chatId: ChatId; branchId: ChatBranchId; traces: Map<ChatId, PendingPromptTraceTurn>; collectReview: boolean;
   }>();
 
   private get pendingPromptTraceByChat() {
@@ -119,9 +119,9 @@ export class ChatRuntime {
   /** Bind EVERY iterator pull, not just generator creation: lazy bodies execute
    * on next(). Navigation/preview requests keep their own idle trace state and
    * cannot erase or retarget a detached producer's prompt/partial/final reply. */
-  withGenerationScope<T extends { event: string; data: string }>(chatId: ChatId, branchId: ChatBranchId, events: AsyncIterable<T>): AsyncIterable<T> {
-    const scope = { chatId, branchId, traces: new Map<ChatId, PendingPromptTraceTurn>() };
-    const stream = this.deps.persistCoauthorReview
+  withGenerationScope<T extends { event: string; data: string }>(chatId: ChatId, branchId: ChatBranchId, events: AsyncIterable<T>, collectReview = true): AsyncIterable<T> {
+    const scope = { chatId, branchId, traces: new Map<ChatId, PendingPromptTraceTurn>(), collectReview };
+    const stream = collectReview && this.deps.persistCoauthorReview
       ? persistAgentBufferReviewStream(events, new CoauthorReviewPersistence(chatId, this.deps.persistCoauthorReview)) : events;
     const iterator = this.generationScope.run(scope, () => stream[Symbol.asyncIterator]());
     return {
@@ -655,7 +655,7 @@ export class ChatRuntime {
   private async persistUnscopedReview(chatId: ChatId, results: readonly CoauthorReviewResult[]) {
     // Detached streams flush their collector once, after exhaustion. Native
     // non-streaming/raw callers commit from the exact append input instead.
-    if (!this.generationScope.getStore()) await this.deps.persistCoauthorReview?.(chatId, results);
+    if (!this.generationScope.getStore()?.collectReview) await this.deps.persistCoauthorReview?.(chatId, results);
   }
 }
 

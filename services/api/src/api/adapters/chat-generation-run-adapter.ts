@@ -23,14 +23,14 @@ export class ChatGenerationRunAdapter {
 
   /** Queue targets keep their message's branch even after navigation. HTTP
    * callers cannot choose this internal scope override. */
-  protected async startOwnedChatGeneration(chatId: string, operation: Parameters<ChatMessageRuntimeApi["startChatGeneration"]>[1], turn: ChatGenerationTurn, subscriberSignal?: AbortSignal, branchId?: string) {
+  protected async startOwnedChatGeneration(chatId: string, operation: Parameters<ChatMessageRuntimeApi["startChatGeneration"]>[1], turn: ChatGenerationTurn, subscriberSignal?: AbortSignal, branchId?: string, native = false) {
     const chat = await this.runStores.chats.getById(chatId);
     if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
     const character = await this.runStores.characters.getById(chat.characterId);
     const key = chatGenerationKey(chatId);
     const context = chatGenerationContextSchema.parse({ ...operation, chatId, branchId: branchId ?? chat.activeBranchId, runId: crypto.randomUUID() });
     this.agentRuns.start(key, { kind: "chat", chatId, mode: chat.mode },
-      (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, context.branchId, turn, ownedSignal), signal, context),
+      (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, context.branchId, turn, ownedSignal, native), signal, context),
       { kind: chat.mode, title: character?.name ?? chat.title });
     return this.agentRuns.subscribe(key, 0, subscriberSignal)!;
   }
@@ -42,7 +42,7 @@ export class ChatGenerationRunAdapter {
     (chatId) => ({ stopped: this.agentRuns.stop(chatGenerationKey(chatId)) });
 
   /** Runtime composition may give the turn isolated branch/trace state. */
-  protected runGenerationTurn(_chatId: string, _branchId: string, turn: ChatGenerationTurn, signal: AbortSignal) {
+  protected runGenerationTurn(_chatId: string, _branchId: string, turn: ChatGenerationTurn, signal: AbortSignal, _native = false) {
     return turn(signal);
   }
 

@@ -43,8 +43,8 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 		agentRuns?: AgentRunRegistry<AgentRunOwner>,
 	) { super(stores, agentRuns); }
 
-	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal) {
-		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal));
+	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal, native = false) {
+		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal), !native);
 	}
 
 	getCoauthorReview: ChatRuntimeApi["getCoauthorReview"] = (id) => new CoauthorReviewService(this.stores).get(id);
@@ -178,8 +178,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 		};
 	}
 
-	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
-		this.assertGenerationIdle(chatId);
+	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "send", messageId: null }, requestSignal, async (signal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -213,7 +212,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 			promptMessageCount: result.promptMessageCount,
 		});
 		return result.snapshot;
-	};
+	});
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
@@ -246,8 +245,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 		}
 	};
 
-	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
-		this.assertGenerationIdle(chatId);
+	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "regenerate", messageId }, requestSignal, async (signal) => {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
@@ -260,7 +258,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
@@ -283,8 +281,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 	 *  executor pushes under; a capability-less provider cannot accept a
 	 *  continuation, so the request fails honestly instead of silently
 	 *  generating a fresh reply. */
-	continueMessage = async (chatId: string, messageId: string, signal?: AbortSignal) => {
-		this.assertGenerationIdle(chatId);
+	continueMessage = async (chatId: string, messageId: string, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "continue", messageId }, requestSignal, async (signal) => {
 		const message = await this.stores.messages.getMessageById(messageId);
 		if (!message || message.chatId !== chatId) {
 			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
@@ -308,7 +305,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	continueMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, signal?: AbortSignal) {
 		const message = await this.stores.messages.getMessageById(messageId);
@@ -335,8 +332,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 		});
 	};
 
-	generateReply = async (chatId: string, signal?: AbortSignal) => {
-		this.assertGenerationIdle(chatId);
+	generateReply = async (chatId: string, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "generate", messageId: null }, requestSignal, async (signal) => {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,
@@ -347,7 +343,7 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	generateReplyStream = async function* (this: ChatAdapter, chatId: string, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });

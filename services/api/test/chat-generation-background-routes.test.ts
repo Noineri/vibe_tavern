@@ -100,7 +100,7 @@ async function setup(mode: Mode, dir: string) {
   const release = deferred();
   const entered = deferred();
   const inputs: ProviderExecutionInput[] = [];
-  const provider = { fail: false, ask: false, proposals: [] as ExtractedToolResult[] };
+  const provider = { fail: false, ask: false, parkNative: false, proposals: [] as ExtractedToolResult[] };
   const events = new EventBus();
   const lifecycle: AgentRunNotification[] = [];
   events.on("agent.run", (event) => { lifecycle.push(event); });
@@ -108,6 +108,7 @@ async function setup(mode: Mode, dir: string) {
     async () => getChatModeStrategy(mode), undefined, undefined, {
       nonstreaming: async (input) => {
         inputs.push(input);
+        if (provider.parkNative) { entered.resolve(); await release.promise; input.signal?.throwIfAborted(); }
         return { text: "Native reply", providerResponse: { mode: "nonstream", steps: [] },
           toolCalls: provider.proposals.map((result) => ({ toolCallId: result.toolCallId, toolName: result.toolName, args: result.args })),
           toolResults: provider.proposals };
@@ -249,6 +250,25 @@ test("a queued provider cut retains its partial variant and a later job still su
     h.release.resolve(); await h.adapter.generationQueue.kick(h.chat.id);
     expect(await h.adapter.getGenerationQueue(h.chat.id)).toMatchObject([{ status: "failed", error: "Provider cut", variantIndex: 1 }, { status: "done", variantIndex: 2 }]);
     expect((await h.stores.messages.getVariants(h.assistant.id)).map((variant) => variant.content)).toEqual(["Continue here", "Partial reply", "Partial reply completed"]);
+  });
+});
+
+test("a standalone native regenerate owns the chat slot before queued work and is never itself a queue job", async () => {
+  await withEnv("rp", async (h) => {
+    h.provider.parkNative = true;
+    const native = h.app.request(`${h.path}/messages/${h.assistant.id}/regenerate`, { method: "POST" });
+    await h.entered.promise;
+    await h.adapter.enqueueGenerationJob(h.chat.id, { messageId: h.assistant.id, model: "queued", promptPresetId: null });
+    await h.adapter.generationQueue.kick(h.chat.id);
+    expect((await h.adapter.getGenerationQueue(h.chat.id)).map((job) => job.status)).toEqual(["pending"]);
+    expect(h.inputs).toHaveLength(1);
+    expect((await h.start("send")).status).toBe(409);
+    h.release.resolve();
+    expect((await native).status).toBe(200);
+    await h.adapter.generationQueue.kick(h.chat.id);
+    expect(h.inputs.map((input) => input.model)).toEqual(["test-model", "queued"]);
+    expect(await h.adapter.getGenerationQueue(h.chat.id)).toMatchObject([{ status: "done", variantIndex: 2 }]);
+    expect((await h.stores.messages.getVariants(h.assistant.id)).map((variant) => variant.content)).toEqual(["Continue here", "Native reply", "Partial reply completed"]);
   });
 });
 
