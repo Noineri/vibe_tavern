@@ -24,6 +24,9 @@ const { useChatStore } = await import("../stores/chat-store.js");
 const { useChatNotifications } = await import("../stores/chat-notifications-store.js");
 const { useModalStore } = await import("../stores/modal-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
+const { useGenerationQueueStore } = await import("../stores/generation-queue-store.js");
+const { refreshGenerationQueue } = await import("../lib/chat-generation-queue-client.js");
+const initialQueue = useGenerationQueueStore.getState();
 const { generateChatSummaryAction } = await import("../stores/api-actions/chat-actions.js");
 const { brandId } = await import("@vibe-tavern/domain");
 import type { ChatId } from "@vibe-tavern/domain";
@@ -64,6 +67,7 @@ beforeEach(() => {
 	useChatStore.setState({ activeChatId: brandId<ChatId>("chat-1") });
 	useModalStore.getState().setContextMemoryOpen(false);
 	useSnapshotStore.getState().clear();
+	useGenerationQueueStore.setState({ jobsByChat: {}, recordsByChat: {}, batchesByChat: {} });
 	MockEventSource.instances = [];
 	globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
 });
@@ -72,9 +76,44 @@ afterAll(() => {
 	globalThis.fetch = originalFetch;
 	success.mockRestore();
 	error.mockRestore();
+	useGenerationQueueStore.setState(initialQueue, true);
 });
 
 const { useChatEvents } = await import("./use-chat-events.js");
+
+it("queue.updated refreshes the existing pill state and keeps its background channel until settlement", async () => {
+	const job = { id: "server-job", chatId: "chat-1", messageId: "assistant", model: "model", promptPresetId: null, status: "running" as const, enqueuedAt: 1 };
+	let jobs: Array<Omit<typeof job, "status"> & { status: "running" | "done" }> = [job];
+	globalThis.fetch = Object.assign(async () => Response.json(jobs), { preconnect: originalFetch.preconnect });
+	const { rerender, unmount } = renderHook(({ id }) => useChatEvents(id), { initialProps: { id: "chat-1" } });
+	const source = MockEventSource.instances[0]!;
+	await act(async () => { source.emit("queue.updated"); await refreshGenerationQueue("chat-1"); });
+	expect(useGenerationQueueStore.getState().jobsByChat["chat-1"]?.[0]?.status).toBe("running");
+	rerender({ id: "chat-2" });
+	expect(source.closed).toBe(false);
+	jobs = [{ ...job, status: "done" }];
+	await act(async () => { source.emit("queue.updated"); await refreshGenerationQueue("chat-1"); });
+	expect(source.closed).toBe(true);
+	expect(useGenerationQueueStore.getState().recordsByChat["chat-1"]).toEqual([]);
+	expect(success).not.toHaveBeenCalled();
+	unmount();
+});
+
+it("ready refreshes queue state missed during reconnect and ignores callbacks from a closed source", async () => {
+	const job = { id: "restored", chatId: "chat-1", messageId: "assistant", model: "model", promptPresetId: null, status: "pending", enqueuedAt: 1 };
+	let reads = 0;
+	globalThis.fetch = Object.assign(async () => { reads += 1; return Response.json([job]); }, { preconnect: originalFetch.preconnect });
+	const { rerender, unmount } = renderHook(({ id }) => useChatEvents(id), { initialProps: { id: "chat-1" } });
+	const source = MockEventSource.instances[0]!;
+	await act(async () => { source.emit("ready"); await refreshGenerationQueue("chat-1"); });
+	expect(useGenerationQueueStore.getState().jobsByChat["chat-1"]?.[0]?.id).toBe("restored");
+	await act(async () => { useGenerationQueueStore.getState().replaceServerJobs("chat-1", []); });
+	rerender({ id: "chat-2" });
+	const before = reads;
+	await act(async () => { source.emit("queue.updated"); });
+	expect(reads).toBe(before);
+	unmount();
+});
 
 describe("useChatEvents — SPC-7b", () => {
 	it("opens an EventSource for the active chat and closes it on unmount", () => {
@@ -84,7 +123,7 @@ describe("useChatEvents — SPC-7b", () => {
 
 		expect(MockEventSource.instances).toHaveLength(1);
 		expect(MockEventSource.instances[0]!.url).toContain("/api/chats/chat-1/events");
-		for (const kind of ["summary.started", "summary.generated", "summary.failed", "summary.cancelled"]) {
+		for (const kind of ["summary.started", "summary.generated", "summary.failed", "summary.cancelled", "queue.updated", "ready"]) {
 			expect(MockEventSource.instances[0]!.addEventListener).toHaveBeenCalledWith(kind, expect.any(Function));
 		}
 

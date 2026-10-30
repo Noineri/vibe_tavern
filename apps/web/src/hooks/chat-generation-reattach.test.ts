@@ -104,6 +104,7 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
       return hook;
     },
     setActive(value: boolean) { active = value; },
+    nextRun() { active = true; context.runId = "run-b"; },
     refuse() { refused = true; },
     delaySnapshot(fn: () => Promise<Response>) { snapshotOverride = fn; },
     delayReplay(barrier: Promise<void>) { replayBarrier = barrier; },
@@ -196,6 +197,50 @@ test("a running queue job uses the same explicit server Stop rather than abortin
     expect(h.requests).toContain(`DELETE /api/chats/${A}/queue/${job.id}`);
     expect(useChatStore.getState().generations[A]?.isSending).toBe(true);
     await act(async () => { h.finish(true); });
+    await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(false));
+  });
+});
+
+test("queue invalidation attaches an idle chat and a next job starting before local settlement is not lost", async () => {
+  await fixture("rp", { operation: "regenerate", messageId: "assistant" }, async (h) => {
+    h.setActive(false); h.mount();
+    await waitFor(() => expect(h.requests).toContain(`GET /api/chats/${A}`));
+    const job = { id: "first", chatId: A, messageId: "assistant", model: "model", promptPresetId: null, status: "running" as const, enqueuedAt: 1 };
+    await act(async () => { h.setActive(true); useGenerationQueueStore.getState().replaceServerJobs(A, [job]); });
+    await waitFor(() => expect(h.readers).toHaveLength(1));
+    expect(useChatStore.getState().generations[A]?.context?.runId).toBe("run-a");
+    await act(async () => {
+      h.finish(); h.nextRun();
+      useGenerationQueueStore.getState().replaceServerJobs(A, [{ ...job, status: "done", variantIndex: 1 }, { ...job, id: "next" }]);
+    });
+    await waitFor(() => expect(h.readers).toHaveLength(2));
+    expect(useChatStore.getState().generations[A]?.context?.runId).toBe("run-b");
+    expect(h.requests.filter((request) => request.startsWith("POST"))).toEqual([]);
+    await act(async () => {
+      h.finish(); useGenerationQueueStore.getState().replaceServerJobs(A, [{ ...job, status: "done" }, { ...job, id: "next", status: "done" }]);
+    });
+    await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(false));
+    expect(useSnapshotStore.getState().messagesById.assistant?.content).toBe("Final reply");
+  });
+});
+
+test("a background queue invalidation never attaches over the current chat and returning discovers its run", async () => {
+  await fixture("rp", { operation: "regenerate", messageId: "assistant" }, async (h) => {
+    useChatStore.setState({ activeChatId: B });
+    useSnapshotStore.getState().ingestSnapshot(snapshot(B, "rp", "Other chat"));
+    h.setActive(false); h.mount();
+    await act(async () => {
+      h.setActive(true);
+      useGenerationQueueStore.getState().replaceServerJobs(A, [{ id: "background", chatId: A, messageId: "assistant", model: "model", promptPresetId: null, status: "running", enqueuedAt: 1 }]);
+    });
+    expect(h.readers).toHaveLength(0);
+    expect(useSnapshotStore.getState().activeChat?.id).toBe(B);
+    await act(async () => {
+      useChatStore.setState({ activeChatId: A });
+      useSnapshotStore.getState().ingestSnapshot(snapshot(A, "rp", "Old assistant"));
+    });
+    await waitFor(() => expect(h.readers).toHaveLength(1));
+    await act(async () => { h.finish(); });
     await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(false));
   });
 });
