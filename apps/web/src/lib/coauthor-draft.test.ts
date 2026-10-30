@@ -5,13 +5,12 @@
  *  - PURE: finalizeForPersistence / serializeDraft / parseDraft — the
  *    load-bearing contract (what persists, how it's versioned, how corruption
  *    / version-skew is rejected). No DOM, no localStorage.
- *  - I/O: saveDraft / loadDraft / clearDraft / loadAllDrafts / rehydrate —
+ *  - Legacy I/O: saveDraft / loadDraft / clearDraft / loadAllDrafts —
  *    guarded localStorage round-trips. These need a DOM (happy-dom), so the
  *    file uses useDomEnv; the pure tests are unaffected by its presence.
  *
- * Plus an integration check that the store actions (upsertActivity /
- * clearTurn) drive persistence end-to-end — the wiring that makes a reload
- * rehydrate the in-review diff.
+ * Store checks pin projection-only semantics. The reload/migration boundary
+ * now runs against real HTTP clients in coauthor-review-persistence.test.ts.
  */
 import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
@@ -23,7 +22,6 @@ import {
 	loadDraft,
 	clearDraft,
 	loadAllDrafts,
-	rehydrateCoauthorDrafts,
 } from "./coauthor-draft.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
@@ -205,9 +203,10 @@ describe("coauthor-draft — store integration (the reload contract)", () => {
 		useCoauthorTurnStore.setState({ turnsByChat: {} });
 	});
 
-	it("upsertActivity of a finalized proposal persists it to localStorage", () => {
+	it("live finalized proposals stay in memory rather than writing a partial browser draft", () => {
 		useCoauthorTurnStore.getState().upsertActivity("chat_1", profileActivity("c1", PROFILE_A));
-		expect(loadDraft("chat_1")).toEqual([profileActivity("c1", PROFILE_A)]);
+		expect(useCoauthorTurnStore.getState().getActivities("chat_1")).toEqual([profileActivity("c1", PROFILE_A)]);
+		expect(loadDraft("chat_1")).toBeNull();
 	});
 
 	it("upsertActivity of a streaming placeholder does NOT persist (no finalized)", () => {
@@ -215,43 +214,12 @@ describe("coauthor-draft — store integration (the reload contract)", () => {
 		expect(loadDraft("chat_1")).toBeNull();
 	});
 
-	it("clearTurn drops the persisted draft (Apply / Reject / turn-start)", () => {
+	it("clearTurn resets projection, not the legacy migration source or server review", () => {
+		saveDraft("chat_1", [profileActivity("legacy", PROFILE_A)]);
 		useCoauthorTurnStore.getState().upsertActivity("chat_1", profileActivity("c1", PROFILE_A));
 		expect(loadDraft("chat_1")).not.toBeNull();
 		useCoauthorTurnStore.getState().clearTurn("chat_1");
-		expect(loadDraft("chat_1")).toBeNull();
-	});
-
-	it("rehydrateCoauthorDrafts seeds the store from localStorage (the reload)", () => {
-		// Simulate a previous session having persisted a proposal.
-		saveDraft("chat_1", [profileActivity("c1", PROFILE_A), greetingActivity("c2", 0, "Hi.")]);
-		// Fresh page load: store starts empty.
-		useCoauthorTurnStore.setState({ turnsByChat: {} });
-		rehydrateCoauthorDrafts();
-		const acts = useCoauthorTurnStore.getState().getActivities("chat_1");
-		expect(acts.map((a) => a.toolCallId)).toEqual(["c1", "c2"]);
-		expect(acts[0].proposed).toBe(PROFILE_A);
-	});
-
-	it("rehydrateCoauthorDrafts is a no-op when nothing is persisted", () => {
-		useCoauthorTurnStore.setState({ turnsByChat: { chat_x: [profileActivity("c9", PROFILE_A)] } });
-		const before = useCoauthorTurnStore.getState().turnsByChat;
-		rehydrateCoauthorDrafts();
-		// Merge of {} is a no-op → dict reference unchanged.
-		expect(useCoauthorTurnStore.getState().turnsByChat).toBe(before);
-	});
-
-	it("full reload cycle: persist → clear store → rehydrate → proposal is back, then Apply clears it", () => {
-		// Turn produces a proposal.
-		useCoauthorTurnStore.getState().upsertActivity("chat_1", profileActivity("c1", PROFILE_A));
-		// Page reloads: store resets, but localStorage survives.
-		useCoauthorTurnStore.setState({ turnsByChat: {} });
-		// Boot rehydrates the in-review proposal.
-		rehydrateCoauthorDrafts();
-		expect(useCoauthorTurnStore.getState().getActivities("chat_1")).toHaveLength(1);
-		// The user Applies → clearTurn wipes both store and persisted draft.
-		useCoauthorTurnStore.getState().clearTurn("chat_1");
 		expect(useCoauthorTurnStore.getState().getActivities("chat_1")).toEqual([]);
-		expect(loadDraft("chat_1")).toBeNull();
+		expect(loadDraft("chat_1")).toEqual([profileActivity("legacy", PROFILE_A)]);
 	});
 });

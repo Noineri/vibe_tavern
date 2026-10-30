@@ -17,6 +17,7 @@ import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useChatGenerationAttachment } from "../../hooks/use-chat-generation-attachment.js";
+import { useCoauthorReviewPersistence } from "../../hooks/use-coauthor-review-persistence.js";
 import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -111,6 +112,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   const chat = useChatController();
   useChatGenerationAttachment(chat.reattachGeneration);
+  useCoauthorReviewPersistence();
   // W7: subscribe to the per-chat SSE channel for background notifications
   // (auto-summary). No-op when no chat is active.
   useChatEvents(activeChatId);

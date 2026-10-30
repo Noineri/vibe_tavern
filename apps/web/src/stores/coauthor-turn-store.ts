@@ -1,13 +1,6 @@
 import { create } from "zustand";
 import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorTrackerTemplateOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type CoauthorTarget, type CoauthorLoreBundle, type CoauthorTrackerTemplateOutput, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
-// CA-15: persistence of unapplied proposals across reloads. Imported here (not
-// subscribed) so the two resolution points — finalize (upsert) and discard
-// (clear) — are the ONLY places persistence is touched. The import forms a
-// module cycle (coauthor-draft.ts imports useCoauthorTurnStore), but both
-// sides use each other's bindings only INSIDE function bodies (never at module
-// eval), so ESM live bindings resolve them lazily after both modules load.
-import { saveDraft, clearDraft } from "../lib/coauthor-draft.js";
 
 /**
  * Co-Author turn store (CA-9.2) — ephemeral, per-chat accumulation of the
@@ -23,9 +16,9 @@ import { saveDraft, clearDraft } from "../lib/coauthor-draft.js";
  * still prevents a refresh from interrupting in-flight activity and gives CA-11
  * one provider-neutral Apply source.
  *
- * Lifecycle: keyed by chatId → the LATEST turn's activities only (each turn
- * starts fresh). `clearTurn` is called at turn start (controller), on chat
- * switch, and on Apply/Reject (CA-11). Not persisted (no `persist` middleware).
+ * Lifecycle: keyed by chatId; turn start clears only this projection, not the
+ * server review. BR-4d restores canonical reviews on entry/settlement and owns
+ * explicit Apply/Reject deletion. Chat switches retain this per-chat memory.
  */
 
 /** Lifecycle of a single tool call within a co-author turn. */
@@ -248,7 +241,7 @@ interface CoauthorTurnState {
   turnsByChat: Record<string, CoauthorToolActivity[]>;
   /** Insert or merge (by toolCallId) an activity for a chat. */
   upsertActivity: (chatId: string, activity: CoauthorToolActivity) => void;
-  /** Drop the active turn's activities for a chat (turn start / switch / Apply / Reject). */
+  /** Drop only the local projection (turn start or confirmed review resolution). */
   clearTurn: (chatId: string) => void;
   /** Read the activities for a chat (empty array if none). */
   getActivities: (chatId: string) => CoauthorToolActivity[];
@@ -268,11 +261,6 @@ export const useCoauthorTurnStore = create<CoauthorTurnState>((set, get) => ({
           : list.map((a, i) => (i === idx ? { ...a, ...activity } : a));
       return { turnsByChat: { ...s.turnsByChat, [chatId]: next } };
     });
-    // CA-15: keep the persisted draft in sync. saveDraft filters to the
-    // finalized-proposed subset and is a guarded no-op without localStorage,
-    // so this stays cheap during streaming (no finalized → removes an absent
-    // key) and only writes once a proposal actually materializes.
-    saveDraft(chatId, get().turnsByChat[chatId] ?? []);
   },
   clearTurn: (chatId) => {
     set((s) => {
@@ -281,10 +269,6 @@ export const useCoauthorTurnStore = create<CoauthorTurnState>((set, get) => ({
       delete next[chatId];
       return { turnsByChat: next };
     });
-    // CA-15: a resolved/discarded proposal (Apply / Reject) or a fresh turn
-    // start must also drop the persisted draft so it isn't rehydrated later.
-    // No-op without localStorage.
-    clearDraft(chatId);
   },
   getActivities: (chatId) => get().turnsByChat[chatId] ?? [],
 }));
