@@ -10,10 +10,10 @@ import { AgentRunActiveError } from "../../domain/agent/agent-run-registry.js";
 import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
 import { createRouteAbortBridge, writeAgentSseEvents } from "./agent-sse-transport.js";
 
-async function startChatGenerationSse(c: Context, runtime: ChatRuntimeApi, chatId: string, turn: ChatGenerationTurn) {
+async function startChatGenerationSse(c: Context, runtime: ChatRuntimeApi, chatId: string, operation: schemas.ChatGenerationOperation, turn: ChatGenerationTurn) {
   const bridge = createRouteAbortBridge(c.req.raw.signal, "api.route.chat-generation", { chatId });
   try {
-    const events = await runtime.startChatGeneration(chatId, turn, bridge.signal);
+    const events = await runtime.startChatGeneration(chatId, operation, turn, bridge.signal);
     return streamSSE(c, (stream) => writeAgentSseEvents(stream, events, bridge));
   } catch (error) {
     bridge.cleanup();
@@ -136,7 +136,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const messageId = c.req.param("messageId");
       const override = c.req.valid("json");
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
-      return startChatGenerationSse(c, runtime, chatId, (signal) => runtime.regenerateMessageStream(chatId, messageId, override, signal));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "regenerate", messageId }, (signal) => runtime.regenerateMessageStream(chatId, messageId, override, signal));
     })
     .post("/api/chats/:chatId/messages/:messageId/continue", async (c) => {
       // LS-4a: continue the last assistant reply from its selected variant's
@@ -152,7 +152,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
       logSendDebug("api.route.continue-stream.start", { chatId, messageId });
-      return startChatGenerationSse(c, runtime, chatId, (signal) => runtime.continueMessageStream(chatId, messageId, signal));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "continue", messageId }, (signal) => runtime.continueMessageStream(chatId, messageId, signal));
     })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
@@ -265,7 +265,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.messages-stream.post", { chatId, contentLength: body.content?.length ?? 0 });
-      return startChatGenerationSse(c, runtime, chatId, (signal) => runtime.sendMessageStream(chatId, body, signal));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "send", messageId: null }, (signal) => runtime.sendMessageStream(chatId, body, signal));
     })
     .get("/api/chats/:chatId/summaries", async (c) => {
       return c.json(await runtime.listChatSummaries(c.req.param("chatId")));
@@ -324,7 +324,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .post("/api/chats/:chatId/generate-reply/stream", async (c) => {
       const chatId = c.req.param("chatId");
       logSendDebug("api.route.generate-reply-stream.post", { chatId });
-      return startChatGenerationSse(c, runtime, chatId, (signal) => runtime.generateReplyStream(chatId, signal));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "generate", messageId: null }, (signal) => runtime.generateReplyStream(chatId, signal));
     })
     .get("/api/chats/:chatId/generation", zValidator("query", schemas.experienceCopilotRunQuerySchema), (c) => {
       const chatId = c.req.param("chatId");

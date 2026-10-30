@@ -9,6 +9,7 @@ import { notFound } from "../../shared/errors.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { chatGenerationContextSchema, type ChatGenerationContext } from "@vibe-tavern/api-contracts";
 
 export class ChatGenerationRunAdapter {
   constructor(
@@ -16,13 +17,14 @@ export class ChatGenerationRunAdapter {
     readonly agentRuns = new AgentRunRegistry<AgentRunOwner>(),
   ) {}
 
-  startChatGeneration: ChatMessageRuntimeApi["startChatGeneration"] = async (chatId, turn, subscriberSignal) => {
+  startChatGeneration: ChatMessageRuntimeApi["startChatGeneration"] = async (chatId, operation, turn, subscriberSignal) => {
     const chat = await this.runStores.chats.getById(chatId);
     if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
     const character = await this.runStores.characters.getById(chat.characterId);
     const key = chatGenerationKey(chatId);
+    const context = chatGenerationContextSchema.parse({ ...operation, chatId, branchId: chat.activeBranchId, runId: crypto.randomUUID() });
     this.agentRuns.start(key, { kind: "chat", chatId, mode: chat.mode },
-      (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, chat.activeBranchId, turn, ownedSignal), signal),
+      (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, context.branchId, turn, ownedSignal), signal, context),
       { kind: chat.mode, title: character?.name ?? chat.title });
     return this.agentRuns.subscribe(key, 0, subscriberSignal)!;
   };
@@ -38,7 +40,8 @@ export class ChatGenerationRunAdapter {
     return turn(signal);
   }
 
-  private async *loggedTurn(turn: ChatGenerationTurn, signal: AbortSignal) {
+  private async *loggedTurn(turn: ChatGenerationTurn, signal: AbortSignal, context: ChatGenerationContext) {
+    yield { event: "generation-context", data: JSON.stringify(context) };
     try {
       yield* turn(signal);
     } catch (error) {

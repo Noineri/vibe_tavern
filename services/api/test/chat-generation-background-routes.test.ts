@@ -164,11 +164,14 @@ for (const mode of ["rp", "coauthor"] as const) {
         h.release.resolve();
         const frames = await watching;
         expect(frames.map(({ event }) => event)).toEqual([
-          ...(operation === "send" ? ["user-message-saved"] : []), "generation-metadata",
+          "generation-context", ...(operation === "send" ? ["user-message-saved"] : []), "generation-metadata",
           ...(mode === "coauthor" && operation !== "continue" ? ["coauthor-module"] : []),
           "reasoning-delta", "text-delta", "text-delta", "reasoning-done", "finish",
         ]);
         expect(frames.map(({ id }) => id)).toEqual(frames.map((_, index) => index + 1));
+        expect(frames[0]!.data).toMatchObject({ chatId: h.chat.id, branchId: h.chat.activeBranchId, operation,
+          messageId: operation === "regenerate" || operation === "continue" ? h.assistant.id : null });
+        expect(typeof frames[0]!.data.runId).toBe("string");
         expect(frames.find(({ event }) => event === "text-delta")!.data).toEqual({ delta: "Partial reply" });
         expect(frames.find(({ event }) => event === "reasoning-delta")!.data).toEqual({ delta: "Thinking" });
         expect(frames.at(-1)!.data.finishReason).toBe("stop");
@@ -260,7 +263,10 @@ for (const mode of ["rp", "coauthor"] as const) for (const operation of operatio
       const fork = await h.adapter.forkBranch(h.chat.id, h.assistant.id);
       expect(fork.activeBranch!.id).not.toBe(originalBranch);
       h.release.resolve();
-      await watching;
+      const frames = await watching;
+      expect(frames[0]!.data).toMatchObject({ branchId: originalBranch, operation,
+        messageId: operation === "regenerate" || operation === "continue" ? h.assistant.id : null });
+      expect((await all(await h.app.request(`${h.path}/generation`)))[0]).toEqual(frames[0]!);
       const oldMessages = await h.stores.messages.getMessages(originalBranch);
       const newMessages = await h.stores.messages.getMessages(fork.activeBranch!.id);
       const target = operation === "regenerate" || operation === "continue" ? (await h.stores.messages.getMessageById(h.assistant.id))! : oldMessages.at(-1)!;
