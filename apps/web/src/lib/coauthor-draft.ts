@@ -1,11 +1,12 @@
 /** Server-owned Co-Author reviews (BR-4d). LocalStorage is a one-time CA-15
  * migration source only; live/replayed tool activities are never browser PUTs.
  * The diff continues to compare the restored proposal against the current card. */
-import { buildCoauthorReviewEnvelope, coauthorReviewActivitySchema, type CoauthorReviewEnvelope } from "@vibe-tavern/api-contracts";
+import { buildCoauthorReviewEnvelope, coauthorReviewActivitySchema, type CoauthorReviewActivity, type CoauthorReviewEnvelope } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import { getCoauthorReview, putCoauthorReview, deleteCoauthorReview } from "../api/coauthor-review-api.js";
 import { isChatGenerationRunning } from "../api/chat-generation-api.js";
+import { clearCoauthorRemoteReview } from "./coauthor-editor-snapshot.js";
 
 const DRAFT_PREFIX = "vt:coauthor-draft:";
 const DRAFT_VERSION = 1;
@@ -22,7 +23,7 @@ interface DraftEnvelope {
  * subset is exactly what the aggregator consumes. Defensive: a value that
  * fails any clause is dropped on load (corruption / version-skew defense).
  */
-export function isFinalizedActivity(x: unknown): x is CoauthorToolActivity {
+export function isFinalizedActivity(x: unknown): x is CoauthorReviewActivity {
   return coauthorReviewActivitySchema.safeParse(x).success;
 }
 
@@ -203,18 +204,40 @@ export class CoauthorReviewPersistence {
       if (isCurrent() && this.deps.read(id) === before) this.deps.apply(id, envelope);
     });
   }
+
+  /** Resolve the exact offered proposal, not whatever a later turn produced.
+   * GET/DELETE is best-effort predecessor protection, not cross-client CAS. */
+  resolve(id: string, origin: readonly CoauthorToolActivity[]): Promise<void> {
+    return this.enqueue(id, async () => {
+      const before = this.deps.read(id);
+      if (await this.deps.isRunning(id)) throw new Error("Co-Author generation still owns this review");
+      const remote = await this.deps.get(id);
+      if (remote !== null && JSON.stringify(remote) !== JSON.stringify(buildCoauthorReviewEnvelope(origin))) {
+        if (this.deps.read(id) === before) this.deps.apply(id, remote);
+        return;
+      }
+      if (await this.deps.isRunning(id)) throw new Error("Co-Author generation still owns this review");
+      if (this.deps.read(id) !== before) return;
+      await this.deps.delete(id);
+      this.deps.removeLegacy(id);
+    });
+  }
 }
 
 export const coauthorReviews = new CoauthorReviewPersistence({
   get: getCoauthorReview, put: putCoauthorReview, delete: deleteCoauthorReview,
   isRunning: isChatGenerationRunning,
   read: (id) => useCoauthorTurnStore.getState().turnsByChat[id],
-  apply: (id, envelope) => useCoauthorTurnStore.setState((s) => {
+  apply: (id, envelope) => {
+    if (envelope === null) clearCoauthorRemoteReview(id);
+    useCoauthorTurnStore.setState((s) => {
     const current = s.turnsByChat[id] ?? [];
-    if (JSON.stringify(buildCoauthorReviewEnvelope(current)) === JSON.stringify(envelope)) return s;
+    if (envelope !== null && JSON.stringify(buildCoauthorReviewEnvelope(current)) === JSON.stringify(envelope)) return s;
     // Keep the current turn's read/error cards; only reviewable proposals are
     // replaced by the server round. Equal proposals keep their UI identity.
-    return { turnsByChat: { ...s.turnsByChat, [id]: [...current.filter((a) => !isFinalizedActivity(a)), ...(envelope?.activities ?? [])] } };
-  }),
+    const reviewIds = new Set(envelope?.activities.map((a) => a.toolCallId));
+    return { turnsByChat: { ...s.turnsByChat, [id]: [...current.filter((a) => !isFinalizedActivity(a) && !reviewIds.has(a.toolCallId)), ...(envelope?.activities ?? [])] } };
+    });
+  },
   readLegacy: loadDraft, removeLegacy: clearDraft,
 });

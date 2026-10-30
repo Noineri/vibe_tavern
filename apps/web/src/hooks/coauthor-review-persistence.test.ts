@@ -10,6 +10,9 @@ const { coauthorReviews, saveDraft, loadDraft } = await import("../lib/coauthor-
 const { useChatStore } = await import("../stores/chat-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
 const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
+const { chatStreamToolCallbacks } = await import("./chat-stream-tool-callbacks.js");
+const { publishCoauthorReviewSession, readCoauthorReviewSession, snapshotCoauthorEditorSnapshotStateForTests, restoreCoauthorEditorSnapshotStateForTests } = await import("../lib/coauthor-editor-snapshot.js");
+const originalEditor = snapshotCoauthorEditorSnapshotStateForTests();
 const id = brandId<ChatId>("server-review-chat");
 const storageKey = `vt:coauthor-draft:${id}`;
 const originalStorage = localStorage.getItem(storageKey);
@@ -20,6 +23,7 @@ let remote: CoauthorReviewEnvelope | null, running: boolean, failPut: boolean;
 let requests: string[];
 let delayedGet: (() => Promise<Response>) | undefined;
 function restore() {
+  restoreCoauthorEditorSnapshotStateForTests(originalEditor);
   globalThis.fetch = originalFetch;
   useChatStore.setState(originalChat, true); useSnapshotStore.setState(originalSnapshot, true); useCoauthorTurnStore.setState(originalTurn, true);
   if (originalStorage === null) localStorage.removeItem(storageKey); else localStorage.setItem(storageKey, originalStorage);
@@ -108,9 +112,50 @@ test("turn settlement restores the prior server review after a read-only/no-prop
 });
 
 test("a cleared server draft removes stale local proposals on the next visit", async () => {
+  publishCoauthorReviewSession(id, "character", [proposal("retained")]);
   useCoauthorTurnStore.getState().upsertActivity(id, proposal("stale"));
   await coauthorReviews.hydrate(id);
   expect(useCoauthorTurnStore.getState().getActivities(id)).toEqual([]);
+  expect(readCoauthorReviewSession(id, "character")).toEqual([]);
+});
+
+test("live and replay tracker results project the canonical proposal, keeping args and one review card", async () => {
+  const trackerTemplate = { version: 1 as const, scene: null, objective: null };
+  const callbacks = chatStreamToolCallbacks(id);
+  callbacks.onToolCall?.({ toolCallId: "tracker", toolName: "set_tracker_template", args: { scene: null } });
+  callbacks.onToolResult?.({ toolCallId: "tracker", toolName: "set_tracker_template", output: { trackerTemplate, summary: "Tracker proposal" }, isError: false });
+  remote = buildCoauthorReviewEnvelope(useCoauthorTurnStore.getState().getActivities(id));
+  await coauthorReviews.hydrate(id);
+  expect(useCoauthorTurnStore.getState().getActivities(id)).toEqual([{ toolCallId: "tracker", toolName: "set_tracker_template", args: { scene: null }, status: "done", trackerTemplate, summary: "Tracker proposal" }]);
+  expect(requests.every((request) => request.startsWith("GET"))).toBe(true);
+});
+
+test("explicit resolution deletes the exact server review and a reload cannot restore it", async () => {
+  const origin = [proposal()]; remote = buildCoauthorReviewEnvelope(origin);
+  await coauthorReviews.hydrate(id);
+  await coauthorReviews.resolve(id, origin);
+  useCoauthorTurnStore.getState().clearTurn(id);
+  await coauthorReviews.hydrate(id);
+  expect(remote).toBeNull();
+  expect(useCoauthorTurnStore.getState().getActivities(id)).toEqual([]);
+  expect(requests.filter((request) => request.startsWith("DELETE"))).toHaveLength(1);
+});
+
+test("late resolution preserves a newer server proposal instead of deleting it", async () => {
+  const origin = [proposal("origin")];
+  useCoauthorTurnStore.setState({ turnsByChat: { [id]: origin } });
+  remote = buildCoauthorReviewEnvelope([proposal("replacement")]);
+  await coauthorReviews.resolve(id, origin);
+  expect(remote?.activities[0]?.toolCallId).toBe("replacement");
+  expect(useCoauthorTurnStore.getState().getActivities(id)[0]?.toolCallId).toBe("replacement");
+  expect(requests.filter((request) => request.startsWith("DELETE"))).toHaveLength(0);
+});
+
+test("resolution refuses a running producer and leaves the offered draft available", async () => {
+  const origin = [proposal()]; remote = buildCoauthorReviewEnvelope(origin); running = true;
+  await expect(coauthorReviews.resolve(id, origin)).rejects.toThrow("still owns");
+  expect(remote?.activities).toEqual(origin);
+  expect(requests.filter((request) => request.startsWith("DELETE"))).toHaveLength(0);
 });
 
 test("hydration cannot overwrite activity arriving during a slow response", async () => {

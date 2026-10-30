@@ -1,5 +1,5 @@
 /** Shared live/replay projection, extracted from the chat controller. */
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorReviewActivityFromResult, coauthorSkillReadOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema } from "@vibe-tavern/api-contracts";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { StreamOpts } from "../api/stream.js";
 
@@ -12,16 +12,12 @@ export function chatStreamToolCallbacks(chatId: string, isCurrent = () => true):
     onToolInputStart: (info) => upsert({ toolCallId: info.toolCallId, toolName: info.toolName, status: "streaming" }),
     onToolResult: (info) => {
       const base = { toolCallId: info.toolCallId, toolName: info.toolName };
+      const proposal = coauthorReviewActivityFromResult({ ...base, result: info.output, isError: info.isError });
+      if (proposal) { upsert(proposal); return; }
       // Reads are not proposals, but still render as successful activity cards.
       if (info.toolName === "read_skill_file") {
         const read = coauthorSkillReadOutputSchema.safeParse(info.output);
         upsert({ ...base, status: info.isError || !read.success ? "error" : "done", ...(read.success ? { readPath: read.data.path } : {}) });
-        return;
-      }
-      // The discriminator recognizes all lore mutations, not a tool-name list.
-      const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
-      if (lore.success) {
-        upsert({ ...base, status: info.isError ? "error" : "done", loreBundle: lore.data.bundle, summary: lore.data.summary });
         return;
       }
       if (info.toolName === "search_context") {
@@ -34,11 +30,7 @@ export function chatStreamToolCallbacks(chatId: string, isCurrent = () => true):
         upsert({ ...base, status: info.isError || !read.success ? "error" : "done", ...(read.success ? { contextRead: { type: read.data.type, title: read.data.title } } : {}) });
         return;
       }
-      const parsed = coauthorToolOutputSchema.safeParse(info.output);
-      upsert({ ...base, status: info.isError || !parsed.success ? "error" : "done", ...(parsed.success ? {
-        summary: parsed.data.summary, target: parsed.data.target, proposed: parsed.data.proposed,
-        greetingIndex: parsed.data.greetingIndex, isAdd: parsed.data.isAdd,
-      } : {}) });
+      upsert({ ...base, status: "error" });
     },
   };
 }

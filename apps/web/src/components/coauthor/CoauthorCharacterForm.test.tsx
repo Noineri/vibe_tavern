@@ -26,14 +26,14 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutcomeFixtureRequest } from "../../../test/review-outcome-fixtures.js";
 
 useDomEnv();
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render: renderReact, waitFor } = await import("@testing-library/react");
 import type { AppCharacter, LorebookRecord } from "../../api/types.js";
 import type { BootstrapData } from "../../stores/api-actions/bootstrap-actions.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
-import { coauthorApplySchema, coauthorToolOutputSchema, sendMessageSchema } from "@vibe-tavern/api-contracts";
+import { buildCoauthorReviewEnvelope, coauthorApplySchema, coauthorToolOutputSchema, sendMessageSchema } from "@vibe-tavern/api-contracts";
 import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
@@ -46,6 +46,27 @@ import {
 	restoreCoauthorEditorSnapshotStateForTests,
 	snapshotCoauthorEditorSnapshotStateForTests,
 } from "../../lib/coauthor-editor-snapshot.js";
+
+// Keep each case's original Apply/send HTTP boundary intact, while supplying
+// the new review protocol. Resolution traffic is asserted separately, never
+// counted as a character Apply or supervisor message.
+let reviewRequests: string[] = [];
+let reviewDeleteFails = false;
+function render(ui: React.ReactNode, options?: Parameters<typeof renderReact>[1]) {
+  const transport = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input), method = init?.method ?? "GET";
+    if (url.endsWith("/api/agent-runs")) return Response.json([]);
+    if (url.includes("/coauthor/review")) {
+      reviewRequests.push(method);
+      if (method === "DELETE") return reviewDeleteFails ? Response.json({ error: "Review cleanup failed" }, { status: 500 }) : Response.json({ ok: true });
+      const chatId = url.match(/\/chats\/([^/]+)\/coauthor\/review/)?.[1] ?? "";
+      return Response.json(buildCoauthorReviewEnvelope(useCoauthorTurnStore.getState().getActivities(chatId)));
+    }
+    return transport(input, init);
+  }, { preconnect: transport.preconnect });
+  return renderReact(ui, options);
+}
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 const handleSaveCharacter = mock(async () => undefined);
@@ -233,6 +254,7 @@ describe("CoauthorCharacterForm", () => {
 	}
 
 	beforeEach(() => {
+		reviewRequests = []; reviewDeleteFails = false;
 		sentRequests.length = 0;
 		clearCoauthorEditorSnapshotStateForTests();
 		globalThis.fetch = realFetch;
@@ -567,6 +589,21 @@ describe("CoauthorCharacterForm", () => {
 			// Turn store cleared → reviewing falls to idle (overlay gone).
 			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 		});
+		expect(reviewRequests).toEqual(["GET", "DELETE"]);
+	});
+
+	it("Apply cleanup failure still ingests the committed character and leaves review cleanup retryable", async () => {
+		__isSending = false; seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("cleanup", "Confirmed despite cleanup failure."));
+		globalThis.fetch = Object.assign(async () => Response.json({ character: makeCharacter({ description: "Confirmed despite cleanup failure." }), corrections: [] }), { preconnect: realFetch.preconnect });
+		reviewDeleteFails = true;
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(useSnapshotStore.getState().character?.description).toBe("Confirmed despite cleanup failure."));
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toHaveLength(1);
+		reviewDeleteFails = false;
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
 	});
 
 	it("Apply: renders backend corrections as a toast (R3 — empty name restored)", async () => {
@@ -602,7 +639,7 @@ describe("CoauthorCharacterForm", () => {
 		expect(String(firstCall[0] ?? "")).toContain("Kira");
 	});
 
-	it("Reject: discards the proposal without an RPC and returns to idle", () => {
+	it("Reject: deletes the server review before discarding the local proposal and returning to idle", async () => {
 		__isSending = false;
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
@@ -613,10 +650,28 @@ describe("CoauthorCharacterForm", () => {
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.reject"));
 
-		// No RPC fired — Reject is local-only (discards the in-turn proposal).
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
+		expect(reviewRequests).toEqual(["GET", "DELETE"]);
+		// No character mutation: Reject only deletes the review.
 		expect(fetchMock).not.toHaveBeenCalled();
 		// Turn store cleared → idle.
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+	});
+
+	it("Reject cleanup failure keeps the review available for an explicit retry", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("retry", "Retryable proposal."));
+		reviewDeleteFails = true;
+		const utils = render(<CoauthorCharacterForm />);
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(reviewRequests).toContain("DELETE"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.reject")?.closest("button")?.disabled).toBe(false));
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toHaveLength(1);
+		reviewDeleteFails = false;
+		fireEvent.click(utils.getByText("coauthor.review.reject"));
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
+		expect(reviewRequests.filter((method) => method === "DELETE")).toHaveLength(2);
 	});
 
 	afterAll(() => {
@@ -1346,7 +1401,7 @@ describe("CoauthorCharacterForm", () => {
 		});
 	});
 
-	it("CTX-L3: Reject discards a lore proposal without an RPC", () => {
+	it("CTX-L3: Reject deletes the lore review without applying it", async () => {
 		__isSending = false;
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
@@ -1357,7 +1412,8 @@ describe("CoauthorCharacterForm", () => {
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.reject"));
 		expect(fetchMock).not.toHaveBeenCalled();
-		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		await waitFor(() => expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]));
+		expect(reviewRequests).toEqual(["GET", "DELETE"]);
 	});
 
 	// ── CA-12: hunk-level (granular) Apply ────────────────────────────────────
