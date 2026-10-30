@@ -138,7 +138,7 @@ async function loaded() {
   return view;
 }
 function source(chatId = "chat") {
-  const result = NetworkEvents.instances.find((item) => item.url === `/api/chats/${chatId}/events` && !item.closed);
+  const result = NetworkEvents.instances.find((item) => item.url.slice(item.url.indexOf("/api/")).split("?")[0] === `/api/chats/${chatId}/events` && !item.closed);
   if (!result) throw new Error(`Missing source for ${chatId}`);
   return result;
 }

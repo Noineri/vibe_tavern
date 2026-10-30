@@ -1,203 +1,145 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
-import type { AppMessage } from "../api/types.js";
+import type { ChatGenerationJob } from "@vibe-tavern/api-contracts";
+import { toast } from "sonner";
+import type { AppMessage, AppSnapshot } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { cancelQueueJob, clearQueuePending, enqueueGenerateMore, useGenerationQueue } from "./use-generation-queue.js";
+import { refreshGenerationQueue } from "../lib/chat-generation-queue-client.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
-const { act, renderHook } = await import("@testing-library/react");
-
-const CHAT_A = brandId<ChatId>("queue-chat-a");
-const CHAT_B = brandId<ChatId>("queue-chat-b");
-const MESSAGE = "assistant-message";
-const originalChatState = useChatStore.getState();
-const originalSnapshotState = useSnapshotStore.getState();
-
+const { act, renderHook, waitFor } = await import("@testing-library/react");
+const A = brandId<ChatId>("queue-chat-a"), B = brandId<ChatId>("queue-chat-b"), MESSAGE = "assistant-message";
+const originalFetch = globalThis.fetch;
+const originalChat = useChatStore.getState(), originalSnapshot = useSnapshotStore.getState(), originalQueue = useGenerationQueueStore.getState();
+const errorToast = spyOn(toast, "error").mockImplementation(() => "error");
+let jobs: ChatGenerationJob[] = [], calls: Array<{ path: string; method: string; body?: unknown }> = [];
+let failEnqueue = false;
+function job(id: string, status: ChatGenerationJob["status"] = "pending"): ChatGenerationJob {
+  return { id, chatId: A, messageId: MESSAGE, model: id, promptPresetId: null, status, enqueuedAt: 1 };
+}
+function setVariants(ids: string[]) {
+  useSnapshotStore.setState({ messagesById: { [MESSAGE]: { id: MESSAGE, role: "assistant", variants: ids.map((id, variantIndex) => ({ id, variantIndex })) } } as unknown as Record<string, AppMessage>, messageOrder: [MESSAGE] });
+}
+beforeEach(() => {
+  globalThis.fetch = originalFetch; errorToast.mockClear(); failEnqueue = false; calls = []; jobs = [];
+  useChatStore.setState({ activeChatId: A, generations: {} });
+  useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
+  useSnapshotStore.setState({ activeChat: { id: A, mode: "rp" } as AppSnapshot["activeChat"] });
+  setVariants(["original"]);
+  globalThis.fetch = (async (input, init) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    calls.push({ path, method, body });
+    if (method === "GET") return Response.json(jobs);
+    if (method === "POST" && path.endsWith("/queue")) {
+      if (failEnqueue) return Response.json({ error: "Enqueue refused" }, { status: 400 });
+      const next = { ...job(`server-${jobs.length}`), ...body }; jobs = [...jobs, next]; return Response.json(next, { status: 201 });
+    }
+    if (method === "DELETE") jobs = jobs.map((item) => path.endsWith(`/${item.id}`) ? { ...item, status: "cancelled" } : item);
+    if (path.endsWith("/clear")) jobs = jobs.filter((item) => item.status !== "pending");
+    return Response.json({ ok: true });
+  }) as typeof fetch;
+});
 afterAll(() => {
-  useChatStore.setState(originalChatState, true);
-  useSnapshotStore.setState(originalSnapshotState, true);
+  globalThis.fetch = originalFetch; errorToast.mockRestore();
+  useChatStore.setState(originalChat, true); useSnapshotStore.setState(originalSnapshot, true); useGenerationQueueStore.setState(originalQueue, true);
 });
 
-function resetStores(): void {
-  useChatStore.setState({ activeChatId: CHAT_A, generations: {} });
-  useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
-  useSnapshotStore.setState({ messagesById: {}, messageOrder: [] });
-}
+test("enqueue sends ordered complete frozen keys; browser never starts a regenerate", async () => {
+  await act(async () => { await Promise.all([enqueueGenerateMore(MESSAGE, "model-a", "preset-a"), enqueueGenerateMore(MESSAGE, "model-b", null)]); });
+  expect(calls.filter((call) => call.method === "POST")).toEqual([
+    { path: `/api/chats/${A}/queue`, method: "POST", body: { messageId: MESSAGE, model: "model-a", promptPresetId: "preset-a" } },
+    { path: `/api/chats/${A}/queue`, method: "POST", body: { messageId: MESSAGE, model: "model-b", promptPresetId: null } },
+  ]);
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.map((item) => item.id)).toEqual(["server-0", "server-1"]);
+  expect(useGenerationQueueStore.getState().recordsByChat[A]?.map((record) => record.status)).toEqual(["pending", "pending"]);
+});
 
-function parked<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  return { promise: new Promise<T>((done) => { resolve = done; }), resolve };
-}
+test("server progress continues while another chat is on screen without replacing its snapshot", async () => {
+  await enqueueGenerateMore(MESSAGE, "model-a", null);
+  useChatStore.getState().setActiveChatId(B);
+  useSnapshotStore.setState({ activeChat: { id: B } as AppSnapshot["activeChat"] });
+  jobs = jobs.map((item) => ({ ...item, status: "done", variantIndex: 1 }));
+  await refreshGenerationQueue(A);
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.[0]?.status).toBe("done");
+  expect(useGenerationQueueStore.getState().recordsByChat[A]).toEqual([]);
+  expect(useSnapshotStore.getState().activeChat?.id).toBe(B);
+  expect(useChatStore.getState().activeChatId).toBe(B);
+  expect(calls.every((call) => !call.path.includes("regenerate"))).toBe(true);
+});
 
-function setServerVariantIds(variantIds: string[]): void {
-  useSnapshotStore.setState({
-    messagesById: { [MESSAGE]: { id: MESSAGE, variants: variantIds.map((id) => ({ id })) } } as unknown as Record<string, AppMessage>,
-    messageOrder: [MESSAGE],
-  });
-}
+test("clear calls the server and preserves running and failed evidence", async () => {
+  jobs = [job("running", "running"), job("pending"), { ...job("failed", "failed"), error: "Provider cut" }];
+  await refreshGenerationQueue(A);
+  await clearQueuePending();
+  expect(calls).toContainEqual({ path: `/api/chats/${A}/queue/clear`, method: "POST", body: undefined });
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.map((item) => item.status)).toEqual(["running", "failed"]);
+  expect(useGenerationQueueStore.getState().recordsByChat[A]?.map((record) => record.status)).toEqual(["running", "failed"]);
+});
 
-function serverVariantIds(): string[] {
-  return useSnapshotStore.getState().messagesById[MESSAGE]?.variants.map((variant) => variant.id) ?? [];
-}
+test("pending cancellation removes only its projected record and retains canonical cancelled history", async () => {
+  jobs = [job("cancel"), job("survivor")]; await refreshGenerationQueue(A);
+  await cancelQueueJob("cancel");
+  expect(calls).toContainEqual({ path: `/api/chats/${A}/queue/cancel`, method: "DELETE", body: undefined });
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.map((item) => item.status)).toEqual(["cancelled", "pending"]);
+  expect(useGenerationQueueStore.getState().recordsByChat[A]?.map((record) => record.id)).toEqual(["survivor"]);
+});
 
-async function flushUntil(predicate: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (predicate()) return;
-    await Promise.resolve();
-  }
-  expect(predicate()).toBe(true);
-}
+for (const partial of [true, false]) test(`running cancellation preserves ${partial ? "a partial" : "no invented"} server variant and does not abort the local reader`, async () => {
+  jobs = [job("running", "running")]; await refreshGenerationQueue(A);
+  const reader = useChatStore.getState().startGeneration(A, null, [], MESSAGE);
+  setVariants(partial ? ["original", "partial"] : ["original"]);
+  await cancelQueueJob("running");
+  expect(reader.signal.aborted).toBe(false);
+  expect(useChatStore.getState().generations[A]?.isSending).toBe(true);
+  expect(useSnapshotStore.getState().messagesById[MESSAGE]?.variants.map((variant) => String(variant.id))).toEqual(partial ? ["original", "partial"] : ["original"]);
+  expect(useGenerationQueueStore.getState().recordsByChat[A]).toEqual([]);
+  useChatStore.getState().finishGeneration(A);
+});
 
-describe("useGenerationQueue record lifecycle", () => {
-  beforeEach(resetStores);
+test("failed work retains server error text and does not prevent later successful work from projecting", async () => {
+  jobs = [{ ...job("failed", "failed"), error: "provider rate limit" }, { ...job("done", "done"), variantIndex: 1 }];
+  await refreshGenerationQueue(A);
+  expect(useGenerationQueueStore.getState().recordsByChat[A]).toMatchObject([{ status: "failed", error: "provider rate limit" }]);
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.[1]?.status).toBe("done");
+});
 
-  test("runs queued jobs one at a time and forwards each complete frozen override", async () => {
-    const first = parked<"done">();
-    const calls: Array<{ chatId: ChatId; messageId: string; override: unknown }> = [];
-    const { unmount } = renderHook(() => useGenerationQueue(async (chatId, messageId, override) => {
-      calls.push({ chatId, messageId, override });
-      return calls.length === 1 ? first.promise : "done";
-    }));
+test("reload restores server-only jobs, batch, failed records and no client timeline identity is required", async () => {
+  jobs = [job("running", "running"), job("waiting"), { ...job("interrupted", "failed"), error: "Retry this job" }];
+  const hook = renderHook(() => useGenerationQueue());
+  await waitFor(() => expect(useGenerationQueueStore.getState().jobsByChat[A]).toHaveLength(3));
+  expect(useGenerationQueueStore.getState().batchesByChat[A]).toEqual({ messageId: MESSAGE, variantIdsAtStart: ["original"] });
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.[0]?.recordId).toBe("running");
+  hook.unmount(); await refreshGenerationQueue(A);
+  expect(calls.every((call) => call.method === "GET")).toBe(true);
+});
 
-    await act(async () => {
-      enqueueGenerateMore(MESSAGE, "model-a", "preset-a");
-      enqueueGenerateMore(MESSAGE, "model-b", null);
-      await flushUntil(() => calls.length === 1);
-    });
-    expect(calls).toEqual([{ chatId: CHAT_A, messageId: MESSAGE, override: { model: "model-a", promptPresetId: "preset-a" } }]);
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.map((job) => job.status)).toEqual(["running", "pending"]);
+test("an enqueue HTTP failure leaves no invented pending job and a later retry succeeds", async () => {
+  failEnqueue = true; await enqueueGenerateMore(MESSAGE, "model", null);
+  expect(useGenerationQueueStore.getState().jobsByChat[A] ?? []).toEqual([]);
+  expect(errorToast).toHaveBeenCalledTimes(1);
+  failEnqueue = false; await enqueueGenerateMore(MESSAGE, "model", null);
+  expect(useGenerationQueueStore.getState().jobsByChat[A]).toHaveLength(1);
+});
 
-    await act(async () => {
-      first.resolve("done");
-      await flushUntil(() => calls.length === 2);
-    });
-    expect(calls).toEqual([
-      { chatId: CHAT_A, messageId: MESSAGE, override: { model: "model-a", promptPresetId: "preset-a" } },
-      { chatId: CHAT_A, messageId: MESSAGE, override: { model: "model-b" } },
-    ]);
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toEqual([]);
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.map((job) => job.status)).toEqual(["done", "done"]);
-    unmount();
-  });
-
-  test("pauses a backgrounded chat until it becomes active again", async () => {
-    const calls: string[] = [];
-    const { unmount } = renderHook(() => useGenerationQueue(async (_chatId, messageId) => {
-      calls.push(messageId);
-      return "done";
-    }));
-
-    useChatStore.getState().startGeneration(CHAT_A);
-    enqueueGenerateMore(MESSAGE, "model-a", null);
-    useChatStore.getState().setActiveChatId(CHAT_B);
-    useChatStore.getState().finishGeneration(CHAT_A);
-    await Promise.resolve();
-    expect(calls).toEqual([]);
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.[0]?.status).toBe("pending");
-
-    await act(async () => {
-      useChatStore.getState().setActiveChatId(CHAT_A);
-      await flushUntil(() => calls.length === 1);
-    });
-    expect(calls).toEqual([MESSAGE]);
-    unmount();
-  });
-
-  test("clearing pending work keeps the parked running job and its server completion", async () => {
-    const first = parked<"done">();
-    const calls: string[] = [];
-    const { unmount } = renderHook(() => useGenerationQueue(async (_chatId, _messageId, override) => {
-      calls.push(override?.model ?? "");
-      return first.promise;
-    }));
-
-    await act(async () => {
-      enqueueGenerateMore(MESSAGE, "first", null);
-      enqueueGenerateMore(MESSAGE, "second", null);
-      await flushUntil(() => calls.length === 1);
-    });
-    const running = useGenerationQueueStore.getState().jobsByChat[CHAT_A]![0]!;
-    clearQueuePending();
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]).toEqual([expect.objectContaining({ id: running.id, status: "running" })]);
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toEqual([expect.objectContaining({ id: running.recordId, status: "running" })]);
-
-    await act(async () => {
-      setServerVariantIds(["completed-by-server"]);
-      first.resolve("done");
-      await flushUntil(() => useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.[0]?.status === "done");
-    });
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toEqual([]);
-    expect(calls).toEqual(["first"]);
-    expect(serverVariantIds()).toEqual(["completed-by-server"]);
-    unmount();
-  });
-
-  test("cancelling a pending queue job removes only its linked pending record", () => {
-    enqueueGenerateMore(MESSAGE, "model-a", "preset-a");
-    enqueueGenerateMore(MESSAGE, "model-b", null);
-    const [job, survivor] = useGenerationQueueStore.getState().jobsByChat[CHAT_A]!;
-    cancelQueueJob(job.id);
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]).toEqual([expect.objectContaining({ id: survivor.id })]);
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]).toEqual([expect.objectContaining({ id: survivor.recordId, status: "pending" })]);
-  });
-
-  for (const partialVariant of [true, false]) {
-    test(`cancelling a running job ${partialVariant ? "keeps" : "does not invent"} a partial server variant`, async () => {
-      const outcome = parked<"cancelled">();
-      const signals: AbortSignal[] = [];
-      const { unmount } = renderHook(() => useGenerationQueue(async () => {
-        signals.push(useChatStore.getState().startGeneration(CHAT_A, null, [], MESSAGE).signal);
-        return outcome.promise;
-      }));
-
-      await act(async () => {
-        enqueueGenerateMore(MESSAGE, "model-a", null);
-        await flushUntil(() => signals.length === 1);
-      });
-      const job = useGenerationQueueStore.getState().jobsByChat[CHAT_A]![0]!;
-      const recordId = job.recordId!;
-      cancelQueueJob(job.id);
-      expect(signals[0]?.aborted).toBe(true);
-      expect(useChatStore.getState().generations[CHAT_A]).toMatchObject({ isSending: false, abortController: null });
-      setServerVariantIds(partialVariant ? ["server-partial"] : []);
-      expect(serverVariantIds()).toEqual(partialVariant ? ["server-partial"] : []);
-
-      await act(async () => {
-        outcome.resolve("cancelled");
-        await flushUntil(() => !useGenerationQueueStore.getState().jobsByChat[CHAT_A]);
-      });
-      expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.find((record) => record.id === recordId)).toBeUndefined();
-      expect(serverVariantIds()).toEqual(partialVariant ? ["server-partial"] : []);
-      expect(useChatStore.getState().generations[CHAT_A]).toMatchObject({ isSending: false, abortController: null });
-      unmount();
-    });
-  }
-
-  test("a failed job retains controller text and advances without fallback error text", async () => {
-    const calls: string[] = [];
-    const { unmount } = renderHook(() => useGenerationQueue(async (_chatId, _messageId, override) => {
-      calls.push(override?.model ?? "none");
-      const running = useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.find((record) => record.status === "running");
-      if (calls.length === 1 && running) {
-        useGenerationQueueStore.getState().updateRecord(CHAT_A, running.id, { status: "failed", error: "provider rate limit" });
-        return "failed";
-      }
-      return "done";
-    }));
-
-    await act(async () => {
-      enqueueGenerateMore(MESSAGE, "bad-model", null);
-      enqueueGenerateMore(MESSAGE, "next-model", null);
-      await flushUntil(() => calls.length === 2);
-    });
-    expect(calls).toEqual(["bad-model", "next-model"]);
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT_A]?.[0]).toMatchObject({ status: "failed", error: "provider rate limit" });
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.[0]).toMatchObject({ status: "failed", error: "provider rate limit" });
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.[0]?.error).not.toBe("generation_failed");
-    expect(useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.[0]?.error).not.toBe("regen_failed");
-    unmount();
-  });
+test("a parked older hydration cannot overwrite a later cancellation", async () => {
+  jobs = [job("cancel")]; await refreshGenerationQueue(A);
+  const transport = globalThis.fetch;
+  let release!: (response: Response) => void;
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  let park = true;
+  globalThis.fetch = (async (input, init) => {
+    if (park && (!init?.method || init.method === "GET")) { park = false; entered(); return new Promise<Response>((resolve) => { release = resolve; }); }
+    return transport(input, init);
+  }) as typeof fetch;
+  const older = refreshGenerationQueue(A); await ready;
+  const cancel = cancelQueueJob("cancel");
+  release(Response.json(jobs)); await older; await cancel;
+  expect(useGenerationQueueStore.getState().jobsByChat[A]?.[0]?.status).toBe("cancelled");
 });

@@ -6,6 +6,10 @@ import { useChatNotifications, useModalStore } from "../stores/index.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { switchChatAction } from "../stores/api-actions/chat-actions.js";
 import { publishChatSummaryEvent } from "../lib/chat-summary-events.js";
+import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
+import { refreshGenerationQueue } from "../lib/chat-generation-queue-client.js";
+import { getGatewayBaseUrl } from "../api/client.js";
+import { appendTokenQuery } from "../lib/mobile-token.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // useChatEvents — per-chat SSE subscription (W7 / SPC-7b)
@@ -20,7 +24,7 @@ import { publishChatSummaryEvent } from "../lib/chat-summary-events.js";
 //   • `summary.cancelled` → badge back to idle, without a toast
 //
 // Mounted once at the app-shell level. One channel per watched chat: the active
-// one, plus background chats with running summaries or pending local requests.
+// one, plus background chats with active queue jobs, summaries or local requests.
 // Idle background channels close; unmount closes all of them. Returning during
 // a run reuses its existing channel instead of losing completion notifications.
 //
@@ -49,10 +53,14 @@ export function useChatEvents(activeChatId: string | null): void {
   const sources = useRef(new Map<string, EventSource>());
   const byChat = useChatNotifications((state) => state.byChat);
   const holdsByChat = useChatNotifications((state) => state.holdsByChat);
+  const jobsByChat = useGenerationQueueStore((state) => state.jobsByChat);
 
   useEffect(() => {
     const watched = new Set<string>();
     if (activeChatId) watched.add(activeChatId);
+    for (const [chatId, jobs] of Object.entries(jobsByChat)) {
+      if (jobs.some((job) => job.status === "running" || job.status === "pending")) watched.add(chatId);
+    }
     for (const [chatId, state] of Object.entries(byChat)) {
       if (state.pending > 0) watched.add(chatId);
     }
@@ -67,7 +75,7 @@ export function useChatEvents(activeChatId: string | null): void {
 
     for (const chatId of watched) {
       if (sources.current.has(chatId)) continue;
-      const eventSource = new EventSource(`/api/chats/${chatId}/events`);
+      const eventSource = new EventSource(appendTokenQuery(`${getGatewayBaseUrl()}/api/chats/${chatId}/events`));
       sources.current.set(chatId, eventSource);
       const isCurrent = () => sources.current.get(chatId) === eventSource;
       const { setGenerating, setReady, settle } = useChatNotifications.getState();
@@ -123,8 +131,13 @@ export function useChatEvents(activeChatId: string | null): void {
       eventSource.addEventListener("summary.generated", onGenerated as EventListener);
       eventSource.addEventListener("summary.failed", onFailed as EventListener);
       eventSource.addEventListener("summary.cancelled", onCancelled as EventListener);
+      const onQueue = () => {
+        if (isCurrent()) void refreshGenerationQueue(chatId).catch((error: unknown) => console.warn("[chat-queue] refresh failed", error));
+      };
+      eventSource.addEventListener("queue.updated", onQueue);
+      eventSource.addEventListener("ready", onQueue);
     }
-  }, [activeChatId, byChat, holdsByChat]);
+  }, [activeChatId, byChat, holdsByChat, jobsByChat]);
 
   useEffect(() => {
     const current = sources.current;

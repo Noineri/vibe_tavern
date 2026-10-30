@@ -65,6 +65,10 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
     requests.push(`${method} ${path}`);
     if (path === "/api/agent-runs") return Response.json(active ? [{ threadId: `chat:${A}` }] : []);
     if (path === `/api/chats/${A}/generation/stop`) return Response.json({ stopped: true });
+    if (path.startsWith(`/api/chats/${A}/queue`)) {
+      if (method === "DELETE") return Response.json({ ok: true });
+      return Response.json(useGenerationQueueStore.getState().jobsByChat[A] ?? []);
+    }
     if (path === `/api/chats/${A}/generation`) {
       if (replayBarrier) await replayBarrier;
       if (noRetainedRun) { current = snapshot(A, mode, "Final reply"); return new Response(null, { status: 204 }); }
@@ -188,8 +192,8 @@ test("a running queue job uses the same explicit server Stop rather than abortin
     useGenerationQueueStore.getState().enqueueJob({ chatId: A, messageId: "assistant", model: "model", promptPresetId: null });
     const job = useGenerationQueueStore.getState().jobsByChat[A]![0]!;
     useGenerationQueueStore.getState().markRunning(job.id);
-    await act(async () => { cancelQueueJob(job.id); });
-    expect(h.requests).toContain(`POST /api/chats/${A}/generation/stop`);
+    await act(async () => { await cancelQueueJob(job.id); });
+    expect(h.requests).toContain(`DELETE /api/chats/${A}/queue/${job.id}`);
     expect(useChatStore.getState().generations[A]?.isSending).toBe(true);
     await act(async () => { h.finish(true); });
     await waitFor(() => expect(useChatStore.getState().generations[A]?.isSending).toBe(false));

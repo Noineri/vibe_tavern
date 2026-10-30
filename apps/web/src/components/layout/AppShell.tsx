@@ -120,7 +120,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useQuotaEvents();
   useAgentRunEvents();
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
-  useGenerationQueue(chat.runRegenerateJob);
+  useGenerationQueue();
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
