@@ -10,6 +10,8 @@ import type { ChatGenerationContext } from "@vibe-tavern/api-contracts";
 
 export interface ChatGenerationState {
   context?: ChatGenerationContext | null;
+  /** Frozen locally before the server's first context frame arrives. */
+  branchId?: string | null;
   /** Streaming Stop belongs to the server; reader abort only detaches. */
   requestStop?: (() => void) | null;
   isSending: boolean;
@@ -214,6 +216,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
         [chatId]: {
           ...defaultGenState(),
           isSending: true,
+          branchId: useSnapshotStore.getState().activeChat?.id === chatId ? useSnapshotStore.getState().activeBranch?.id ?? null : null,
           streamingMessageId,
           pendingUserMessageContent: pendingContent ?? null,
           pendingUserMessageAttachments: pendingAttachments ?? [],
@@ -241,7 +244,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   setGenerationContext: (chatId, context) => set((s) => {
     const gen = s.generations[chatId];
-    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, context, streamingMessageId: context.messageId } } } : s;
+    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, context, branchId: context.branchId, streamingMessageId: context.messageId } } } : s;
   }),
   setGenerationStop: (chatId, requestStop) => set((s) => {
     const gen = s.generations[chatId];
@@ -363,9 +366,42 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
  * Returns null if no chat is active or no generation in progress.
  */
 export function useActiveGeneration(): ChatGenerationState | null {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   return useChatStore((s) => {
     if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId] ?? null;
+    const gen = s.generations[s.activeChatId];
+    return generationMatchesBranch(gen, branchId) ? gen ?? null : null;
+  });
+}
+
+/** The composer remains busy across branches; only the message projection is
+ * branch-scoped. Legacy/non-stream fixtures without an origin retain parity. */
+export function generationMatchesBranch(gen: ChatGenerationState | undefined, branchId: string | null): boolean {
+  const origin = gen?.context?.branchId ?? gen?.branchId;
+  return !origin || origin === branchId;
+}
+
+export function useIsGenerationVisible(): boolean {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return Boolean(gen?.isSending && generationMatchesBranch(gen, branchId));
+  });
+}
+
+export function usePendingUserContent(): string | null {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return generationMatchesBranch(gen, branchId) ? gen?.pendingUserMessageContent ?? null : null;
+  });
+}
+
+export function useHasFreshGeneration(): boolean {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return Boolean(gen?.isSending && gen.context?.messageId === null && generationMatchesBranch(gen, branchId));
   });
 }
 

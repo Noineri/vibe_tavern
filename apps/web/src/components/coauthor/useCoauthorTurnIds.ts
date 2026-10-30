@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useMessageOrder } from "../../stores/index.js";
-import { useActiveGeneration, useIsSending } from "../../stores/chat-store.js";
+import { useHasFreshGeneration, useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
+import { useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 /**
@@ -10,9 +11,10 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
  */
 export function useCoauthorTurnIds(): string[] {
   const messageOrder = useMessageOrder();
-  const activeGen = useActiveGeneration();
-  const isSending = useIsSending();
-  const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
+  const isSending = useIsGenerationVisible();
+  const pendingUserMessageContent = usePendingUserContent();
+  const hasFreshGeneration = useHasFreshGeneration();
+  const streamingMessageId = useActiveStreamingMessageId();
   const lastPersistedMessage = useSnapshotStore((s) => {
     const lastMessageId = s.messageOrder[s.messageOrder.length - 1];
     return lastMessageId ? s.messagesById[lastMessageId] : null;
@@ -39,7 +41,7 @@ export function useCoauthorTurnIds(): string[] {
       }
     }
 
-    if (pendingUserMessageContent) {
+    if (pendingUserMessageContent !== null) {
       const alreadyPersisted =
         lastPersistedMessage?.role === "user" &&
         lastPersistedMessage.content.trim() === pendingUserMessageContent.trim();
@@ -48,12 +50,12 @@ export function useCoauthorTurnIds(): string[] {
         turnIds.push("__pending-user");
       }
       turnIds.push("__pending-assistant");
-    } else if (isSending) {
-      if (lastPersistedMessage?.role === "user") {
+    } else if (isSending && !streamingMessageId) {
+      if (hasFreshGeneration || lastPersistedMessage?.role === "user") {
         turnIds.push("__pending-assistant");
       }
     }
 
     return turnIds;
-  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
+  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending, hasFreshGeneration, streamingMessageId]);
 }

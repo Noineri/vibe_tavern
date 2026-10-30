@@ -18,6 +18,7 @@ import { countTokens } from "../../utils/tokenizer.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useShallow } from "zustand/react/shallow";
 import { copyText } from "../../lib/clipboard.js";
+import { useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
 
 export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   turnId,
@@ -32,11 +33,9 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const chat = useChatController();
   const authorInfo = useMessageAuthor();
   const isSending = useIsSending();
+  const isGenerationVisible = useIsGenerationVisible();
   
-  const pendingUserMessageContent = useChatStore(s => {
-    if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
-  });
+  const pendingUserMessageContent = usePendingUserContent();
 
   const turnMessageIds = useSnapshotStore(useShallow((state) => {
     const order = state.messageOrder;
@@ -75,7 +74,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
 
   if (!authorInfo || turnMessageIds.length === 0) return null;
 
-  const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
+  const isGenerating = isGenerationVisible && !pendingUserMessageContent && isLastTurn;
 
   const characterAvatarUrl = resolveEntityAvatarUrl({
     kind: "characters",

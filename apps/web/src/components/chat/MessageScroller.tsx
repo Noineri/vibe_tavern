@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
 import type { Components, ContextProp } from "react-virtuoso";
-import { useChatStore, useIsSending } from "../../stores/chat-store.js";
+import { useHasFreshGeneration, useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
+import { useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useMessageOrder } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
@@ -34,10 +35,10 @@ import { MessageScrollContext } from "./message-scroll-context.js";
  */
 export function useDisplayMessageIds(): string[] {
   const messageOrder = useMessageOrder();
-  const isSending = useIsSending();
-  const pendingUserMessageContent = useChatStore((s) =>
-    s.activeChatId ? (s.generations[s.activeChatId]?.pendingUserMessageContent ?? null) : null,
-  );
+  const isSending = useIsGenerationVisible();
+  const hasFreshGeneration = useHasFreshGeneration();
+  const streamingMessageId = useActiveStreamingMessageId();
+  const pendingUserMessageContent = usePendingUserContent();
   const lastPersistedMessage = useSnapshotStore((s) => {
     const lastMessageId = s.messageOrder[s.messageOrder.length - 1];
     return lastMessageId ? s.messagesById[lastMessageId] : null;
@@ -58,12 +59,12 @@ export function useDisplayMessageIds(): string[] {
         ids.push("__pending-user");
       }
       ids.push("__pending-assistant");
-    } else if (isSending && lastPersistedMessage?.role === "user") {
+    } else if (isSending && !streamingMessageId && (hasFreshGeneration || lastPersistedMessage?.role === "user")) {
       ids.push("__pending-assistant");
     }
 
     return ids;
-  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
+  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending, hasFreshGeneration, streamingMessageId]);
 }
 
 export interface MessageScrollerProps {

@@ -10,6 +10,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor, useEditingDraftFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { usePendingUserContent } from "../../stores/chat-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
@@ -98,10 +99,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const agentKindSettings = useBootstrapStore((s) => s.data?.agentKindSettings);
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
-  const pendingUserMessageContent = useChatStore(s => {
-    if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
-  });
+  const pendingUserMessageContent = usePendingUserContent();
   const activeCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
   const activePersonaId = useSnapshotStore((s) => s.activeChat?.personaId ?? null);
   const narrationTextRef = useRef("");
