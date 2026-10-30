@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import type { Attachment, ChatBranchId, ChatId, ExperienceMessageReport } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
-import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
+import { fetchChat, generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream, subscribeChatGeneration, stopChatGeneration, type StreamOpts } from "../api/chat-api.js";
 import type { AppMessage, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
@@ -122,6 +122,7 @@ function tryHandleExperienceSendConflict(
 export type StreamOutcome = "done" | "cancelled" | "failed";
 
 export interface ChatControllerActions {
+  reattachGeneration: (chatId: ChatId, signal: AbortSignal) => Promise<StreamOutcome>;
   handleSend: () => Promise<void>;
   handleCancelGeneration: () => void;
   handleSwitchChat: (chatId: ChatId) => Promise<void>;
@@ -181,9 +182,6 @@ export function useChatController(): ChatControllerActions {
   const streamResponseRef = useRef(streamResponse);
   streamResponseRef.current = streamResponse;
 
-  // StreamingReveal is created per-generation, re-created when needed
-  const streamingRevealRef = useRef<StreamingReveal | null>(null);
-
   // --- Snapshot cache helpers ---
 
   // --- Common streaming helper ---
@@ -194,18 +192,7 @@ export function useChatController(): ChatControllerActions {
    */
   async function executeStreamAction(
     chatId: ChatId,
-    streamFn: (opts: {
-      signal: AbortSignal;
-      onStatus: (status: ChatGenerationStatus) => void;
-      onChunk: (delta: string) => void;
-      onReasoningChunk?: (delta: string) => void;
-      onReasoningDone?: (info: { durationMs: number | null }) => void;
-      onGenerationMetadata?: (info: GenerationMetadata) => void;
-      onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
-      onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
-      onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
-      onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
-    }) => Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown; lorebookOverflows?: Array<{ name: string; dropped: number }> }>,
+    streamFn: (opts: StreamOpts & { signal: AbortSignal }) => Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown; lorebookOverflows?: Array<{ name: string; dropped: number }> }>,
     pendingUserContent?: string | null,
     pendingAttachments?: import("@vibe-tavern/domain").Attachment[],
     /**
@@ -217,13 +204,28 @@ export function useChatController(): ChatControllerActions {
     onFailure?: (error: unknown) => void,
     onGenerationMetadata?: (metadata: GenerationMetadata) => void,
     pendingExperienceReport?: ExperienceMessageReport | null,
+    attachment?: { signal: AbortSignal },
   ): Promise<StreamOutcome> {
+    if (getIsSending(chatId)) return "failed";
     const completionTargetBeforeStream = streamingMessageId
       ? null
       : findCurrentInsightsCompletionTarget(chatId);
     const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId, pendingExperienceReport);
     const store = useChatStore.getState();
-    store.setDraft("");
+    if (!attachment) store.setDraft("");
+    let replaying = Boolean(attachment);
+    const owns = () => useChatStore.getState().generations[chatId]?.abortController === controller;
+    let contextSeen = false, stopRequested = false, stopping = false;
+    const requestStop = () => {
+      stopRequested = true;
+      if (!contextSeen || stopping || !owns()) return;
+      stopping = true;
+      void stopChatGeneration(chatId).catch((error: unknown) => {
+        stopping = false;
+        if (owns()) showProviderErrorToast(error, getT());
+      });
+    };
+    store.setGenerationStop(chatId, requestStop);
 
     // Start the co-author turn fresh: drop the previous turn's tool activities.
     // No-op for RP chats (they never emit tool events, so the store stays empty).
@@ -231,33 +233,78 @@ export function useChatController(): ChatControllerActions {
 
     // Create a new StreamingReveal for this generation
     const reveal = new StreamingReveal(chatId);
-    streamingRevealRef.current = reveal;
+    const detach = () => {
+      if (owns()) { reveal.clear(); useChatStore.getState().finishGeneration(chatId); }
+      controller.abort();
+    };
+    attachment?.signal.addEventListener("abort", detach, { once: true });
+    // Replay snapshot reads must not outlive this subscriber, even if the
+    // same chat is reopened before a slow HTTP response comes back.
+    const refresh = async () => {
+      if (!replaying) return refreshChatSnapshotCache(chatId);
+      const snapshot = await fetchChat(chatId);
+      if (owns() && !controller.signal.aborted && getActiveChatId() === chatId) useSnapshotStore.getState().ingestSnapshot(snapshot);
+      return snapshot;
+    };
+    let userRefresh: Promise<unknown> = Promise.resolve();
 
     try {
-      let collected = "";
-      const streamResult = await streamFn({
+      if (attachment?.signal.aborted) { detach(); return "cancelled"; }
+      const callbacks: StreamOpts & { signal: AbortSignal } = {
         signal: controller.signal,
-        onStatus: (status) => useChatStore.getState().setGenerationStatus(chatId, status),
+        waitForStreamEnd: true,
+        onStatus: (status) => { if (owns()) useChatStore.getState().setGenerationStatus(chatId, status); },
         onChunk: (delta) => {
-          collected += delta;
-          reveal.pushDelta(delta);
+          if (owns()) reveal.pushDelta(delta);
         },
         onReasoningChunk: (delta) => {
-          useChatStore.getState().appendReasoningText(chatId, delta);
+          if (owns()) useChatStore.getState().appendReasoningText(chatId, delta);
         },
         onReasoningDone: () => {
           // Reasoning complete — text stays until snapshot refresh
         },
         onGenerationMetadata: (metadata) => {
+          if (!owns()) return;
           useChatStore.getState().setGenerationMetadata(chatId, metadata);
           onGenerationMetadata?.(metadata);
         },
-        ...chatStreamToolCallbacks(chatId),
-      });
+        onGenerationContext: (context) => {
+          if (!owns()) return;
+          if (context.chatId !== chatId) throw new Error("Chat generation context mismatch");
+          streamingMessageId = context.messageId;
+          useChatStore.getState().setGenerationContext(chatId, context);
+          contextSeen = true;
+          if (stopRequested) requestStop();
+        },
+        onUserMessageSaved: () => {
+          if (replaying && owns()) userRefresh = userRefresh.then(refresh).catch((error: unknown) => console.warn("[chat-run] user refresh failed", error));
+        },
+        ...chatStreamToolCallbacks(chatId, owns),
+      };
+      let streamResult: Awaited<ReturnType<typeof streamFn>>;
+      try { streamResult = await streamFn(callbacks); }
+      catch (error) {
+        if (!(error instanceof ProviderStreamError) || error.code !== "AGENT_RUN_ACTIVE") throw error;
+        if (getActiveChatId() === chatId) restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        replaying = true;
+        pendingUserContent = null; pendingAttachments = undefined;
+        useChatStore.getState().setPendingContent(chatId, null);
+        await refresh();
+        streamResult = await subscribeChatGeneration(chatId, 0, callbacks);
+      }
 
+      await userRefresh;
+      if (!owns() || controller.signal.aborted) return "cancelled";
+      if (streamResult?.finishReason === "cancelled") {
+        const snapshot = await refresh();
+        if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot, completionTargetBeforeStream);
+        toast.info(getT()("generation_cancelled"));
+        return "cancelled";
+      }
       await reveal.waitForReveal();
+      if (!owns()) return "cancelled";
       useChatStore.getState().setPendingContent(chatId, null);
-      const snapshot = await refreshChatSnapshotCache(chatId);
+      const snapshot = await refresh();
       // Fresh send/generate paths emit message.appended and start insight work;
       // regenerate targets an existing message and intentionally does not.
       if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
@@ -272,6 +319,7 @@ export function useChatController(): ChatControllerActions {
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {
+        if (attachment) return "cancelled";
         const snapshot = await refreshAfterAbort(chatId);
         // The backend persists and emits message.appended for a partial fresh
         // assistant response. Refresh only when abort produced a new target;
@@ -283,7 +331,7 @@ export function useChatController(): ChatControllerActions {
         return "cancelled";
       }
       onFailure?.(error);
-      const settleDraft = () => settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
+      const settleDraft = () => replaying ? refresh() : settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
       if (tryHandleDiceSendConflict(error, chatId, pendingUserContent, pendingAttachments)) {
@@ -323,9 +371,8 @@ export function useChatController(): ChatControllerActions {
       useChatStore.getState().setGenerationStatus(chatId, "failed");
       return "failed";
     } finally {
-      useChatStore.getState().finishGeneration(chatId);
-      reveal.clear();
-      streamingRevealRef.current = null;
+      attachment?.signal.removeEventListener("abort", detach);
+      if (owns()) { reveal.clear(); useChatStore.getState().finishGeneration(chatId); }
     }
   }
 
@@ -401,6 +448,10 @@ export function useChatController(): ChatControllerActions {
   }
 
   // --- Actions ---
+
+  const reattachGeneration = useCallback((chatId: ChatId, signal: AbortSignal) => executeStreamAction(
+    chatId, (opts) => subscribeChatGeneration(chatId, 0, opts), null, undefined, null, undefined, undefined, null, { signal },
+  ), []);
 
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
@@ -825,6 +876,7 @@ export function useChatController(): ChatControllerActions {
   );
 
   return {
+    reattachGeneration,
     handleSend,
     handleCancelGeneration,
     handleSwitchChat,

@@ -3,9 +3,9 @@ import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBu
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { StreamOpts } from "../api/stream.js";
 
-export function chatStreamToolCallbacks(chatId: string): Pick<StreamOpts, "onToolCall" | "onToolInputStart" | "onToolResult"> {
+export function chatStreamToolCallbacks(chatId: string, isCurrent = () => true): Pick<StreamOpts, "onToolCall" | "onToolInputStart" | "onToolResult"> {
   const upsert = (activity: Parameters<ReturnType<typeof useCoauthorTurnStore.getState>["upsertActivity"]>[1]) =>
-    useCoauthorTurnStore.getState().upsertActivity(chatId, activity);
+    isCurrent() && useCoauthorTurnStore.getState().upsertActivity(chatId, activity);
   return {
     // Inputs and outputs merge into the same operation card (CED-5).
     onToolCall: (info) => upsert({ toolCallId: info.toolCallId, toolName: info.toolName, args: info.args, status: "streaming" }),

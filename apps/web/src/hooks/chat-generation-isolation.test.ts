@@ -45,6 +45,7 @@ let generation: ReturnType<typeof deferred<Response>>;
 let requested: ReturnType<typeof deferred<void>>;
 let completion: ReturnType<typeof deferred<void>>;
 let requests: string[];
+let stopStream: (() => void) | null;
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
@@ -53,11 +54,16 @@ beforeEach(() => {
   requested = deferred<void>();
   completion = deferred<void>();
   requests = [];
+  stopStream = null;
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.slice(url.indexOf("/api/"));
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
     requests.push(`${method} ${path}`);
+    if (path === `/api/chats/${A}/generation/stop`) {
+      stopStream?.();
+      return Response.json({ stopped: true });
+    }
     if (method === "GET" && path === `/api/chats/${A}`) return Response.json(snapshots[A]);
     if (method === "GET" && path === `/api/chats/${B}`) return Response.json(snapshots[B]);
     if (path === `/api/chats/${A}/insights/completion-refresh`) {
@@ -151,7 +157,8 @@ describe(`generation isolation (streaming=${streaming})`, () => {
       // Keep the real SSE reader parked mid-body, not just the HTTP headers.
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode('event: text-delta\ndata: {"delta":"A"}\n\n'));
+          controller.enqueue(new TextEncoder().encode(`event: generation-context\ndata: ${JSON.stringify({ runId: "run-a", chatId: A, branchId: `branch-${A}`, operation: "send", messageId: null })}\n\nevent: text-delta\ndata: {"delta":"A"}\n\n`));
+          stopStream = () => { controller.enqueue(new TextEncoder().encode('event: abort\ndata: {"partialLength":1}\n\n')); controller.close(); };
         },
       });
       await act(async () => {

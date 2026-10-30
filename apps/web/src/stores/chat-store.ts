@@ -4,10 +4,14 @@ import type { ChatGenerationStatus } from "../api/types.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
+import type { ChatGenerationContext } from "@vibe-tavern/api-contracts";
 
 // ── Per-chat generation state ──────────────────────────────────────────
 
 export interface ChatGenerationState {
+  context?: ChatGenerationContext | null;
+  /** Streaming Stop belongs to the server; reader abort only detaches. */
+  requestStop?: (() => void) | null;
   isSending: boolean;
   /**
    * Explicit identity of the message currently being streamed into (the
@@ -47,6 +51,8 @@ export interface ChatGenerationState {
 
 function defaultGenState(): ChatGenerationState {
   return {
+    context: null,
+    requestStop: null,
     isSending: false,
     streamingMessageId: null,
     streamingRevealedText: "",
@@ -131,6 +137,8 @@ export interface ChatActions {
    * Dice is off / no pending rolls, so regenerate & non-Dice sends are inert.
    */
   startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null, pendingExperienceReport?: ExperienceMessageReport | null) => AbortController;
+  setGenerationContext: (chatId: string, context: ChatGenerationContext) => void;
+  setGenerationStop: (chatId: string, stop: () => void) => void;
 
   /** Set the revealed streaming text (throttled by StreamingReveal). */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
@@ -231,6 +239,15 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     });
   },
 
+  setGenerationContext: (chatId, context) => set((s) => {
+    const gen = s.generations[chatId];
+    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, context, streamingMessageId: context.messageId } } } : s;
+  }),
+  setGenerationStop: (chatId, requestStop) => set((s) => {
+    const gen = s.generations[chatId];
+    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, requestStop } } } : s;
+  }),
+
   appendReasoningText: (chatId, delta) => {
     set((s) => {
       const gen = s.generations[chatId];
@@ -283,6 +300,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           [chatId]: {
             ...gen,
             isSending: false,
+            context: null,
+            requestStop: null,
             streamingMessageId: null,
             streamingRevealedText: "",
             streamingReasoningText: "",
@@ -301,6 +320,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   abortGeneration: (chatId) => {
     const gen = get().generations[chatId];
+    if (gen?.requestStop) { gen.requestStop(); return; }
     if (gen?.abortController) {
       gen.abortController.abort();
     }
