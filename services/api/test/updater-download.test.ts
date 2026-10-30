@@ -280,6 +280,8 @@ describe("downloadToPathWithProgress", () => {
 		};
 
 		let bytesOnDiskBeforeLastChunk = -1;
+		let releaseLastChunk!: () => void;
+		const diskProgress = new Promise<void>((resolve) => { releaseLastChunk = resolve; });
 		const server = Bun.serve({
 			port: 0,
 			fetch: () => {
@@ -291,6 +293,10 @@ describe("downloadToPathWithProgress", () => {
 					// is driven by the response draining, like a real server.
 					async pull(controller) {
 						if (next === CHUNKS - 1) {
+							// Socket backpressure alone does not pin disk progress: the
+							// OS may buffer over half the payload under suite load. Park
+							// the last chunk until the client reports a flushed majority.
+							await diskProgress;
 							bytesOnDiskBeforeLastChunk = await stat(dest).then((s) => s.size, () => 0);
 						}
 						if (next >= CHUNKS) {
@@ -307,7 +313,9 @@ describe("downloadToPathWithProgress", () => {
 		const expected = createHash("sha256");
 		for (let i = 0; i < CHUNKS; i++) expected.update(chunkAt(i));
 
-		const outcome = await downloadToPathWithProgress(`http://127.0.0.1:${server.port}/big.bin`, dest);
+		const outcome = await downloadToPathWithProgress(`http://127.0.0.1:${server.port}/big.bin`, dest, (received) => {
+			if (received !== undefined && received > CHUNK * CHUNKS / 2) releaseLastChunk();
+		}).finally(releaseLastChunk);
 
 		const payloadSize = CHUNK * CHUNKS;
 		expect(outcome.bytes).toBe(payloadSize);

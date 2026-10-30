@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import type { AppMessage } from "../api/types.js";
+import type { AppMessage, AppSnapshot } from "../api/types.js";
 
 import { useDomEnv } from "../../test/dom-env.js";
 import {
@@ -16,7 +16,8 @@ import { useSnapshotStore } from "./snapshot-store.js";
 useDomEnv();
 
 const originalSnapshotState = useSnapshotStore.getState();
-afterAll(() => { useSnapshotStore.setState(originalSnapshotState, true); });
+const originalQueueState = useGenerationQueueStore.getState();
+afterAll(() => { useSnapshotStore.setState(originalSnapshotState, true); useGenerationQueueStore.setState(originalQueueState, true); });
 
 const { render, act } = await import("@testing-library/react");
 
@@ -45,9 +46,39 @@ function enq(chatId: string, messageId: string, model: string) {
 function setVisibleTarget(variantIds: string[]): void {
   useSnapshotStore.setState({
     messageOrder: ["m1"],
-    messagesById: { m1: { id: "m1", variants: variantIds.map((id) => ({ id })) } } as unknown as Record<string, AppMessage>,
+    messagesById: { m1: { id: "m1", variants: variantIds.map((id, variantIndex) => ({ id, variantIndex })) } } as unknown as Record<string, AppMessage>,
   });
 }
+
+describe("BR-4g server projection", () => {
+  beforeEach(() => { resetStore(); useSnapshotStore.setState({ activeChat: null, messageOrder: [], messagesById: {} }); });
+  test("canonical jobs restore batch/record correlation and remove settled records without clearing a standalone regenerate", () => {
+    setVisibleTarget(["original"]);
+    useSnapshotStore.setState({ activeChat: { id: "c1" } as AppSnapshot["activeChat"] });
+    const message = useSnapshotStore.getState().messagesById.m1!;
+    useSnapshotStore.setState({ messagesById: { m1: { ...message, role: "assistant" } } });
+    const store = useGenerationQueueStore.getState();
+    const plain = store.addRecord("c1", { messageId: "m1", origin: "regenerate", status: "failed", model: "plain", presetId: null, presetName: null, error: "Plain failure" });
+    const job = { id: "server-job", chatId: "c1", messageId: "m1", model: "queued", promptPresetId: "preset", status: "running" as const, enqueuedAt: 1 };
+    store.replaceServerJobs("c1", [job], { preset: "Preset" });
+    expect(useGenerationQueueStore.getState().batchesByChat.c1).toEqual({ messageId: "m1", variantIdsAtStart: ["original"] });
+    expect(useGenerationQueueStore.getState().recordsByChat.c1?.at(-1)).toMatchObject({ id: "server-job", status: "running", presetName: "Preset", startVariantPosition: 1 });
+    store.replaceServerJobs("c1", [{ ...job, status: "done", variantIndex: 1 }]);
+    expect(useGenerationQueueStore.getState().recordsByChat.c1?.map((record) => record.id)).toEqual([plain]);
+    expect(useGenerationQueueStore.getState().batchesByChat.c1?.messageId).toBe("m1");
+  });
+
+  test("remote deletion clears queue projections, never another chat or a newer reply's batch", () => {
+    const job = { id: "server-job", chatId: "c1", messageId: "m1", model: "queued", promptPresetId: null, status: "pending" as const, enqueuedAt: 1 };
+    const store = useGenerationQueueStore.getState();
+    store.replaceServerJobs("c1", [job]);
+    store.replaceServerJobs("c2", [{ ...job, id: "other", chatId: "c2" }]);
+    store.replaceServerJobs("c1", []);
+    expect(useGenerationQueueStore.getState().recordsByChat.c1).toEqual([]);
+    expect(useGenerationQueueStore.getState().jobsByChat.c2?.[0]?.id).toBe("other");
+    expect(useGenerationQueueStore.getState().batchesByChat.c1).toBeUndefined();
+  });
+});
 
 describe("Q3 store: sequential state machine", () => {
   beforeEach(resetStore);
