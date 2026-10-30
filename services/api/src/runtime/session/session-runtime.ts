@@ -22,6 +22,7 @@ import {
 import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { buildMessagesWithVariants } from "./session-runtime-messages.js";
+import { getPromptTraceHistory, listPromptTraces } from "./session-runtime-traces.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
@@ -343,11 +344,13 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		const [messagesWithVariants, latestTrace] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
 			// Latest single trace only — the full history is lazy-loaded (TRACE_LAZY_LOADING).
-			this.getPromptTraceHistory(chatId, branchId, 1),
+			// LC-1: one row in SQL — getTracesByChat + slice loaded and inflated
+			// every trace of the branch to return one (D1, LONG_CHAT_PERFORMANCE_REPORT).
+			this.stores.traces.getLatestTraceByChat(chatId, branchId),
 		]);
 		const response: MessageResponse = {
 			messages: messagesWithVariants,
-			promptTrace: latestTrace[0] ?? null,
+			promptTrace: latestTrace ? mapPromptTraceRecord(latestTrace) : null,
 		};
 		if (opts?.summaries) {
 			response.summaries = await this.fetchSummaries(chatId, branchId);
@@ -539,22 +542,14 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		branchId?: ChatBranchId,
 		limit = 12,
 	): Promise<PromptTraceRecordDto[]> {
-		const traces = await this.stores.traces.getTracesByChat(chatId, branchId);
-		return traces.slice(0, limit).map(mapPromptTraceRecord);
+		return getPromptTraceHistory(this.stores, chatId, branchId, limit);
 	}
 
 	async listPromptTraces(
 		chatId: ChatId,
 		opts?: { messageId?: string; branchId?: string },
 	): Promise<PromptTraceRecordDto[]> {
-		// Server-side filtering only — the route's query params flow straight to
-		// the store so the frontend never receives traces outside its scope.
-		const traces = await this.stores.traces.getTracesByChat(
-			chatId,
-			opts?.branchId,
-			opts?.messageId,
-		);
-		return traces.map(mapPromptTraceRecord);
+		return listPromptTraces(this.stores, chatId, opts);
 	}
 
 	async rebuildChatOrder(): Promise<void> {

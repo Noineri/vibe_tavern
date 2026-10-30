@@ -184,12 +184,12 @@ export class PromptTraceStore {
     return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
-  async getTracesByChat(chatId: string, branchId?: string, messageId?: string): Promise<PromptTrace[]> {
+  async getTracesByChat(chatId: string, branchId?: string, messageId?: string, limit?: number): Promise<PromptTrace[]> {
     const conditions = [eq(promptTraces.chatId, chatId)];
     if (branchId) conditions.push(eq(promptTraces.branchId, branchId));
     if (messageId) conditions.push(eq(promptTraces.messageId, messageId));
 
-    const rows = await this.db
+    const query = this.db
       .select()
       .from(promptTraces)
       .where(and(...conditions))
@@ -198,10 +198,41 @@ export class PromptTraceStore {
       // order: the most-recently-inserted id surfaces first. Without this,
       // three traces saved in quick succession can tie on createdAt and return
       // in arbitrary order (flaky `list-prompt-traces` test).
-      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
-      .all();
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id));
+    // LC-1: callers needing only the newest N rows push the limit into SQL —
+    // loading the whole branch to slice in JS was the D1 cost
+    // (LONG_CHAT_PERFORMANCE_REPORT). Same row set: the order above makes
+    // `slice(0, n)` ≡ `LIMIT n`.
+    const rows = limit === undefined
+      ? await query.all()
+      : await query.limit(limit).all();
     const chunkMap = await this.hydrateChunkMap(rows);
     return rows.map((row) => this.mapRowTrace(row, chunkMap));
+  }
+
+  /** LC-1: the NEWEST trace of a chat + branch — one row in SQL (LIMIT 1),
+   *  not `getTracesByChat` + slice (which loaded and inflated EVERY trace of
+   *  the branch to return one). Same newest-first order + id tie-break as
+   *  `getTracesByChat`, so the returned row is exactly
+   *  `getTracesByChat(chatId, branchId)[0]`; chunks are hydrated for that row
+   *  only. Backs `MessageResponse.promptTrace` (buildMessageResponse); the
+   *  full history stays lazy (GET /api/chats/:chatId/traces →
+   *  apps/web/src/stores/trace-history-store.ts). */
+  async getLatestTraceByChat(chatId: string, branchId: string): Promise<PromptTrace | null> {
+    const row = await this.db
+      .select()
+      .from(promptTraces)
+      .where(
+        and(
+          eq(promptTraces.chatId, chatId),
+          eq(promptTraces.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
+      .limit(1)
+      .get();
+    if (!row) return null;
+    return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
   /** SC-23e: the trace that PRODUCED one swipe — the newest row whose

@@ -113,6 +113,59 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(sortedKeys(r)).toEqual(["messages", "promptTrace", "summaries"]);
 	});
 
+	it("LC-1: build/edit/delete responses carry the branch's NEWEST trace, payload intact (characterization)", async () => {
+		// LONG_CHAT_PERFORMANCE_REPORT D1 fix step 1 pin: MessageResponse.promptTrace
+		// is the branch's newest trace — the exact record the (unchanged) lazy
+		// history path returns first — with chunked payload columns hydrated.
+		// Self-contained runtime so the seeded traces cannot perturb the shared
+		// chatId used by the shape tests (mirror of the deleteChat test above).
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime: rt, chatId: cid, stores } = ctx;
+		const snap = await rt.getSnapshot(cid);
+		const branchId = snap.activeBranch!.id as import("@vibe-tavern/domain").ChatBranchId;
+		const greetingMsgId = snap.messages[0].id;
+		// A second message to delete later: traces FK-cascade with their message,
+		// so the traced greeting must survive the delete leg.
+		const doomed = await stores.messages.addMessage({
+			chatId: cid, branchId, role: "user", authorType: "user", content: "LC-1 delete-me",
+		});
+
+			// Two authored traces; the SECOND save is newest by createdAt AND by the
+		// id tie-break (monotonic ids), so "newest" is deterministic even if both
+		// saves land in the same millisecond. The newest one carries a big text
+		// (≥ TRACE_CHUNK_THRESHOLD) so its payload is stored as chunks — the
+		// response must return it inflated.
+			const bigText = "lc1-system-prompt-" + "x".repeat(512);
+			await stores.traces.saveTrace(lc1TraceSeed(cid, branchId, greetingMsgId, "lc1-old", "old-layers"));
+			const newest = await stores.traces.saveTrace(
+				lc1TraceSeed(cid, branchId, greetingMsgId, "lc1-new", bigText),
+			);
+
+			// Oracle: the UNCHANGED lazy-history path (listPromptTraces →
+			// getTracesByChat, no limit). Its first record is the branch's newest.
+			const lazy = await rt.listPromptTraces(cid, { branchId });
+			expect(lazy[0].model).toBe("model-lc1-new");
+			expect(lazy[0].layers).toEqual([{ layer: bigText }]);
+
+			// buildMessageResponse must carry exactly that record.
+			const built = await rt.buildMessageResponse(cid);
+			expect(built.promptTrace).toEqual(lazy[0]);
+			expect(built.promptTrace!.id).toBe(newest.id);
+
+			// Same for a real mutation response (send/edit path → buildMessageResponse).
+			const edited = await rt.chatRuntime.editMessage(cid, greetingMsgId, "lc1 edited");
+			expect(edited.promptTrace).toEqual(lazy[0]);
+
+			// Same for the delete path — deleting the OTHER message, so the newest
+			// trace (bound to the greeting) survives and rides the response.
+			const deleted = await rt.chatRuntime.deleteMessage(cid, doomed.id);
+			expect(deleted.promptTrace).toEqual(lazy[0]);
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+
 	// ─── Variant path ───────────────────────────────────────────────────
 
 	it("buildVariantResponse: variant-shape = {messages}", async () => {
@@ -613,3 +666,37 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		}
 	});
 });
+
+/** LC-1 trace seed: a minimal saveTrace payload with `text` embedded in every
+ *  chunkable column (layers, finalPayload, providerResponse body). */
+function lc1TraceSeed(chatId: string, branchId: string, messageId: string, tag: string, text: string) {
+	return {
+		chatId,
+		branchId,
+		messageId,
+		model: `model-${tag}`,
+		presetName: `preset-${tag}`,
+		assembledLayers: [{ layer: text }],
+		tokenAccounting: { total: 1 },
+		activatedLoreEntries: [tag],
+		activatedLoreDetail: [],
+		retrievedMemories: [],
+		scriptInjections: [],
+		latencyMs: 100,
+		prefill: `prefill-${tag}`,
+		compactionSummary: null,
+		sentConfig: null,
+		providerResponse: {
+			mode: "nonstream" as const,
+			steps: [{
+				response: {
+					id: `response-${tag}`,
+					modelId: `model-${tag}`,
+					headers: {},
+					body: { text: `reply-body-${tag}` },
+				},
+				finishReason: "stop",
+			}],
+		},
+	};
+}
