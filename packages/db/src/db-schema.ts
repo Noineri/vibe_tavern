@@ -15,6 +15,7 @@ import type {
   ThinkingMode,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
+import { CHAT_GENERATION_JOB_STATUSES } from '@vibe-tavern/domain';
 import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
@@ -819,6 +820,27 @@ export const messages = sqliteTable('messages', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   branchPosition: uniqueIndex('idx_messages_branch_position').on(table.branchId, table.position),
+}));
+
+// Durable generate-more queue (BR-4e).
+
+export const chatGenerationJobs = sqliteTable('chat_generation_jobs', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  model: text('model').notNull(),
+  // Frozen key, not preset ownership: deleting a preset must not delete jobs.
+  promptPresetId: text('prompt_preset_id'),
+  status: text('status', { enum: CHAT_GENERATION_JOB_STATUSES }).notNull().default('pending'),
+  variantIndex: integer('variant_index'),
+  error: text('error'),
+  enqueuedAt: integer('enqueued_at').notNull(),
+}, (table) => ({
+  chatStatusEnqueuedIdx: index('idx_chat_generation_jobs_chat_status_enqueued').on(table.chatId, table.status, table.enqueuedAt),
+  // Values come only from the fixed domain vocabulary, never user input.
+  statusCheck: check('chat_generation_jobs_status', sql`${table.status} IN (${sql.raw(CHAT_GENERATION_JOB_STATUSES.map((status) => `'${status}'`).join(', '))})`),
+  variantCheck: check('chat_generation_jobs_variant_index', sql`${table.variantIndex} IS NULL OR ${table.variantIndex} >= 0`),
+  enqueuedCheck: check('chat_generation_jobs_enqueued_at', sql`${table.enqueuedAt} >= 0`),
 }));
 
 // ─── chatSummaries ─────────────────────────────────────────────────────────────

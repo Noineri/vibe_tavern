@@ -53,6 +53,8 @@ export type {
 } from './agent-profile-model-store.js';
 
 export { ChatStore } from './chat-store.js';
+export { ChatGenerationJobStore } from './chat-generation-job-store.js';
+export type { ChatGenerationJobRecord, EnqueueChatGenerationJob, ChatGenerationJobUpdate } from './chat-generation-job-store.js';
 export type {
   Chat,
   ChatBranch,

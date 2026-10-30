@@ -1,6 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { AgentPlanStore } from './stores/agent-plan-store.js';
 import { AgentReviewRoundStore } from './stores/agent-review-round-store.js';
+import { ChatGenerationJobStore } from './stores/chat-generation-job-store.js';
 import { AgentKindSettingsStore } from './stores/agent-kind-settings-store.js';
 import { ChatAgentSettingsStore } from './stores/chat-agent-settings-store.js';
 import { AgentProfileModelStore } from './stores/agent-profile-model-store.js';
@@ -57,6 +58,7 @@ export interface StoreContainer {
   experienceCopilot: ExperienceCopilotStore;
   agentPlans: AgentPlanStore;
   agentReviewRounds: AgentReviewRoundStore;
+  chatGenerationJobs: ChatGenerationJobStore;
   quota: QuotaStore;
 }
 
@@ -136,6 +138,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     experienceCopilot: new ExperienceCopilotStore(db),
     agentPlans: new AgentPlanStore(db),
     agentReviewRounds: new AgentReviewRoundStore(db),
+    chatGenerationJobs: new ChatGenerationJobStore(db),
     quota: new QuotaStore(db),
   };
 }
