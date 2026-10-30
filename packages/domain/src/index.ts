@@ -11,6 +11,7 @@ export * from "./image-route.js";
 // the builtins via the explicit subpath `@vibe-tavern/domain/builtins`.
 export * from "./character-asset.js";
 export * from "./chat-json-config.js";
+export * from "./chat-generation-queue.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-generation-settings.js";
 export * from "./coauthor-transport-capabilities.js";

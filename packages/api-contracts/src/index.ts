@@ -5,3 +5,4 @@ export * from "./agent-review-round.js";
 export * from "./script-agent-review-round.js";
 export * from "./coauthor-review.js";
 export * from "./chat-generation-context.js";
+export * from "./chat-generation-job.js";
