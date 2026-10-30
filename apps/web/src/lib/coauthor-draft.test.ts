@@ -13,7 +13,7 @@
  * clearTurn) drive persistence end-to-end — the wiring that makes a reload
  * rehydrate the in-review diff.
  */
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 import {
 	finalizeForPersistence,
@@ -29,6 +29,13 @@ import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 
 useDomEnv();
+const originalStore = useCoauthorTurnStore.getState();
+const originalStorage = Object.entries(localStorage);
+afterAll(() => {
+  useCoauthorTurnStore.setState(originalStore, true);
+  localStorage.clear();
+  for (const [key, value] of originalStorage) localStorage.setItem(key, value);
+});
 
 function profileActivity(toolCallId: string, proposed: string, summary = "Made personality assertive."): CoauthorToolActivity {
 	return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };
@@ -55,6 +62,10 @@ const PROFILE_A = "---\nname: A\n---\n# PERSONALITY\nBold.";
 const PROFILE_B = "---\nname: A\n---\n# PERSONALITY\nBolder.";
 
 describe("coauthor-draft — pure serialization", () => {
+	it("tracker-template proposals use the same canonical v1 envelope as server reviews", () => {
+		const activity: CoauthorToolActivity = { toolCallId: "tracker", toolName: "set_tracker_template", status: "done", trackerTemplate: { version: 1, scene: null, objective: null } };
+		expect(parseDraft(serializeDraft([activity]))).toEqual([activity]);
+	});
 	it("finalizeForPersistence keeps only done + proposed activities, dedupes by toolCallId in order", () => {
 		const activities: CoauthorToolActivity[] = [
 			{ toolCallId: "c1", toolName: "write_profile", status: "streaming" }, // transient → dropped

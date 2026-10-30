@@ -36,7 +36,7 @@
  * which is the honest behavior (review the proposal against the current card).
  * Apply sends the full proposed document regardless, so it is self-contained.
  */
-import { coauthorLoreBundleSchema } from "@vibe-tavern/api-contracts";
+import { buildCoauthorReviewEnvelope, coauthorReviewActivitySchema } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 
@@ -56,22 +56,7 @@ interface DraftEnvelope {
  * fails any clause is dropped on load (corruption / version-skew defense).
  */
 export function isFinalizedActivity(x: unknown): x is CoauthorToolActivity {
-  if (typeof x !== "object" || x === null) return false;
-  const a = x as Record<string, unknown>;
-  if (
-    a.status !== "done"
-    || typeof a.toolCallId !== "string"
-    || typeof a.toolName !== "string"
-  ) return false;
-  const profileOrGreeting =
-    (a.target === "profile" || a.target === "greeting")
-    && typeof a.proposed === "string"
-    && a.proposed.length > 0;
-  // CTX-L3: lore activities carry a typed cumulative bundle instead of the
-  // profile/greeting target+proposed pair. Validate the persisted JSON through
-  // the canonical contract schema before rehydrating it into the review store.
-  const lore = coauthorLoreBundleSchema.safeParse(a.loreBundle).success;
-  return profileOrGreeting || lore;
+  return coauthorReviewActivitySchema.safeParse(x).success;
 }
 
 /**
@@ -80,16 +65,7 @@ export function isFinalizedActivity(x: unknown): x is CoauthorToolActivity {
  * store's own upsert-merge semantics. Pure: no I/O.
  */
 export function finalizeForPersistence(activities: CoauthorToolActivity[]): CoauthorToolActivity[] {
-  // Map (not Set) so a later duplicate toolCallId OVERWRITES the value while
-  // preserving the first occurrence's POSITION — mirroring both the store's
-  // upsert-merge (later fields win) and `aggregateCoauthorProposal`'s
-  // finalizedActivities dedup. Map iteration is insertion order.
-  const byId = new Map<string, CoauthorToolActivity>();
-  for (const a of activities) {
-    if (!isFinalizedActivity(a)) continue;
-    byId.set(a.toolCallId, a);
-  }
-  return [...byId.values()];
+  return buildCoauthorReviewEnvelope(activities)?.activities ?? [];
 }
 
 /**
