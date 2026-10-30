@@ -73,7 +73,7 @@ export function useSummaryRun({ isOpen, chatId, branchId, onLoaded, onGenerated 
     setState({ scope, generating: false, loading: true, checking: true });
     const unsubscribe = subscribeChatSummaryEvents((event) => {
       if (event.chatId !== chatId || !current(target)) return;
-      if (event.source === "manual") {
+      if ("source" in event && event.source === "manual") {
         ++target.runRevision;
         patch(target, { generating: event.kind === "summary.started", checking: false });
       }

@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { ChatGenerationJobStatus } from '@vibe-tavern/domain';
 import { chatGenerationJobs, messages } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -56,6 +56,12 @@ export class ChatGenerationJobStore {
       .where(and(eq(chatGenerationJobs.chatId, chatId), eq(chatGenerationJobs.status, 'pending')))
       .orderBy(asc(chatGenerationJobs.enqueuedAt), sql`${chatGenerationJobs}.rowid`).limit(1).get();
     return row ? mapJob(row) : null;
+  }
+
+  /** Startup discovery only; mutations still require explicit chat ownership. */
+  async unfinishedChatIds(): Promise<string[]> {
+    return this.db.selectDistinct({ chatId: chatGenerationJobs.chatId }).from(chatGenerationJobs)
+      .where(inArray(chatGenerationJobs.status, ['pending', 'running'])).all().map((row) => row.chatId);
   }
 
   /** The runner can guard a pending->running claim or terminal settlement with

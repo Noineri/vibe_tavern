@@ -18,16 +18,22 @@ export class ChatGenerationRunAdapter {
   ) {}
 
   startChatGeneration: ChatMessageRuntimeApi["startChatGeneration"] = async (chatId, operation, turn, subscriberSignal) => {
+    return this.startOwnedChatGeneration(chatId, operation, turn, subscriberSignal);
+  };
+
+  /** Queue targets keep their message's branch even after navigation. HTTP
+   * callers cannot choose this internal scope override. */
+  protected async startOwnedChatGeneration(chatId: string, operation: Parameters<ChatMessageRuntimeApi["startChatGeneration"]>[1], turn: ChatGenerationTurn, subscriberSignal?: AbortSignal, branchId?: string) {
     const chat = await this.runStores.chats.getById(chatId);
     if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
     const character = await this.runStores.characters.getById(chat.characterId);
     const key = chatGenerationKey(chatId);
-    const context = chatGenerationContextSchema.parse({ ...operation, chatId, branchId: chat.activeBranchId, runId: crypto.randomUUID() });
+    const context = chatGenerationContextSchema.parse({ ...operation, chatId, branchId: branchId ?? chat.activeBranchId, runId: crypto.randomUUID() });
     this.agentRuns.start(key, { kind: "chat", chatId, mode: chat.mode },
       (signal) => this.loggedTurn((ownedSignal) => this.runGenerationTurn(chatId, context.branchId, turn, ownedSignal), signal, context),
       { kind: chat.mode, title: character?.name ?? chat.title });
     return this.agentRuns.subscribe(key, 0, subscriberSignal)!;
-  };
+  }
 
   subscribeChatGeneration: ChatMessageRuntimeApi["subscribeChatGeneration"] =
     (chatId, after, signal) => this.agentRuns.subscribe(chatGenerationKey(chatId), after, signal);

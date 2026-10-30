@@ -17,3 +17,6 @@ export const chatGenerationJobSchema = z.object({
   enqueuedAt: z.number().int().nonnegative(),
 });
 export type ChatGenerationJob = z.infer<typeof chatGenerationJobSchema>;
+
+export const enqueueChatGenerationJobSchema = chatGenerationJobSchema.pick({ messageId: true, model: true, promptPresetId: true });
+export type EnqueueChatGenerationJobRequest = z.infer<typeof enqueueChatGenerationJobSchema>;
