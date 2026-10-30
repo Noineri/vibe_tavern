@@ -10,7 +10,7 @@
 |-----------|--------|
 | **Auth** | Loopback requests (`127.0.0.1`/`::1`) bypass auth. Remote/LAN/Tailscale `/api/*` requests are fail-closed: if no mobile token is configured they return 401; otherwise they require `Authorization: Bearer <token>` or `?token=<token>`. |
 | **Errors** | `{ error: string }` with appropriate HTTP status. `DomainError` kinds map to: 404 (NotFound), 400 (Validation), 409 (Conflict), 502 (Provider), 499 (Cancelled), 401 (Unauthorized), 500 (Internal). |
-| **SSE streams** | Endpoints with `/stream` return `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `error`, `snapshot`, `done`. |
+| **SSE streams** | Generation POSTs and replay GETs return `text/event-stream`; numbered event IDs are run-local cursors. Disconnect detaches the reader, not a detached producer. See the generation event table below. |
 | **Snapshots** | Most mutating endpoints return a monolithic snapshot (`SessionSnapshot`) that the frontend ingests atomically via `ingestSnapshot()`. Some endpoints return partial data (e.g., `renameChat` returns `{ chatId, title }`). |
 | **Validation** | Request bodies validated via Zod schemas (`@hono/zod-validator`). Invalid requests return 400 with field-level error details. |
 
@@ -238,27 +238,38 @@ Send a user message and stream the AI response. **Primary generation endpoint.**
 Events:
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `text-delta` | `{ text: string }` | Assistant text chunk |
-| `reasoning-delta` | `{ text: string }` | Thinking/reasoning chunk |
-| `snapshot` | `SessionSnapshot` | Final state after generation completes |
-| `error` | `{ error: string }` | Generation error |
-| `done` | — | Stream complete |
+| `generation-context` | `{ runId, chatId, branchId, operation, messageId }` | First numbered event; operation is send/regenerate/continue/generate and messageId is nullable for a fresh reply |
+| `user-message-saved` | `{ messageId }` | Committed user-message identity, when a send appends one |
+| `generation-metadata` | `{ modelId, presetName }` | Resolved generation identity |
+| `text-delta` | `{ delta: string }` | Assistant text chunk |
+| `reasoning-delta` | `{ delta: string }` | Thinking/reasoning chunk |
+| `tool-call`, `tool-result`, `tool-input-start`, `tool-input-delta` | Tool-specific payload | Co-Author activities/streaming tool input |
+| `reasoning-done` | `{ durationMs }` | Reasoning duration |
+| `finish` | `{ finishReason, usage?, messageCount?, lorebookOverflows? }` | Result committed; refetch the chat rather than expecting an embedded snapshot |
+| `abort` | `{ partialLength }` | Cooperative Stop, after partial persistence |
+| `error` | `{ message, category?, code?, partialSaved? }` | Classified provider/bind error; mode-specific media gates may also carry type/attachments |
+
+Both RP and Co-Author POST stream routes start server-owned execution and subscribe to that exact run.
+Competing generations return 409 `{ error: string, code: "AGENT_RUN_ACTIVE" }` before opening SSE.
+The registry holds its slot through final persistence, not merely until a finish-looking event appears.
 
 ### `POST /api/chats/:chatId/messages`
 
-Send a user message **without** AI generation (append only).
+Send a user message and return the generated reply without streaming text deltas.
 
 **Body:** `sendMessageSchema`
 
 ```json
-{ "content": "A message without generation." }
+{ "content": "Hello, Aria!" }
 ```
 
-**Response:** `SessionSnapshot`
+**Response:** `MessageResponse` (messages, latest prompt trace and optional summaries).
 
 ### `POST /api/chats/:chatId/messages/:messageId/regenerate/stream`
 
 Regenerate a specific assistant message (streaming).
+
+**Optional body:** `{ model?: string, promptPresetId?: string }` (`regenerateOverrideSchema`); keys affect only this generation, not the chat row.
 
 **Response:** SSE stream (same format as `/messages/stream`)
 
@@ -266,7 +277,12 @@ Regenerate a specific assistant message (streaming).
 
 Regenerate a specific assistant message (non-streaming).
 
-**Response:** `SessionSnapshot`
+**Response:** `MessageResponse`.
+
+### `POST /api/chats/:chatId/messages/:messageId/continue[/stream]`
+
+Continue the selected assistant variant's text as a new variant, without sending that text from the browser.
+No body; the native path returns `MessageResponse`, the stream path uses the event format above.
 
 ### `POST /api/chats/:chatId/generate-reply/stream`
 
@@ -278,13 +294,47 @@ Generate an assistant continuation without user input (streaming).
 
 Generate continuation without user input (non-streaming).
 
-**Response:** `SessionSnapshot`
+**Response:** `MessageResponse`.
 
 ### `POST /api/chats/:chatId/messages/:messageId/branch`
 
 Create a new branch from a specific message.
 
 **Response:** `SessionSnapshot`
+
+### Chat generation recovery, queue and Co-Author review
+
+| Endpoint | Body/query | Response / behavior |
+|---|---|---|
+| `GET /api/chats/:chatId/generation` | `after` non-negative safe integer, default `0` | SSE replay after that cursor plus live tail; 204 if no run is retained since server start |
+| `POST /api/chats/:chatId/generation/stop` | — | `{ stopped: boolean }`; cooperative and idempotent, partial output persists before EOF |
+| `GET /api/chats/:chatId/queue` | — | `ChatGenerationJob[]` in enqueue order |
+| `POST /api/chats/:chatId/queue` | `{ messageId, model, promptPresetId: string \| null }` | 201 `ChatGenerationJob`; target must be an assistant in this chat |
+| `DELETE /api/chats/:chatId/queue/:jobId` | — | `{ ok: true }`; pending becomes cancelled, running requests Stop, settled jobs are unchanged |
+| `POST /api/chats/:chatId/queue/clear` | — | `{ ok: true }`; deletes pending rows only |
+| `GET /api/chats/:chatId/coauthor/review` | — | Canonical CA-15 v1 envelope or `null`; Co-Author mode required |
+| `PUT /api/chats/:chatId/coauthor/review` | `coauthorReviewEnvelopeSchema` | Validated full replacement envelope |
+| `DELETE /api/chats/:chatId/coauthor/review` | — | `{ ok: true }`; clears only this chat's review, never applies it |
+
+`ChatGenerationJob` (`packages/api-contracts/src/chat-generation-job.ts`) has id/chatId/messageId/model, nullable promptPresetId, pending/running/done/failed/cancelled status, epoch-ms enqueuedAt and optional variantIndex/error.
+Unset results are omitted, and variantIndex zero is preserved; optional recordId is a UI correlation, not persisted ownership.
+Native JSON chat calls reserve the same generation slot while executing but keep their request-signal cancellation behavior; native replay supplies context and settlement rather than invented text deltas.
+The first standalone regenerate is not a job; queue execution follows its existing regenerate/profile path and remains pinned to the target message's branch.
+Restart fails interrupted running jobs with a retry reason and resumes pending jobs; completed rows are not rerun.
+
+### App-level run discovery and per-chat notifications
+
+| Endpoint | Response |
+|---|---|
+| `GET /api/agent-runs` | Active `{ threadId, owner, kind, title, startedAt }[]`; startedAt is epoch milliseconds |
+| `GET /api/agent-runs/events` | SSE `ready`, then `agent.run` with `{ threadId, owner, kind, title, state }`; state is started/finished/asking/failed/stopped |
+| `GET /api/chats/:chatId/events` | Existing per-chat SSE: ready, summary.started/generated/failed/cancelled, queue.updated |
+
+Chat generations use threadId `chat:<chatId>` and owner `{ kind: "chat", chatId, mode }`; agent-thread owners retain script or chat-branch identities.
+The app lifecycle channel is not a durable notification inbox or a generation-delta stream.
+`queue.updated` carries an empty payload because the channel already identifies the chat; clients refetch its canonical queue, including after reconnect's ready handshake.
+Manual summary events carry `source: "manual"`; generated also carries summaryId/label, and cancelled is quiet.
+Remote EventSource clients authenticate with the same token query convention as the other SSE routes.
 
 ### `POST /api/chats/:chatId/messages/:messageId/variants/:variantIndex/select`
 
@@ -461,7 +511,13 @@ Generate a summary using AI.
 }
 ```
 
-**Response:** `SessionSnapshot`
+**Response:** `{ summary, chatSummary, snapshot: SummaryResponse }` after the server-owned manual run settles.
+Closing the request does not stop the run; a second manual run in that chat returns 409 `AGENT_RUN_ACTIVE` independently of reply generation.
+
+| Endpoint | Response |
+|---|---|
+| `GET /api/chats/:chatId/summaries/generate` | `{ from, to, label, startedAt }` for the running manual summary, otherwise `null` |
+| `POST /api/chats/:chatId/summaries/generate/stop` | `{ stopped: boolean }`; cancellation saves no late result |
 
 ### `PATCH /api/chats/:chatId/memory-settings`
 
@@ -1315,7 +1371,22 @@ The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no checklist y
 
 ### Stream
 
-`POST /api/experience-copilot/:threadId/stream` — **Response:** `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `tool-call`, `tool-result`, `reasoning-done`, `finish`, `abort`, `error`. A 15s SSE-comment heartbeat keeps the socket alive during long thinking. Client disconnect aborts the domain stream and persists partial state.
+`POST /api/experience-copilot/:threadId/stream` — **Response:** `text/event-stream` with numbered event IDs.
+Events include `text-delta`, `reasoning-delta`, `tool-call`, `tool-result`, `reasoning-done`, `finish`, `abort`, `error`; the shared transport keeps its heartbeat during long thinking.
+Client disconnect only unsubscribes; the server completes and persists the turn.
+A competing start returns 409 `{ error: string, code: "AGENT_RUN_ACTIVE" }` before SSE.
+
+| Endpoint | Body/query | Response |
+|---|---|---|
+| `GET /api/experience-copilot/:threadId/run` | `after` non-negative safe integer, default `0` | Numbered replay/live SSE, or 204 if no retained run |
+| `POST /api/experience-copilot/:threadId/stop` | — | `{ stopped: boolean }` |
+| `GET /api/experience-copilot/:threadId/review` | — | Canonical v2 review envelope or `null` |
+| `PUT /api/experience-copilot/:threadId/review` | `agentReviewEnvelopeSchema` | Validated full replacement envelope |
+| `DELETE /api/experience-copilot/:threadId/review` | — | `{ ok: true }` |
+
+The log remains until the thread's next start or process restart; a new browser projection rebuilds from cursor zero without another send or checkpoint.
+Producers persist finalized buffer proposals and their review base/progress before terminal delivery, even without a subscriber; no-proposal turns leave an existing review intact.
+These review routes cover the mini-app and script buffers; record proposals retain their existing explicit apply/reject endpoints.
 
 **Body** (exactly one of `content` / `answer`):
 

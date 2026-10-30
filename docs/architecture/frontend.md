@@ -233,11 +233,15 @@ The streaming layer separates three concerns that used to be conflated: **which 
 
 ```ts
 interface ChatGenerationState {
+  context?: ChatGenerationContext | null;
+  branchId?: string | null;
+  requestStop?: (() => void) | null;    // server Stop, not reader cancellation
   isSending: boolean;
   streamingMessageId: string | null;   // which message the stream targets (see below)
-  streamingText: string;                // full accumulated text so far
   streamingRevealedText: string;        // throttled view fed to the UI
   streamingReasoningText: string;
+  modelId: string | null;
+  presetName: string | null;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
   pendingUserMessageAttachments: Attachment[];
@@ -249,7 +253,7 @@ interface ChatGenerationState {
 
 ### `streamingMessageId` vs `messageActionId`
 
-These are deliberately separate so a future sequential queue can hold long-lived streaming state without it rendering as a transient action spinner:
+These are deliberately separate so sequential queue replay can hold long-lived streaming state without rendering as a transient action spinner:
 
 | Field | Meaning | Read by |
 |-------|---------|---------|
@@ -286,6 +290,18 @@ User sends message
 ### Regeneration
 
 For regenerate, `startGeneration` is called with a `streamingMessageId` pointing at the existing assistant message. Only that one `MessageBlock` (the one where `useIsStreamingTarget(id)` is true) swaps its stored content for the live streaming text; every other message renders normally. Previously this was driven by overloading `messageActionId === messageId`, which made every assistant message show as loading during a regen — the split above is the fix.
+
+### Detached execution and recovery
+
+The server owns the producer; an HTTP reader only subscribes to its numbered log.
+`generation-context` is the first event and supplies immutable run/chat/starting-branch/operation/target identity; `user-message-saved` reconciles committed sends with canonical history instead of recreating speculative rows.
+One AppShell `useChatGenerationAttachment` discovers active runs and feeds GET replay into the same controller callbacks/reveal as live sends, starting from `after=0` to rebuild local state.
+A local live reader can survive a chat switch; an attachment cleanup detaches only its GET and never stops the server.
+Explicit Stop calls the server and leaves the reader attached until partial persistence and EOF.
+Branch-aware selectors prevent a retained run from painting another branch.
+Every asynchronous completion refresh checks active chat ownership after the await: a non-active chat never ingests its snapshot into the visible one; return uses the ordinary fresh fetch.
+Detached unfinished output is not auto-narrated.
+Manual-summary recovery in the memory modal follows the summary status/Stop API and the same retained per-chat notification channel, not the reply-generation slot.
 
 ---
 
@@ -347,12 +363,20 @@ LorebookEditor
 
 ## Generation Queue
 
-A per-chat **sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting. The queue lives in `useGenerationQueueStore` (the ordered job list + per-job status); the runner is `use-generation-queue.ts`, registered once in the app shell.
+A per-chat **server-owned sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting.
+SQLite `chat_generation_jobs` is authoritative; `useGenerationQueueStore` mirrors its ordered jobs and projects the existing batch/timeline records.
+`use-generation-queue.ts` only sends enqueue/cancel/clear intent and hydrates on chat/branch entry; it contains no browser pump or generation callback registration.
+Typed RPC lives in `api/chat-generation-queue-api.ts`, with an ordered per-chat read/write lane in `lib/chat-generation-queue-client.ts` so a slow hydration cannot overwrite a later mutation.
 
 **Invariants:**
-- Exactly one in-flight generation per chat. The pump pops the next pending job only after the current one resolves.
-- The queue STATE is separate from the streaming seam: it asks "what is the queue's progress?", while `useChatStore.streamingMessageId` (above) answers "which message is streaming right now?". The runner writes streaming-target identity through `startGeneration`, the same path a manual regenerate uses.
-- `enqueueGenerateMore` / `cancelQueueJob` / `clearQueuePending` are plain module-level functions any component can import; `QueueManager.tsx` (rendered in `PlayMode`/the chat footer) renders the queue's progress.
+- Exactly one generation per chat occupies the server registry, including the standalone first regenerate and native JSON calls; queue jobs wait for it rather than becoming another client execution path.
+- Pending jobs survive reload/closed tabs and appear on another device; switching chats does not pause them.
+- Failure retains its server error and advances; Stop keeps a partial variant and advances; Clear removes pending work only.
+- `queue.updated` and reconnect `ready` notifications refresh canonical jobs through the existing authenticated per-chat channel; active queues retain that channel while another chat is visible.
+- Server job IDs supply local record correlation, so restoring a queue requires no browser-only timeline ID; saved variants remain the finished rows and standalone records keep their existing lifecycle.
+- Queue progress is separate from the streaming target: BR-4c replay writes `streamingMessageId` through `startGeneration`, while the mirror supplies status to the unchanged QueueManager pill, desktop popover and mobile sheet.
+- The attachment owner wakes on a new running-job identity and after the prior local reader settles, so a next job starting before the previous reveal ends is not missed; it never re-POSTs generation.
+- `use-agent-run-events.ts` shows one RP reply toast after the final successful job only when that chat is not on screen; canonical queue reads plus lifecycle revisions prevent late earlier-job checks from duplicating it.
 
 ---
 

@@ -45,6 +45,32 @@ The `servesChatModes` gate confines a kind to the chat modes it declares: creati
 The web reads the same fact from the bootstrap kind map (`servesChatModes` on the kind-settings wire) — never a second hard-coded mode check.
 The lifecycle routes are the chat-scoped twins in `services/api/src/api/routes/agent-chat-sessions.ts`; the per-thread routes (`/api/experience-copilot/:threadId/...`) stay owner-agnostic and serve a chat-owned thread exactly like a script-owned one.
 
+## Server-owned turns, replay and review
+
+Every kind starts through the shared `AgentRunRegistry` (`services/api/src/domain/agent/agent-run-registry.ts`), not the lifetime of its POST connection.
+The existing stream POST reserves one run per thread and subscribes; a duplicate answers 409 `AGENT_RUN_ACTIVE` before SSE, while another thread can run concurrently.
+GET `/api/experience-copilot/:threadId/run?after=<seq>` replays numbered events and tails the bound run; 204 means no retained run since startup.
+POST `/api/experience-copilot/:threadId/stop` cooperatively aborts execution; closing a stream or leaving a shell only detaches its subscription.
+Logs remain in memory until that thread's next run or server restart; persisted history is the recovery source after restart, not an automatic retry.
+RP and Co-Author generations share the same registry under `chat:<chatId>` and expose their own generation/replay/stop routes; manual summaries use an independent instance of the same registry implementation.
+
+`agent_review_rounds` is authoritative for review recovery, not localStorage or replayed activity upserts.
+The thread-owned v2 envelope (`packages/api-contracts/src/agent-review-round.ts`) stores finalized activities together with turn-start base snapshots, per-hunk accepted/dismissed progress and CD-8 dangling capture.
+The experience and script producers persist finalized proposals before terminal delivery; a turn without proposals preserves prior review bytes/timestamps.
+Co-Author uses the chat-owned arm of that same table and its canonical CA-15 v1 envelope, not another review store or copilot host.
+Nothing applies itself, and unsaved editor text still follows its existing Save flow.
+
+The generic controller's host transport offers replay and explicit Stop; remount/owner switches reattach without a new POST, checkpoint or preparation write.
+An ordered review client lane hydrates the server round, uploads a legacy localStorage envelope only when no server review exists, and removes the old key after success.
+Before send/answer/regenerate, the host flushes previous progress through the preparation barrier; while the producer owns the run, browser activity is projection-only.
+Apply/Reject/revert persist resolution through the same lane; predecessor checks protect newer server proposals without claiming cross-client CAS.
+
+One AppShell lifecycle subscription (`use-agent-run-events.ts`) handles finished/asking/failed assistant notifications only when the actual host is not visible; stopped turns remain quiet.
+Host descriptors supply Open navigation through existing build/chat routes, and visibility leases exclude mounted-but-hidden panes.
+Co-Author Open uses ordinary character/chat navigation and server-review hydration.
+RP uses its own finished-reply toast after a canonical queue check; revision guards suppress stale checks from earlier variants, and errors/stops add no RP toast.
+The queue mirror, retained per-chat notification channels and single attachment owner continue to work across navigation, reload and another device; see [Backend](./backend.md#server-owned-generations) and [Frontend](./frontend.md#generation-queue).
+
 ## Per-kind resources
 
 Profiles live behind `services/api/src/api/routes/copilot-profile.ts`, where `?kind=` selects the kind (default `experience`) and an unknown kind is a 400 carrying `UNKNOWN_AGENT_KIND`.
@@ -153,7 +179,7 @@ The copy ends with a `branch_forked { at }` event, rendered by the web as the se
 The host registry is `apps/web/src/lib/agent-host-registry.ts`, the frontend counterpart of the backend kind registry.
 A host descriptor carries the stable `kind`, the i18n key table (`title`, optional `subtitle`, `placeholder`, `loading`, `emptyTitle`, optional `emptySub`, optional `mobileBackLabelKey`), the profile-modal `toolKeys`, the `profileAssignment` target (`script` or `chat`), the `bufferSpecs`, the `transport` seam, the optional `renderEditorPane` (absent means a chat-only host), `buildSendOptions`, the optional `onSendSettled` and `composerTopSlot`, the optional `toolCaption` (with interpolation params; `detail` stays the error line), the optional `defaultModelBinding` (the kind's model default when no saved binding exists), the optional `planOwner` (absent = no plan block), the optional `meterSegmentLabels` (labels for kind-provided meter segments), the optional `messageActions` (under assistant bubbles), the optional `toolbarSlot` and `mobileEditTabHeader`, and the `recordProposalRenderers` map.
 `registerAgentHost` returns an unsubscribe and `getAgentHost` throws `UnknownAgentHostError` for an unregistered kind; host modules self-register at module init and their editors import them for that side effect.
-`AgentKind` is a plain string, and `agentThreadKey(kind, threadId)` is the single per-thread store-key derivation: bare `threadId` for `experience` (so pre-existing localStorage drafts keep working) and `${kind}:${threadId}` for later kinds, while server-side keys stay bare.
+`AgentKind` is a plain string, and `agentThreadKey(kind, threadId)` is the single per-thread UI store-key derivation: bare `threadId` for `experience` (compatible with legacy draft migration) and `${kind}:${threadId}` for later kinds, while server-side thread keys stay bare.
 `AgentSendOptions` (owned by the registry) carries the live buffers and step: `rules` / `visual` / `code`, `scriptKind`, `codeSaved` / `rulesSaved` / `visualSaved`, `step`, `testFeedback`, `launchContext`, `reviewSnapshot`, and `attachedVariants` (the sidechat's pending RP-variant attachments, cleared by the host on a successful send).
 `AgentHostContext` hands the host its `ownerId`, `scriptId`, live `threadId`, `isSending` flag, opaque `hostProps`, and the mutable `bridge`; the editor pane assigns `bridge.session` (`onBeforeSend` plus `buildSendOptions`) every render and host surfaces prefill the chat input through `bridge.setInputPrefill`.
 The transport seam (`sendStream`, `answerAsk`, `getActiveThread`, `listMessages`, `startSession`, `listSessions`, `activateSession`, `renameSession`, `setContextLinks`, optional `listEvents`) mirrors the experience client, with the lifecycle members owner-typed (`AgentThreadOwner`) so a chat host's sessions come from the chat routes; the generic shell and controller never import a kind-specific client.

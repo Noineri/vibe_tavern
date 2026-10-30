@@ -1,5 +1,7 @@
 /** Server-owned Co-Author reviews (BR-4d). LocalStorage is a one-time CA-15
  * migration source only; live/replayed tool activities are never browser PUTs.
+ * The producer commits canonical envelopes to agent_review_rounds before EOF;
+ * Apply/Reject resolution uses the ordered API lane and never auto-applies.
  * The diff continues to compare the restored proposal against the current card. */
 import { buildCoauthorReviewEnvelope, coauthorReviewActivitySchema, type CoauthorReviewActivity, type CoauthorReviewEnvelope } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
@@ -11,7 +13,7 @@ import { clearCoauthorRemoteReview } from "./coauthor-editor-snapshot.js";
 const DRAFT_PREFIX = "vt:coauthor-draft:";
 const DRAFT_VERSION = 1;
 
-/** localStorage envelope — versioned so a future schema change can migrate/discard. */
+/** Legacy localStorage envelope, read only for successful one-time upload. */
 interface DraftEnvelope {
   _v: number;
   activities: unknown[];

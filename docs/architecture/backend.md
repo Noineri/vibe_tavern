@@ -1,11 +1,50 @@
 # Backend Architecture
 
-> **services/api** — Single Bun process serving HTTP API and static frontend. No microservices, no queues.
+> **services/api** — Single Bun process serving HTTP API and static frontend, with in-process background runs and a SQLite-backed generate-more queue; no external workers or message broker.
 
 ## Architecture gates
 
 `bun run typecheck` runs a ratchet that blocks new `domain/` imports from `api/` or `runtime/`.
 Domain code must receive a narrow interface or shared package/domain dependency instead of reaching upward to `SessionRuntime`.
+
+## Server-owned generations
+
+`domain/agent/agent-run-registry.ts` owns execution, independent of HTTP subscriptions.
+The composition root shares one registry across agent threads and chat generations: bare thread IDs for assistants, `chat:<chatId>` for RP and Co-Author.
+`start` synchronously reserves a key, consumes its generator without subscriber backpressure, numbers the retained events, and releases the slot only after generator finalization/persistence.
+A competing start returns HTTP 409 with top-level `code: "AGENT_RUN_ACTIVE"`; different keys run concurrently.
+Disconnect/unmount only detaches a subscriber; explicit Stop aborts the run's own controller and waits cooperatively for producer cleanup, including saved partial chat output.
+Native JSON chat requests reserve that same slot, so the first non-streaming regenerate cannot overlap a queued job; their original request-signal cancellation remains supported.
+
+`api/adapters/chat-generation-run-adapter.ts` records `generation-context` first: run ID, chat, starting branch, operation and nullable existing-message target.
+`ChatRuntime.withGenerationScope` pins every lazy iterator pull to that branch and isolates pending traces with AsyncLocalStorage; changing the visible branch cannot retarget a producer.
+GET replay uses a run-local `after` cursor (default zero); the log survives completion until the key's next start, or process restart.
+There is no persisted run log and no automatic restart/re-execution of an interrupted ordinary turn; committed history/reviews remain available.
+App-level `GET /api/agent-runs` discovers active runs and `GET /api/agent-runs/events` publishes `agent.run` lifecycle notifications through the existing EventBus.
+Owners distinguish agent-thread script/chat-branch identities from chat-generation `{ kind: "chat", chatId, mode }` identities; Co-Author is not a copilot host.
+
+Manual ranged summaries reuse the registry implementation in an independent `ChatSummaryService` registry keyed `summary:<chatId>` so they do not block replies.
+Their POST waits for the original JSON result while execution survives a closed connection; GET status and POST Stop recover the modal's controls.
+Manual `summary.started/generated/failed/cancelled` notifications use the existing per-chat events channel; cancellation is quiet, and automatic summaries retain their own locks/lifecycle.
+
+### Durable reviews and generate-more jobs
+
+`agent_review_rounds` is the only buffer-review table: separate nullable unique cascade FKs to thread and chat, with an exactly-one-owner CHECK.
+Shared contracts are `agent-review-round.ts` (v2 activities, base snapshots, hunk progress and dangling capture, including script code) and `coauthor-review.ts` (CA-15 v1 activities, including profile/greeting/lore/tracker-template proposals).
+The producer stores finalized proposals before terminal delivery; read-only/no-proposal/failed-tool turns preserve an existing review rather than rewriting or deleting it.
+Reviews never apply themselves: host Apply/Reject and existing save/binding endpoints remain explicit user actions.
+GET/PUT/DELETE review endpoints restore across browsers/devices; ordered client lanes flush prior progress before a new producer starts, suppress partial browser writes/replay checkpoints, and upload legacy localStorage once only when the server has no review.
+Full replacement provides same-client ordering/predecessor checks, not cross-device compare-and-swap.
+
+`domain/chat/chat-generation-queue.ts` owns per-chat ordered execution over `ChatGenerationJobStore` and the same detached regenerate/profile path as the stream route.
+`chat_generation_jobs` stores assistant-message ownership, model/preset keys, status, optional variant result/error and epoch-ms enqueue time; chat/message deletion cascades, and equal timestamps retain SQLite insertion order.
+Model/preset keys are frozen at enqueue; generation settings resolve at pop, and a null preset uses the chat's then-current preset.
+The target message determines the job's branch; no active-branch mutation is needed.
+An idle chat claims one pending job; failure marks it failed and advances, pending cancellation marks cancelled, running Stop keeps any partial variant and advances, and Clear deletes only pending rows.
+The standalone first regenerate stays outside the queue.
+Queue status settles before terminal `agent.run` publication and each queue mutation emits `queue.updated` on the existing per-chat channel, allowing one completion toast after the last successful job.
+Startup marks interrupted running rows failed with an actionable retry reason and resumes only pending rows; there is no silent rerun of interrupted work.
+The web mirrors the queue through typed RPC and events; no browser pump remains.
 
 ---
 

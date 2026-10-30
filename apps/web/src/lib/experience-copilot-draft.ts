@@ -19,9 +19,10 @@
  * `{ activities, round }` together; a V1 envelope (activities only) still
  * loads, degraded (no review anchor).
  *
- * WRITE SIDE. `syncPersistedCopilotRound(threadId)` is the single entry point
- * the copilot shell calls from an effect on every round/activity mutation: it
- * reads both stores and either saves or DELETES the server review. It survives while
+ * WRITE SIDE. The server producer writes finalized proposals before terminal
+ * delivery. `syncPersistedCopilotRound(threadId)` persists idle review progress
+ * through the ordered API lane; preparation flushes it before a new turn.
+ * Live/replayed activity updates never upload partial proposals. It survives while
  * anything reviewable remains (finalized activities OR a dangling capture);
  * a fully resolved / reverted round removes it. Unsaved buffer edits and
  * accepted-hunk text do NOT survive a reload (the draft buffers are in-memory),
@@ -47,8 +48,7 @@
  * after a schema change) discards the legacy entry rather than seeding incompatible
  * data — the user simply sees no draft, same as before ER-10. Malformed JSON
  * is likewise discarded (best-effort: persistence is a convenience, never a
- * correctness constraint — the canonical buffers are the script/visual draft
- * stores' source of truth).
+ * legacy-import guarantee; canonical reviews use the validated server API).
  */
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 import type { AgentReviewRound } from "../stores/agent-review-store.js";

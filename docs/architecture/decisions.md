@@ -759,3 +759,40 @@ Threads stay **script-owned with no kind column**: `experience_copilot_threads` 
 **Evidence:** The seeds and their tool sets are pinned by `services/api/test/sidechat-ooc-kind.test.ts` and `services/api/test/sidechat-director-tools.test.ts`; the projection/follow-back/reconcile by `services/api/test/story-plan-sync.test.ts` and `services/api/test/story-plan-wiring.test.ts`; the capability-gated switch by `apps/web/src/stores/sidechat-call-director-store.test.ts`; the plan-driven goals UI by `apps/web/src/components/build/editors/ObjectiveConfig.test.tsx`. The record-proposal registry that keeps Accept the only write path is `SIDECHAT_RECORD_PROPOSAL_REGISTRY` (`services/api/src/domain/sidechat/sidechat-objective-proposal.ts`, pinned by `services/api/test/agent-thread-proposals.test.ts`).
 
 **Revisit trigger:** A director capability that the sidechat's profile shape cannot express (per-turn model routing, several drafts with a judge — the deferred design phases) reopens the profile-not-kind ruling; a second chat-owned kind would then be the honest shape, not a workaround.
+
+---
+
+## AD-030: Assistant Turns and Chat Generations Are Server-Owned
+
+**Context:** Tying model execution to an HTTP reader made leaving an editor or closing a tab stop an assistant/RP turn, while browser-only proposal envelopes lost review recovery across devices.
+An asynchronous completion could also ingest the generating chat's snapshot after navigation and replace another chat's messages/character.
+The single-process architecture (AD-011) needs no external worker system, but the producer must outlive an individual subscriber.
+
+**Decision:** One in-process `AgentRunRegistry` implementation owns execution, cancellation and numbered retained replay; one composition-root registry serves agent threads and chat generations, with an independent instance for manual summaries so summaries never occupy a reply slot.
+Starting a second generation in the same owner key returns 409 `AGENT_RUN_ACTIVE`; other keys run concurrently.
+Disconnect/unmount unsubscribes only, while explicit Stop cooperatively aborts the owned producer and preserves the chat's existing partial-output semantics.
+Chat runs carry immutable starting-branch/operation/target context as the first event and isolate pending traces per run; native JSON calls reserve the same slot without manufacturing text deltas.
+Clients replay from zero to reconstruct local projections, never re-send preparation/checkpoints as replay side effects.
+
+**Persistence boundary:** Ordinary run logs live in memory until the next run or process restart, not in a new run table.
+A restart interrupts ordinary turns; committed history and reviews survive, but interrupted work is not silently replayed against the provider.
+`agent_review_rounds` is the sole canonical buffer-review table, with separate exactly-one thread/chat owners and shared versioned contracts.
+The producer writes finalized proposals before terminal delivery, preserving existing reviews on no-proposal/read-only turns; users still Apply/Reject/save explicitly.
+Clients persist review progress through ordered API lanes and migrate valid legacy localStorage envelopes once only when there is no server round; unsaved editor buffers keep their existing Save semantics.
+Full-replacement review CRUD is ordered/predecessor-checked within a client, not cross-client compare-and-swap.
+
+**Durable user intent:** Unlike ordinary run logs, generate-more jobs are persisted because pending requests must survive reloads, closed tabs and restarts.
+The per-chat runner reuses the detached regenerate/profile path and registry, serializes jobs, advances after failure/Stop, and leaves the standalone first regenerate outside the queue.
+Startup marks interrupted running jobs failed with a retry reason and resumes pending jobs only.
+Queue mutations use the existing per-chat `queue.updated` notification; the global `agent.run` lifecycle is the existing channel for assistant/Co-Author/reply completion.
+The web is a queue mirror, never another runner, and suppresses intermediate queue reply toasts.
+
+**Visible-state invariant:** A generation finishing in a non-active chat never ingests that chat into the visible snapshot, even when navigation happens while a refresh is awaiting HTTP.
+Returning fetches the intended chat; reattachment paints only its starting branch, and navigation alone does not auto-narrate unfinished output.
+
+**Alternatives rejected:** Keeping request-owned execution still loses work on disconnect; separate per-host registries/review stores/channels duplicate lifecycle knowledge; persisting every run log introduces restart/retry semantics that are not part of this decision; a browser queue still cannot execute after the tab closes.
+
+**Evidence:** `agent-run-registry.test.ts`, `chat-generation-background-routes.test.ts`, `chat-generation-queue.test.ts`, review producer/store suites, `chat-generation-reattach.test.ts`, queue HTTP/UI suites and `use-agent-run-events.test.ts` pin detached execution, persistence-before-settlement, branch/chat isolation, recovery and explicit navigation.
+Architecture entry points and endpoint details are in [Backend](./backend.md#server-owned-generations), [Agent Shell](./agent-shell.md#server-owned-turns-replay-and-review) and [API Reference](./api-reference.md).
+
+**Revisit trigger:** Multi-process execution, durable automatic run retries, cross-client review CAS, or a persistent notification inbox would require a new ownership/persistence decision; none is implied by background execution in one Bun process.
