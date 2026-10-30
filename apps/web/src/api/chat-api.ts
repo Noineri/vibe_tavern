@@ -345,6 +345,7 @@ export async function regenerateAttachmentDescription(
 
 export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream, continueStream as continueChatMessageStream };
 export type { StreamOpts };
+export { isChatGenerationRunning, subscribeChatGeneration, stopChatGeneration } from "./chat-generation-api.js";
 
 // ─── Branches ───────────────────────────────────────────────────────────
 
