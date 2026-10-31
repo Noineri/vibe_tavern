@@ -1,8 +1,9 @@
-import { describe, it, expect } from "bun:test";
-import { assemblePrompt } from "../src/assemble.ts";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { assemblePrompt, makeLayer } from "../src/assemble.ts";
 import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
-import { setTokenCountFn } from "../src/compaction.ts";
+import { setSeparatorSideFn, setTokenCountFn } from "../src/compaction.ts";
+import { formatRecentMessages } from "../src/history-token-count.ts";
 import type { PromptAssemblyContext } from "../src/types.ts";
 import { brandId, type DiceRollSnapshot, type DiceRollId, type ExperienceReportSnapshot, type MessageId } from "@vibe-tavern/domain";
 
@@ -444,6 +445,77 @@ describe("assemblePrompt", () => {
       const result = assemblePrompt(baseContext({ chat: { recentMessages: [] } }));
       const hist = result.layers.find((l) => l.id === "recent_history");
       expect(hist).toBeUndefined();
+    });
+  });
+
+  // ─── TOKEN_COUNT_ONCE_PLAN TC-9: no discarded encode on the history layer ──
+  //
+  // `makeLayer` used to encode every layer text unconditionally; the history
+  // site then threw that count away and overrode it with the TC-3 piece
+  // count — so every assembly encoded the joined history (a >100 000-char,
+  // memory-only text in a long chat) and discarded the result, and every
+  // churn eviction re-encoded the whole history on the hot path. These pins
+  // go through the injected counter seam exactly like
+  // history-token-count.test.ts: a recording counter plus an injected
+  // separator-side answer.
+  describe("history layer token count (TC-9)", () => {
+    const HISTORY = [
+      { id: "msg_1", role: "user", content: "First distinct user turn." },
+      { id: "msg_2", role: "assistant", content: "Second distinct assistant reply." },
+      { id: "msg_3", role: "user", content: "Third distinct user turn." },
+    ];
+    const joinedHistory = () => formatRecentMessages(HISTORY);
+    const historyPieces = () => HISTORY.map((m) => `${m.role.toUpperCase()}: ${m.content.trim()}`);
+
+    let counted: string[];
+    beforeEach(() => {
+      counted = [];
+      setTokenCountFn((text) => { counted.push(text); return text.length; });
+      setSeparatorSideFn(() => "after");
+    });
+    afterEach(() => {
+      setSeparatorSideFn(null);
+      setTokenCountFn(() => 0);
+    });
+
+    it("on a measured side the history layer issues ZERO joined-text encodes", () => {
+      const result = assemblePrompt(baseContext({ chat: { recentMessages: HISTORY } }));
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist).toBeTruthy();
+      expect(counted).not.toContain(joinedHistory());
+      // The layer's VALUE is byte-identical across the change: the "after"-side
+      // piece sum the char counter computes arithmetically.
+      const [p0, p1, p2] = historyPieces();
+      expect(hist.tokenCount).toBe(`${p0}\n\n`.length + `${p1}\n\n`.length + p2.length);
+    });
+
+    it("a null side keeps the joined count as the history layer's lawful fallback", () => {
+      setSeparatorSideFn(() => null);
+      const result = assemblePrompt(baseContext({ chat: { recentMessages: HISTORY } }));
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist).toBeTruthy();
+      expect(counted).toContain(joinedHistory());
+      expect(hist.tokenCount).toBe(joinedHistory().length);
+    });
+
+    it("a caller-passed tokenCount wins inside makeLayer — a passed 0 disables the encode", () => {
+      const seven = makeLayer({
+        id: "layer_a",
+        sourceType: "test",
+        sourceId: "src_a",
+        text: "Text whose estimate must never be computed.",
+        tokenCount: 7,
+      });
+      expect(seven.tokenCount).toBe(7);
+      const zero = makeLayer({
+        id: "layer_b",
+        sourceType: "test",
+        sourceId: "src_b",
+        text: "Zero means already counted — still no estimate call.",
+        tokenCount: 0,
+      });
+      expect(zero.tokenCount).toBe(0);
+      expect(counted).toEqual([]);
     });
   });
 
