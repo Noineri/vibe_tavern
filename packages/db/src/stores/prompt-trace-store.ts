@@ -4,6 +4,7 @@ import type { ActivatedLoreDetail, OverflowedLorebook, ProviderResponseTrace } f
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { deflateTraceValue, inflateTraceValue, collectMarkerIds, type TraceChunk } from '../trace-chunking.js';
+import { compressTraceText, decodeTraceText } from '../trace-storage-codec.js';
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -113,13 +114,11 @@ export class PromptTraceStore {
     const id = this.idGen.next('trace');
     const now = this.clock.now();
 
-    // The three payload columns are stored as chunk-referencing skeletons
-    // (trace-chunking.ts): every string ≥ TRACE_CHUNK_THRESHOLD moves into
-    // prompt_trace_chunks keyed by its sha256, so the chat history shared by
-    // every later trace in a chat is stored once instead of per-trace.
-    const layers = deflateTraceValue(data.assembledLayers);
-    const final = deflateTraceValue(data.finalPayload ?? {});
-    const response = data.providerResponse ? deflateTraceValue(data.providerResponse) : null;
+    // v2: ordered content-defined blocks plus compressed skeletons. Chunk ids
+    // hash plaintext, so existing v1 chunks can still satisfy a shared block.
+    const layers = deflateTraceValue(data.assembledLayers, 2);
+    const final = deflateTraceValue(data.finalPayload ?? {}, 2);
+    const response = data.providerResponse ? deflateTraceValue(data.providerResponse, 2) : null;
     const chunks = dedupeChunks([layers, final, ...(response ? [response] : [])]);
     const refPairs: Array<{ traceId: string; chunkId: string }> = [];
     for (const deflated of [layers, final, ...(response ? [response] : [])]) {
@@ -129,7 +128,10 @@ export class PromptTraceStore {
     this.db.transaction((tx) => {
       if (chunks.length > 0) {
         tx.insert(promptTraceChunks)
-          .values(chunks.map((chunk) => ({ id: chunk.id, byteSize: chunk.content.length, content: chunk.content })))
+          .values(chunks.map((chunk) => {
+            const content = compressTraceText(chunk.content);
+            return { id: chunk.id, byteSize: content.byteLength, content };
+          }))
           .onConflictDoNothing()
           .run();
       }
@@ -148,9 +150,9 @@ export class PromptTraceStore {
           variantId: data.variantId ?? null,
           model: data.model,
           presetName: data.presetName,
-          assembledLayersJson: JSON.stringify(layers.skeleton),
+          assembledLayersJson: compressTraceText(JSON.stringify(layers.skeleton)),
           tokenAccountingJson: JSON.stringify(data.tokenAccounting),
-          finalPayloadJson: JSON.stringify(final.skeleton),
+          finalPayloadJson: compressTraceText(JSON.stringify(final.skeleton)),
           activatedLoreEntriesJson: JSON.stringify(data.activatedLoreEntries),
           activatedLoreDetailJson: JSON.stringify(data.activatedLoreDetail ?? []),
           overflowedLorebooksJson: JSON.stringify(data.overflowedLorebooks ?? []),
@@ -159,7 +161,7 @@ export class PromptTraceStore {
           prefill: data.prefill ?? null,
           compactionSummary: data.compactionSummary ?? null,
           sentConfigJson: data.sentConfig ? JSON.stringify(data.sentConfig) : null,
-          providerResponseJson: response ? JSON.stringify(response.skeleton) : null,
+          providerResponseJson: response ? compressTraceText(JSON.stringify(response.skeleton)) : null,
           latencyMs: data.latencyMs,
           createdAt: now,
         })
@@ -361,10 +363,9 @@ export class PromptTraceStore {
    */
   private async hydrateChunkMap(rows: Array<typeof promptTraces.$inferSelect>): Promise<Map<string, string>> {
     const ids = new Set<string>();
-    const marker = '"$vtchunk"';
     for (const row of rows) {
       for (const column of [row.assembledLayersJson, row.finalPayloadJson, row.providerResponseJson]) {
-        if (column && column.includes(marker)) {
+        if (column) {
           for (const id of collectMarkerIds(column)) ids.add(id);
         }
       }
@@ -379,7 +380,7 @@ export class PromptTraceStore {
         .from(promptTraceChunks)
         .where(inArray(promptTraceChunks.id, slice))
         .all();
-      for (const chunk of found) map.set(chunk.id, chunk.content);
+      for (const chunk of found) map.set(chunk.id, decodeTraceText(chunk.content));
     }
     return map;
   }
@@ -396,9 +397,9 @@ export class PromptTraceStore {
       variantId: row.variantId ?? null,
       model: row.model,
       presetName: row.presetName,
-      assembledLayers: inflateTraceValue(JSON.parse(row.assembledLayersJson), lookup),
+      assembledLayers: inflateTraceValue(JSON.parse(decodeTraceText(row.assembledLayersJson)), lookup),
       tokenAccounting: JSON.parse(row.tokenAccountingJson),
-      finalPayload: inflateTraceValue(JSON.parse(row.finalPayloadJson), lookup),
+      finalPayload: inflateTraceValue(JSON.parse(decodeTraceText(row.finalPayloadJson)), lookup),
       activatedLoreEntries: JSON.parse(row.activatedLoreEntriesJson),
       activatedLoreDetail: row.activatedLoreDetailJson ? JSON.parse(row.activatedLoreDetailJson) : [],
       overflowedLorebooks: row.overflowedLorebooksJson ? JSON.parse(row.overflowedLorebooksJson) : [],
@@ -408,7 +409,7 @@ export class PromptTraceStore {
       prefill: row.prefill ?? null,
       compactionSummary: row.compactionSummary ?? null,
       sentConfig: row.sentConfigJson ? JSON.parse(row.sentConfigJson) : null,
-      providerResponse: row.providerResponseJson ? inflateTraceValue(JSON.parse(row.providerResponseJson), lookup) : null,
+      providerResponse: row.providerResponseJson ? inflateTraceValue(JSON.parse(decodeTraceText(row.providerResponseJson)), lookup) : null,
       createdAt: row.createdAt,
     };
   }

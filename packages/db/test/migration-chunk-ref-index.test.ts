@@ -48,9 +48,13 @@ describe("prompt_trace_chunk_refs chunk_id index (LONG_CHAT_PERFORMANCE_REPORT s
 		expect(entries[126]!.when).toBeLessThan(entries[125]!.when);
 	});
 
-	test("the newest migration creates idx_prompt_trace_chunk_refs_chunk on chunk_id", async () => {
+	test("the index migration creates idx_prompt_trace_chunk_refs_chunk on chunk_id", async () => {
 		const entries = await readJournal();
-		const tag = entries[entries.length - 1]!.tag;
+		// Pin the migration that owns this index, not whichever migration happens
+		// to be last after unrelated schema changes land.
+		const entry = entries.find((candidate) => candidate.tag === "0134_common_masked_marvel");
+		expect(entry).toBeDefined();
+		const tag = entry!.tag;
 		const migrationSql = await readFile(join(DRIZZLE_DIR, `${tag}.sql`), "utf8");
 		expect(migrationSql).toContain("CREATE INDEX");
 		expect(migrationSql).toContain("idx_prompt_trace_chunk_refs_chunk");
@@ -61,7 +65,7 @@ describe("prompt_trace_chunk_refs chunk_id index (LONG_CHAT_PERFORMANCE_REPORT s
 	});
 
 	test("a fresh DB carries the index (the test template rides the new migration)", async () => {
-		const db = await createDb(":memory:");
+		const db = await createDb(":memory:", undefined, { realMigrations: true });
 		const rows = db.all(
 			sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'prompt_trace_chunk_refs'`,
 		) as unknown as Array<{ name: string }>;

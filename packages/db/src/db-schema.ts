@@ -1341,9 +1341,9 @@ export const promptTraces = sqliteTable('prompt_traces', {
   messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
   model: text('model').notNull(),
   presetName: text('preset_name').notNull(),
-  assembledLayersJson: text('assembled_layers_json').notNull(),
+  assembledLayersJson: blob('assembled_layers_json', { mode: 'buffer' }).$type<Buffer | string>().notNull(),
   tokenAccountingJson: text('token_accounting_json').notNull(),
-  finalPayloadJson: text('final_payload_json').notNull().default('{}'),
+  finalPayloadJson: blob('final_payload_json', { mode: 'buffer' }).$type<Buffer | string>().notNull().default(sql`'{}'`),
   activatedLoreEntriesJson: text('activated_lore_entries_json').notNull().default('[]'),
   /** Per-entry activation reasons (JSON ActivatedLoreDetail[]). Nullable for traces saved before this column existed. */
   activatedLoreDetailJson: text('activated_lore_detail_json'),
@@ -1356,7 +1356,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
   compactionSummary: text('compaction_summary'),
   latencyMs: integer('latency_ms').notNull(),
   sentConfigJson: text('sent_config_json'),
-  providerResponseJson: text('provider_response_json'),
+  providerResponseJson: blob('provider_response_json', { mode: 'buffer' }).$type<Buffer | string>(),
   /** SC-23b (SIDECHAT_PLAN Wave 5b): the swipe (message_variants row) this
    *  trace's prompt produced. Null = the producing swipe is unknown: greeting
    *  traces (no model wrote them), legacy traces the boot back-fill could not
@@ -1381,7 +1381,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
 export const promptTraceChunks = sqliteTable('prompt_trace_chunks', {
   id: text('id').primaryKey(),
   byteSize: integer('byte_size').notNull(),
-  content: text('content').notNull(),
+  content: blob('content', { mode: 'buffer' }).$type<Buffer | string>().notNull(),
 });
 
 /**

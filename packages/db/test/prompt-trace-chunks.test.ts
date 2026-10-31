@@ -4,6 +4,8 @@ import { sql } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
 import { PromptTraceStore, type SaveTraceData } from "../src/stores/prompt-trace-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
+import { deflateTraceValue } from "../src/trace-chunking.js";
+import { decodeTraceText, isCompressedTraceText } from "../src/trace-storage-codec.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -108,6 +110,32 @@ describe("PromptTraceStore — chunked payloads", () => {
     expect(JSON.stringify(fetched!.finalPayload)).toBe(JSON.stringify(data.finalPayload));
   });
 
+  test("seeded legacy TEXT skeletons and chunks serve identical JSON through every read path", async () => {
+    const data = makeTraceData("chat_1", "msg_1", 60, "legacy");
+    const saved = await store.saveTrace(data);
+    const values = [data.assembledLayers, data.finalPayload, data.providerResponse].map((value) => deflateTraceValue(value, 1));
+    db.transaction(() => {
+      db.$client.query('DELETE FROM prompt_trace_chunk_refs WHERE trace_id = ?').run(saved.id);
+      for (const value of values) {
+        for (const chunk of value.chunks) {
+          db.$client.query('INSERT OR REPLACE INTO prompt_trace_chunks(id, byte_size, content) VALUES (?, ?, ?)').run(chunk.id, chunk.content.length, chunk.content);
+          db.$client.query('INSERT OR IGNORE INTO prompt_trace_chunk_refs(trace_id, chunk_id) VALUES (?, ?)').run(saved.id, chunk.id);
+        }
+      }
+      db.$client.query('UPDATE prompt_traces SET assembled_layers_json = ?, final_payload_json = ?, provider_response_json = ? WHERE id = ?')
+        .run(...values.map((value) => JSON.stringify(value.skeleton)), saved.id);
+    });
+    for (const trace of [
+      await store.getTrace(saved.id),
+      await store.getLatestTraceByChat("chat_1", "brnch_1"),
+      ...(await store.getTracesByChat("chat_1", "brnch_1", "msg_1", 1)),
+    ]) {
+      expect(JSON.stringify(trace!.assembledLayers)).toBe(JSON.stringify(data.assembledLayers));
+      expect(JSON.stringify(trace!.finalPayload)).toBe(JSON.stringify(data.finalPayload));
+      expect(JSON.stringify(trace!.providerResponse)).toBe(JSON.stringify(data.providerResponse));
+    }
+  });
+
   test("getTracesByChat hydrates every row", async () => {
     const d1 = makeTraceData("chat_1", "msg_1", 5, "r1");
     const d2 = makeTraceData("chat_1", "msg_2", 6, "r2");
@@ -119,6 +147,23 @@ describe("PromptTraceStore — chunked payloads", () => {
     const byId = new Map(list.map((t) => [t.id, t]));
     expect(byId.get(s1.id)!.finalPayload).toEqual(d1.finalPayload);
     expect(byId.get(s2.id)!.finalPayload).toEqual(d2.finalPayload);
+  });
+
+  test("v2 commits compressed BLOBs with plaintext-hashed blocks and compressed byte sizes", async () => {
+    const data = makeTraceData("chat_1", "msg_1", 60, "v2");
+    const saved = await store.saveTrace(data);
+    const row = db.$client.query<{ layers: Uint8Array; final: Uint8Array; response: Uint8Array }, [string]>(
+      'SELECT assembled_layers_json AS layers, final_payload_json AS final, provider_response_json AS response FROM prompt_traces WHERE id = ?',
+    ).get(saved.id)!;
+    for (const column of [row.layers, row.final, row.response]) {
+      expect(isCompressedTraceText(column)).toBe(true);
+      expect(decodeTraceText(column)).toContain('"$vtlist"');
+    }
+    for (const chunk of db.$client.query<{ content: Uint8Array; size: number }, []>('SELECT content, byte_size AS size FROM prompt_trace_chunks').all()) {
+      expect(isCompressedTraceText(chunk.content)).toBe(true);
+      expect(chunk.size).toBe(chunk.content.byteLength);
+    }
+    expect(JSON.stringify((await store.getLatestTraceByChat("chat_1", "brnch_1"))!.assembledLayers)).toBe(JSON.stringify(data.assembledLayers));
   });
 
   test("shared history between consecutive traces is stored once", async () => {
