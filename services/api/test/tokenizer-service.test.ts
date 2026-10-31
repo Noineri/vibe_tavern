@@ -27,7 +27,6 @@ import {
 	warmupTokenizers,
 	resolveTokenizerId,
 	setPersistentTokenCountStore,
-	waitForTokenCountReadIdle,
 	getTokenCountLayerStatsForTests,
 	configureTokenCountLayerForTests,
 	resetTokenCountLayerForTests,
@@ -150,7 +149,7 @@ function makeFakeStore() {
 	const gets: Array<{ textHash: string; tokenizer: string }> = [];
 	const puts: RecordedRow[] = [];
 	const store: PersistentTokenCountStore = {
-		get: async (textHash, tokenizer) => {
+		getSync: (textHash, tokenizer) => {
 			gets.push({ textHash, tokenizer });
 			const count = rows.get(`${tokenizer}::${textHash}`);
 			return count === undefined ? null : { tokenCount: count };
@@ -265,25 +264,40 @@ describe("layered count cache (TC-2)", () => {
 		expect(getTokenCountLayerStatsForTests().encodes).toBe(1);
 	});
 
-	test("after a memory reset the count comes from the persistent store without encoding", async () => {
-		const text = "counted once yesterday, stored, reread today";
+	test("after a memory reset the FIRST post-reset call returns the stored count with ZERO encodes", () => {
+		// TC-8 retightening: this pin's TC-2 form allowed "the sync path must
+		// encode once more" — that comment codified the defect (TC-7 measured
+		// it: one re-encode per text per pass re-encoded an entire long-chat
+		// snapshot on every pass). The store must be consulted SYNCHRONOUSLY
+		// before the encode decision: with a stored row, the first post-reset
+		// call answers from the store and encodes nothing.
+		const texts = [
+			"counted once yesterday, stored, reread today",
+			"a second stored text from the same snapshot pass",
+			"and a third, so the pin covers a whole pass, not one text",
+		];
 		const fake = makeFakeStore();
 		setPersistentTokenCountStore(fake.store);
-		const first = countTokens(text, "gpt-4o"); // encodes + write-through
-		await waitForTokenCountReadIdle(); // the scheduled read finds nothing
-		expect(fake.puts.length).toBe(1);
-		expect(fake.puts[0]!.tokenizer).toBe("tiktoken:o200k_base");
-		expect(fake.puts[0]!.tokenCount).toBe(first);
-		// Simulate a restart: memory gone; the store row exists (held at a
-		// marker value so the assertion can tell store routing from encoding).
-		fake.rows.set(`${fake.puts[0]!.tokenizer}::${fake.puts[0]!.textHash}`, 987654);
+		const first = texts.map((text) => countTokens(text, "gpt-4o")); // encodes + write-through
+		expect(fake.puts.length).toBe(texts.length);
+		for (const [i, put] of fake.puts.entries()) {
+			expect(put.tokenizer).toBe("tiktoken:o200k_base");
+			expect(put.tokenCount).toBe(first[i]);
+		}
+		// Simulate a restart: memory gone; every row exists, held at marker
+		// values so the assertions can tell store routing from encoding.
+		for (const [i, put] of fake.puts.entries()) {
+			fake.rows.set(`${put.tokenizer}::${put.textHash}`, 900_000 + i);
+		}
 		resetTokenCountLayerForTests();
-		const second = countTokens(text, "gpt-4o"); // sync path must encode once more
-		expect(second).toBe(first);
-		await waitForTokenCountReadIdle(); // the store read lands → memory ← stored value
-		const third = countTokens(text, "gpt-4o");
-		expect(third).toBe(987654); // from the persistent store
-		expect(getTokenCountLayerStatsForTests().encodes).toBe(1); // only the post-reset call encoded
+		const second = texts.map((text) => countTokens(text, "gpt-4o"));
+		expect(second).toEqual([900_000, 900_001, 900_002]); // from the store
+		const third = texts.map((text) => countTokens(text, "gpt-4o")); // LRU populated by the hits
+		expect(third).toEqual([900_000, 900_001, 900_002]);
+		const stats = getTokenCountLayerStatsForTests();
+		expect(stats.encodes).toBe(0); // ZERO encodes after the reset
+		expect(stats.storeReads).toBe(texts.length);
+		expect(stats.storeReadHits).toBe(texts.length);
 	});
 
 	test("texts above 100 000 chars never reach the store (memory only)", () => {
@@ -321,7 +335,7 @@ describe("layered count cache (TC-2)", () => {
 		expect(stats.storeReads).toBe(1); // …and no second store read
 	});
 
-	test("with no store injected everything works, memory-only", async () => {
+	test("with no store injected everything works, memory-only", () => {
 		setPersistentTokenCountStore(null); // unit-test / tools mode
 		const a = countTokens("unit-test mode has no store", "gemini-2.0-flash");
 		expect(countTokens("unit-test mode has no store", "gemini-2.0-flash")).toBe(a);
@@ -329,7 +343,6 @@ describe("layered count cache (TC-2)", () => {
 		expect(stats.encodes).toBe(1);
 		expect(stats.storeReads).toBe(0);
 		expect(stats.storeWrites).toBe(0);
-		await waitForTokenCountReadIdle(); // resolves immediately — nothing pending
 	});
 
 	test("evicts least-recent entries beyond the per-tokenizer entry bound", () => {

@@ -9,8 +9,9 @@
  * TC-2 (TOKEN_COUNT_ONCE_PLAN): below the provider-exact layer, every count
  * goes through the layered cache — per-tokenizer memory LRU → persistent
  * token_counts store → encode + write-through — so a text is encoded at
- * most once per tokenizer per process (and read, not encoded, after a
- * restart once the store backfill lands).
+ * most once per tokenizer per process, and after a restart (or any memory
+ * eviction) it is READ from the store, never re-encoded (TC-8: the store
+ * is consulted synchronously before the encode decision).
  */
 
 import { join, resolve } from "node:path";
@@ -220,24 +221,27 @@ export function separatorSide(tokenizerId: string): SeparatorSide | null {
 	return SEPARATOR_SIDES[tokenizerId] ?? null;
 }
 
-// ── Layered count cache (TC-2) ──────────────────────────────────────────
+// ── Layered count cache (TC-2, TC-8) ──────────────────────────────
 // A token count is deterministic per (exact text, tokenizer), so below the
 // provider-exact layer every count is memoized: per-tokenizer memory LRU
 // (the hot layer, the same discipline as the browser's LC-5 cache) →
 // persistent token_counts store (survives restarts) → encode + write-
-// through to both. countTokens stays synchronous by contract, so the store
-// participates asynchronously: a memory miss schedules a non-blocking store
-// read that backfills the memory LRU when it lands (a stored row overwrites
-// the encoded value — they are equal by determinism); the CURRENT call
-// always answers with the encode.
+// through to both. The store is consulted SYNCHRONOUSLY on every memory
+// miss, BEFORE the encode decision (TC-8): a hit answers with the stored
+// count and populates the LRU, so a text is encoded at most once per
+// tokenizer across restarts. (TC-2's first cut scheduled the store read
+// asynchronously and always encoded on the miss — measured by TC-7 to
+// re-encode an entire long-chat snapshot on every pass.)
 
 /**
  * The persistent-count seam injected at server boot. Structural on purpose:
  * TC-1's TokenCountStore satisfies it; unit tests and tools inject a fake
- * or run without one (the layer is then skipped — memory-only).
+ * or run without one (the layer is then skipped — memory-only). `getSync`
+ * is synchronous because the counting path is synchronous by contract and
+ * the underlying bun:sqlite read always was (see the store's getSync note).
  */
 export interface PersistentTokenCountStore {
-	get(textHash: string, tokenizer: string): Promise<{ tokenCount: number } | null>;
+	getSync(textHash: string, tokenizer: string): { tokenCount: number } | null;
 	putMany(
 		rows: ReadonlyArray<{ textHash: string; tokenizer: string; tokenCount: number }>,
 	): Promise<void>;
@@ -251,12 +255,17 @@ interface LayerTunables {
 }
 
 const DEFAULT_LAYER_TUNABLES: LayerTunables = {
-	// Same bounds as the browser's LC-5 cache (apps/web/src/utils/tokenizer.ts):
+	// Same entry bound as the browser's LC-5 cache (apps/web/src/utils/tokenizer.ts):
 	// a chat's stable tail plus prompt/lorebook churn fits with room to age
 	// out; per-tokenizer so switching models never evicts another model's
-	// counts.
+	// counts. The chars bound is deliberately 4× the browser's 2 000 000
+	// (TC-8): TC-7 measured one long-chat snapshot pass at 813 texts /
+	// ~2.5 M chars, so a 2 M-char server LRU evicted the pass's own head
+	// before its tail arrived and every pass re-encoded everything; 8 M
+	// holds the whole pass (~16 MB of strings worst case — trivial
+	// server-side).
 	maxEntriesPerTokenizer: 1_000,
-	maxTotalCharsPerTokenizer: 2_000_000,
+	maxTotalCharsPerTokenizer: 8_000_000,
 };
 
 /**
@@ -274,16 +283,6 @@ const perTokenizerCache = new Map<string, Map<string, number>>();
 const perTokenizerChars = new Map<string, number>();
 
 let persistentStore: PersistentTokenCountStore | null = null;
-
-/**
- * In-flight store reads deduped per (tokenizer, hash). Internal key format —
- * NOT the store's composite key (that derivation stays in token-count-store).
- */
-const inflightReads = new Set<string>();
-let pendingStoreReads = 0;
-const storeReadIdleWaiters: Array<() => void> = [];
-/** Bumped by the test reset so reads scheduled before it cannot repopulate cleared state. */
-let readGeneration = 0;
 
 function sha256Hex(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
@@ -342,38 +341,6 @@ function layerStore(tokenizerId: string, text: string, count: number): void {
 	perTokenizerChars.set(tokenizerId, Math.max(chars, 0));
 }
 
-function scheduleStoreRead(tokenizerId: string, text: string, hash: string): void {
-	const store = persistentStore;
-	if (!store) return;
-	const inflightKey = `${tokenizerId}\u0000${hash}`;
-	if (inflightReads.has(inflightKey)) return;
-	inflightReads.add(inflightKey);
-	layerStats.storeReads++;
-	pendingStoreReads++;
-	const generation = readGeneration;
-	store
-		.get(hash, tokenizerId)
-		.then((row) => {
-			if (row === null || generation !== readGeneration) return;
-			layerStats.storeReadHits++;
-			// Overwrite, not write-if-absent: a stored row and a fresh encode
-		// are equal by determinism, and overwriting is what makes store
-			// routing observable in the tests.
-			layerStore(tokenizerId, text, row.tokenCount);
-		})
-		.catch(() => {
-			// A failed store read is non-fatal — counting keeps working through
-			// the encode path, and the next miss schedules a fresh read.
-		})
-		.finally(() => {
-			inflightReads.delete(inflightKey);
-			pendingStoreReads--;
-			if (pendingStoreReads === 0) {
-				for (const resolve of storeReadIdleWaiters.splice(0)) resolve();
-			}
-		});
-}
-
 function writeThroughStore(tokenizerId: string, hash: string, count: number): void {
 	const store = persistentStore;
 	if (!store) return;
@@ -387,15 +354,32 @@ function writeThroughStore(tokenizerId: string, hash: string, count: number): vo
 }
 
 /**
- * The TC-2 layering for one (tokenizer, text): memory LRU read → (async
- * store backfill scheduled on a miss) → encode → write-through. `encode`
- * runs at most once per (text, tokenizer) while the entry stays cached.
+ * The TC-2/TC-8 layering for one (tokenizer, text): memory LRU read →
+ * SYNCHRONOUS persistent-store read → encode → write-through. `encode` runs
+ * at most once per (text, tokenizer) while the row stays stored — a store
+ * hit answers directly AND populates the LRU, so even an evicted entry is
+ * read back, never re-encoded.
  */
 function countViaLayer(tokenizerId: string, text: string, encode: () => number): number {
 	const hit = layerLookup(tokenizerId, text);
 	if (hit !== undefined) return hit;
 	const hash = tokenCountTextHash(text);
-	if (hash !== null) scheduleStoreRead(tokenizerId, text, hash);
+	const store = persistentStore;
+	if (hash !== null && store) {
+		layerStats.storeReads++;
+		let row: { tokenCount: number } | null = null;
+		try {
+			row = store.getSync(hash, tokenizerId);
+		} catch {
+			// A failed store read is non-fatal — counting falls through to the
+			// encode path, and the next miss consults the store again.
+		}
+		if (row !== null) {
+			layerStats.storeReadHits++;
+			layerStore(tokenizerId, text, row.tokenCount);
+			return row.tokenCount;
+		}
+	}
 	layerStats.encodes++;
 	const count = encode();
 	layerStore(tokenizerId, text, count);
@@ -406,12 +390,6 @@ function countViaLayer(tokenizerId: string, text: string, encode: () => number):
 /** Inject the persistent token_counts store (server boot). `null` un-injects. */
 export function setPersistentTokenCountStore(store: PersistentTokenCountStore | null): void {
 	persistentStore = store;
-}
-
-/** Test/observability seam: resolves when every scheduled store read has settled. Never rejects. */
-export function waitForTokenCountReadIdle(): Promise<void> {
-	if (pendingStoreReads === 0) return Promise.resolve();
-	return new Promise((resolve) => storeReadIdleWaiters.push(resolve));
 }
 
 /** Spy seam: layer activity since the last reset (encode/store touch counts). */
@@ -425,18 +403,16 @@ export function configureTokenCountLayerForTests(tunables: Partial<LayerTunables
 }
 
 /**
- * Drop every cached count, restore default bounds and invalidate in-flight
- * store reads (test isolation — this file's process is shared).
+ * Drop every cached count, reset the activity counters and restore default
+ * bounds (test isolation — this file's process is shared).
  */
 export function resetTokenCountLayerForTests(): void {
 	perTokenizerCache.clear();
 	perTokenizerChars.clear();
-	inflightReads.clear();
 	layerStats.encodes = 0;
 	layerStats.storeReads = 0;
 	layerStats.storeReadHits = 0;
 	layerStats.storeWrites = 0;
-	readGeneration++;
 	Object.assign(layerTunables, DEFAULT_LAYER_TUNABLES);
 }
 
@@ -451,9 +427,10 @@ export function resetTokenCountLayerForTests(): void {
  * count wins; on a miss the local ladder below runs and a bounded background
  * warm fetch is scheduled. See `token-count-cache.ts` for the mechanic.
  *
- * TC-2: below that provider-exact layer, counts go through the layered
- * cache — memory LRU → (async) persistent store → encode + write-through.
- * The returned number is always exactly what the ladder encoded.
+ * TC-2/TC-8: below that provider-exact layer, counts go through the layered
+ * cache — memory LRU → persistent store (synchronous) → encode +
+ * write-through. The returned number is always exactly what the ladder
+ * encoded (or what the store holds — equal by determinism).
  */
 export function countTokens(text: string, model?: string): number {
 	if (!text) return 0;

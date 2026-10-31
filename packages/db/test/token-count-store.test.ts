@@ -7,9 +7,10 @@ import type { StoreClock } from "../src/persistence.js";
 // per (exact-text hash, tokenizer id). Writes are insert-or-ignore by design
 // (a count is deterministic per tokenizer, so a repeated put can never be a
 // correction — first writer wins). Pins cover the putMany→get round trip,
-// the duplicate-put no-op, and getMany on mixed hits/misses. The hash is an
-// OPAQUE value here — its single derivation lives in TC-2's tokenizer
-// service, so fixtures are arbitrary 64-char strings.
+// the duplicate-put no-op, getMany on mixed hits/misses, and getSync (the
+// TC-8 synchronous hot-path seam). The hash is an OPAQUE value here — its
+// single derivation lives in TC-2's tokenizer service, so fixtures are
+// arbitrary 64-char strings.
 
 const FIXED_NOW = "2026-10-30T00:00:00.000Z";
 const testClock: StoreClock = { now: () => FIXED_NOW };
@@ -45,6 +46,20 @@ describe("token_counts store (TC-1)", () => {
 
     // Empty put is a no-op, never a throw.
     await store.putMany([]);
+  });
+
+  test("getSync round-trips the composite key and misses on either half", async () => {
+    await store.putMany([{ textHash: H1, tokenizer: "tiktoken:cl100k_base", tokenCount: 42 }]);
+    const row = store.getSync(H1, "tiktoken:cl100k_base");
+    expect(row).not.toBeNull();
+    expect(row!.tokenCount).toBe(42);
+    expect(row!.createdAt).toBe(FIXED_NOW);
+    // Miss on either half of the key — the same composite-key exactness as
+    // the async get.
+    expect(store.getSync(H3, "tiktoken:cl100k_base")).toBeNull();
+    expect(store.getSync(H1, "web:claude.json")).toBeNull();
+    // Agrees with the async read of the same row.
+    expect((await store.get(H1, "tiktoken:cl100k_base"))!.tokenCount).toBe(42);
   });
 
   test("duplicate put is a no-op: first write survives, no error", async () => {

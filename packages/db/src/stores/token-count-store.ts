@@ -62,6 +62,23 @@ export class TokenCountStore {
   }
 
   /**
+   * Synchronous single-pair lookup over the same connection — the hot-path
+   * seam the counting layer consults BEFORE encoding (TC-8). No driver
+   * change is involved: drizzle's bun-sqlite session executes
+   * `.run/.get/.all/.values` synchronously (see db-connection.ts's
+   * transaction note), so the read was already synchronous under the hood.
+   */
+  getSync(textHash: string, tokenizer: string): TokenCountRow | null {
+    return (
+      this.db
+        .select()
+        .from(tokenCounts)
+        .where(and(eq(tokenCounts.textHash, textHash), eq(tokenCounts.tokenizer, tokenizer)))
+        .get() ?? null
+    );
+  }
+
+  /**
    * Batched lookup: only the requested (hash, tokenizer) pairs that exist,
    * keyed by tokenCountKey — misses are simply absent from the map.
    */
