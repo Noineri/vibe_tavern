@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { splitTraceString } from './trace-blocks.js';
+import { decodeTraceText, type StoredTraceText } from './trace-storage-codec.js';
 
 /**
  * Content-addressed chunking for prompt-trace payload columns.
@@ -27,6 +29,7 @@ import { createHash } from 'node:crypto';
 
 /** Marker key identifying a chunk reference inside a skeleton document. */
 export const TRACE_CHUNK_MARKER = '$vtchunk';
+export const TRACE_BLOCK_MARKER = '$vtlist';
 
 /**
  * Minimum string length (JS characters) that gets chunked. Shorter strings
@@ -58,16 +61,21 @@ export function hashTraceChunk(content: string): string {
  * untouched. Arrays and plain objects are walked recursively; other object
  * kinds (dates, etc.) do not occur in trace payloads and are left as-is.
  */
-export function deflateTraceValue(value: unknown): DeflatedTraceValue {
+// Version 1 remains the historical boot-pass default; the v2 store/converter
+// explicitly request blocks. The plaintext chunk contract is unchanged.
+export function deflateTraceValue(value: unknown, version: 1 | 2 = 1): DeflatedTraceValue {
   const chunks = new Map<string, string>();
   const seen = new WeakSet<object>();
 
   const walk = (v: unknown): unknown => {
     if (typeof v === 'string') {
       if (v.length < TRACE_CHUNK_THRESHOLD) return v;
-      const id = hashTraceChunk(v);
-      if (!chunks.has(id)) chunks.set(id, v);
-      return { [TRACE_CHUNK_MARKER]: id };
+      const ids = (version === 2 ? splitTraceString(v) : [v]).map((content) => {
+        const id = hashTraceChunk(content);
+        if (!chunks.has(id)) chunks.set(id, content);
+        return id;
+      });
+      return version === 2 ? { [TRACE_BLOCK_MARKER]: ids } : { [TRACE_CHUNK_MARKER]: ids[0] };
     }
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return v; // cycles cannot occur in JSON payloads; defensive
@@ -89,6 +97,14 @@ function isMarkerObject(v: unknown): v is Record<typeof TRACE_CHUNK_MARKER, stri
   return typeof id === 'string' && /^[0-9a-f]{64}$/.test(id);
 }
 
+function isBlockMarker(v: unknown): v is Record<typeof TRACE_BLOCK_MARKER, string[]> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const keys = Object.keys(v);
+  if (keys.length !== 1 || keys[0] !== TRACE_BLOCK_MARKER) return false;
+  const ids = (v as Record<string, unknown>)[TRACE_BLOCK_MARKER];
+  return Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id));
+}
+
 /**
  * Reverse {@link deflateTraceValue}: substitute every marker object with the
  * chunk content from `lookup`. A marker whose chunk is missing from the lookup
@@ -96,19 +112,20 @@ function isMarkerObject(v: unknown): v is Record<typeof TRACE_CHUNK_MARKER, stri
  * transaction, so a miss means corrupted state that must surface loudly
  * rather than silently return a marker into the UI.
  */
-export function inflateTraceValue<T = unknown>(skeleton: unknown, lookup: (id: string) => string | undefined): T {
+export function inflateTraceValue<T = unknown>(skeleton: unknown, lookup: (id: string) => StoredTraceText | undefined): T {
+  const load = (id: string): string => {
+    const content = lookup(id);
+    if (content === undefined) throw new Error(`prompt-trace chunk '${id}' is referenced but missing from prompt_trace_chunks`);
+    return decodeTraceText(content);
+  };
   const walk = (v: unknown): unknown => {
     if (typeof v === 'string') return v;
     if (v === null || typeof v !== 'object') return v;
     if (Array.isArray(v)) return v.map(walk);
     if (isMarkerObject(v)) {
-      const id = v[TRACE_CHUNK_MARKER];
-      const content = lookup(id);
-      if (content === undefined) {
-        throw new Error(`prompt-trace chunk '${id}' is referenced but missing from prompt_trace_chunks`);
-      }
-      return content;
+      return load(v[TRACE_CHUNK_MARKER]);
     }
+    if (isBlockMarker(v)) return v[TRACE_BLOCK_MARKER].map(load).join('');
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(v)) out[key] = walk((v as Record<string, unknown>)[key]);
     return out;
@@ -123,19 +140,15 @@ export function collectTraceChunkIds(skeleton: unknown): string[] {
     if (v === null || typeof v !== 'object') return;
     if (Array.isArray(v)) { for (const item of v) walk(item); return; }
     if (isMarkerObject(v)) { ids.push(v[TRACE_CHUNK_MARKER]); return; }
+    if (isBlockMarker(v)) { ids.push(...v[TRACE_BLOCK_MARKER]); return; }
     for (const key of Object.keys(v)) walk((v as Record<string, unknown>)[key]);
   };
   walk(skeleton);
   return ids;
 }
 
-/** Extract the 64-hex ids from `"$vtchunk":"<id>"` occurrences in a skeleton
- *  JSON STRING — the raw-text twin of collectTraceChunkIds: callers scan
- *  stored column text without parsing it. */
-export function collectMarkerIds(skeletonJson: string): string[] {
-  const ids: string[] = [];
-  const re = /"\$vtchunk":"([0-9a-f]{64})"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(skeletonJson)) !== null) ids.push(m[1]);
-  return ids;
+/** Read refs from either stored representation (legacy TEXT or Zstd BLOB).
+ * Parsing also validates marker shapes and avoids matching quoted user text. */
+export function collectMarkerIds(skeletonJson: StoredTraceText): string[] {
+  return collectTraceChunkIds(JSON.parse(decodeTraceText(skeletonJson)));
 }
