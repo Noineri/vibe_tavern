@@ -17,6 +17,7 @@ import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { getEncoding, type Tiktoken, type TiktokenEncoding } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
+import type { SeparatorSide } from "@vibe-tavern/prompt-pipeline";
 import { activeProviderTokenContext, readExactTokenCount } from "./token-count-cache.js";
 
 // ── cl100k_base fallback ─────────────────────────────────────────────────
@@ -184,6 +185,39 @@ function resolveTokenizerRef(model?: string): TokenizerRef {
  */
 export function resolveTokenizerId(model?: string): string {
 	return resolveTokenizerRef(model).id;
+}
+
+// ── History separator side (TC-3) ──────────────────────────────────────
+// Which side of a history piece the "\n\n" separator merges into for a
+// tokenizer — i.e. the side on which the per-message decomposition equals
+// the joined count TO THE TOKEN. EXPLICIT ids only, one row per fixture
+// rail in services/api/test/tokenizer-side-exactness.test.ts; never a
+// blanket "every tiktoken encoding" rule (p50k_base disproved that
+// generalization: it binds BEFORE like claude, unlike cl100k/o200k). Every
+// unlisted tokenizer (qwen2, glm-4.6, deepseek, mimo, nemo, mistral —
+// measured to have NO exact side — command-r, command-a, …) resolves to
+// null → the pipeline keeps the joined count, exact by construction.
+
+/** The measured separator side per tokenizer id; ids without a row are null. */
+const SEPARATOR_SIDES: Readonly<Record<string, SeparatorSide>> = {
+	// tiktoken BPE merges the separator into the END of the preceding piece.
+	"tiktoken:cl100k_base": "after",
+	"tiktoken:o200k_base": "after",
+	// GPT-2-style BPE: the separator merges into the START of the following
+	// piece (claude-style), unlike cl100k/o200k above.
+	"tiktoken:p50k_base": "before",
+	"web:llama3.json": "after",
+	"web:claude.json": "before",
+};
+
+/**
+ * The measured separator side for a tokenizer id (TC-3): "after" | "before"
+ * for the ids the fixture-exactness suite pins, null for every other
+ * tokenizer (joined counting). Callers resolve the id through
+ * {@link resolveTokenizerId} — never a second id derivation.
+ */
+export function separatorSide(tokenizerId: string): SeparatorSide | null {
+	return SEPARATOR_SIDES[tokenizerId] ?? null;
 }
 
 // ── Layered count cache (TC-2) ──────────────────────────────────────────

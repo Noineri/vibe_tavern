@@ -28,7 +28,7 @@ import { buildCoauthorTools } from "./coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
 import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
-import { estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
+import { countHistoryPieces, estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import { dirname } from "node:path";
@@ -173,17 +173,35 @@ function renderBoundScriptsAwareness(scripts: CoauthorBoundResources["scripts"])
   ].join("\n");
 }
 
-function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
+/**
+ * ONE derivation of the co-author history pieces (TOKEN_COUNT_ONCE_PLAN
+ * TC-3): the prompt formatter and the token counter map every message
+ * through here, so the counted pieces and the sent text can never drift
+ * apart. Tool results ride as their SDK JSON — unchanged from the joined
+ * era. Exported so the TC-6 backfill and the exactness tests count the same
+ * pieces the prompt sends.
+ */
+export function formatCoauthorHistoryPieces(messages: ReadonlyArray<CoauthorHistoryMessage>): string[] {
   return messages.map((message) => {
     const content = message.role === "tool"
       ? JSON.stringify(message.content)
       : `${message.content || ""}${message.toolCalls ? JSON.stringify(message.toolCalls) : ""}`;
     return `${message.role.toUpperCase()}: ${content}`;
-  }).join("\n\n");
+  });
 }
 
-function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
-  return estimateTokens(formatCoauthorHistoryMessages(messages))
+export function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
+  return formatCoauthorHistoryPieces(messages).join("\n\n");
+}
+
+/**
+ * The co-author history cost: the same pieces the prompt sends, counted
+ * per message through the pipeline's shared separator arithmetic
+ * (countHistoryPieces — side-aware, exact where fixture-pinned), plus
+ * visible file weights. Tool messages carry no attachment weight.
+ */
+export function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
+  return countHistoryPieces(formatCoauthorHistoryPieces(messages))
     + messages.reduce((sum, message) => sum + (message.role === "tool" ? 0 : attachmentPromptTokens(message.attachments, estimateTokens)), 0);
 }
 

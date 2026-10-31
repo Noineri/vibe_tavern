@@ -32,6 +32,36 @@ export function setTokenCountFn(fn: (text: string, model?: string) => number): v
 }
 
 /**
+ * Which side of a history piece the "\n\n" separator binds to for the
+ * active tokenizer (TOKEN_COUNT_ONCE_PLAN TC-3). The per-message history
+ * decomposition is exact to the token only on the side the tokenizer's BPE
+ * actually merges; `null` keeps the joined count (the pre-TC-3 behavior).
+ */
+export type SeparatorSide = "after" | "before";
+
+/**
+ * Injectable separator-side answer, set by the server next to
+ * {@link setTokenCountFn}. Receives the same model hint estimateTokens
+ * passes to the counter, and returns the side the ACTIVE tokenizer was
+ * measured to bind (or null when unmeasured). The pipeline stays pure: it
+ * never derives the side from a model name itself.
+ */
+let separatorSideFn: ((model?: string) => SeparatorSide | null) | null = null;
+
+/**
+ * Replace the separator-side answer. `null` un-injects it (unit tests,
+ * tools): every history count then falls back to the joined string.
+ */
+export function setSeparatorSideFn(fn: ((model?: string) => SeparatorSide | null) | null): void {
+  separatorSideFn = fn;
+}
+
+/** The measured side of the ACTIVE tokenizer for the current model hint. */
+export function separatorSideForCurrentModel(): SeparatorSide | null {
+  return separatorSideFn === null ? null : separatorSideFn(currentModel);
+}
+
+/**
  * Set the model hint used by {@link estimateTokens}.
  * Called once per prompt assembly to ensure consistent token counts.
  */

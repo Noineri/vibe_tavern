@@ -2,12 +2,14 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
-import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
+import { setTokenCountFn, setSeparatorSideFn } from "@vibe-tavern/prompt-pipeline";
 import { TokenCountStore } from "@vibe-tavern/db";
 import {
 	countTokens,
 	warmupTokenizers,
 	setPersistentTokenCountStore,
+	resolveTokenizerId,
+	separatorSide,
 } from "../infrastructure/ai/tokenizer-service.js";
 import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
@@ -208,6 +210,12 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	// Tokenizers
 	await warmupTokenizers();
 	setTokenCountFn(countTokens);
+	// TOKEN_COUNT_ONCE_PLAN TC-3: the pipeline learns the ACTIVE tokenizer's
+	// separator side through this injected answer — its only model→side path,
+	// so the package stays pure. resolveTokenizerId stays the single id
+	// derivation; tokenizers without a measured side answer null and the
+	// pipeline keeps the joined count.
+	setSeparatorSideFn((model) => separatorSide(resolveTokenizerId(model)));
 	// TOKEN_COUNT_ONCE_PLAN TC-2: countTokens reads/writes persistent
 	// per-(text, tokenizer) counts through this injected store — constructed
 	// here at its only consumer (not added to the StoreContainer). Unit tests
