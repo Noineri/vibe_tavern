@@ -289,6 +289,16 @@ function sha256Hex(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
+/**
+ * The persistence key hash for an exact text — ONE derivation (TC-2's
+ * hashing, exported for the TC-6 backfill and the tests, never a second
+ * copy): sha256 hex, or null when the text exceeds the persistence cutoff
+ * (such texts are memory-only by design and are never stored).
+ */
+export function tokenCountTextHash(text: string): string | null {
+	return text.length <= PERSIST_MAX_TEXT_CHARS ? sha256Hex(text) : null;
+}
+
 /** Memory read; a hit re-inserts the key on the most-recent side (LRU touch). */
 function layerLookup(tokenizerId: string, text: string): number | undefined {
 	const inner = perTokenizerCache.get(tokenizerId);
@@ -384,7 +394,7 @@ function writeThroughStore(tokenizerId: string, hash: string, count: number): vo
 function countViaLayer(tokenizerId: string, text: string, encode: () => number): number {
 	const hit = layerLookup(tokenizerId, text);
 	if (hit !== undefined) return hit;
-	const hash = text.length <= PERSIST_MAX_TEXT_CHARS ? sha256Hex(text) : null;
+	const hash = tokenCountTextHash(text);
 	if (hash !== null) scheduleStoreRead(tokenizerId, text, hash);
 	layerStats.encodes++;
 	const count = encode();

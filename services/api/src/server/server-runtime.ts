@@ -70,6 +70,7 @@ import { generateStructuredActionChoice } from "../domain/interactive/experience
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
 import { scheduleAvatarThumbnailBackfill } from "../domain/asset/avatar-thumbnail-backfill.js";
+import { scheduleTokenCountBackfill } from "../infrastructure/ai/token-count-backfill.js";
 import { ensureStockImageGenSamplerSets } from "../domain/imagegen/stock-sampler-set-seed.js";
 import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
@@ -81,6 +82,9 @@ import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 import { serveErrorResponse } from "./serve-error.js";
 import { serveAssetFile } from "./static-conditional.js";
+// Port pre-check cluster — extracted when TC-6's wiring pushed this file over
+// the 800-line arch-gate cap (extraction, never compression — see server-port.ts).
+import { ensurePortAvailable } from "./server-port.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
 export { serveErrorResponse } from "./serve-error.js";
@@ -220,7 +224,10 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	// per-(text, tokenizer) counts through this injected store — constructed
 	// here at its only consumer (not added to the StoreContainer). Unit tests
 	// and tools run without it: the cache layer is then skipped, memory-only.
-	setPersistentTokenCountStore(new TokenCountStore(stores.db));
+	// TC-6 reuses the same instance for the startup backfill's existence
+	// checks, so the pass and the counting layer share one view of the rows.
+	const tokenCountStore = new TokenCountStore(stores.db);
+	setPersistentTokenCountStore(tokenCountStore);
 	console.log(`${tag} Tokenizers ready.`);
 
 	// Provider proxy transport — bind the process-wide fetch factory so every
@@ -435,6 +442,19 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	// never delay server readiness; per-entity failures are logged, not fatal.
 	scheduleAvatarThumbnailBackfill(stores, assetService);
 
+	// TOKEN_COUNT_ONCE_PLAN TC-6: pre-count every stored message/variant and
+	// its history piece forms in ≤ 15 ms background slices, freshest chats
+	// first, then mark the pass complete (app_data_migrations marker — later
+	// boots skip the scan). Started here in createRuntimeApp, so standalone,
+	// android and test-instance boots run it the same way; like the avatar
+	// pass it never delays readiness and never throws into startup.
+	scheduleTokenCountBackfill({
+		chats: stores.chats,
+		messages: stores.messages,
+		tokenCounts: tokenCountStore,
+		db: stores.db,
+	});
+
 	return app;
 }
 
@@ -636,104 +656,6 @@ async function gracefulShutdown(server: Bun.Server<undefined>, tag: string): Pro
 		console.error(`${tag} Error closing SOCKS5 bridges during shutdown:`, err);
 	}
 	process.exit(0);
-}
-
-async function ensurePortAvailable(options: {
-	readonly host: string;
-	readonly port: number;
-	readonly tag: string;
-}): Promise<void> {
-	try {
-		const testServer = Bun.serve({
-			fetch: () => new Response(),
-			port: options.port,
-			hostname: options.host,
-		});
-		testServer.stop(true);
-	} catch (err) {
-		const code = typeof err === "object" && err && "code" in err ? (err as { code?: unknown }).code : undefined;
-		if (code !== "EADDRINUSE") throw err;
-
-		console.error(`\n${options.tag} Port ${options.port} is already in use.`);
-		const oldPid = findProcessOnPort(options.port);
-
-		if (!oldPid) {
-			console.error(`${options.tag} Could not find the process. Please kill it manually and try again.`);
-			process.exit(1);
-		}
-
-		console.error(`${options.tag} Occupied by PID ${oldPid}.`);
-
-		if (!process.stdin?.isTTY) {
-			console.log(`${options.tag} Non-interactive mode — killing PID ${oldPid}...`);
-			await killProcessAndWaitForPort(oldPid, options);
-			return;
-		}
-
-		console.log(`${options.tag} Kill PID ${oldPid}? [Y/n]`);
-		const input = await new Promise<string>((resolveInput) => {
-			process.stdin.resume();
-			process.stdin.once("data", (data: Buffer) => {
-				process.stdin.pause();
-				resolveInput(data.toString().trim());
-			});
-		});
-		if (input === "" || input.toLowerCase() === "y") {
-			await killProcessAndWaitForPort(oldPid, options);
-		} else {
-			console.error(`${options.tag} Cancelled. Exiting.`);
-			process.exit(1);
-		}
-	}
-}
-
-function findProcessOnPort(port: number): string | null {
-	try {
-		if (process.platform === "win32") {
-			const result = Bun.spawnSync(["netstat", "-ano"], { stdout: "pipe" });
-			const lines = new TextDecoder().decode(result.stdout).split("\n");
-			for (const line of lines) {
-				if (line.includes(`:${port}`) && line.includes("LISTENING")) {
-					return line.trim().split(/\s+/).pop() ?? null;
-				}
-			}
-		} else {
-			const result = Bun.spawnSync(["ss", "-tlnp"], { stdout: "pipe" });
-			const lines = new TextDecoder().decode(result.stdout).split("\n");
-			for (const line of lines) {
-				if (line.includes(`:${port}`)) {
-					const match = line.match(/pid=(\d+)/);
-					return match?.[1] ?? null;
-				}
-			}
-		}
-	} catch { /* port detection is best-effort; returning null just means "do not pre-kill" */ }
-	return null;
-}
-
-async function killProcessAndWaitForPort(
-	pid: string,
-	options: {
-		readonly host: string;
-		readonly port: number;
-		readonly tag: string;
-	},
-): Promise<void> {
-	try {
-		process.kill(Number(pid), "SIGTERM");
-		for (let i = 0; i < 20; i++) {
-			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-			try {
-				const testServer = Bun.serve({ fetch: () => new Response(), port: options.port, hostname: options.host });
-				testServer.stop(true);
-				console.log(`${options.tag} Port ${options.port} freed.`);
-				return;
-			} catch { /* port still bound — keep polling until it frees or we time out */ }
-		}
-	} catch {
-		console.error(`${options.tag} Failed to kill PID ${pid}. Exiting.`);
-		process.exit(1);
-	}
 }
 
 const STARTUP_ERROR_HTML = `<!DOCTYPE html>
