@@ -23,6 +23,21 @@ async function makeApp() {
 }
 
 describe("response compression", () => {
+	test("an embedded frontend compresses on demand without precompressed siblings", async () => {
+		const content = "export const value = 'embedded';\n".repeat(128);
+		const app = await createApp({
+			runtime: {} as RuntimeApi,
+			embeddedWebFiles: new Map([
+				["/index.html", new Blob(["<main>app</main>"], { type: "text/html" })],
+				["/assets/app.js", new Blob([content], { type: "text/javascript" })],
+			]),
+		});
+		const response = await app.request("/assets/app.js", { headers: { "Accept-Encoding": "gzip" } });
+		expect(response.headers.get("Content-Encoding")).toBe("gzip");
+		expect(response.headers.get("ETag")).toStartWith("W/");
+		expect(new TextDecoder().decode(Bun.gunzipSync(await response.arrayBuffer()))).toBe(content);
+	});
+
 	test("JSON without encoding negotiation keeps its original body", async () => {
 		const app = await makeApp();
 		const response = await app.request("/api/compression-json");
