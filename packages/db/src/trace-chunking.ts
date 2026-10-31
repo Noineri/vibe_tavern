@@ -128,3 +128,14 @@ export function collectTraceChunkIds(skeleton: unknown): string[] {
   walk(skeleton);
   return ids;
 }
+
+/** Extract the 64-hex ids from `"$vtchunk":"<id>"` occurrences in a skeleton
+ *  JSON STRING — the raw-text twin of collectTraceChunkIds: callers scan
+ *  stored column text without parsing it. */
+export function collectMarkerIds(skeletonJson: string): string[] {
+  const ids: string[] = [];
+  const re = /"\$vtchunk":"([0-9a-f]{64})"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(skeletonJson)) !== null) ids.push(m[1]);
+  return ids;
+}

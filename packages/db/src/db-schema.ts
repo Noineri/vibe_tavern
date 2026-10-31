@@ -1395,6 +1395,12 @@ export const promptTraceChunkRefs = sqliteTable('prompt_trace_chunk_refs', {
   chunkId: text('chunk_id').notNull(),
 }, (table) => ({
   refPk: primaryKey({ columns: [table.traceId, table.chunkId] }),
+  /** LONG_CHAT_PERFORMANCE_REPORT step 8: the chunk side of the index. The
+   *  (trace_id, chunk_id) PK's left prefix serves the trace side (deleting one
+   *  trace's refs); reclamation's "is this candidate chunk still referenced?"
+   *  per-candidate lookups run on chunk_id, which had NO index before — every
+   *  such lookup was a table scan over the whole refs table. */
+  chunkIdx: index('idx_prompt_trace_chunk_refs_chunk').on(table.chunkId),
 }));
 
 // ─── uiSettings ────────────────────────────────────────────────────────────────

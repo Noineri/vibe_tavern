@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { createDb } from "../src/db-connection.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
 import { ChatStore } from "../src/stores/chat-store.js";
 import { MessageStore } from "../src/stores/message-store.js";
@@ -302,5 +302,115 @@ describe("ChatStore.forkBranch — trace inheritance (Defect C)", () => {
 		expect(after).not.toBeNull();
 		expect(after!.variantId).toBeNull();
 		expect((await messageStore.getVariants(msg0.id))).toHaveLength(1);
+	});
+});
+
+// ─── Chunk refs (LONG_CHAT_PERFORMANCE_REPORT step 8) ───────────────────────
+
+describe("ChatStore.forkBranch — chunk refs (LONG_CHAT_PERFORMANCE_REPORT step 8)", () => {
+	let db: Awaited<ReturnType<typeof createDb>>;
+	let store: ChatStore;
+	let messageStore: MessageStore;
+	let traceStore: PromptTraceStore;
+
+	beforeEach(async () => {
+		clockTick = 0;
+		idCounters = new Map();
+		db = await createDb(":memory:");
+		store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+		messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
+		traceStore = new PromptTraceStore(db, { clock: testClock, idGenerator: testIdGen });
+
+		db.insert(schema.characters).values({
+			id: "char_1", name: "TestChar", description: "",
+			alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
+			status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+		}).run();
+		db.insert(schema.providerProfiles).values({
+			id: "prov_1", name: "TestProvider", providerPreset: "openai",
+			endpoint: "http://localhost", maxTokens: 500,
+			temperature: 1.0, topP: 1.0, topK: 0, minP: 0,
+			frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1.0,
+			reasoningEffort: "auto", streamResponse: 1, isActive: 1,
+			createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+		}).run();
+		db.insert(schema.promptPresets).values({
+			id: "preset_1", name: "Default", systemPrompt: "",
+			postHistoryInstructions: "", assistantPrefix: "", authorsNote: "",
+			authorsNoteDepth: 4, summaryPrompt: "", toolsPrompt: "",
+			createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+		}).run();
+		db.insert(schema.chats).values({
+			id: "chat_1", characterId: "char_1", personaId: null,
+			activeBranchId: "brnch_1", promptPresetId: "preset_1",
+			title: "Test chat", summary: "", messageHistoryLimit: 0,
+			status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+		}).run();
+		db.insert(schema.chatBranches).values({
+			id: "brnch_1", chatId: "chat_1", parentBranchId: null,
+			forkedFromMessageId: null, label: "main", createdAt: FIXED_NOW,
+		}).run();
+	});
+
+	/** A traced send whose payloads exceed TRACE_CHUNK_THRESHOLD — the trace's
+	 *  skeleton references shared chunks instead of inlining the strings. */
+	function chunkedTraceData(messageId: string, tag: string): SaveTraceData {
+		const text = `${tag}-${"x".repeat(600)}`;
+		return {
+			...makeTraceData("chat_1", "brnch_1", messageId, tag),
+			assembledLayers: [{ layer: text }],
+			finalPayload: { messages: [{ role: "user", content: text }] },
+		};
+	}
+
+	test("fork copies write prompt_trace_chunk_refs for the copied skeletons (refs-index completeness)", async () => {
+		const msg0 = await messageStore.addMessage({
+			chatId: "chat_1", branchId: "brnch_1", role: "user", authorType: "user", content: "M0",
+		});
+		await traceStore.saveTrace(chunkedTraceData(msg0.id, "C0"));
+
+		const forkedBranch = await store.forkBranch("chat_1", msg0.id, "refs fork");
+
+		const copyRows = db.select().from(schema.promptTraces)
+			.where(eq(schema.promptTraces.branchId, forkedBranch.id)).all();
+		expect(copyRows).toHaveLength(1);
+		const srcRows = db.select().from(schema.promptTraces)
+			.where(eq(schema.promptTraces.branchId, "brnch_1")).all();
+		expect(srcRows).toHaveLength(1);
+
+		const copyRefs = db.select().from(schema.promptTraceChunkRefs)
+			.where(eq(schema.promptTraceChunkRefs.traceId, copyRows[0]!.id)).all();
+		const srcRefs = db.select().from(schema.promptTraceChunkRefs)
+			.where(eq(schema.promptTraceChunkRefs.traceId, srcRows[0]!.id)).all();
+		// Without fork-side refs the inverted index undercounts chunk usage: a
+		// later reclamation would free chunks the fork's skeletons still load.
+		expect(srcRefs.length).toBeGreaterThan(0);
+		expect(copyRefs.map((r) => r.chunkId).sort()).toEqual(srcRefs.map((r) => r.chunkId).sort());
+	});
+
+	test("deleting the SOURCE branch after a fork keeps the fork's shared chunks (owner live-DB scenario)", async () => {
+		const msg0 = await messageStore.addMessage({
+			chatId: "chat_1", branchId: "brnch_1", role: "user", authorType: "user", content: "M0",
+		});
+		const seed = chunkedTraceData(msg0.id, "C0");
+		await traceStore.saveTrace(seed);
+		const forkedBranch = await store.forkBranch("chat_1", msg0.id, "shared fork");
+
+		// The runtime's pre-delete capture, then the branch delete cascades the
+		// source branch's traces (message_id + branch_id FKs) away.
+		const dying = await traceStore.listTraceIds({ chatId: "chat_1", branchId: "brnch_1" });
+		expect(dying).toHaveLength(1);
+		await store.deleteBranch("brnch_1");
+		await traceStore.reclaimChunksForTraces(dying);
+
+		// The fork's copied trace still hydrates from the SHARED chunks — the
+		// user-visible invariant: opening the fork's history must not throw
+		// (a missing chunk is treated as corruption by inflateTraceValue).
+		const forkTraces = await traceStore.getTracesByChat("chat_1", forkedBranch.id);
+		expect(forkTraces).toHaveLength(1);
+		expect(forkTraces[0]!.assembledLayers).toEqual(seed.assembledLayers);
+		expect(forkTraces[0]!.finalPayload).toEqual(seed.finalPayload);
+		const chunkCount = db.select({ n: sql<number>`count(*)` }).from(schema.promptTraceChunks).get() as { n: number };
+		expect(chunkCount.n).toBeGreaterThan(0);
 	});
 });

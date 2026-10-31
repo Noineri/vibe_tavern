@@ -455,7 +455,32 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		db: stores.db,
 	});
 
+	// LONG_CHAT_PERFORMANCE_REPORT step 8: the global orphan-chunk sweep moved
+	// OFF the request path (it froze the whole server during message/branch/
+	// chat deletes on multi-GB DBs; the deletes now run a scoped reclamation
+	// instead). This is the maintenance pass: once at boot, best-effort — it
+	// never delays readiness and never throws into startup.
+	scheduleBootChunkSweep(stores);
+
 	return app;
+}
+
+/**
+ * Fire-and-forget wrapper for the boot-time orphan-chunk sweep (called from
+ * createRuntimeApp right after «Application ready», next to the avatar and
+ * token-count backfills): the store method itself is best-effort (it catches
+ * and logs its own failures), and this wrapper adds the same never-fail-
+ * startup contract the other boot passes carry — a rejection here is caught
+ * and logged, never surfaced into the boot sequence. Structural `stores` on
+ * purpose (the TokenCountBackfillDeps discipline): the real StoreContainer
+ * satisfies it; the wiring test passes a fake.
+ */
+export function scheduleBootChunkSweep(stores: {
+	readonly traces: { sweepOrphanedChunks(): Promise<void> };
+}): void {
+	void stores.traces.sweepOrphanedChunks().catch((error: unknown) => {
+		console.error("[db] boot orphan-chunk sweep crashed:", error);
+	});
 }
 
 /**

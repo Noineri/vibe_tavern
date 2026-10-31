@@ -3,7 +3,7 @@ import { promptTraces, promptTraceChunks, promptTraceChunkRefs } from '../db-sch
 import type { ActivatedLoreDetail, OverflowedLorebook, ProviderResponseTrace } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { deflateTraceValue, inflateTraceValue, type TraceChunk } from '../trace-chunking.js';
+import { deflateTraceValue, inflateTraceValue, collectMarkerIds, type TraceChunk } from '../trace-chunking.js';
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -257,7 +257,77 @@ export class PromptTraceStore {
     return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
+  /** Trace ids matching a deletion scope — captured BEFORE the delete, because
+   *  the rows are then removed by FK cascades (message/branch/chat deletion)
+   *  and their ids are gone. Same condition shape as getTracesByChat, but ids
+   *  only: no hydration, no payload reads. The runtime feeds the result to
+   *  reclaimChunksForTraces after the delete commits. */
+  async listTraceIds(filter: { chatId: string; branchId?: string; messageId?: string }): Promise<string[]> {
+    const conditions = [eq(promptTraces.chatId, filter.chatId)];
+    if (filter.branchId) conditions.push(eq(promptTraces.branchId, filter.branchId));
+    if (filter.messageId) conditions.push(eq(promptTraces.messageId, filter.messageId));
+    const rows = await this.db
+      .select({ id: promptTraces.id })
+      .from(promptTraces)
+      .where(and(...conditions))
+      .all();
+    return rows.map((row) => row.id);
+  }
+
   // ─── Chunk maintenance ────────────────────────────────────────────────
+
+  /**
+   * Scoped chunk reclamation for one deletion (LONG_CHAT_PERFORMANCE_REPORT
+   * step 8). Given the ids of the traces that JUST died (captured before the
+   * delete via listTraceIds — the trace rows themselves were removed by FK
+   * cascades inside it), delete exactly those traces' refs (PK left prefix)
+   * and reclaim a candidate chunk only when NO surviving ref points at it
+   * (per-candidate NOT EXISTS on idx_prompt_trace_chunk_refs_chunk). Chunks
+   * are content-addressed and shared across traces/branches — the guard is
+   * what keeps a surviving branch's shared chunks alive.
+   *
+   * Replaces the per-request global sweepOrphanedChunks anti-join, which
+   * scanned the ENTIRE refs/chunks tables synchronously on the event loop
+   * and froze the whole server on multi-GB DBs; the global pass survives as
+   * best-effort boot-time maintenance (server-runtime.ts).
+   *
+   * Best-effort by design: a failure is logged and NEVER breaks the
+   * user-visible delete that already committed (same contract as the sweep).
+   */
+  async reclaimChunksForTraces(traceIds: readonly string[]): Promise<void> {
+    if (traceIds.length === 0) return;
+    try {
+      this.db.transaction((tx) => {
+        // Candidate chunks: what the dying traces' refs point at — collected
+        // BEFORE their refs are deleted, deduplicated across traces.
+        const candidates = new Set<string>();
+        const BATCH = 500; // keep IN clauses inside SQLite variable limits
+        for (let i = 0; i < traceIds.length; i += BATCH) {
+          const idBatch = traceIds.slice(i, i + BATCH);
+          const refRows = tx
+            .select({ chunkId: promptTraceChunkRefs.chunkId })
+            .from(promptTraceChunkRefs)
+            .where(inArray(promptTraceChunkRefs.traceId, idBatch))
+            .all();
+          for (const row of refRows) candidates.add(row.chunkId);
+          tx.delete(promptTraceChunkRefs)
+            .where(inArray(promptTraceChunkRefs.traceId, idBatch))
+            .run();
+        }
+        const chunkList = [...candidates];
+        for (let i = 0; i < chunkList.length; i += BATCH) {
+          const chunkBatch = chunkList.slice(i, i + BATCH);
+          tx.run(sql`DELETE FROM prompt_trace_chunks
+            WHERE id IN ${inList(chunkBatch)}
+            AND NOT EXISTS (SELECT 1 FROM prompt_trace_chunk_refs WHERE chunk_id = prompt_trace_chunks.id)`);
+        }
+      });
+    } catch (error: unknown) {
+      // The delete response is already committed; reclamation must not turn
+      // it into a 500 (same best-effort contract as sweepOrphanedChunks).
+      console.warn(`[db] prompt-trace chunk reclamation skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   /**
    * Reclaim chunks referenced only by traces that no longer exist. Traces
@@ -352,11 +422,8 @@ function dedupeChunks(deflated: Array<{ chunks: TraceChunk[] }>): TraceChunk[] {
   return [...byId.values()];
 }
 
-/** Extract the 64-hex ids from `"$vtchunk":"<id>"` occurrences in a skeleton string. */
-function collectMarkerIds(skeletonJson: string): string[] {
-  const ids: string[] = [];
-  const re = /"\$vtchunk":"([0-9a-f]{64})"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(skeletonJson)) !== null) ids.push(m[1]);
-  return ids;
+/** SQL `(?, ?, …)` list for raw-statement IN clauses (drizzle's inArray
+ *  composes only into query-builder where clauses). */
+function inList(values: readonly string[]): ReturnType<typeof sql> {
+  return sql`(${sql.join(values.map((value) => sql`${value}`), sql`, `)})`;
 }

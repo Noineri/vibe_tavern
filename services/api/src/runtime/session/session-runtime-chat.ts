@@ -529,9 +529,13 @@ export class ChatRuntime {
   }
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
+    // Step 8: capture the traces that die with this message (FK cascade on
+    // prompt_traces.message_id) BEFORE the delete — their ids are gone after.
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId, messageId });
     await this.deps.chatApp.deleteMessage(messageId);
-    // Traces died with the message (FK cascade) — reclaim chunks they alone referenced.
-    await this.deps.traces.sweepOrphanedChunks();
+    // Traces died with the message (FK cascade) — reclaim chunks they alone
+    // referenced (scoped; the global sweep lives at boot now).
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
@@ -567,8 +571,11 @@ export class ChatRuntime {
   async deleteBranch(chatId: string, branchId: string): Promise<BranchResponse> {
     const typedChatId = brandId<ChatId>(chatId);
     const typedBranchId = brandId<ChatBranchId>(branchId);
+    // Step 8: capture the branch's traces BEFORE the delete (FK cascades on
+    // prompt_traces.branch_id and message_id remove them with the branch).
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId: typedChatId, branchId: typedBranchId });
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
-    await this.deps.traces.sweepOrphanedChunks();
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     this.pendingPromptTraceByChat.delete(typedChatId);
     return await this.deps.buildBranchResponse(typedChatId);
   }
@@ -589,10 +596,13 @@ export class ChatRuntime {
 
   async deleteChat(chatId: string): Promise<ChatListResponse> {
     const typedChatId = brandId<ChatId>(chatId);
+    // Step 8: capture the chat's traces BEFORE the delete (FK cascade on
+    // prompt_traces.chat_id removes them with the chat).
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId: typedChatId });
     this.deps.chatOrder.remove(typedChatId);
     this.pendingPromptTraceByChat.delete(typedChatId);
     await this.deps.chats.delete(typedChatId);
-    await this.deps.traces.sweepOrphanedChunks();
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     // Return the refreshed chats list so the sidebar deterministically drops
     // the deleted chat. Previously the route returned 204 with no body, so the
     // frontend relied on a racy fire-and-forget bootstrap to refresh the list
