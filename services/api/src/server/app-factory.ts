@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { serveStatic } from "hono/bun";
+import { compress } from "hono/compress";
 import { resolve } from "node:path";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
@@ -68,6 +69,10 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	}
 
 	const app = new Hono();
+	// The default content-type filter excludes SSE and JSONL: their producers
+	// must keep delivering individual events without compression buffering.
+	// Disk assets bypass Hono; embedded assets use this same middleware.
+	app.use("*", compress());
 
 	// ─── Detect real remote IP ────────────────────────────────────────────
 	app.use("*", async (c, next) => {
