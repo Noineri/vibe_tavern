@@ -13,6 +13,7 @@
  * globalThis patches, no waits, no platform assumptions.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { getEncoding } from "js-tiktoken";
 import {
 	addKnownTokenCounts,
 	configureTokenCountCacheForTests,
@@ -32,6 +33,7 @@ const encodeSpy = mock((text: string) => {
 tokenizer.encode = encodeSpy;
 afterAll(() => {
 	delete (tokenizer as { encode?: unknown }).encode;
+	resetTokenCountCacheForTests();
 });
 
 beforeEach(() => {
@@ -40,6 +42,23 @@ beforeEach(() => {
 });
 
 describe("token count cache (LC-5)", () => {
+	test("the single-table encoder matches the root-import cl100k encoder", () => {
+		const reference = getEncoding("cl100k_base");
+		const fixtures = [
+			"", "ASCII sentence with punctuation: 1234!",
+			"\u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440!",
+			"\u{1f600}\u{1f469}\u200d\u{1f4bb}\u{1f3fd}\u2764\ufe0f",
+			"   \t\t\n\n\r\n     ",
+			"A long paragraph with numbers 123 and symbols <>.\n".repeat(500),
+		];
+		for (const text of fixtures) {
+			const expected = reference.encode(text);
+			expect(countTokens(text)).toBe(expected.length);
+			expect(realEncode(text)).toEqual(expected);
+		}
+		expect(getTokenizer()).toBe(tokenizer);
+	});
+
 	test("a repeated text encodes once — later counts are cache hits", () => {
 		const text = "the same displayed text is recounted on every remount";
 		const first = countTokens(text);

@@ -1,7 +1,7 @@
 /**
  * Shared tokenizer singleton for the frontend.
  * Uses cl100k_base (GPT-4 class) — same as backend's countTokensDefault().
- * Lazy-loaded on first use.
+ * Encoder constructed on first use; its one rank table is statically imported.
  *
  * Token count cache (LC-5, LONG_CHAT_PERFORMANCE_REPORT step 5): a message's
  * displayed count is a pure function of its displayed text, so countTokens
@@ -15,18 +15,19 @@
  * (TC-5, TOKEN_COUNT_ONCE_PLAN Wave 3): counts that traveled on the wire
  * with the snapshot are served before anything is encoded (see below).
  *
- * The encoder initialization shape below is deliberately unchanged (APP_LOAD
- * step 3 will swap the rank-table import and may lazily preload the table):
- * the cache wraps getTokenizer().encode, it does not touch the loader.
+ * Import only the encoder core and cl100k ranks: the package root also pulls
+ * five unused tables into the entry chunk (APP_LOAD_REPORT step 3).
+ * Cache layers and synchronous initialization semantics are unchanged.
  */
 
-import { getEncoding, type Tiktoken } from "js-tiktoken";
+import { Tiktoken } from "js-tiktoken/lite";
+import cl100kBase from "js-tiktoken/ranks/cl100k_base";
 
 let instance: Tiktoken | null = null;
 
 export function getTokenizer(): Tiktoken {
 	if (!instance) {
-		instance = getEncoding("cl100k_base");
+		instance = new Tiktoken(cl100kBase);
 	}
 	return instance;
 }
