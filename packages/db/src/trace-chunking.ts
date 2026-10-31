@@ -3,28 +3,25 @@ import { splitTraceString } from './trace-blocks.js';
 import { decodeTraceText, type StoredTraceText } from './trace-storage-codec.js';
 
 /**
- * Content-addressed chunking for prompt-trace payload columns.
+ * Trace storage v2: eligible strings become ordered content-defined blocks,
+ * `{ "$vtlist": ["<sha256-hex>", ...] }`, shared across overlapping history
+ * windows rather than deduplicating only identical whole strings.
+ * `trace-blocks.ts` pins the gear table and 512/4096/16384 character cut limits;
+ * `trace-storage-codec.ts` stores blocks and the three JSON skeletons as level-3
+ * Zstd BLOBs. Hashes address PLAINTEXT, independent of compression.
  *
- * Prompt traces snapshot the ENTIRE assembled prompt (the whole chat history
- * at that moment), so consecutive traces in a chat share almost all of their
- * bytes — stored again on every turn. Measured on the owner's live DB
- * (2026-09-07, 6199 traces): 1107 MB of payload strings collapse to ~187 MB
- * of unique chunks (≈5×), and growth per message becomes additive instead of
- * quadratic.
- *
- * A trace column is stored as a "skeleton" JSON document where every string
- * ≥ TRACE_CHUNK_THRESHOLD characters is replaced by a marker object
- * `{ "$vtchunk": "<sha256-hex>" }`; the string itself lives once in the
- * `prompt_trace_chunks` table keyed by that hash. Inflation reverses the
- * substitution, returning a deep-equal value with strings in their original
- * positions (object key order is preserved — the inflated value re-stringifies
- * byte-identically for non-chunked documents, and chunked markers occupy the
- * same key slots the original strings held).
+ * Legacy TEXT and v1 `{ "$vtchunk": "<sha256-hex>" }` markers remain readable
+ * forever, including mixed-format documents while background conversion runs.
+ * The historical v1 boot pass still uses one-argument deflate; the live store
+ * and converter request version 2. Inflation preserves key order and exact
+ * re-stringified JSON; compression is a storage concern, never a DTO format.
+ * Malformed UTF-16 strings stay inline in the compressed JSON skeleton, whose
+ * escapes preserve them; encoding such a chunk as UTF-8 would replace bytes.
  *
  * Marker safety: user content reaches these columns only as STRING values
  * (message text, layer text); markers are OBJECTS with the single key
- * "$vtchunk", so user data can never collide with a marker. Inflation only
- * substitutes objects with exactly that key shape and a 64-char hex value.
+ * "$vtchunk" or "$vtlist". Inflation substitutes only exact single-key
+ * objects with a valid hash or a non-empty ordered array of valid hashes.
  */
 
 /** Marker key identifying a chunk reference inside a skeleton document. */
@@ -70,6 +67,10 @@ export function deflateTraceValue(value: unknown, version: 1 | 2 = 1): DeflatedT
   const walk = (v: unknown): unknown => {
     if (typeof v === 'string') {
       if (v.length < TRACE_CHUNK_THRESHOLD) return v;
+      // JSON permits unpaired surrogates, UTF-8 does not. Keep these rare
+      // strings in JSON (still Zstd-compressed), never normalize or hash them
+      // as replacement characters. The legacy boot pass stays unchanged.
+      if (version === 2 && !v.isWellFormed()) return v;
       const ids = (version === 2 ? splitTraceString(v) : [v]).map((content) => {
         const id = hashTraceChunk(content);
         if (!chunks.has(id)) chunks.set(id, content);

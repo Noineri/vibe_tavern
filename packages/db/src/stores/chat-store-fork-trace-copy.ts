@@ -53,8 +53,8 @@ export function copyForkPromptTraces(
   // fork's copies carried zero refs rows, so any reclamation judged those
   // chunks unreferenced once the source branch died and deleted chunks the
   // fork's skeletons still load (hydrateChunkMap treats a miss as
-  // corruption). Harvest the marker ids from the copied column text (no
-  // JSON.parse — same scanner the store's hydration uses) and write one refs
+  // corruption). Harvest both v1/v2 marker forms from the stored columns
+  // (TEXT or Zstd BLOB — same reader the store's hydration uses) and write one refs
   // row per (copy id, chunk id), conflict-ignored (the PK already dedupes).
   const newRefs: Array<typeof promptTraceChunkRefs.$inferInsert> = [];
   for (const t of tracesToCopy) {

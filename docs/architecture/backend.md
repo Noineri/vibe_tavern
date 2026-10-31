@@ -334,6 +334,40 @@ The story plan (a chat branch's agent plan, DIRECTOR_MODE_PLAN) can drive the go
 
 ---
 
+## Prompt trace storage
+
+`packages/db/src/stores/prompt-trace-store.ts` stores trace payloads losslessly; trace IDs, owners, dates, model/preset names and query fields stay plain.
+The three payload skeleton columns (`assembled_layers_json`, `final_payload_json`, `provider_response_json`) and `prompt_trace_chunks.content` are BLOB columns, accepting legacy TEXT during conversion.
+`trace-storage-codec.ts` detects Zstd by its magic bytes and uses Bun's built-in level-3 compression; no native dependency or wire-format change is involved.
+
+Strings of at least 256 UTF-16 code units become ordered `{"$vtlist":["<plaintext-sha256>",...]}` references.
+`trace-blocks.ts` pins the gear table and cut rule: target 4096 characters, minimum 512, maximum 16384; only the terminal tail may be shorter, and surrogate pairs are never split.
+Content-defined boundaries let neighboring history windows reuse blocks despite inserted or removed prefixes.
+Strings with unpaired UTF-16 surrogates stay escaped inside the compressed JSON skeleton instead of being normalized by UTF-8 block encoding.
+Blocks deduplicate by plaintext hash, and `byte_size` records their compressed byte length.
+Legacy `{"$vtchunk":"<id>"}` skeletons remain readable, including documents and chunks with mixed storage versions.
+`saveTrace` commits blocks, refs and compressed skeletons in one transaction; reads decompress only requested rows and their referenced blocks.
+Latest-trace reads remain SQL `LIMIT 1`; lazy history keeps its SQL limit rather than hydrating every trace.
+Forks copy stored columns unchanged and harvest both marker forms to preserve independent ref ownership.
+
+`trace-storage-converter.ts` runs after `Application ready` in the shared runtime wiring for dev, prod, standalone and Android.
+It compresses legacy chunks under their old IDs, then atomically converts each trace and rebuilds its refs.
+Historical forks can lack inverted refs, so no old chunk is reclaimed until every surviving skeleton has been processed.
+The persistent `trace-storage-v2-running` marker suspends ordinary scoped reclamation and the boot sweep during conversion and across interruptions.
+The final cleanup removes dead refs and unreferenced blocks in bounded units, then atomically sets `trace-storage-v2` and clears the running marker.
+The pass yields after 15 ms of accumulated work between atomic units; a single compression/row transaction can exceed that interval.
+A failed or cancelled pass leaves its marker incomplete and resumes next boot; it never drops a trace or silently skips corrupt data.
+One summary line is logged on completion, and later boots skip conversion silently.
+
+`trace-storage-vacuum.ts` runs once on the next boot, after stores open but before `Application ready`, while the bind-first placeholder still serves API traffic.
+It requires the conversion-complete marker, no running pass and no `trace-storage-v2-vacuumed` marker; successful VACUUM and WAL truncation precede the vacuum marker.
+An interrupted/failed VACUUM is retried rather than marked successful.
+Later boots keep LC-8's best-effort global orphan sweep, while ordinary deletions use `listTraceIds` plus `reclaimChunksForTraces`, never a request-path global anti-join.
+JSONL chat exports serialize message fields only and contain no traces; SQLite snapshots preserve BLOB bytes without a separate trace export.
+Future retention/usage tools must report compressed table/index sizes and reclaim only a deletion's candidate chunks; deleting traces remains an explicit user action, not part of conversion.
+
+---
+
 ## Lorebook Activation Engine
 
 **File:** `domain/prompt/lore-activation-engine.ts` — **pure function**, no DB access, no side effects.

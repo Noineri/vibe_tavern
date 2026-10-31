@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn, setSeparatorSideFn } from "@vibe-tavern/prompt-pipeline";
-import { TokenCountStore } from "@vibe-tavern/db";
+import { TokenCountStore, vacuumTraceStorageOnce } from "@vibe-tavern/db";
 import {
 	countTokens,
 	warmupTokenizers,
@@ -155,6 +155,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	// Stores
 	const stores = await createRuntimeStore(config.dataDir);
+	// Conversion runs after readiness; physical compaction belongs to the next
+	// boot while the bind-first loading placeholder still owns all API traffic.
+	if (vacuumTraceStorageOnce(stores.db)) console.log(`${tag} Trace storage v2 VACUUM complete.`);
 
 	// Seed
 	await Promise.all([

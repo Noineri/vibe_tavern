@@ -87,4 +87,12 @@ describe("trace storage v2 format", () => {
 		expect(decodeTraceText(Buffer.from("legacy text"))).toBe("legacy text");
 		expect(() => decodeTraceText(new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0]))).toThrow();
 	});
+
+	test("JSON strings containing unpaired surrogates are not normalized by UTF-8 chunk storage", () => {
+		const value = { text: "prefix ".repeat(200) + "\ud800 middle \udfff" };
+		const deflated = deflateTraceValue(value, 2);
+		const chunks = new Map(deflated.chunks.map((chunk) => [chunk.id, compressTraceText(chunk.content)]));
+		const skeleton = JSON.parse(decodeTraceText(compressTraceText(JSON.stringify(deflated.skeleton))));
+		expect(JSON.stringify(inflateTraceValue(skeleton, (id) => chunks.get(id)))).toBe(JSON.stringify(value));
+	});
 });
