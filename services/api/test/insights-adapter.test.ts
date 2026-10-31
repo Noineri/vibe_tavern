@@ -3,6 +3,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { ObjectiveState } from "@vibe-tavern/domain";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
+import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import { defaultObjectiveState } from "@vibe-tavern/domain";
 import type { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService, SceneTarget } from "../src/domain/insights/tracker-service.js";
@@ -298,6 +299,11 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		expect(response.target).toEqual({ chatId: "chat_1", ...SCENE_TARGET });
 		expect(response.message.id).toBe("msg_1");
 		expect(response.message.variants).toHaveLength(1);
+		// TC-4: the scene patch rides mapMessageDto like every other message
+		// path — its DTO carries the count of the wire content (the selected
+		// variant's "hello") and every variant carries its own.
+		expect(response.message.tokenCount).toBe(countTokensDefault("hello"));
+		expect(response.message.variants[0].tokenCount).toBe(countTokensDefault("hello"));
 	});
 
 	it("generate forwards the request signal to the service", async () => {

@@ -75,6 +75,7 @@ function makeMessage(id: string, content: string): AppMessage {
     state: "complete",
     createdAt: NOW,
     updatedAt: NOW,
+    tokenCount: 0,
     variants: [],
     selectedVariantIndex: null,
     modelId: null,
@@ -344,6 +345,7 @@ describe("useAutoNarrate", () => {
         isSelected: true,
         finishReason: null,
         createdAt: NOW,
+        tokenCount: 0,
         ttsAnnotation: 'She [sigh] said "wait for me [chuckle] now".',
       },
     ];

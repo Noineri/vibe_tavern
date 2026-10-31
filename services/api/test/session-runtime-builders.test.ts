@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 
@@ -660,6 +661,60 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			for (const m of snap.messages) {
 				expect(m.diceRolls).toBeUndefined();
 				expect("diceRolls" in m).toBe(false);
+			}
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+});
+
+// ─── TOKEN_COUNT_ONCE_PLAN TC-4: counts travel on every message DTO ───
+//
+// Every response family that carries messages flows through mapMessageDto
+// (getSnapshot; bootstrap's snapshot; the message/variant/branch/switch/create
+// builders; the insights scene patch — pinned separately in
+// insights-adapter.test.ts). This suite pins that each family's wire messages
+// carry `tokenCount` equal to an independent cl100k recompute of the exact
+// content, message AND variants, so no path can emit a DTO without the field.
+
+describe("TC-4: message DTOs carry tokenCount through every response family", () => {
+	it("getSnapshot, bootstrap and every message-carrying builder ship tokenCount (message + variants)", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime, chatId } = ctx;
+
+			const snapshot = await runtime.getSnapshot(chatId);
+			expect(snapshot.messages.length).toBeGreaterThan(0);
+			for (const message of snapshot.messages) {
+				expect(message.tokenCount, `snapshot ${message.id}`).toBe(countTokensDefault(message.content));
+				for (const variant of message.variants) {
+					expect(variant.tokenCount, `snapshot ${message.id}/v${variant.variantIndex}`).toBe(countTokensDefault(variant.content));
+				}
+			}
+
+			// Bootstrap rides the same getSnapshot funnel (buildBootstrapState).
+			const bootstrap = await runtime.getBootstrapState();
+			expect(bootstrap.snapshot?.messages.length).toBeGreaterThan(0);
+			for (const message of bootstrap.snapshot?.messages ?? []) {
+				expect(message.tokenCount, `bootstrap ${message.id}`).toBe(countTokensDefault(message.content));
+			}
+
+			// Every per-endpoint builder family that carries messages.
+			const families = [
+				["message", await runtime.buildMessageResponse(chatId)],
+				["variant", await runtime.buildVariantResponse(chatId)],
+				["branch", await runtime.buildBranchResponse(chatId)],
+				["switch", await runtime.buildChatSwitchResponse(chatId)],
+				["create", await runtime.buildChatCreateResponse(chatId)],
+			] as const;
+			for (const [family, response] of families) {
+				expect(response.messages.length).toBeGreaterThan(0);
+				for (const message of response.messages) {
+					expect(message.tokenCount, `${family} ${message.id}`).toBe(countTokensDefault(message.content));
+					for (const variant of message.variants) {
+						expect(variant.tokenCount, `${family} ${message.id}/v${variant.variantIndex}`).toBe(countTokensDefault(variant.content));
+					}
+				}
 			}
 		} finally {
 			await ctx.cleanup();

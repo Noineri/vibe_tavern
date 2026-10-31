@@ -1,10 +1,12 @@
 import { describe, it, expect } from "bun:test";
+import { getEncoding } from "js-tiktoken";
 import {
   mapMessageDto,
   entryMatchesRecentText,
   toClientProviderProfile,
   resolveStoredApiKey,
 } from "../src/runtime/session/session-runtime-dto.js";
+import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import type { LoreEntry } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
 
@@ -157,6 +159,47 @@ describe("mapMessageDto", () => {
     const result = mapMessageDto(message, variants);
     expect(result.attachments).toBeUndefined();
     expect("messageLevelAttachments" in result).toBe(false);
+  });
+
+  // ── tokenCount (TOKEN_COUNT_ONCE_PLAN TC-4: counts travel on the wire) ──
+
+  it("tokenCount = cl100k count of the wire content AND of every variant's own content (TC-4)", () => {
+    const message = { id: "m1", role: "assistant", content: "stale row content" };
+    const variants = [
+      { id: "var_0", messageId: "m1", content: "Reply A — first draft", variantIndex: 0, isSelected: false },
+      { id: "var_1", messageId: "m1", content: "Ночной разговор с эмодзи 🌙", variantIndex: 1, isSelected: true },
+    ];
+
+    const result = mapMessageDto(message, variants);
+
+    // Wire content is the SELECTED variant's content; the count is recomputed
+    // here independently (never read back off the field), and cross-checked
+    // against raw js-tiktoken so a silent cl100k fallback (len/4 estimate)
+    // inside countTokensDefault cannot pass against itself.
+    expect(result.content).toBe("Ночной разговор с эмодзи 🌙");
+    expect(result.tokenCount).toBe(countTokensDefault("Ночной разговор с эмодзи 🌙"));
+    expect(result.tokenCount).toBe(getEncoding("cl100k_base").encode("Ночной разговор с эмодзи 🌙").length);
+    expect(result.variants[0].tokenCount).toBe(countTokensDefault("Reply A — first draft"));
+    expect(result.variants[1].tokenCount).toBe(countTokensDefault("Ночной разговор с эмодзи 🌙"));
+    // A selected variant's message-level count equals that variant's count
+    // (same string by construction — the invariant TC-5's known-count map
+    // relies on when a variant switch reuses the variant's number).
+    expect(result.tokenCount).toBe(result.variants[1].tokenCount);
+  });
+
+  it("tokenCount counts the message row's own content when no variant is selected (TC-4)", () => {
+    const message = { id: "m1", role: "user", content: "plain question" };
+    const variants = [
+      { id: "var_0", messageId: "m1", content: "unused projection", variantIndex: 0, isSelected: false },
+    ];
+    const result = mapMessageDto(message, variants);
+    expect(result.content).toBe("plain question");
+    expect(result.tokenCount).toBe(countTokensDefault("plain question"));
+  });
+
+  it("tokenCount is 0 for empty content (TC-4)", () => {
+    const result = mapMessageDto({ id: "m1", role: "user", content: "" }, []);
+    expect(result.tokenCount).toBe(0);
   });
 });
 
