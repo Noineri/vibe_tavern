@@ -10,8 +10,10 @@
  * virtualized history), changed text is a different key, stale keys age out.
  * Every consumer (useDisplayMessage, use-token-count, SummaryTab,
  * CoauthorTurnShell, attachment overflow, the lorebook total, the pending
- * user stub) calls countTokens and gets this cache for free — there is no
- * second cache anywhere.
+ * user stub) calls countTokens and gets both layers for free — no consumer
+ * keeps a cache of its own. In front of the LRU sits the server-known map
+ * (TC-5, TOKEN_COUNT_ONCE_PLAN Wave 3): counts that traveled on the wire
+ * with the snapshot are served before anything is encoded (see below).
  *
  * The encoder initialization shape below is deliberately unchanged (APP_LOAD
  * step 3 will swap the rank-table import and may lazily preload the table):
@@ -82,6 +84,10 @@ function storeTokenCount(text: string, count: number): void {
 
 export function countTokens(text: string): number {
 	if (!text || typeof text !== "string") return 0;
+	// TC-5: the server-known map sits in front of the LRU — text the server
+	// already counted (snapshot DTOs) is served without encoding.
+	const known = knownTokenCounts.get(text);
+	if (known !== undefined) return known;
 	const cached = lookupTokenCount(text);
 	if (cached !== undefined) return cached;
 	const count = getTokenizer().encode(text).length;
@@ -89,14 +95,45 @@ export function countTokens(text: string): number {
 	return count;
 }
 
+// ── Server-known counts (TC-5, TOKEN_COUNT_ONCE_PLAN Wave 3) ───────────────
+// Every server message DTO carries the cl100k count of its content and of
+// each variant's content (TC-4, derived server-side from the SAME ladder
+// this module uses — countTokensDefault ↔ getEncoding("cl100k_base") — so a
+// seeded entry equals what a local encode would return; only the work is
+// skipped). Seeding lives in snapshot-store.ts's server-DTO write paths
+// ONLY — one derivation, never a consumer or selector, never a local-only
+// mutation (an optimistic edit's or pending row's tokenCount field is not a
+// promise; only a server DTO's is).
+//
+// Not LRU-bounded and holding no text of its own: keys are the same string
+// instances the snapshot store already holds (a JS Map key REFERENCES the
+// existing string, it does not copy it), so the map's memory cost is the
+// current snapshot's texts and nothing more.
+const knownTokenCounts = new Map<string, number>();
+
+/** Swap the whole map — the new snapshot's texts replace the previous chat's. */
+export function replaceKnownTokenCounts(entries: Iterable<readonly [string, number]>): void {
+	knownTokenCounts.clear();
+	addKnownTokenCounts(entries);
+}
+
+/** Add entries without dropping existing ones (server patch responses). */
+export function addKnownTokenCounts(entries: Iterable<readonly [string, number]>): void {
+	for (const [text, count] of entries) {
+		knownTokenCounts.set(text, count);
+	}
+}
+
 /** Override cache tunables (tests: eviction at small bounds). */
 export function configureTokenCountCacheForTests(tunables: Partial<TokenCountCacheTunables>): void {
 	Object.assign(tokenCountCacheTunables, tunables);
 }
 
-/** Drop every cached entry and restore the default tunables (test isolation). */
+/** Drop every cached entry (both layers) and restore the default tunables
+ * (test isolation). */
 export function resetTokenCountCacheForTests(): void {
 	tokenCountCache.clear();
 	tokenCountCacheChars = 0;
+	knownTokenCounts.clear();
 	Object.assign(tokenCountCacheTunables, DEFAULT_TOKEN_COUNT_CACHE_TUNABLES);
 }

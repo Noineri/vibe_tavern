@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireCharacter } from "../../test/wire-fixtures.js";
 import type { Attachment, ChatId, ChatBranchId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot } from "../api/types.js";
+import type { AppCharacter, AppMessage, AppSnapshot, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
+import { countTokens, getTokenizer, resetTokenCountCacheForTests } from "../utils/tokenizer.js";
+import { replaceUiMacros } from "../lib/macros.js";
 
 // Branded-id cast helpers (match the convention in bootstrap-actions.test.ts).
 const asChatId = (id: string): ChatId => id as ChatId;
@@ -489,5 +491,219 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
     useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
+  });
+});
+
+// ── TC-5: known token counts seeded from server DTOs ──────────────────────
+
+/**
+ * TOKEN_COUNT_ONCE_PLAN Wave 3: the server's token counts (riding the wire
+ * on every message and variant DTO since TC-4, computed by the SAME cl100k
+ * ladder the browser uses) seed a known-count map in front of the LC-5 LRU.
+ * The browser must encode NO text the server already counted; local-only
+ * mutations never seed. Pins use the LC-5 encode-spy idiom (own-property
+ * shadow on the shared encoder singleton, removed in afterAll — the real
+ * BPE still runs, so fixture numbers are real server numbers).
+ */
+describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => {
+  const tokenizer = getTokenizer();
+  const realEncode = tokenizer.encode.bind(tokenizer);
+  const encodedTexts: string[] = [];
+  tokenizer.encode = mock((text: string) => {
+    encodedTexts.push(text);
+    return realEncode(text);
+  });
+  afterAll(() => {
+    delete (tokenizer as { encode?: unknown }).encode;
+  });
+  beforeEach(() => {
+    encodedTexts.length = 0;
+    resetTokenCountCacheForTests();
+  });
+
+  /** Server-shaped row: content + every variant carry their wire tokenCount. */
+  function makeServerMessage(id: string, content: string, variantContents: string[] = []): AppMessage {
+    const variants = variantContents.map((variantContent, index) => ({
+      id: `${id}_v${index}`,
+      messageId: id,
+      variantIndex: index,
+      content: variantContent,
+      isSelected: index === 0,
+      finishReason: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      tokenCount: realEncode(variantContent).length,
+    }));
+    return {
+      id,
+      chatId: "chat-tc5",
+      branchId: "branch-tc5",
+      role: "assistant",
+      authorType: "assistant",
+      position: 1,
+      content,
+      state: "complete",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      tokenCount: realEncode(content).length,
+      variants,
+      selectedVariantIndex: variants.length > 0 ? 0 : null,
+      modelId: null,
+      sceneTracker: null,
+    } as unknown as AppMessage;
+  }
+
+  test("a 600-message snapshot with variants: full pass over every message and variant encodes 0 times", () => {
+    const messages = Array.from({ length: 600 }, (_, i) =>
+      makeServerMessage(`long-${i}`, `long chat message body ${i} — stable text`, [
+        `long chat message body ${i} — stable text`,
+        `alternate reply variant ${i} of the long chat`,
+      ]),
+    );
+    // Fixture building encodes for real (honest server numbers) — start the
+    // count AFTER it, so the assertion covers only the consumer pass.
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({ messages } as AppSnapshot);
+
+    // SummaryTab-style pass (countedMessages): every message's content.
+    const state = useSnapshotStore.getState();
+    for (const id of state.messageOrder) {
+      countTokens(state.messagesById[id]!.content);
+    }
+    // Variant-level reads (swipes, co-author parts): every variant's content.
+    for (const msg of Object.values(useSnapshotStore.getState().messagesById)) {
+      for (const variant of msg.variants) countTokens(variant.content);
+    }
+    expect(encodedTexts).toEqual([]);
+    // The served numbers are the server's (spot-check across the range).
+    expect(countTokens(messages[0]!.content)).toBe(messages[0]!.tokenCount);
+    expect(countTokens(messages[599]!.variants[1]!.content)).toBe(messages[599]!.variants[1]!.tokenCount);
+    expect(encodedTexts).toEqual([]);
+  });
+
+  test("mounting the feed path (useDisplayMessage-style per-message count) encodes 0 times", () => {
+    const messages = Array.from({ length: 50 }, (_, i) => makeServerMessage(`feed-${i}`, `feed message ${i} body text`));
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({ messages } as AppSnapshot);
+
+    // useDisplayMessage's derivation with no macro context: displayContent
+    // IS the stored content — every per-message label is a known hit.
+    const macroCtx = null;
+    for (const id of useSnapshotStore.getState().messageOrder) {
+      const msg = useSnapshotStore.getState().messagesById[id]!;
+      const displayContent = macroCtx ? replaceUiMacros(msg.content, macroCtx) : msg.content;
+      expect(countTokens(displayContent)).toBe(msg.tokenCount);
+    }
+    expect(encodedTexts).toEqual([]);
+  });
+
+  test("a variant switch surfaces that variant's count with 0 encodes", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("swipe-1", "selected body", ["selected body", "variant one body"])],
+    } as AppSnapshot);
+    expect(countTokens("selected body")).toBe(realEncode("selected body").length);
+    expect(encodedTexts).toEqual([]);
+
+    // Optimistic swipe: selectVariant writes the variant's content into the
+    // row LOCALLY (never seeds) — the count still comes from the map entry
+    // the variant's DTO seeded at ingest.
+    useSnapshotStore.getState().selectVariant("swipe-1", 1, 1);
+    const switched = useSnapshotStore.getState().messagesById["swipe-1"]!;
+    expect(switched.content).toBe("variant one body");
+    expect(countTokens(switched.content)).toBe(realEncode("variant one body").length);
+    expect(encodedTexts).toEqual([]);
+  });
+
+  test("ingesting chat B's snapshot drops chat A's entries — A's text encodes again", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("a1", "chat A text one"), makeServerMessage("a2", "chat A text two")],
+    } as AppSnapshot);
+    // A's texts are served by the known map — no encode.
+    expect(countTokens("chat A text one")).toBe(realEncode("chat A text one").length);
+    expect(encodedTexts).toEqual([]);
+
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("b1", "chat B text one")],
+    } as AppSnapshot);
+    expect(countTokens("chat B text one")).toBe(realEncode("chat B text one").length);
+    expect(encodedTexts).toEqual([]); // B served by its own snapshot's counts
+    // A's dropped entry now encodes again — the spy count goes up.
+    expect(countTokens("chat A text one")).toBe(realEncode("chat A text one").length);
+    expect(encodedTexts).toEqual(["chat A text one"]);
+  });
+
+  test("a macro-substituted display text is a miss by design — encoded, today's value", () => {
+    encodedTexts.length = 0;
+    const content = "Hi {{user}}, the dice show 42!";
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("macro-1", content)],
+    } as AppSnapshot);
+    // The raw content is known — served, not encoded.
+    expect(countTokens(content)).toBe(realEncode(content).length);
+    expect(encodedTexts).toEqual([]);
+
+    // useDisplayMessage's derivation with a macro context: the substituted
+    // text differs from `content`, misses by design, and is counted locally
+    // exactly as before TC-5 (same value the label showed today).
+    const displayContent = replaceUiMacros(content, { characterName: "Nekomata", personaName: "Player" });
+    expect(displayContent).not.toBe(content);
+    expect(countTokens(displayContent)).toBe(realEncode(displayContent).length);
+    expect(encodedTexts).toEqual([displayContent]);
+  });
+
+  test("applyInsightsCompletionPatch seeds the patched server message's counts", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: "chat-tc5", mode: "rp" } as unknown as AppSnapshot["activeChat"],
+      messages: [makeServerMessage("insights-1", "original insights body")],
+    } as AppSnapshot);
+    const patched = makeServerMessage("insights-1", "regenerated insights body");
+    const applied = useSnapshotStore.getState().applyInsightsCompletionPatch({
+      target: { chatId: "chat-tc5", branchId: "branch-tc5", messageId: "insights-1", variantId: null },
+      patch: { message: patched },
+    } as unknown as InsightsCompletionPatchResponse);
+    expect(applied).toBe(true);
+    expect(useSnapshotStore.getState().messagesById["insights-1"]?.content).toBe("regenerated insights body");
+    expect(countTokens("regenerated insights body")).toBe(realEncode("regenerated insights body").length);
+    expect(encodedTexts).toEqual([]);
+  });
+
+  test("applySceneTargetPatch seeds the patched server message's counts", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: "chat-tc5", mode: "rp" } as unknown as AppSnapshot["activeChat"],
+      messages: [makeServerMessage("scene-1", "scene body v0", ["scene body v0", "scene body v1"])],
+    } as AppSnapshot);
+    const regenerated = makeServerMessage("scene-1", "regenerated scene body", ["scene body v0", "regenerated scene body"]);
+    const applied = useSnapshotStore.getState().applySceneTargetPatch({
+      target: { chatId: "chat-tc5", branchId: "branch-tc5", messageId: "scene-1", variantId: "scene-1_v1" },
+      message: regenerated,
+    } as unknown as SceneTargetResponse);
+    expect(applied).toBe(true);
+    expect(countTokens("regenerated scene body")).toBe(realEncode("regenerated scene body").length);
+    expect(encodedTexts).toEqual([]);
+  });
+
+  test("a local optimistic edit never seeds — the edited text encodes", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("edit-1", "original server body")],
+    } as AppSnapshot);
+    useSnapshotStore.getState().updateMessage("edit-1", { content: "locally edited body" });
+    expect(countTokens("locally edited body")).toBe(realEncode("locally edited body").length);
+    expect(encodedTexts).toEqual(["locally edited body"]);
+  });
+
+  test("clearMessages drops the known map (chat switch with no follow-up ingest)", () => {
+    encodedTexts.length = 0;
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeServerMessage("clear-1", "cleared chat text")],
+    } as AppSnapshot);
+    expect(countTokens("cleared chat text")).toBe(realEncode("cleared chat text").length);
+    expect(encodedTexts).toEqual([]);
+    useSnapshotStore.getState().clearMessages();
+    expect(countTokens("cleared chat text")).toBe(realEncode("cleared chat text").length);
+    expect(encodedTexts).toEqual(["cleared chat text"]);
   });
 });

@@ -13,7 +13,14 @@
  * globalThis patches, no waits, no platform assumptions.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { configureTokenCountCacheForTests, countTokens, getTokenizer, resetTokenCountCacheForTests } from "./tokenizer.js";
+import {
+	addKnownTokenCounts,
+	configureTokenCountCacheForTests,
+	countTokens,
+	getTokenizer,
+	replaceKnownTokenCounts,
+	resetTokenCountCacheForTests,
+} from "./tokenizer.js";
 
 const tokenizer = getTokenizer();
 const realEncode = tokenizer.encode.bind(tokenizer);
@@ -123,5 +130,82 @@ describe("token count cache (LC-5)", () => {
 		countTokens(big);
 		countTokens(big);
 		expect(encodedTexts).toEqual([big, big]);
+	});
+});
+
+/**
+ * Known token counts (TC-5, TOKEN_COUNT_ONCE_PLAN Wave 3): the map the
+ * snapshot store seeds from server DTOs sits IN FRONT of the LC-5 LRU.
+ * Pins:
+ * - a seeded count is served without encoding and WINS over an existing
+ *   LRU entry (server count is authoritative for its exact texts);
+ * - `replace` swaps the whole map (a new chat's snapshot drops the previous
+ *   chat's entries); `add` extends without dropping;
+ * - the map is not LRU-bounded and does not leak into the LRU.
+ */
+describe("known token counts from server DTOs (TC-5)", () => {
+	test("a known count is served before the LRU and without encoding", () => {
+		replaceKnownTokenCounts([["server-counted text", 4242]]);
+		expect(countTokens("server-counted text")).toBe(4242);
+		expect(encodedTexts).toEqual([]);
+		// Precedence over an existing LRU entry: the known value wins even
+		// after the same text was already encoded (and cached) locally.
+		countTokens("locally counted first");
+		expect(encodedTexts).toEqual(["locally counted first"]);
+		addKnownTokenCounts([["locally counted first", 999]]);
+		expect(countTokens("locally counted first")).toBe(999);
+		expect(encodedTexts).toEqual(["locally counted first"]);
+	});
+
+	test("replace swaps the whole map — the previous snapshot's entries drop", () => {
+		replaceKnownTokenCounts([
+			["chat A message one", 11],
+			["chat A message two", 22],
+		]);
+		expect(countTokens("chat A message one")).toBe(11);
+		expect(encodedTexts).toEqual([]);
+		replaceKnownTokenCounts([["chat B message one", 33]]);
+		expect(countTokens("chat B message one")).toBe(33);
+		expect(encodedTexts).toEqual([]);
+		// A's dropped text now encodes again — and serves the real count.
+		expect(countTokens("chat A message one")).toBe(realEncode("chat A message one").length);
+		expect(encodedTexts).toEqual(["chat A message one"]);
+	});
+
+	test("add keeps existing entries while adding new ones", () => {
+		replaceKnownTokenCounts([["ingested earlier", 7]]);
+		addKnownTokenCounts([["patched in later", 8]]);
+		expect(countTokens("ingested earlier")).toBe(7);
+		expect(countTokens("patched in later")).toBe(8);
+		expect(encodedTexts).toEqual([]);
+	});
+
+	test("the known map is not LRU-bounded", () => {
+		configureTokenCountCacheForTests({ maxEntries: 2, maxTotalChars: 40 });
+		const entries = Array.from({ length: 12 }, (_, i) => [
+			`known text ${i} — ${"k".repeat(i)}`,
+			100 + i,
+		] as [string, number]);
+		replaceKnownTokenCounts(entries);
+		for (const [text, count] of entries) {
+			expect(countTokens(text)).toBe(count);
+		}
+		expect(encodedTexts).toEqual([]);
+	});
+
+	test("a known entry does not leak into the LRU — dropping it re-encodes", () => {
+		replaceKnownTokenCounts([["transient known text", 5]]);
+		expect(countTokens("transient known text")).toBe(5);
+		expect(encodedTexts).toEqual([]);
+		replaceKnownTokenCounts([]);
+		// If the known path had also stored into the LRU this would be a hit.
+		expect(countTokens("transient known text")).toBe(realEncode("transient known text").length);
+		expect(encodedTexts).toEqual(["transient known text"]);
+	});
+
+	test("empty text stays 0 even when an empty key was seeded", () => {
+		addKnownTokenCounts([["", 77]]);
+		expect(countTokens("")).toBe(0);
+		expect(encodedTexts).toEqual([]);
 	});
 });

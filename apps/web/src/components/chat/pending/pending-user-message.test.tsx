@@ -81,9 +81,13 @@ describe("pending user token count (LC-5)", () => {
     const stubCount = readTokenCount(view);
     expect(stubCount).toBeGreaterThan(0);
 
+    // TC-5: the row simulates the SERVER's persisted message — its wire
+    // tokenCount is the cl100k count of the raw content (macros NOT
+    // substituted server-side), so the fixture carries that honest number
+    // (was a placeholder 0 before TC-5 seeded ingest from these rows).
     const message: AppMessage = { id: brandId<MessageId>("lc5-counted"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
       position: 1, content: PENDING_CONTENT, state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
-      tokenCount: 0, variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
+      tokenCount: realEncode(PENDING_CONTENT).length, variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
     await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
     expect(readTokenCount(view)).toBe(stubCount);
     await act(async () => { useChatStore.getState().finishGeneration(chatId); });
@@ -99,7 +103,7 @@ describe("pending user token count (LC-5)", () => {
 
     const message: AppMessage = { id: brandId<MessageId>("lc5-cached"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
       position: 1, content: PENDING_CONTENT, state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
-      tokenCount: 0, variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
+      tokenCount: realEncode(PENDING_CONTENT).length, variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null };
     await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
     await act(async () => { useChatStore.getState().finishGeneration(chatId); });
     expect(readTokenCount(view)).toBe(stubCount);
@@ -139,7 +143,7 @@ describe("pending user report chip (ERX-9)", () => {
     expect(view.getAllByTestId("experience-report-chip")).toHaveLength(1);
     const message: AppMessage = { id: brandId<MessageId>("committed"), chatId, branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user",
       position: 1, content: "Played", state: "complete", createdAt: "2026-10-27T12:00:00Z", updatedAt: "2026-10-27T12:00:00Z",
-      variants: [], tokenCount: 0, selectedVariantIndex: null, modelId: null, sceneTracker: null, experienceReports: [report] };
+      variants: [], tokenCount: getTokenizer().encode("Played").length, selectedVariantIndex: null, modelId: null, sceneTracker: null, experienceReports: [report] };
     await act(async () => { useSnapshotStore.getState().ingestSnapshot({ messages: [message] }); });
     expect(view.getAllByTestId("experience-report-chip")).toHaveLength(1);
     expect(view.container.querySelector('[data-message-id="__pending-user"]')).toBeNull();
