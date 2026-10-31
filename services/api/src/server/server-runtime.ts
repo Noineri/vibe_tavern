@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-service.js";
+import { TokenCountStore } from "@vibe-tavern/db";
+import {
+	countTokens,
+	warmupTokenizers,
+	setPersistentTokenCountStore,
+} from "../infrastructure/ai/tokenizer-service.js";
 import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
 import { createChatEventsFeature } from "../domain/chat/chat-events-feature.js";
@@ -203,6 +208,11 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	// Tokenizers
 	await warmupTokenizers();
 	setTokenCountFn(countTokens);
+	// TOKEN_COUNT_ONCE_PLAN TC-2: countTokens reads/writes persistent
+	// per-(text, tokenizer) counts through this injected store — constructed
+	// here at its only consumer (not added to the StoreContainer). Unit tests
+	// and tools run without it: the cache layer is then skipped, memory-only.
+	setPersistentTokenCountStore(new TokenCountStore(stores.db));
 	console.log(`${tag} Tokenizers ready.`);
 
 	// Provider proxy transport — bind the process-wide fetch factory so every

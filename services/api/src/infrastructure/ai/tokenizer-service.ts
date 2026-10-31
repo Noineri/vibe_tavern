@@ -5,9 +5,16 @@
  * - js-tiktoken for OpenAI models (GPT-4, GPT-4o, etc.)
  * - @agnai/web-tokenizers for Claude, Llama3, Mistral, Qwen2, DeepSeek, GLM, etc.
  * - cl100k_base (GPT-4 tokenizer) as universal fallback for prompt token counting only
+ *
+ * TC-2 (TOKEN_COUNT_ONCE_PLAN): below the provider-exact layer, every count
+ * goes through the layered cache — per-tokenizer memory LRU → persistent
+ * token_counts store → encode + write-through — so a text is encoded at
+ * most once per tokenizer per process (and read, not encoded, after a
+ * restart once the store backfill lands).
  */
 
 import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { getEncoding, type Tiktoken, type TiktokenEncoding } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 import { activeProviderTokenContext, readExactTokenCount } from "./token-count-cache.js";
@@ -137,6 +144,258 @@ function resolveTokenizerFamily(model: string): TokenizerFamily {
 	return { type: "fallback" };
 }
 
+// ── Tokenizer id resolution (TC-2) ──────────────────────────────────────
+
+/** Id of the universal cl100k fallback — also countTokensDefault's tokenizer. */
+const CL100K_TOKENIZER_ID = "tiktoken:cl100k_base";
+
+/**
+ * The tokenizer the ladder would ACTUALLY use for a model, resolved in one
+ * place: the tiktoken encoding it maps to, the web file if that file is
+ * already loaded, or the cl100k fallback when no model is given, nothing
+ * matches, or the web file has not been warmed yet (the cold path counts
+ * with cl100k until warmup loads the file — so does this resolution).
+ */
+type TokenizerRef =
+	| { id: string; type: "tiktoken"; encoding: string }
+	| { id: string; type: "web"; file: string }
+	| { id: string; type: "fallback" };
+
+function resolveTokenizerRef(model?: string): TokenizerRef {
+	if (!model) return { id: CL100K_TOKENIZER_ID, type: "fallback" };
+	const family = resolveTokenizerFamily(model);
+	switch (family.type) {
+		case "tiktoken":
+			return { id: `tiktoken:${family.encoding}`, type: "tiktoken", encoding: family.encoding };
+		case "web":
+			return webTokenizerCache.has(family.file)
+				? { id: `web:${family.file}`, type: "web", file: family.file }
+				: { id: CL100K_TOKENIZER_ID, type: "fallback" };
+		default:
+			return { id: CL100K_TOKENIZER_ID, type: "fallback" };
+	}
+}
+
+/**
+ * The id of the tokenizer countTokens would actually use for `model` —
+ * e.g. "tiktoken:o200k_base", "web:llama3.json". ONE derivation: the
+ * layered-cache keys, the persistent token_counts rows and the history
+ * separator-side table (Wave 2) all read THIS id, never a second copy.
+ */
+export function resolveTokenizerId(model?: string): string {
+	return resolveTokenizerRef(model).id;
+}
+
+// ── Layered count cache (TC-2) ──────────────────────────────────────────
+// A token count is deterministic per (exact text, tokenizer), so below the
+// provider-exact layer every count is memoized: per-tokenizer memory LRU
+// (the hot layer, the same discipline as the browser's LC-5 cache) →
+// persistent token_counts store (survives restarts) → encode + write-
+// through to both. countTokens stays synchronous by contract, so the store
+// participates asynchronously: a memory miss schedules a non-blocking store
+// read that backfills the memory LRU when it lands (a stored row overwrites
+// the encoded value — they are equal by determinism); the CURRENT call
+// always answers with the encode.
+
+/**
+ * The persistent-count seam injected at server boot. Structural on purpose:
+ * TC-1's TokenCountStore satisfies it; unit tests and tools inject a fake
+ * or run without one (the layer is then skipped — memory-only).
+ */
+export interface PersistentTokenCountStore {
+	get(textHash: string, tokenizer: string): Promise<{ tokenCount: number } | null>;
+	putMany(
+		rows: ReadonlyArray<{ textHash: string; tokenizer: string; tokenCount: number }>,
+	): Promise<void>;
+}
+
+interface LayerTunables {
+	/** Max cached texts per tokenizer id. */
+	maxEntriesPerTokenizer: number;
+	/** Max total cached text length (UTF-16 units) per tokenizer id. */
+	maxTotalCharsPerTokenizer: number;
+}
+
+const DEFAULT_LAYER_TUNABLES: LayerTunables = {
+	// Same bounds as the browser's LC-5 cache (apps/web/src/utils/tokenizer.ts):
+	// a chat's stable tail plus prompt/lorebook churn fits with room to age
+	// out; per-tokenizer so switching models never evicts another model's
+	// counts.
+	maxEntriesPerTokenizer: 1_000,
+	maxTotalCharsPerTokenizer: 2_000_000,
+};
+
+/**
+ * Texts above this length are cached in MEMORY ONLY, never persisted —
+ * joined prompt blocks would grow the table unboundedly; the memory layer
+ * still dedups the hot ones.
+ */
+const PERSIST_MAX_TEXT_CHARS = 100_000;
+
+const layerTunables: LayerTunables = { ...DEFAULT_LAYER_TUNABLES };
+const layerStats = { encodes: 0, storeReads: 0, storeReadHits: 0, storeWrites: 0 };
+
+/** tokenizerId → (exact text → count). Never a concatenated key string. */
+const perTokenizerCache = new Map<string, Map<string, number>>();
+const perTokenizerChars = new Map<string, number>();
+
+let persistentStore: PersistentTokenCountStore | null = null;
+
+/**
+ * In-flight store reads deduped per (tokenizer, hash). Internal key format —
+ * NOT the store's composite key (that derivation stays in token-count-store).
+ */
+const inflightReads = new Set<string>();
+let pendingStoreReads = 0;
+const storeReadIdleWaiters: Array<() => void> = [];
+/** Bumped by the test reset so reads scheduled before it cannot repopulate cleared state. */
+let readGeneration = 0;
+
+function sha256Hex(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
+
+/** Memory read; a hit re-inserts the key on the most-recent side (LRU touch). */
+function layerLookup(tokenizerId: string, text: string): number | undefined {
+	const inner = perTokenizerCache.get(tokenizerId);
+	if (!inner) return undefined;
+	const hit = inner.get(text);
+	if (hit === undefined) return undefined;
+	inner.delete(text);
+	inner.set(text, hit);
+	return hit;
+}
+
+/**
+ * Memory write; evicts from the least-recent side until BOTH bounds hold
+ * (LC-5 discipline — the keys ARE the texts, so the char cap is the memory
+ * cap). A single text larger than the whole bound is never cached.
+ */
+function layerStore(tokenizerId: string, text: string, count: number): void {
+	if (text.length > layerTunables.maxTotalCharsPerTokenizer) return;
+	let inner = perTokenizerCache.get(tokenizerId);
+	if (!inner) {
+		inner = new Map();
+		perTokenizerCache.set(tokenizerId, inner);
+		perTokenizerChars.set(tokenizerId, 0);
+	}
+	if (!inner.has(text)) {
+		perTokenizerChars.set(tokenizerId, (perTokenizerChars.get(tokenizerId) ?? 0) + text.length);
+	}
+	inner.delete(text);
+	inner.set(text, count);
+	let chars = perTokenizerChars.get(tokenizerId) ?? 0;
+	while (
+		inner.size > 0 &&
+		(inner.size > layerTunables.maxEntriesPerTokenizer ||
+			chars > layerTunables.maxTotalCharsPerTokenizer)
+	) {
+		const oldest = inner.keys().next().value;
+		if (oldest === undefined) break;
+		inner.delete(oldest);
+		chars -= oldest.length;
+	}
+	perTokenizerChars.set(tokenizerId, Math.max(chars, 0));
+}
+
+function scheduleStoreRead(tokenizerId: string, text: string, hash: string): void {
+	const store = persistentStore;
+	if (!store) return;
+	const inflightKey = `${tokenizerId}\u0000${hash}`;
+	if (inflightReads.has(inflightKey)) return;
+	inflightReads.add(inflightKey);
+	layerStats.storeReads++;
+	pendingStoreReads++;
+	const generation = readGeneration;
+	store
+		.get(hash, tokenizerId)
+		.then((row) => {
+			if (row === null || generation !== readGeneration) return;
+			layerStats.storeReadHits++;
+			// Overwrite, not write-if-absent: a stored row and a fresh encode
+		// are equal by determinism, and overwriting is what makes store
+			// routing observable in the tests.
+			layerStore(tokenizerId, text, row.tokenCount);
+		})
+		.catch(() => {
+			// A failed store read is non-fatal — counting keeps working through
+			// the encode path, and the next miss schedules a fresh read.
+		})
+		.finally(() => {
+			inflightReads.delete(inflightKey);
+			pendingStoreReads--;
+			if (pendingStoreReads === 0) {
+				for (const resolve of storeReadIdleWaiters.splice(0)) resolve();
+			}
+		});
+}
+
+function writeThroughStore(tokenizerId: string, hash: string, count: number): void {
+	const store = persistentStore;
+	if (!store) return;
+	layerStats.storeWrites++;
+	void store
+		.putMany([{ textHash: hash, tokenizer: tokenizerId, tokenCount: count }])
+		.catch(() => {
+			// Persistence is best-effort: a failed write only costs a later
+			// re-encode after a restart, never a wrong count.
+		});
+}
+
+/**
+ * The TC-2 layering for one (tokenizer, text): memory LRU read → (async
+ * store backfill scheduled on a miss) → encode → write-through. `encode`
+ * runs at most once per (text, tokenizer) while the entry stays cached.
+ */
+function countViaLayer(tokenizerId: string, text: string, encode: () => number): number {
+	const hit = layerLookup(tokenizerId, text);
+	if (hit !== undefined) return hit;
+	const hash = text.length <= PERSIST_MAX_TEXT_CHARS ? sha256Hex(text) : null;
+	if (hash !== null) scheduleStoreRead(tokenizerId, text, hash);
+	layerStats.encodes++;
+	const count = encode();
+	layerStore(tokenizerId, text, count);
+	if (hash !== null) writeThroughStore(tokenizerId, hash, count);
+	return count;
+}
+
+/** Inject the persistent token_counts store (server boot). `null` un-injects. */
+export function setPersistentTokenCountStore(store: PersistentTokenCountStore | null): void {
+	persistentStore = store;
+}
+
+/** Test/observability seam: resolves when every scheduled store read has settled. Never rejects. */
+export function waitForTokenCountReadIdle(): Promise<void> {
+	if (pendingStoreReads === 0) return Promise.resolve();
+	return new Promise((resolve) => storeReadIdleWaiters.push(resolve));
+}
+
+/** Spy seam: layer activity since the last reset (encode/store touch counts). */
+export function getTokenCountLayerStatsForTests(): typeof layerStats {
+	return { ...layerStats };
+}
+
+/** Override cache bounds (tests: eviction at small limits). */
+export function configureTokenCountLayerForTests(tunables: Partial<LayerTunables>): void {
+	Object.assign(layerTunables, tunables);
+}
+
+/**
+ * Drop every cached count, restore default bounds and invalidate in-flight
+ * store reads (test isolation — this file's process is shared).
+ */
+export function resetTokenCountLayerForTests(): void {
+	perTokenizerCache.clear();
+	perTokenizerChars.clear();
+	inflightReads.clear();
+	layerStats.encodes = 0;
+	layerStats.storeReads = 0;
+	layerStats.storeReadHits = 0;
+	layerStats.storeWrites = 0;
+	readGeneration++;
+	Object.assign(layerTunables, DEFAULT_LAYER_TUNABLES);
+}
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 /**
@@ -147,6 +406,10 @@ function resolveTokenizerFamily(model: string): TokenizerFamily {
  * orchestrator via `runWithProviderTokenContext`), a cached backend-exact
  * count wins; on a miss the local ladder below runs and a bounded background
  * warm fetch is scheduled. See `token-count-cache.ts` for the mechanic.
+ *
+ * TC-2: below that provider-exact layer, counts go through the layered
+ * cache — memory LRU → (async) persistent store → encode + write-through.
+ * The returned number is always exactly what the ladder encoded.
  */
 export function countTokens(text: string, model?: string): number {
 	if (!text) return 0;
@@ -158,29 +421,23 @@ export function countTokens(text: string, model?: string): number {
 		// Miss → local ladder below; the warm pass fills the cache for next turn.
 	}
 
-	// When no model is specified, use cl100k_base as a universal default.
-	// It's more accurate than byte estimation for all languages.
-	if (!model) return countTokensDefault(text);
-
-	const family = resolveTokenizerFamily(model);
-
+	const ref = resolveTokenizerRef(model);
 	try {
-		switch (family.type) {
-			case "tiktoken": {
-				const tokenizer = getTiktoken(family.encoding);
-				return tokenizer.encode(text).length;
-			}
-			case "web": {
-				const cached = webTokenizerCache.get(family.file);
-				if (cached) return cached.encode(text).length;
-				// Not loaded yet — fallback to cl100k_base
-				return countTokensDefault(text);
+		if (ref.type === "tiktoken") {
+			return countViaLayer(ref.id, text, () => getTiktoken(ref.encoding).encode(text).length);
+		}
+		if (ref.type === "web") {
+			const tokenizer = webTokenizerCache.get(ref.file);
+			if (tokenizer) {
+				return countViaLayer(ref.id, text, () => tokenizer.encode(text).length);
 			}
 		}
 	} catch {
 		// ignore — fallback below
 	}
 
+	// No model, an unknown model, a not-yet-loaded web tokenizer, or a failed
+	// family encode — the cl100k default, exactly as before the cache existed.
 	return countTokensDefault(text);
 }
 
@@ -192,7 +449,9 @@ export function countTokens(text: string, model?: string): number {
 export function countTokensDefault(text: string): number {
 	if (!text) return 0;
 	try {
-		return getTiktoken("cl100k_base").encode(text).length;
+		return countViaLayer(CL100K_TOKENIZER_ID, text, () =>
+			getTiktoken("cl100k_base").encode(text).length,
+		);
 	} catch {
 		// cl100k_base failed (shouldn't happen) — rough char-based estimate
 		return Math.ceil(text.length / 4);
