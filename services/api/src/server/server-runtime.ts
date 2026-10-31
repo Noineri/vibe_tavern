@@ -82,6 +82,7 @@ import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 import { serveErrorResponse } from "./serve-error.js";
 import { serveAssetFile } from "./static-conditional.js";
+import { startTraceStorageConversion } from "./trace-storage-maintenance.js";
 // Port pre-check cluster — extracted when TC-6's wiring pushed this file over
 // the 800-line arch-gate cap (extraction, never compression — see server-port.ts).
 import { ensurePortAvailable } from "./server-port.js";
@@ -435,6 +436,8 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
+	const traceConversion = startTraceStorageConversion(stores.db);
+	addRuntimeTeardown(traceConversion.stop);
 
 	// LB-1C: normalize pre-existing avatar thumbnails in the background. Unlike
 	// the awaited one-time migrations above, this is deliberately fire-and-
@@ -460,7 +463,12 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	// chat deletes on multi-GB DBs; the deletes now run a scoped reclamation
 	// instead). This is the maintenance pass: once at boot, best-effort — it
 	// never delays readiness and never throws into startup.
-	scheduleBootChunkSweep(stores);
+	// Never sweep against incomplete historical fork refs. The conversion pass
+	// repairs them and owns its own bounded cleanup; later boots keep LC-8's
+	// ordinary best-effort maintenance.
+	void traceConversion.completed.then((stats) => {
+		if (stats?.skippedByMarker) scheduleBootChunkSweep(stores);
+	});
 
 	return app;
 }

@@ -5,6 +5,7 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { deflateTraceValue, inflateTraceValue, collectMarkerIds, type TraceChunk } from '../trace-chunking.js';
 import { compressTraceText, decodeTraceText } from '../trace-storage-codec.js';
+import { isTraceStorageConversionRunning } from '../trace-storage-converter.js';
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -299,6 +300,9 @@ export class PromptTraceStore {
   async reclaimChunksForTraces(traceIds: readonly string[]): Promise<void> {
     if (traceIds.length === 0) return;
     try {
+      // Historical fork refs may be incomplete until the converter repairs
+      // EVERY skeleton. The converter also reclaims refs for deleted traces.
+      if (isTraceStorageConversionRunning(this.db)) return;
       this.db.transaction((tx) => {
         // Candidate chunks: what the dying traces' refs point at — collected
         // BEFORE their refs are deleted, deduplicated across traces.
@@ -340,6 +344,7 @@ export class PromptTraceStore {
    */
   async sweepOrphanedChunks(): Promise<void> {
     try {
+      if (isTraceStorageConversionRunning(this.db)) return;
       this.db.transaction((tx) => {
         tx.run(sql`DELETE FROM prompt_trace_chunk_refs WHERE trace_id NOT IN (SELECT id FROM prompt_traces)`);
         tx.run(sql`DELETE FROM prompt_trace_chunks WHERE id NOT IN (SELECT chunk_id FROM prompt_trace_chunk_refs)`);

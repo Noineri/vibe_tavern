@@ -1,6 +1,7 @@
 export * from './db-schema.js';
 export { createDb, closeAllDbs, resolveMigrationsFolder, type AppDb, type DbTransaction } from './db-connection.js';
 export { enableTestDbTemplate, type CreateDbOptions } from './db-template.js';
+export { runTraceStorageConversion, TRACE_STORAGE_CONVERSION_MARKER, type TraceStorageConversionOptions, type TraceStorageConversionStats } from './trace-storage-converter.js';
 export {
   createStoreContainer,
   IncrementingStoreIdGenerator,
