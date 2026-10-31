@@ -1457,6 +1457,8 @@
 	"queue_timeline_variant": "Variant {n}",
 	"queue_timeline_error": "Error",
 	"queue_timeline_writing": "Writing…",
+	"chat_writing_badge": "writing…",
+	"chat_ready_badge": "ready",
 	"queue_timeline_waiting": "Waiting",
 	"queue_timeline_one_more": "One more:",
 	"queue_timeline_one_more_mobile": "One more",

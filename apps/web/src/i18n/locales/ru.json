@@ -1477,6 +1477,8 @@
 	"queue_timeline_variant": "Вариант {n}",
 	"queue_timeline_error": "Ошибка",
 	"queue_timeline_writing": "Пишет…",
+	"chat_writing_badge": "пишет…",
+	"chat_ready_badge": "готово",
 	"queue_timeline_waiting": "Ждёт",
 	"queue_timeline_one_more": "Ещё один:",
 	"queue_timeline_one_more_mobile": "Ещё один",

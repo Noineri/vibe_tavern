@@ -4,9 +4,14 @@ import { apiFetch, getGatewayBaseUrl } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 import { streamReplayEndpoint, type StreamOpts } from "./stream.js";
 
-export async function isAgentThreadRunning(threadId: string, signal?: AbortSignal): Promise<boolean> {
+export async function listActiveAgentRuns(signal?: AbortSignal): Promise<unknown[]> {
   const active: unknown = await unwrapRpc(await apiFetch(`${getGatewayBaseUrl()}/api/agent-runs`, { signal }));
   if (!Array.isArray(active)) throw new Error("Invalid agent run list");
+  return active;
+}
+
+export async function isAgentThreadRunning(threadId: string, signal?: AbortSignal): Promise<boolean> {
+  const active = await listActiveAgentRuns(signal);
   return active.some((run: unknown) => typeof run === "object" && run !== null && "threadId" in run && run.threadId === threadId);
 }
 

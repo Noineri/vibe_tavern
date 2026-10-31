@@ -11,6 +11,9 @@ const { useChatStore } = await import("../stores/chat-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
 const { useNavigationStore } = await import("../stores/navigation-store.js");
 const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
+const { useChatRunActivityStore, CHAT_READY_STORAGE_KEY, readReadyChats } = await import("../stores/chat-run-activity-store.js");
+const originalActivity = useChatRunActivityStore.getState();
+const originalReadyStorage = localStorage.getItem(CHAT_READY_STORAGE_KEY);
 const { snapshotCoauthorEditorSnapshotStateForTests, restoreCoauthorEditorSnapshotStateForTests } = await import("../lib/coauthor-editor-snapshot.js");
 const originalEditor = snapshotCoauthorEditorSnapshotStateForTests();
 const originalChat = useChatStore.getState(), originalSnapshot = useSnapshotStore.getState(), originalNavigation = useNavigationStore.getState(), originalTurn = useCoauthorTurnStore.getState();
@@ -55,6 +58,9 @@ function restoreToken() {
   else localStorage.setItem(tokenKey, originalToken);
 }
 function restoreStores() {
+  if (originalReadyStorage === null) localStorage.removeItem(CHAT_READY_STORAGE_KEY);
+  else localStorage.setItem(CHAT_READY_STORAGE_KEY, originalReadyStorage);
+  useChatRunActivityStore.setState(originalActivity, true);
   globalThis.fetch = originalFetch;
   restoreCoauthorEditorSnapshotStateForTests(originalEditor);
   useChatStore.setState(originalChat, true); useSnapshotStore.setState(originalSnapshot, true);
@@ -221,6 +227,47 @@ test("mismatched Co-Author owners never create notifications", () => {
 const replyEvent = (state = "finished", chatId = "rp-chat") => ({ threadId: `chat:${chatId}`, kind: "rp", title: "Reply header character", state,
   owner: { kind: "chat", chatId, mode: "rp" } });
 
+test("native chat lifecycle tracks parallel background writing, but not asking or unrelated agents", () => {
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    const source = Source.instances[0]!;
+    source.emit(replyEvent("started"));
+    source.emit(coauthorEvent("started"));
+    source.emit(notification("script", "started"));
+    source.emit({ ...replyEvent("started", "wrong"), threadId: "chat:mismatch" });
+    expect(useChatRunActivityStore.getState().running).toEqual({ "rp-chat": true, "coauthor-chat": true });
+    source.emit(replyEvent("asking"));
+    expect(useChatRunActivityStore.getState().running).toEqual({ "coauthor-chat": true });
+    source.emit(coauthorEvent("stopped"));
+    expect(useChatRunActivityStore.getState().running).toEqual({});
+    source.emit(replyEvent("started"));
+    source.emit(replyEvent("failed"));
+    expect(useChatRunActivityStore.getState().running).toEqual({});
+  } finally { h.unmount(); }
+});
+
+test("ready discovers running chats after reload and reconnect without overwriting newer lifecycle events", async () => {
+  const releases: Array<(response: Response) => void> = [];
+  globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { releases.push(resolve); }), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  const source = Source.instances[0]!;
+  const ready = () => source.listeners.get("ready")!(new MessageEvent("ready", { data: "{}" }));
+  try {
+    ready();
+    await act(async () => { releases[0]!(Response.json([replyEvent("started"), coauthorEvent("started"), notification("script", "started")])); });
+    expect(useChatRunActivityStore.getState().running).toEqual({ "rp-chat": true, "coauthor-chat": true });
+    ready();
+    source.emit(replyEvent("failed"));
+    source.emit(replyEvent("started", "new-chat"));
+    await act(async () => { releases[1]!(Response.json([replyEvent("started")])); });
+    expect(useChatRunActivityStore.getState().running).toEqual({ "new-chat": true });
+    ready();
+    h.unmount();
+    await act(async () => { releases[2]!(Response.json([replyEvent("started")])); });
+    expect(useChatRunActivityStore.getState().running).toEqual({});
+  } finally { h.unmount(); }
+});
+
 test("a background RP reply uses the header name and Open navigates to its exact roleplay chat", async () => {
   const requests: string[] = [];
   globalThis.fetch = (async (input) => {
@@ -232,11 +279,13 @@ test("a background RP reply uses the header name and Open navigates to its exact
   try {
     Source.instances[0]!.emit(replyEvent());
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "rp-chat": true });
     expect(JSON.parse(String(success.mock.calls[0]![0]))).toEqual({ key: "chat_new_reply_toast", values: { name: "Reply header character" }, language: "en" });
     const action = success.mock.calls[0]![1]!.action;
     if (typeof action !== "object" || !action || !("onClick" in action)) throw new Error("No Open action");
     await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
     expect(String(useChatStore.getState().activeChatId)).toBe("rp-chat");
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
     expect(useChatStore.getState().selectedCharacterId).toBe("rp-character");
     expect(useNavigationStore.getState().mode).toBe("play");
     expect(requests.some((url) => url.includes("/experience-copilot/"))).toBe(false);
@@ -251,12 +300,16 @@ test("a queue of three toasts only after the final job, not per variant", async 
     const source = Source.instances[0]!;
     for (let index = 0; index < 3; index++) {
       await act(async () => { source.emit(replyEvent("started")); source.emit(replyEvent()); });
-      if (index < 2) expect(success).not.toHaveBeenCalled();
+      if (index < 2) {
+        expect(success).not.toHaveBeenCalled();
+        expect(useChatRunActivityStore.getState().ready).toEqual({});
+      }
       else await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
       pending -= 1;
     }
     await act(async () => { source.emit(replyEvent()); });
     expect(success).toHaveBeenCalledTimes(1); // Duplicate terminal delivery without another start.
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "rp-chat": true });
   } finally { h.unmount(); }
 });
 
@@ -283,6 +336,7 @@ test("visible RP, errors, stops, asking and owner/key mismatches stay quiet", as
     Source.instances[0]!.emit({ ...replyEvent(), threadId: "chat:wrong" });
     Source.instances[0]!.emit({ ...replyEvent(), owner: { kind: "chat", chatId: "rp-chat", mode: "coauthor" } });
     expect(requests).toEqual([]);
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
     expect(success).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled();
   } finally { h.unmount(); }
 });
@@ -315,5 +369,92 @@ test("background errors and stops stay quiet and invalidate older in-flight comp
     }
     await act(async () => { for (const release of releases) release(Response.json([])); });
     expect(success).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled(); expect(info).not.toHaveBeenCalled();
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
   } finally { h.unmount(); }
+});
+
+test("ready survives a remount/reload, but only actually opening that chat acknowledges it", () => {
+  useChatRunActivityStore.getState().markReady("rp-chat");
+  expect(readReadyChats()).toEqual({ "rp-chat": true });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    useChatStore.setState({ selectedCharacterId: "rp-character" });
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "rp-chat": true });
+    useNavigationStore.getState().setMode("build");
+    useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
+    useSnapshotStore.setState({ activeChat: { id: "rp-chat", mode: "rp" } as typeof originalSnapshot.activeChat });
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "rp-chat": true });
+    useNavigationStore.getState().setMode("play");
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+    expect(readReadyChats()).toEqual({});
+  } finally { h.unmount(); }
+});
+
+test("opening and leaving a chat during a slow completion check cannot resurrect ready or its toast", async () => {
+  let release!: (response: Response) => void;
+  globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { release = resolve; }), { preconnect: originalFetch.preconnect });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    Source.instances[0]!.emit(replyEvent());
+    useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
+    useSnapshotStore.setState({ activeChat: { id: "rp-chat", mode: "rp" } as typeof originalSnapshot.activeChat });
+    useChatStore.setState({ activeChatId: brandId<ChatId>("another-chat") });
+    await act(async () => { release(Response.json([])); });
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+    expect(success).not.toHaveBeenCalled();
+  } finally { h.unmount(); }
+});
+
+test("Co-Author ready clears only on opening, ignores duplicate finishes, and failures never create it", () => {
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    const source = Source.instances[0]!;
+    source.emit(coauthorEvent("started"));
+    source.emit(coauthorEvent());
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "coauthor-chat": true });
+    useChatStore.setState({ activeChatId: brandId<ChatId>("coauthor-chat") });
+    useSnapshotStore.setState({ activeChat: { id: "coauthor-chat", mode: "coauthor" } as typeof originalSnapshot.activeChat });
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+    useChatStore.setState({ activeChatId: null });
+    source.emit(coauthorEvent());
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+    source.emit(coauthorEvent("started"));
+    source.emit(coauthorEvent());
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "coauthor-chat": true });
+    source.emit(coauthorEvent("started"));
+    source.emit(coauthorEvent("failed"));
+    expect(useChatRunActivityStore.getState().ready).toEqual({ "coauthor-chat": true }); // Earlier unread reply remains unread.
+    useChatRunActivityStore.getState().markRead("coauthor-chat");
+    source.emit(coauthorEvent("started"));
+    source.emit(coauthorEvent("failed"));
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+  } finally { h.unmount(); }
+});
+
+test("a reply finished on screen stays read after navigating away and a duplicate terminal delivery", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+    requests.push(String(input)); return Response.json([]);
+  }, { preconnect: originalFetch.preconnect });
+  useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
+  useSnapshotStore.setState({ activeChat: { id: "rp-chat", mode: "rp" } as typeof originalSnapshot.activeChat });
+  const h = renderHook(() => useAgentRunEvents());
+  try {
+    const source = Source.instances[0]!;
+    source.emit(replyEvent("started")); source.emit(replyEvent());
+    useChatStore.setState({ activeChatId: null });
+    await act(async () => source.emit(replyEvent()));
+    expect(requests).toEqual([]);
+    expect(useChatRunActivityStore.getState().ready).toEqual({});
+    expect(success).not.toHaveBeenCalled();
+  } finally { h.unmount(); }
+});
+
+test("invalid persisted ready data is ignored rather than breaking the sidebar", () => {
+  for (const raw of ["broken", "null", "[]"]) {
+    localStorage.setItem(CHAT_READY_STORAGE_KEY, raw);
+    expect(readReadyChats()).toEqual({});
+  }
+  localStorage.setItem(CHAT_READY_STORAGE_KEY, JSON.stringify({ valid: true, ignored: "true", empty: false }));
+  expect(readReadyChats()).toEqual({ valid: true });
 });

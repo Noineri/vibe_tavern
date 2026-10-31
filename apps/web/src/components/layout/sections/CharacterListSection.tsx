@@ -26,6 +26,7 @@ import type { CharacterControllerActions } from "../../../hooks/use-character-co
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
+import { CharacterActivityBadge } from "./character-activity-badge.js";
 
 export function CharacterListSection({
   t,
@@ -110,10 +111,13 @@ export function CharacterListSection({
               style={{ zIndex: menuOpen ? 100 : 1 }}
               onClick={() => onSelectCharacter(tab)}
             >
-              <span className={cn(
-                'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
-                isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
-              )}>{tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}</span>
+              <span className="relative h-8 w-8 shrink-0">
+                <span className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
+                  isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
+                )}>{tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}</span>
+                <CharacterActivityBadge characterId={tab.id} />
+              </span>
               <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                 {tab.name}
               </span>

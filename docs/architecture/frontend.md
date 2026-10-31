@@ -377,6 +377,11 @@ Typed RPC lives in `api/chat-generation-queue-api.ts`, with an ordered per-chat 
 - Queue progress is separate from the streaming target: BR-4c replay writes `streamingMessageId` through `startGeneration`, while the mirror supplies status to the unchanged QueueManager pill, desktop popover and mobile sheet.
 - The attachment owner wakes on a new running-job identity and after the prior local reader settles, so a next job starting before the previous reveal ends is not missed; it never re-POSTs generation.
 - `use-agent-run-events.ts` shows one RP reply toast after the final successful job only when that chat is not on screen; canonical queue reads plus lifecycle revisions prevent late earlier-job checks from duplicating it.
+- The same lifecycle channel feeds `chat-run-activity-store.ts` for the navigation writing badges (native RP/Co-Author only, not side agents); each `ready` reconciles `/api/agent-runs`, overlaying newer events so reload/reconnect and slow discovery cannot resurrect a completed run.
+- `CharacterActivityBadge` overlays only character avatars (bottom-right, expanded/collapsed desktop and mobile navigation); chat rows deliberately have no indicators, while names and action buttons retain their geometry.
+- The avatar circle uses theme `s3` with an animated accent pencil while writing, or solid `success` with a white check when ready; a surface-colored outer separator keeps it distinct from the image, status text lives in a shared tooltip/accessible label, and reduced motion disables the pencil animation.
+- Successful background completion changes the overlay to a static check and `ready` until that exact chat is opened in play mode; RP waits for the canonical queue to drain, while errors/stops/asking never create a ready marker.
+- Ready markers are browser-local UI state persisted across reloads, not server read receipts; writing takes priority without acknowledging older unread results, and opening a chat invalidates even in-flight completion checks.
 
 ---
 

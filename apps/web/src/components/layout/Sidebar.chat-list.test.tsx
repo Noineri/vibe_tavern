@@ -17,7 +17,7 @@
  * chat list and a selected character but WITHOUT an active chat. The Radix
  * flyout popover mounts under happy-dom via a click inside an async act.
  */
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
 import type { AppCharacterEntry, ChatListItem } from "../../api/types.js";
@@ -76,6 +76,8 @@ const { Sidebar } = await import("./Sidebar.js");
 const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
 const { useChatStore, useNavigationStore } = await import("../../stores/index.js");
 const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
+const { useChatRunActivityStore } = await import("../../stores/chat-run-activity-store.js");
+const originalActivity = useChatRunActivityStore.getState();
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -154,8 +156,10 @@ function seedNoActiveChat(opts: { collapsed: boolean; selectedCharacterId: strin
 }
 
 beforeEach(() => {
+	useChatRunActivityStore.setState(originalActivity, true);
 	CHAT_STUB.handleSwitchChat.mockClear();
 });
+afterAll(() => useChatRunActivityStore.setState(originalActivity, true));
 
 // ── Harness ──────────────────────────────────────────────────────────────
 
@@ -171,6 +175,27 @@ function chatSectionTitles(view: View): string[] {
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe("Sidebar — chats section without an active chat", () => {
+	it("marks a character's non-first generating chat without intercepting the character actions", () => {
+		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
+		const view = render(<Sidebar />);
+		act(() => {
+			useChatRunActivityStore.getState().setRunning("chat-a2", true);
+			useChatRunActivityStore.getState().setRunning("chat-b1", true);
+		});
+		const characterRows = view.getByText("Bram").parentElement!;
+		const characterBadge = within(characterRows).getByRole("status");
+		expect(characterBadge.getAttribute("aria-label")).toBe("chat_writing_badge");
+		expect(characterBadge.parentElement?.classList.contains("h-8")).toBe(true);
+		expect(view.getAllByRole("status")).toHaveLength(2); // Avatars only: Aria and Bram, never Winter Market.
+		const chatsSection = [...view.container.querySelectorAll("section")].find((section) => section.textContent?.includes("sidebar_chats"))!;
+		expect(within(chatsSection).queryByRole("status")).toBeNull();
+		fireEvent.click(within(characterRows).getByRole("button", { name: "sidebar_character_actions" }));
+		expect(useChatStore.getState().selectedCharacterId).toBe(ARIA);
+		expect(CHAT_STUB.handleSwitchChat).not.toHaveBeenCalled();
+		act(() => useChatRunActivityStore.getState().setRunning("chat-a2", false));
+		expect(view.getAllByRole("status")).toEqual([characterBadge]);
+	});
+
 	it("lists the selected character's RP chats (not another character's, not its Co-Author chat)", () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
 		const view = render(<Sidebar />);
@@ -207,6 +232,17 @@ describe("Sidebar — character list recency without an active chat", () => {
 });
 
 describe("Sidebar — collapsed flyout without an active chat", () => {
+	it("keeps the status on the collapsed avatar without adding a chat-row badge", async () => {
+		seedNoActiveChat({ collapsed: true, selectedCharacterId: null });
+		useChatRunActivityStore.getState().setRunning("chat-a2", true);
+		const view = render(<Sidebar />);
+		const badge = view.getByRole("status", { name: "chat_writing_badge" });
+		expect(badge.parentElement?.classList.contains("relative")).toBe(true);
+		await act(async () => fireEvent.click(badge));
+		expect(within(document.body).getByText("Winter Market")).toBeTruthy();
+		expect(within(document.body).getAllByRole("status")).toEqual([badge]);
+	});
+
 	it("opening a character's flyout lists that character's RP chats", async () => {
 		seedNoActiveChat({ collapsed: true, selectedCharacterId: null });
 		const view = render(<Sidebar />);

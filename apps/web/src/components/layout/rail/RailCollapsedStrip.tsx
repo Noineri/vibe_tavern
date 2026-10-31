@@ -29,6 +29,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { initials } from "../app-shell-helpers.js";
+import { CharacterActivityBadge } from "../sections/character-activity-badge.js";
 
 export interface RailCollapsedCharacter {
   id: string;
@@ -85,17 +86,20 @@ export function RailCollapsedStrip({
         <div
           key={c.id}
           className={cn(
-            "flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
+            "relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
             selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
           )}
           onClick={() => onCharacterClick(c.id)}
           title={c.name}
         >
-          {avatarSrc(c) ? (
-            <img className="h-full w-full object-cover" src={avatarSrc(c)!} alt={c.name} />
-          ) : (
-            <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-[var(--ui-fs)] leading-5", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
-          )}
+          <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-[inherit]">
+            {avatarSrc(c) ? (
+              <img className="h-full w-full object-cover" src={avatarSrc(c)!} alt={c.name} />
+            ) : (
+              <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-[var(--ui-fs)] leading-5", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
+            )}
+          </span>
+          <CharacterActivityBadge characterId={c.id} />
         </div>
       ))}
     </>

@@ -11,6 +11,8 @@ import { getGenerationQueue } from "../api/chat-generation-queue-api.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
+import { listActiveAgentRuns } from "../api/agent-run-api.js";
+import { nativeRunChatId, useChatRunActivityStore } from "../stores/chat-run-activity-store.js";
 
 function navigableOwner(value: unknown): AgentThreadOwner | null {
   if (!isRecord(value)) return null;
@@ -31,7 +33,35 @@ export function useAgentRunEvents(): void {
   tRef.current = t;
   useEffect(() => {
     let mounted = true;
+    let discovery: AbortController | null = null;
+    let changes = new Map<string, boolean>();
+    // The server subscribes before ready. Reconcile on EVERY ready (including
+    // reconnect), overlaying events received while the list was in flight.
+    const onReady = async () => {
+      discovery?.abort();
+      const controller = new AbortController();
+      discovery = controller;
+      const duringRead = new Map<string, boolean>();
+      changes = duringRead;
+      try {
+        const runs = await listActiveAgentRuns(controller.signal);
+        if (!mounted || controller.signal.aborted) return;
+        const running: Record<string, true> = {};
+        for (const run of runs) {
+          const chatId = nativeRunChatId(run);
+          if (chatId) running[chatId] = true;
+        }
+        for (const [chatId, active] of duringRead) {
+          if (active) running[chatId] = true;
+          else delete running[chatId];
+        }
+        useChatRunActivityStore.getState().replaceRunning(running);
+      } catch (error) {
+        if (mounted && !controller.signal.aborted) console.warn("[chat-run] active run discovery failed", error);
+      }
+    };
     const replies = new Map<string, { revision: number; notified: boolean }>();
+    const finishedCoauthorChats = new Set<string>();
     const visibleChat = (id: string) => useNavigationStore.getState().mode === "play"
       && useChatStore.getState().activeChatId === id && useSnapshotStore.getState().activeChat?.id === id;
     const notifyReply = async (chatId: string, name: string, revision: number) => {
@@ -41,6 +71,7 @@ export function useAgentRunEvents(): void {
         if (!mounted || !current || current.revision !== revision || current.notified || visibleChat(chatId)
           || jobs.some((job) => job.status === "pending" || job.status === "running")) return;
         current.notified = true;
+        useChatRunActivityStore.getState().markReady(chatId);
         toast.success(tRef.current("chat_new_reply_toast", { name }), {
           action: { label: tRef.current("agent_run_open"), onClick: async () => {
             try { await openRoleplayChat(chatId); }
@@ -55,6 +86,21 @@ export function useAgentRunEvents(): void {
       let event: unknown;
       try { event = JSON.parse(message.data); } catch { return; }
       if (!isRecord(event) || typeof event.threadId !== "string" || event.threadId.length === 0 || typeof event.kind !== "string" || typeof event.title !== "string") return;
+      const nativeChatId = nativeRunChatId(event);
+      if (nativeChatId && ["started", "finished", "failed", "stopped", "asking"].includes(String(event.state))) {
+        const running = event.state === "started";
+        changes.set(nativeChatId, running);
+        useChatRunActivityStore.getState().setRunning(nativeChatId, running);
+        if (event.kind === "coauthor") {
+          if (running) finishedCoauthorChats.delete(nativeChatId);
+          else if (event.state === "finished" && !finishedCoauthorChats.has(nativeChatId)) {
+            finishedCoauthorChats.add(nativeChatId);
+            if (!visibleChat(nativeChatId) && !isAgentThreadVisible("coauthor", event.threadId)) {
+              useChatRunActivityStore.getState().markReady(nativeChatId);
+            }
+          }
+        }
+      }
       if (event.kind === "rp") {
         const owner = event.owner;
         if (!isRecord(owner) || owner.kind !== "chat" || owner.mode !== "rp" || typeof owner.chatId !== "string"
@@ -65,7 +111,10 @@ export function useAgentRunEvents(): void {
         replies.set(owner.chatId, state);
         // RP headers use the chat character's name (no RP authorOverride); the
         // registry title comes from that same character row, not chat.title.
-        if (event.state === "finished" && !visibleChat(owner.chatId) && !state.notified) void notifyReply(owner.chatId, event.title, state.revision);
+        if (event.state === "finished") {
+          if (visibleChat(owner.chatId)) state.notified = true;
+          else if (!state.notified) void notifyReply(owner.chatId, event.title, state.revision);
+        }
         return;
       }
       const key = event.state === "finished" ? "agent_run_finished_toast"
@@ -99,10 +148,34 @@ export function useAgentRunEvents(): void {
         },
       });
     };
+    // A character selection is not a read. Acknowledge only after the actual
+    // chat snapshot and navigation agree that its conversation is on screen.
+    const acknowledgeVisible = () => {
+      const chatId = useChatStore.getState().activeChatId;
+      if (!chatId || !visibleChat(chatId)) return;
+      useChatRunActivityStore.getState().markRead(chatId);
+      const pending = replies.get(chatId);
+      if (pending) pending.notified = true; // Invalidate a slow completion check even if the user leaves again.
+    };
+    const offChat = useChatStore.subscribe((state, previous) => {
+      if (state.activeChatId !== previous.activeChatId) acknowledgeVisible();
+    });
+    const offSnapshot = useSnapshotStore.subscribe((state, previous) => {
+      if (state.activeChat?.id !== previous.activeChat?.id) acknowledgeVisible();
+    });
+    const offNavigation = useNavigationStore.subscribe((state, previous) => {
+      if (state.mode !== previous.mode) acknowledgeVisible();
+    });
+    acknowledgeVisible();
     source.addEventListener("agent.run", onRun as EventListener);
+    source.addEventListener("ready", onReady);
     return () => {
       mounted = false;
+      offChat(); offSnapshot(); offNavigation();
+      discovery?.abort();
+      useChatRunActivityStore.getState().replaceRunning({});
       source.removeEventListener("agent.run", onRun as EventListener);
+      source.removeEventListener("ready", onReady);
       source.close();
     };
   }, []);

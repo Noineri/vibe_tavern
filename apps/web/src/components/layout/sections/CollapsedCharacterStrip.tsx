@@ -16,6 +16,7 @@ import { tabAvatarSrc } from "../sidebar-utils.js";
 import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { CharacterTab } from "../app-shell-types.js";
+import { CharacterActivityBadge } from "./character-activity-badge.js";
 
 export function CollapsedCharacterStrip({
   characterTabs,
@@ -66,6 +67,7 @@ export function CollapsedCharacterStrip({
               )}>
                 {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
               </span>
+              <CharacterActivityBadge characterId={tab.id} />
             </div>
           </CustomTooltip>
         );
