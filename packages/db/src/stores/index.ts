@@ -255,3 +255,6 @@ export type {
   CreateAiInstructionTemplateData,
   UpdateAiInstructionTemplateData,
 } from './ai-instruction-template-store.js';
+
+export { TokenCountStore, tokenCountKey } from './token-count-store.js';
+export type { TokenCountKey, TokenCountRow, TokenCountPut } from './token-count-store.js';

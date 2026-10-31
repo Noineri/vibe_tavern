@@ -2449,3 +2449,24 @@ export const imagePromptProfiles = sqliteTable('image_prompt_profiles', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// ─── tokenCounts ──────────────────────────────────────────────────────────────
+// TOKEN_COUNT_ONCE_PLAN TC-1: ONE persisted token count per (exact text,
+// tokenizer) so the server never encodes the same text twice for the same
+// tokenizer, across restarts. `textHash` is the sha256 hex of the EXACT
+// text and is OPAQUE to this table — the single derivation lives in the
+// tokenizer service (TC-2); no prefix/length/fuzzy keys, so a cached count
+// is never returned for a different string. `tokenizer` is the id of the
+// tokenizer the ladder would actually use ("tiktoken:cl100k_base",
+// "web:llama3.json", …), so a later tokenizer switch invalidates nothing by
+// hand. Writes are INSERT OR IGNORE by design: a count is deterministic per
+// (text, tokenizer), so a second write can never be a correction — first
+// writer wins, a repeated put is a no-op.
+export const tokenCounts = sqliteTable('token_counts', {
+  textHash: text('text_hash').notNull(),
+  tokenizer: text('tokenizer').notNull(),
+  tokenCount: integer('token_count').notNull(),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.textHash, table.tokenizer] }),
+}));
