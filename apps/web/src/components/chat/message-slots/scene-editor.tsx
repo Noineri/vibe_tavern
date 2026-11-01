@@ -20,6 +20,7 @@ import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domai
 import { Toggle } from "../../shared/Toggle.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { Ic } from "../../shared/icons.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import type { TFunc } from "../../../i18n/context.js";
 
@@ -153,13 +154,23 @@ function ArrayEditor({ label, items, value, onChange, t }: {
       </div>
       {arr.length === 0 && <p className="text-[calc(var(--ui-fs)-3px)] text-t4">[]</p>}
       <div className="flex flex-col gap-1.5">
-        {arr.map((item, i) => (
+        {arr.map((item, i) => items.$type === "object" ? (
+          <fieldset key={i} className="flex min-w-0 flex-col rounded-lg border border-border p-2.5">
+            <legend className="max-w-full px-1">
+              <span className="inline-flex max-w-full items-start gap-1.5">
+                <span className={lblCls + " !mb-0 min-w-0 break-words"}>{label} {i + 1}</span>
+                <button type="button" onClick={() => removeAt(i)} className="shrink-0 rounded px-1.5 py-1 text-t4 transition-colors hover:bg-s2 hover:text-danger" aria-label={t("scn_edit_remove_item")}>
+                  <Ic.del />
+                </button>
+              </span>
+            </legend>
+            <FieldsEditor schema={items.properties} value={(item && typeof item === "object" ? item : {}) as Record<string, unknown>} onChange={(v) => updateAt(i, v)} t={t} />
+          </fieldset>
+        ) : (
           <div key={i} className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">
               {isLeaf ? (
                 <LeafInput node={items as Extract<SceneTrackerSchemaNode, { $type: "string" | "number" | "boolean" }>} value={item} onChange={(v) => updateAt(i, v)} />
-              ) : items.$type === "object" ? (
-                <FieldsEditor schema={(items as { properties: SceneTrackerDsl }).properties} value={(item && typeof item === "object" ? item : {}) as Record<string, unknown>} onChange={(v) => updateAt(i, v)} t={t} />
               ) : (
                 <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("scn_edit_nested_array_unsupported")}</span>
               )}

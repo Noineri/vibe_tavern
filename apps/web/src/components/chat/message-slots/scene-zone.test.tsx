@@ -418,6 +418,58 @@ describe("Scene zone component (SCN-12)", () => {
     expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, rosterRecord().sceneState);
   });
 
+  it("object array items are numbered groups with header-local removal and preserve neighboring values", () => {
+    seed([msg("m1", { variantId: "v1", rec: rosterRecord() })]);
+    const view = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(view.getByLabelText("scn_zone_expand"));
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    const panel = view.getByTestId("modal");
+    const groups = panel.querySelectorAll("fieldset");
+    expect(groups.length).toBe(12);
+    for (const [i, group] of Array.from(groups).entries()) {
+      expect(group.classList.contains("border-border")).toBe(true);
+      expect(group.querySelector("legend")?.textContent).toBe(`applicantRoster ${i + 1}`);
+      expect(group.querySelectorAll("textarea").length).toBe(4);
+      const remove = group.querySelector('legend button[aria-label="scn_edit_remove_item"]')!;
+      expect(remove).not.toBeNull();
+      expect(remove.querySelector("svg")).not.toBeNull();
+      expect(remove.textContent).not.toContain("✕");
+    }
+    fireEvent.change(view.getByDisplayValue("applicant 2"), { target: { value: "kept edit" } });
+    fireEvent.click(view.getAllByRole("button", { name: "scn_edit_remove_item" })[0]);
+    expect(view.queryByDisplayValue("applicant 1")).toBeNull();
+    expect(view.getByDisplayValue("kept edit")).toBeTruthy();
+    expect(panel.querySelectorAll("fieldset").length).toBe(11);
+    expect(panel.querySelector("legend")?.textContent).toBe("applicantRoster 1");
+    fireEvent.click(view.getByRole("button", { name: "+ scn_edit_add_item" }));
+    expect(panel.querySelectorAll("fieldset").length).toBe(12);
+    const expected = rosterRecord().sceneState.applicantRoster as Record<string, unknown>[];
+    expected.shift();
+    expected[0].applicant = "kept edit";
+    expected.push({});
+    fireEvent.click(view.getByRole("button", { name: "scn_edit_save" }));
+    expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, { applicantRoster: expected });
+  });
+
+  it("leaf arrays keep compact rows and add, edit, remove, and save without object cards", () => {
+    const rec = { ...record("v1", { tags: ["first", "second"] }), schema: { tags: { $type: "array", items: { $type: "string" } } } satisfies SceneTrackerDsl };
+    seed([msg("m1", { variantId: "v1", rec })]);
+    const view = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(view.getByLabelText("scn_zone_expand"));
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    const panel = view.getByTestId("modal");
+    expect(panel.querySelector("fieldset")).toBeNull();
+    const remove = view.getAllByRole("button", { name: "scn_edit_remove_item" })[0];
+    expect(remove.parentElement?.classList.contains("items-center")).toBe(true);
+    fireEvent.click(remove);
+    fireEvent.change(view.getByDisplayValue("second"), { target: { value: "edited" } });
+    fireEvent.click(view.getByRole("button", { name: "+ scn_edit_add_item" }));
+    expect(panel.querySelectorAll("textarea").length).toBe(2);
+    expect(panel.querySelector("fieldset")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "scn_edit_save" }));
+    expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, { tags: ["edited", ""] });
+  });
+
   it("does NOT hydrate status for an older message", () => {
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "calm" }) }), msg("m2", { variantId: "v2" })]);
     render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
