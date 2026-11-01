@@ -7,7 +7,9 @@
 // changed, it just lives in its own file now.
 
 import { Database } from 'bun:sqlite';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 /** Type-safe `.message` extraction from a caught value. Returns "" for non-Error
  *  so downstream `.includes()` / `.toLowerCase()` checks behave as before
@@ -390,4 +392,71 @@ export async function healPartialMigrations(sqlite: Database, migrationsFolder: 
   if (healed > 0) {
     console.log(`[db] Heal: repaired ${healed} partial migration(s).`);
   }
+}
+
+// ── Rename-safe CHECK normalization (macOS smoke, CI 2026-11-01) ─────────────
+
+/** drizzle-kit emits table-rebuild CHECK constraints with the temporary table
+ *  name qualified in: CHECK(("__new_provider_profiles"."proxy_mode" = …)).
+ *  SQLite ≥ 3.46 rewrites those references on ALTER TABLE RENAME; older
+ *  builds (bun's macOS/arm64 build links one) re-parse the schema at the
+ *  rename and fail: "error in table X after rename: no such column:
+ *  __new_X.col". Unqualified column references resolve against the table
+ *  itself under EITHER name, so stripping the qualification is safe on every
+ *  SQLite ≥ 3.25 and changes no semantics (the pattern occurs only inside
+ *  CHECK constraints in drizzle-kit output — verified over drizzle/ 0000-0135:
+ *  exactly 0030 and 0131, three occurrences). */
+export function normalizeDunderCheckReferences(sql: string): string {
+  // Match the full qualified reference INCLUDING the column's opening quote
+  // ("__new_x"."col") and emit a single opening quote — a bare
+  // '"__new_x".' → '"' replacement would double the column's own quote.
+  return sql.replace(/"__new_[A-Za-z0-9_]+"\."/g, '"');
+}
+
+/** Stage a migrate()-only copy of the migrations folder with rename-safe CHECK
+ *  constraints (normalizeDunderCheckReferences applied to every .sql; meta/
+ *  copied verbatim — journal `when` values drive drizzle's resume watermark, so
+ *  stamps written from the staged files resume identically against the
+ *  official folder — the watermark notion, not file hashes, is what every
+ *  resume/heal path in this repo reads). Committed migration files are never
+ *  edited; the temp copy lives only for this boot's migrate() call. */
+export async function stageRenameSafeMigrationsFolder(migrationsFolder: string): Promise<string> {
+  const staged = await mkdtemp(join(tmpdir(), 'vt-migrations-renamed-'));
+  const files = await readdir(migrationsFolder, { recursive: true });
+  for (const entry of files) {
+    if (typeof entry !== 'string') continue;
+    const source = resolve(migrationsFolder, entry);
+    // Recursive readdir lists directory paths too — copy files only.
+    if (!await stat(source).then((info) => info.isFile(), () => false)) continue;
+    const target = resolve(staged, entry);
+    await mkdir(resolve(target, '..'), { recursive: true });
+    if (entry.endsWith('.sql')) {
+      await Bun.write(target, normalizeDunderCheckReferences(await Bun.file(source).text()));
+    } else {
+      await Bun.write(target, await Bun.file(source).arrayBuffer());
+    }
+  }
+  return staged;
+}
+
+/** True when migrate() has work to do: any journal entry sits above the
+ *  database's high-water mark (the same watermark notion healPartialMigrations
+ *  mirrors — see its comment). A fresh database counts as pending. */
+export function hasPendingMigrations(sqlite: Database, migrationsFolder: string): Promise<boolean> {
+  return (async () => {
+    const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+    if (!await Bun.file(journalPath).exists()) return false;
+    const journal = JSON.parse(await Bun.file(journalPath).text()) as MigrationJournal;
+    const lastWhen = journal.entries.length > 0
+      ? journal.entries.reduce((latest, entry) => entry.when > latest ? entry.when : latest, 0)
+      : 0;
+    let watermark = 0;
+    try {
+      const row = sqlite.prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1').get() as { created_at: number } | undefined;
+      watermark = row ? Number(row.created_at) : 0;
+    } catch {
+      // No meta table yet — every journal entry is pending.
+    }
+    return lastWhen > watermark;
+  })();
 }

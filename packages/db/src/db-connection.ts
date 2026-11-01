@@ -9,11 +9,13 @@ import { runBootDataPasses } from './boot-data-passes.js';
 import {
   errorMessage,
   errorMessageChain,
+  hasPendingMigrations,
   healPartialMigrations,
   preBackfillPendingRebuilds,
   quoteSqlIdentifier,
   repairSkippedRebuilds,
   splitMigrationStatements,
+  stageRenameSafeMigrationsFolder,
   stampMigrationAtWhen,
   type MigrationJournal,
 } from './db-migration-repair.js';
@@ -717,6 +719,16 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
   // Workaround (upstream-recommended): flip FK OFF on the raw handle BEFORE
   // migrate() opens its BEGIN, then restore ON for normal app queries.
   sqlite.exec('PRAGMA foreign_keys = OFF');
+  // The folder migrate() runs from: when work is pending, a temp copy whose
+  // rebuild CHECK constraints carry unqualified column references —
+  // rename-safe on every SQLite ≥ 3.25 (normalizeDunderCheckReferences;
+  // bun's macOS/arm64 build links a pre-3.46 SQLite whose RENAME leaves the
+  // `"__new_x"."col"` CHECK references dangling, CI 2026-11-01). Committed
+  // migration files are never edited; the temp copy exists only for this
+  // migrate() and is removed in the finally below. Boots with nothing pending
+  // — the steady state — read the official folder with zero staging cost.
+  let migrateFolder = migrationsFolder;
+  let stagedFolder: string | null = null;
   try {
     await baselineLegacyDb(sqlite, migrationsFolder);
     await rebaseToBaseline(sqlite, migrationsFolder);
@@ -726,9 +738,14 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // (which is what produced the scary "migrate() failed … healing" boot).
     await preBackfillPendingRebuilds(sqlite, migrationsFolder);
 
+    if (await hasPendingMigrations(sqlite, migrationsFolder)) {
+      stagedFolder = await stageRenameSafeMigrationsFolder(migrationsFolder);
+      migrateFolder = stagedFolder;
+    }
+
     // Try normal migration first
     try {
-      migrate(db, { migrationsFolder });
+      migrate(db, { migrationsFolder: migrateFolder });
     } catch (migrateErr: unknown) {
       // migrate() can fail when a previous ensureAlterColumns() pre-flight
       // already added columns but didn't stamp the migration, leaving partial state.
@@ -739,7 +756,7 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
       // 2026-11-01 macOS smoke failure was undiagnosable from the wrapper text).
       console.warn(`[db] migrate() failed (${errorMessageChain(migrateErr)}), healing partial state...`);
       await healPartialMigrations(sqlite, migrationsFolder);
-      migrate(db, { migrationsFolder });
+      migrate(db, { migrationsFolder: migrateFolder });
     }
 
     // Post-migration integrity checks
@@ -757,6 +774,7 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // mid-pass just re-runs it on the next boot.
     runBootDataPasses(sqlite);
   } finally {
+    if (stagedFolder) await rm(stagedFolder, { recursive: true, force: true });
     // Restore FK enforcement for normal app queries (the OFF above was scoped
     // to the migration phase only). See the #5782 note above for why this is
     // the correct place to flip it back on.
