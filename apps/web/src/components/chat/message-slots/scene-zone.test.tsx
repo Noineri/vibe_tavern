@@ -30,6 +30,7 @@ import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansi
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import { resolveMessageSlots, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 import type { AppMessage, AppSnapshot } from "../../../api/types.js";
+import type { SceneTrackerDsl } from "@vibe-tavern/domain";
 
 const mocks = {
   generateSceneAction: mock(),
@@ -95,6 +96,33 @@ beforeAll(async () => {
 const SCHEMA = { mood: { $type: "string" as const }, tension: { $type: "number" as const, min: 0, max: 10 } };
 const SCHEMA_HASH = "h1";
 const REVISION = 1;
+
+const ROSTER_SCHEMA: SceneTrackerDsl = {
+  applicantRoster: {
+    $type: "array",
+    items: {
+      $type: "object",
+      properties: {
+        condition: { $type: "string" },
+        sector: { $type: "string" },
+        applicant: { $type: "string" },
+        badgeShield: { $type: "string" },
+      },
+    },
+  },
+};
+
+function rosterRecord(): SceneTrackerRecord {
+  return {
+    ...record("v1", {
+      applicantRoster: Array.from({ length: 12 }, (_, i) => ({
+        condition: `condition ${i + 1}`, sector: `sector ${i + 1}`,
+        applicant: `applicant ${i + 1}`, badgeShield: `shield ${i + 1}`,
+      })),
+    }),
+    schema: ROSTER_SCHEMA,
+  };
+}
 
 type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
 
@@ -324,6 +352,39 @@ describe("Scene zone component (SCN-12)", () => {
     // A positive hydration (server-owned job in flight) joins the completion-refresh
     // so the generation flag clears when the job settles (step 6).
     await waitFor(() => expect(mocks.startInsightsCompletionRefresh).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
+  });
+
+  it("desktop roster keeps Save and Cancel outside the fields scroll region", () => {
+    seed([msg("m1", { variantId: "v1", rec: rosterRecord() })]);
+    const view = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(view.getByLabelText("scn_zone_expand"));
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    const panel = view.getByTestId("modal").firstElementChild!;
+    expect(panel.classList.contains("flex-col")).toBe(true);
+    expect(panel.classList.contains("overflow-hidden")).toBe(true);
+    expect(panel.classList.contains("overflow-y-auto")).toBe(false);
+    const fields = panel.querySelector(".overflow-y-auto")!;
+    expect(fields).not.toBeNull();
+    expect(fields.classList.contains("min-h-0")).toBe(true);
+    expect(fields.querySelectorAll("textarea").length).toBe(48);
+    const save = view.getByRole("button", { name: "scn_edit_save" });
+    const cancel = view.getByRole("button", { name: "scn_edit_cancel" });
+    expect(fields.contains(save)).toBe(false);
+    expect(fields.contains(cancel)).toBe(false);
+    expect(save.parentElement?.classList.contains("shrink-0")).toBe(true);
+    expect(fields.parentElement).toBe(save.parentElement!.parentElement);
+    fireEvent.change(view.getByDisplayValue("applicant 1"), { target: { value: "edited applicant" } });
+    fireEvent.click(cancel);
+    expect(view.queryByTestId("modal")).toBeNull();
+    expect(mocks.editSceneAction).not.toHaveBeenCalled();
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    expect(view.getByDisplayValue("applicant 1")).toBeTruthy();
+    fireEvent.change(view.getByDisplayValue("applicant 1"), { target: { value: "edited applicant" } });
+    fireEvent.click(view.getByRole("button", { name: "scn_edit_save" }));
+    const expected = rosterRecord().sceneState;
+    (expected.applicantRoster as Record<string, unknown>[])[0].applicant = "edited applicant";
+    expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, expected);
+    expect(useSnapshotStore.getState().messagesById.m1.sceneTracker?.sceneState).toEqual(rosterRecord().sceneState);
   });
 
   it("does NOT hydrate status for an older message", () => {

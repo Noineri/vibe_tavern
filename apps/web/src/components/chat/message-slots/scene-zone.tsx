@@ -396,10 +396,7 @@ function SceneEditorModal({ open, isMobile, schema, state, onClose, onSave, t }:
   }
   return (
     <Modal open={open} onClose={onClose} title={t("scn_zone_edit")}>
-      {/* overflow-y-auto narrows the bundled overflow-hidden to the y-axis
-          (Tailwind emits it later, so vertical scroll survives; x stays
-          clipped) — the sanctioned axis override documented on modalPanelCls. */}
-      <div className={cn(modalPanelCls, "max-h-[80vh] w-[min(92vw,560px)] overflow-y-auto p-4")}>
+      <div className={cn(modalPanelCls, "flex max-h-[80vh] w-[min(92vw,560px)] flex-col p-4")}>
         {body}
       </div>
     </Modal>

@@ -106,10 +106,9 @@ export function getApplicationModalPortal(): HTMLElement | null {
  * Caller-owned extras (NOT universal, so NOT in here): `flex`/`flex-col`,
  * sizes/widths, padding, and the mobile-fullscreen branch — dual-mode callers
  * keep the chrome desktop-only (chromeless `glass-blur-under` fullscreen on
- * mobile). The one sanctioned axis narrowing is `overflow-y-auto` on top of
- * the bundled `overflow-hidden` (scene-zone edit panel): Tailwind v4 emits
- * `.overflow-y-auto` after `.overflow-hidden` (verified against the repo's
- * own tailwindcss 4.3.3), so the y-axis scrolls while x stays clipped.
+ * mobile). Editors with a pinned footer keep this panel non-scrolling and
+ * put `min-h-0 overflow-y-auto` on their inner fields region instead
+ * (scene-zone edit panel).
  */
 export const modalPanelCls =
   "rounded-xl border border-border2 glass-blur-under shadow-[0_24px_60px_rgba(0,0,0,.5)] overflow-hidden";

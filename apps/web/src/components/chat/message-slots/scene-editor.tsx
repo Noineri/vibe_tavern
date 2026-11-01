@@ -33,9 +33,11 @@ export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
   const [draft, setDraft] = useState<Record<string, unknown>>(() => deepClone(initial));
 
   return (
-    <div className="flex flex-col gap-3">
-      <FieldsEditor schema={schema} value={draft} onChange={setDraft} t={t} />
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <FieldsEditor schema={schema} value={draft} onChange={setDraft} t={t} />
+      </div>
+      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border pt-3">
         <button type="button" onClick={onCancel} className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1">
           {t("scn_edit_cancel")}
         </button>
