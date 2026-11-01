@@ -17,6 +17,23 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "";
 }
 
+/** The full error story: the message plus the `.cause` chain (bounded, cycle-safe).
+ *  drizzle's migrator wraps SQLite errors as
+ *  `Failed to run the query '…'` with the actual SQLite reason one cause deeper —
+ *  logging only the wrapper made the 2026-11-01 macOS smoke migration failure
+ *  undiagnosable from CI logs. */
+export function errorMessageChain(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+    const message = current.message;
+    if (message && !parts.includes(message)) parts.push(message);
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+  const chain = parts.join(" ← ");
+  return chain || String(err);
+}
+
 /** Split migration SQL without treating semicolons inside line comments or
  * quoted literals as statement boundaries. Bun's sqlite.exec rejects
  * comment-only input, so comments are removed while scanning. */
@@ -277,5 +294,100 @@ export async function repairSkippedRebuilds(sqlite: Database, migrationsFolder: 
     stampMigrationAtWhen(sqlite, hash, entry.when);
     stampedHashes.add(hash);
     console.log(`[db] Gap-repair: migration ${entry.tag} was skipped by a failed boot but ${spec.targetTable} is still in its pre-rebuild shape — re-applied transactionally (${backfilledColumns} column(s) backfilled), stamped.`);
+  }
+}
+
+/**
+ * Heal partial migration state caused by previous runs where ensureAlterColumns()
+ * added columns before migrate() ran, leaving the migration unstamped.
+ *
+ * Splits each unstamped migration's SQL into individual statements, runs each
+ * one tolerating "already exists" / "duplicate column" errors, and stamps the
+ * migration hash so the subsequent migrate() call skips it. Extracted verbatim
+ * from db-connection.ts (which sits at its arch-gate baseline).
+ */
+export async function healPartialMigrations(sqlite: Database, migrationsFolder: string): Promise<void> {
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  // Drizzle's migrator resumes from a single high-water mark, NOT by hash
+  // membership: SQLiteSyncDialect.migrate reads the ONE row with the greatest
+  // created_at and runs every journal entry whose folderMillis (`when`) exceeds
+  // it. So "applied" here means `when <= MAX(created_at)` — the same notion.
+  // Checking hash membership instead is a trap: when a migration is regenerated
+  // with identical SQL (identical hash) but a new `when` — e.g. a branch-merge
+  // reconciliation renumbering/re-dating it — existing DBs keep the stamp at the
+  // OLD created_at. The hash is "present", so a hash-based heal would skip
+  // re-stamping, yet that orphan row's created_at sits below the new
+  // folderMillis, so migrate() re-runs the migration and dies on "table already
+  // exists". Mirror drizzle's watermark exactly to stay self-consistent with it.
+  let watermark = 0;
+  try {
+    const row = sqlite.prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1').get() as { created_at: number } | undefined;
+    watermark = row ? Number(row.created_at) : 0;
+  } catch {
+    return; // No meta table yet — nothing to heal
+  }
+
+  let healed = 0;
+  for (const entry of journal.entries) {
+    if (entry.when <= watermark) continue; // at/below the watermark — migrate() will skip it too
+
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+
+    // Rebuild migrations (CREATE TABLE `__new_<x>` ... DROP ... RENAME) must
+    // NEVER run through this statement-by-statement path. It is not atomic,
+    // and a partial run leaves a stray `__new_<x>` table that, on the next
+    // heal attempt, makes the rebuild copy from / drop the wrong table and
+    // destroys row data (`lorebooks` was emptied this way in June 2026: the
+    // rebuild healed piecemeal, `lore_entries` survived only because a
+    // DROP TABLE does not fire FK cascade). Rebuilds are only safe via
+    // migrate()'s own (transactional) execution. If that failed, leave this
+    // migration unstamped and let the retry migrate() below surface a real
+    // error — a loud boot failure is strictly better than silent data loss.
+    const isRebuild = /CREATE\s+TABLE\s+[`"']?__new_/i.test(sqlContent);
+    if (isRebuild) {
+      console.warn(`[db] Heal: migration ${entry.tag} is a table-rebuild — not safely retryable piecemeal, skipping heal (letting migrate() handle it).`);
+      // STOP here — never touch any later entry. Later migrations may depend
+      // on this rebuild's shape, and stamping a later one would advance the
+      // drizzle watermark PAST this unstamped rebuild, so the retry migrate()
+      // below would silently skip it forever (CI 2026-11-01, macOS npm smoke:
+      // the heal stamped 0031..0135 around the skipped 0030/0131 rebuilds, the
+      // retry ran nothing, and startup died on a unique-column guard far away
+      // from the real defect). The rebuild is left for the retry, which either
+      // applies it in order or fails loudly — never a silently wrong schema.
+      break;
+    }
+
+    const statements = splitMigrationStatements(sqlContent);
+
+    let allOk = true;
+    for (const stmt of statements) {
+      try {
+        sqlite.exec(stmt + ';');
+      } catch (err: unknown) {
+        const msg = errorMessage(err).toLowerCase();
+        if (msg.includes('already exists') || msg.includes('duplicate column')) {
+          // Tolerate — column/table already present from a previous partial run
+        } else {
+          console.error(`[db] Heal: unexpected error in ${entry.tag}:`, errorMessage(err) || err);
+          allOk = false;
+        }
+      }
+    }
+
+    if (allOk) {
+      stampMigrationAtWhen(sqlite, hash, entry.when);
+      watermark = entry.when; // advance so later entries are evaluated against the new high-water mark
+      healed++;
+      console.log(`[db] Heal: stamped migration ${entry.tag}`);
+    }
+  }
+
+  if (healed > 0) {
+    console.log(`[db] Heal: repaired ${healed} partial migration(s).`);
   }
 }
