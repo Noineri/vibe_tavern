@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
-import type { Components, ContextProp } from "react-virtuoso";
+import type { Components, ContextProp, VirtuosoHandle } from "react-virtuoso";
 import { useHasFreshGeneration, useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
 import { useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useMessageOrder } from "../../stores/index.js";
@@ -16,6 +16,7 @@ import { cn } from "../../lib/cn.js";
 import { useStickToBottom } from "./use-stick-to-bottom.js";
 import { partitionMessageRenderWindow } from "./message-render-window.js";
 import { MessageScrollContext } from "./message-scroll-context.js";
+import { jumpToMessage } from "./message-jump.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -110,7 +111,7 @@ function StableTail({ context }: ContextProp<MessageScrollerContext>) {
   return (
     <div ref={stableTailRef} data-message-stable-tail style={{ display: "flow-root" }}>
       {stableTailIds.map((messageId, offset) => (
-        <div key={messageId} style={{ display: "flow-root" }}>
+        <div key={messageId} data-scroller-message-id={messageId} style={{ display: "flow-root" }}>
           {renderItem(stableTailStartIndex + offset, messageId)}
         </div>
       ))}
@@ -143,7 +144,7 @@ function StableTail({ context }: ContextProp<MessageScrollerContext>) {
  * after the change: item gaps 0, distance-to-bottom 0 in both engines.
  */
 const Item: NonNullable<Components<string, MessageScrollerContext>["Item"]> = ({ children, style, item, context, ...rest }) => (
-  <div {...rest} style={{ ...style, display: "flow-root" }}>
+  <div {...rest} data-scroller-message-id={item} style={{ ...style, display: "flow-root" }}>
     {children}
   </div>
 );
@@ -199,7 +200,17 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     pinned,
     scrollToBottom,
     revealStart,
+    beginExplicitNavigation,
   } = useStickToBottom(resetKey, imageGenRunInFlight);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
+  const attachScroller = useCallback((node: HTMLElement | Window | null) => {
+    scrollerRef(node);
+    setScrollerElement(node instanceof HTMLElement ? node : null);
+  }, [scrollerRef]);
+  const jumpToDisplayIndex = useCallback((index: number) => {
+    jumpToMessage({ index, displayIds, stableTailStartIndex, scroller: scrollerElement, virtualizer: virtuosoRef.current, beginExplicitNavigation });
+  }, [displayIds, stableTailStartIndex, scrollerElement, beginExplicitNavigation]);
   const context = useMemo<MessageScrollerContext>(() => ({
     renderItem,
     stableTailIds,
@@ -213,7 +224,8 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
         <Virtuoso<string, MessageScrollerContext>
-          scrollerRef={scrollerRef}
+          ref={virtuosoRef}
+          scrollerRef={attachScroller}
           data={virtualizedIds}
           context={context}
           computeItemKey={(_index, messageId) => messageId}

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { isAtBottom, type ScrollMetrics } from "../../lib/stick-to-bottom.js";
 import type { RevealMessageStart } from "./message-scroll-context.js";
 
+/** A stale completion must not align a row or change the pin. */
+export type CompleteExplicitNavigation = (target?: HTMLElement | null) => boolean;
+
 export interface StickToBottom {
   /** Attach to the overflow container. */
   scrollerRef: (node: HTMLElement | Window | null) => void;
@@ -15,6 +18,8 @@ export interface StickToBottom {
   scrollToBottom: () => void;
   /** Explicit reading navigation; temporarily wins over bottom follow. */
   revealStart: RevealMessageStart;
+  /** Detach until the virtualizer completes; optionally align a mounted row. */
+  beginExplicitNavigation: () => CompleteExplicitNavigation;
 }
 
 function readMetrics(element: HTMLElement): ScrollMetrics {
@@ -52,6 +57,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const pinnedRef = useRef(true);
   const userScrollIntentRef = useRef(false);
   const readingNavigationRef = useRef<{ target: HTMLElement } | null>(null);
+  const explicitNavigationRef = useRef<object | null>(null);
   const [pinned, setPinnedState] = useState(true);
   // Latest-flag mirror: the observers close over reconcileAfterLayoutChange,
   // so a changing suppressFollow must not churn them (the ref is read at
@@ -84,6 +90,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const revealStart = useCallback<RevealMessageStart>((target) => {
     const element = scrollerElementRef.current;
     if (!element?.contains(target)) return () => {};
+    explicitNavigationRef.current = null;
     const navigation = { target };
     readingNavigationRef.current = navigation;
     userScrollIntentRef.current = false;
@@ -100,9 +107,30 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     };
   }, [revealReadingStart, setPinned]);
 
+  const beginExplicitNavigation = useCallback((): CompleteExplicitNavigation => {
+    const navigation = {};
+    explicitNavigationRef.current = navigation;
+    readingNavigationRef.current = null;
+    userScrollIntentRef.current = false;
+    setPinned(false);
+    return (target) => {
+      if (explicitNavigationRef.current !== navigation) return false;
+      const element = scrollerElementRef.current;
+      if (element && target && element.contains(target)) {
+        const top = element.getBoundingClientRect().top + element.clientTop;
+        const delta = target.getBoundingClientRect().top - top;
+        element.scrollTop = Math.max(0, Math.min(element.scrollHeight - element.clientHeight, element.scrollTop + delta));
+      }
+      explicitNavigationRef.current = null;
+      if (element) setPinned(isAtBottom(readMetrics(element)));
+      return true;
+    };
+  }, [setPinned]);
+
   const reconcileAfterLayoutChange = useCallback(() => {
     const element = scrollerElementRef.current;
     if (!element) return;
+    if (explicitNavigationRef.current) return;
     if (readingNavigationRef.current) {
       revealReadingStart();
       return;
@@ -121,7 +149,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const handleScroll = useCallback(() => {
     const element = scrollerElementRef.current;
     if (!element) return;
-    if (readingNavigationRef.current) return;
+    if (readingNavigationRef.current || explicitNavigationRef.current) return;
     if (pinnedRef.current && !userScrollIntentRef.current) {
       // Firefox can restore a nested scroll container after React's layout
       // effects have already aligned a freshly loaded chat. That browser-owned
@@ -135,6 +163,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   }, [followBottom, setPinned]);
 
   const markUserScrollIntent = useCallback(() => {
+    explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
     userScrollIntentRef.current = true;
   }, []);
@@ -197,12 +226,14 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   }, [reconcileAfterLayoutChange]);
 
   const scrollToBottom = useCallback(() => {
+    explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
     setPinned(true);
     followBottom();
   }, [followBottom, setPinned]);
 
   useLayoutEffect(() => {
+    explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
     userScrollIntentRef.current = false;
     setPinned(true);
@@ -211,6 +242,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
 
   useEffect(() => {
     return () => {
+      explicitNavigationRef.current = null;
       const element = scrollerElementRef.current;
       element?.removeEventListener("scroll", handleScroll);
       element?.removeEventListener("wheel", markWheelScrollIntent);
@@ -229,5 +261,6 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     pinned,
     scrollToBottom,
     revealStart,
+    beginExplicitNavigation,
   };
 }

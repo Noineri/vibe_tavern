@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test"
 import { useCallback, useRef } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ScrollMetrics } from "../../lib/stick-to-bottom.js";
+import { jumpToMessage, type MessageJumpOptions } from "./message-jump.js";
 
 useDomEnv();
 
@@ -60,13 +61,18 @@ interface HarnessProps {
   resetKey: string;
   suppressFollow?: boolean;
   targetOffset?: number;
+  targetId?: string;
+  jumpIndex?: number;
+  virtualizer?: MessageJumpOptions["virtualizer"];
 }
 
-function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200 }: HarnessProps) {
-  const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart } = useStickToBottom(resetKey, suppressFollow);
+function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200, targetId = "row-150", jumpIndex = 150, virtualizer = null }: HarnessProps) {
+  const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart, beginExplicitNavigation } = useStickToBottom(resetKey, suppressFollow);
   const targetRef = useRef<HTMLDivElement>(null);
+  const scrollerElement = useRef<HTMLDivElement | null>(null);
   const finishRef = useRef<(() => void) | undefined>(undefined);
   const attachScroller = useCallback((node: HTMLDivElement | null) => {
+    scrollerElement.current = node;
     if (node) {
       node.getBoundingClientRect = () => new DOMRect(0, 20, 320, metrics.clientHeight);
       Object.defineProperties(node, {
@@ -95,12 +101,17 @@ function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200
         <div ref={(node) => {
           targetRef.current = node;
           if (node) node.getBoundingClientRect = () => new DOMRect(0, 20 + targetOffset - metrics.scrollTop, 320, 200);
-        }} data-testid="reading-target" />
+        }} data-testid="reading-target" data-scroller-message-id={targetId} />
       </div>
       <output data-testid="pinned">{String(pinned)}</output>
       <button type="button" onClick={scrollToBottom}>bottom</button>
       <button type="button" onClick={() => { if (targetRef.current) finishRef.current = revealStart(targetRef.current); }}>reveal</button>
       <button type="button" onClick={() => finishRef.current?.()}>finish</button>
+      <button type="button" onClick={() => { finishRef.current = beginExplicitNavigation(); }}>jump</button>
+      <button type="button" onClick={() => jumpToMessage({
+        index: jumpIndex, displayIds: Array.from({ length: 200 }, (_, i) => `row-${i}`),
+        stableTailStartIndex: 100, scroller: scrollerElement.current, virtualizer, beginExplicitNavigation,
+      })}>jump-row</button>
     </>
   );
 }
@@ -114,6 +125,80 @@ function observerFor(testId: string): ControlledResizeObserver {
 }
 
 describe("useStickToBottom", () => {
+  it("tail jumps align a scoped row through the controller without the virtualizer", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("jump-row"));
+    expect(metrics.scrollTop).toBe(200);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("virtualized jumps stay detached until the virtualizer completion and align on landing", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    let done: (() => void) | undefined;
+    const virtualizer: NonNullable<MessageJumpOptions["virtualizer"]> = {
+      scrollIntoView(location) {
+        if (typeof location === "number" || !("index" in location)) throw new Error("Expected indexed location");
+        expect(location.index).toBe(12);
+        expect(location.behavior).toBe("auto");
+        expect(location.align).toBe("start");
+        done = location.done;
+      },
+    };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" jumpIndex={12} targetId="row-12" virtualizer={virtualizer} />);
+    fireEvent.click(view.getByText("jump-row"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    expect(metrics.scrollTop).toBe(600);
+    metrics.scrollHeight = 1200;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(metrics.scrollTop).toBe(600);
+    expect(done).toBeDefined();
+    act(() => { done!(); });
+    expect(metrics.scrollTop).toBe(200);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    fireEvent.click(view.getByText("jump-row"));
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 350;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    act(() => { done!(); });
+    expect(metrics.scrollTop).toBe(350);
+  });
+
+  it("explicit jumps stay detached through layout and settle at the real position", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("jump"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    metrics.scrollTop = 600;
+    act(() => { observerFor("stable-tail").notify(); });
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    metrics.scrollTop = 200;
+    fireEvent.click(view.getByText("finish"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    fireEvent.click(view.getByText("jump"));
+    metrics.scrollTop = 600;
+    fireEvent.click(view.getByText("finish"));
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+    metrics.scrollHeight = 1200;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(metrics.scrollTop).toBe(800);
+  });
+
+  it("bottom navigation and reset invalidate pending jump completions", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("jump"));
+    fireEvent.click(view.getByText("bottom"));
+    fireEvent.click(view.getByText("finish"));
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+    fireEvent.click(view.getByText("jump"));
+    view.rerender(<Harness metrics={metrics} resetKey="chat-2" />);
+    fireEvent.click(view.getByText("finish"));
+    expect(metrics.scrollTop).toBe(600);
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+  });
+
   it("reveals a variant start and rejects bottom-follow throughout its height transition", () => {
     const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
     const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
