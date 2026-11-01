@@ -677,6 +677,10 @@ The wizard uses `Modal` (Radix Dialog). The overlay uses `flex items-center just
 
 The sidebar reads persona name/avatar from `snapshot?.persona` with fallback to `bootstrapPersonas` (the personas list from the bootstrap store). This ensures the persona is always visible even when no active snapshot exists (e.g., after deleting the last character).
 
+### Avatar Image Rendering
+
+`styles.css` resets `overflow-clip-margin: unset` on `img.object-cover`, including sidebar and top-bar avatars. Chromium's default `content-box` clip margin causes aliased downscaling when `object-fit: cover` crops a non-square source into a square slot ([Chromium #572863043](https://issues.chromium.org/issues/572863043)). Parent `overflow-hidden` containers retain avatar clipping; source files, dimensions, and crop framing are unchanged.
+
 ---
 
 ## Dice System
