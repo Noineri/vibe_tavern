@@ -118,13 +118,14 @@ describe("buildExperienceFrameDocument", () => {
     for (const source of [host, turn, realtime]) {
       expect(source).toContain("::-webkit-scrollbar{width:8px;height:8px}");
       expect(source).toContain("border-radius:4px");
-      expect(source).toContain("@supports not selector(::-webkit-scrollbar)");
+      expect(source).toContain("@supports (-moz-appearance:none)");
       expect(source).toContain("*{scrollbar-width:thin;scrollbar-color:");
     }
     const baseStyle = (doc: string) => doc.slice(doc.indexOf("<style>"), doc.indexOf("</style>"));
     expect(baseStyle(turn)).toBe(baseStyle(realtime));
     expect(host).toContain("scrollbar-width: none;");
     expect(host).toContain(".scrollbar-hide::-webkit-scrollbar");
+    expect(/@layer base\s*\{\s*@supports \(-moz-appearance:none\)/.test(host)).toBe(true);
   });
 });
 

@@ -184,10 +184,12 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    portaled modals/toasts (body children, z>=40) still stack above both. */
 #root{position:relative;z-index:1}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-/* Standard properties override WebKit geometry in Chromium. Use them only
-   where the pseudo-elements are absent; width is not inherited, so nested
-   scrollers need the universal rule as well as the document viewport. */
-@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent}}
+/* Standard properties override WebKit geometry in Chromium. Gate the Firefox
+   rule on its engine property: newer Firefox also accepts WebKit selectors.
+   Width is not inherited; the base layer preserves utility-based hiding. */
+@layer base {
+  @supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent}}
+}
 
 /* ── Sidebar icon button ── */
 .iBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:var(--t3);transition:background .1s,color .1s;flex-shrink:0}

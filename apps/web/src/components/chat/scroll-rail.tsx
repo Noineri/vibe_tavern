@@ -130,7 +130,7 @@ export function ScrollRail({ entries, scroller, onJump, isMobile, onTick = vibra
 
   if (entries.length === 0) return null;
   const open = !!entry;
-  const valueIndex = active >= 0 ? active : Math.min(entries.length - 1, Math.floor(geometry.start * entries.length));
+  const valueIndex = entry ? active : Math.min(entries.length - 1, Math.floor(geometry.start * entries.length));
   const value = entries[valueIndex];
   const cardTop = Math.max(0, Math.min(geometry.height - previewHeight, cursorY - (isMobile ? previewHeight + 24 : previewHeight / 2)));
   const windowSize = geometry.end - geometry.start;

@@ -54,8 +54,37 @@
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
 | `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
+| `<ChatScrollRail>` / `<ScrollRail>` | Transcript native scrollbar | `chat/scroll-rail.tsx` | Shared RP/Co-Author story map: quiet thread, hover previews, desktop jumps/drag and mobile edge scrub |
 
 ---
+
+## Chat Navigation Rail
+
+**Files:** `chat/scroll-rail.tsx`, `chat/scroll-rail-model.ts`, `chat/message-jump.ts`.
+
+`MessageScroller` mounts one `ChatScrollRail` for both RP and Co-Author and hides only the transcript's native scrollbar through `scrollbar-hide`.
+All other scrollbars retain the global themed 8px WebKit geometry; Firefox uses the standard thin/color fallback guarded by `@supports (-moz-appearance:none)`, including nested scroll regions and both opaque-origin experience iframe documents.
+The engine-property guard is intentional: Firefox 153 also accepts WebKit selectors, so selector absence no longer identifies it; the host fallback lives in the base layer so utility-based scrollbar hiding still wins.
+
+- **Rest:** a quiet 2px thread and accent viewport thumb on desktop; a 2.5px mobile thread rides the reading position inside a transparent 24×48px handle, 4px inboard of the edge.
+- **Hover / focus:** desktop reveals typographic ticks, user turns use the theme's quoted-text warmth, and nearby ticks expand into a fisheye wave.
+- **Preview:** one persistent contrast card uses the shared tooltip's `bg-t1` / `text-bg` chrome and UI font ladder, shows canonical number, speaker, role, and a three-line content snippet, and is measured/clamped inside the live pane.
+- **Desktop navigation:** press/click teleports, captured pointer movement scrubs live, and Home/End/Arrow/Page keys navigate the same entries.
+- **Mobile navigation:** only the inboard handle claims touch input, the full-height rail remains pointer-transparent, and captured scrubbing shows the same card centered above the finger; release/cancel ends the scrub and fades the card.
+- **Haptics:** a changed mobile selection calls `navigator.vibrate(8)` when available; unsupported browsers retain visual feedback, with no polyfill or new setting.
+- **Accessibility:** the named vertical scrollbar exposes its controlled transcript, ordinal range, and canonical message number/speaker as value text; pending-only/empty lists expose no rail.
+
+The pure model derives entries from the caller's display IDs and canonical message records.
+Numbers are always wire `position + 1`, never the rail ordinal; synthetic pending IDs, tools, missing records, and records without a canonical position are excluded.
+Co-Author supplies its grouped turn IDs through the existing renderer, so the rail does not introduce another grouping or numbering source.
+At most one tick per 4px is rendered (2px minimum tick + 2px gap); contiguous merged buckets never reduce pointer access to the underlying messages.
+Store subscriptions stay inside `ChatScrollRail`, below the transcript renderer, and scroll/resize/content observations update only the rail.
+
+Every jump goes through `jumpToMessage` and `useStickToBottom.beginExplicitNavigation()`.
+The controller drops the pin before navigation, suppresses follow during the transaction, owns mounted-row alignment, and re-evaluates the real bottom only on settlement.
+Stable-tail rows settle directly; virtualized rows use Virtuoso's forced-start `scrollIntoView` with its `done` callback, not a guessed timeout.
+Native scroll intent, another navigation, explicit bottom navigation, chat/branch reset, or teardown invalidates an old completion so it cannot realign a stale target.
+The landing highlight is local to the target row and is cancelled on the next landing or list reset.
 
 ## Toggle
 

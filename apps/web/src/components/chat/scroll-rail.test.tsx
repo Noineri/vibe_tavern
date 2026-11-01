@@ -25,7 +25,7 @@ function setup(isMobile = false) {
   rail.setPointerCapture = () => {};
   rail.releasePointerCapture = () => {};
   rail.hasPointerCapture = () => true;
-  return { view, rail, onJump, onTick };
+  return { view, rail, scroller, onJump, onTick };
 }
 
 describe("desktop scroll rail", () => {
@@ -70,6 +70,15 @@ describe("desktop scroll rail", () => {
   it("has no navigation surface when there are no persisted entries", () => {
     const view = render(<ScrollRail entries={[]} scroller={null} onJump={() => {}} isMobile={false} />);
     expect(view.queryByRole("scrollbar")).toBeNull();
+  });
+
+  it("does not read a removed active entry when the message snapshot shrinks", () => {
+    const { view, rail, scroller, onJump } = setup();
+    fireEvent.pointerMove(rail, { clientY: 419, pointerType: "mouse" });
+    expect(view.getByRole("tooltip").textContent).toContain("#131");
+    view.rerender(<ScrollRail entries={entries.slice(0, 2)} scroller={scroller} onJump={onJump} isMobile={false} />);
+    expect(view.getByRole("scrollbar").getAttribute("aria-valuemax")).toBe("2");
+    expect(view.queryByRole("tooltip")).toBeNull();
   });
 });
 
