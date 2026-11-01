@@ -284,7 +284,15 @@ export async function repairSkippedRebuilds(sqlite: Database, migrationsFolder: 
       continue;
     }
     const backfilledColumns = backfillRebuildNulls(sqlite, spec);
-    const statements = splitMigrationStatements(sqlContent);
+    // The EXECUTED statements run through the same rename-safe
+    // normalization as the staged migrate() folder (D4d): this path reads
+    // the OFFICIAL folder's SQL raw, and a dunder-qualified CHECK
+    // (`"__new_x"."col"`) either fails the rename on old SQLite (macOS
+    // smoke, CI 2026-11-01) or survives qualified by the FINAL table name.
+    // The hash above stays on the RAW file content — stamps and the
+    // "applied — healthy" check must remain consistent with the official
+    // ledger notion every other path reads.
+    const statements = splitMigrationStatements(normalizeDunderCheckReferences(sqlContent));
     // Atomic by construction — a mid-rebuild failure rolls back to the intact
     // legacy table, so no partial `__new_` state can survive. This is the
     // property healPartialMigrations lacks (and correctly refuses rebuilds for).
