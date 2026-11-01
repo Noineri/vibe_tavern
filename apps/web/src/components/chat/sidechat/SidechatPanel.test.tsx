@@ -314,6 +314,9 @@ describe("sidechat-panel — handle opens/closes (SC-14)", () => {
     const { getByTestId, queryByTestId } = render(withIsolatedI18n(<SidechatPanel />));
 
     expect(getByTestId("sidechat-closed")).toBeDefined();
+    // The closed tab overlaps the transcript's z-20 navigation rail: its
+    // zero-width sibling must own a higher stacking context for hit testing.
+    expect(getByTestId("sidechat-closed").classList.contains("z-30")).toBe(true);
     const toggle = getByTestId("sidechat-toggle");
     expect(toggle.getAttribute("aria-label")).toBe("sidechat_toggle_label");
     // Closed chevron points left (the caret's rotate-180 inline style).

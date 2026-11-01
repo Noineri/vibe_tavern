@@ -138,8 +138,9 @@ export function SidechatHandle(props: SidechatHandleProps) {
       </div>
     );
   }
+  // Above the transcript's z-20 rail; only the 24x48 button has a hit area.
   return (
-    <div className="relative w-0 shrink-0" data-testid="sidechat-closed">
+    <div className="relative z-30 w-0 shrink-0" data-testid="sidechat-closed">
       <div className="absolute top-1/2 right-0 -translate-y-1/2">
         <EdgeButton label={label} onPress={onPress} look="capsule" side="right" caret="l" testId="sidechat-toggle" tooltipSide="left" />
       </div>
