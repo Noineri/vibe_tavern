@@ -107,6 +107,25 @@ describe("buildExperienceFrameDocument", () => {
     expect(doc).toContain("::-webkit-scrollbar");
     expect(doc).toContain("rgba(140,140,140,0.5)");
   });
+
+  it("host and both iframe documents use 8px scrollbars and a nested Firefox fallback", async () => {
+    const host = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+    const turn = buildExperienceFrameDocument(VISUAL, "var(--test-thumb)");
+    const realtime = buildRealtimeExperienceFrameDocument(VISUAL, "", {
+      rulesSource: "", seed: 1, tickMs: 33, initialState: {}, initialSettings: {},
+      participants: [], scriptSeats: [], viewer: { kind: "human", participantId: "p1" },
+    }, "var(--test-thumb)");
+    for (const source of [host, turn, realtime]) {
+      expect(source).toContain("::-webkit-scrollbar{width:8px;height:8px}");
+      expect(source).toContain("border-radius:4px");
+      expect(source).toContain("@supports not selector(::-webkit-scrollbar)");
+      expect(source).toContain("*{scrollbar-width:thin;scrollbar-color:");
+    }
+    const baseStyle = (doc: string) => doc.slice(doc.indexOf("<style>"), doc.indexOf("</style>"));
+    expect(baseStyle(turn)).toBe(baseStyle(realtime));
+    expect(host).toContain("scrollbar-width: none;");
+    expect(host).toContain(".scrollbar-hide::-webkit-scrollbar");
+  });
 });
 
 // ─── inline script embedding (the RM-12 live-render regression) ─────────────
