@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
 import type { Components, ContextProp, VirtuosoHandle } from "react-virtuoso";
@@ -17,6 +17,7 @@ import { useStickToBottom } from "./use-stick-to-bottom.js";
 import { partitionMessageRenderWindow } from "./message-render-window.js";
 import { MessageScrollContext } from "./message-scroll-context.js";
 import { jumpToMessage } from "./message-jump.js";
+import { ChatScrollRail } from "./scroll-rail.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -203,14 +204,22 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     beginExplicitNavigation,
   } = useStickToBottom(resetKey, imageGenRunInFlight);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollId = useId();
+  const highlightRef = useRef<Animation | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
   const attachScroller = useCallback((node: HTMLElement | Window | null) => {
     scrollerRef(node);
     setScrollerElement(node instanceof HTMLElement ? node : null);
   }, [scrollerRef]);
   const jumpToDisplayIndex = useCallback((index: number) => {
-    jumpToMessage({ index, displayIds, stableTailStartIndex, scroller: scrollerElement, virtualizer: virtuosoRef.current, beginExplicitNavigation });
+    jumpToMessage({ index, displayIds, stableTailStartIndex, scroller: scrollerElement, virtualizer: virtuosoRef.current, beginExplicitNavigation,
+      onLand: (target) => {
+        highlightRef.current?.cancel();
+        highlightRef.current = target.animate([{ backgroundColor: "var(--accent-dim)" }, { backgroundColor: "transparent" }], { duration: 900 });
+      },
+    });
   }, [displayIds, stableTailStartIndex, scrollerElement, beginExplicitNavigation]);
+  useEffect(() => () => { highlightRef.current?.cancel(); }, [resetKey]);
   const context = useMemo<MessageScrollerContext>(() => ({
     renderItem,
     stableTailIds,
@@ -224,6 +233,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
         <Virtuoso<string, MessageScrollerContext>
+          id={scrollId}
           ref={virtuosoRef}
           scrollerRef={attachScroller}
           data={virtualizedIds}
@@ -233,9 +243,10 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
           overscan={{ main: 4000, reverse: 4000 }}
           itemContent={(index, messageId) => renderItem(index, messageId)}
           components={components}
-          className="flex-1"
+          className={cn("flex-1", !isMobile && "scrollbar-hide")}
           style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
         />
+        <ChatScrollRail key={resetKey} displayIds={displayIds} scroller={scrollerElement} onJump={jumpToDisplayIndex} isMobile={isMobile} />
         {!pinned && displayIds.length > 0 && (
           isMobile ? (
             <button type="button"
