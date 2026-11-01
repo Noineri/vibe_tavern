@@ -3,7 +3,7 @@
  * ONE web-side derivation for everything a sidechat built-in profile adds
  * over the host's own defaults: its localized display name, its empty-state
  * presentation (its own four starters + title/subtitle keys), and the
- * first built-in's hand-off row to the director (mockup §3).
+ * hand-off row to the director (mockup §3).
  *
  * Scope is deliberately NARROW: only the TWO sidechat built-ins
  * (`builtin` — the OOC seed, `builtin-director` — the director) get localized
@@ -157,19 +157,22 @@ export function effectiveProfileStarterKeys(
 }
 
 /**
- * The hand-off row offered under the FIRST built-in's starters (DR-7, mockup
- * §3 right): the OOC built-in hands the chat over to the director. Offered ONLY
- * while the kind's first built-in is the EFFECTIVE profile — a user profile
- * never shows it (the user already chose their own profile) — and only for
- * the sidechat kind. The plan-hides-it rule (no row once the branch plan has
- * events) is the CALLER's — it owns the plan read.
+ * The hand-off row offered under the sidechat empty state's starters (DR-7,
+ * mockup §3 right): the chat hands over to the director. Offered for EVERY
+ * effective profile of the sidechat kind EXCEPT the director itself (a
+ * self-switch is pointless) — user profiles included (owner ruling
+ * 2026-11-01: user profiles show the row; discovery of the director
+ * outranks profile-choice non-nagging — the DR-7 first-built-in-only gate
+ * is dropped). Non-sidechat kinds never see it. The plan-hides-it rule (no
+ * row once the branch plan has events) is the CALLER's — it owns the plan
+ * read.
  */
 export function builtinProfileHandoff(
 	kind: AgentKind,
 	effectiveProfileId: string,
 ): AgentBuiltinProfileHandoff | undefined {
 	if (kind !== SIDECHAT_AGENT_KIND) return undefined;
-	if (effectiveProfileId !== BUILTIN_PROFILE_ID) return undefined;
+	if (effectiveProfileId === BUILTIN_DIRECTOR_PROFILE_ID) return undefined;
 	return { rowKey: "sidechat_director_row", prefillKey: DIRECTOR_PRESENTATION.starterKeys[0] };
 }
 

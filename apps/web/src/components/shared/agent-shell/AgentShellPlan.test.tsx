@@ -461,20 +461,25 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
 	});
 
-	it("a user profile falls back to the host's starters and shows no hand-off row (owner ruling 2026-10-27)", async () => {
+	it("a user profile keeps the host's starters and shows the hand-off row (owner ruling 2026-11-01)", async () => {
 		dr7ChatProfileId = "cprof_user";
 		dr7Plan = EMPTY_PLAN;
-		const { getByTestId, queryByTestId } = renderSidechat("user");
+		const { getByTestId } = renderSidechat("user");
 		// Terminal state: the chip's label proves the effective read + the
 		// profile list landed (the raw wire name — user profiles never
 		// localize); the starter fallback alone cannot (it is also the
 		// pre-read state).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My grim director"));
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
-		expect(queryByTestId("agent-handoff-row")).toBeNull();
+		// Behavior change: a user profile HID the row under DR-7 → SHOWS it now
+		// (owner ruling 2026-11-01: discovery of the director outranks
+		// profile-choice non-nagging). The chip anchor above proves the
+		// user-profile read landed, so this pins the post-read state — not the
+		// pre-read built-in seed, which showed the row on HEAD too.
+		expect(getByTestId("agent-handoff-row").textContent).toBe("sidechat_director_row");
 	});
 
-	it("DR-7b: a user DUPLICATE of the director shows the SOURCE's starters with the HOST's title — no hand-off row", async () => {
+	it("DR-7b: a user DUPLICATE of the director shows the SOURCE's starters with the HOST's title — and the hand-off row (owner ruling 2026-11-01)", async () => {
 		dr7ChatProfileId = "cprof_dup";
 		dr7Plan = EMPTY_PLAN;
 		const { getByTestId, getAllByText, queryByTestId, queryByText } = renderSidechat("dup");
@@ -491,8 +496,10 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		expect(getAllByText("agent_kind_sidechat").length).toBeGreaterThanOrEqual(1);
 		expect(queryByText("agent_profile_name_builtin_director")).toBeNull();
 		expect(queryByText("agent_director_empty_sub")).toBeNull();
-		// A user profile never offers the OOC hand-off row.
-		expect(queryByTestId("agent-handoff-row")).toBeNull();
+		// A user profile offers the OOC hand-off row too — the duplicate is NOT
+		// the director itself (its own id differs), so the switch is meaningful
+		// (owner ruling 2026-11-01; the DR-7 user-profile hide is dropped).
+		expect(getByTestId("agent-handoff-row").textContent).toBe("sidechat_director_row");
 	});
 });
 

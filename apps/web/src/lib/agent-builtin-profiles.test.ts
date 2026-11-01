@@ -12,7 +12,10 @@
  *     starters for a user duplicate (starters-only inheritance), the
  *     built-in's own for a built-in, and the host's (undefined) everywhere
  *     else;
- *   - the hand-off row exists ONLY for the sidechat kind's FIRST built-in;
+ *   - the hand-off row exists for EVERY sidechat effective profile except
+ *     the director itself — user profiles included (owner ruling
+ *     2026-11-01: discovery of the director outranks profile-choice
+ *     non-nagging; the DR-7 first-built-in-only gate is dropped);
  *   - the display name maps the two sidechat built-ins to their keys and
  *     passes every other id/kind through to the wire name.
  */
@@ -77,17 +80,25 @@ describe("agent-builtin-profiles (DR-7)", () => {
 		expect(effectiveProfileStarterKeys("sidechat-ooc", BUILTIN_PROFILE_ID, undefined)).toBeUndefined();
 	});
 
-	it("the hand-off row exists only for the sidechat kind's FIRST built-in", () => {
+	it("the hand-off row exists for every sidechat effective profile except the director itself (owner ruling 2026-11-01)", () => {
 		const handoff = builtinProfileHandoff("sidechat-ooc", BUILTIN_PROFILE_ID);
 		expect(handoff).toEqual({
 			rowKey: "sidechat_director_row",
 			// The prefill is the director's first starter.
 			prefillKey: "agent_starter_director_plan",
 		});
-		// Not under the director itself, a user profile, or other kinds.
+		// A USER profile shows the row too — owner ruling 2026-11-01: discovery
+		// of the director outranks profile-choice non-nagging (the DR-7
+		// first-built-in-only gate is dropped).
+		expect(builtinProfileHandoff("sidechat-ooc", "cprof_1")).toEqual({
+			rowKey: "sidechat_director_row",
+			prefillKey: "agent_starter_director_plan",
+		});
+		// Not under the director itself (a self-switch is pointless).
 		expect(builtinProfileHandoff("sidechat-ooc", BUILTIN_DIRECTOR_PROFILE_ID)).toBeUndefined();
-		expect(builtinProfileHandoff("sidechat-ooc", "cprof_1")).toBeUndefined();
+		// And never outside the sidechat kind, whatever the profile id.
 		expect(builtinProfileHandoff("experience", BUILTIN_PROFILE_ID)).toBeUndefined();
+		expect(builtinProfileHandoff("experience", "cprof_1")).toBeUndefined();
 		expect(builtinProfileHandoff("script", BUILTIN_PROFILE_ID)).toBeUndefined();
 	});
 
