@@ -6,6 +6,10 @@ WORKDIR /app
 
 # Layer-cached dependency install — copy all workspace manifests first
 COPY package.json bun.lock ./
+# patchedDependencies (root package.json) resolve relative to the repo root —
+# the patches must exist before `bun install --frozen-lockfile` (CI 2026-11-01:
+# "patch file not found: patches/@base-ui%2Freact@1.9.0.patch").
+COPY patches ./patches
 COPY apps/web/package.json apps/web/
 COPY packages/api-contracts/package.json packages/api-contracts/
 COPY packages/db/package.json packages/db/
