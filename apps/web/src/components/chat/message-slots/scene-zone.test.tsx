@@ -40,6 +40,7 @@ const mocks = {
   getSceneStatusAction: mock(async () => ({ generating: false, record: null })),
   startInsightsCompletionRefresh: mock(),
 };
+let isMobile = false;
 const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
@@ -49,7 +50,7 @@ const realTooltip = await import("../../shared/Tooltip.js");
 
 installI18nContextSeam();
 
-mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobile }));
 
 mock.module("../../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
@@ -182,6 +183,7 @@ function visible(messageId: string): boolean {
 }
 
 beforeEach(() => {
+  isMobile = false;
   useSceneGenerationStore.getState().clearAll();
   // The expansion store persists across tests (separate zustand store); reset it
   // so each test starts collapsed.
@@ -191,6 +193,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  isMobile = false;
   useSnapshotStore.getState().clear();
   mocks.generateSceneAction.mockReset();
   mocks.editSceneAction.mockReset();
@@ -385,6 +388,34 @@ describe("Scene zone component (SCN-12)", () => {
     (expected.applicantRoster as Record<string, unknown>[])[0].applicant = "edited applicant";
     expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, expected);
     expect(useSnapshotStore.getState().messagesById.m1.sceneTracker?.sceneState).toEqual(rosterRecord().sceneState);
+  });
+
+  it("mobile roster bounds the sheet content and keeps the footer outside scrolling fields", () => {
+    isMobile = true;
+    seed([msg("m1", { variantId: "v1", rec: rosterRecord() })]);
+    const view = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(view.getByLabelText("scn_zone_expand"));
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    expect(view.queryByTestId("modal")).toBeNull();
+    const cap = view.getByTestId("sheet").firstElementChild!;
+    expect(cap.classList.contains("max-h-[80dvh]")).toBe(true);
+    expect(cap.classList.contains("flex-col")).toBe(true);
+    expect(cap.classList.contains("overflow-hidden")).toBe(true);
+    const fields = cap.querySelector(".overflow-y-auto")!;
+    expect(fields).not.toBeNull();
+    expect(fields.querySelectorAll("textarea").length).toBe(48);
+    const save = view.getByRole("button", { name: "scn_edit_save" });
+    const cancel = view.getByRole("button", { name: "scn_edit_cancel" });
+    expect(fields.contains(save)).toBe(false);
+    expect(fields.contains(cancel)).toBe(false);
+    expect(fields.parentElement).toBe(save.parentElement!.parentElement);
+    expect(save.parentElement?.classList.contains("shrink-0")).toBe(true);
+    fireEvent.click(cancel);
+    expect(view.queryByTestId("sheet")).toBeNull();
+    expect(mocks.editSceneAction).not.toHaveBeenCalled();
+    fireEvent.click(view.getByLabelText("scn_zone_edit"));
+    fireEvent.click(view.getByRole("button", { name: "scn_edit_save" }));
+    expect(mocks.editSceneAction).toHaveBeenCalledWith("chat-1", { branchId: "b1", messageId: "m1", variantId: "v1" }, rosterRecord().sceneState);
   });
 
   it("does NOT hydrate status for an older message", () => {

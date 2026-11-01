@@ -390,7 +390,9 @@ function SceneEditorModal({ open, isMobile, schema, state, onClose, onSave, t }:
   if (isMobile) {
     return (
       <BottomSheet open={open} onClose={onClose} title={t("scn_zone_edit")}>
-        {body}
+        <div className="flex max-h-[80dvh] flex-col overflow-hidden p-4">
+          {body}
+        </div>
       </BottomSheet>
     );
   }
