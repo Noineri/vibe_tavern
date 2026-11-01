@@ -21,7 +21,7 @@ function setup(isMobile = false) {
   const onTick = mock();
   const view = render(<ScrollRail entries={entries} scroller={scroller} onJump={onJump} isMobile={isMobile} onTick={onTick} />);
   const rail = view.getByRole("scrollbar");
-  rail.getBoundingClientRect = () => new DOMRect(564, 20, 36, 400);
+  rail.getBoundingClientRect = () => new DOMRect(isMobile ? 572 : 536, 20, isMobile ? 24 : 36, 400);
   rail.setPointerCapture = () => {};
   rail.releasePointerCapture = () => {};
   rail.hasPointerCapture = () => true;
@@ -29,12 +29,24 @@ function setup(isMobile = false) {
 }
 
 describe("desktop scroll rail", () => {
+  it("keeps the full-height hit lane left of the 24px edge toggle with a 4px gap", () => {
+    const { rail, onJump } = setup();
+    expect(rail.classList.contains("right-7")).toBe(true);
+    expect(rail.classList.contains("right-0")).toBe(false);
+    expect(rail.classList.contains("w-9")).toBe(true);
+    // The rail retains the message at the toggle's vertical midpoint.
+    fireEvent.pointerDown(rail, { clientY: 220, pointerId: 1, button: 0, pointerType: "mouse" });
+    expect(onJump).toHaveBeenLastCalledWith(8);
+    fireEvent.pointerUp(rail, { pointerId: 1, pointerType: "mouse" });
+  });
+
   it("starts quiet, previews canonical entries on hover, and closes on leave", () => {
     const { view, rail } = setup();
     expect(view.queryByRole("tooltip")).toBeNull();
     expect(rail.getAttribute("aria-controls")).toBe("transcript");
     fireEvent.pointerMove(rail, { clientY: 220, pointerType: "mouse" });
     const card = view.getByRole("tooltip");
+    expect(card.style.maxWidth).toBe("360px");
     expect(card.textContent).toContain("#126");
     expect(card.textContent).toContain("Keith");
     expect(card.textContent).toContain("Scene 6");
@@ -70,6 +82,18 @@ describe("desktop scroll rail", () => {
   it("has no navigation surface when there are no persisted entries", () => {
     const view = render(<ScrollRail entries={[]} scroller={null} onJump={() => {}} isMobile={false} />);
     expect(view.queryByRole("scrollbar")).toBeNull();
+  });
+
+  it("budgets the desktop preview for the inboard offset in a narrow chat pane", () => {
+    const scroller = document.createElement("div");
+    Object.defineProperties(scroller, {
+      clientHeight: { value: 400 }, scrollHeight: { value: 2000 }, clientWidth: { value: 320 },
+    });
+    const view = render(<ScrollRail entries={entries} scroller={scroller} onJump={() => {}} isMobile={false} />);
+    const rail = view.getByRole("scrollbar");
+    rail.getBoundingClientRect = () => new DOMRect(256, 20, 36, 400);
+    fireEvent.pointerMove(rail, { clientY: 220, pointerType: "mouse" });
+    expect(view.getByRole("tooltip").style.maxWidth).toBe("236px");
   });
 
   it("does not read a removed active entry when the message snapshot shrinks", () => {

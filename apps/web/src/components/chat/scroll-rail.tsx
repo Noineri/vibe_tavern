@@ -148,7 +148,8 @@ export function ScrollRail({ entries, scroller, onJump, isMobile, onTick = vibra
       aria-valuemax={entries.length}
       aria-valuenow={valueIndex + 1}
       aria-valuetext={`#${value.number} ${value.author || t(value.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}`}
-      className={cn("absolute inset-y-2 z-20 select-none outline-none focus-visible:ring-1 focus-visible:ring-accent", isMobile ? "pointer-events-none right-1 w-6" : "right-0 w-9 cursor-pointer")}
+      // Desktop: reserve 24px for the edge toggle plus 4px between hit areas.
+      className={cn("absolute inset-y-2 z-20 select-none outline-none focus-visible:ring-1 focus-visible:ring-accent", isMobile ? "pointer-events-none right-1 w-6" : "right-7 w-9 cursor-pointer")}
       onPointerEnter={(event) => { if (!isMobile && event.pointerType !== "touch") pointAt(event.clientY, false); }}
       onPointerMove={(event) => {
         if (pointerRef.current !== null && pointerRef.current !== event.pointerId) return;
@@ -198,7 +199,7 @@ export function ScrollRail({ entries, scroller, onJump, isMobile, onTick = vibra
       </div>
       {previewEntry && <div ref={previewRef} role="tooltip" aria-hidden={!entry} className={cn("pointer-events-none absolute w-max whitespace-normal rounded-md bg-t1 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-bg shadow-md transition-opacity duration-150 motion-reduce:transition-none", entry ? "opacity-100" : "opacity-0")}
         style={{ top: cardTop, right: isMobile ? undefined : 38, left: isMobile ? 28 - geometry.width / 2 : undefined, transform: isMobile ? "translateX(-50%)" : undefined,
-          maxWidth: Math.min(360, Math.max(0, geometry.width - 56)), maxHeight: geometry.height, overflowY: "hidden" }}>
+          maxWidth: Math.min(360, Math.max(0, geometry.width - (isMobile ? 56 : 84))), maxHeight: geometry.height, overflowY: "hidden" }}>
         <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-bg/15 pb-1.5">
           <span className="font-body italic text-accent">#{previewEntry.number}</span>
           <span className="min-w-0 break-words font-semibold">{previewEntry.author || t(previewEntry.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}</span>

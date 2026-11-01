@@ -258,7 +258,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
           ) : (
             <CustomTooltip content={t("scroll_to_bottom")} side="left">
               <button type="button"
-                className="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
+                className="absolute bottom-6 right-20 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
                 onClick={scrollToBottom}
               >
                 <Icons.Caret direction="d" />

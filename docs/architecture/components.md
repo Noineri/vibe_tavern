@@ -70,6 +70,7 @@ The engine-property guard is intentional: Firefox 153 also accepts WebKit select
 - **Hover / focus:** desktop reveals typographic ticks, user turns use the theme's quoted-text warmth, and nearby ticks expand into a fisheye wave.
 - **Preview:** one persistent contrast card uses the shared tooltip's `bg-t1` / `text-bg` chrome and UI font ladder, shows canonical number, speaker, role, and a three-line content snippet, and is measured/clamped inside the live pane.
 - **Desktop navigation:** press/click teleports, captured pointer movement scrubs live, and Home/End/Arrow/Page keys navigate the same entries.
+- **Desktop hit lanes:** the straight 36px rail sits 28px inboard (24px edge-toggle target plus a 4px gap), so the closed sidechat handle cannot cover any rail position; jump-to-bottom sits 80px inboard, left of the rail rather than under it.
 - **Mobile navigation:** only the inboard handle claims touch input, the full-height rail remains pointer-transparent, and captured scrubbing shows the same card centered above the finger; release/cancel ends the scrub and fades the card.
 - **Haptics:** a changed mobile selection calls `navigator.vibrate(8)` when available; unsupported browsers retain visual feedback, with no polyfill or new setting.
 - **Accessibility:** the named vertical scrollbar exposes its controlled transcript, ordinal range, and canonical message number/speaker as value text; pending-only/empty lists expose no rail.
