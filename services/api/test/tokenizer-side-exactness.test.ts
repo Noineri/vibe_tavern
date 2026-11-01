@@ -12,10 +12,14 @@
  * assembly on a cold cache, zero on a warm one) and the compaction-boundary
  * proof (decomposed counter and joined counter produce identical plans).
  *
- * Process-sharing (services/api tests share one process): this file sorts
- * AFTER tokenizer-service.test.ts on purpose — its "before warmup" pins
- * depend on running before any warmer. The injected pipeline state set here
- * is fully restored in afterAll.
+ * Process-sharing (services/api tests share one process): NO file-order
+ * guarantee exists — discovery order is readdir-order on Linux CI and
+ * alphabetical on Windows dev, so this file cannot "sort after"
+ * tokenizer-service.test.ts. When it runs FIRST its warmup leaves the cache
+ * full; the service file's cold describe snapshots + clears + restores its
+ * own precondition, so both orders hold. This file warms only the rails it
+ * exercises (see WARM_MODELS below). The injected pipeline state set here is
+ * fully restored in afterAll.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
@@ -128,10 +132,28 @@ const NULL_RAILS: Array<{ label: string; model: string }> = [
 	{ label: "web:mistral.json", model: "mistral-large-2411" },
 ];
 
+/** The models warmed here — DERIVED from RAILS and NULL_RAILS, never a second
+ *  list: every distinct model the rails exercise. warmupTokenizers resolves
+ *  each through resolveTokenizerFamily, so exactly this file's four REAL web
+ *  tokenizers load (llama3, claude, qwen2, mistral); the tiktoken rails load
+ *  lazily and were never part of the hook's cost. Including NULL_RAILS keeps
+ *  Qwen2/Mistral on real tokenizers — coverage must not narrow to cold
+ *  cl100k fallbacks. */
+const WARM_MODELS: string[] = [
+	...new Set(
+		[...RAILS, ...NULL_RAILS]
+			.map((rail) => rail.model)
+			.filter((model): model is string => model !== undefined),
+	),
+];
+
 beforeAll(async () => {
-	// Warmup loads all 10 web-tokenizer JSON files — measured ~5.9 s, over
-	// bun's 5 s default hook timeout (same as tokenizer-service.test.ts).
-	await warmupTokenizers();
+	// Scoped warmup — only this file's four real web tokenizers load here
+	// (see WARM_MODELS); previously this hook warmed all 10 files (~5.9 s,
+	// over bun's 5 s default hook timeout) although only four rails are
+	// exercised. The budget stays the measured all-10 figure on purpose: the
+	// hook got cheaper, not the guarantee weaker.
+	await warmupTokenizers(WARM_MODELS);
 	setTokenCountFn(countTokens);
 	setSeparatorSideFn((model) => separatorSide(resolveTokenizerId(model)));
 	setPersistentTokenCountStore(null);

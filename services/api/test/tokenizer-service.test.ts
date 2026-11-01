@@ -14,14 +14,18 @@
  * seam, the 100 000-char persistence cutoff, provider-exact precedence
  * over every local layer, and store-less (unit-test) operation.
  *
- * Process-sharing (services/api tests share one process): discovery order is
- * readdir-order on Linux CI and alphabetical on Windows dev, so "this file
- * runs before any warmer" is not a portable assumption (2026-11-01: a
- * server-runtime-importing file warmed the web tokenizers first on Linux and
- * flipped these cold-path pins). The cold-path describe below enforces its
- * own precondition via resetWebTokenizerCacheForTests(). Every injection this
- * file makes (persistent store, fetch stub) is restored in afterAll; every
- * layer is reset between tests.
+ * Process-sharing (services/api tests share one process): NO file-order
+ * guarantee exists — discovery order is readdir-order on Linux CI and
+ * alphabetical on Windows dev, so "this file runs before any warmer" is not
+ * a portable assumption (2026-11-01: in readdir order
+ * tokenizer-side-exactness.test.ts's own warmup hook ran first and flipped
+ * these cold-path pins — importing server-runtime.ts does NOT warm
+ * tokenizers; only the createRuntimeApp() boot does). The cold-path describe
+ * below enforces its own precondition via resetWebTokenizerCacheForTests(),
+ * snapshots the cache FIRST and restores the instances in its afterAll, so a
+ * warmer that ran before is never charged a second construction pass. Every
+ * injection this file makes (persistent store, fetch stub) is restored in
+ * afterAll; every layer is reset between tests.
  */
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll } from "bun:test";
 import {
@@ -34,8 +38,12 @@ import {
 	configureTokenCountLayerForTests,
 	resetTokenCountLayerForTests,
 	resetWebTokenizerCacheForTests,
+	saveWebTokenizerCacheForTests,
+	restoreWebTokenizerCacheForTests,
+	getWebTokenizerConstructionsForTests,
 	type PersistentTokenCountStore,
 } from "../src/infrastructure/ai/tokenizer-service.js";
+import type { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 import {
 	resetTokenCountCache,
 	runWithProviderTokenContext,
@@ -81,6 +89,14 @@ const MATRIX: Array<{ text: string; fixture: string; model: string; modelId?: st
 	{ fixture: "long30k", text: FIX_LONG_30K, model: "gpt4o", modelId: "gpt-4o" },
 	{ fixture: "long30k", text: FIX_LONG_30K, model: "gemini", modelId: "gemini-2.0-flash" },
 	{ fixture: "long30k", text: FIX_LONG_30K, model: "claude", modelId: "claude-sonnet-4-5" },
+];
+
+/** The models this file warms — DERIVED from MATRIX, never a second list: every
+ *  distinct model id the matrix exercises. warmupTokenizers resolves each
+ *  through resolveTokenizerFamily, so only MATRIX's web rails (claude, gemini
+ *  → llama3) load files; gpt-4o is tiktoken and contributes nothing. */
+const MATRIX_WARM_MODELS: string[] = [
+	...new Set(MATRIX.map((entry) => entry.modelId).filter((id): id is string => id !== undefined)),
 ];
 
 /**
@@ -187,11 +203,23 @@ afterAll(() => {
 });
 
 describe("tokenizer-service before warmup (fresh process)", () => {
+	let preColdCache: ReadonlyMap<string, WebTokenizer> = new Map();
+
 	beforeAll(() => {
 		// Enforce the "fresh process" precondition instead of assuming it from
 		// file order (see the file header) — another file in this shared process
-		// may have warmed the web tokenizers already.
+		// may have warmed the web tokenizers already. Own the pre-cold state:
+		// snapshot IMMEDIATELY before clearing; the afterAll below puts the
+		// instances back so no later warmer is charged for them twice.
+		preColdCache = saveWebTokenizerCacheForTests();
 		resetWebTokenizerCacheForTests();
+	});
+
+	afterAll(() => {
+		// The cold block owns restoration — not the next warmer's setup — so
+		// there is no cleared-but-unrestored window in which a later construction
+		// pass could start. Restoring only moves instances (zero loads).
+		restoreWebTokenizerCacheForTests(preColdCache);
 	});
 
 	test("a not-yet-loaded web tokenizer falls back to the cl100k count", () => {
@@ -211,11 +239,13 @@ describe("tokenizer-service before warmup (fresh process)", () => {
 });
 
 describe("tokenizer-service counts (characterization, warmed)", () => {
-	// Warmup loads all 10 web-tokenizer JSON files — measured ~5.9 s, over
-	// bun's 5 s default hook timeout, so the hook declares the measured
-	// budget explicitly (deterministic setup cost, not a flake mask).
+	// Scoped warmup — only MATRIX's web rails (claude.json + llama3.json)
+	// load here; see MATRIX_WARM_MODELS. When the cold describe above restored
+	// another file's instances, these are cache hits (zero constructions).
+	// The hook keeps the measured all-10 budget on purpose: the hook got
+	// cheaper, not the guarantee weaker.
 	beforeAll(async () => {
-		await warmupTokenizers();
+		await warmupTokenizers(MATRIX_WARM_MODELS);
 	}, 30_000);
 
 	test("every pinned (text, model) count is byte-identical", () => {
@@ -246,6 +276,20 @@ describe("tokenizer-service counts (characterization, warmed)", () => {
 		expect(resolveTokenizerId("llama-3.3-70b")).toBe("web:llama3.json");
 		expect(resolveTokenizerId("claude-sonnet-4-5")).toBe("web:claude.json");
 		expect(resolveTokenizerId("totally-unknown-model")).toBe("tiktoken:cl100k_base");
+	});
+
+	test("cache snapshot seam: save → reset → fallback id → restore → web id, and restoration loads nothing", () => {
+		// PR65 D5 pin: a cold reset must never cost a second construction pass.
+		// Round-trip the seam on the warmed cache and prove restore moves the
+		// instances back with ZERO growth at the WebTokenizer.fromJSON boundary.
+		expect(resolveTokenizerId("claude-sonnet-4-5")).toBe("web:claude.json"); // warmed precondition
+		const snapshot = saveWebTokenizerCacheForTests();
+		resetWebTokenizerCacheForTests();
+		expect(resolveTokenizerId("claude-sonnet-4-5")).toBe("tiktoken:cl100k_base"); // cold = cl100k id
+		const loadsBeforeRestore = getWebTokenizerConstructionsForTests();
+		restoreWebTokenizerCacheForTests(snapshot);
+		expect(getWebTokenizerConstructionsForTests()).toBe(loadsBeforeRestore); // restore = zero loads
+		expect(resolveTokenizerId("claude-sonnet-4-5")).toBe("web:claude.json"); // web id is back
 	});
 });
 

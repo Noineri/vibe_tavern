@@ -67,14 +67,50 @@ async function ensureTokenizerDir(): Promise<string> {
 const tiktokenCache = new Map<string, Tiktoken>();
 const webTokenizerCache = new Map<string, WebTokenizer>();
 
+/** Real WebTokenizer.fromJSON constructions since process start — the
+ * expensive JSON→WASM pass, NOT cache hits. Test seam: pins prove reuse
+ * (warmup over a restored cache, restoration itself) by reading it
+ * before/after and expecting no growth. */
+let webTokenizerConstructions = 0;
+
 /** Test seam: drop the warmed web tokenizers so a file can pin the COLD path
  * (fallback ids, pre-warmup counts) on demand. "Fresh process" cannot be
  * assumed from file order: a workspace's test files share ONE process and
  * discovery order is readdir-order on Linux CI vs alphabetical on Windows
- * dev — on 2026-11-01 a server-runtime-importing file warmed the cache before
- * tokenizer-service.test.ts ran, flipping its cold-path pins. */
+ * dev — on 2026-11-01 tokenizer-side-exactness.test.ts's own warmup hook had
+ * warmed the cache before tokenizer-service.test.ts ran in readdir order
+ * (importing server-runtime.ts does NOT warm tokenizers; only the
+ * createRuntimeApp() boot does), flipping its cold-path pins. A bare reset
+ * discards instances another file already paid for — pair it with the
+ * save/restore seams below so they are reused, never reconstructed. */
 export function resetWebTokenizerCacheForTests(): void {
 	webTokenizerCache.clear();
+}
+
+/** Test seam: snapshot the warmed web-tokenizer cache as a copy of the
+ * file→instance map. The tokenizer INSTANCES are shared as-is — immutable
+ * once loaded — so a cold-path describe can clear the live cache and put
+ * them back afterwards at zero IO. */
+export function saveWebTokenizerCacheForTests(): ReadonlyMap<string, WebTokenizer> {
+	return new Map(webTokenizerCache);
+}
+
+/** Test seam: restore a saveWebTokenizerCacheForTests() snapshot into the
+ * live cache. Moves already-constructed instances back into the map —
+ * performs no loads (pin: webTokenizerConstructions must not grow across it). */
+export function restoreWebTokenizerCacheForTests(
+	snapshot: ReadonlyMap<string, WebTokenizer>,
+): void {
+	webTokenizerCache.clear();
+	for (const [file, instance] of snapshot) {
+		webTokenizerCache.set(file, instance);
+	}
+}
+
+/** Test seam: real WebTokenizer.fromJSON constructions so far (see the
+ * counter's declaration) — the boundary getWebTokenizer builds at. */
+export function getWebTokenizerConstructionsForTests(): number {
+	return webTokenizerConstructions;
 }
 
 function getTiktoken(encoding: string): Tiktoken {
@@ -91,6 +127,7 @@ async function getWebTokenizer(file: string): Promise<WebTokenizer> {
 	const dir = await ensureTokenizerDir();
 	const buf = await Bun.file(join(dir, file)).arrayBuffer();
 	instance = await WebTokenizer.fromJSON(buf);
+	webTokenizerConstructions++;
 	webTokenizerCache.set(file, instance);
 	return instance;
 }
@@ -543,11 +580,27 @@ export function tokenizeText(text: string, model?: string): TokenizedToken[] {
  */
 
 /**
- * Pre-load all web-tokenizer models so countTokens() can stay synchronous.
+ * Pre-load web-tokenizer models so countTokens() can stay synchronous.
  * Call once at server startup.
+ *
+ * Omitted `models` = the FULL warmup: every web tokenizer in the catalog
+ * (the production boot call — unchanged). A supplied list warms ONLY the
+ * web files those models resolve to, deduplicated through the same
+ * resolveTokenizerFamily mapping countTokens uses (one data source, many
+ * consumers — a second model→file table here would be a forbidden second
+ * derivation); tiktoken-only models contribute nothing (those encodings
+ * load lazily and were never part of warmup's cost).
  */
-export async function warmupTokenizers(): Promise<void> {
-	const files = new Set(WEB_TOKENIZERS.map(([, f]) => f));
+export async function warmupTokenizers(models?: ReadonlyArray<string>): Promise<void> {
+	const files =
+		models === undefined
+			? new Set(WEB_TOKENIZERS.map(([, file]) => file))
+			: new Set(
+					models.flatMap((model) => {
+						const family = resolveTokenizerFamily(model);
+						return family.type === "web" ? [family.file] : [];
+					}),
+			);
 	for (const file of files) {
 		try {
 			await getWebTokenizer(file);
