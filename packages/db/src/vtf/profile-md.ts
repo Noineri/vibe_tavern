@@ -8,17 +8,23 @@
  * This codec is PROSE-ONLY: functional instruction fields (`# SYSTEM`,
  * `# POST-HISTORY`, `# DEPTH PROMPT` + their `vt.depth_prompt_*` config) live
  * in `instructions.json` (see `instructions.ts`), NOT in this document. Those
- * headings exist only in the exchange monolith (`monolith.ts`). If they appear
- * in a `profile.md`, they are preserved losslessly as unknown sections
- * (never routed to fields).
+ * headings exist only in the exchange monolith (`monolith.ts`), which parses
+ * with `foldUnknownSections: false` so they ride as unknown sections (its
+ * transport). In a plain `profile.md` parse their text is preserved through
+ * the fold (below) instead of being routed away.
  *
  * This is a HAND-ROLLED codec for our own canonical dialect, not a general
  * YAML parser (no YAML dependency exists in the workspaces and `import-export`
  * is intentionally `domain`-only). The frontmatter grammar we accept is
  * deliberately narrow: scalars, one inline flow array (`tags`), one nested
- * `vt:` map, and block scalars (`key: |`). Unknown frontmatter keys, unknown
- * `vt:` keys, and unknown body sections are preserved verbatim so that
- * `MD → Form → MD` is lossless (they re-emit after the known/canonical ones).
+ * `vt:` map, and block scalars (`key: |`). Unknown frontmatter keys and unknown
+ * `vt:` keys are preserved verbatim so that `MD → Form → MD` is lossless (they
+ * re-emit after the known/canonical ones). Unknown BODY sections are lossless
+ * through the FOLD (MD_HEADING_LOSS_REPORT): an unknown H1 section following a
+ * known one becomes part of that known section's field text — heading line
+ * kept — so authored prose is never silently dropped by a parse→save
+ * round-trip; an unknown section BEFORE the first known heading still rides
+ * verbatim as an unknown section (nothing to fold into).
  *
  * Routing contract (section/frontmatter key → Character field → canvas slot)
  * lives in `plans/VIBE_TAVERN_FORMAT.md`; this module is the single source of
@@ -119,6 +125,25 @@ export interface ProfileMd extends ProfileStorageId {
 /** Shape returned by {@link parseProfileMd} (round-trips into {@link ProfileMd}). */
 export interface ParsedProfile extends ProfileMd {}
 
+/** Options for {@link parseProfileMd}. */
+export interface ParseProfileMdOptions {
+  /**
+   * `true` (default): an unknown H1 section FOLLOWING a known section folds
+   * into that known section's field text — the unknown heading line + body
+   * become part of the field, so authored prose is never silently dropped by
+   * a parse→save round-trip (MD_HEADING_LOSS_REPORT: heading-first prose
+   * pasted under `# PERSONALITY` used to save `description: ""`). Uniform
+   * rule — it applies whether the preceding known section is empty or not,
+   * and to every unknown section, including consecutive ones.
+   * `false`: legacy shape — unknown sections (wherever they sit) are returned
+   * verbatim in {@link ParsedProfile.unknownSections}. Used ONLY by the
+   * exchange monolith (`monolith.ts`), whose functional headings
+   * (`# SYSTEM` / `# POST-HISTORY` / `# DEPTH PROMPT` / `# GREETINGS`) ride as
+   * unknown sections — that transport must not absorb them into prose fields.
+   */
+  foldUnknownSections?: boolean;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Canonical ordering
 // ───────────────────────────────────────────────────────────────────────────
@@ -136,7 +161,9 @@ const KNOWN_SECTIONS = [
  * Functional instruction sections (`# SYSTEM` / `# POST-HISTORY` /
  * `# DEPTH PROMPT`) are intentionally NOT mapped here — they live in
  * `instructions.json`, not the prose document. If they appear in a
- * `profile.md`, they are preserved losslessly as {@link BodySection} unknowns.
+ * `profile.md`, their text is preserved through the fold (see
+ * {@link ParseProfileMdOptions.foldUnknownSections}); only the exchange
+ * monolith keeps them as {@link BodySection} unknowns (its transport).
  */
 type SectionField = "description" | "scenario" | "mesExample";
 
@@ -173,15 +200,16 @@ interface FmEntry {
  * Tolerant of: quoted/unquoted scalars, inline flow arrays, block scalars, and
  * the nested `vt:` map. Missing frontmatter yields a profile with defaults
  * (the caller may treat an empty `name` as invalid). Never throws on unknown
- * keys/sections — they are preserved.
+ * keys/sections — they are preserved (see {@link ParseProfileMdOptions}).
  */
-export function parseProfileMd(text: string): ParsedProfile {
+export function parseProfileMd(text: string, opts: ParseProfileMdOptions = {}): ParsedProfile {
   const { frontmatterText, bodyText } = splitFrontmatter(text);
   const fmEntries = frontmatterText.length > 0 ? parseFrontmatter(frontmatterText) : [];
   const sections = parseBodySections(bodyText);
 
   const { profile, storageId, unknownFrontmatter, unknownVt } = extractProfileFromFrontmatter(fmEntries);
-  const { profile: profileFromSections, unknownSections } = extractProfileFromSections(sections);
+  const foldUnknownSections = opts.foldUnknownSections !== false;
+  const { profile: profileFromSections, unknownSections } = extractProfileFromSections(sections, foldUnknownSections);
 
   // Section-derived fields override only when the frontmatter didn't set them
   // (sections are the source for prose fields; frontmatter never carries them).
@@ -482,18 +510,34 @@ function extractProfileFromFrontmatter(entries: FmEntry[]): {
   return { profile, storageId, unknownFrontmatter, unknownVt };
 }
 
-function extractProfileFromSections(sections: RawSection[]): {
+function extractProfileFromSections(sections: RawSection[], fold: boolean): {
   profile: Partial<Record<SectionField, string | null>>;
   unknownSections: BodySection[];
 } {
   const profile: Partial<Record<SectionField, string | null>> = {};
   const unknownSections: BodySection[] = [];
+  // The last KNOWN section seen so far — the fold target for unknown sections
+  // that follow it. Unknown sections never become fold targets themselves.
+  let foldTarget: SectionField | null = null;
   for (const section of sections) {
     const field = SECTION_TO_FIELD[section.heading];
     const body = section.body.trim();
     if (field) {
+      foldTarget = field;
       // Empty section body = field absent (null). Non-empty = the field value.
+      // The empty-description special case (VTF-12 "PERSONALITY always
+      // defined") is deliberate clearing and must stick when nothing follows.
       profile[field] = body.length > 0 ? body : field === "description" ? "" : null;
+    } else if (fold && foldTarget !== null) {
+      // MD_HEADING_LOSS_REPORT fold: an unknown H1 section following a known
+      // one becomes part of that known section's field text — the heading
+      // line is kept, joined with a blank line, so nothing authored is
+      // dropped by a parse→save round-trip. Uniform: applies to an empty
+      // target too (the fold overrides the just-cleared field value).
+      const folded = body.length > 0 ? `# ${section.heading}\n${body}` : `# ${section.heading}`;
+      const current = profile[foldTarget];
+      profile[foldTarget] =
+        current !== null && current !== undefined && current.length > 0 ? `${current}\n\n${folded}` : folded;
     } else {
       unknownSections.push({ heading: section.heading, body });
     }

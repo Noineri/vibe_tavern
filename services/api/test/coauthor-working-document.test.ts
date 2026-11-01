@@ -61,7 +61,12 @@ describe("coauthor working document", () => {
     expect(parsed.storageId).toBe("char_storage");
     expect(parsed.unknownVt).toEqual([{ key: "server_flag", value: "keep", block: false }]);
     expect(parsed.unknownFrontmatter).toEqual([{ key: "custom_key", value: "custom-value", block: false }]);
-    expect(parsed.unknownSections).toEqual([{ heading: "CUSTOM", body: "Saved custom section." }]);
+    // The saved # CUSTOM section sat AFTER # EXAMPLES, so it parses FOLDED
+    // into mesExample (MD_HEADING_LOSS_REPORT); the overlay takes the editor's
+    // prose fields wholesale — in the real flow the editor body itself carries
+    // the folded text inside # EXAMPLES, so nothing is lost end-to-end.
+    expect(parsed.profile.mesExample).toBe("Live example.");
+    expect(parsed.unknownSections).toEqual([]);
     expect(result.profileMd).not.toContain("# GREETINGS");
     expect(result.character).toEqual({ firstMessage: "Live primary.", alternateGreetings: ["Live alternate."] });
   });
@@ -86,6 +91,12 @@ describe("coauthor working document", () => {
     const fields = mapCoauthorProfileToCharacterFields(profile, { server_only: "keep", creator: "old" });
 
     expect(fields.extensions).toEqual({ server_only: "keep", creator: "Server Creator", character_version: "v7" });
-    expect(fields).toMatchObject({ description: "Saved personality.", scenario: "Saved scenario.", mesExample: "Saved example." });
+    // The saved # CUSTOM section sat AFTER # EXAMPLES, so it parses FOLDED
+    // into mesExample (MD_HEADING_LOSS_REPORT) — text preserved in the field.
+    expect(fields).toMatchObject({
+      description: "Saved personality.",
+      scenario: "Saved scenario.",
+      mesExample: "Saved example.\n\n# CUSTOM\nSaved custom section.",
+    });
   });
 });

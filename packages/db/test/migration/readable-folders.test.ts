@@ -254,6 +254,10 @@ describe("HRF-5 migrateToReadableFolders", () => {
 		expect(parsed.storageId).toBe("char_custom"); // stamped
 		expect(parsed.unknownVt?.some((u) => u.key === "custom_vt_key")).toBe(true); // preserved
 		expect(parsed.unknownFrontmatter?.some((u) => u.key === "custom_top_key")).toBe(true); // preserved
-		expect(parsed.unknownSections?.some((s) => s.heading === "CUSTOM SECTION")).toBe(true); // preserved
+		// The custom body section FOLLOWED a known section, so the fold
+		// (MD_HEADING_LOSS_REPORT) keeps its text INSIDE # PERSONALITY's field
+		// instead of a separate unknown section — preserved, not dropped.
+		expect(parsed.profile.description).toBe("body text\n\n# CUSTOM SECTION\ncustom body");
+		expect(parsed.unknownSections).toEqual([]); // folded into the field above
 	});
 });

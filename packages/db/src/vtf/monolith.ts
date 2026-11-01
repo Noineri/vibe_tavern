@@ -64,8 +64,11 @@
  *  - The frontmatter + prose body are produced by {@link serializeProfileMd} /
  *    {@link parseProfileMd} (profile-md.ts is the single source of truth for the
  *    hand-rolled YAML dialect). The functional sections ride as `unknownSections`
- *    and the depth config rides as `unknownVt` entries, which profile-md already
- *    preserves verbatim — so no dialect code is duplicated here.
+ *    and the depth config rides as `unknownVt` entries, which profile-md preserves
+ *    verbatim when the monolith parses with `foldUnknownSections: false` — the
+ *    default fold (MD_HEADING_LOSS_REPORT) protects prose fields from
+ *    unknown-section loss but would absorb these transport sections into the
+ *    preceding prose field — so no dialect code is duplicated here.
  *  - Greetings ride in a `# GREETINGS` section whose body is the inline-marker
  *    blob from {@link compileGreetingsInline} / {@link splitGreetingsInline}.
  *  - Extensions ride in a fenced ```` ```vtf-extensions ```` block whose inner
@@ -188,7 +191,12 @@ export function packMonolith(character: VtfCharacterContent): string {
  */
 export function unpackMonolith(md: string): VtfCharacterContent {
   const { fenceInner, rest } = extractExtensionsFence(md);
-  const parsed = parseProfileMd(rest);
+  // foldUnknownSections: false — this codec's functional headings
+  // (# SYSTEM / # POST-HISTORY / # DEPTH PROMPT / # GREETINGS) sit AFTER the
+  // prose sections and are read back out of `unknownSections`; the default
+  // fold (MD_HEADING_LOSS_REPORT) would absorb them into the preceding prose
+  // field and destroy this transport.
+  const parsed = parseProfileMd(rest, { foldUnknownSections: false });
 
   const sections = indexUnknownSections(parsed.unknownSections ?? []);
   const vtMap = new Map((parsed.unknownVt ?? []).map((e) => [e.key, e.value]));
