@@ -32,8 +32,9 @@ import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
  * (`sourceBuiltinId`, carried on the wire row) resolves the SOURCE's
  * STARTERS through `effectiveProfileStarterKeys` (starters are the one
  * thing a duplicate inherits). The hand-off row is
- * offered ONLY while the kind's FIRST built-in is effective (a user profile
- * never shows it) AND the branch plan has no events — the story plan's
+ * offered for every effective profile of the sidechat kind except the
+ * director itself (owner ruling 2026-11-01 — user profiles included) AND
+ * the branch plan has no events — the story plan's
  * events are its tasks, and the caller passes the same `useAgentPlan` value
  * the plan section renders from (no second plan read).
  *
@@ -58,7 +59,8 @@ export interface AgentEmptyProfileResult {
 	 *  undefined = the host's `starterPromptKeys`. */
 	starterKeys: readonly AgentI18nKey[] | undefined;
 	/** The OOC hand-off row config + its profile-switch callback, or
-	 *  undefined (no row — another profile active, or the plan has events). */
+	 *  undefined (no row — the director is already effective, or the plan
+	 *  has events). */
 	handoffRow: (AgentBuiltinProfileHandoff & { onActivate: () => void }) | undefined;
 }
 
