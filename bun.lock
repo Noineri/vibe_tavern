@@ -12,7 +12,7 @@
     },
     "apps/web": {
       "name": "@vibe-tavern/web",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@base-ui/react": "^1.9.0",
         "@codemirror/autocomplete": "^6.20.4",
@@ -91,7 +91,7 @@
     },
     "packages/api-contracts": {
       "name": "@vibe-tavern/api-contracts",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
         "zod": "catalog:",
@@ -102,7 +102,7 @@
     },
     "packages/db": {
       "name": "@vibe-tavern/db",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
         "drizzle-orm": "^0.45.4",
@@ -114,7 +114,7 @@
     },
     "packages/domain": {
       "name": "@vibe-tavern/domain",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "acorn": "^8.19.0",
       },
@@ -124,7 +124,7 @@
     },
     "packages/import-export": {
       "name": "@vibe-tavern/import-export",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
       },
@@ -134,7 +134,7 @@
     },
     "packages/prompt-pipeline": {
       "name": "@vibe-tavern/prompt-pipeline",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
       },
@@ -144,7 +144,7 @@
     },
     "services/api": {
       "name": "@vibe-tavern/api",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "dependencies": {
         "@agnai/web-tokenizers": "^0.1.6-pre3",
         "@ai-sdk/anthropic": "^4.0.89",
