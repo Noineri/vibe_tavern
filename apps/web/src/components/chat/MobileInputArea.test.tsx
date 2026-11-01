@@ -14,13 +14,14 @@ useDomEnv();
 // "Context") — byte-identical to the previous hand-built values.
 installI18nContextSeam({ interpolateKeys: ["context_usage_percent", "context_label"] });
 
+let act: typeof import("@testing-library/react").act;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let MobileInputArea: typeof import("./MobileInputArea.js").MobileInputArea;
 
 beforeAll(async () => {
-  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+  ({ act, render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ MobileInputArea } = await import("./MobileInputArea.js"));
 });
 
@@ -168,6 +169,70 @@ describe("MobileInputArea context breakdown (via the model sheet)", () => {
     ] as const) {
       expect(text).toContain(`${label}${value}`);
     }
+  });
+});
+
+// CNR-7e characterization, written BEFORE the thin-scrollbar opt-in: the
+// hand-rolled mobile growth — content height until 40% of the viewport, the
+// same node kept across draft changes, clear recomputes the height. The
+// opt-in must not disturb any of it.
+describe("MobileInputArea draft growth (CNR-7e)", () => {
+  const textbox = (v: ReturnType<typeof render>) => v.getByRole("textbox") as HTMLTextAreaElement;
+
+  it("grows with the draft and caps the box at 40% of the viewport height", async () => {
+    const view = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
+    await act(async () => {}); // the mounted voice button's STT fetch settles inside act
+    const ta = textbox(view);
+    expect(ta.classList.contains("max-h-[40vh]")).toBe(true);
+    // Short draft: the box takes the measured content height.
+    Object.defineProperty(ta, "scrollHeight", { configurable: true, get: () => 60 });
+    fireEvent.change(ta, { target: { value: "short" } });
+    expect(ta.style.height).toBe("60px");
+    // Long draft: the manual growth stops at window.innerHeight * 0.4 (the
+    // same cap as the max-h-[40vh] class). The CSSOM read-back normalizes the
+    // float, so compare parsed numbers, not the raw string.
+    Object.defineProperty(ta, "scrollHeight", { configurable: true, get: () => 5000 });
+    fireEvent.change(ta, { target: { value: "a much longer draft" } });
+    const capped = Math.min(5000, window.innerHeight * 0.4);
+    expect(parseFloat(ta.style.height)).toBeCloseTo(capped, 6);
+    expect(parseFloat(ta.style.height)).toBeLessThan(5000);
+    expect(textbox(view)).toBe(ta);
+  });
+
+  it("keeps the same native textarea across draft changes and recomputes on clear", async () => {
+    const view = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
+    await act(async () => {});
+    const ta = textbox(view);
+    Object.defineProperty(ta, "scrollHeight", { configurable: true, get: () => 26 });
+    view.rerender(<TooltipProvider><MobileInputArea data={makeData({ draft: "" })} /></TooltipProvider>);
+    await act(async () => {});
+    // draft "" runs the shrink effect (adjustTextareaHeight) without a change event.
+    expect(ta.style.height).toBe("26px");
+    expect(textbox(view)).toBe(ta);
+  });
+
+  // New boundary (fails before the CNR-7e opt-in): the textarea IS the thin
+  // scroll-area viewport — no wrapper div, no Content node, native tab stop.
+  it("composes the native textarea as the 3px thin-viewport and mounts the track only on overflow", async () => {
+    const view = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
+    await act(async () => {});
+    const ta = textbox(view);
+    expect(ta.hasAttribute("data-scroll-viewport")).toBe(true);
+    expect(ta.querySelector("[data-scroll-content]")).toBeNull();
+    expect(ta.tabIndex).toBe(0);
+    expect(view.container.querySelector("[data-scroll-track]")).toBeNull();
+    Object.defineProperties(ta, {
+      clientHeight: { configurable: true, value: 100 }, scrollHeight: { configurable: true, get: () => 1000 },
+      clientWidth: { configurable: true, value: 200 }, scrollWidth: { configurable: true, value: 200 },
+    });
+    view.rerender(<TooltipProvider><MobileInputArea data={makeData({ draft: "a long overflowing draft" })} /></TooltipProvider>);
+    const track = await waitFor(() => {
+      const el = view.container.querySelector("[data-scroll-track]")!;
+      expect(el).not.toBeNull();
+      return el;
+    });
+    expect(track.classList.contains("w-[3px]")).toBe(true);
+    expect(textbox(view)).toBe(ta);
   });
 });
 

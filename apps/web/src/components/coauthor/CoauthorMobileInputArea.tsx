@@ -11,6 +11,7 @@ import type { ChangeEvent } from "react";
 import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
 import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
@@ -135,16 +136,24 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 				{draftAttachments.length > 0 && <AttachmentPreview attachments={draftAttachments} onRemove={data.remove} />}
 				<div className="flex items-end gap-2">
 					<input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
-					<textarea
-						ref={mobileTextareaRef}
-						data-testid="coauthor-input-textarea"
-						className={composerCls}
-						placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
-						value={draft}
-						onChange={mobileOnChange}
-						onPaste={handlePaste}
-						rows={1}
-					/>
+					{/* CNR-7e: the textarea itself composes as the Base UI viewport
+						(ScrollArea viewportRender — same seam as the desktop
+						composers) for the 3px custom thumb; the element, its ref,
+						the 40vh growth cap and touch input stay native. The root
+						takes the row's flex-1 role the textarea held as a direct
+						child. */}
+					<ScrollArea scrollbarSize="thin" className="flex-1" viewportRender={
+						<textarea
+							ref={mobileTextareaRef}
+							data-testid="coauthor-input-textarea"
+							className={composerCls}
+							placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
+							value={draft}
+							onChange={mobileOnChange}
+							onPaste={handlePaste}
+							rows={1}
+						/>
+					} />
 					<div className="flex shrink-0 items-center">
 						<TokenCounterPopover
 							mobile

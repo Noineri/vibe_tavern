@@ -201,6 +201,55 @@ describe("CoauthorMobileInputArea — Enter does not send (E4)", () => {
   });
 });
 
+// CNR-7e characterization, written BEFORE the thin-scrollbar opt-in: the
+// hand-rolled mobile growth — content height until 40% of the viewport, the
+// same node kept across draft changes. The opt-in must not disturb it.
+describe("CoauthorMobileInputArea draft growth (CNR-7e)", () => {
+  const textbox = (v: ReturnType<typeof render>) => v.getByTestId("coauthor-input-textarea") as HTMLTextAreaElement;
+
+  it("grows with the draft and caps the box at 40% of the viewport height", () => {
+    const { data } = makeData();
+    const view = render(<TooltipProvider><CoauthorMobileInputArea data={data} /></TooltipProvider>);
+    const ta = textbox(view);
+    expect(ta.classList.contains("max-h-[40vh]")).toBe(true);
+    Object.defineProperty(ta, "scrollHeight", { configurable: true, get: () => 60 });
+    fireEvent.change(ta, { target: { value: "short" } });
+    expect(ta.style.height).toBe("60px");
+    Object.defineProperty(ta, "scrollHeight", { configurable: true, get: () => 5000 });
+    fireEvent.change(ta, { target: { value: "a much longer draft" } });
+    // The CSSOM read-back normalizes the float; compare parsed numbers.
+    const capped = Math.min(5000, window.innerHeight * 0.4);
+    expect(parseFloat(ta.style.height)).toBeCloseTo(capped, 6);
+    expect(parseFloat(ta.style.height)).toBeLessThan(5000);
+    expect(textbox(view)).toBe(ta);
+  });
+
+  // New boundary (fails before the CNR-7e opt-in): the textarea IS the thin
+  // scroll-area viewport — no wrapper div, no Content node, native tab stop.
+  it("composes the native textarea as the 3px thin-viewport and mounts the track only on overflow", async () => {
+    const { data } = makeData();
+    const view = render(<TooltipProvider><CoauthorMobileInputArea data={data} /></TooltipProvider>);
+    await act(async () => {});
+    const ta = textbox(view);
+    expect(ta.hasAttribute("data-scroll-viewport")).toBe(true);
+    expect(ta.querySelector("[data-scroll-content]")).toBeNull();
+    expect(ta.tabIndex).toBe(0);
+    expect(view.container.querySelector("[data-scroll-track]")).toBeNull();
+    Object.defineProperties(ta, {
+      clientHeight: { configurable: true, value: 100 }, scrollHeight: { configurable: true, get: () => 1000 },
+      clientWidth: { configurable: true, value: 200 }, scrollWidth: { configurable: true, value: 200 },
+    });
+    view.rerender(<TooltipProvider><CoauthorMobileInputArea data={makeData().data} /></TooltipProvider>);
+    const track = await waitFor(() => {
+      const el = view.container.querySelector("[data-scroll-track]")!;
+      expect(el).not.toBeNull();
+      return el;
+    });
+    expect(track.classList.contains("w-[3px]")).toBe(true);
+    expect(textbox(view)).toBe(ta);
+  });
+});
+
 describe('Co-Author mobile image warning (CA-1h3)', () => {
   for (const route of ['none', 'describe'] as const) {
     it(`image route ${route}: shared warning=${route === 'none'}, attachment-only Send stays enabled`, async () => {

@@ -24,6 +24,7 @@ import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { ContextRing, getContextUsage } from "../shared/TokenCounterPopover.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "./attachment-overflow-warning.js";
@@ -164,15 +165,22 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
         {/* Input row */}
         <div className="flex items-end gap-2">
           <input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
-          <textarea
-            ref={mobileTextareaRef}
-            className={composerCls}
-            placeholder={t("placeholder")}
-            value={draft}
-            onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}
-            onPaste={handlePaste}
-            rows={1}
-          />
+          {/* CNR-7e: the textarea itself composes as the Base UI viewport
+              (ScrollArea viewportRender — same seam as the desktop composers)
+              for the 3px custom thumb; the element, its ref, the 40vh growth
+              cap and touch input stay native. The root takes the row's flex-1
+              role the textarea held as a direct child. */}
+          <ScrollArea scrollbarSize="thin" className="flex-1" viewportRender={
+            <textarea
+              ref={mobileTextareaRef}
+              className={composerCls}
+              placeholder={t("placeholder")}
+              value={draft}
+              onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}
+              onPaste={handlePaste}
+              rows={1}
+            />
+          } />
           <div className="flex shrink-0 items-center gap-2">
             {showGenerateMore && (
               <button type="button"
