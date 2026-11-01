@@ -54,9 +54,20 @@
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
 | `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
+| `<ScrollArea>` | Vertical native scrollbar chrome | `scroll-area.tsx` | Base UI native viewport with themed custom 3px (`thin`) or 8px (`regular`) scrollbar visuals in every browser |
 | `<ChatScrollRail>` / `<ScrollRail>` | Transcript native scrollbar | `chat/scroll-rail.tsx` | Shared RP/Co-Author story map: quiet thread, hover previews, desktop jumps/drag and mobile edge scrub |
 
 ---
+
+## Scroll Area
+
+**File:** `scroll-area.tsx`.
+Wraps the installed Base UI Root/Viewport/Content/Scrollbar/Thumb; the viewport remains a native scroll container, with native scrollbar chrome hidden and horizontal overflow clipped.
+`scrollbarSize="thin"` draws a 3px vertical scrollbar; the default `regular` draws 8px, using `--border2` and a fully rounded thumb in Chromium and Firefox alike.
+`className`/`style` size the root (including flex or max-height constraints); `contentClassName` carries row layout, gaps and padding; `viewportProps` forwards the ref, accessible name, scroll events and viewport-local classes to the actual scroller.
+Use `render={<section />}` when the existing semantic root must remain a section.
+Base UI owns measurement, conditional scrollbar mounting, thumb dragging and native keyboard/wheel/touch interaction; non-overflowing viewports stay out of tab order.
+This vertical primitive does not replace the message navigation rail, direct textarea scrolling, CodeMirror, or sandboxed iframe documents.
 
 ## Chat Navigation Rail
 
