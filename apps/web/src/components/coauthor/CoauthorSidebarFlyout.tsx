@@ -47,6 +47,7 @@ import type { ChatControllerActions } from "../../hooks/use-chat-controller.js";
 import { useT } from "../../i18n/context.js";
 import type { CharacterTab } from "../layout/app-shell-types.js";
 import type { TFn } from "../layout/sections/section-types.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 
 /** Collapsed sidebar strip right edge — the former `fixed left-[54px]` value. */
 const COLLAPSED_STRIP_RIGHT_X = 54;
@@ -127,6 +128,7 @@ export function CoauthorSidebarFlyout({
           sideOffset={0}
           collisionPadding={12}
           className="glass-blur z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-[flyoutIn_0.18s_ease-out]"
+          style={{ maxHeight: "var(--radix-popper-available-height)" }}
         >
           {/* ── Header ── */}
           <div className="relative shrink-0 border-b border-border">
@@ -162,7 +164,7 @@ export function CoauthorSidebarFlyout({
           </div>
 
           {/* ── Chat list ── */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1" style={{ maxHeight: "var(--radix-popper-available-height)" }}>
+          <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="flex flex-col px-2 py-1">
             {q && (
               <div className="px-2 pb-0.5 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t4">
                 {filtered.length} / {flyoutChats.length} {t("sidebar_chats").toLowerCase()}
@@ -211,7 +213,7 @@ export function CoauthorSidebarFlyout({
                 );
               })
             )}
-          </div>
+          </ScrollArea>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

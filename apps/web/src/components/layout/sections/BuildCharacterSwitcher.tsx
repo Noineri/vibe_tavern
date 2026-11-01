@@ -28,6 +28,7 @@ import { tabAvatarSrc } from "../sidebar-utils.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export interface BuildCharacterSwitcherProps {
   variant: "expanded" | "collapsed";
@@ -112,10 +113,10 @@ export function BuildCharacterSwitcher({
             sideOffset={6}
             onOpenAutoFocus={handleOpenAutoFocus}
             className="glass-blur z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-            style={{ animation: "flyoutIn 0.18s ease-out" }}
+            style={{ animation: "flyoutIn 0.18s ease-out", maxHeight: "var(--radix-popper-available-height)" }}
           >
             {searchRow}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1" style={{ maxHeight: "var(--radix-popper-available-height)" }}>
+            <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="flex flex-col px-2 py-1">
               {visibleTabs.map((tab, index) => {
                 const isActive = tab.id === activeCharacterId;
                 return (
@@ -142,7 +143,7 @@ export function BuildCharacterSwitcher({
                 );
               })}
               {noResultsRow}
-            </div>
+            </ScrollArea>
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
@@ -178,9 +179,10 @@ export function BuildCharacterSwitcher({
             sideOffset={4}
             onOpenAutoFocus={handleOpenAutoFocus}
             className="glass-blur z-[400] rounded-lg border border-border bg-glass-bg shadow-theme-md outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 flex min-w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden"
+            style={{ maxHeight: "var(--radix-popper-available-height)" }}
           >
             {searchRow}
-            <div className="max-h-[240px] overflow-y-auto py-1">
+            <ScrollArea scrollbarSize="thin" className="max-h-[240px]" contentClassName="py-1">
               {visibleTabs.map(tab => (
                 <div
                   key={tab.id}
@@ -200,7 +202,7 @@ export function BuildCharacterSwitcher({
                 </div>
               ))}
               {noResultsRow}
-            </div>
+            </ScrollArea>
           </Popover.Content>
         </Popover.Portal>
       )}

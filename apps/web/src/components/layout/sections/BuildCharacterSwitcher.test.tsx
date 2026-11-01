@@ -34,6 +34,12 @@ useDomEnv({ failOnNetwork: true });
 // LB-3A).
 const { render, fireEvent, act, waitFor, within } = await import("@testing-library/react");
 
+async function renderSettled(node: ReactNode) {
+	let view!: ReturnType<typeof render>;
+	await act(async () => { view = render(node); });
+	return view;
+}
+
 // --- House mocks (RichChatRow.test.tsx pattern) -------------------------
 const realTooltip = await import("../../shared/Tooltip.js");
 const realChatController = await import("../../../hooks/use-chat-controller.js");
@@ -230,7 +236,7 @@ describe("Sidebar build-mode character switcher — characterization (LB-3A)", (
 
 	it("expanded: lists every character tab", async () => {
 		seedSidebar(false);
-		const { container } = render(<Sidebar />);
+		const { container } = await renderSettled(<Sidebar />);
 		openTrigger(switcherTrigger(container));
 		await waitFor(() => expect(within(document.body).getByText("Alpha")).toBeTruthy());
 		expect(within(document.body).getByText("Bree")).toBeTruthy();
@@ -238,7 +244,7 @@ describe("Sidebar build-mode character switcher — characterization (LB-3A)", (
 
 	it("expanded: picking a tab with a chat switches to it and closes", async () => {
 		seedSidebar(false);
-		const { container } = render(<Sidebar />);
+		const { container } = await renderSettled(<Sidebar />);
 		const trigger = switcherTrigger(container);
 		openTrigger(trigger);
 		await act(async () => {
@@ -252,7 +258,7 @@ describe("Sidebar build-mode character switcher — characterization (LB-3A)", (
 
 	it("expanded: picking a tab without a chat creates one", async () => {
 		seedSidebar(false);
-		const { container } = render(<Sidebar />);
+		const { container } = await renderSettled(<Sidebar />);
 		openTrigger(switcherTrigger(container));
 		await act(async () => {
 			fireEvent.click(within(document.body).getByText("Alpha"));
@@ -262,17 +268,17 @@ describe("Sidebar build-mode character switcher — characterization (LB-3A)", (
 		expect(switchChatSpy).not.toHaveBeenCalled();
 	});
 
-	it("collapsed: lists every tab in the avatar flyout", () => {
+	it("collapsed: lists every tab in the avatar flyout", async () => {
 		seedSidebar(true);
-		const { container } = render(<Sidebar />);
-		openTrigger(switcherTrigger(container));
+		const { container } = await renderSettled(<Sidebar />);
+		await act(async () => openTrigger(switcherTrigger(container)));
 		expect(within(document.body).getByText("Alpha")).toBeTruthy();
 		expect(within(document.body).getByText("Bree")).toBeTruthy();
 	});
 
 	it("collapsed: picking a tab switches and closes", async () => {
 		seedSidebar(true);
-		const { container } = render(<Sidebar />);
+		const { container } = await renderSettled(<Sidebar />);
 		const trigger = switcherTrigger(container);
 		openTrigger(trigger);
 		await act(async () => {
@@ -332,10 +338,10 @@ function MockSwitcher(props: { variant: "expanded" | "collapsed"; tabs: Characte
 const searchInput = (): HTMLInputElement | null =>
 	document.body.querySelector('input[aria-label="link_binding_search_placeholder"]');
 
-function typeQuery(value: string): void {
+async function typeQuery(value: string): Promise<void> {
 	const input = searchInput();
 	if (!(input instanceof HTMLInputElement)) throw new Error("search input not found");
-	act(() => {
+	await act(async () => {
 		fireEvent.change(input, { target: { value } });
 	});
 }
@@ -346,15 +352,22 @@ describe("BuildCharacterSwitcher — unit (LB-3A)", () => {
 	beforeEach(() => { picked = null; });
 
 	for (const variant of VARIANTS) {
-		it(`${variant}: lists every tab when open`, () => {
-			render(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory"])} />);
+		it(`${variant}: portal rows use the narrow native-scroll/custom-chrome primitive`, async () => {
+			const view = await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory", "D", "E", "F", "G"])} />);
+			const area = view.baseElement.querySelector('[role="dialog"] [data-scroll-area="thin"]')!;
+			expect(area).not.toBeNull();
+			expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+			expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("Alpha");
+		});
+		it(`${variant}: lists every tab when open`, async () => {
+			await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory"])} />);
 			expect(within(document.body).getByText("Alpha")).toBeTruthy();
 			expect(within(document.body).getByText("Bree")).toBeTruthy();
 			expect(within(document.body).getByText("Cory")).toBeTruthy();
 		});
 
 		it(`${variant}: picking a tab fires onPick and closes`, async () => {
-			render(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree"])} />);
+			await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree"])} />);
 			await act(async () => {
 				fireEvent.click(within(document.body).getByText("Bree"));
 			});
@@ -362,57 +375,57 @@ describe("BuildCharacterSwitcher — unit (LB-3A)", () => {
 			await waitFor(() => expect(within(document.body).queryByText("Bree")).toBeNull());
 		});
 
-		it(`${variant}: no search row with 6 tabs, present with 7`, () => {
+		it(`${variant}: no search row with 6 tabs, present with 7`, async () => {
 			const six = makeTabs(["A", "B", "C", "D", "E", "F"]);
-			const { unmount } = render(<MockSwitcher variant={variant} tabs={six} />);
+			const { unmount } = await renderSettled(<MockSwitcher variant={variant} tabs={six} />);
 			expect(searchInput()).toBeNull();
 			unmount();
 
 			const seven = [...six, makeTab("c7", "G")];
-			render(<MockSwitcher variant={variant} tabs={seven} />);
+			await renderSettled(<MockSwitcher variant={variant} tabs={seven} />);
 			expect(searchInput() instanceof HTMLInputElement).toBe(true);
 		});
 
-		it(`${variant}: typing filters case-insensitively, order preserved, Cyrillic matches`, () => {
+		it(`${variant}: typing filters case-insensitively, order preserved, Cyrillic matches`, async () => {
 			const tabs = makeTabs(["Alpha", "bree", "\u0410\u043d\u043d\u0430", "Cory", "Dana", "Eli", "Finn"]);
-			render(<MockSwitcher variant={variant} tabs={tabs} />);
-			typeQuery("BREE");
+			await renderSettled(<MockSwitcher variant={variant} tabs={tabs} />);
+			await typeQuery("BREE");
 			expect(within(document.body).queryByText("Alpha")).toBeNull();
 			expect(within(document.body).getByText("bree")).toBeTruthy();
 			expect(within(document.body).queryByText("Cory")).toBeNull();
-			typeQuery("\u0410\u041d"); // upper-case Cyrillic query matches the mixed-case name
+			await typeQuery("\u0410\u041d"); // upper-case Cyrillic query matches the mixed-case name
 			expect(within(document.body).getByText("\u0410\u043d\u043d\u0430")).toBeTruthy();
 			expect(within(document.body).queryByText("Alpha")).toBeNull();
 		});
 
-		it(`${variant}: no-results line when nothing matches`, () => {
-			render(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory", "D", "E", "F", "G"])} />);
-			typeQuery("zzz");
+		it(`${variant}: no-results line when nothing matches`, async () => {
+			await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory", "D", "E", "F", "G"])} />);
+			await typeQuery("zzz");
 			expect(within(document.body).getByText("link_binding_no_results")).toBeTruthy();
 			expect(within(document.body).queryByText("Alpha")).toBeNull();
 		});
 
 		it(`${variant}: query resets after close and reopen`, async () => {
 			const tabs = makeTabs(["Alpha", "Bree", "Cory", "D", "E", "F", "G"]);
-			const { rerender } = render(
+			const { rerender } = await renderSettled(
 				<MockSwitcher variant={variant} tabs={tabs} />,
 			);
-			typeQuery("Bree");
+			await typeQuery("Bree");
 			expect(within(document.body).queryByText("Alpha")).toBeNull();
 			// Close (parent flips open), reopen — query must be empty again.
-			rerender(<MockSwitcher variant={variant} tabs={tabs} forceOpen={false} />);
+			await act(async () => rerender(<MockSwitcher variant={variant} tabs={tabs} forceOpen={false} />));
 			await waitFor(() => expect(within(document.body).queryByText("Bree")).toBeNull());
-			rerender(<MockSwitcher variant={variant} tabs={tabs} forceOpen={true} />);
+			await act(async () => rerender(<MockSwitcher variant={variant} tabs={tabs} forceOpen={true} />));
 			const input = searchInput();
 			expect(input instanceof HTMLInputElement).toBe(true);
 			expect((input as HTMLInputElement).value).toBe("");
 			expect(within(document.body).getByText("Alpha")).toBeTruthy();
 		});
 
-		it(`${variant}: row images are lazy-decoded`, () => {
+		it(`${variant}: row images are lazy-decoded`, async () => {
 			const withAvatar = [makeTab("c1", "Alpha", { avatarExt: "png", avatarAssetId: "a1" })];
-			const tabs = [...withAvatar, ...makeTabs(["Bree", "Cory"]).slice(0, 1)];
-			render(<MockSwitcher variant={variant} tabs={tabs} />);
+			const tabs = [...withAvatar, makeTab("c2", "Bree")];
+			await renderSettled(<MockSwitcher variant={variant} tabs={tabs} />);
 			const img = within(document.body).getAllByRole("img")[0];
 			expect(img.getAttribute("loading")).toBe("lazy");
 			expect(img.getAttribute("decoding")).toBe("async");

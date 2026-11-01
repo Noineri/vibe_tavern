@@ -275,6 +275,20 @@ describe("Sidebar — character list recency without an active chat", () => {
 });
 
 describe("Sidebar — collapsed flyout without an active chat", () => {
+	it.each([["RP", Sidebar], ["Co-Author", CoauthorSidebar]] as const)("%s portal list uses narrow custom chrome independently of the sidebar root", async (_mode, Component) => {
+		seedNoActiveChat({ collapsed: true, selectedCharacterId: null });
+		const view = render(<Component />);
+		await act(async () => {
+			const tile = [...view.container.querySelectorAll("span")].find((el) => el.textContent === "A")!;
+			fireEvent.click(tile);
+		});
+		const dialog = view.getByRole("dialog");
+		expect(view.container.contains(dialog)).toBe(false);
+		const area = dialog.querySelector('[data-scroll-area="thin"]')!;
+		expect(area).not.toBeNull();
+		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+	});
+
 	it("keeps the status on the collapsed avatar without adding a chat-row badge", async () => {
 		seedNoActiveChat({ collapsed: true, selectedCharacterId: null });
 		useChatRunActivityStore.getState().setRunning("chat-a2", true);

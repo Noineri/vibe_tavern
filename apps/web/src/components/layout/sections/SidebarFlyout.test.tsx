@@ -77,7 +77,7 @@ function branchBadge(container: HTMLElement): HTMLElement | null {
   return container.querySelector('button[aria-label="sidebar_chat_branches"]');
 }
 
-function renderSc21Flyout(setConfirmDestroy: ReturnType<typeof mock>) {
+async function renderSc21Flyout(setConfirmDestroy: ReturnType<typeof mock>) {
   const view = render(
     <SidebarFlyout
       flyoutCharId="char-1"
@@ -100,6 +100,7 @@ function renderSc21Flyout(setConfirmDestroy: ReturnType<typeof mock>) {
       t={(key: string) => key}
     />,
   );
+  await act(async () => {});
   return view;
 }
 
@@ -119,7 +120,7 @@ describe("SidebarFlyout SC-21 delete-branch confirm", () => {
   it("with sessions the confirm body carries the warning", async () => {
     respondSummary(200, { hasSessions: true, count: 1 });
     const setConfirmDestroy = mock();
-    const view = renderSc21Flyout(setConfirmDestroy);
+     const view = await renderSc21Flyout(setConfirmDestroy);
     await clickDeleteBranch(view);
     await waitFor(() => expect(setConfirmDestroy).toHaveBeenCalledTimes(1));
     expect(setConfirmDestroy.mock.calls[0][0].body).toBe(
@@ -131,7 +132,7 @@ describe("SidebarFlyout SC-21 delete-branch confirm", () => {
   it("without sessions the confirm body is today's sentence", async () => {
     respondSummary(200, { hasSessions: false, count: 0 });
     const setConfirmDestroy = mock();
-    const view = renderSc21Flyout(setConfirmDestroy);
+     const view = await renderSc21Flyout(setConfirmDestroy);
     await clickDeleteBranch(view);
     await waitFor(() => expect(setConfirmDestroy).toHaveBeenCalledTimes(1));
     expect(setConfirmDestroy.mock.calls[0][0].body).toBe("sidebar_delete_branch_body");
