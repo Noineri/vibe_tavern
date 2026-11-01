@@ -169,6 +169,11 @@
 :root.light-lava { --img-outline: rgba(0, 0, 0, 0.1); }
 img { outline: 1px solid var(--img-outline); outline-offset: -1px; }
 
+/* Avoid Chromium's aliased downscaling of non-square object-fit: cover images.
+   Parent overflow-hidden still owns avatar clipping.
+   https://issues.chromium.org/issues/572863043 */
+img.object-cover { overflow-clip-margin: unset; }
+
 
 html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overflow:hidden}
 /* #root sits above the WebGL lava-lamp canvas (LavaBackground.tsx, portaled to
